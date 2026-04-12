@@ -57,9 +57,39 @@ Target: **≤ 100 lines.** This file is prepended to every turn of that subproje
 
 ### `docs/conventions.md` (per-subproject)
 
-The long-form rules that would bloat `CLAUDE.md`. Layered architecture, DI conventions, database patterns, schema naming, error handling, metrics, specific testing patterns — whatever your subproject cares about.
+Binding rules that are always applicable but too detailed for `CLAUDE.md`. Schema naming, error handling philosophy, SSE targeting rules, collation rules, linting commands — short, prescriptive, always-on.
 
-This file is read by agents **on demand**, not loaded every turn. It can be as long as it needs to be. Structure it with clear headings so agents can jump to the section they need.
+This file is read by agents **on demand**, not loaded every turn. Keep it to binding rules only — no code examples or step-by-step recipes.
+
+### `docs/conventions/` (per-subproject, optional)
+
+A folder for **detailed convention documents** that are too large for a single `conventions.md` but still binding. Typical contents: form conventions, data display conventions, button standards, tooltip guidelines, UI pattern archetypes (entity management, simple CRUD).
+
+Use this when a single `conventions.md` would grow past ~200 lines and the sections are independently referenceable. `conventions.md` links to the files in this folder.
+
+### `docs/patterns/` (per-subproject)
+
+**How-to recipes** for specific situations. Each file is a self-contained guide with code examples and step-by-step instructions. You only read a pattern file when you're doing *that specific thing*.
+
+Examples: "How to wire a new service into the DI container", "How to add a paginated endpoint", "How to set up Playwright tests with the backend environment", "How to add localization keys."
+
+`conventions.md` should include a patterns index — a short list of available pattern files with one-line descriptions.
+
+### `docs/reference/` (per-subproject)
+
+**Orientation docs** about what exists. Architecture diagrams, folder structure, dependency lists, key UI surface inventories. Useful for getting bearings but doesn't prescribe behavior.
+
+### The three-bucket test
+
+When adding documentation to a subproject, classify it:
+
+| Bucket | Question to ask | Example |
+|---|---|---|
+| **Convention** | "Does every developer need to know this for any technical decision?" | "Every text column must specify a collation." |
+| **Pattern** | "Does a developer need this only when doing this specific thing?" | "How to integrate with the lifecycle coordinator for graceful shutdown." |
+| **Reference** | "Is this about what exists, not what to do?" | "The app uses Flask, SQLAlchemy, Pydantic, Alembic." |
+
+If it's a convention, it goes in `conventions.md` (or `conventions/` if it's large). If it's a pattern, it goes in `patterns/`. If it's a reference, it goes in `reference/`.
 
 ### Workflow docs (`docs/major_change_workflow.md`, `docs/minor_change_workflow.md`)
 
