@@ -92,6 +92,15 @@ Before running any real work, do a smoke test:
 
 If any step fails with "file not found" or "variable not filled in," that's a signal you missed a placeholder during Step 2.
 
+## Single-project repositories
+
+If your repo has only one codebase (no `backend/` + `frontend/` split), merge the `orchestrator/` and `project/` content into a single set of files at the repo root. The key differences:
+
+- **No `claude_session.py`.** The orchestrator doesn't need to dispatch separate Claude processes for different subprojects. The `run-slice` command dispatches dev agents directly as Task subagents from the same session.
+- **Rewrite `run-slice.md`** to dispatch agents directly (Task tool) instead of via the session manager. The step structure is the same (pre-flight → plan-writer → plan-reviewer → code-writer → verify → code-reviewer → iterate), but without the `claude_session.py start/resume/finish` choreography.
+- **`CLAUDE.md` combines orchestrator and project content** — design philosophy, issue log, documentation pointers, testing expectations, code quality commands all go in one file.
+- **Agents and commands live in `.claude/agents/` and `.claude/commands/`** at the repo root (no subproject nesting).
+
 ## Step 6: Read `WRITING_GUIDE.md` before modifying anything
 
 The template makes strong assumptions about where content lives (CLAUDE.md hierarchy, agent definition shape, workflow doc purpose). When you customize or extend, follow those rules or the whole system drifts back toward the duplication this template was built to eliminate. `WRITING_GUIDE.md` documents the rules explicitly.
