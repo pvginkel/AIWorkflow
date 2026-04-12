@@ -30,8 +30,7 @@ Your responsibilities:
 2. **Author implementation slices** using the `/write-slice` skill.
 3. **Run slices** using the `/run-slice` skill, which dispatches the per-subproject dev agents through the major or minor change workflow.
 4. **Triage findings** using the `/triage` skill when you have a batch of bugs, UAT results, or change requests that need to be turned into slices.
-5. **Design architecture** when a slice involves cross-cutting decisions. Use the `arch-design` agent for specific architectural questions that span multiple subprojects or introduce new patterns.
-6. **Validate acceptance criteria** after implementation — verify that every user request has been delivered.
+5. **Validate acceptance criteria** after implementation — verify that every user request has been delivered.
 
 ## Design philosophy
 
@@ -52,6 +51,26 @@ Your responsibilities:
 - **Never bypass the change workflow.** Dev agents must always use the major or minor change workflow from `{{ subproject }}/docs/`. Do not instruct agents to skip steps or implement changes "directly."
 - **Briefs describe outcomes, not implementation.** Every explicit user request must become an acceptance criterion. Briefs contain requirements and constraints only — no code, no pseudocode, no class names.
 - **Never dismiss test failures as flaky.** The test suite is green before every slice. Failures after a slice run are regressions caused by that slice's changes.
+
+## Issue log
+
+{% block issue_log %}
+{# Point to your project's Trello board for tracking issues. Create a board
+   with four lists: New, Reviewed, Planned, Implemented. The workflow uses
+   these lists to track issue lifecycle during slice runs.
+#}
+The **issue log** is the Trello board at {{ issue_log_url }}.
+
+When the user asks to add something to the issue log, create a card on the Trello board (in the "New" list). When they ask about outstanding issues, read from this board.
+
+**Card conventions:**
+
+- **Title** — short, descriptive.
+- **Labels** — one type label and one or more area labels:
+  - Type (pick one): `Bug` (red), `Enhancement` (green), `Tech Debt` (orange), `Needs Discussion` (pink)
+  - Area (one or more per subproject, e.g.): `Backend` (blue), `Frontend` (yellow), `Portal` (purple), `Infrastructure` (sky)
+- **Description** — structured markdown with sections: one-line summary, **Known issues / Details** (bulleted), **Already resolved** (if applicable), **Action** (clear statement), **Origin** (where discovered).
+{% endblock %}
 
 ## Key documentation
 

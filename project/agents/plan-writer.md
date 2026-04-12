@@ -101,7 +101,7 @@ In the plan, summarize: "See `file_map.json` for the full file map (N files)."
 
 Describe new or changed data shapes (request/response bodies, events, DB tables/columns, config). Use concise JSON or table snippets.
 
-Prefer refactoring to eliminate backwards compatibility needs. If backwards compatibility is unavoidable, specify the fallback strategy (idempotency, nullable defaults, versioning).
+Always plan the clean refactor: change the contract, update every caller, delete the old shape. See the design philosophy in `CLAUDE.md` — no backwards compatibility, no shims, no adapters.
 
 ### 4) API / integration surface
 

@@ -76,17 +76,6 @@ After reading all slice documents and passing infrastructure checks, present a p
 3. **Clarifications.** If anything is ambiguous, ask the user now — before any agent starts.
 4. **Notify and wait.** Send a push notification and wait for the user to respond before proceeding. Do not start Step 1 until the user has confirmed.
 
-### Step 0c: UX design (if applicable)
-
-Check whether `ux_design.md` already exists in the slice directory.
-
-- **If it exists:** it was authored as part of the slice. No action needed — provide it to the relevant dev agent in their step below.
-- **If it doesn't exist and the slice has frontend or portal work:** assess whether the slice warrants dedicated UX guidance (new screens, novel interactions, complex state management, ambiguous UI behavior). If so, generate one using Codex:
-  ```bash
-  python3 {{ project_root }}/tools/ai_workflow/codex_exec.py --prompt-file /tmp/ux_prompt.txt --response-file {{ specs_repo_path }}/slices/<SLICE_DIR>/ux_design.md
-  ```
-  The first line of the prompt must be `$frontend-ux-designer`. Follow the project's UX prompt conventions (what you're designing, what to read, current state, problems, constraints, deliverable).
-
 ### Step 1: Run the "leading" subproject
 
 {% block leading_subproject %}

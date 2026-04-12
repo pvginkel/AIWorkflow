@@ -18,6 +18,23 @@ This is the {{ subproject }} of {{ project_name }} — {{ subproject_tagline }}.
 - Dev agents work scoped to the `{{ subproject }}/` subdirectory but commit to the single shared repository.
 {% endblock %}
 
+## Design philosophy
+
+{% block design_philosophy %}
+{# These rules define how code changes are approached in this project. They
+   apply to every agent: plan-writers, code-writers, and reviewers alike.
+   Put them here (not just in the orchestrator CLAUDE.md) because project
+   agents don't see the root CLAUDE.md — this is their only source.
+#}
+- **Always do the clean refactor.** When changing an interface, a data model, or a contract: update every caller, fix every test, change every reference. Do not leave the old version alive alongside the new one "for now." Do not add optional parameters that default to old behavior. Do not create adapter layers, shims, thunks, or trampolines that translate between old and new. The number of files changed is not a cost; incomplete migrations are.
+- **No backwards compatibility.** This project has no external consumers. All subprojects are developed and deployed together. There is never a reason to preserve an old interface for compatibility.
+- **No tombstones.** When code is replaced or removed, delete it completely. No commented-out code, no `# removed` markers, no stub functions, no re-exports at old import paths, no "see X instead" docstrings.
+{% endblock %}
+
+## Specs repo
+
+Planning documents (change briefs, plans, plan reviews, code reviews) are stored in a separate specs repo at `{{ specs_repo_path }}`. If you need context on a slice, feature, or prior design decision, look there.
+
 ## Conventions
 
 Detailed conventions — architectural patterns, layering rules, dependency injection, database and schema patterns, error handling, observability, testing patterns — live in **`docs/conventions.md`**. Read it when you need to make technical choices. If the user proposes a new convention, update `docs/conventions.md` to reflect it (not this file).

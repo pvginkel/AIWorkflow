@@ -6,6 +6,7 @@ This guide walks you through copying the template into a new codebase. The workf
 
 - A monorepo checkout at some path (e.g., `/work/MyProject`).
 - A specs repo at a sibling path (e.g., `/work/MyProjectSpecs`). This is where slice documentation and per-feature planning artifacts live. Keep it separate so slice documents don't clutter your main repo.
+- A **Trello board** for the issue log. Create a board with four lists: **New**, **Reviewed**, **Planned**, **Implemented**. The workflow uses these lists to track issue lifecycle during slice runs. Set up labels for issue types (`Bug` red, `Enhancement` green, `Tech Debt` orange, `Needs Discussion` pink) and areas (one per subproject — e.g., `Backend` blue, `Frontend` yellow).
 - Python 3 available for the tooling scripts.
 
 ## Step 1: Copy the files
@@ -51,6 +52,7 @@ Every file uses Jinja2-style placeholders. Do a find-and-replace pass with the v
 | `{{ test_command }}` | Test command for the subproject | `poetry run pytest` / `pnpm exec playwright test` |
 | `{{ full_suite_command }}` | Full test suite command for the whole monorepo | `poetry run run-suite-remote` |
 | `{{ regen_api_command }}` | Command to regenerate the OpenAPI client (if applicable) | `pnpm generate:api` |
+| `{{ issue_log_url }}` | URL to the project's Trello issue log board | `https://trello.com/b/abc123/my-project-issues` |
 
 Per-template block sections (`{% block foo %}…{% endblock %}`) are free-form and need to be replaced with prose specific to your codebase. They are marked with `{# … #}` comments explaining what belongs there. Examples:
 
