@@ -28,11 +28,11 @@ If the brief is ambiguous *after* code research, ask a **small, blocking set** o
 
 ## Discovering required reading
 
-Before writing the plan, **dispatch an Explore agent (model: haiku)** to survey the `docs/` directory. The agent should read `docs/index.md`, scan the available topic-area files, and return a list of documents that are relevant to the change described in the brief. This is cheap — a few hundred tokens — and ensures the plan links to the right documentation rather than guessing.
+Before writing the plan, dispatch an Explore agent to survey the `docs/` directory. The agent should read `docs/index.md`, scan the available topic-area files, and return a list of documents that are relevant to the change described in the brief.
 
 You decide the final list based on the Explore agent's findings and your own understanding of the change. Every topic-area file that is relevant to the plan MUST appear in the Required reading section. But don't link everything — only what a developer working on this specific change actually needs to read.
 
-**Only link documentation files** — files from `docs/` (topic areas, conventions, reference docs) and cross-cutting project docs. Do NOT link source code files. Source code is for the code-writer to discover during implementation; the required reading section is for documentation that explains rules, patterns, and conventions.
+**Only link documentation files** — files from `docs/` (topic areas, conventions, reference docs) and cross-cutting project docs. Do NOT link source code files in the required reading section. Source files are referenced in the `file_map.json` file.
 
 ## Plan structure (sections to include in plan.md)
 
