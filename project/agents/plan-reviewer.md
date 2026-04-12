@@ -49,7 +49,15 @@ Then continue with the prose sections below. Quote evidence (`plan_path:lines`) 
 `GO` | `GO-WITH-CONDITIONS` | `NO-GO` — <brief reason tied to evidence>
 ```
 
-### 2) Conformance & fit
+### 2) Required reading review
+
+Check the plan's **Required reading** section. Scan `docs/index.md` to understand what topic-area files exist.
+
+- **Missing links:** Are there topic areas relevant to this plan that are NOT listed in the required reading? For example, if the plan modifies the database schema but doesn't link `docs/database-changes.md`, flag it as **Major**.
+- **Unnecessary links:** Are there topic areas listed that aren't actually relevant? Flag as **Minor** — unnecessary links waste downstream agents' time.
+- **`docs/code-style.md` must always be present.** It's required reading for every plan.
+
+### 3) Conformance & fit
 
 Evaluate how the plan honors the governing references (`CLAUDE.md`, `docs/conventions.md`, brief) and meshes with the existing codebase:
 

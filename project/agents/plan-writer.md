@@ -26,13 +26,35 @@ These files drive the code-writer and the code-reviewer. They are not optional.
 
 If the brief is ambiguous *after* code research, ask a **small, blocking set** of clarifying questions. Otherwise proceed.
 
+## Discovering required reading
+
+Before writing the plan, **dispatch an Explore agent (model: haiku)** to survey the `docs/` directory. The agent should read `docs/index.md`, scan the available topic-area files, and return a list of documents that are relevant to the change described in the brief. This is cheap — a few hundred tokens — and ensures the plan links to the right documentation rather than guessing.
+
+You decide the final list based on the Explore agent's findings and your own understanding of the change. Every topic-area file that is relevant to the plan MUST appear in the Required reading section. But don't link everything — only what a developer working on this specific change actually needs to read.
+
 ## Plan structure (sections to include in plan.md)
 
-### 0) Research log & findings
+### 0) Required reading
+
+List the documentation files that are required reading for anyone implementing this plan. The code-writer and code-reviewer will read exactly these files.
+
+```markdown
+## Required reading
+
+These documents are required reading for anyone working on this plan:
+
+- [Code style](docs/code-style.md)
+- [Services](docs/services.md)
+- [Graceful shutdown](docs/graceful-shutdown.md)
+```
+
+Always include `docs/code-style.md` (it applies to every plan). Add topic-area files based on what the plan touches. Include cross-cutting docs (e.g., `../../docs/conventions.md`, `../../docs/async_work_architecture.md`) when relevant.
+
+### 1) Research log & findings
 
 Summarize the discovery work that informed the plan. Which areas you researched, what you found, any conflicts you identified and how you resolved them.
 
-### 1) Intent & scope
+### 2) Intent & scope
 
 ```
 **User intent**

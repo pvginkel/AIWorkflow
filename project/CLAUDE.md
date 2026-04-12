@@ -35,26 +35,11 @@ This is the {{ subproject }} of {{ project_name }} — {{ subproject_tagline }}.
 
 Planning documents (change briefs, plans, plan reviews, code reviews) are stored in a separate specs repo at `{{ specs_repo_path }}`. If you need context on a slice, feature, or prior design decision, look there.
 
-## Conventions
+## Documentation
 
-Detailed conventions — architectural patterns, layering rules, dependency injection, database and schema patterns, error handling, observability, testing patterns — live in **`docs/conventions.md`**. Read it when you need to make technical choices. If the user proposes a new convention, update `docs/conventions.md` to reflect it (not this file).
+Project-specific documentation is organized by topic area in **`docs/`**. See **`docs/index.md`** for the full index — it links to topic areas like code style, testing, and any project-specific conventions. `docs/index.md` is the entry point; plan-writers survey it to build the required reading list for each plan.
 
 This `CLAUDE.md` intentionally stays lean. It is prepended to every turn and to every dev-agent subagent dispatched from this subproject, so every line here is paid for many times over.
-
-## Testing expectations
-
-{% block testing_expectations %}
-{# What does "done" look like? Include:
-   - What kinds of tests are required (unit, integration, e2e)
-   - Test data conventions
-   - Any testing infrastructure that matters (real DB vs mocks, fixtures)
-   - Non-negotiable rules (e.g., "every feature ships with test coverage")
-   Keep it short. Details go in docs/conventions.md.
-#}
-- Every feature must ship with test coverage. A feature without tests is incomplete.
-- Tests live in `tests/` mirroring the `app/` structure.
-- Use real services where practical; see `docs/conventions.md` for specifics.
-{% endblock %}
 
 ## Code quality
 

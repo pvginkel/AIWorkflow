@@ -55,41 +55,46 @@ Should **not** contain:
 
 Target: **≤ 100 lines.** This file is prepended to every turn of that subproject's dev session *and* to every user-defined dev-agent subagent dispatched from it.
 
-### `docs/conventions.md` (per-subproject)
+### `docs/index.md` and topic-area files (per-subproject)
 
-Binding rules that are always applicable but too detailed for `CLAUDE.md`. Schema naming, error handling philosophy, SSE targeting rules, collation rules, linting commands — short, prescriptive, always-on.
+Documentation is organized by **topic area** — "what are you working on?" — not by document type. Each topic area is a self-contained file that mixes binding rules and how-to recipes together, because when you're building a service you need both.
 
-This file is read by agents **on demand**, not loaded every turn. Keep it to binding rules only — no code examples or step-by-step recipes.
+`docs/index.md` is the entry point. It is a **pure fan-out document** that contains no rules itself — only links to topic-area files with one-line descriptions. It includes a "Maintaining this index" section explaining that plan-writers dispatch Explore agents to survey the directory.
+
+**Typical topic areas** (vary by project and stack):
+
+- `code-style.md` — linting, type hints, error handling, readability (required reading for every plan)
+- `api-design.md` — endpoint patterns, pagination, schema naming
+- `services.md` — service layer pattern, dependency injection, metrics
+- `database-changes.md` — schema conventions, collation, migrations
+- `database-usage.md` — query patterns, relationships, enumerations
+- `testing.md` — test organization, fixtures, coverage expectations
+- `graceful-shutdown.md` — lifecycle coordinator integration
+- `sse-event-targeting.md` — SSE dispatch rules
+
+When a new topic area emerges, create a file, add it to `index.md`, and it's immediately discoverable by plan-writers.
 
 ### `docs/conventions/` (per-subproject, optional)
 
-A folder for **detailed convention documents** that are too large for a single `conventions.md` but still binding. Typical contents: form conventions, data display conventions, button standards, tooltip guidelines, UI pattern archetypes (entity management, simple CRUD).
+A folder for **detailed convention documents** that are too large for a single topic-area file but still binding and independently referenceable. Typical contents: UI form conventions, data display rules, button standards, tooltip guidelines, UI pattern archetypes (entity management, simple CRUD). `index.md` links to these files.
 
-Use this when a single `conventions.md` would grow past ~200 lines and the sections are independently referenceable. `conventions.md` links to the files in this folder.
-
-### `docs/patterns/` (per-subproject)
-
-**How-to recipes** for specific situations. Each file is a self-contained guide with code examples and step-by-step instructions. You only read a pattern file when you're doing *that specific thing*.
-
-Examples: "How to wire a new service into the DI container", "How to add a paginated endpoint", "How to set up Playwright tests with the backend environment", "How to add localization keys."
-
-`conventions.md` should include a patterns index — a short list of available pattern files with one-line descriptions.
-
-### `docs/reference/` (per-subproject)
+### `docs/reference/` (per-subproject, optional)
 
 **Orientation docs** about what exists. Architecture diagrams, folder structure, dependency lists, key UI surface inventories. Useful for getting bearings but doesn't prescribe behavior.
 
-### The three-bucket test
+### Organizing documentation — the topic-area test
 
-When adding documentation to a subproject, classify it:
+When adding documentation, ask: **"What task would make a developer reach for this?"**
 
-| Bucket | Question to ask | Example |
-|---|---|---|
-| **Convention** | "Does every developer need to know this for any technical decision?" | "Every text column must specify a collation." |
-| **Pattern** | "Does a developer need this only when doing this specific thing?" | "How to integrate with the lifecycle coordinator for graceful shutdown." |
-| **Reference** | "Is this about what exists, not what to do?" | "The app uses Flask, SQLAlchemy, Pydantic, Alembic." |
+| If the answer is… | Then it goes in… |
+|---|---|
+| "Any time I write code" | `code-style.md` |
+| "When I'm building an API endpoint" | `api-design.md` |
+| "When I'm changing the schema" | `database-changes.md` |
+| "When I'm orienting on the architecture" | `reference/architecture.md` |
+| "It doesn't fit a single task — it's a project-wide rule" | Root `docs/conventions.md` or `CLAUDE.md` |
 
-If it's a convention, it goes in `conventions.md` (or `conventions/` if it's large). If it's a pattern, it goes in `patterns/`. If it's a reference, it goes in `reference/`.
+The goal: each topic-area file is a self-contained reference for one kind of work. A plan links to 2–5 topic areas, and the code-writer reads exactly those files.
 
 ### Workflow docs (`docs/major_change_workflow.md`, `docs/minor_change_workflow.md`)
 
