@@ -32,6 +32,8 @@ Before writing the plan, **dispatch an Explore agent (model: haiku)** to survey 
 
 You decide the final list based on the Explore agent's findings and your own understanding of the change. Every topic-area file that is relevant to the plan MUST appear in the Required reading section. But don't link everything — only what a developer working on this specific change actually needs to read.
 
+**Only link documentation files** — files from `docs/` (topic areas, conventions, reference docs) and cross-cutting project docs. Do NOT link source code files. Source code is for the code-writer to discover during implementation; the required reading section is for documentation that explains rules, patterns, and conventions.
+
 ## Plan structure (sections to include in plan.md)
 
 ### 0) Required reading

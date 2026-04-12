@@ -18,6 +18,8 @@
 - (repeat for each subproject)
 
 A separate **specs repo** at `{{ specs_repo_path }}` holds slice documentation and per-feature planning artifacts (briefs, plans, reviews).
+
+**Commit to the specs repo early and often.** The specs repo is a separate git repository. Every document you produce there should be committed as soon as it's written — not batched up at the end. `cd` to `{{ specs_repo_path }}`, `git add` the file, and commit. Frequent small commits avoid conflicts and prevent work loss if a session crashes.
 {% endblock %}
 
 ## Your role as orchestrator
