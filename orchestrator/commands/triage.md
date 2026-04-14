@@ -110,21 +110,41 @@ For each slice, create the full documentation set. Work through slices in parall
 
 **6b. Update the issue tracker.** For each tracker entry that was assigned to a slice: add a slice label, add type/area labels, rewrite the description with structured markdown, move the item from the intake queue to "planned."
 
-### Phase 7: Write summary
+### Phase 7: Write summary and DAG
 
 **7a. Create a summary document** at `{{ specs_repo_path }}/<triage_name>_summary.md` covering:
 
 - What was done (item count, slice count).
 - What the user needs to review (UX designs, technical designs).
 - Slice overview table (number, title, areas, dependencies, items).
-- Suggested execution order (waves of slices that can run in parallel).
 - Removed/deferred items.
 - Files created/modified.
 
-**7b. Notify the user** that triage is complete:
+**7b. Create a run DAG** at `{{ specs_repo_path }}/<triage_name>_dag.md`. The user keeps this open in a notepad next to the execution run to pick the next slice to dispatch — optimise for clarity, copy-paste friendliness, and "can I glance at this and know what's runnable right now."
+
+The DAG must show:
+
+- **Every active slice** with a one- or two-line description. Each slice appears exactly once. Every active slice gets a `[ ]` checkbox prefix so the user can tick slices off as they dispatch and complete them. Deferred slices use `[-]` instead.
+- **Soft ordering edges** between slices, annotated with the *reason* (e.g., "shares {{ subproject }}/src/hooks/use-foo.ts", "doc should reflect the new prompt framing"). Soft edges are ordering hints that minimize merge churn and rework — not hard gates.
+- **Free roots** — slices with no predecessors, dispatchable any time — grouped separately from the ordered chain so the user can grab one at a glance.
+- **An ASCII visual** of the DAG. Keep it monospace-clean, no heavy Unicode that renders badly in a plain notepad. Nodes appear once, each with a `[ ]` checkbox. Draw the arrows.
+- **Deferred slices** in a separate section so they don't clutter the runnable set but are still visible. Use `[-]` prefix.
+- **A cheat sheet** at the bottom: max parallel width, longest path, pure sinks, pure sources. This is what the user scans when deciding how many slices to dispatch at once.
+
+**How to discover the edges:**
+
+1. **File overlap.** For each pair of slices touching the same subproject, list the files each slice will write. Same file → soft edge. Adjacent files in the same area (same directory, same test file, same hook) → soft edge. Read the briefs you just wrote — the grounded file paths are the source of truth.
+2. **Logical sequencing.** A slice that produces a fact another slice consumes (a new convention, a new doc, a new disablement) gets an edge. Example: a disablement slice should land before a documentation slice that describes "this is disabled."
+3. **Contract changes.** A slice that changes a shared contract (API response shape, error taxonomy, event shape) should land before slices that consume the new contract.
+
+Do NOT invent hard dependencies. Slices are intentionally independent where possible — edges are hints, not gates. If you can't find a good reason for an edge, don't draw one.
+
+**Do NOT include execution waves.** The user's parallel capacity varies run-to-run. A DAG is more flexible than a wave plan — the user picks from free nodes based on current capacity.
+
+**7c. Notify the user** that triage is complete:
 
 ```bash
-python3 {{ notification_script }} --title "Triage complete" "N items triaged into M slices. Summary at {{ specs_repo_path }}/..._summary.md."
+python3 {{ notification_script }} --title "Triage complete" "N items triaged into M slices. Summary at {{ specs_repo_path }}/..._summary.md. Run DAG at {{ specs_repo_path }}/..._dag.md."
 ```
 
 ## Key principles
