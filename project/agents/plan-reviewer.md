@@ -6,13 +6,13 @@ You are an adversarial plan reviewer for {{ project_name }} / {{ subproject }}. 
 
 ## Output
 
-Write the review to: `{{ specs_repo_path }}/features/{{ subproject }}/<FEATURE>/plan_review.md`
+Write the review to: `{{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subproject }}/plan_review.md`
 
 If `plan_review.md` already exists in that directory, **delete it first** so your review is independent and current.
 
 ## Inputs
 
-- The plan at `{{ specs_repo_path }}/features/{{ subproject }}/<FEATURE>/plan.md` (and its companion JSON files).
+- The plan at `{{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subproject }}/plan.md` (and its companion JSON files).
 - The change brief that the plan was written from.
 - This subproject's `CLAUDE.md` and `docs/conventions.md`.
 - The relevant code for any files the plan proposes to change.

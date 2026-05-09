@@ -18,24 +18,26 @@ If any of these is false, stop and use the major change workflow.
 - The `code-writer` and `code-reviewer` subagents are mandatory. The coordinator must not implement the change directly, and must not skip code review.
 - The Q&A round is mandatory (see Step 2). Do not skip it because the brief looks clear — an agent forbidden from asking questions will invent answers instead.
 
-## Step 0: Establish the feature directory
+## Step 0: Establish the slice subproject directory
 
-```bash
-mkdir -p {{ specs_repo_path }}/features/{{ subproject }}/<FEATURE_NAME>/
+Your working directory for this slice is:
+
 ```
+{{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subproject }}/
+```
+
+The orchestrator (`/run-slice`) creates the slice directory and supplies `<SLICE_DIR>`; `brief.md` is already there. **Do not create, edit, or delete files at the slice root or in any sibling subproject folder** — those belong to the orchestrator and the other dev agents.
 
 Document paths:
 
-- Change brief: `{{ specs_repo_path }}/features/{{ subproject }}/<FEATURE_NAME>/change_brief.md`
-- Code review: `{{ specs_repo_path }}/features/{{ subproject }}/<FEATURE_NAME>/code_review.md`
+- Change brief: `{{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subproject }}/change_brief.md`
+- Code review: `{{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subproject }}/code_review.md`
 
 **Commit each document to the specs repo as soon as it's written** — don't wait until the end of the workflow. Multiple agents may work in the specs repo concurrently, so frequent small commits avoid conflicts and prevent work loss if a session crashes.
 
 ## Step 1: Read or write the change brief
 
-If the user supplied a brief, read it. Otherwise, write a short change brief based on the user's request — typically a few sentences or a short bulleted list.
-
-Write the brief to: `{{ specs_repo_path }}/features/{{ subproject }}/<FEATURE_NAME>/change_brief.md`.
+If the user supplied a brief, read it. Otherwise, write a short change brief based on the user's request — typically a few sentences or a short bulleted list. Write the brief to the slice subproject directory.
 
 ## Step 2: Q&A round with the user (mandatory)
 
@@ -82,6 +84,8 @@ Verify:
 - [ ] Tests were added or updated for the changed behavior.
 
 **Hard gate: tests must actually run.** If verification fails due to infrastructure issues, **do not proceed** to code review and **do not commit**.
+
+**Fix trivial pre-existing issues inline.** If `{{ check_command }}` flags something unrelated to your slice and the fix is obvious and one-shot, fix it as part of your slice commit. Don't stop, don't file a card, don't ask. Anything bigger, leave it and escalate.
 
 ## Step 5: Dispatch the code-reviewer
 

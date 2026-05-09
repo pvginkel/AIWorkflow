@@ -41,6 +41,20 @@ Project-specific documentation is organized by topic area in **`docs/`**. See **
 
 This `CLAUDE.md` intentionally stays lean. It is prepended to every turn and to every dev-agent subagent dispatched from this subproject, so every line here is paid for many times over.
 
+## Testing expectations
+
+{% block testing_expectations %}
+{# What "done" looks like for a dev agent in this subproject. Keep it short —
+   detail belongs in docs/testing.md. Examples of what to put here:
+   - "Every feature must ship with test coverage. A feature without tests is incomplete."
+   - Where tests live (mirror `src/` in `tests/`, etc.).
+   - Special test infrastructure rules (use real services vs mocks, fixture conventions).
+   See docs/testing.md for the actual rules.
+#}
+- Every feature must ship with test coverage. A feature without tests is incomplete.
+- See `docs/testing.md` for fixtures, patterns, and infrastructure.
+{% endblock %}
+
 ## Code quality
 
 Before committing, verify:

@@ -6,28 +6,24 @@ For small, pattern-following changes, use `minor_change_workflow.md` instead.
 
 The coordinator reading this document is the subproject's main Claude session. The coordinator dispatches the four dev agents (`plan-writer`, `plan-reviewer`, `code-writer`, `code-reviewer`) in order and drives the verification and iteration loop.
 
-## Step 0: Establish the feature directory
+## Step 0: Establish the slice subproject directory
 
-Before invoking any subagents, determine the feature directory path:
+Before invoking any subagents, confirm the slice subproject directory path:
 
 ```
-{{ specs_repo_path }}/features/{{ subproject }}/<FEATURE_NAME>/
+{{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subproject }}/
 ```
 
-where `<FEATURE_NAME>` is a snake_case identifier for the change (e.g., `shopping_cart`, `status_badge_refactor`).
+This is the dev-agent working directory for the {{ subproject }} part of the slice. The orchestrator (`/run-slice`) creates the slice directory and supplies `<SLICE_DIR>`; your job is to add the artifacts below alongside the `brief.md` already in place.
 
-Create it with:
-
-```bash
-mkdir -p {{ specs_repo_path }}/features/{{ subproject }}/<FEATURE_NAME>/
-```
+**Do not create, edit, or delete files at the slice root** (`{{ specs_repo_path }}/slices/<SLICE_DIR>/*.md`, `*.json`) **or in any sibling subproject folder.** Those belong to the orchestrator and the other dev agents.
 
 Document paths (pass these to every agent invocation):
 
-- Change brief: `{{ specs_repo_path }}/features/{{ subproject }}/<FEATURE_NAME>/change_brief.md`
-- Plan: `{{ specs_repo_path }}/features/{{ subproject }}/<FEATURE_NAME>/plan.md`
-- Plan review: `{{ specs_repo_path }}/features/{{ subproject }}/<FEATURE_NAME>/plan_review.md`
-- Code review: `{{ specs_repo_path }}/features/{{ subproject }}/<FEATURE_NAME>/code_review.md`
+- Change brief: `{{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subproject }}/change_brief.md`
+- Plan: `{{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subproject }}/plan.md`
+- Plan review: `{{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subproject }}/plan_review.md`
+- Code review: `{{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subproject }}/code_review.md`
 
 **Commit each document to the specs repo as soon as it's written** — don't wait until the end of the workflow. Multiple agents may work in the specs repo concurrently, so frequent small commits avoid conflicts and prevent work loss if a session crashes.
 
@@ -35,7 +31,7 @@ Document paths (pass these to every agent invocation):
 
 Describe the work at a functional level based on the user's input. A brief can be a single sentence or several paragraphs if the change needs a reproduction or domain context.
 
-Write the change brief to: `{{ specs_repo_path }}/features/{{ subproject }}/<FEATURE_NAME>/change_brief.md`.
+Write the change brief to the slice subproject directory.
 
 If confidence is low that the change brief describes the change clearly, respond back to the user and abort the session.
 
@@ -86,6 +82,8 @@ Before proceeding to code review, verify:
 - [ ] `test_plan.json` (if present): spot-check that planned test scenarios have corresponding test functions.
 
 **Hard gate: tests must actually run.** If verification fails due to infrastructure issues (unreachable services, missing env vars, broken fixtures), **do not proceed** to code review and **do not commit** work. Report the infrastructure issue and stop.
+
+**Fix trivial pre-existing issues inline.** If `{{ check_command }}` flags something unrelated to your slice and the fix is obvious and one-shot, fix it as part of your slice commit. Don't stop, don't file a card, don't ask. Anything bigger, leave it and escalate.
 
 ## Step 6: Dispatch the code-reviewer
 

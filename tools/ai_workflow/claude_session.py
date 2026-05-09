@@ -57,8 +57,14 @@ def _tool_description(name: str, inp: dict) -> str:
         basename = PurePosixPath(path).name
         parts = [basename]
         if inp.get("offset") or inp.get("limit"):
-            start = inp.get("offset", 1)
-            limit = inp.get("limit")
+            try:
+                start = int(inp.get("offset", 1))
+            except (TypeError, ValueError):
+                start = 1
+            try:
+                limit = int(inp.get("limit")) if inp.get("limit") else None
+            except (TypeError, ValueError):
+                limit = None
             if limit:
                 parts.append(f"lines {start}-{start + limit - 1}")
             else:
@@ -203,6 +209,7 @@ def _project_dir(name: str) -> str:
 
     Internal projects (backend, frontend, portal) live under PROJECT_ROOT.
     External projects (sse-gateway) live at configured paths outside the monorepo.
+    'root' resolves to the monorepo root itself.
     """
     if name in EXTERNAL_PROJECTS:
         path = EXTERNAL_PROJECTS[name]
@@ -214,6 +221,8 @@ def _project_dir(name: str) -> str:
             )
             sys.exit(1)
         return str(path)
+    if name == "root":
+        return str(PROJECT_ROOT)
     return str(PROJECT_ROOT / name)
 
 
