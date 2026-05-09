@@ -1,0 +1,10 @@
+# Honcho-managed dev processes. One line per long-running service.
+# Run with `poetry run honcho -f Procfile.dev start` from the project root.
+#
+# Customize the lines below for your subprojects. The samples assume
+# backend/frontend/portal — delete or duplicate as needed. Pick non-overlapping
+# ports per service so honcho can start them all in one shell.
+
+backend:    cd backend && PORT=3401 scripts/dev-watch.sh poetry run dev
+frontend:   cd frontend && pnpm dev
+portal:     cd portal && pnpm dev

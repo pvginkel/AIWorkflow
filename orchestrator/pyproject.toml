@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "{{ project_name_slug }}"
+version = "0.1.0"
+description = "{{ project_tagline }}"
+authors = ["{{ author_name }} <{{ author_email }}>"]
+packages = [{include = "tools"}]
+
+[tool.poetry.dependencies]
+python = "^3.13"
+portpicker = "^1"
+honcho = "^2"
+pathspec = "^1"
+psutil = "^5"
+jsonschema = "^4.26.0"
+jsonpatch = "^1.33"
+
+[tool.poetry.scripts]
+code-health = "tools.code_health.__main__:main"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

@@ -19,12 +19,28 @@ orchestrator/CLAUDE.md               → <project_root>/CLAUDE.md
 orchestrator/commands/*.md           → <project_root>/.claude/commands/
 orchestrator/agents/*.md             → <project_root>/.claude/agents/
 
-# Tooling
+# Root scaffolding (Poetry/pnpm/Procfile/gitignore)
+orchestrator/pyproject.toml          → <project_root>/pyproject.toml
+orchestrator/pnpm-workspace.yaml     → <project_root>/pnpm-workspace.yaml
+orchestrator/.gitignore              → <project_root>/.gitignore
+orchestrator/.codehealthignore       → <project_root>/.codehealthignore
+orchestrator/Procfile.dev            → <project_root>/Procfile.dev
+
+# Orchestration scripts
+orchestrator/scripts/*.py            → <project_root>/scripts/
+                                       (build-all.py, regenerate-openapi.py,
+                                        _initd_log.py — referenced by
+                                        /run-slice's pre-flight and Step 2)
+
+# Runtime tools
 tools/ai_workflow/*.py               → <project_root>/tools/ai_workflow/
                                        (or wherever you want the scripts to live;
                                         update the `{{ session_manager_path }}`
                                         and `{{ notification_script }}` variables
                                         to match)
+tools/code_health/                   → <project_root>/tools/code_health/
+                                       (Python + TypeScript sidecar; wired as
+                                        the `code-health` Poetry script)
 
 # Per-subproject content — repeat for each subproject
 project/CLAUDE.md                    → <project_root>/<subproject>/CLAUDE.md
@@ -73,14 +89,24 @@ There is no template for `conventions.md` — its content is entirely project-sp
 
 ## Step 4: Set up the tooling
 
-The scripts in `tools/ai_workflow/` (`claude_session.py`, `codex_exec.py`) are runtime dependencies of the `run-slice` skill. Make sure:
+The scripts in `tools/ai_workflow/` (`claude_session.py`, `codex_exec.py`, `send_message.py`) are runtime dependencies of the `run-slice` skill. Make sure:
 
 - They are executable (`chmod +x`).
 - `python3` is on PATH.
 - `claude_session.py` can find the `claude` CLI.
 - Any paths hardcoded inside the scripts (if you edit them) match your project layout.
 
-You will likely also want a push-notification script. The template references `{{ notification_script }}` but does not ship one — provide your own, or remove the notification calls from `run-slice.md` and `triage.md` if you don't use them.
+The template ships a push-notification helper at `tools/ai_workflow/send_message.py` — wire it up to your delivery channel of choice (Pushover, ntfy, Slack, email, etc.) or remove the notification calls from `run-slice.md` and `triage.md` if you don't use them.
+
+### Step 4b: Install dependencies
+
+Once the files are in place:
+
+1. **Poetry deps** — `cd <project_root> && poetry install`. This installs the orchestration tools (`code-health`, `claude_session.py`, etc.) and registers the `code-health` Poetry script.
+2. **pnpm install** — `pnpm install`. This pulls dependencies for the workspace, including the cognitive-complexity sidecar at `tools/code_health/cognitive/`.
+3. **Verify** — `poetry run code-health --help` should print usage. The first time you run it, the sidecar will compile its TypeScript via `tsx` on demand.
+
+If you're not using one or both of Poetry/pnpm, edit `pyproject.toml`/`pnpm-workspace.yaml` accordingly. The orchestration scripts only depend on the Python deps listed in `pyproject.toml`.
 
 ## Step 5: Try a small slice
 

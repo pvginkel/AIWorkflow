@@ -6,9 +6,10 @@ This repository is a **template**, not a library. Copy its contents into a real 
 
 ## What's in here
 
-- **`orchestrator/`** — content for the monorepo root / orchestrator Claude Code session. Contains the top-level `CLAUDE.md`, the slice-management skills (`run-slice`, `write-slice`, `triage`), and the `arch-design` agent. This is what the orchestrator loads when you sit at the root of the repo and drive slice work.
+- **`orchestrator/`** — everything that gets copied to the monorepo root. The orchestrator session's `CLAUDE.md`, the slice-management skills (`run-slice`, `write-slice`, `triage`, `arch-design`, `ux-design`, `quality-improver`, `quality-issue-finder`, `refactor-audit`), the `arch-design` and `slice-verifier` agents, root scaffolding (`pyproject.toml`, `pnpm-workspace.yaml`, `.gitignore`, `.codehealthignore`, `Procfile.dev`), and orchestration scripts (`scripts/build-all.py`, `scripts/regenerate-openapi.py`).
 - **`project/`** — content for each per-subproject Claude Code session (backend, frontend, portal, etc.). Contains a per-project `CLAUDE.md`, the four dev agents (`plan-writer`, `plan-reviewer`, `code-writer`, `code-reviewer`), and the major/minor change workflow documents.
-- **`tools/ai_workflow/`** — runtime scripts the orchestrator depends on: `claude_session.py` (session manager for dispatching dev agents) and `codex_exec.py` (wrapper for invoking Codex for UX design generation).
+- **`tools/ai_workflow/`** — runtime scripts the orchestrator depends on: `claude_session.py` (session manager for dispatching dev agents), `codex_exec.py` (wrapper for invoking Codex for UX design generation), `send_message.py` (push-notification helper).
+- **`tools/code_health/`** — code-health grader (Python + a TypeScript cognitive-complexity sidecar). Wired as a Poetry script (`code-health`) by `orchestrator/pyproject.toml`. Used by the `refactor-audit` and `quality-issue-finder` skills.
 
 ## How to use it
 
