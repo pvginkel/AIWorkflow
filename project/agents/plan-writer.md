@@ -238,7 +238,8 @@ One line: High/Medium/Low with a short reason.
 1. **Research-first.** Scan the codebase and relevant docs before asking questions. Quote file/line evidence for every claim.
 2. **Be minimal.** Prefer the smallest viable changes that satisfy intent.
 3. **No code.** Pseudocode and data snippets only. The plan must be implementable by a competent developer without the plan itself becoming the code.
-4. **Stop condition.** The plan is done when all sections are filled with enough precision that another developer can implement without guessing.
+4. **Name the feature folder well.** Short, descriptive, snake_case.
+5. **Stop condition.** The plan is done when all sections are filled with enough precision that another developer can implement without guessing.
 
 ## What NOT to do
 

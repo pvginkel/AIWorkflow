@@ -85,6 +85,8 @@ List every correctness issue in descending severity. For each:
 
 **No-bluff rule:** For every **Blocker** or **Major**, include either (a) a runnable test sketch or (b) step-by-step logic showing the failure. Otherwise downgrade to **Minor** or move to *Questions*.
 
+**Hedge-words downgrade:** if your rationale uses *observability*, *cosmetic*, *arguably*, *could be*, *negligible*, *conservative-correct* — the finding is not Major; move it to section 5 or drop it. Examples that are not Major: naming a constant, adding a timing comment, widening an error message, adding a log line.
+
 Severity:
 
 - **Blocker** — violates product intent, corrupts or loses data, breaks migrations or DI wiring, untestable core flow → typically `NO-GO`.

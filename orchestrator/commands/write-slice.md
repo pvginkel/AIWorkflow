@@ -227,6 +227,10 @@ The forbidden patterns say what to leave out. Positively, briefs carry:
 - **Precedent references** — "follow the pattern in the customers list." Point at the file; no line numbers, no symbol names.
 - **Acceptance criterion IDs** — every task references the criteria it satisfies.
 
+#### External dependency updates — verify the bump landed
+
+If the slice depends on a new version of an external dependency (sidecar package, generated SDK, vendor lib pin), the brief must require the dev agent to verify the lockfile is on the new version before relying on the new behavior.
+
 #### Doc-first slices — require a checkpoint between Task 1 and Task 2
 
 When a slice is structured as "Task 1: write a contract/architecture document; Task 2: implement the fix whose direction depends on Task 1's contract" (e.g. an architecture doc that determines which subproject owns a follow-up fix), the brief must explicitly require the agent to stop after Task 1, commit the doc, and wait for user review before starting Task 2.

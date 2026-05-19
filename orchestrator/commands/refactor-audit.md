@@ -77,7 +77,7 @@ Call these out explicitly so they can be suppressed. Preferred approaches, in or
 
 ### Phase 5: Write the report
 
-**5a. Write the audit report** to `{{ specs_repo_path }}/refactor_audit_YYYY-MM-DD.md` with these sections:
+**5a. Write the audit report** to `docs/refactor_audit_YYYY-MM-DD.md` with these sections:
 
 1. **Summary** — health score distribution, key patterns, number of recommendations.
 2. **Refactoring groups** — the grouped recommendations from Phase 3, in priority order.

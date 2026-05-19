@@ -65,24 +65,24 @@ Read all documents in the slice directory. Determine which agents need to run ba
 {# Project-specific pre-flight commands. These should verify that:
    - All subprojects build cleanly with frozen lockfiles (catches dep drift)
    - The test harness can collect tests without environment errors
+   - The test harness config is ready (any "prepare" / fixture-build step)
    - External services (DB, queues, storage) are reachable
    - Any special startup requirements are met
-   Replace with the actual commands for your stack. The DesignAssistant
-   project uses scripts/build-all.py + per-subproject test collection
-   smoke checks; adapt to your toolchain.
+   Prefer bundling these into a single pre-flight script that runs the
+   checks, stays silent on success, and dumps the buffered output of every
+   check plus the failure details on failure. The DesignAssistant project
+   uses scripts/preflight.py, which bundles a full repo build
+   (scripts/build-all.py), backend test collection, and test-harness config
+   readiness; adapt to your toolchain.
 #}
-Run minimal commands that confirm the build succeeds and the test harness is healthy before dispatching any dev agent. Examples:
+Run minimal commands that confirm the build succeeds and the test harness is healthy before dispatching any dev agent. Example:
 
 ```bash
-# Build check: install deps with frozen lockfiles, run production builds
-python3 {{ project_root }}/scripts/build-all.py
-
-# {{ subproject }} test collection
-cd {{ project_root }}/{{ subproject }} && {{ test_command }} --collect-only 2>&1 | tail -5
+python3 {{ project_root }}/scripts/preflight.py
 ```
 {% endblock %}
 
-**If any pre-flight check fails:** notify the user and **stop immediately**. Do not start any dev agent. Unverified code is worse than no code.
+**If any pre-flight check fails:** do **not** try to work around it — fix the root cause. Notify the user (include the pre-flight output so they can act) and **stop immediately**. Do not start any dev agent. Unverified code is worse than no code.
 
 ### Step 0b: Pre-flight review with user
 

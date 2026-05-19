@@ -27,7 +27,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 SESSIONS_DIR = PROJECT_ROOT / ".claude" / "sessions"
 
-VALID_PROJECTS = ("backend", "frontend", "portal", "sse-gateway")
+VALID_PROJECTS = ("root", "backend", "frontend", "portal", "sse-gateway")
 
 # External project directories (outside the monorepo)
 EXTERNAL_PROJECTS = {
@@ -207,10 +207,12 @@ def _now_iso() -> str:
 def _project_dir(name: str) -> str:
     """Resolve a project name to its absolute directory path.
 
+    'root' resolves to the monorepo root itself.
     Internal projects (backend, frontend, portal) live under PROJECT_ROOT.
     External projects (sse-gateway) live at configured paths outside the monorepo.
-    'root' resolves to the monorepo root itself.
     """
+    if name == "root":
+        return str(PROJECT_ROOT)
     if name in EXTERNAL_PROJECTS:
         path = EXTERNAL_PROJECTS[name]
         if not path.exists():
@@ -221,8 +223,6 @@ def _project_dir(name: str) -> str:
             )
             sys.exit(1)
         return str(path)
-    if name == "root":
-        return str(PROJECT_ROOT)
     return str(PROJECT_ROOT / name)
 
 

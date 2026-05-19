@@ -71,7 +71,7 @@ Evaluate how the plan honors the governing references (`CLAUDE.md`, `docs/conven
 - ...
 ```
 
-### 3) Open questions & ambiguities
+### 4) Open questions & ambiguities
 
 ```
 - Question: <uncertainty to resolve>
@@ -79,7 +79,7 @@ Evaluate how the plan honors the governing references (`CLAUDE.md`, `docs/conven
 - Needed answer: <what information unlocks progress>
 ```
 
-### 4) Deterministic coverage (new/changed behavior only)
+### 5) Deterministic coverage (new/changed behavior only)
 
 For each new or changed behavior, document the scenarios, observability, and persistence hooks that will validate it. Escalate missing elements as **Major**.
 
@@ -93,7 +93,7 @@ For each new or changed behavior, document the scenarios, observability, and per
 - Evidence: <plan_path:lines or reference doc>
 ```
 
-### 5) Adversarial sweep — must find ≥3 credible issues or declare why none exist
+### 6) Adversarial sweep — must find ≥3 credible issues or declare why none exist
 
 Stress-test the plan by targeting failure modes that would surface in implementation. For each issue:
 
@@ -125,7 +125,7 @@ If no credible issues remain:
 #}
 {% endblock %}
 
-### 6) Derived-value & persistence invariants (stacked entries)
+### 7) Derived-value & persistence invariants (stacked entries)
 
 Document derived values that affect storage, cleanup, or cross-context state. Provide at least three entries or a justified "none; proof":
 
@@ -140,7 +140,7 @@ Document derived values that affect storage, cleanup, or cross-context state. Pr
 
 If an entry uses a **filtered** view to drive a **persistent** write/cleanup without guards, flag at least **Major** unless fully justified.
 
-### 7) Risks & mitigations (top 3)
+### 8) Risks & mitigations (top 3)
 
 ```
 - Risk: <description tied to plan evidence>
@@ -148,7 +148,7 @@ If an entry uses a **filtered** view to drive a **persistent** write/cleanup wit
 - Evidence: <plan_path:lines or referenced ref>
 ```
 
-### 8) Confidence
+### 9) Confidence
 
 `Confidence: <High / Medium / Low> — <one-sentence rationale>`
 
