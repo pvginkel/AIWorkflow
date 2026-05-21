@@ -6,7 +6,7 @@ authors = ["{{ author_name }} <{{ author_email }}>"]
 packages = [{include = "tools"}]
 
 [tool.poetry.dependencies]
-python = "^3.13"
+python = "^3.11"
 portpicker = "^1"
 honcho = "^2"
 pathspec = "^1"

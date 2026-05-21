@@ -27,12 +27,36 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 SESSIONS_DIR = PROJECT_ROOT / ".claude" / "sessions"
 
-VALID_PROJECTS = ("root", "backend", "frontend", "portal", "sse-gateway")
+# ---------------------------------------------------------------------------
+# Project configuration — CUSTOMIZE FOR YOUR REPO
+# ---------------------------------------------------------------------------
+#
+# This script ships with Jinja-style placeholders (`{{ … }}`) that mark the
+# values you must replace when adopting the template. The placeholders are
+# NOT processed at runtime — replace them with literal Python values before
+# running.
+#
+# VALID_PROJECTS lists every project name the orchestrator can dispatch:
+#   - "root" is the orchestrator session itself.
+#   - The rest are one entry per subproject directory under PROJECT_ROOT
+#     (e.g. "backend", "frontend", "portal"), plus any external projects.
+#
+# EXTERNAL_PROJECTS maps a project name to a directory OUTSIDE the monorepo
+# (e.g. a sibling repo). Use it sparingly — most subprojects live inside
+# PROJECT_ROOT and don't need an entry.
+#
+# Example values for a backend/frontend monorepo with a sibling gateway repo:
+#   VALID_PROJECTS = ("root", "backend", "frontend")
+#   EXTERNAL_PROJECTS = {"gateway": PROJECT_ROOT.parent / "Gateway"}
+#
+# Example values for a single-subproject repo:
+#   VALID_PROJECTS = ("root", "app")
+#   EXTERNAL_PROJECTS = {}
+# ---------------------------------------------------------------------------
 
-# External project directories (outside the monorepo)
-EXTERNAL_PROJECTS = {
-    "sse-gateway": PROJECT_ROOT.parent / "SSEGateway",
-}
+VALID_PROJECTS = ("root", {{ subproject_names }})
+
+EXTERNAL_PROJECTS = {{ external_projects }}
 
 
 # ---------------------------------------------------------------------------

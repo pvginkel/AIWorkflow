@@ -6,7 +6,7 @@ This guide walks you through copying the template into a new codebase. The workf
 
 - A monorepo checkout at some path (e.g., `/work/MyProject`).
 - A specs repo at a sibling path (e.g., `/work/MyProjectSpecs`). This is where slice documentation and per-feature planning artifacts live. Keep it separate so slice documents don't clutter your main repo.
-- A **Trello board** for the issue log. Create a board with four lists: **New**, **Reviewed**, **Planned**, **Implemented**. The workflow uses these lists to track issue lifecycle during slice runs. Set up labels for issue types (`Bug` red, `Enhancement` green, `Tech Debt` orange, `Needs Discussion` pink) and areas (one per subproject — e.g., `Backend` blue, `Frontend` yellow).
+- An **issue log** in any kanban tool with a decent MCP server — Trello, Linear, GitHub Projects, Jira, etc. The workflow only assumes a four-state lifecycle (**New** → **Reviewed** → **Planned** → **Implemented**) and a tagging system for issue type (`Bug`, `Enhancement`, `Tech Debt`, `Needs Discussion`) and area (one per subproject). Wire the tool's MCP server into Claude Code so the orchestrator can read and write cards. The template's defaults are written with Trello as the reference implementation; if you use something else, adjust the orchestrator's `CLAUDE.md` issue-log block to match its terminology (lists vs. columns vs. statuses, labels vs. tags vs. custom fields).
 - Python 3 available for the tooling scripts.
 
 ## Step 1: Copy the files
@@ -19,12 +19,11 @@ orchestrator/CLAUDE.md               → <project_root>/CLAUDE.md
 orchestrator/commands/*.md           → <project_root>/.claude/commands/
 orchestrator/agents/*.md             → <project_root>/.claude/agents/
 
-# Root scaffolding (Poetry/pnpm/Procfile/gitignore)
+# Root scaffolding (Poetry/pnpm/gitignore)
 orchestrator/pyproject.toml          → <project_root>/pyproject.toml
 orchestrator/pnpm-workspace.yaml     → <project_root>/pnpm-workspace.yaml
 orchestrator/.gitignore              → <project_root>/.gitignore
 orchestrator/.codehealthignore       → <project_root>/.codehealthignore
-orchestrator/Procfile.dev            → <project_root>/Procfile.dev
 
 # Orchestration scripts
 orchestrator/scripts/*.py            → <project_root>/scripts/
@@ -56,19 +55,21 @@ Every file uses Jinja2-style placeholders. Do a find-and-replace pass with the v
 
 | Variable | Meaning | Example |
 |---|---|---|
-| `{{ project_name }}` | Full name of the project | `Design Assistant` |
-| `{{ project_short }}` | Short name for prose | `DA` |
-| `{{ project_tagline }}` | One-sentence description | `document-backed copy refinement workspace` |
-| `{{ specs_repo_path }}` | Relative path from project root to specs repo | `../MyProjectSpecs` |
-| `{{ subproject }}` | Subproject name (per-project files only) | `backend` / `frontend` / `portal` |
-| `{{ subproject_tagline }}` | Short description of the subproject | `Flask backend serving internal and portal APIs` |
+| `{{ project_name }}` | Full name of the project | `Kestrel` |
+| `{{ project_short }}` | Short name for prose | `Kestrel` |
+| `{{ project_tagline }}` | One-sentence description | `build-log aggregator for distributed CI runs` |
+| `{{ specs_repo_path }}` | Relative path from project root to specs repo | `../KestrelSpecs` |
+| `{{ subproject }}` | Subproject name (per-project files only) | `backend` / `frontend` / `worker` |
+| `{{ subproject_tagline }}` | Short description of the subproject | `FastAPI ingest API, log normalizer, and query service` |
 | `{{ session_manager_path }}` | Path to `claude_session.py` from project root | `tools/ai_workflow/claude_session.py` |
 | `{{ notification_script }}` | Path to your push-notification script | `tools/ai_workflow/send_message.py` |
 | `{{ check_command }}` | Lint/type/format command for the subproject | `poetry run check` / `pnpm run check` |
 | `{{ test_command }}` | Test command for the subproject | `poetry run pytest` / `pnpm exec playwright test` |
 | `{{ full_suite_command }}` | Full test suite command for the whole monorepo | `poetry run run-suite-remote` |
 | `{{ regen_api_command }}` | Command to regenerate the OpenAPI client (if applicable) | `pnpm generate:api` |
-| `{{ issue_log_url }}` | URL to the project's Trello issue log board | `https://trello.com/b/abc123/my-project-issues` |
+| `{{ issue_log_url }}` | URL to the project's issue log board | `https://trello.com/b/abc123/my-project-issues` |
+| `{{ subproject_names }}` | Subproject names for `claude_session.py` `VALID_PROJECTS` | `"backend", "frontend", "portal"` |
+| `{{ external_projects }}` | External project map for `claude_session.py` `EXTERNAL_PROJECTS` | `{"gateway": PROJECT_ROOT.parent / "Gateway"}` or `{}` |
 
 Per-template block sections (`{% block foo %}…{% endblock %}`) are free-form and need to be replaced with prose specific to your codebase. They are marked with `{# … #}` comments explaining what belongs there. Examples:
 
@@ -96,7 +97,15 @@ The scripts in `tools/ai_workflow/` (`claude_session.py`, `codex_exec.py`, `send
 - `claude_session.py` can find the `claude` CLI.
 - Any paths hardcoded inside the scripts (if you edit them) match your project layout.
 
-The template ships a push-notification helper at `tools/ai_workflow/send_message.py` — wire it up to your delivery channel of choice (Pushover, ntfy, Slack, email, etc.) or remove the notification calls from `run-slice.md` and `triage.md` if you don't use them.
+**`claude_session.py` contains Jinja-style placeholders.** Unlike the markdown
+files, this is a Python script that won't run until you replace the
+`{{ subproject_names }}` and `{{ external_projects }}` placeholders at the top
+of the file with literal Python values. The placeholders are documented inline
+in the script. See Step 2's variable table.
+
+The template ships a push-notification helper at `tools/ai_workflow/send_message.py` — point it at your Home Assistant instance via `HA_URL`, `HA_TOKEN`, and `HA_NOTIFY_SERVICE` environment variables, or replace its body with a call to a different delivery channel (Pushover, ntfy, Slack, email, etc.). The skills only depend on its CLI contract (`send_message.py [--title TITLE] [--channel CHANNEL] MESSAGE`). If you don't want push notifications at all, remove the notification calls from `run-slice.md` and `triage.md`.
+
+`codex_exec.py` is only needed if you use the `/ux-design` skill's "Codex" invocation option. If you dispatch UX work as a Claude Code subagent instead (see the block in `orchestrator/commands/ux-design.md`), `codex_exec.py` is unused and can be deleted, along with the `.agents/skills/frontend-ux-designer/` directory it relies on.
 
 ### Step 4b: Install dependencies
 
@@ -107,6 +116,8 @@ Once the files are in place:
 3. **Verify** — `poetry run code-health --help` should print usage. The first time you run it, the sidecar will compile its TypeScript via `tsx` on demand.
 
 If you're not using one or both of Poetry/pnpm, edit `pyproject.toml`/`pnpm-workspace.yaml` accordingly. The orchestration scripts only depend on the Python deps listed in `pyproject.toml`.
+
+**One-command dev startup (optional).** A `Procfile.dev` with [honcho](https://github.com/nickstenning/honcho) or a similar process manager (foreman, overmind) is a handy way to start the backend, frontend, and other long-running services in one shell. Honcho is already listed as a dependency in `pyproject.toml`. The template doesn't ship a `Procfile.dev` because the per-subproject dev commands vary too much; if you want one, create it at the repo root with one `name: command` line per service.
 
 ## Step 5: Try a small slice
 

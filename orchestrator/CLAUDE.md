@@ -60,9 +60,11 @@ Your responsibilities:
 ## Issue log
 
 {% block issue_log %}
-{# Point to your project's Trello board for tracking issues. Create a board
-   with four lists: New, Reviewed, Planned, Implemented. The workflow uses
-   these lists to track issue lifecycle during slice runs.
+{# Point to your project's issue log. Any kanban tool with an MCP server
+   works (Trello, Linear, GitHub Projects, Jira, …). The workflow assumes a
+   four-state lifecycle (New → Reviewed → Planned → Implemented) and a
+   tagging system for type and area. Adjust the prose below to match your
+   tool's terminology if you're not using Trello.
 #}
 The **issue log** is the Trello board at {{ issue_log_url }}.
 

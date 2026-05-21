@@ -70,10 +70,10 @@ Read all documents in the slice directory. Determine which agents need to run ba
    - Any special startup requirements are met
    Prefer bundling these into a single pre-flight script that runs the
    checks, stays silent on success, and dumps the buffered output of every
-   check plus the failure details on failure. The DesignAssistant project
-   uses scripts/preflight.py, which bundles a full repo build
-   (scripts/build-all.py), backend test collection, and test-harness config
-   readiness; adapt to your toolchain.
+   check plus the failure details on failure. A typical implementation is a
+   scripts/preflight.py that bundles a full repo build (scripts/build-all.py),
+   backend test collection, and test-harness config readiness — adapt to
+   your toolchain.
 #}
 Run minimal commands that confirm the build succeeds and the test harness is healthy before dispatching any dev agent. Example:
 
@@ -222,10 +222,11 @@ python3 {{ session_manager_path }} finish --project {{ subproject }}
    the regenerated files before dispatching consumer subprojects so they
    work against the updated spec.
 
-   The DesignAssistant project uses scripts/regenerate-openapi.py which picks
-   a free port, runs the backend's prepare command, starts the backend,
-   waits until the OpenAPI endpoint is reachable, runs `pnpm generate:api`
-   in each target project, and stops the backend cleanly.
+   A typical implementation is a scripts/regenerate-openapi.py that picks a
+   free port, runs the backend's prepare command, starts the backend, waits
+   until the OpenAPI endpoint is reachable, runs `pnpm generate:api` in each
+   target project, and stops the backend cleanly. The template ships a
+   working reference at orchestrator/scripts/regenerate-openapi.py.
 
    Delete this whole block if nothing downstream depends on generated
    artifacts.

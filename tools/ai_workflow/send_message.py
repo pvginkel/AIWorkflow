@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""
-Send an Android/iOS push notification through Home Assistant's companion app
-notifier: notify.mobile_app_pieter_telefoon
+"""Send a push notification via Home Assistant's REST API.
+
+Targets the `notify.*` service identified by HA_NOTIFY_SERVICE — typically the
+Home Assistant Companion mobile app, e.g. `mobile_app_<device_id>`. If you
+don't use Home Assistant, replace the body of this script with a call to your
+delivery channel of choice (Pushover, ntfy, Slack, email, etc.). The skills
+(`/run-slice`, `/triage`) only depend on the CLI contract:
+
+    send_message.py [--title TITLE] [--channel CHANNEL] MESSAGE
 
 Usage:
     send_message.py --title "title" --channel "channel" "message"
     send_message.py "message only"
 
 Environment variables:
-    HA_URL   e.g. http://homeassistant.local:8123
-    HA_TOKEN long-lived access token from Home Assistant profile
+    HA_URL              e.g. http://homeassistant.local:8123
+    HA_TOKEN            long-lived access token from Home Assistant profile
+    HA_NOTIFY_SERVICE   notify service name (e.g. mobile_app_pieter_telefoon)
 """
 
 from __future__ import annotations
@@ -20,9 +27,6 @@ import sys
 from typing import Any
 
 import requests
-
-
-SERVICE_URL_PATH = "/api/services/notify/mobile_app_pieter_telefoon"
 
 
 def parse_args() -> argparse.Namespace:
@@ -70,6 +74,7 @@ def main() -> int:
 
     ha_url = os.environ.get("HA_URL", "").strip().rstrip("/")
     ha_token = os.environ.get("HA_TOKEN", "").strip()
+    notify_service = os.environ.get("HA_NOTIFY_SERVICE", "").strip()
 
     if not ha_url:
         print("Error: HA_URL environment variable is not set.", file=sys.stderr)
@@ -79,7 +84,15 @@ def main() -> int:
         print("Error: HA_TOKEN environment variable is not set.", file=sys.stderr)
         return 2
 
-    url = f"{ha_url}{SERVICE_URL_PATH}"
+    if not notify_service:
+        print(
+            "Error: HA_NOTIFY_SERVICE environment variable is not set "
+            "(e.g. mobile_app_<device_id>).",
+            file=sys.stderr,
+        )
+        return 2
+
+    url = f"{ha_url}/api/services/notify/{notify_service}"
     payload = build_payload(args.message, args.title, args.channel or "claude")
 
     headers = {
