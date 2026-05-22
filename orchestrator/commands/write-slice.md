@@ -42,14 +42,19 @@ Check the issue log (Planned list) for cards related to this work — they may c
 
 ### Step 2: Research the codebase
 
-Before writing anything, understand the current state:
+Before writing anything, understand the current state.
 
-- Read relevant conventions and architecture decisions.
-- Read the code areas that will be affected (models, services, API endpoints, components).
-- Check recent slices in the same area for patterns and context.
-- Identify dependencies on other slices.
+**Route the codebase research through `Explore` agents.** Code areas read inline here are then carried through overview, criteria, brief authoring, and the grounding pass — for the whole write-slice session. Dispatch one or more `Explore` agents for the code areas the slice will affect (models, services, API endpoints, components) and ask each for a **`file:line`-grounded digest** — current-state facts with citations, not file dumps. Author the briefs from the digest. `triage` and `refactor-audit` already route research this way.
 
-Do not write briefs based on assumptions about what the code looks like. Read it.
+Read directly yourself:
+
+- Relevant conventions and architecture decisions — binding rules, not current-state facts to digest.
+- Recent slices in the same area, for patterns and context.
+- Any specific file a brief's correctness hinges on — when a brief turns on a subtlety, spot-read that file rather than trusting the digest alone.
+
+Identify dependencies on other slices.
+
+Do not write briefs based on assumptions about what the code looks like — the digest is `file:line`-grounded, you spot-read where it matters, and Step 7b's `brief-grounding-verifier` re-checks every frozen brief against the code.
 
 **Adjust research to fit the request.** A feature adding a new API endpoint needs you to understand models, services, and existing patterns. A mechanical change like "normalize every version pin" does not — it needs a clear rule and broad scope. Match the depth of your research to what the user actually asked for, and carry that through to the briefs: if the request is rule-based, the brief should state the rule and let the agent apply it, not enumerate every individual change (which agents misread as a closed set).
 
