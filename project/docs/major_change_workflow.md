@@ -72,12 +72,17 @@ If the agent does not complete the plan in full, provide assistance:
 
 ## Step 5: Verification checkpoint (after code-writer)
 
-Before proceeding to code review, verify:
+Before proceeding to code review, run the checkpoint script:
 
-- [ ] Lint/type/format/test all pass. Run: `{{ check_command }}`
-- [ ] Review `git diff` for unexpected changes.
-- [ ] New test files were created as required by the plan.
-- [ ] Any schema migrations and test-data updates were made.
+```bash
+python3 {{ project_root }}/scripts/checkpoint.py --project {{ subproject }}
+```
+
+It runs the subproject's check/build/test commands, lists the working-tree changes, and flags diff-derived structural gaps (a schema change without a migration or a test-data update, a source change with no matching test change). Resolve every command failure; resolve or justify every structural warning; review the change list for scope bleed.
+
+Then verify the items the script cannot check:
+
+- [ ] New test files cover the behaviour the plan requires.
 - [ ] `requirements.json` (if present): spot-check that key requirements appear implemented.
 - [ ] `test_plan.json` (if present): spot-check that planned test scenarios have corresponding test functions.
 
