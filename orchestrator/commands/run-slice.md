@@ -67,7 +67,10 @@ Read all documents in the slice directory. Determine which agents need to run ba
      changes from an aborted prior run would pollute the slice's commit range
    - All subprojects build cleanly with frozen lockfiles (catches dep drift)
    - The test harness can collect tests without environment errors
+     (every subproject — not just the leading one)
    - The test harness config is ready (any "prepare" / fixture-build step)
+   - Database migration scripts form a valid single-headed chain, if you
+     use migrations (an offline check — no DB connection needed)
    - External services (DB, queues, storage) are reachable
    - Any special startup requirements are met
    Prefer bundling these into a single pre-flight script that runs the

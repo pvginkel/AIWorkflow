@@ -41,6 +41,25 @@ CODE_DIRS = ["backend", "frontend", "portal"]
 
 STATUS_COL = 60
 
+# Offline Alembic migration-chain check (customize/remove for your stack).
+# Walks the revision graph from the script directory only — no database
+# connection. walk_revisions() raises on a broken chain (a down_revision
+# pointing nowhere, a cycle); more than one head means two slices each
+# added a migration without a merge revision.
+ALEMBIC_CHAIN_CHECK = """
+import sys
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+
+sd = ScriptDirectory.from_config(Config("alembic.ini"))
+list(sd.walk_revisions())
+heads = sd.get_heads()
+if len(heads) != 1:
+    print(f"expected exactly 1 migration head, found {len(heads)}: {heads}", file=sys.stderr)
+    print("two slices likely each added a migration without a merge revision", file=sys.stderr)
+    sys.exit(1)
+"""
+
 
 def write_status(buf: io.StringIO, component: str, action: str, ok: bool) -> None:
     label = f"[{component}] {action}"
@@ -164,6 +183,47 @@ def main() -> int:
     if rc != 0:
         sys.stdout.write(buf.getvalue())
         return rc
+
+    # Offline migration-chain validity — catches a broken chain or an
+    # unmerged double head before any agent starts. Remove if you do not
+    # use Alembic migrations.
+    rc = run_init_d(
+        buf,
+        "backend",
+        "alembic chain",
+        ["poetry", "run", "python", "-c", ALEMBIC_CHAIN_CHECK],
+        REPO_ROOT / "backend",
+        timeout=120,
+    )
+    if rc != 0:
+        sys.stdout.write(buf.getvalue())
+        return rc
+
+    # Confirm the consumer subprojects' test harness can collect tests.
+    for project in ("frontend", "portal"):
+        rc = run_init_d(
+            buf,
+            project,
+            "playwright --list",
+            ["pnpm", "exec", "playwright", "test", "--list"],
+            REPO_ROOT / project,
+            timeout=300,
+        )
+        if rc != 0:
+            sys.stdout.write(buf.getvalue())
+            return rc
+
+        rc = run_init_d(
+            buf,
+            project,
+            "vitest list",
+            ["pnpm", "exec", "vitest", "list"],
+            REPO_ROOT / project,
+            timeout=300,
+        )
+        if rc != 0:
+            sys.stdout.write(buf.getvalue())
+            return rc
 
     return 0
 
