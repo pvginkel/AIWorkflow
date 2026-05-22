@@ -307,15 +307,24 @@ Run this in the background (`run_in_background: true`). The background task mech
 
 **If any tests fail:**
 
-1. Read the test output for failures.
-2. For each failure, identify which agent owns it based on where the failing test lives.
-3. **Diagnose before fixing.** Understand *why* the test fails before writing a fix. In particular:
-   - **When a consumer subproject's tests fail after a leading-subproject change**, the cause is almost always test infrastructure that references the old behavior (a startup command, an endpoint path, an env var). Look at how **passing** tests start their services, not how the app factory is structured. Do not add special cases or workarounds — if a fix requires a lot of special-casing, the approach is wrong.
-   - **When a fix seems to need changes to core infrastructure** (app factory, test bootstrap, lifecycle code), stop and reconsider. The test infrastructure is battle-tested; the problem is more likely in the new code.
-4. Send the owning agent back to fix it. Tell them explicitly: *"The test suite was green before your changes. These failures are regressions caused by your code changes (all unpushed commits). Find and fix the root cause."* Include the full failure output and your diagnosis.
-5. Re-run the suite. Repeat until green or blocked.
-6. **If a failure is clearly caused by a leading-subproject gap** that a consumer agent cannot fix alone, notify the user and stop.
-7. **Maximum 3 fix rounds per agent.** If an agent cannot get its tests green after 3 attempts, notify the user and stop — the slice may be mis-classified or too large.
+1. Dispatch the `test-failure-triager` sub-agent:
+
+   ```
+   Slice directory: {{ specs_repo_path }}/slices/<SLICE_DIR>/
+   Commit range: <hash>..HEAD
+   ```
+
+   It reads the suite-result artifact and the slice diff, diagnoses each failure's root cause, and writes `failure_triage.json` to the slice directory — per failure: `owning_area`, `confidence`, and a prose `diagnosis`.
+
+2. Read `failure_triage.json`. Re-diagnose any `low`-confidence entry yourself before dispatching. Group the failures by `owning_area`.
+
+3. Per area, send the owning agent back to fix it with the failure output plus the agent's `diagnosis`. Tell them explicitly: *"The test suite was green before your changes. These failures are regressions caused by your code changes (all unpushed commits). Find and fix the root cause."*
+
+4. Re-run the suite. Repeat until green or blocked.
+
+5. **If a failure is clearly caused by a leading-subproject gap** that a consumer agent cannot fix alone, notify the user and stop.
+
+6. **Maximum 3 fix rounds per agent.** If an agent cannot get its tests green after 3 attempts, notify the user and stop — the slice may be mis-classified or too large.
 
 ### Step 8c: Independent verification
 
