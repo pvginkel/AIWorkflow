@@ -248,9 +248,17 @@ This applies to any slice where a planning artifact drives a downstream implemen
 
 **Mandatory — do not skip, do not soften to "consider".** Before any brief in this slice is considered frozen, you must re-ground every codebase claim it contains against the current code. Briefs written from your short-term mental model rather than from a fresh read of the files are the leading cause of Round 1 Q&A corrections. This step exists to catch those misses before the brief is handed to a dev agent.
 
+**Run the citation check first:**
+
+```bash
+python3 {{ project_root }}/scripts/slice-check.py cite <NUMBER>
+```
+
+`slice-check cite` parses every `file:line` citation out of the briefs, hard-fails any that point at a missing file or an out-of-range line (stale line numbers — exactly the failure mode this step catches), and dumps `citation → current line content` as one block. Fix every broken citation before continuing. The dump is your input for (a).
+
 For every brief produced in this slice, you must:
 
-- **(a) Open every `file:line` citation** in the brief and confirm the cited code matches the claim the brief is making about it. A stale line number, a renamed symbol, a moved block — any mismatch gets corrected in the brief before the brief is frozen.
+- **(a) Confirm every `file:line` citation matches the claim.** The `slice-check cite` dump gives you `citation → current content` for each — read it and confirm the cited code supports the claim the brief makes about it. A renamed symbol or a moved block that leaves the line valid but wrong is not caught by the script; that mismatch gets corrected in the brief before the brief is frozen.
 - **(b) Re-grep or re-read the code behind every "the system does X today" / "the current behavior is Y" / "there is no Z today" assertion.** Do not assert current behavior from memory. If the claim is "feature F does not exist yet," grep for it; if it is "endpoint E returns 201 on success today," open the handler.
 - **(c) Check every "add Y" / "introduce Y" / "create Y" task against the current codebase** to confirm Y is not already present. Partial implementations count — if a half-built version of Y exists, record what is present so the brief directs the agent to complete rather than duplicate.
 
@@ -302,7 +310,13 @@ You are NOT responsible for designing the implementation. The dev agents read th
 
 ## Quality checklist
 
-Before presenting the slice to the user, verify:
+Before presenting the slice to the user, run the structural lint:
+
+```bash
+python3 {{ project_root }}/scripts/slice-check.py lint <NUMBER>
+```
+
+`slice-check lint` mechanically checks JSON validity, AC id prefixes, the forbidden `status` field, brief locations, `grounding_check.md` sections, the README Pending entry, and brief word counts. Fix every `FAIL`; assess each `WARN`. Then verify the remaining items — the semantic ones the lint cannot check:
 
 - [ ] Overview explains *what* and *why*, not *how*.
 - [ ] **Every explicit user request** has a matching acceptance criterion.
