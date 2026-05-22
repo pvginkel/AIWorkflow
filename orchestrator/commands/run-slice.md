@@ -248,20 +248,17 @@ If downstream subprojects depend on artifacts generated from the leading subproj
 
 ### Step 3: Review the API contract (if applicable)
 
-Read the generated OpenAPI spec (or equivalent) and compare it against `api_contract.json`. For each endpoint entry:
+Run `check-api-contract.py` to verify `api_contract.json` against the regenerated OpenAPI spec:
 
-1. Verify the endpoint exists in the spec (method + path).
-2. Check that `key_request_fields` and `key_response_fields` appear in the schemas.
-3. Confirm the `status_codes` are documented.
-4. Update the `verified` field to `true` or `false`.
+```bash
+python3 {{ project_root }}/scripts/check-api-contract.py <NUMBER>
+```
 
-For each `schema_changes` entry, verify the change is reflected. For each `removals` entry:
-- `schema_field` removals: grep the spec for the field name and confirm it does not appear in the named schema.
-- `endpoint` removals: confirm the method + path combination does not exist in the spec.
+The script checks every endpoint (method + path exist, 2xx status codes documented, `key_request_fields`/`key_response_fields` present in the `$ref`/`allOf`-resolved schemas) and every endpoint removal (method + path confirmed absent), sets each entry's `verified` flag, writes `api_contract.json` back, and prints a compact report.
 
-Write the updated `api_contract.json` back to the slice directory.
+The report's **Manual review** section lists `schema_changes` and prose `removals` (entries with no method + path) that the script cannot verify mechanically — free-text claims about schema fields. Check each against the spec yourself and set its `verified` flag.
 
-If any endpoint has `verified: false`, assess whether it's a significant gap (missing endpoint, wrong schema) or a minor difference (field ordering, naming convention). Significant gaps → notify the user and stop. Minor differences are fine.
+For every `[FAIL]` in the report, assess whether it's a significant gap (missing endpoint, missing key field, wrong schema) or a minor difference (an error-only status code the framework serves outside the spec, a naming convention). Significant gaps → notify the user and stop. Minor differences are fine.
 
 **Log any issues** (gaps, deferred items, workarounds) to the issue log.
 
