@@ -229,21 +229,17 @@ python3 {{ session_manager_path }} finish --project {{ subproject }}
    free port, runs the backend's prepare command, starts the backend, waits
    until the OpenAPI endpoint is reachable, runs `pnpm generate:api` in each
    target project, and stops the backend cleanly. The template ships a
-   working reference at orchestrator/scripts/regenerate-openapi.py.
+   working reference at orchestrator/scripts/regenerate-openapi.py — its
+   `--commit` flag stages and commits exactly the caches it regenerated, so
+   regeneration and commit are one step.
 
    Delete this whole block if nothing downstream depends on generated
    artifacts.
 #}
-If downstream subprojects depend on artifacts generated from the leading subproject (e.g., an OpenAPI client), regenerate them now and commit the result before dispatching the consumer agents.
+If downstream subprojects depend on artifacts generated from the leading subproject (e.g., an OpenAPI client), regenerate them now and commit the result before dispatching the consumer agents. The reference `regenerate-openapi.py` does both in one run: its `--commit` flag stages and commits exactly the caches it regenerated, and is a no-op when the spec did not change.
 
 ```bash
 {{ regen_api_command }}
-```
-
-Then commit the regenerated files:
-
-```bash
-cd {{ project_root }} && git add <regenerated_paths> && git commit -m "Regenerate API spec (slice <NUMBER>)"
 ```
 {% endblock %}
 
