@@ -12,16 +12,21 @@ You are the orchestrator. You do not write application code — you produce slic
 
 ### Phase 1: Collect and consolidate
 
-**1a. Read the findings document** passed as the argument.
+**1a. Fetch your issue tracker's intake queue** — the outstanding items to consider alongside the findings.
 
-**1b. Read your issue tracker's intake queue.** Fetch outstanding items that should be considered alongside the findings.
+**1b. Dispatch the `triage-consolidator` sub-agent** to build the consolidated test-results document:
 
-**1c. Write a consolidated test-results document** at `{{ specs_repo_path }}/test_results_YYYY-MM-DD.md`. Every item gets a numbered entry with:
+```
+Findings document: <path passed as the skill argument>
+Today's date: <YYYY-MM-DD>
+Intake-queue items:
+- #<id> <title> — <description>
+- ...
+```
 
-- Clear description of the issue.
-- Source (findings document reference, issue tracker ID, or both).
+It reads the findings document, merges it with the intake items (one entry per distinct issue, both sources recorded on a merged entry), groups related items, and writes `{{ specs_repo_path }}/test_results_YYYY-MM-DD.md` — numbered entries, each with a description, a **Source**, and a **QUESTION** marker where the item is not yet clear.
 
-Group related items. For every item that isn't clear, add a **QUESTION** marker. Present the document to the user and iterate on questions until all items are understood. This may take multiple rounds.
+**1c. Present the document to the user** and iterate on the QUESTION markers until every item is understood. This may take multiple rounds.
 
 ### Phase 2: Ground in code
 
