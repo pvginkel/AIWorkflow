@@ -343,14 +343,18 @@ Trust the verifier's flags. If you genuinely disagree with a verdict, escalate t
 
 ### Step 9: Review QA log for issue log items
 
-Review `{{ specs_repo_path }}/slices/<SLICE_DIR>/qa_log.md` end-to-end. Look for:
+Dispatch the `qa-log-harvester` sub-agent to review the slice's QA log for issue-tracker items. First fetch the current New-list card titles so the agent can flag duplicates, then dispatch:
 
-- **Deferred work** — features or improvements explicitly deferred to a later slice.
-- **Known limitations** — architectural shortcuts that will need revisiting.
-- **Contract/spec drift** — cases where implementation diverged from the original brief.
-- **Design decisions with future implications.**
+```
+Slice directory: {{ specs_repo_path }}/slices/<SLICE_DIR>/
+New-list card titles:
+- <title>
+- <title>
+```
 
-For each item found, create an entry on the issue log. Don't duplicate items already logged inline during Q&A.
+The agent walks `qa_log.md` for deferred work, known limitations, contract/spec drift, and design decisions with future implications, and writes `proposed_cards.json` to the slice directory — one entry per item with `type_label`, `area_labels`, a rendered `description`, and `duplicate_of` set when the item is already covered by a New-list card.
+
+Read `proposed_cards.json`. For each entry with `duplicate_of: null`, create an issue-tracker card (New list) — resolve `type_label` / `area_labels` to your tracker's labels and pass `description` verbatim. Skip entries with a non-null `duplicate_of`.
 
 ### Step 10: Report results
 
