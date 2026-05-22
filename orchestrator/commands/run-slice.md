@@ -274,12 +274,23 @@ For each remaining subproject with a brief file, run `claude` using the same pat
 **Check for testing infrastructure gaps.** If the agent's questions reveal that it needs testing infrastructure from the leading subproject (e.g., a seeding endpoint for end-to-end tests), **stop the agent immediately**. Send the leading subproject's agent to implement the missing infrastructure first, then resume. Testing infrastructure gaps are blocking.
 
 {% block release_notes_step %}
-{# If your project maintains user-facing release notes, add a step here that
-   updates them after the slice run. Rules typically: group by date, write
-   from the user's perspective, only include non-trivial features.
-
-   Delete this block if you don't maintain release notes.
+{# If your project maintains user-facing release notes, the template ships a
+   release-notes-drafter agent (orchestrator/agents/release-notes-drafter.md)
+   that drafts them from a slice's overview + diff. The step below wires it in
+   — point the final append at your project's release-notes file. Delete this
+   whole block if you don't maintain release notes.
 #}
+### Step 6: Update release notes
+
+After a successful slice run, dispatch the `release-notes-drafter` sub-agent to draft the user-facing release notes:
+
+```
+Slice directory: {{ specs_repo_path }}/slices/<SLICE_DIR>/
+Commit range: <hash>..HEAD  (or specific hashes)
+Today's date: <YYYY-MM-DD>
+```
+
+It reads the slice overview and diff, classifies each change, and returns a ready-to-append markdown block (entries from the user's perspective, grouped under today's date) plus a `Skipped` list of changes it judged not user-facing. Review the cut, then append the block to your project's release-notes file.
 {% endblock %}
 
 ### Step 7: Run the full test suite
