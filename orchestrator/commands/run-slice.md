@@ -98,33 +98,36 @@ After reading all slice documents and passing infrastructure checks, present a p
 
 ### Step 0c: Seed the verification log
 
-Once the user confirms the pre-flight, create `{{ specs_repo_path }}/slices/<SLICE_DIR>/verification.json` and seed it from `acceptance_criteria.json`. The verification log is the single source of truth for what the slice's independent verifier checks at Step 8c — items only get verified if they're in the log.
+Once the user confirms the pre-flight, seed the verification log from `acceptance_criteria.json`:
 
-Schema (one entry per item):
+```bash
+python3 {{ project_root }}/scripts/verification.py seed <NUMBER>
+```
+
+This writes `{{ specs_repo_path }}/slices/<SLICE_DIR>/verification.json` with one item per AC, in entry order — ids `V01`, `V02`, …, `source: ac`, `description` prefixed with the AC id (so Step 9 can map verdicts back), and `verdict`/`rationale`/`evidence` left empty for the verifier. The verification log is the single source of truth for what the slice's independent verifier checks at Step 8c — items only get verified if they're in the log.
+
+`area` is the subproject a failure routes back to. The seeder copies the AC's `area` when it already names a subproject; a regression criterion's `area` is routed to the slice's sole subproject. **If `seed` prints an `ACTION REQUIRED` warning**, the slice has multiple subprojects and one or more regression criteria could not be routed automatically — edit those items' `area` to the owning subproject before starting Step 1.
+
+The item schema, relevant when you append `qa_correction` items **by hand** in Steps 1+:
 
 ```json
 {
-  "items": [
-    {
-      "id": "V01",
-      "source": "ac",
-      "area": "{{ subproject }}",
-      "description": "BE-1: <verbatim AC description>",
-      "verdict": null,
-      "rationale": "",
-      "evidence": []
-    }
-  ]
+  "id": "V01",
+  "source": "ac",
+  "area": "{{ subproject }}",
+  "description": "BE-1: <verbatim AC description>",
+  "verdict": null,
+  "rationale": "",
+  "evidence": []
 }
 ```
 
-- `id` — sequential `V01`, `V02`, … in entry order.
-- `source` — `ac` (seeded from acceptance criteria) or `qa_correction` (added in Step 1+ when you override an agent's stated direction).
-- `area` — the subproject the entry belongs to. For AC entries, copy the AC's `area`.
-- `description` — what must be true in the implementation. For AC entries, prefix with the AC id (e.g., `BE-1: …`) so Step 9 can map verdicts back. State the *what*, not the *why* — no opinions.
+- `source` — `ac` (seeded) or `qa_correction` (added in Step 1+ when you override an agent's stated direction).
+- `area` — the subproject a failure routes back to.
+- `description` — for `qa_correction` items, what must be true in the implementation. State the *what*, not the *why* — no opinions. Use the next sequential `V##` id.
 - `verdict`, `rationale`, `evidence` — left empty; the verifier fills these in.
 
-Seed one item per AC, in order. Commit `verification.json` to the specs repo before starting Step 1.
+Commit `verification.json` to the specs repo before starting Step 1.
 
 ### Step 1: Run the "leading" subproject
 
@@ -345,7 +348,7 @@ Summarize what happened:
 - Any issues encountered.
 - The API contract review result (from `api_contract.json` — how many endpoints verified/failed).
 - Test suite results (pass/fail per project, number of fix rounds if any).
-- Acceptance criteria results — count `source: ac` entries in `verification.json` by `verdict`. At this point all should be `passed` (failed/uncertain were routed back in Step 8c); if any remain unresolved, Step 8c was skipped and you must go back.
+- Acceptance criteria results — run `python3 {{ project_root }}/scripts/verification.py tally <NUMBER>` to count `source: ac` entries in `verification.json` by `verdict`. At this point all should be `passed` (failed/uncertain were routed back in Step 8c); if any remain unresolved, Step 8c was skipped and you must go back.
 - Any failures blocked on identified gaps (link to issue log entries).
 
 Move the slice from the **Pending** section to the **Completed** section in `{{ specs_repo_path }}/README.md`.
