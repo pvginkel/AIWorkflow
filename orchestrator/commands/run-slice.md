@@ -308,7 +308,7 @@ Run this in the background (`run_in_background: true`). The background task mech
 
 ### Step 8c: Independent verification
 
-Verification runs in fresh context via the `slice-verifier` sub-agent walking the verification log.
+Verification runs in fresh context via the `slice-verifier` sub-agent walking the verification log. The verifier reads a bounded input set — the slice's `verification.json` / `acceptance_criteria.json` / `api_contract.json`, the Step 7 suite-result artifact, and code reachable from the slice diff — and consults the suite result for suite-level criteria rather than re-running suites; a `failed` suite-level verdict is grounded in that artifact.
 
 1. **Determine the slice's commit range** — typically the unpushed commits on the current branch, or the commits added since this slice started. Capture as a hash range or list.
 
@@ -328,7 +328,7 @@ Verification runs in fresh context via the `slice-verifier` sub-agent walking th
    - A rationale that reads like a rubber-stamp (matches without surprises, no falsification statement) → send back to the verifier with the entry id and ask for sharper reading.
    - All passed → proceed to Step 9.
 
-Trust the verifier's flags; if you genuinely disagree, escalate to the user rather than silently override. `verification.json` is committed with the rest of the slice artifacts at the end of the run.
+Trust the verifier's flags. If you genuinely disagree with a verdict, escalate to the user — do not add an override block to `verification.json`. A disputed verdict is a verifier-quality signal worth raising, not something to patch in the log. `verification.json` is committed with the rest of the slice artifacts at the end of the run.
 
 ### Step 9: Review QA log for issue log items
 
