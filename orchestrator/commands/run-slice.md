@@ -63,6 +63,8 @@ Read all documents in the slice directory. Determine which agents need to run ba
 
 {% block preflight_checks %}
 {# Project-specific pre-flight commands. These should verify that:
+   - The working tree is clean under the code subprojects — uncommitted
+     changes from an aborted prior run would pollute the slice's commit range
    - All subprojects build cleanly with frozen lockfiles (catches dep drift)
    - The test harness can collect tests without environment errors
    - The test harness config is ready (any "prepare" / fixture-build step)
@@ -70,9 +72,10 @@ Read all documents in the slice directory. Determine which agents need to run ba
    - Any special startup requirements are met
    Prefer bundling these into a single pre-flight script that runs the
    checks, stays silent on success, and dumps the buffered output of every
-   check plus the failure details on failure. A typical implementation is a
-   scripts/preflight.py that bundles a full repo build (scripts/build-all.py),
-   backend test collection, and test-harness config readiness — adapt to
+   check plus the failure details on failure. The template ships a working
+   reference at orchestrator/scripts/preflight.py that bundles a clean-tree
+   gate, a full repo build (scripts/build-all.py), and test-harness
+   readiness checks — adapt the CODE_DIRS list and the harness checks to
    your toolchain.
 #}
 Run minimal commands that confirm the build succeeds and the test harness is healthy before dispatching any dev agent. Example:
