@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -227,12 +228,12 @@ def basename_index() -> dict[str, list[Path]]:
         root = REPO_ROOT / sp
         if not root.is_dir():
             continue
-        for path in root.rglob("*"):
-            if not path.is_file():
-                continue
-            if any(part in SKIP_DIRS for part in path.parts):
-                continue
-            index.setdefault(path.name, []).append(path)
+        # os.walk so SKIP_DIRS (node_modules, .venv, …) are pruned during
+        # descent — rglob would stat every file under them first.
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+            for name in filenames:
+                index.setdefault(name, []).append(Path(dirpath) / name)
     _basename_index = index
     return index
 

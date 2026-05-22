@@ -269,9 +269,9 @@ def main() -> int:
     contract = load_json(contract_path, "api_contract.json")
 
     endpoints = contract.get("endpoints")
-    if not endpoints and "changes" in contract:
+    if not endpoints and not contract.get("removals") and not contract.get("schema_changes"):
         print(f"API contract check — {slice_dir.name}")
-        print("No API changes (non-API contract). Nothing to verify.")
+        print("No API changes (empty contract). Nothing to verify.")
         return 0
 
     if args.spec:

@@ -259,7 +259,7 @@ python3 {{ project_root }}/scripts/check-api-contract.py <NUMBER>
 
 The script checks every endpoint (method + path exist, 2xx status codes documented, `key_request_fields`/`key_response_fields` present in the `$ref`/`allOf`-resolved schemas) and every endpoint removal (method + path confirmed absent), sets each entry's `verified` flag, writes `api_contract.json` back, and prints a compact report.
 
-The report's **Manual review** section lists `schema_changes` and prose `removals` (entries with no method + path) that the script cannot verify mechanically — free-text claims about schema fields. Check each against the spec yourself and set its `verified` flag.
+The report's **Manual review** section lists `schema_changes` and prose `removals` (entries with no method + path) that the script cannot verify mechanically — free-text claims about schema fields. Check each against the spec yourself and set its `verified` flag: for a schema-field removal, confirm the named field is absent from the schema in the spec; for a schema change, confirm the change is reflected.
 
 For every `[FAIL]` in the report, assess whether it's a significant gap (missing endpoint, missing key field, wrong schema) or a minor difference (an error-only status code the framework serves outside the spec, a naming convention). Significant gaps → notify the user and stop. Minor differences are fine.
 

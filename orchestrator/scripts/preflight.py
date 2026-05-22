@@ -68,9 +68,13 @@ def write_status(buf: io.StringIO, component: str, action: str, ok: bool) -> Non
     buf.write("[  OK  ]\n" if ok else "[FAILED]\n")
 
 
-def append(buf: io.StringIO, text: str | None) -> None:
+def append(buf: io.StringIO, text: str | bytes | None) -> None:
     if not text:
         return
+    # subprocess.run(text=True) still hands back bytes on the TimeoutExpired
+    # path — decode so the buffered report does not crash on a timeout.
+    if isinstance(text, bytes):
+        text = text.decode(errors="replace")
     buf.write(text)
     if not text.endswith("\n"):
         buf.write("\n")
