@@ -246,27 +246,31 @@ This applies to any slice where a planning artifact drives a downstream implemen
 
 ### Step 7b: Grounding pass
 
-**Mandatory — do not skip, do not soften to "consider".** Before any brief in this slice is considered frozen, you must re-ground every codebase claim it contains against the current code. Briefs written from your short-term mental model rather than from a fresh read of the files are the leading cause of Round 1 Q&A corrections. This step exists to catch those misses before the brief is handed to a dev agent.
+**Mandatory — do not skip, do not soften to "consider".** Before any brief in this slice is considered frozen, every codebase claim it contains must be re-grounded against the current code. Briefs written from your short-term mental model rather than from a fresh read of the files are the leading cause of Round 1 Q&A corrections. This step catches those misses before the brief is handed to a dev agent.
 
-**Run the citation check first:**
+**1. Mechanical citation check.** Run:
 
 ```bash
 python3 {{ project_root }}/scripts/slice-check.py cite <NUMBER>
 ```
 
-`slice-check cite` parses every `file:line` citation out of the briefs, hard-fails any that point at a missing file or an out-of-range line (stale line numbers — exactly the failure mode this step catches), and dumps `citation → current line content` as one block. Fix every broken citation before continuing. The dump is your input for (a).
+`slice-check cite` parses every `file:line` citation out of the briefs and hard-fails any that point at a missing file or an out-of-range line. Fix every broken citation before continuing.
 
-For every brief produced in this slice, you must:
+**2. Semantic grounding check.** Dispatch the `brief-grounding-verifier` sub-agent:
 
-- **(a) Confirm every `file:line` citation matches the claim.** The `slice-check cite` dump gives you `citation → current content` for each — read it and confirm the cited code supports the claim the brief makes about it. A renamed symbol or a moved block that leaves the line valid but wrong is not caught by the script; that mismatch gets corrected in the brief before the brief is frozen.
-- **(b) Re-grep or re-read the code behind every "the system does X today" / "the current behavior is Y" / "there is no Z today" assertion.** Do not assert current behavior from memory. If the claim is "feature F does not exist yet," grep for it; if it is "endpoint E returns 201 on success today," open the handler.
-- **(c) Check every "add Y" / "introduce Y" / "create Y" task against the current codebase** to confirm Y is not already present. Partial implementations count — if a half-built version of Y exists, record what is present so the brief directs the agent to complete rather than duplicate.
+```
+Slice directory: {{ specs_repo_path }}/slices/<SLICE_DIR>/
+```
 
-You must write a sibling grounding self-check artifact at `{{ specs_repo_path }}/slices/<SLICE_DIR>/grounding_check.md`. This file is a dedicated artifact, not inlined into each brief. Its minimum contents:
+It walks every brief, extracts each claim about the codebase — `file:line` citations, "the system does X today" / "there is no Z yet" assertions, and "add Y" tasks (Y claimed absent) — checks each against the current code, and writes `grounding_verdicts.json`: per claim a `verdict` of `confirmed`, `stale` (the cited line moved — `note` gives the right location), or `mismatch` (the code does not support the claim, including an "add Y" task whose Y already partly exists).
+
+**3. Act on the verdicts.** Read `grounding_verdicts.json`. For every `stale` or `mismatch` entry, correct the brief — fix the citation, fix the current-state assertion, or redirect an "add Y" task to *complete* the partial Y rather than duplicate it. A brief is not frozen while any non-`confirmed` verdict against it is unresolved.
+
+**4. Write the grounding self-check artifact** at `{{ specs_repo_path }}/slices/<SLICE_DIR>/grounding_check.md`, derived from the verdicts. This is a dedicated artifact, not inlined into the briefs. Minimum contents:
 
 - One section per brief (`## <subproject>/brief.md` for each subproject the slice touches).
-- Under each section, a bulleted list of every claim you checked, each with a `file_path:line_number` citation where relevant and a verdict of **confirmed**, **corrected** (with a short note on what was changed in the brief), or **not applicable** (with a reason).
-- A final "Summary" bullet per section stating "all file:line citations verified" — or, if any corrections were applied, listing them.
+- Under each, a bullet per claim with its `file_path:line_number` citation where relevant and a verdict of **confirmed**, **corrected** (a short note on what was changed in the brief — every `stale`/`mismatch` verdict becomes a `corrected` bullet), or **not applicable** (with a reason).
+- A final "Summary" bullet per section.
 
 The artifact lets the orchestrator and reviewers see the grounding pass actually happened. A brief without a matching `grounding_check.md` section is not frozen.
 
