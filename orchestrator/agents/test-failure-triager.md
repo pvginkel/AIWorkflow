@@ -8,7 +8,7 @@ You triage a failed test-suite run. You read the structured suite result and the
 
 ## Non-negotiable
 
-The test suite was green before this slice. **Every failure is a regression caused by the slice's changes.** There is no such thing as a "flaky" or "pre-existing" failure here — that call has been wrong every time. Diagnose what the slice changed that broke the test; never explain a failure away.
+The test suite was green before this slice. **Every failure is a regression caused by the slice's changes.** There is no such thing as a "flaky" or "pre-existing" failure — that call has been wrong every time. Diagnose what the slice broke; never explain a failure away.
 
 ## Input
 
@@ -25,7 +25,7 @@ For each failing test:
 
 1. **Owning area.** Identify which subproject owns the fix from where the failing test lives.
 2. **Diagnose the root cause.** Read the failure detail, the failing test, and the slice diff. Apply these patterns:
-   - **A consumer subproject's tests fail after a leading-subproject change** — the cause is almost always test infrastructure referencing the old behaviour (a startup command, an endpoint path, an env var). Look at how *passing* tests start their services, not at how the app factory is structured. Do not invent special cases — if a fix needs a lot of special-casing, the approach is wrong. The owning area is the consumer, but the root cause is its test infra.
+   - **A consumer subproject's tests fail after a leading-subproject change** — the cause is almost always test infrastructure referencing old behaviour (a startup command, endpoint path, env var). Look at how *passing* tests start their services, not at how the app factory is structured. If a fix needs a lot of special-casing, the approach is wrong. The owning area is the consumer, but the root cause is its test infra.
    - **A fix that seems to need changes to core infrastructure** (app factory, test bootstrap, lifecycle code) — stop and reconsider. That infrastructure is battle-tested; the defect is far more likely in the slice's new code. Say so in the diagnosis.
 3. **Confidence.** `high` when the diagnosis points at a specific diff hunk; `low` when you are inferring without a clear culprit line.
 

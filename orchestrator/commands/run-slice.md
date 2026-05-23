@@ -111,7 +111,7 @@ This writes `{{ specs_repo_path }}/slices/<SLICE_DIR>/verification.json` with on
 
 `area` is the subproject a failure routes back to. The seeder copies the AC's `area` when it already names a subproject; a regression criterion's `area` is routed to the slice's sole subproject. **If `seed` prints an `ACTION REQUIRED` warning**, the slice has multiple subprojects and one or more regression criteria could not be routed automatically — edit those items' `area` to the owning subproject before starting Step 1.
 
-The item schema, relevant when you append `qa_correction` items **by hand** in Steps 1+:
+Item schema, for `qa_correction` items appended by hand in Steps 1+:
 
 ```json
 {
@@ -257,9 +257,9 @@ Run `check-api-contract.py` to verify `api_contract.json` against the regenerate
 python3 {{ project_root }}/scripts/check-api-contract.py <NUMBER>
 ```
 
-The script checks every endpoint (method + path exist, 2xx status codes documented, `key_request_fields`/`key_response_fields` present in the `$ref`/`allOf`-resolved schemas) and every endpoint removal (method + path confirmed absent), sets each entry's `verified` flag, writes `api_contract.json` back, and prints a compact report.
+The script checks every endpoint (method + path exist, 2xx status codes documented, `key_request_fields`/`key_response_fields` present in resolved schemas) and every endpoint removal, sets each entry's `verified` flag, writes `api_contract.json` back, and prints a report.
 
-The report's **Manual review** section lists `schema_changes` and prose `removals` (entries with no method + path) that the script cannot verify mechanically — free-text claims about schema fields. Check each against the spec yourself and set its `verified` flag: for a schema-field removal, confirm the named field is absent from the schema in the spec; for a schema change, confirm the change is reflected.
+The report's **Manual review** section lists `schema_changes` and prose `removals` (no method + path) that the script cannot verify mechanically. Check each against the spec and set its `verified` flag: for a schema-field removal, confirm the field is absent from the named schema; for a schema change, confirm it is reflected.
 
 For every `[FAIL]` in the report, assess whether it's a significant gap (missing endpoint, missing key field, wrong schema) or a minor difference (an error-only status code the framework serves outside the spec, a naming convention). Significant gaps → notify the user and stop. Minor differences are fine.
 
@@ -282,7 +282,7 @@ For each remaining subproject with a brief file, run `claude` using the same pat
 #}
 ### Step 6: Update release notes
 
-After a successful slice run, dispatch the `release-notes-drafter` sub-agent to draft the user-facing release notes:
+After a successful slice run, dispatch the `release-notes-drafter` sub-agent:
 
 ```
 Slice directory: {{ specs_repo_path }}/slices/<SLICE_DIR>/
@@ -328,7 +328,7 @@ Run this in the background (`run_in_background: true`). The background task mech
 
 ### Step 8c: Independent verification
 
-Verification runs in fresh context via the `slice-verifier` sub-agent walking the verification log. The verifier reads a bounded input set — the slice's `verification.json` / `acceptance_criteria.json` / `api_contract.json`, the Step 7 suite-result artifact, and code reachable from the slice diff — and consults the suite result for suite-level criteria rather than re-running suites; a `failed` suite-level verdict is grounded in that artifact.
+Verification runs in fresh context via the `slice-verifier` sub-agent walking the verification log. The verifier reads `verification.json`, `acceptance_criteria.json`, `api_contract.json`, the Step 7 suite-result artifact, and code reachable from the slice diff — and consults the suite result for suite-level criteria rather than re-running suites.
 
 1. **Determine the slice's commit range** — typically the unpushed commits on the current branch, or the commits added since this slice started. Capture as a hash range or list.
 
@@ -348,11 +348,11 @@ Verification runs in fresh context via the `slice-verifier` sub-agent walking th
    - A rationale that reads like a rubber-stamp (matches without surprises, no falsification statement) → send back to the verifier with the entry id and ask for sharper reading.
    - All passed → proceed to Step 9.
 
-Trust the verifier's flags. If you genuinely disagree with a verdict, escalate to the user — do not add an override block to `verification.json`. A disputed verdict is a verifier-quality signal worth raising, not something to patch in the log. `verification.json` is committed with the rest of the slice artifacts at the end of the run.
+Trust the verifier's flags. If you genuinely disagree, escalate to the user — do not add an override block to `verification.json`. `verification.json` is committed with the rest of the slice artifacts at the end of the run.
 
 ### Step 9: Review QA log for issue log items
 
-Dispatch the `qa-log-harvester` sub-agent to review the slice's QA log for issue-tracker items. First fetch the current New-list card titles so the agent can flag duplicates, then dispatch:
+Fetch the current New-list card titles so the agent can flag duplicates, then dispatch the `qa-log-harvester` sub-agent:
 
 ```
 Slice directory: {{ specs_repo_path }}/slices/<SLICE_DIR>/

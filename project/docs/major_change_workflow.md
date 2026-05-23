@@ -78,9 +78,9 @@ Before proceeding to code review, run the checkpoint script:
 python3 {{ project_root }}/scripts/checkpoint.py --project {{ subproject }}
 ```
 
-It runs the subproject's check/build/test commands, lists the working-tree changes, and flags diff-derived structural gaps (a schema change without a migration or a test-data update, a source change with no matching test change). Resolve every command failure; resolve or justify every structural warning; review the change list for scope bleed.
+It runs the subproject's check/build/test commands, lists working-tree changes, and flags structural gaps (a schema change without a migration or test-data update, a source change with no matching test change). Resolve every command failure; resolve or justify every structural warning; review the change list for scope bleed.
 
-Then verify the items the script cannot check:
+Also verify:
 
 - [ ] New test files cover the behaviour the plan requires.
 - [ ] `requirements.json` (if present): spot-check that key requirements appear implemented.

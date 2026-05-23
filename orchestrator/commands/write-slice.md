@@ -44,7 +44,7 @@ Check the issue log (Planned list) for cards related to this work — they may c
 
 Before writing anything, understand the current state.
 
-**Route the codebase research through `Explore` agents.** Code areas read inline here are then carried through overview, criteria, brief authoring, and the grounding pass — for the whole write-slice session. Dispatch one or more `Explore` agents for the code areas the slice will affect (models, services, API endpoints, components) and ask each for a **`file:line`-grounded digest** — current-state facts with citations, not file dumps. Author the briefs from the digest. `triage` and `refactor-audit` already route research this way.
+**Route codebase research through `Explore` agents.** Code read inline here gets carried through overview, criteria, brief authoring, and grounding — the whole session. Dispatch one or more `Explore` agents for the affected code areas (models, services, API endpoints, components) and ask each for a **`file:line`-grounded digest** — current-state facts with citations, not file dumps. Author the briefs from the digest.
 
 Read directly yourself:
 
@@ -251,7 +251,7 @@ This applies to any slice where a planning artifact drives a downstream implemen
 
 ### Step 7b: Grounding pass
 
-**Mandatory — do not skip, do not soften to "consider".** Before any brief in this slice is considered frozen, every codebase claim it contains must be re-grounded against the current code. Briefs written from your short-term mental model rather than from a fresh read of the files are the leading cause of Round 1 Q&A corrections. This step catches those misses before the brief is handed to a dev agent.
+**Mandatory — do not skip, do not soften to "consider".** Before any brief in this slice is considered frozen, every codebase claim it contains must be re-grounded against the current code. Briefs written from memory rather than a fresh read are the leading cause of Round 1 Q&A corrections. This step catches those misses before a dev agent sees the brief.
 
 **1. Mechanical citation check.** Run:
 
