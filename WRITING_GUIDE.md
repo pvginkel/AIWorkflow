@@ -96,9 +96,9 @@ When adding documentation, ask: **"What task would make a developer reach for th
 
 The goal: each topic-area file is a self-contained reference for one kind of work. A plan links to 2–5 topic areas, and the code-writer reads exactly those files.
 
-### Workflow docs (`docs/major_change_workflow.md`, `docs/minor_change_workflow.md`)
+### Workflow commands (`/major-change`, `/minor-change`)
 
-Pure **orchestration sequence**: which agent is dispatched, in what order, with what inputs, and what verification happens between steps.
+Pure **orchestration sequence**: which agent is dispatched, in what order, with what inputs, and what verification happens between steps. The two workflow commands live at `orchestrator/commands/{minor,major}-change.md` and are invoked by the dev session's coordinator from the prompt the orchestrator (`/run-slice`) hands it.
 
 Should **not** contain:
 - The content of each step (that lives in the agent definition).
@@ -106,7 +106,7 @@ Should **not** contain:
 - Restatements of patterns from `CLAUDE.md`.
 - "Before starting, read X" instructions — if the agent needs to read X, its own definition says so.
 
-Think of the workflow doc as a script that choreographs the agents, not a place to explain what the agents do.
+Think of each command as a script that choreographs the agents, not a place to explain what the agents do.
 
 ### Agent definitions (`.claude/agents/<name>.md`)
 

@@ -96,6 +96,6 @@ Use `python3 {{ notification_script }} --title "<title>" "<message>"` to send pu
 #}
 - `{{ specs_repo_path }}/README.md` — implementation slice index and progress tracking.
 - `{{ subproject }}/docs/conventions.md` — binding technical conventions for {{ subproject }}.
-- `{{ subproject }}/docs/major_change_workflow.md` — major change workflow (plan → review → implement → review).
-- `{{ subproject }}/docs/minor_change_workflow.md` — minor change workflow (Q&A → implement → review).
+- `/major-change` — major change workflow command (plan → review → implement → review).
+- `/minor-change` — minor change workflow command (Q&A → implement → review).
 {% endblock %}
