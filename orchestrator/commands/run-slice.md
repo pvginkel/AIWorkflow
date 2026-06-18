@@ -76,10 +76,9 @@ Read all documents in the slice directory. Determine which agents need to run ba
    Prefer bundling these into a single pre-flight script that runs the
    checks, stays silent on success, and dumps the buffered output of every
    check plus the failure details on failure. The template ships a working
-   reference at orchestrator/scripts/preflight.py that bundles a clean-tree
-   gate, a full repo build (scripts/build-all.py), and test-harness
-   readiness checks — adapt the CODE_DIRS list and the harness checks to
-   your toolchain.
+   reference at orchestrator/scripts/preflight.py that bundles a full repo
+   build (scripts/build-all.py), test collection, and test-harness
+   readiness checks — adapt the harness checks to your toolchain.
 #}
 Run minimal commands that confirm the build succeeds and the test harness is healthy before dispatching any dev agent. Example:
 
@@ -101,36 +100,33 @@ After reading all slice documents and passing infrastructure checks, present a p
 
 ### Step 0c: Seed the verification log
 
-Once the user confirms the pre-flight, seed the verification log from `acceptance_criteria.json`:
+Once the user confirms the pre-flight, create `{{ specs_repo_path }}/slices/<SLICE_DIR>/verification.json` and seed it from `acceptance_criteria.json`. The verification log is the single source of truth for what the slice's independent verifier checks at Step 8c — items only get verified if they're in the log.
 
-```bash
-python3 {{ project_root }}/scripts/verification.py seed <NUMBER>
-```
-
-This writes `{{ specs_repo_path }}/slices/<SLICE_DIR>/verification.json` with one item per AC, in entry order — ids `V01`, `V02`, …, `source: ac`, `description` prefixed with the AC id (so Step 9 can map verdicts back), and `verdict`/`rationale`/`evidence` left empty for the verifier. The verification log is the single source of truth for what the slice's independent verifier checks at Step 8c — items only get verified if they're in the log.
-
-`area` is the subproject a failure routes back to. The seeder copies the AC's `area` when it already names a subproject; a regression criterion's `area` is routed to the slice's sole subproject. **If `seed` prints an `ACTION REQUIRED` warning**, the slice has multiple subprojects and one or more regression criteria could not be routed automatically — edit those items' `area` to the owning subproject before starting Step 1.
-
-Item schema, for `qa_correction` items appended by hand in Steps 1+:
+Schema (one entry per item):
 
 ```json
 {
-  "id": "V01",
-  "source": "ac",
-  "area": "{{ subproject }}",
-  "description": "BE-1: <verbatim AC description>",
-  "verdict": null,
-  "rationale": "",
-  "evidence": []
+  "items": [
+    {
+      "id": "V01",
+      "source": "ac",
+      "area": "{{ subproject }}",
+      "description": "BE-1: <verbatim AC description>",
+      "verdict": null,
+      "rationale": "",
+      "evidence": []
+    }
+  ]
 }
 ```
 
-- `source` — `ac` (seeded) or `qa_correction` (added in Step 1+ when you override an agent's stated direction).
-- `area` — the subproject a failure routes back to.
-- `description` — for `qa_correction` items, what must be true in the implementation. State the *what*, not the *why* — no opinions. Use the next sequential `V##` id.
+- `id` — sequential `V01`, `V02`, … in entry order.
+- `source` — `ac` (seeded from acceptance criteria) or `qa_correction` (added in Step 1+ when you override an agent's stated direction).
+- `area` — the subproject a failure routes back to. For AC entries, copy the AC's `area`.
+- `description` — what must be true in the implementation. For AC entries, prefix with the AC id (e.g., `BE-1: …`) so Step 10 can map verdicts back. State the *what*, not the *why* — no opinions.
 - `verdict`, `rationale`, `evidence` — left empty; the verifier fills these in.
 
-Commit `verification.json` to the specs repo before starting Step 1.
+Seed one item per AC, in order. Commit `verification.json` to the specs repo before starting Step 1.
 
 ### Step 1: Run the "leading" subproject
 
@@ -235,33 +231,40 @@ python3 {{ session_manager_path }} finish --project {{ subproject }}
    free port, runs the backend's prepare command, starts the backend, waits
    until the OpenAPI endpoint is reachable, runs `pnpm generate:api` in each
    target project, and stops the backend cleanly. The template ships a
-   working reference at orchestrator/scripts/regenerate-openapi.py — its
-   `--commit` flag stages and commits exactly the caches it regenerated, so
-   regeneration and commit are one step.
+   working reference at orchestrator/scripts/regenerate-openapi.py.
 
    Delete this whole block if nothing downstream depends on generated
    artifacts.
 #}
-If downstream subprojects depend on artifacts generated from the leading subproject (e.g., an OpenAPI client), regenerate them now and commit the result before dispatching the consumer agents. The reference `regenerate-openapi.py` does both in one run: its `--commit` flag stages and commits exactly the caches it regenerated, and is a no-op when the spec did not change.
+If downstream subprojects depend on artifacts generated from the leading subproject (e.g., an OpenAPI client), regenerate them now and commit the result before dispatching the consumer agents. Run the regeneration in the foreground — it shuts the backend down on exit:
 
 ```bash
 {{ regen_api_command }}
+```
+
+**Commit the regenerated artifacts** so the consumer agents pick up the updated spec (stage only the caches that were actually regenerated):
+
+```bash
+cd {{ project_root }} && git add <regenerated-cache-dirs> && git commit -m "Regenerate API client (slice <NUMBER>)"
 ```
 {% endblock %}
 
 ### Step 3: Review the API contract (if applicable)
 
-Run `check-api-contract.py` to verify `api_contract.json` against the regenerated OpenAPI spec:
+Read the generated OpenAPI spec and compare it against `api_contract.json`. For each endpoint entry:
 
-```bash
-python3 {{ project_root }}/scripts/check-api-contract.py <NUMBER>
-```
+1. Verify the endpoint exists in the spec (method + path).
+2. Check that `key_request_fields` and `key_response_fields` appear in the schemas.
+3. Confirm the `status_codes` are documented.
+4. Update the `verified` field to `true` or `false`.
 
-The script checks every endpoint (method + path exist, 2xx status codes documented, `key_request_fields`/`key_response_fields` present in resolved schemas) and every endpoint removal, sets each entry's `verified` flag, writes `api_contract.json` back, and prints a report.
+For each `schema_changes` entry, verify the change is reflected. For each `removals` entry:
+- `schema_field` removals: grep the OpenAPI spec for the field name and confirm it does not appear in the named schema.
+- `endpoint` removals: confirm the method + path combination does not exist in the spec.
 
-The report's **Manual review** section lists `schema_changes` and prose `removals` (no method + path) that the script cannot verify mechanically. Check each against the spec and set its `verified` flag: for a schema-field removal, confirm the field is absent from the named schema; for a schema change, confirm it is reflected.
+Write the updated `api_contract.json` back to the slice directory.
 
-For every `[FAIL]` in the report, assess whether it's a significant gap (missing endpoint, missing key field, wrong schema) or a minor difference (an error-only status code the framework serves outside the spec, a naming convention). Significant gaps → notify the user and stop. Minor differences are fine.
+If any endpoint has `verified: false`, assess whether it's a significant gap (missing endpoint, wrong schema) or a minor difference (field ordering, naming convention). Significant gaps → notify the user and stop. Minor differences are fine.
 
 **Log any issues** (gaps, deferred items, workarounds) to the issue log.
 
@@ -274,23 +277,21 @@ For each remaining subproject with a brief file, run `claude` using the same pat
 **Check for testing infrastructure gaps.** If the agent's questions reveal that it needs testing infrastructure from the leading subproject (e.g., a seeding endpoint for end-to-end tests), **stop the agent immediately**. Send the leading subproject's agent to implement the missing infrastructure first, then resume. Testing infrastructure gaps are blocking.
 
 {% block release_notes_step %}
-{# If your project maintains user-facing release notes, the template ships a
-   release-notes-drafter agent (orchestrator/agents/release-notes-drafter.md)
-   that drafts them from a slice's overview + diff. The step below wires it in
-   — point the final append at your project's release-notes file. Delete this
-   whole block if you don't maintain release notes.
+{# If your project maintains user-facing release notes, update them here from
+   the slice's user-facing changes. Point the path at your project's
+   release-notes file, and add any app-specific tagging (e.g. a customer-facing
+   app) your project needs. Delete this whole block if you don't maintain
+   release notes.
 #}
 ### Step 6: Update release notes
 
-After a successful slice run, dispatch the `release-notes-drafter` sub-agent:
+After a successful slice run, update your project's user-facing release-notes file with the user-facing changes from this slice.
 
-```
-Slice directory: {{ specs_repo_path }}/slices/<SLICE_DIR>/
-Commit range: <hash>..HEAD  (or specific hashes)
-Today's date: <YYYY-MM-DD>
-```
-
-It reads the slice overview and diff, classifies each change, and returns a ready-to-append markdown block (entries from the user's perspective, grouped under today's date) plus a `Skipped` list of changes it judged not user-facing. Review the cut, then append the block to your project's release-notes file.
+Rules:
+- Group entries by date only (use today's date).
+- Write from the user's perspective — no slice numbers, git revisions, or subproject distinctions.
+- Only include non-trivial features. Skip minor bug fixes, refactors, and internal improvements.
+- Add new entries under today's date heading. If a heading for today already exists, append to it.
 {% endblock %}
 
 ### Step 7: Run the full test suite
@@ -303,32 +304,24 @@ After all agents have completed, run the full test suite to verify everything is
 
 Run this in the background (`run_in_background: true`). The background task mechanism notifies you automatically when it completes — do **not** poll with sleep+check commands.
 
-**If all tests pass:** proceed to Step 8.
+**If all tests pass:** proceed to Step 8c.
 
 **If any tests fail:**
 
-1. Dispatch the `test-failure-triager` sub-agent:
-
-   ```
-   Slice directory: {{ specs_repo_path }}/slices/<SLICE_DIR>/
-   Commit range: <hash>..HEAD
-   ```
-
-   It reads the suite-result artifact and the slice diff, diagnoses each failure's root cause, and writes `failure_triage.json` to the slice directory — per failure: `owning_area`, `confidence`, and a prose `diagnosis`.
-
-2. Read `failure_triage.json`. Re-diagnose any `low`-confidence entry yourself before dispatching. Group the failures by `owning_area`.
-
-3. Per area, send the owning agent back to fix it with the failure output plus the agent's `diagnosis`. Tell them explicitly: *"The test suite was green before your changes. These failures are regressions caused by your code changes (all unpushed commits). Find and fix the root cause."*
-
-4. Re-run the suite. Repeat until green or blocked.
-
-5. **If a failure is clearly caused by a leading-subproject gap** that a consumer agent cannot fix alone, notify the user and stop.
-
-6. **Maximum 3 fix rounds per agent.** If an agent cannot get its tests green after 3 attempts, notify the user and stop — the slice may be mis-classified or too large.
+1. Read the suite-result artifact for the detailed failure output.
+2. For each failure, identify which agent owns it based on where the failing test lives.
+3. **Diagnose before fixing.** Understand *why* the test fails. In particular:
+   - **When a consumer subproject's tests fail after a leading-subproject-only change**, the cause is almost always test infrastructure that references the old behavior (a startup command, an endpoint path, an env var). Look at how **passing** tests start their services and follow the same pattern for the failing service. Do not add special cases or workarounds — if a fix requires a lot of special-casing, the approach is wrong.
+   - **When a fix seems to need changes to the app factory or core test infrastructure**, stop and reconsider. That infrastructure is battle-tested; the problem is more likely in the new code.
+4. Write the failure output to a prompt file and send the owning agent back to fix it. Tell the agent explicitly: *"The test suite was green before your changes. These failures are regressions caused by your code changes (all unpushed commits). Find and fix the root cause."* Include the full failure output and your diagnosis.
+5. After the agent finishes, re-run the suite to verify the fix.
+6. **If a failure is clearly caused by a leading-subproject gap** that a consumer agent cannot fix alone, notify the user and stop.
+7. **Repeat until green or blocked.**
+8. **Maximum 3 fix rounds per agent.** If an agent cannot get its tests green after 3 attempts, notify the user and stop.
 
 ### Step 8c: Independent verification
 
-Verification runs in fresh context via the `slice-verifier` sub-agent walking the verification log. The verifier reads `verification.json`, `acceptance_criteria.json`, `api_contract.json`, the Step 7 suite-result artifact, and code reachable from the slice diff — and consults the suite result for suite-level criteria rather than re-running suites.
+Verification runs in fresh context via the `slice-verifier` sub-agent walking the verification log.
 
 1. **Determine the slice's commit range** — typically the unpushed commits on the current branch, or the commits added since this slice started. Capture as a hash range or list.
 
@@ -352,18 +345,14 @@ Trust the verifier's flags. If you genuinely disagree, escalate to the user — 
 
 ### Step 9: Review QA log for issue log items
 
-Fetch the current New-list card titles so the agent can flag duplicates, then dispatch the `qa-log-harvester` sub-agent:
+Review `{{ specs_repo_path }}/slices/<SLICE_DIR>/qa_log.md` end-to-end. Look for:
 
-```
-Slice directory: {{ specs_repo_path }}/slices/<SLICE_DIR>/
-New-list card titles:
-- <title>
-- <title>
-```
+- **Deferred work** — features or improvements explicitly deferred to a later slice.
+- **Known limitations** — architectural shortcuts that will need revisiting.
+- **Contract/spec drift** — cases where implementation diverged from the original brief.
+- **Design decisions with future implications.**
 
-The agent walks `qa_log.md` for deferred work, known limitations, contract/spec drift, and design decisions with future implications, and writes `proposed_cards.json` to the slice directory — one entry per item with `type_label`, `area_labels`, a rendered `description`, and `duplicate_of` set when the item is already covered by a New-list card.
-
-Read `proposed_cards.json`. For each entry with `duplicate_of: null`, create an issue-tracker card (New list) — resolve `type_label` / `area_labels` to your tracker's labels and pass `description` verbatim. Skip entries with a non-null `duplicate_of`.
+For each item found, create a card on the issue log. Don't duplicate items already logged inline during Q&A.
 
 ### Step 10: Report results
 
@@ -372,7 +361,7 @@ Summarize what happened:
 - Any issues encountered.
 - The API contract review result (from `api_contract.json` — how many endpoints verified/failed).
 - Test suite results (pass/fail per project, number of fix rounds if any).
-- Acceptance criteria results — run `python3 {{ project_root }}/scripts/verification.py tally <NUMBER>` to count `source: ac` entries in `verification.json` by `verdict`. At this point all should be `passed` (failed/uncertain were routed back in Step 8c); if any remain unresolved, Step 8c was skipped and you must go back.
+- Acceptance criteria results — count `source: ac` entries in `verification.json` by `verdict`. At this point all should be `passed` (failed/uncertain were routed back in Step 8c); if any remain unresolved, Step 8c was skipped and you must go back.
 - Any failures blocked on identified gaps (link to issue log entries).
 
 Move the slice from the **Pending** section to the **Completed** section in `{{ specs_repo_path }}/README.md`.

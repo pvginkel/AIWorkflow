@@ -47,7 +47,7 @@ The project's design system and existing components handle the visual layer. The
 
 ### Step 1: Gather context
 
-Read the relevant slice documents if this design is for a slice:
+Read the relevant slice documents:
 
 - `overview.md` — what the feature delivers and why.
 - `acceptance_criteria.json` — what must be true when done.
@@ -64,8 +64,8 @@ Write a prompt file for the UX design agent. The prompt should include:
 3. **Current state** — describe what exists today and what the problem is.
 4. **What the design must cover** — specific questions the design must answer. Be explicit about scope boundaries.
 5. **Constraints** — technical and practical boundaries (which subproject, existing components to reuse, dark mode requirement, accessibility standards).
-6. **Anti-patterns** — remind the agent: no CSS classes, no grand redesigns, no speculative features.
-7. **Deliverable** — where to write the file and what format (actionable developer guidance following the design doc template).
+6. **Anti-patterns** — remind the agent: no CSS classes, no grand redesigns, no speculative features. Focus on interaction design, states, and flows.
+7. **Deliverable** — where to write the file (typically `{{ specs_repo_path }}/slices/<SLICE_DIR>/ux_design.md`) and what format (actionable developer guidance following the design doc template).
 
 {% block ux_agent_invocation %}
 {# How the UX design agent is invoked depends on your setup. Two options:
@@ -101,8 +101,6 @@ If the output is too vague, too broad, or falls into the anti-patterns (CSS clas
 ### Step 5: Present to user
 
 Show the user the design document. Walk through the key decisions and any open questions. Wait for approval before referencing it from slice briefs.
-
-The approved UX design is then referenced from the frontend/portal briefs so the dev agent reads it alongside the brief during implementation.
 
 ## Authoring order within a slice
 

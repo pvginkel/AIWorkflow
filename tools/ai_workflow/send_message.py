@@ -16,7 +16,7 @@ Usage:
 Environment variables:
     HA_URL              e.g. http://homeassistant.local:8123
     HA_TOKEN            long-lived access token from Home Assistant profile
-    HA_NOTIFY_SERVICE   notify service name (e.g. mobile_app_pieter_telefoon)
+    HA_NOTIFY_SERVICE   notify service name (e.g. mobile_app_<device_id>)
 """
 
 from __future__ import annotations

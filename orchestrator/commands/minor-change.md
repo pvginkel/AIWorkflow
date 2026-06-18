@@ -61,21 +61,14 @@ Launch the code-writer agent. Pass the full path to the change brief (now includ
 
 ## Step 4: Verification checkpoint (after code-writer)
 
-Run the checkpoint script for your subproject:
-
-```bash
-python3 {{ project_root }}/scripts/checkpoint.py --project <subproject>
-```
-
-(`<subproject>` = the name of your working directory.)
-
-It runs the subproject's check/build/test commands, lists working-tree changes, and flags structural gaps appropriate to the subproject. Resolve every command failure; resolve or justify every structural warning; review the change list for scope bleed. The structural test check only confirms *some* test changed — confirm the new tests actually cover the changed behaviour.
-
-If your subproject runs additional out-of-suite tests (e.g. a Playwright e2e that the full-suite step doesn't cover), also run them here.
+- [ ] `{{ check_command }}` passes.
+- [ ] `{{ test_command }}` passes (full test suite).
+- [ ] `git diff` shows no unexpected changes or scope bleed.
+- [ ] Tests were added or updated for the changed behavior.
 
 **Hard gate: tests must actually run.** If they fail due to infrastructure issues, **do not proceed**.
 
-**Fix trivial pre-existing issues inline.** If the check command flags something unrelated to your slice and the fix is obvious and one-shot, fix it as part of your slice commit. Anything bigger, leave it and escalate.
+**Fix trivial pre-existing issues inline.** If `{{ check_command }}` flags something unrelated to your slice and the fix is obvious and one-shot, fix it as part of your slice commit. Don't stop, don't file a card, don't ask. Anything bigger, leave it and escalate.
 
 ## Step 5: Dispatch the code-reviewer
 
@@ -98,5 +91,5 @@ The work is complete when:
 - All brief requirements (including Clarifications) are implemented.
 - Code review completed with decision GO or GO-WITH-CONDITIONS.
 - ALL review issues are resolved.
-- `checkpoint.py` passes cleanly.
+- `{{ check_command }}` passes cleanly.
 - No scope bleed — the diff matches the brief, with no adjacent refactors.

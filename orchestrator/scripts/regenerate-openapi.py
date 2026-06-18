@@ -29,7 +29,6 @@ Usage:
     scripts/regenerate-openapi.py --frontend
     scripts/regenerate-openapi.py --portal
     scripts/regenerate-openapi.py --frontend --portal
-    scripts/regenerate-openapi.py --frontend --portal --commit --slice 182
 """
 
 from __future__ import annotations
@@ -51,14 +50,6 @@ LOG_DIR = ROOT / "logs"
 
 OPENAPI_PATH = "/api/docs/openapi.json"
 READY_TIMEOUT_S = 120
-
-# OpenAPI cache directory per regeneration target. `--commit` stages and
-# commits exactly the directories for the targets that were regenerated.
-# Customize the keys/paths for your subprojects.
-CACHE_DIRS = {
-    "frontend": "frontend/openapi-cache",
-    "portal": "portal/openapi-cache",
-}
 
 
 def pick_free_port() -> int:
@@ -148,34 +139,6 @@ def regenerate(project: str, port: int) -> int:
     return result.returncode
 
 
-def commit_caches(targets: list[str], slice_id: str | None) -> int:
-    """Stage and commit exactly the OpenAPI caches that were regenerated.
-
-    Scoped to the cache directories for `targets` only — never stages
-    anything else. If the regenerated spec is byte-identical to the
-    committed cache (no spec change this slice), nothing is staged and
-    the commit is skipped.
-    """
-    paths = [CACHE_DIRS[t] for t in targets]
-    if subprocess.run(["git", "add", "--", *paths], cwd=ROOT).returncode != 0:
-        print("git add failed", file=sys.stderr)
-        return 1
-    staged = subprocess.run(
-        ["git", "diff", "--cached", "--quiet", "--", *paths], cwd=ROOT
-    )
-    if staged.returncode == 0:
-        print("OpenAPI cache unchanged — nothing to commit", flush=True)
-        return 0
-    suffix = f" (slice {slice_id})" if slice_id else ""
-    message = f"Regenerate OpenAPI spec: {', '.join(targets)}{suffix}"
-    commit = subprocess.run(["git", "commit", "-m", message, "--", *paths], cwd=ROOT)
-    if commit.returncode != 0:
-        print("git commit failed", file=sys.stderr)
-        return 1
-    print(f"Committed: {message}", flush=True)
-    return 0
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--frontend", action="store_true", help="Regenerate frontend OpenAPI client")
@@ -185,17 +148,6 @@ def main() -> int:
         type=int,
         default=READY_TIMEOUT_S,
         help="Seconds to wait for backend readiness (default: %(default)s)",
-    )
-    parser.add_argument(
-        "--commit",
-        action="store_true",
-        help="After regenerating, stage and commit exactly the regenerated caches",
-    )
-    parser.add_argument(
-        "--slice",
-        dest="slice_id",
-        metavar="NUMBER",
-        help="Slice identifier for the --commit commit message",
     )
     args = parser.parse_args()
 
@@ -229,9 +181,6 @@ def main() -> int:
                 return rc
     finally:
         stop_backend(dev_proc)
-
-    if args.commit:
-        return commit_caches(targets, args.slice_id)
 
     return 0
 

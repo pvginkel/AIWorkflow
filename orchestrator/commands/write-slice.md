@@ -42,19 +42,14 @@ Check the issue log (Planned list) for cards related to this work — they may c
 
 ### Step 2: Research the codebase
 
-Before writing anything, understand the current state.
+Before writing anything, understand the current state:
 
-**Route codebase research through `Explore` agents.** Code read inline here gets carried through overview, criteria, brief authoring, and grounding — the whole session. Dispatch one or more `Explore` agents for the affected code areas (models, services, API endpoints, components) and ask each for a **`file:line`-grounded digest** — current-state facts with citations, not file dumps. Author the briefs from the digest.
+- Read relevant conventions and architecture decisions.
+- Read the code areas that will be affected (models, services, API endpoints, components).
+- Check recent slices in the same area for patterns and context.
+- Identify dependencies on other slices.
 
-Read directly yourself:
-
-- Relevant conventions and architecture decisions — binding rules, not current-state facts to digest.
-- Recent slices in the same area, for patterns and context.
-- Any specific file a brief's correctness hinges on — when a brief turns on a subtlety, spot-read that file rather than trusting the digest alone.
-
-Identify dependencies on other slices.
-
-Do not write briefs based on assumptions about what the code looks like — the digest is `file:line`-grounded, you spot-read where it matters, and Step 7b's `brief-grounding-verifier` re-checks every frozen brief against the code.
+Do not write briefs based on assumptions about what the code looks like. Read it.
 
 **Adjust research to fit the request.** A feature adding a new API endpoint needs you to understand models, services, and existing patterns. A mechanical change like "normalize every version pin" does not — it needs a clear rule and broad scope. Match the depth of your research to what the user actually asked for, and carry that through to the briefs: if the request is rule-based, the brief should state the rule and let the agent apply it, not enumerate every individual change (which agents misread as a closed set).
 
@@ -140,7 +135,7 @@ Write one brief per agent that will work on the slice, placed at `{{ specs_repo_
 
 #### The cardinal rule: describe outcomes, not implementations
 
-Briefs describe **what** needs to change and **why**. They do NOT prescribe **how**. The dev agent reads the code and writes the implementation; it knows the context the orchestrator doesn't. A prescriptive brief is the most expensive failure mode on record — the agent follows the brief down a wrong path even when a better one is obvious from the code, and the minor workflow has no plan-review safety net to catch it.
+Briefs describe **what** needs to change and **why**. They do NOT prescribe **how**. The dev agent reads the code and writes the implementation; it knows the context the orchestrator doesn't.
 
 **Good:** "The undo endpoint must detect when an edit has already been undone and return 409."
 **Bad:** "Add a query `select(ContentEdit).where(ContentEdit.original_edit_id == edit_id)` and if it returns a result, raise `InvalidOperationException`."
@@ -180,8 +175,6 @@ Before freezing, re-read the brief. Every non-trivial line is one of:
 - **(b)** Outcome, requirement, constraint, or behavioral rule about target behavior — keep.
 - **(c)** Prescription about how to get from (a) to (b) — move it: into `acceptance_criteria.json` if it's a requirement in disguise, into the overview's Constraints section if the user explicitly demanded the implementation choice, otherwise delete it.
 
-If you find yourself defending a (c) line ("but the agent needs to know this"), you don't trust the agent — and the data says you should.
-
 #### Length ceilings
 
 Past the ceiling, the brief is doing a plan's job and the work belongs in the major workflow:
@@ -190,8 +183,6 @@ Past the ceiling, the brief is doing a plan's job and the work belongs in the ma
 - **Pattern-following / bug fix with reproduction**: ≤ 600 words.
 - **Any minor brief**: ≤ 1,000 words hard ceiling.
 - **Major-workflow briefs**: no ceiling — they go through plan-writer + plan-reviewer.
-
-Outcome-focused minor briefs cluster at 300–500 words; plan-shaped minor briefs run 1,000–2,000 and produce the most expensive minor sessions on record.
 
 #### Rule-based briefs (routine maintenance)
 
@@ -204,7 +195,7 @@ When the user's request is a rule applied broadly (dependency updates, bulk rena
 
 Exhaustive tables get misread as a closed set.
 
-**Routine briefs go to the minor workflow regardless of file count.** Each touch is mechanical and the dev coordinator does not need a written plan. Note this in the overview's Scope section ("Routine maintenance — minor workflow expected") so `/run-slice`'s brief-shape check exempts it from the plan-shaped-brief warning. Major-workflow plans on routine slices burn ~5M tokens of plan-writer + plan-reviewer overhead the agent did not need.
+**Routine briefs go to the minor workflow regardless of file count.** Each touch is mechanical and the dev coordinator does not need a written plan. Note this in the overview's Scope section ("Routine maintenance — minor workflow expected") so `/run-slice`'s brief-shape check exempts it from the plan-shaped-brief warning.
 
 If a routine brief grows past 400 words, the work is probably no longer routine — design decisions are hidden inside the rule. Surface them to the user before freezing.
 
@@ -251,31 +242,19 @@ This applies to any slice where a planning artifact drives a downstream implemen
 
 ### Step 7b: Grounding pass
 
-**Mandatory — do not skip, do not soften to "consider".** Before any brief in this slice is considered frozen, every codebase claim it contains must be re-grounded against the current code. Briefs written from memory rather than a fresh read are the leading cause of Round 1 Q&A corrections. This step catches those misses before a dev agent sees the brief.
+**Mandatory — do not skip, do not soften to "consider".** Before any brief in this slice is considered frozen, you must re-ground every codebase claim it contains against the current code. Briefs written from your short-term mental model rather than from a fresh read of the files are the leading cause of Round 1 Q&A corrections. This step exists to catch those misses before the brief is handed to a dev agent.
 
-**1. Mechanical citation check.** Run:
+For every brief produced in this slice (one `<subproject>/brief.md` per subproject the slice touches), you must:
 
-```bash
-python3 {{ project_root }}/scripts/slice-check.py cite <NUMBER>
-```
+- **(a) Open every `file:line` citation** in the brief and confirm the cited code matches the claim the brief is making about it. A stale line number, a renamed symbol, a moved block — any mismatch gets corrected in the brief before the brief is frozen.
+- **(b) Re-grep or re-read the code behind every "the system does X today" / "the current behavior is Y" / "there is no Z today" assertion.** Do not assert current behavior from memory. If the claim is "feature F does not exist yet," grep for it; if it is "endpoint E returns 201 on success today," open the handler.
+- **(c) Check every "add Y" / "introduce Y" / "create Y" task against the current codebase** to confirm Y is not already present. Partial implementations count — if a half-built version of Y exists, record what is present so the brief directs the agent to complete rather than duplicate.
 
-`slice-check cite` parses every `file:line` citation out of the briefs and hard-fails any that point at a missing file or an out-of-range line. Fix every broken citation before continuing.
-
-**2. Semantic grounding check.** Dispatch the `brief-grounding-verifier` sub-agent:
-
-```
-Slice directory: {{ specs_repo_path }}/slices/<SLICE_DIR>/
-```
-
-It walks every brief, extracts each claim about the codebase — `file:line` citations, "the system does X today" / "there is no Z yet" assertions, and "add Y" tasks (Y claimed absent) — checks each against the current code, and writes `grounding_verdicts.json`: per claim a `verdict` of `confirmed`, `stale` (the cited line moved — `note` gives the right location), or `mismatch` (the code does not support the claim, including an "add Y" task whose Y already partly exists).
-
-**3. Act on the verdicts.** Read `grounding_verdicts.json`. For every `stale` or `mismatch` entry, correct the brief — fix the citation, fix the current-state assertion, or redirect an "add Y" task to *complete* the partial Y rather than duplicate it. A brief is not frozen while any non-`confirmed` verdict against it is unresolved.
-
-**4. Write the grounding self-check artifact** at `{{ specs_repo_path }}/slices/<SLICE_DIR>/grounding_check.md`, derived from the verdicts. This is a dedicated artifact, not inlined into the briefs. Minimum contents:
+You must write a sibling grounding self-check artifact at `{{ specs_repo_path }}/slices/<SLICE_DIR>/grounding_check.md`. This file is a dedicated artifact, not inlined into each brief. Its minimum contents:
 
 - One section per brief (`## <subproject>/brief.md` for each subproject the slice touches).
-- Under each, a bullet per claim with its `file_path:line_number` citation where relevant and a verdict of **confirmed**, **corrected** (a short note on what was changed in the brief — every `stale`/`mismatch` verdict becomes a `corrected` bullet), or **not applicable** (with a reason).
-- A final "Summary" bullet per section.
+- Under each section, a bulleted list of every claim you checked, each with a `file_path:line_number` citation where relevant and a verdict of **confirmed**, **corrected** (with a short note on what was changed in the brief), or **not applicable** (with a reason).
+- A final "Summary" bullet per section stating "all file:line citations verified" — or, if any corrections were applied, listing them.
 
 The artifact lets the orchestrator and reviewers see the grounding pass actually happened. A brief without a matching `grounding_check.md` section is not frozen.
 
@@ -319,13 +298,7 @@ You are NOT responsible for designing the implementation. The dev agents read th
 
 ## Quality checklist
 
-Before presenting the slice to the user, run the structural lint:
-
-```bash
-python3 {{ project_root }}/scripts/slice-check.py lint <NUMBER>
-```
-
-`slice-check lint` mechanically checks JSON validity, AC id prefixes, the forbidden `status` field, brief locations, `grounding_check.md` sections, the README Pending entry, and brief word counts. Fix every `FAIL`; assess each `WARN`. Then verify the remaining items — the semantic ones the lint cannot check:
+Before presenting the slice to the user, verify:
 
 - [ ] Overview explains *what* and *why*, not *how*.
 - [ ] **Every explicit user request** has a matching acceptance criterion.

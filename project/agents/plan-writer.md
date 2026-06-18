@@ -77,9 +77,7 @@ Summarize the discovery work that informed the plan. Which areas you researched,
 
 ### 1a) User requirements checklist → `requirements.json`
 
-Derive a checklist of explicit requirements from the change brief. Each item captures one concrete, verifiable requirement. This checklist is consumed by the code-writer (as implementation targets) and the code-reviewer (to confirm every requirement was addressed).
-
-Write this as a companion file at `{{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subproject }}/requirements.json`:
+Derive a checklist of explicit requirements from the change brief. Each item captures one concrete, verifiable requirement.
 
 ```json
 {
@@ -93,15 +91,11 @@ Write this as a companion file at `{{ specs_repo_path }}/slices/<SLICE_DIR>/{{ s
 }
 ```
 
-Fields: `id` (sequential `REQ-NN`), `description` (one concrete, verifiable requirement), `status` (`pending` initially — the code-reviewer updates to `done` or `gap` during review).
-
-In the plan itself, include a brief summary: "See `requirements.json` for the full checklist (N requirements)."
+In the plan: "See `requirements.json` for the full checklist (N requirements)."
 
 ### 2) Affected areas & file map → `file_map.json`
 
-List every module/file/function to create or change. This becomes the implementation checklist.
-
-Write as a companion file at `{{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subproject }}/file_map.json`:
+List every module/file/function to create or change.
 
 ```json
 {
@@ -117,15 +111,9 @@ Write as a companion file at `{{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subpro
 }
 ```
 
-Fields: `id` (sequential `FM-NN`), `path`, `action` (`create`/`modify`/`delete`), `why` (one sentence), `evidence` (`path:line-range`).
-
-In the plan, summarize: "See `file_map.json` for the full file map (N files)."
-
 ### 3) Data model / contracts
 
-Describe new or changed data shapes (request/response bodies, events, DB tables/columns, config). Use concise JSON or table snippets.
-
-Always plan the clean refactor: change the contract, update every caller, delete the old shape. See the design philosophy in `CLAUDE.md` — no backwards compatibility, no shims, no adapters.
+New/changed data shapes (request/response bodies, events, DB tables/columns, config). Concise JSON or table snippets. Always plan the clean refactor: change the contract, update every caller, delete the old shape. See the design philosophy in `CLAUDE.md` — no backwards compatibility, no shims, no adapters.
 
 ### 4) API / integration surface
 
@@ -133,40 +121,33 @@ Endpoints, RPCs, CLI commands, background jobs, webhooks, or message topics that
 
 ### 5) Algorithms & state machines
 
-Describe the core algorithm(s) in numbered steps or pseudo-flow. If a state machine is involved, list states and transitions with guards. Call out complexity hotspots and expected volumes.
+Core algorithm(s) in numbered steps or pseudo-flow. If a state machine is involved, list states and transitions with guards. Call out complexity hotspots and expected volumes.
 
 ### 6) Derived state & invariants
 
-List derived values that influence storage, cleanup, or cross-context state. Provide ≥3 entries or justify "none." For each:
-
-- Derived value name
-- Source (filtered/unfiltered inputs and where they come from)
-- Writes / cleanup triggered by the derived value
-- Guards (conditions, feature flags, retries)
-- Invariant (what must stay true)
-- Evidence (`file:line`)
+List derived values that influence storage, cleanup, or cross-context state. Provide ≥3 entries or justify "none." For each: derived value name, source (filtered/unfiltered), writes/cleanup triggered, guards, invariant, evidence.
 
 If a filtered view drives a persistent write/cleanup, call it out explicitly under Guards and propose a protection.
 
 ### 7) Consistency, transactions & concurrency
 
-Where transactions begin/end; what must be atomic; how partial failure rolls back. Idempotency keys for retried work. Ordering guarantees and locking strategy.
+Transaction boundaries, atomicity requirements, partial failure rollback. Idempotency keys for retried work. Ordering guarantees and locking strategy.
 
 ### 8) Errors & edge cases
 
-Enumerate expected failure modes and how they surface to callers/users. Validation rules, limits, timeouts, retries.
+Expected failure modes and how they surface. Validation rules, limits, timeouts, retries.
 
 ### 9) Observability / telemetry
 
-Metrics, logs, traces you will emit (names/labels). Any alerts or counters that prove the feature works in production.
+Metrics, logs, traces to emit (names/labels). Alerts or counters that prove the feature works.
 
 ### 10) Background work & shutdown
 
-Any background workers/threads/jobs; when they start/stop; required shutdown hooks.
+Background workers/threads/jobs; when they start/stop; required shutdown hooks or lifecycle notifications.
 
 ### 11) Security & permissions (if applicable)
 
-Authn/authz touchpoints, sensitive fields, redaction, rate limits. Omit if truly not applicable.
+Authn/authz touchpoints, sensitive fields, redaction, rate limits.
 
 {% block plan_special_sections %}
 {# Add project-specific plan sections here. Example for a backend with SSE:
@@ -185,20 +166,18 @@ Delete or replace this block with the sections relevant to your project.
 
 ### 12) UX / UI impact (if applicable)
 
-Entry points, screens/forms affected, notable interactions. No mockups — list components/routes you expect to change and why. Omit if no UX impact.
+Entry points, screens/forms affected, notable interactions. No mockups — list components/routes you expect to change and why.
 
 ### 13) Deterministic test plan → `test_plan.json`
 
-For each API/service/CLI/job/state machine, define the test scenarios. This is consumed by the code-writer (to know exactly which tests to write) and the code-reviewer (to verify coverage).
-
-Write as a companion file at `{{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subproject }}/test_plan.json`:
+For each API/service/CLI/job/state machine, define the test scenarios.
 
 ```json
 {
   "surfaces": [
     {
       "id": "TS-01",
-      "surface": "<API/service/CLI/job/state machine name>",
+      "surface": "<API/service/CLI/job name>",
       "scenarios": [
         {
           "id": "TS-01-01",
@@ -208,22 +187,17 @@ Write as a companion file at `{{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subpro
           "status": "pending"
         }
       ],
-      "fixtures": "<factories, dataset prep, dependency injection tweaks>",
+      "fixtures": "<factories, dataset prep, DI tweaks>",
       "gaps": "<anything deferred + justification, or null>",
-      "evidence": "<path:line-range — existing tests or helper utilities>"
+      "evidence": "<path:line-range — existing tests or helpers>"
     }
   ]
 }
 ```
 
-Fields on `surfaces`: `id` (`TS-NN`), `surface`, `scenarios` (array), `fixtures`, `gaps`, `evidence`.
-Fields on `scenarios`: `id` (`TS-NN-MM`), `given`, `when`, `then`, `status` (`pending`, updated by the code-reviewer to `covered` or `missing`).
-
-In the plan, summarize: "See `test_plan.json` for the full test plan (N surfaces, M scenarios)."
-
 ### 14) Implementation slices (only if large)
 
-Order small slices that land value early (e.g., schema → service → API → UI). Each slice: 1–2 sentences and the files it touches.
+Order small slices that land value early. Each slice: 1–2 sentences and the files it touches.
 
 ### 15) Risks & open questions
 
@@ -235,9 +209,9 @@ One line: High/Medium/Low with a short reason.
 
 ## Method
 
-1. **Research-first.** Scan the codebase and relevant docs before asking questions. Quote file/line evidence for every claim.
+1. **Research-first.** Scan the repo and docs before asking questions; quote file/line evidence for every claim.
 2. **Be minimal.** Prefer the smallest viable changes that satisfy intent.
-3. **No code.** Pseudocode and data snippets only. The plan must be implementable by a competent developer without the plan itself becoming the code.
+3. **No code.** Pseudocode and data snippets only; the plan must be implementable by a competent developer.
 4. **Name the feature folder well.** Short, descriptive, snake_case.
 5. **Stop condition.** The plan is done when all sections are filled with enough precision that another developer can implement without guessing.
 
@@ -245,5 +219,5 @@ One line: High/Medium/Low with a short reason.
 
 - Do not write code snippets in the plan. Shapes, signatures, and pseudo-flow only.
 - Do not restate `CLAUDE.md` or `docs/conventions.md`. Reference them instead.
-- Do not design new architectural patterns. Mirror existing ones. If the brief requires a new pattern, flag it in Risks and propose the smallest viable new pattern — do not expand scope.
-- Do not skip the companion JSON files. They are required inputs for the downstream agents.
+- Do not design new architectural patterns. Mirror existing ones. If the brief requires a new pattern, flag it in Risks and propose the smallest viable new pattern.
+- Do not skip the companion JSON files. They are required inputs for downstream agents.

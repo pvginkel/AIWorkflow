@@ -170,7 +170,7 @@ Keep markdown findings ordered the same way as JSON.
 ### Phase 6: Commit to the specs repo
 
 ```bash
-cd <specs_repo_absolute_path>
+cd {{ specs_repo_absolute_path }}
 mkdir -p quality-audits
 git add quality-audits/<date>-<subproject>.json quality-audits/<date>-<subproject>.md
 git commit -m "Quality audit: <subproject> <date>"

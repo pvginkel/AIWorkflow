@@ -47,27 +47,32 @@ If the agent does not complete the plan in full, provide assistance: encourage p
 
 ## Step 5: Verification checkpoint (after code-writer)
 
-Before proceeding to code review, run the checkpoint script for your subproject:
+Before proceeding to code review:
 
-```bash
-python3 {{ project_root }}/scripts/checkpoint.py --project <subproject>
-```
-
-(`<subproject>` = the name of your working directory.)
-
-It runs the subproject's check/build/test commands, lists working-tree changes, and flags structural gaps appropriate to the subproject. Resolve every command failure; resolve or justify every structural warning; review the change list for scope bleed.
-
-Also verify:
-
-- [ ] New test files cover the behaviour the plan requires.
+- [ ] `{{ check_command }}` passes (lint, type-check, dead-code).
+- [ ] `{{ test_command }}` passes (full test suite).
+- [ ] Review `git diff` for unexpected changes.
+- [ ] New test files were created as required by the plan.
 - [ ] `requirements.json` (if present): spot-check that key requirements appear implemented.
 - [ ] `test_plan.json` (if present): spot-check that planned test scenarios have corresponding test functions.
 
-If your subproject runs additional out-of-suite tests (e.g. a Playwright e2e the full-suite step doesn't cover), also run them here.
+{% block subproject_structural_checks %}
+{# Stack-specific structural checks for this subproject's verification
+   checkpoint. List the things a check command can't catch on its own that
+   must travel with the change. Examples for a backend with a relational DB:
+   - [ ] Database migration created for any schema changes.
+   - [ ] Test data / fixtures updated if the schema changed.
+   Examples for a UI subproject:
+   - [ ] End-to-end (e.g. Playwright) coverage added for new flows.
+   Delete this block if the subproject has no such checks.
+#}
+- [ ] <structural check 1>
+- [ ] <structural check 2>
+{% endblock %}
 
-**Hard gate: tests must actually run.** If tests fail due to infrastructure issues, **do not proceed** to code review and **do not commit**. Report the infrastructure issue and stop.
+**Hard gate: tests must actually run.** If `{{ test_command }}` fails due to infrastructure issues, **do not proceed** to code review and **do not commit**. Report the infrastructure issue and stop.
 
-**Fix trivial pre-existing issues inline.** If the check command flags something unrelated to your slice and the fix is obvious and one-shot, fix it as part of your slice commit. Anything bigger, leave it and escalate.
+**Fix trivial pre-existing issues inline.** If `{{ check_command }}` flags something unrelated to your slice and the fix is obvious and one-shot, fix it as part of your slice commit. Don't stop, don't file a card, don't ask. Anything bigger, leave it and escalate.
 
 ## Step 6: Dispatch the code-reviewer
 
@@ -81,7 +86,7 @@ Repeat Step 5. All checks must pass. If any fail, return to Step 6.
 
 ## Step 8: Iterate if needed
 
-If you lack confidence in the end result, request a new code review from a fresh code-reviewer. Place subsequent reviews at `code_review_2.md`, `code_review_3.md`, etc. If not confident after 3 iterations, escalate to the user.
+If you lack confidence in the end result, request a new code review from a fresh code-reviewer instance. Place subsequent reviews at `code_review_2.md`, `code_review_3.md`, etc. If not confident after 3 iterations, escalate to the user.
 
 ## Hard guardrails
 
@@ -94,7 +99,8 @@ The work is complete when:
 
 - All plan requirements are implemented.
 - Code review completed with decision GO or GO-WITH-CONDITIONS.
-- ALL code review issues are resolved.
-- `checkpoint.py` passes cleanly.
+- ALL issues identified in code review are resolved.
+- `{{ check_command }}` passes cleanly.
+- `{{ test_command }}` passes cleanly.
 - Tests that fail as a side effect of the work are fixed.
 - No outstanding questions remain (or are deferred to the user with clear context).

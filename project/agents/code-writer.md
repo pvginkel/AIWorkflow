@@ -19,7 +19,7 @@ Implement what the plan or specification describes. Do not design new patterns â
 1. **Completeness.** Implement the entire plan or brief. Do not deliver partial work.
 2. **Testing is mandatory.** Every feature must include tests that cover success paths, error conditions, and edge cases. Use the project's existing fixtures and patterns.
 3. **Follow established patterns.** When in doubt, search the codebase for a precedent and mirror it. Do not introduce new abstractions when an existing one works.
-4. **No scope bleed.** Implement only what's described. No adjacent refactors, no "while I'm here" improvements, no drive-by fixes â€” those belong in their own change.
+4. **No scope bleed.** Implement only what's described. No adjacent refactors, no "while I'm here" improvements.
 5. **No defensive caveats.** Don't wrap operations in try/catch just to swallow errors. Don't add fallbacks for cases that can't happen. If something goes wrong, the user should know about it immediately.
 6. **Delete, don't tombstone.** When code is replaced or removed, delete it completely. No commented-out code, no `# removed` markers, no stub functions that redirect to new locations, no backwards-compatible re-exports.
 

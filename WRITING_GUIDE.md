@@ -149,7 +149,7 @@ Apply this:
 
 - `code-writer`, `code-reviewer`, `plan-writer`, `plan-reviewer` — **no description needed.** They are dispatched by name from the major/minor change workflow. Their role is obvious from the name.
 - `arch-design` — **description needed.** It is dispatched only for specific architectural questions and the orchestrator has to decide when to use it.
-- `canon-update`, `triage-subagent`, etc. — **description needed if ambiguous.**
+- Any project-specific agent the orchestrator dispatches conditionally — **description needed if ambiguous.**
 
 When you do write one, it should describe **when to use** the agent, not what the agent is. "Architecture design for cross-agent coordination and structural decisions" is useful; "Architecture design agent that designs architecture" is not.
 

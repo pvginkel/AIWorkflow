@@ -27,9 +27,10 @@ orchestrator/.codehealthignore       → <project_root>/.codehealthignore
 
 # Orchestration scripts
 orchestrator/scripts/*.py            → <project_root>/scripts/
-                                       (build-all.py, regenerate-openapi.py,
-                                        _initd_log.py — referenced by
-                                        /run-slice's pre-flight and Step 2)
+                                       (preflight.py, build-all.py,
+                                        regenerate-openapi.py, _initd_log.py
+                                        — referenced by /run-slice's
+                                        pre-flight and Step 2)
 
 # Runtime tools
 tools/ai_workflow/*.py               → <project_root>/tools/ai_workflow/
@@ -66,7 +67,7 @@ Every file uses Jinja2-style placeholders. Do a find-and-replace pass with the v
 | `{{ check_command }}` | Lint/type/format command for the subproject | `poetry run check` / `pnpm run check` |
 | `{{ test_command }}` | Test command for the subproject | `poetry run pytest` / `pnpm exec playwright test` |
 | `{{ full_suite_command }}` | Full test suite command for the whole monorepo | `poetry run run-suite-remote` |
-| `{{ regen_api_command }}` | Command to regenerate generated API artifacts (if applicable); the shipped `regenerate-openapi.py` commits the result with `--commit` | `scripts/regenerate-openapi.py --frontend --portal --commit --slice <NUMBER>` |
+| `{{ regen_api_command }}` | Command to regenerate generated API artifacts (if applicable); commit the regenerated caches separately afterward | `scripts/regenerate-openapi.py --frontend --portal` |
 | `{{ issue_log_url }}` | URL to the project's issue log board | `https://trello.com/b/abc123/my-project-issues` |
 | `{{ subproject_names }}` | Subproject names for `claude_session.py` `VALID_PROJECTS` | `"backend", "frontend", "portal"` |
 | `{{ external_projects }}` | External project map for `claude_session.py` `EXTERNAL_PROJECTS` | `{"gateway": PROJECT_ROOT.parent / "Gateway"}` or `{}` |

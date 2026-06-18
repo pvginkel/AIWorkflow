@@ -15,7 +15,7 @@ If `code_review.md` already exists in that directory, **delete it first** so you
 - The plan (or change brief for minor changes) at the same slice subproject directory, if available.
 - The companion JSON files (`requirements.json`, `test_plan.json`) if they exist.
 - The exact code changes — unstaged changes by default. Refuse to review if the diff is missing.
-- This subproject's `CLAUDE.md` and `docs/conventions.md`.
+- This subproject's `CLAUDE.md` and `docs/conventions.md`. For cross-cutting rules, also the shared root conventions if your monorepo has them.
 
 ## Ignore (out of scope)
 
@@ -31,7 +31,7 @@ Write the updated JSON files back after completing your review.
 
 ## Document structure
 
-**Start the review document** with a structured JSON decision block inside a fenced code block:
+**Start the review document** with a structured JSON decision block:
 
 ````markdown
 ```json
@@ -49,88 +49,41 @@ Then continue with the prose sections below. Quote evidence (`file:line-range`) 
 
 ### 1) Summary & decision
 
-```
-**Readiness**
-<single paragraph on overall readiness>
-
-**Decision**
-`GO` | `GO-WITH-CONDITIONS` | `NO-GO` — <brief reason tied to evidence>
-```
+**Readiness** — single paragraph on overall readiness.
+**Decision** — `GO` | `GO-WITH-CONDITIONS` | `NO-GO` with brief reason tied to evidence.
 
 ### 2) Conformance to plan (with evidence)
 
-Explain how the implementation maps to the approved plan. Flag any deviations or missing deliverables:
-
-```
-**Plan alignment**
-- <plan section> ↔ `code_path:lines` — <snippet showing implementation>
-- ...
-
-**Gaps / deviations**
-- <plan commitment> — <what's missing or differs> (`code_path:lines`)
-- ...
-```
+How the implementation maps to the plan. Plan alignment (plan section ↔ code path), and gaps/deviations.
 
 ### 3) Correctness — findings (ranked)
 
-List every correctness issue in descending severity. For each:
+Every correctness issue in descending severity. For each: title (severity — short summary), evidence (`file:lines`), impact, fix (minimal viable change), confidence.
 
-```
-- Title: <Severity> — <short summary>
-- Evidence: `file:lines` — <snippet or paraphrase>
-- Impact: <user/system consequence>
-- Fix: <minimal viable change>
-- Confidence: <High / Medium / Low>
-```
-
-**No-bluff rule:** For every **Blocker** or **Major**, include either (a) a runnable test sketch or (b) step-by-step logic showing the failure. Otherwise downgrade to **Minor** or move to *Questions*.
+**No-bluff rule:** For every **Blocker** or **Major**, include either (a) a runnable test sketch or (b) step-by-step logic showing the failure. Otherwise downgrade to **Minor** or move to Questions.
 
 **Hedge-words downgrade:** if your rationale uses *observability*, *cosmetic*, *arguably*, *could be*, *negligible*, *conservative-correct* — the finding is not Major; move it to section 5 or drop it. Examples that are not Major: naming a constant, adding a timing comment, widening an error message, adding a log line.
 
 Severity:
-
-- **Blocker** — violates product intent, corrupts or loses data, breaks migrations or DI wiring, untestable core flow → typically `NO-GO`.
+- **Blocker** — violates product intent, corrupts/loses data, breaks migrations/DI wiring, untestable core flow → typically `NO-GO`.
 - **Major** — correctness risk, API/contract mismatch, ambiguous behavior affecting scope → often `GO-WITH-CONDITIONS`.
 - **Minor** — non-blocking clarity/ergonomics.
 
 ### 4) Over-engineering & refactoring opportunities
 
-Hotspots with unnecessary abstraction, duplication, or unclear ownership. Describe the smallest refactor that restores clarity:
-
-```
-- Hotspot: <module/function showing over-design>
-- Evidence: `file:lines` — <snippet>
-- Suggested refactor: <minimal change>
-- Payoff: <testability/maintenance benefit>
-```
+Hotspots with unnecessary abstraction, duplication, or unclear ownership. Smallest refactor that restores clarity.
 
 ### 5) Style & consistency
 
-Substantive consistency issues that threaten maintainability (transactions, error handling, metrics usage, etc.):
-
-```
-- Pattern: <inconsistency observed>
-- Evidence: `file:lines` — <snippet>
-- Impact: <maintenance/testability consequence>
-- Recommendation: <concise alignment step>
-```
+Substantive consistency issues that threaten maintainability (transactions, error handling, metrics usage).
 
 ### 6) Tests & deterministic coverage (new/changed behavior only)
 
-For each changed behavior, document the exercised scenarios and coverage gaps. Missing scenarios or hooks should be marked **Major** with proposed minimum-viable tests:
-
-```
-- Surface: <API/service/migration/etc.>
-- Scenarios:
-  - Given <context>, When <action>, Then <outcome> (`tests/path::test_name`)
-- Hooks: <fixtures/factories/injector wiring>
-- Gaps: <missing cases or instrumentation>
-- Evidence: <code_path:lines or test file references>
-```
+For each changed behavior: exercised scenarios, supporting fixtures/hooks, coverage gaps. Missing scenarios should be marked **Major** with proposed minimum-viable tests.
 
 ### 7) Adversarial sweep — must attempt ≥3 credible failures or justify none
 
-Attack likely fault lines for this subproject's stack.
+Attack likely fault lines for this subproject's stack:
 
 {% block adversarial_focus_areas %}
 {# Project-specific fault lines. Examples:
@@ -146,45 +99,21 @@ Attack likely fault lines for this subproject's stack.
 - <area 3>
 {% endblock %}
 
-Report findings using the template from section 3. If the sweep turns up no credible failures, document the attempted attacks and rationale:
-
-```
-- Checks attempted: <list of fault lines probed>
-- Evidence: <code_path:lines or test output references>
-- Why code held up: <reasoning that closes the risk>
-```
+Report findings using the template from section 3. If the sweep turns up no credible failures, document the attempted attacks and rationale.
 
 ### 8) Invariants checklist (stacked entries)
 
-At least three entries or a justified "none; proof":
-
-```
-- Invariant: <statement the system must uphold>
-  - Where enforced: <module or test proving it (`file:lines`)>
-  - Failure mode: <how the invariant could break>
-  - Protection: <existing guard, transaction, or test>
-  - Evidence: <additional path:lines as needed>
-```
+At least three entries or justified "none; proof." For each: invariant (statement the system must uphold), where enforced (`file:lines`), failure mode, protection (guard/transaction/test), evidence.
 
 If an entry shows filtered/derived state driving a persistent write/cleanup without a guard, escalate to at least **Major**.
 
 ### 9) Questions / needs-info
 
-Unresolved questions that block confidence in the change:
-
-```
-- Question: <what you need to know>
-- Why it matters: <decision blocked or risk introduced>
-- Desired answer: <specific clarification or artifact>
-```
+Unresolved questions that block confidence. For each: question, why it matters, desired answer.
 
 ### 10) Risks & mitigations (top 3)
 
-```
-- Risk: <concise statement tied to evidence>
-- Mitigation: <action or follow-up to reduce impact>
-- Evidence: <reference to finding/question `path:lines`>
-```
+Risk, mitigation, evidence.
 
 ### 11) Confidence
 
@@ -192,11 +121,11 @@ Unresolved questions that block confidence in the change:
 
 ## Method
 
-1. **Assume wrong until proven.** Stress transactions, DI wiring, migrations, and test data.
-2. **Quote evidence.** Every claim includes `file:lines` and plan refs when applicable.
-3. **Be diff-aware.** Focus on changed code first, but validate touchpoints (models, schemas, services, API, tests, observability).
-4. **Prefer minimal fixes.** Propose the smallest change that closes the risk.
-5. **Don't self-certify.** Never claim "fixed"; suggest patches or tests.
+1. **Assume wrong until proven**: stress transactions, DI wiring, migrations, and test data.
+2. **Quote evidence**: every claim includes `file:lines` and plan refs when applicable.
+3. **Be diff-aware**: focus on changed code first, but validate touchpoints (models, schemas, services, API, tests, observability).
+4. **Prefer minimal fixes**: propose the smallest change that closes the risk.
+5. **Don't self-certify**: never claim "fixed"; suggest patches or tests.
 
 ## Stop condition
 

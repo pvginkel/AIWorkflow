@@ -18,7 +18,7 @@ Use this skill when a slice or feature involves:
 **Do not use** for:
 - Slices that follow established patterns — the dev agent's planning phase handles those.
 - Implementation-level decisions within a single subproject (callback threading, DI wiring).
-- Questions that are answered by existing convention docs.
+- Questions that are answered by `docs/conventions.md` or `docs/architecture_decisions.md`.
 
 ## Procedure
 

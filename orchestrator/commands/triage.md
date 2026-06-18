@@ -2,7 +2,7 @@
 
 Turn a batch of findings into grounded, sliced implementation work. Argument: path to a findings document (e.g., `tmp/uat_testing.md`).
 
-The findings document can be a UAT run, a list of bugs, a change-request dump, or any unstructured collection of issues. This skill converts it into fully documented implementation slices ready for `/run-slice`.
+The findings document can be a UAT run, a list of bugs, a change-request dump, or any unstructured collection of issues. This skill converts it into fully documented implementation slices ready to run.
 
 ## What this skill does
 
@@ -12,21 +12,16 @@ You are the orchestrator. You do not write application code — you produce slic
 
 ### Phase 1: Collect and consolidate
 
-**1a. Fetch your issue tracker's intake queue** — the outstanding items to consider alongside the findings.
+**1a. Read the findings document** passed as the argument.
 
-**1b. Dispatch the `triage-consolidator` sub-agent** to build the consolidated test-results document:
+**1b. Read the issue tracker.** Fetch the outstanding items in your issue tracker's intake queue. These should be considered alongside the findings.
 
-```
-Findings document: <path passed as the skill argument>
-Today's date: <YYYY-MM-DD>
-Intake-queue items:
-- #<id> <title> — <description>
-- ...
-```
+**1c. Write a consolidated test-results document** at `{{ specs_repo_path }}/test_results_YYYY-MM-DD.md`. Every item gets a numbered entry with:
 
-It reads the findings document, merges it with the intake items (one entry per distinct issue, both sources recorded on a merged entry), groups related items, and writes `{{ specs_repo_path }}/test_results_YYYY-MM-DD.md` — numbered entries, each with a description, a **Source**, and a **QUESTION** marker where the item is not yet clear.
+- Clear description of the issue.
+- Source (findings document reference, issue-tracker id, or both).
 
-**1c. Present the document to the user** and iterate on the QUESTION markers until every item is understood. This may take multiple rounds.
+Group related items. For every item that isn't clear, add a **QUESTION** marker. Present the document to the user and iterate on questions until all items are understood.
 
 ### Phase 2: Ground in code
 
@@ -45,7 +40,7 @@ It reads the findings document, merges it with the intake items (one entry per d
 
 **3a. Identify items that don't belong in slices:**
 
-- Infrastructure or tooling issues that bypass the dev-agent workflow.
+- Infrastructure or tooling quality issues that bypass the dev-agent workflow → extract to a dedicated notes file.
 - Already-fixed items → mark as resolved and remove.
 - Discussion points without actionable work → flag for user.
 
@@ -53,7 +48,7 @@ It reads the findings document, merges it with the intake items (one entry per d
 
 ### Phase 4: Create slices
 
-**4a. Design the slice grouping.** Follow these principles:
+**4a. Design the slice grouping.** Group items into slices following these principles:
 
 - Each slice should be independently runnable.
 - Minimize dependencies between slices (a few are fine).
@@ -94,16 +89,23 @@ For each slice, create the full documentation set. Work through slices in parall
 
 1. **First pass — overview, acceptance criteria, API contract.** These define what the slice does, what must be true when done, and what API changes are needed. Delegate to subagents in parallel. Each agent creates:
    - `overview.md` — requirements (R1, R2, …), background, dependencies, scope.
-   - `acceptance_criteria.json` — structured criteria with IDs.
+   - `acceptance_criteria.json` — structured criteria with IDs (BE-01, FE-01, PO-01, RE-01).
    - `api_contract.json` — endpoints and schema changes (or empty if no API changes).
 
-2. **Second pass — UX designs (where needed).** For slices that need UX design, generate them using Codex after the overview and acceptance criteria exist:
+2. **Second pass — UX designs (where needed).** For slices that need UX design, generate them using Codex after the overview and acceptance criteria exist. Write a prompt file and run:
 
    ```bash
    python3 {{ project_root }}/tools/ai_workflow/codex_exec.py --prompt-file <file> --response-file <file>
    ```
 
-   The first line of the prompt must be `$frontend-ux-designer`. See `/write-slice` for when a UX design is needed.
+   The prompt must start with `$frontend-ux-designer` and follow the documented structure (what you're designing, what to read, current state, problems, what the design must cover, constraints, deliverable).
+
+   **UX design is needed when:**
+   - New screens or views
+   - Novel interaction patterns
+   - Complex state management or conditional UI
+   - Multiple visual options that need a decision
+   - Ambiguous or underspecified UI behavior
 
 3. **Third pass — briefs.** Write per-subproject briefs that reference the acceptance criteria and (where applicable) the UX design. Delegate to subagents in parallel.
 
@@ -113,7 +115,12 @@ For each slice, create the full documentation set. Work through slices in parall
 
 **6a. Update `{{ specs_repo_path }}/README.md`** — add all new slices to the **Pending** section.
 
-**6b. Update the issue tracker.** For each tracker entry that was assigned to a slice: add a slice label, add type/area labels, rewrite the description with structured markdown, move the item from the intake queue to "planned."
+**6b. Update the issue tracker.** For each tracker entry that was assigned to a slice:
+
+- Add a slice label (e.g., "Slice 048") — create the label if it doesn't exist.
+- Add type labels (Bug, Enhancement, Tech Debt) and area labels.
+- Rewrite the entry description with structured markdown (summary, details, action, origin).
+- Move the entry from the intake queue to "planned."
 
 ### Phase 7: Write summary and DAG
 
@@ -146,10 +153,10 @@ Do NOT invent hard dependencies. Slices are intentionally independent where poss
 
 **Do NOT include execution waves.** The user's parallel capacity varies run-to-run. A DAG is more flexible than a wave plan — the user picks from free nodes based on current capacity.
 
-**7c. Notify the user** that triage is complete:
+**7c. Notify the user:**
 
 ```bash
-python3 {{ notification_script }} --title "Triage complete" "N items triaged into M slices. Summary at {{ specs_repo_path }}/..._summary.md. Run DAG at {{ specs_repo_path }}/..._dag.md."
+python3 {{ notification_script }} --title "Triage complete" "N items triaged into M slices. Summary at {{ specs_repo_path }}/..._summary.md. Run DAG at {{ specs_repo_path }}/..._dag.md. UX designs ready for review."
 ```
 
 ## Key principles
