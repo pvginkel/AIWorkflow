@@ -112,7 +112,7 @@ Think of each command as a script that choreographs the agents, not a place to e
 
 Each agent definition contains:
 
-1. **Frontmatter** — `name`, `model` (optional), and `description` *only if the LLM needs to choose this agent vs. another*. See "When to write a description" below.
+1. **Frontmatter** — `name` and `description` (**both required** — Claude Code does not register an agent that has no `description`; see below), plus `model` (optional).
 2. **Role** — one paragraph stating what the agent is and what it produces.
 3. **Output location** — where the agent writes its artifact.
 4. **Sections to produce** (for plan-writer / plan-reviewer / code-reviewer) — the structure of the artifact, with templates and examples.
@@ -139,19 +139,16 @@ Should **not** contain:
 - Detailed agent behavior (the agent's own definition owns that).
 - Generic Claude Code etiquette (parallel tool calls, read before write) — those belong in `CLAUDE.md` once, not in every skill.
 
-## When to write a `description` in agent frontmatter
+## The `description` in agent frontmatter (required)
 
-Agent descriptions are visible in the Task tool's `subagent_type` enum at session start. They help the LLM pick the right agent when *the LLM itself is choosing*. The rule:
+**Every agent needs a `description`.** Claude Code only registers an agent that has one — an agent with just a `name` is silently dropped from the Task tool's `subagent_type` enum and **cannot be dispatched at all**, not even by name from a workflow doc or skill. (Learned the hard way: the four dev agents originally shipped with no description, on the theory that name-dispatched agents don't need one, and *every* change-workflow run silently fell back to `general-purpose`. The agent files were present, valid, and at the repo root — they just weren't registered, because they had no description.)
 
-> Only write a description if the LLM has to decide whether to dispatch this agent. If the agent is always dispatched by name from a workflow doc or a skill, the description is wasted context.
+The description is also what the LLM reads to choose an agent when *it* is deciding, so make it accurate:
 
-Apply this:
+- For an agent the orchestrator dispatches **conditionally** (e.g. `arch-design`), the description should say **when to use** the agent — that is what the LLM keys on. "Architecture design for cross-agent coordination and structural decisions" is useful; "Architecture design agent that designs architecture" is not.
+- For an agent **always dispatched by name** from a workflow (`code-writer`, `code-reviewer`, `plan-writer`, `plan-reviewer`), a one-line statement of its role is enough — but it is still mandatory for the agent to exist in the registry.
 
-- `code-writer`, `code-reviewer`, `plan-writer`, `plan-reviewer` — **no description needed.** They are dispatched by name from the major/minor change workflow. Their role is obvious from the name.
-- `arch-design` — **description needed.** It is dispatched only for specific architectural questions and the orchestrator has to decide when to use it.
-- Any project-specific agent the orchestrator dispatches conditionally — **description needed if ambiguous.**
-
-When you do write one, it should describe **when to use** the agent, not what the agent is. "Architecture design for cross-agent coordination and structural decisions" is useful; "Architecture design agent that designs architecture" is not.
+Agents register from the **repo-root** `.claude/agents/` only (the git root), never from subproject subdirectories — see [`ADOPTING.md`](ADOPTING.md).
 
 ## The no-duplication rule
 
