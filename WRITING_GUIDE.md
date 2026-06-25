@@ -141,14 +141,14 @@ Should **not** contain:
 
 ## The `description` in agent frontmatter (required)
 
-**Every agent needs a `description`.** Claude Code only registers an agent that has one — an agent with just a `name` is silently dropped from the Task tool's `subagent_type` enum and **cannot be dispatched at all**, not even by name from a workflow doc or skill. (Learned the hard way: the four dev agents originally shipped with no description, on the theory that name-dispatched agents don't need one, and *every* change-workflow run silently fell back to `general-purpose`. The agent files were present, valid, and at the repo root — they just weren't registered, because they had no description.)
+**Every agent needs a `description`.** Claude Code only registers an agent that has one — an agent with just a `name` is silently dropped from the Task tool's `subagent_type` enum and **cannot be dispatched at all**, not even by name from a workflow doc or skill. (Learned the hard way: the four dev agents originally shipped with no description, on the theory that name-dispatched agents don't need one, and *every* change-workflow run silently fell back to `general-purpose`. The agent files were present and valid — they just weren't registered, because they had no description. Placement was never the issue: a two-phase experiment confirmed that the same agents register fine from a subproject `.claude/agents/` the moment a `description` is added.)
 
 The description is also what the LLM reads to choose an agent when *it* is deciding, so make it accurate:
 
 - For an agent the orchestrator dispatches **conditionally** (e.g. `arch-design`), the description should say **when to use** the agent — that is what the LLM keys on. "Architecture design for cross-agent coordination and structural decisions" is useful; "Architecture design agent that designs architecture" is not.
 - For an agent **always dispatched by name** from a workflow (`code-writer`, `code-reviewer`, `plan-writer`, `plan-reviewer`), a one-line statement of its role is enough — but it is still mandatory for the agent to exist in the registry.
 
-Agents register from the **repo-root** `.claude/agents/` only (the git root), never from subproject subdirectories — see [`ADOPTING.md`](ADOPTING.md).
+Agent discovery is hierarchical: Claude Code merges every `.claude/agents/` from the session's cwd up to the git root. Orchestrator agents go in the repo-root `.claude/agents/`; dev agents go in each subproject's `.claude/agents/` and are picked up because the session manager runs the dev session with its cwd set to that subproject — see [`ADOPTING.md`](ADOPTING.md).
 
 ## The no-duplication rule
 

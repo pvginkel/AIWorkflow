@@ -18,11 +18,9 @@ From the root of the template, copy into your project:
 orchestrator/CLAUDE.md               → <project_root>/CLAUDE.md
 orchestrator/commands/*.md           → <project_root>/.claude/commands/
 orchestrator/agents/*.md             → <project_root>/.claude/agents/
-                                       (ALL agents — arch-design,
-                                        slice-verifier, and the four dev
-                                        agents plan-writer/plan-reviewer/
-                                        code-writer/code-reviewer — register
-                                        ONLY from the repo root; see note below)
+                                       (orchestrator agents — arch-design,
+                                        slice-verifier — at the repo root;
+                                        dev agents are per-subproject, below)
 
 # Root scaffolding (Poetry/pnpm/gitignore)
 orchestrator/pyproject.toml          → <project_root>/pyproject.toml
@@ -50,11 +48,15 @@ tools/code_health/                   → <project_root>/tools/code_health/
 # Per-subproject content — repeat for each subproject
 project/CLAUDE.md                    → <project_root>/<subproject>/CLAUDE.md
 project/docs/*.md                    → <project_root>/<subproject>/docs/
+project/agents/*.md                  → <project_root>/<subproject>/.claude/agents/
+                                       (the four dev agents plan-writer/
+                                        plan-reviewer/code-writer/code-reviewer
+                                        — one copy per subproject; see note below)
 ```
 
-**All agents live in the repo-root `.claude/agents/` — never per subproject.** Claude Code registers project agents **only from the git root** (the directory `git rev-parse --show-toplevel` returns), not from subproject subdirectories. A monorepo has one git root, so agents placed in `<subproject>/.claude/agents/` are silently never loaded and every dev run falls back to `general-purpose`. (`CLAUDE.md`, by contrast, *does* load hierarchically — cwd plus every parent up to the root — which is why the per-subproject `CLAUDE.md` above works even though per-subproject agents do not. The two use different resolution rules; this is the trap.)
+**Agent discovery walks *up* from the session's cwd to the git root**, merging every `.claude/agents/` it passes — the same hierarchical rule `CLAUDE.md` uses. So the orchestrator agents (`arch-design`, `slice-verifier`) live in the repo-root `.claude/agents/`, and the **dev agents live per subproject** in `<subproject>/.claude/agents/`. The session manager dispatches each dev agent with its cwd set to that subproject (`claude_session.py` runs `claude` with `cwd=<subproject>`), so the dev session sees its own subproject's agents **and** the root orchestrator agents. Copy one set of dev agents into each subproject and replace `{{ subproject }}` with the subproject's name; this lets each subproject specialize its dev agents (matching how DesignAssistant ships a tailored `code-writer` per stack). Shared per-subproject context still belongs in that subproject's `CLAUDE.md` + `docs/conventions.md`, which load automatically from the dev agent's working directory.
 
-So a **single** generic copy of each dev agent serves every subproject. The per-subproject context a dev agent needs is delivered through that subproject's `CLAUDE.md` + `docs/conventions.md`, which load automatically from the dev agent's working directory — not through separate per-stack agent files. The dev agents refer to the subproject as a runtime `<subproject>` placeholder the orchestrator fills in when it dispatches the change workflow. If a rule is genuinely backend-only or frontend-only, put it in that subproject's `CLAUDE.md`/`conventions.md`, not in a forked agent.
+> **The one hard requirement is the `description:` frontmatter field** — *not* placement. Claude Code silently drops any agent file that has only a `name:` from the Task tool's `subagent_type` enum, wherever it sits. (Learned the hard way: the dev agents originally shipped name-only, and *every* change-workflow run silently fell back to `general-purpose`. The fix was adding a `description`, not moving the files — a two-phase experiment later confirmed that subproject agents register fine as long as they carry one. See [`WRITING_GUIDE.md`](WRITING_GUIDE.md).)
 
 ## Step 2: Fill in the variables
 

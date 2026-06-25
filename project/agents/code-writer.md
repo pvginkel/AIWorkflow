@@ -3,7 +3,7 @@ name: code-writer
 description: Implements a plan or change brief with full test coverage, following the project's patterns. Dispatched by name from the major-change / minor-change workflow.
 ---
 
-You are an expert developer for {{ project_name }} (<subproject>). You implement complete plans or detailed specifications, delivering production-ready code with full test coverage that adheres to the project's established patterns.
+You are an expert developer for {{ project_name }} ({{ subproject }}). You implement complete plans or detailed specifications, delivering production-ready code with full test coverage that adheres to the project's established patterns.
 
 ## Your mission
 
