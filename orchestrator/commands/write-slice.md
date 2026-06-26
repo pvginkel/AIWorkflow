@@ -1,6 +1,15 @@
 # Write Slice
 
-Author an implementation slice. Argument: a short description of what the slice should deliver (e.g., "session lock rework using User FK").
+Author an implementation slice. **Required input: a change-request bundle** produced by `/triage`,
+under `{{ specs_repo_path }}/change_requests/<slug>/`. Argument: the path to that bundle (or its slug).
+
+A slice is never authored from a bare request — it is authored from a bundle. If you were handed a
+raw request with no bundle, stop and run `/triage` first (the only exception is the narrow
+interactive minimal-change path described in `/triage`, which still produces the bundle).
+
+**Normative keywords.** MUST / MUST NOT / SHOULD / SHOULD NOT / MAY in the slice's acceptance
+criteria, briefs, and overview carry their RFC 2119 / BCP 14 meaning. Use them deliberately when
+stating requirements.
 
 ## What you produce
 
@@ -8,9 +17,10 @@ A complete slice directory under `{{ specs_repo_path }}/slices/<NUMBER>_<snake_c
 
 ```
 <NUMBER>_<snake_case_name>/
-  overview.md                 — what the slice delivers, why, dependencies
+  overview.md                 — summary of what the slice delivers, why, dependencies
   acceptance_criteria.json    — testable conditions confirming the slice is done
   api_contract.json           — structured API specification
+  authoring_notes.md          — authoring decision log + open questions (kept as a record)
   grounding_check.md          — per-brief record of verified file:line citations
                                 (always required when any brief is produced)
   ux_design.md                — designer-driven UX exploration (optional)
@@ -22,23 +32,62 @@ Only create the subproject folder for surfaces the slice actually touches — a 
 
 `ux_design.md` is optional — see Step 8 for when to produce one.
 
-Add the slice to the **Pending** section of `{{ specs_repo_path }}/README.md`.
+Add the slice to the **Pending** section of `{{ specs_repo_path }}/README.md` as a **single
+line** matching the existing entries — `- **NNN** — <short title>: <one-clause summary>
+(#refs; DNNN)`. No status blob: the slice's `overview.md` is where the detail lives. The
+README slice index is a lean catalogue (mirroring the thin `decisions.md` index), not a
+narrative.
 
 ## Procedure
 
-### Step 1: Understand the request
+### Step 1: Read the change-request bundle
 
-Read the user's description. If it's vague, ask clarifying questions before proceeding. You need to understand:
+Read every file in the bundle — `change_request.md` and any attachments. The bundle is your source
+of truth: triage has already absorbed the findings, the issue-tracker cards, the Q&A, and any prior
+design work into it. You need to understand:
 
 - **What problem** is being solved or what capability is being added.
-- **Which surfaces** are affected (backend, frontend, portal, or a combination).
-- **What the user expects** to see when the slice is done.
+- **Which surfaces** are likely affected (backend, frontend, portal, or a combination).
+- **What the operator expects** to see when the slice is done.
 
-**Capture every explicit request.** If the user says "I want X," X must become an acceptance criterion — not a suggestion, not a nice-to-have, not something softened into a different approach because it seems easier. If you think X is problematic or infeasible, say so and discuss it. Do not silently substitute a different approach.
+**Capture every explicit request.** If the bundle (or the operator) says "I want X," X MUST become an acceptance criterion — not a suggestion, not a nice-to-have, not something softened into a different approach because it seems easier. If you think X is problematic or infeasible, say so and discuss it. Do not silently substitute a different approach.
 
-**Push back when needed.** If the user's request has issues — conflicts with existing architecture, technically infeasible, would create problems downstream — raise it now. A conversation about feasibility is always better than silently delivering something different.
+Check the issue tracker (the `{{ owner_tag }}` cards the bundle references, now in the Triage board's **Accepted** list) for any context the bundle didn't capture.
 
-Check the issue log (Planned list) for cards related to this work — they may contain context, constraints, or prior decisions.
+### Step 1b: Reconcile with the bundle and challenge — return to the operator only on a delta
+
+The bundle is the **authoritative statement of intent** — triage already clarified it with the operator and absorbed that Q&A. Do **not** re-interview the operator or re-derive what the bundle already settles; that just spends the same touchpoint twice. Instead:
+
+1. **Take the bundle's understanding as your baseline.** Read it as authoritative and record your reading in `authoring_notes.md`. You do not need a confirm-back round for anything the bundle already answers.
+2. **Challenge when the request cuts against an established pattern** — project or general (style, architecture, infrastructure, security; `CLAUDE.md`; `{{ specs_repo_path }}/decisions.md`; the API contracts). This is what deeper grounding newly surfaces, so it is the part worth raising. The sole purpose is to ensure you do not deviate from the request without the operator being aware. Likely outcomes:
+   - The operator changes their mind → the request improves.
+   - The operator overrules your objection → you MUST capture *why*, so the direction is explicit.
+   - You learn context you were missing → it is critical to a correct end product.
+3. **Return to the operator only on a genuine delta** — a pattern conflict, an ambiguity the bundle did not resolve, or something your grounding revealed that changes the shape. If the bundle is clear and grounding surfaces nothing to raise, proceed without a round; the operator still reviews everything at Step 9.
+4. **Record the outcome in the slice** (the working document below, and the overview's Constraints/Decisions). Writing it down is what stops a later agent — which will share your instinct — from accidentally re-deviating.
+
+### Step 1c: Keep an authoring working document (`authoring_notes.md`)
+
+While you write the slice, maintain `authoring_notes.md` in the slice folder. It carries two logs and stays in the slice as a permanent record — distinct from `qa_log.md`, which `/run-slice` keeps for the dev-agent Q&A.
+
+- **Decision Log — genuine A/B decisions only.** Log a point **only** when you weighed real alternatives and the choice could reasonably have gone the other way (e.g. *which framework*, *what the exit codes are*, *whether to split the bundle*). Do **not** log requirements, restatements of the brief, natural or forced outcomes, or administrative bookkeeping — these are not decisions and they bury the ones that matter. Things that do **not** belong: "no behaviour change to X" (a requirement); "no wire-contract / config / regen impact" (a natural outcome); "decision id = DNNN" or "design doc placed at …" (administrative); "called out the edge cases" (a requirement). If an item has no plausible alternative, leave it out. Aim for a short log of real decisions, not a diary. Use this **exact format**, one entry per decision (headings and bullets, **no tables**):
+
+  ```
+  - <short description of the decision>
+    - <the options / alternatives that were on the table>
+    - <the choice> — <the reasoning, citing a DNNN or a rule where one applies>
+  ```
+
+- **Open Questions.** Questions for the operator that the bundle did not settle. Use this format, with the answer slot written as `_Unanswered_` until the operator fills it in:
+
+  ```
+  - <the question>
+    - _Unanswered_
+  ```
+
+  When a question is answered, replace `_Unanswered_` with the answer; if it was a real A/B, also fold the resolved choice into the Decision Log.
+
+**Write the slice iteratively** when it is non-trivial: make some progress, log your decisions and questions, ask the operator to answer the open questions, then continue. Repeat until the slice is done. When the operator reviews the decisions and asks you to change one, treat it exactly as if they had answered an open question — go back into the loop and revise. That is a *good* outcome: without it the slice would likely have shipped something the operator didn't want.
 
 ### Step 2: Research the codebase
 
@@ -53,9 +102,32 @@ Do not write briefs based on assumptions about what the code looks like. Read it
 
 **Adjust research to fit the request.** A feature adding a new API endpoint needs you to understand models, services, and existing patterns. A mechanical change like "normalize every version pin" does not — it needs a clear rule and broad scope. Match the depth of your research to what the user actually asked for, and carry that through to the briefs: if the request is rule-based, the brief should state the rule and let the agent apply it, not enumerate every individual change (which agents misread as a closed set).
 
+### Step 2b: Decide whether to split the bundle
+
+One bundle usually becomes one slice. Dev agents do significant work in one sitting, and bundling keeps cycle time down — so the default is a single slice. Split the bundle into multiple slices only when there is a **clear** need (a genuine blocking dependency between parts, or work too large to stay coherent in one slice). When you split, record the split and its reason in `authoring_notes.md`. Prefer one slice; do not split for tidiness.
+
 ### Step 3: Assign a slice number
 
-Check `{{ specs_repo_path }}/README.md` for the next available number. Use a letter suffix (e.g., `087b`) if this is follow-up work to an existing slice.
+Slice numbers come from a **shared lock-guarded counter** so concurrent `/write-slice` sessions never
+collide — several may run at once against the same `{{ specs_repo_path }}` working tree, and reading the
+README (or scanning `slices/`) for "the next number" races: two sessions pick the same one. Allocate
+with the helper script and use what it prints:
+
+```bash
+N=$({{ specs_repo_path }}/scripts/allocate-next-slice.sh)   # prints e.g. 044
+```
+
+The script `flock`-serializes concurrent callers and persists the reservation to `slices/.next-slice`
+**before** your slice folder is created, so a parallel session sees the bump immediately. `.next-slice`
+and `.slice-alloc.lock` are host-local coordination, **git-ignored** (not spec artifacts);
+`.next-slice` self-seeds from the highest `NNN_` on disk if it is ever missing. A burned number
+(allocate, then abandon the slice) leaves a harmless gap — the accepted cost of collision-safety. The
+README slice index is no longer the number oracle; you still add the slice to it (Step 10), but the
+counter decides the number.
+
+**Follow-up work** to an existing slice does **not** use the allocator — pick a letter suffix tied to
+that slice (e.g. `087b`), since the number deliberately follows slice 087 rather than being freshly
+sequenced.
 
 ### Step 4: Write the overview
 
@@ -69,6 +141,8 @@ Structure:
 4. **Current state** — what exists today (if relevant).
 5. **Dependencies** — which prior slices must be complete.
 6. **Scope** — what surfaces are affected; explicitly note what's out of scope.
+
+**Keep the overview at summary level.** The overview orients a reader — it is not where the working detail lives. The per-subproject **briefs carry the detail** (current-state `file:line` citations, task specifics, edge cases); the overview summarizes. Do not restate a brief's contents in the overview — state the outcome and the requirements at a glance and let the brief hold the rest. A reader should grasp the slice from the overview and reach for a brief when they need one subproject's specifics. This is deliberate: keeping detail in one place avoids the overview/brief duplication that otherwise drifts out of sync.
 
 ### Step 5: Write acceptance criteria
 
@@ -260,7 +334,7 @@ The artifact lets the orchestrator and reviewers see the grounding pass actually
 
 ### Step 8: Consider UX design
 
-If the slice involves new screens, novel interactions, complex state management, or ambiguous UI behavior, note in the overview that a UX design is needed. The user can generate one via the `/ux-design` skill before the frontend/portal briefs are written. The briefs then reference the UX design.
+If the slice involves new screens, novel interactions, complex state management, or ambiguous UI behavior, note in the overview that a UX design is needed. The operator can generate one via the `/ux-design` skill before the frontend/portal briefs are written. The briefs then reference the UX design.
 
 ### Step 8b: Consider architecture design
 
@@ -274,16 +348,34 @@ Most slices follow an existing pattern and do not need a separate `/arch-design`
 
 For "follow the existing pattern" slices, the brief plus the dev agent's own planning is sufficient. Do not default to running arch-design as a safety net.
 
-### Step 9: Present to user
+### Step 9: Present to the operator
 
-Show the user a summary of what you've written:
+Show the operator a summary of what you've written:
 
 - Which agents will run.
 - Key requirements and acceptance criteria.
-- Any design decisions or trade-offs you made.
-- Questions or ambiguities that need resolution.
+- The **Decision Log and any Open Questions** in `authoring_notes.md` — present the working document alongside the slice so the operator can review the decisions and push back.
+- Any design decisions or trade-offs you made, and any ambiguities still open.
 
-Wait for the user to review and approve before considering the slice complete.
+Wait for the operator to review and approve. If they challenge a decision or answer an open question, go back into the authoring loop (Step 1c) and revise before considering the slice complete.
+
+### Step 10: Absorb the bundle and update the tracker
+
+Once the slice is approved:
+
+1. **Absorb all source material into the slice.** Everything in the bundle — the `change_request.md` content, the Q&A, the referenced issue-tracker items, and any attachment — MUST be reflected in the slice (overview, acceptance criteria, briefs, `authoring_notes.md`). Only a *substantial* attachment worth keeping verbatim (a long prior design doc, e.g. an arch-design) lives **inside the slice directory** and is linked from the overview; everything else is absorbed in place. **Slice-owned documents — including any design doc — stay with the slice; never park them in `handovers/`** (that folder is for transient cross-session handoffs and accrues cruft). For a design that spans a multi-slice program, keep it in the **keystone slice's** directory and reference it from the program's other slices — it survives there (the slice moves to `completed/`) after the change-request bundle is deleted.
+2. **Delete the bundle.** When the slice is complete and self-contained, delete the `change_requests/<slug>/` folder — the operator should be able to delete it with nothing lost. The issue-tracker items are **kept** (they track the work; their content lives in the slice now).
+3. **Replace the source cards with a slice card.** The source cards (`{{ owner_tag }}`-tagged, in the Triage board's **Accepted** list) were just collected thoughts and ideas — they have no standalone value now that the slice exists. Create **one new card on the Kanban board in the To Do list that represents the slice** (title = `[NNN] <slice title>` — the slice number in brackets so the card shows which slice it is; the `{{ owner_tag }}` owner tag and no other labels; a short description that gives the highlights — not a restatement of the slice — points to the slice folder, and **lists the source-card ids it subsumes** so the thread from raw idea to slice survives the archive). Then **archive the source cards** that fed this slice. If you split the bundle into multiple slices, create one Kanban card per slice — each listing the source ids it subsumes — and archive the source cards across them. From here that single slice card is what flows **To Do → In Progress → Done**.
+
+### Step 11: Lodge the slice's decisions in the docs
+
+The decisions and conventions this slice establishes are project documentation, not just a slice artifact — and you, the slice author, are the one to lodge them (per [`docs/documentation-model.md`](docs/documentation-model.md)). You already recorded them in `authoring_notes.md` and the overview; now give them their durable home:
+
+- For each decision or convention the slice establishes or changes, write its rationale into the owning `docs/` topic doc — this subproject's, or the **root** `docs/` for cross-cutting design — splitting or adding a small topic doc rather than growing one. State it as the design, not as a dated log entry.
+- Add or update its row in the thin decision index (`{{ specs_repo_path }}/decisions.md`): `ID | decision | where`, ≤100-character lines, linking to the doc. Mint the next `DNNN` for a new standing decision; keep existing ids stable.
+- Leave **how-it-works detail that depends on the final implementation** to `/run-slice`'s close-out reconcile or a later `/update-docs` sweep — at authoring time you document the *decision*, not the finished code.
+
+Commit the doc changes with the rest of the slice's specs artifacts.
 
 ## Your role
 
@@ -314,4 +406,11 @@ Before presenting the slice to the user, verify:
 - [ ] Each brief references which acceptance criteria IDs it covers.
 - [ ] Briefs live under `<SLICE_DIR>/<subproject>/brief.md`, not at the slice root.
 - [ ] Grounding pass has been run and `grounding_check.md` exists in the slice directory with every `file:line` citation verified and zero unchecked claims.
-- [ ] Slice is added to the **Pending** section of `{{ specs_repo_path }}/README.md`.
+- [ ] Overview is summary-level — it does not restate brief detail.
+- [ ] `authoring_notes.md` exists with the Decision Log (options + grounds) and any Open Questions.
+- [ ] The change-request bundle's material is fully absorbed, and the bundle is deleted once the slice is complete.
+- [ ] Source cards are archived and replaced by a single Kanban **To Do** card per slice (title prefixed `[NNN]` with the slice number; `{{ owner_tag }}` tag, a short highlights summary, a pointer to the slice, and the list of subsumed source-card ids).
+- [ ] Slice is added to the **Pending** section of `{{ specs_repo_path }}/README.md` as a single one-line entry (no status blob).
+- [ ] Each decision or convention the slice establishes is lodged in the owning `docs/` topic doc and in the thin `DNNN` index (per the documentation model).
+</content>
+</invoke>

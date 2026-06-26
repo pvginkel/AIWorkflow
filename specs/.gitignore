@@ -1,0 +1,4 @@
+# Host-local slice-number coordination (see scripts/allocate-next-slice.sh) —
+# not spec artifacts; safe to delete, they self-seed.
+slices/.next-slice
+slices/.slice-alloc.lock

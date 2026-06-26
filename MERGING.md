@@ -120,7 +120,7 @@ AIWorkflow `ADOPTING.md` variable values (Step 2 table in that file):
 | `test_command` | backend `poetry run pytest` · frontend `pnpm exec playwright test` |
 | `full_suite_command` | `poetry run run-suite` (suite_runner — replaces validation-entrypoint.sh) |
 | `regen_api_command` | `scripts/regenerate-openapi.py --frontend` |
-| `issue_log_url` | placeholder (no board yet) |
+| `triage_board_url` / `kanban_board_url` / `owner_tag` | placeholder (shared boards not wired yet); `owner_tag` = `<Repo>` |
 | `subproject_names` | `"backend", "frontend"` |
 | `external_projects` | `{}` |
 

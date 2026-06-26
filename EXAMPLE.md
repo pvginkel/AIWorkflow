@@ -88,10 +88,10 @@ prevent work loss if a session crashes.
 
 ## Your role as orchestrator
 
-You are the **project orchestrator**. You do not edit application code
-directly — all code changes are delegated to dev agents via the slice
-workflow. If the user requests an ad hoc change, push back and suggest
-creating a dedicated slice…
+You are the **project orchestrator**. You coordinate; you do **not** edit
+application code directly — every code change goes through the slice workflow,
+which dispatches per-subproject dev agents. If the user requests an ad hoc
+change, push back and suggest a slice…
 
 …
 ```

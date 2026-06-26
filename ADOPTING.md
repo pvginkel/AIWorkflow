@@ -6,7 +6,7 @@ This guide walks you through copying the template into a new codebase. The workf
 
 - A monorepo checkout at some path (e.g., `/work/MyProject`).
 - A specs repo at a sibling path (e.g., `/work/MyProjectSpecs`). This is where slice documentation and per-feature planning artifacts live. Keep it separate so slice documents don't clutter your main repo.
-- An **issue log** in any kanban tool with a decent MCP server — Trello, Linear, GitHub Projects, Jira, etc. The workflow only assumes a four-state lifecycle (**New** → **Reviewed** → **Planned** → **Implemented**) and a tagging system for issue type (`Bug`, `Enhancement`, `Tech Debt`, `Needs Discussion`) and area (one per subproject). Wire the tool's MCP server into Claude Code so the orchestrator can read and write cards. The template's defaults are written with Trello as the reference implementation; if you use something else, adjust the orchestrator's `CLAUDE.md` issue-log block to match its terminology (lists vs. columns vs. statuses, labels vs. tags vs. custom fields).
+- An **issue log** in any kanban tool with a decent MCP server — Trello, Linear, GitHub Projects, Jira, etc. The workflow uses **two boards that all your projects share**: a **Triage** board (lists **Inbox → Accepted → Later → Won't Do**) for incoming unstructured work, and a **Kanban** board (lists **To Do → In Progress → Done**) for slices. A project's cards are scoped by a single **owner tag** = the project's bare repo name; a session only ever touches its own owner-tag cards, so the same two boards serve every project. Wire the tool's MCP server into Claude Code so the orchestrator can read and write cards. The template's defaults are written with Trello as the reference implementation; if you use something else, adjust the orchestrator's `CLAUDE.md` issue-log block to match its terminology (lists vs. columns vs. statuses, labels vs. tags vs. custom fields).
 - Python 3 available for the tooling scripts.
 
 ## Step 1: Copy the files
@@ -21,6 +21,18 @@ orchestrator/agents/*.md             → <project_root>/.claude/agents/
                                        (orchestrator agents — arch-design,
                                         slice-verifier — at the repo root;
                                         dev agents are per-subproject, below)
+
+orchestrator/docs/documentation-model.md
+                                     → <project_root>/docs/documentation-model.md
+                                       (the documentation-model meta-doc that the
+                                        orchestrator CLAUDE.md + slice skills point at)
+
+# Specs-repo scaffolding — into the sibling specs repo, NOT the main repo
+specs/scripts/allocate-next-slice.sh → <specs_repo_path>/scripts/
+                                       (concurrency-safe slice-number allocator;
+                                        /write-slice calls it — chmod +x it)
+specs/.gitignore                     → merge into <specs_repo_path>/.gitignore
+                                       (ignores the allocator's host-local files)
 
 # Root scaffolding (Poetry/pnpm/gitignore)
 orchestrator/pyproject.toml          → <project_root>/pyproject.toml
@@ -76,7 +88,9 @@ Every file uses Jinja2-style placeholders. Do a find-and-replace pass with the v
 | `{{ test_command }}` | Test command for the subproject | `poetry run pytest` / `pnpm exec playwright test` |
 | `{{ full_suite_command }}` | Full test suite command for the whole monorepo | `poetry run run-suite-remote` |
 | `{{ regen_api_command }}` | Command to regenerate generated API artifacts (if applicable); commit the regenerated caches separately afterward | `scripts/regenerate-openapi.py --frontend --portal` |
-| `{{ issue_log_url }}` | URL to the project's issue log board | `https://trello.com/b/abc123/my-project-issues` |
+| `{{ triage_board_url }}` | URL of the shared **Triage** board (Inbox/Accepted/Later/Won't Do) | `https://trello.com/b/abc123/triage` |
+| `{{ kanban_board_url }}` | URL of the shared **Kanban** board (To Do/In Progress/Done) | `https://trello.com/b/def456/kanban` |
+| `{{ owner_tag }}` | This project's owner tag on both boards — its bare repo name | `Kestrel` |
 | `{{ subproject_names }}` | Subproject names for `claude_session.py` `VALID_PROJECTS` | `"backend", "frontend", "portal"` |
 | `{{ external_projects }}` | External project map for `claude_session.py` `EXTERNAL_PROJECTS` | `{"gateway": PROJECT_ROOT.parent / "Gateway"}` or `{}` |
 
@@ -89,13 +103,13 @@ Per-template block sections (`{% block foo %}…{% endblock %}`) are free-form a
 - `{% block design_philosophy %}` — opinions about backwards-compat, tombstones, defensive code
 - `{% block key_documentation %}` — pointers to the docs a dev agent should consult
 
-## Step 3: Write `docs/conventions.md`
+## Step 3: Set up the documentation model
 
-The template's per-project `CLAUDE.md` is deliberately lean. Detailed conventions — DI patterns, error handling, database patterns, testing patterns, naming conventions — belong in a separate `docs/conventions.md` inside each subproject. `CLAUDE.md` points at it; the dev agents read it when needed.
+The template's per-project `CLAUDE.md` is deliberately lean. Detailed design and conventions — DI patterns, error handling, data patterns, testing patterns, naming — live in a per-scope **`docs/`** set: one `docs/` at the repo root (cross-cutting and system-level design) and one per subproject, organized as small, single-topic docs indexed by `docs/index.md`. Decision rationale lives in those topic docs under stable `DNNN` anchors; `<specs_repo_path>/decisions.md` is only a thin **decision index** pointing at the doc that holds each one. The meta-doc that defines all of this is `docs/documentation-model.md` (copied in Step 1) — read it first.
 
-This split exists so `CLAUDE.md` stays small (it is prepended to every agent turn) while detailed rules remain discoverable. See `WRITING_GUIDE.md` for the reasoning.
+This split exists so `CLAUDE.md` stays small (it is prepended to every agent turn) while detailed rules stay discoverable and can be assembled into a per-change reading list. See `WRITING_GUIDE.md` for the reasoning.
 
-There is no template for `conventions.md` — its content is entirely project-specific. Start with the rules you already have written down somewhere and curate them into one document per subproject.
+There is no template for the topic docs — their content is entirely project-specific. Seed each scope with `/update-docs` (it builds a scope from nothing and reconciles drift), or curate the rules you already have written down. Thereafter **doc upkeep follows authorship**: the slice writer reflects each decision into the right topic doc, and its row in the decision index, as part of recording it.
 
 ## Step 4: Set up the tooling
 
@@ -133,7 +147,7 @@ If you're not using one or both of Poetry/pnpm, edit `pyproject.toml`/`pnpm-work
 Before running any real work, do a smoke test:
 
 1. In the root of your project, start a Claude Code session and confirm `CLAUDE.md` is loaded and reads cleanly.
-2. Type `/write-slice "add a trivial field to <an existing entity>"` and walk through the authoring flow. Check that the slice directory gets created in your specs repo and that the generated files look right.
+2. Run `/triage` on a one-line finding (e.g., "add a trivial field to <an existing entity>") and confirm it produces a change-request bundle under `<specs_repo_path>/change_requests/`. Then `/write-slice` from that bundle and walk through the authoring flow — check that the slice directory gets created in your specs repo (its number allocated by `scripts/allocate-next-slice.sh`) and that the generated files look right.
 3. Type `/run-slice <NUMBER>` on that slice and watch the orchestrator dispatch the dev session(s). Kill it after the pre-flight step if you don't want to run real code changes.
 
 If any step fails with "file not found" or "variable not filled in," that's a signal you missed a placeholder during Step 2.

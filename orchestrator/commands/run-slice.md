@@ -28,6 +28,8 @@ EOF
 
 Do **not** notify for routine progress. Only notify when the user needs to act or when the workflow has reached its end.
 
+**Normative keywords.** MUST / MUST NOT / SHOULD / SHOULD NOT / MAY in a slice's acceptance criteria, briefs, and overview carry their RFC 2119 / BCP 14 meaning — read them as binding requirements when answering agent questions and seeding the verification log.
+
 ## Slice file formats
 
 Slices are authored by the `/write-slice` skill. The layout:
@@ -93,14 +95,14 @@ python3 {{ project_root }}/scripts/preflight.py
 
 After reading all slice documents and passing infrastructure checks, present a pre-flight summary to the user before starting any agent work.
 
-1. **Work rundown.** Summarize which agents will run based on which briefs exist, with a brief description of what each will deliver (1–3 sentences per agent). Include any issue-tracker items in the Planned list tagged for this slice.
-2. **High-impact decisions.** Flag decisions with significant architectural, data-model, or cross-slice implications (new DB tables, new API patterns, cross-subproject changes, irreversible migrations). Skip this section if the slice is primarily low-impact CRUD/UI work.
+1. **Work rundown.** Summarize which agents will run based on which briefs exist, with a brief description of what each will deliver (1–3 sentences per agent). Reference the slice's card on the Kanban board (in **To Do**) — `/write-slice` created it, titled `[NNN]` with the slice number.
+2. **High-impact decisions.** Flag decisions with significant architectural, data-model, or cross-slice implications (new persistent objects, new API patterns, cross-subproject changes, wire-contract or schema changes). Skip this section if the slice is primarily low-impact work.
 3. **Clarifications.** If anything is ambiguous, contradictory, or could go multiple ways, ask the user now — before any agent starts.
 4. **Notify and wait.** Send a push notification and wait for the user to respond before proceeding. Do not start Step 0c until the user confirms (e.g., "go", "looks good", "proceed").
 
 ### Step 0c: Seed the verification log
 
-Once the user confirms the pre-flight, create `{{ specs_repo_path }}/slices/<SLICE_DIR>/verification.json` and seed it from `acceptance_criteria.json`. The verification log is the single source of truth for what the slice's independent verifier checks at Step 8c — items only get verified if they're in the log.
+Once the user confirms the pre-flight, move the slice's Kanban card from **To Do → In Progress**, then create `{{ specs_repo_path }}/slices/<SLICE_DIR>/verification.json` and seed it from `acceptance_criteria.json`. The verification log is the single source of truth for what the slice's independent verifier checks at Step 8c — items only get verified if they're in the log.
 
 Schema (one entry per item):
 
@@ -145,7 +147,9 @@ Start a new session in the leading subproject:
 python3 {{ session_manager_path }} start --project {{ subproject }} --timeout 7200 --response-file /tmp/{{ subproject }}_response.txt <<'EOF'
 I'm the orchestrator coordinating slice <SLICE_NUMBER>. You are the {{ subproject }} dev agent — your job is to implement the {{ subproject }} part of this slice per the brief. I'll handle everything outside the {{ subproject }} subproject: cross-project test suite, release notes, acceptance criteria, issue tracker, and moving the slice to completed.
 
-Please read {{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subproject }}/brief.md and come back with informed questions.
+IMPORTANT — do not start implementing yet, and do not skip the change workflow. For this first round: read the brief and the code it cites, then come back with informed questions ONLY. After I answer, you will run `/minor-change` or `/major-change` on the brief — the code-writer + code-reviewer gates are mandatory and are the whole point; never implement or commit the change directly. Do not call AskUserQuestion — it errors in a non-interactive session; put every question in your reply to me instead.
+
+Please read {{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subproject }}/brief.md and come back with your questions.
 EOF
 ```
 
@@ -182,7 +186,7 @@ Pair each question with its answer directly. Do the same for other subprojects (
 
 The bar is *direction change*. Clarifications, style preferences, picking a tunable value the agent simply asked about, and "yes that's right" confirmations do **not** go in the log — only cases where the agent was about to do something different and you turned them.
 
-**Log deferred items.** If any Q&A exchange surfaces work out of scope for the current slice but needing future attention (a missing feature, a known limitation, a future improvement), create an entry on the issue log immediately — don't rely on the QA log alone.
+**Log deferred items.** If any Q&A exchange surfaces work out of scope for the current slice but needing future attention (a missing feature, a known limitation, a future improvement), create a card in the Triage **Inbox** (tagged `{{ owner_tag }}`) immediately — don't rely on the QA log alone.
 
 **Decide whether to allow follow-up questions.** Use your judgment:
 - If the questions show the agent has a good understanding and your answers are clarifications or minor tweaks, skip the follow-up round and go straight to execution.
@@ -212,6 +216,10 @@ Asymmetry across agents is expected — e.g., backend major, portal minor when p
 The prompt file should end with: *"Run `/<chosen_workflow> {{ specs_repo_path }}/slices/<SLICE_DIR>/<project>/brief.md` (e.g. `/minor-change …/brief.md` or `/major-change …/brief.md`) to implement the brief. Store feature artifacts (change brief, plan files, code reviews, feature docs, and other supporting artifacts) under {{ specs_repo_path }}/slices/<SLICE_DIR>/<project>/ — that subfolder is yours. **Do not create, edit, or delete files at the slice root ({{ specs_repo_path }}/slices/<SLICE_DIR>/\*.md, \*.json, or any sibling subproject folder) — those belong to the orchestrator and the other dev agents.** Commit ALL your work when done, including the feature artifacts. Run 'git status' before your final commit to make sure nothing is left uncommitted."*
 
 Wait for the agent to complete. Do not poll for progress — the session manager streams progress to stderr. If a long time has passed (30+ minutes) and you suspect the agent may be stuck, run `git status` as a diagnostic — new or modified files in the subproject indicate the agent is actively working. On timeout (exit 2), read `.claude/sessions/<project>.json` and decide whether to resume or restart. On error (exit 1), report the failure and stop.
+
+**On success, verify the agent actually used the change workflow — do not take "done" on trust.** Agents optimize to ship and will sometimes run straight to implementing + committing, skipping the questions round *and* the mandatory `/minor-change` / `/major-change` gate (it has happened). They will also occasionally try to call `AskUserQuestion`, which errors in a non-interactive dispatch and can knock them off the workflow — the gate above pre-empts it. Confirm the workflow ran by checking its artifacts landed in the subproject slice folder: `change_brief.md` for a minor change; `plan.md` + `plan_review*.md` + `code_review.md` for a major one. **Absent artifacts mean the gate was bypassed**, no matter how clean the diff looks — the adversarial code review is the whole point, and an agent's self-report is exactly what it exists to check.
+
+If an agent bypassed the workflow but the work is already committed and correct, **remediate forward rather than redoing it**: resume the session and have it (a) write the `change_brief.md`, and (b) dispatch the `code-reviewer` over the **committed diff** (point it at the commit hashes, since there are no unstaged changes) against the brief + acceptance criteria, writing `code_review.md`. Resolve every finding. Once the artifacts exist and the review is GO, the gate is satisfied. Never accept a silently bypassed workflow.
 
 **On success**, finish the session:
 
@@ -251,26 +259,26 @@ cd {{ project_root }} && git add <regenerated-cache-dirs> && git commit -m "Rege
 
 ### Step 3: Review the API contract (if applicable)
 
-Read the generated OpenAPI spec and compare it against `api_contract.json`. For each endpoint entry:
+Read the leading subproject's API definition (its route handlers and the shared request/response models, or the generated API spec if you regenerated one in Step 2) and compare it against `api_contract.json`. For each endpoint entry:
 
-1. Verify the endpoint exists in the spec (method + path).
-2. Check that `key_request_fields` and `key_response_fields` appear in the schemas.
-3. Confirm the `status_codes` are documented.
+1. Verify the endpoint exists (method + path).
+2. Check that `key_request_fields` and `key_response_fields` appear in the corresponding models/schemas.
+3. Confirm the `status_codes` match what the route returns.
 4. Update the `verified` field to `true` or `false`.
 
-For each `schema_changes` entry, verify the change is reflected. For each `removals` entry:
-- `schema_field` removals: grep the OpenAPI spec for the field name and confirm it does not appear in the named schema.
-- `endpoint` removals: confirm the method + path combination does not exist in the spec.
+For each `schema_changes` entry, verify the change is reflected in the contract definitions. For each `removals` entry:
+- `schema_field` removals: grep the contract definitions for the field name and confirm it does not appear in the named model.
+- `endpoint` removals: confirm the method + path combination is gone.
 
 Write the updated `api_contract.json` back to the slice directory.
 
 If any endpoint has `verified: false`, assess whether it's a significant gap (missing endpoint, wrong schema) or a minor difference (field ordering, naming convention). Significant gaps → notify the user and stop. Minor differences are fine.
 
-**Log any issues** (gaps, deferred items, workarounds) to the issue log.
+**Log any issues** (gaps, deferred items, workarounds) as cards in the Triage **Inbox** (tagged `{{ owner_tag }}`).
 
 ### Step 4+: Run the consumer subprojects
 
-For each remaining subproject with a brief file, run `claude` using the same pattern as Step 1 (ask questions, log Q&A, append `qa_correction` entries to `verification.json` per the Step 1 rule, pick workflow, execute, finish). The sequence is the same; only the project name changes.
+For each remaining subproject with a brief file, run `claude` using the same pattern as Step 1 (ask questions, log Q&A, append `qa_correction` entries to `verification.json` per the Step 1 rule, pick workflow, execute, verify the change-workflow gate ran, finish). The sequence is the same; only the project name changes.
 
 **UX design:** If `ux_design.md` exists, include it in the initial prompt: ask the agent to read it alongside the brief.
 
@@ -352,7 +360,16 @@ Review `{{ specs_repo_path }}/slices/<SLICE_DIR>/qa_log.md` end-to-end. Look for
 - **Contract/spec drift** — cases where implementation diverged from the original brief.
 - **Design decisions with future implications.**
 
-For each item found, create a card on the issue log. Don't duplicate items already logged inline during Q&A.
+For each item found, create a card in the Triage **Inbox** (tagged `{{ owner_tag }}`). Don't duplicate items already logged inline during Q&A.
+
+### Step 9b: Reconcile the project docs
+
+A slice that changed the design or a convention is not complete until the project docs reflect what was actually built (per [`docs/documentation-model.md`](docs/documentation-model.md) — the slice author already lodged the slice's decisions in the docs at authoring time; this step confirms reality matches). Scoped to what this slice touched:
+
+- For each decision or convention the slice established or changed, confirm the owning `docs/` topic doc states the design **as implemented**, not just as authored. Where the implementation diverged from the authored intent (watch the `qa_log.md` drift items from Step 9), fix the doc and its thin `DNNN` decision-index row, or run `/update-docs` with a hint to reconcile that scope.
+- Design that landed during implementation but has no doc home gets one — a small topic doc, added to the scope's `index.md`.
+
+A full sweep is `/update-docs`'s job, not this step's. Commit any doc changes with the rest of the slice's specs artifacts.
 
 ### Step 10: Report results
 
@@ -364,7 +381,13 @@ Summarize what happened:
 - Acceptance criteria results — count `source: ac` entries in `verification.json` by `verdict`. At this point all should be `passed` (failed/uncertain were routed back in Step 8c); if any remain unresolved, Step 8c was skipped and you must go back.
 - Any failures blocked on identified gaps (link to issue log entries).
 
-Move the slice from the **Pending** section to the **Completed** section in `{{ specs_repo_path }}/README.md`.
+Move the slice to completed (only when it is fully complete):
+
+- **In `{{ specs_repo_path }}/README.md`**, move the slice's entry from the **Pending** section to the **Completed** section, kept in slice-number order. It stays the **same single line** — `- **NNN** — <short title>: <one-clause summary> (#refs; DNNN)`. Do **not** copy the Step 10 run report (AC counts, agent outcomes, run notes) into the README — that detail lives in the slice's `overview.md` and git history. The slice index is a lean catalogue, not a status log.
+- **On disk**, `git mv {{ specs_repo_path }}/slices/<SLICE_DIR> {{ specs_repo_path }}/slices/completed/<SLICE_DIR>` (create `slices/completed/` if it does not exist) so the active `slices/` view shows only in-flight work. The slice folder stays intact as its record.
+- **On the Kanban board**, move the slice's card **In Progress → Done**.
+
+Commit the move together with the rest of the slice's specs artifacts. (A slice the operator defers or cancels instead goes to `slices/deferred/` or `slices/cancelled/` — those folders are created lazily, only when first needed; anything already filed under `slices/archive/` is left untouched.)
 
 Notify the user that the slice is complete (or partially complete if there are outstanding items).
 
@@ -379,17 +402,16 @@ Notify the user that the slice is complete (or partially complete if there are o
 - **Run subprojects sequentially**, not in parallel. Resource constraints during test suites make parallel runs unreliable.
 - **Timeouts.** Dev agents may take a long time, especially running end-to-end tests. Default timeout is 2 hours per invocation. On timeout, check the session state file at `.claude/sessions/<project>.json` before deciding to resume or restart.
 - **Session state files** live at `.claude/sessions/<project>.json`. You can read them at any time to check invocation history and session IDs.
-- **Agents must always use one of the change workflows.** If an agent can't make progress using the workflow, the slice is too large — report to the user to discuss splitting it.
+- **Agents must always use one of the change workflows — and verify they did.** Gate every initial dispatch to questions-only (see Step 1) so the agent doesn't run ahead, and forbid `AskUserQuestion` (it errors in a non-interactive dispatch). After the agent reports done, confirm the change-workflow artifacts exist before accepting the work (see "On success, verify…"). A missing `change_brief.md` / `code_review.md` means the gate was bypassed; remediate forward via the `code-reviewer` over the committed diff. If an agent genuinely can't make progress within the workflow, the slice is too large — report to the user to discuss splitting it.
 
 ## Issue log
 
-Whenever you encounter something that needs future attention — a gap in the API, a deferred feature, a workaround, a missing field, a known limitation — log it to the issue tracker. See root `CLAUDE.md` for the card conventions.
+Whenever you encounter something that needs future attention — a gap in the API, a deferred feature, a workaround, a missing field, a known limitation — log it as a card on the Triage board's **Inbox** (tagged `{{ owner_tag }}`). See root `CLAUDE.md` for the two-board model and the card conventions.
 
 **Card lifecycle during a slice run:**
-- When a slice **starts**, check the Planned list for cards with the slice's label. These are issues the slice is expected to address.
-- When an issue is **implemented** by a dev agent (code committed), move its card from Planned → Implemented.
-- When new issues are **discovered** during the slice (QA log, spec review, test failures), create them in the New list. If the issue is scoped into the current or a follow-up slice, also move it to Planned.
-- At the **end of the slice** (Step 10), review all cards with the slice's label and ensure they are in the correct list:
-  - Delivered items → **Implemented**
-  - Items scoped for a follow-up slice → **Planned** (with the follow-up slice's label)
-  - Unplanned items still in New → leave in **New** for triage
+- When a slice **starts**, find the slice's card on the **Kanban** board (in **To Do**) — `/write-slice` created it, titled `[NNN]` with the slice number — and move it to **In Progress** (Step 0c).
+- When the slice's work is **implemented and verified**, move its Kanban card **In Progress → Done** (Step 10).
+- When new issues are **discovered** during the slice (QA log, spec review, test failures), create them as cards in the Triage **Inbox** (tagged `{{ owner_tag }}`). They are fresh intake for a future triage, not part of this slice's Kanban card.
+- At the **end of the slice** (Step 10), confirm the slice's Kanban card is in **Done** and that every newly-discovered item is captured in the Triage **Inbox**.
+</content>
+</invoke>

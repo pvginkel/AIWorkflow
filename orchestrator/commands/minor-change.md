@@ -15,6 +15,7 @@ If any of these is false, stop and use `/major-change`.
 
 ## Hard guardrails
 
+- **You were gated to questions-only first.** When `/run-slice` dispatched you, the orchestrator gates you to a questions-only round — your first turn on the brief is informed questions, **not** code. Never implement or commit a change before the orchestrator has answered and explicitly told you to run this workflow; running straight from the brief bypasses the code-writer + code-reviewer gates below (the orchestrator checks the `change_brief.md` / `code_review.md` artifacts and will send a bypass back through them).
 - The `code-writer` and `code-reviewer` subagents are mandatory. Do not implement the change directly, and do not skip code review.
 - The Q&A round is mandatory (see Step 2). Do not skip it because the brief looks clear.
 

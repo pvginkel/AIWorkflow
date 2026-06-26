@@ -1,169 +1,174 @@
 # Triage
 
-Turn a batch of findings into grounded, sliced implementation work. Argument: path to a findings document (e.g., `tmp/uat_testing.md`).
+Turn a batch of findings, requests, and issue-tracker items into grounded **change-request
+bundles** — self-contained work packages the slice writer picks up later. Argument (optional):
+path to a findings document (e.g., `tmp/uat_testing.md`).
 
-The findings document can be a UAT run, a list of bugs, a change-request dump, or any unstructured collection of issues. This skill converts it into fully documented implementation slices ready to run.
+The input can be a UAT run, a list of bugs, a change-request dump, chat discussion, or any
+unstructured collection of issues. Triage understands it, groups it by subject, and writes one
+bundle per group. **Triage does not write slices** — that is the slice writer's job, in a
+separate, deliberate act.
+
+## Triage is mandatory — and it stops at the bundle
+
+- **Every change that will become a slice goes through triage first.** This is a hard rule. The
+  bundle is the required input to `/write-slice`; there is no slicing without one.
+- **Triage does not start `/write-slice` itself.** When the bundles are written, stop. The
+  operator picks a bundle up later — usually in a fresh session — and runs `/write-slice` then.
+  Do not assume the operator will action every bundle immediately.
+- **The one exception is operator-initiated — never your own judgement.** Only when the **operator
+  explicitly asks** you to carry straight on into `/write-slice` in the same session may you do so,
+  and only if you also agree the request is a single isolated, genuinely minimal change (a clear bug
+  fix, a cosmetic fix, an impactful-but-honestly-straightforward change). You never decide this on
+  your own: absent an explicit operator request, you stop at the bundle, full stop. If the operator
+  asks but you judge the change is not minimal, say so. Even when you do proceed, the bundle is still
+  produced, the full slice-writing process still applies, and you **never** do this from a sub-agent.
 
 ## What this skill does
 
-You are the orchestrator. You do not write application code — you produce slice documentation that dev agents will execute.
+You are the orchestrator. You do not write application code, and you do not design the
+implementation — you produce work packages that the slice writer (and, downstream, the dev
+agents) execute.
 
 ## Procedure
 
 ### Phase 1: Collect and consolidate
 
-**1a. Read the findings document** passed as the argument.
+**1a. Gather every input.** Read the findings document if one was passed. Pull in the relevant
+chat discussion. Fetch the outstanding `{{ owner_tag }}`-tagged cards in the **Triage board's
+Inbox** list — the project's intake queue. Leave cards tagged for other projects alone, and treat
+untagged cards as not-yet-claimed; if asked to consider a card without the `{{ owner_tag }}` tag, say
+so rather than adopting it. All three are inputs and are considered together.
 
-**1b. Read the issue tracker.** Fetch the outstanding items in your issue tracker's intake queue. These should be considered alongside the findings.
+**1b. Write a transient triage working document** at `{{ specs_repo_path }}/handovers/triage_YYYY-MM-DD.md`
+(transient docs live in `handovers/`, never at the specs root). Give every item a numbered entry
+with:
 
-**1c. Write a consolidated test-results document** at `{{ specs_repo_path }}/test_results_YYYY-MM-DD.md`. Every item gets a numbered entry with:
+- A clear description of the issue.
+- Its source (findings-document reference, issue-tracker id, or both).
 
-- Clear description of the issue.
-- Source (findings document reference, issue-tracker id, or both).
+This document is scratch — it exists to drive the clarification loop and is **deleted at the end
+of triage** (Phase 7), once all information has been absorbed into the bundles.
 
-Group related items. For every item that isn't clear, add a **QUESTION** marker. Present the document to the user and iterate on questions until all items are understood.
+**1c. Clarify until you fully understand every item.** For every item that is vague, missing
+information, or that simply needs research before it can be understood, add a **QUESTION** marker.
+Present the document to the operator and iterate until every item is understood. Understanding the
+request fully is the whole point of this phase — do not guess.
 
-### Phase 2: Ground in code
+**Do not group items into bundles yet.** Phase 1 is about understanding individual items, not
+deciding how they cluster.
 
-**2a. Research every item.** For each item, find the relevant code. Use `Explore` subagents in parallel batches to investigate groups of related items. For each item, record:
+### Phase 2: Ground enough to understand
 
-- Exact file paths and line numbers.
-- Current implementation state.
-- Root cause (for bugs).
-- Proposed solution with specific code-level changes.
+Research items only to the depth needed to *understand* them — not to design or implement them.
+The deep, file:line grounding that briefs depend on is the **slice writer's** job, not triage's.
 
-**2b. Update the test-results document** with grounded analysis. Add file references, solution proposals, and follow-up questions where the code doesn't match the reported behavior.
+- For an item whose meaning or feasibility is unclear, read the relevant code (use `Explore`
+  sub-agents in parallel for groups of related items) until you understand what is actually being
+  asked and whether it is coherent.
+- Record findings back into the triage working document, and raise follow-up **QUESTION** markers
+  where the code contradicts the reported behaviour or the request is ambiguous.
+- If an item genuinely required research to understand, capture that research as a separate
+  document — it becomes an attachment in the item's bundle (Phase 5).
 
-**2c. Present follow-up questions to the user.** Some items will have ambiguities that only live debugging or user clarification can resolve. Iterate until resolved or explicitly deferred to slice implementation.
+A concrete goal of this phase is to gather enough information that you can group the items **with
+confidence** in Phase 4 — you have to understand what each item really is before you can judge what
+it belongs with. If you cannot yet tell where an item clusters, you do not understand it well enough.
 
-### Phase 3: Separate non-slice items
+Iterate follow-up questions with the operator until resolved or explicitly deferred.
 
-**3a. Identify items that don't belong in slices:**
+### Phase 3: Separate non-actionable items
 
-- Infrastructure or tooling quality issues that bypass the dev-agent workflow → extract to a dedicated notes file.
-- Already-fixed items → mark as resolved and remove.
-- Discussion points without actionable work → flag for user.
+Identify items that should not become slice work:
 
-**3b. Present the separation to the user** for confirmation before proceeding to slicing.
+- **Already implemented, or a duplicate** → **archive the card** (leave a short comment saying why).
+  It never reaches a bundle.
+- **Pure discussion / no actionable work** → flag for the operator.
+- **Infrastructure or tooling work that bypasses the dev-agent slice workflow** (e.g. orchestrator
+  tooling, infrastructure-only operations) → note it for the operator; it is handled outside slices.
 
-### Phase 4: Create slices
+Present the separation to the operator for confirmation before grouping.
 
-**4a. Design the slice grouping.** Group items into slices following these principles:
+### Phase 4: Group into logical categories
 
-- Each slice should be independently runnable.
-- Minimize dependencies between slices (a few are fine).
-- Don't make slices too big — 3–6 items per slice is typical.
-- Group by area (same screen, same backend service, same subsystem).
-- Keep backend-only work separate from frontend-only work where it makes sense.
+Group the remaining items into **change requests**. Follow these rules:
 
-**4b. Write `{{ specs_repo_path }}/slice_backlog.json`** with the slice plan:
+- **Group by related subject**, not by slice boundaries. You are deciding what work is *about the
+  same thing*, not authoring slices. The slice writer decides slice boundaries later.
+- **Do not use the number of API surfaces or applications touched as a grouping metric.**
+  Delivering a feature end-to-end and correct matters more than limiting development complexity.
+- **Favor larger groups.** It is easier for the slice writer to split one bundle into two slices
+  than to notice adjacent work that was scattered across separate bundles and never came into
+  view. When in doubt, group together.
+- **Sanity-check against under-grouping.** Before finalizing, glance at the areas/files each item
+  touches (from Phase 2's grounding): items that hit the same area or the same file almost certainly
+  belong together. Over-grouping is cheap for the slice writer to split; *scattering* related work
+  across separate bundles is the expensive miss — that is the one to catch here.
 
-```json
-{
-  "created": "YYYY-MM-DD",
-  "source": "path/to/findings",
-  "slices": [
-    {
-      "id": "NNN",
-      "name": "snake_case_name",
-      "title": "Human readable title",
-      "items": ["1a", "2b", "3c"],
-      "areas": ["{{ subproject }}"],
-      "ux_design": false,
-      "dependencies": [],
-      "status": "pending"
-    }
-  ]
-}
-```
+### Phase 5: Write the change-request bundles
 
-**4c. Present the slice plan to the user** for review. Adjust groupings based on feedback.
+For each group, create a bundle under `{{ specs_repo_path }}/change_requests/<snake_case_slug>/`. The
+`change_requests/` folder sits next to `slices/`; bundles persist there until the operator actions
+them (do not assume immediate action).
 
-**4d. Create slice directories** under `{{ specs_repo_path }}/slices/NNN_name/`. Continue the existing numbering sequence.
+Each bundle contains:
 
-### Phase 5: Write slice documentation
+- **`change_request.md`** — a self-contained write-up of the change request. It must absorb **all**
+  the relevant material so the slice writer can work from the bundle alone:
+  - A one-line summary, then the detail of what is being requested and why.
+  - **Abstracts of every referenced artifact** — the relevant content of findings-document
+    sections, issue-tracker cards, and chat discussion, pulled in (not just linked).
+  - The **Q&A** you did with the operator during clarification, captured so the slice writer
+    inherits that understanding.
+  - **References to the issue-tracker items** that belong to this change request (by id).
+- **Attachments (optional)** — any research document you produced in Phase 2, and any pre-existing
+  prior work that informs the request. If a relevant document already lives in `handovers/` (a
+  prior design or proposal), **move it into the bundle** so the slice writer has it in one place.
 
-For each slice, create the full documentation set. Work through slices in parallel batches using background agents.
+Your job here is to *bundle and absorb existing material* into a form the slice writer can focus
+on — not to invent design, write acceptance criteria, or propose an implementation.
 
-**Authoring order matters:**
+### Phase 6: Update the issue tracker
 
-1. **First pass — overview, acceptance criteria, API contract.** These define what the slice does, what must be true when done, and what API changes are needed. Delegate to subagents in parallel. Each agent creates:
-   - `overview.md` — requirements (R1, R2, …), background, dependencies, scope.
-   - `acceptance_criteria.json` — structured criteria with IDs (BE-01, FE-01, PO-01, RE-01).
-   - `api_contract.json` — endpoints and schema changes (or empty if no API changes).
+The Triage cards are just collected thoughts and ideas — they have no standalone value once a slice
+forms. For each `{{ owner_tag }}` card that was folded into a bundle:
 
-2. **Second pass — UX designs (where needed).** For slices that need UX design, generate them using Codex after the overview and acceptance criteria exist. Write a prompt file and run:
+- Keep the `{{ owner_tag }}` owner tag and nothing else — the model drops type and area labels.
+- Rewrite the card description only where it is too thin to recognise later — enough that the bundle
+  stands on its own. Don't over-format; these cards are short-lived.
+- Move the card from **Inbox** to **Accepted** — grouped into a change request, not yet sliced.
 
-   ```bash
-   python3 {{ project_root }}/tools/ai_workflow/codex_exec.py --prompt-file <file> --response-file <file>
-   ```
+These are temporary **source cards**: when `/write-slice` forms a slice from the bundle it
+**archives the source cards and opens a single card on the Kanban board (To Do) that represents the
+slice** (which then flows **To Do → In Progress → Done**). The only cards you archive yourself here
+are the already-implemented / duplicate ones separated out in Phase 3 — never the ones bound for a
+bundle. Items the operator wants parked rather than sliced go to **Later**; ones rejected outright go
+to **Won't Do**.
 
-   The prompt must start with `$frontend-ux-designer` and follow the documented structure (what you're designing, what to read, current state, problems, what the design must cover, constraints, deliverable).
+### Phase 7: Finish
 
-   **UX design is needed when:**
-   - New screens or views
-   - Novel interaction patterns
-   - Complex state management or conditional UI
-   - Multiple visual options that need a decision
-   - Ambiguous or underspecified UI behavior
+**7a. Delete the transient triage working document.** All information must by now live in the
+bundles — the operator should be able to delete the triage scratch doc with nothing lost. If
+anything would be lost, it has not been absorbed yet; fix that before deleting.
 
-3. **Third pass — briefs.** Write per-subproject briefs that reference the acceptance criteria and (where applicable) the UX design. Delegate to subagents in parallel.
-
-**Track progress:** Update `slice_backlog.json` status as each slice completes its documentation. Use `docs_complete` when all files are written.
-
-### Phase 6: Update slice index and issue tracker
-
-**6a. Update `{{ specs_repo_path }}/README.md`** — add all new slices to the **Pending** section.
-
-**6b. Update the issue tracker.** For each tracker entry that was assigned to a slice:
-
-- Add a slice label (e.g., "Slice 048") — create the label if it doesn't exist.
-- Add type labels (Bug, Enhancement, Tech Debt) and area labels.
-- Rewrite the entry description with structured markdown (summary, details, action, origin).
-- Move the entry from the intake queue to "planned."
-
-### Phase 7: Write summary and DAG
-
-**7a. Create a summary document** at `{{ specs_repo_path }}/<triage_name>_summary.md` covering:
-
-- What was done (item count, slice count).
-- What the user needs to review (UX designs, technical designs).
-- Slice overview table (number, title, areas, dependencies, items).
-- Removed/deferred items.
-- Files created/modified.
-
-**7b. Create a run DAG** at `{{ specs_repo_path }}/<triage_name>_dag.md`. The user keeps this open in a notepad next to the execution run to pick the next slice to dispatch — optimise for clarity, copy-paste friendliness, and "can I glance at this and know what's runnable right now."
-
-The DAG must show:
-
-- **Every active slice** with a one- or two-line description. Each slice appears exactly once. Every active slice gets a `[ ]` checkbox prefix so the user can tick slices off as they dispatch and complete them. Deferred slices use `[-]` instead.
-- **Soft ordering edges** between slices, annotated with the *reason* (e.g., "shares {{ subproject }}/src/hooks/use-foo.ts", "doc should reflect the new prompt framing"). Soft edges are ordering hints that minimize merge churn and rework — not hard gates.
-- **Free roots** — slices with no predecessors, dispatchable any time — grouped separately from the ordered chain so the user can grab one at a glance.
-- **An ASCII visual** of the DAG. Keep it monospace-clean, no heavy Unicode that renders badly in a plain notepad. Nodes appear once, each with a `[ ]` checkbox. Draw the arrows.
-- **Deferred slices** in a separate section so they don't clutter the runnable set but are still visible. Use `[-]` prefix.
-- **A cheat sheet** at the bottom: max parallel width, longest path, pure sinks, pure sources. This is what the user scans when deciding how many slices to dispatch at once.
-
-**How to discover the edges:**
-
-1. **File overlap.** For each pair of slices touching the same subproject, list the files each slice will write. Same file → soft edge. Adjacent files in the same area (same directory, same test file, same hook) → soft edge. Read the briefs you just wrote — the grounded file paths are the source of truth.
-2. **Logical sequencing.** A slice that produces a fact another slice consumes (a new convention, a new doc, a new disablement) gets an edge. Example: a disablement slice should land before a documentation slice that describes "this is disabled."
-3. **Contract changes.** A slice that changes a shared contract (API response shape, error taxonomy, event shape) should land before slices that consume the new contract.
-
-Do NOT invent hard dependencies. Slices are intentionally independent where possible — edges are hints, not gates. If you can't find a good reason for an edge, don't draw one.
-
-**Do NOT include execution waves.** The user's parallel capacity varies run-to-run. A DAG is more flexible than a wave plan — the user picks from free nodes based on current capacity.
-
-**7c. Notify the user:**
+**7b. Notify the operator:**
 
 ```bash
-python3 {{ notification_script }} --title "Triage complete" "N items triaged into M slices. Summary at {{ specs_repo_path }}/..._summary.md. Run DAG at {{ specs_repo_path }}/..._dag.md. UX designs ready for review."
+python3 {{ notification_script }} --title "Triage complete" "N items triaged into M change-request bundles under {{ specs_repo_path }}/change_requests/. Run /write-slice on a bundle when ready."
 ```
+
+Then stop. Do not start `/write-slice` (except under the narrow interactive minimal-change
+exception at the top of this skill).
 
 ## Key principles
 
-- **Ground everything in code.** Don't propose solutions without reading the relevant source files. File paths and line numbers make briefs actionable.
-- **UX design before briefs.** The frontend brief must reference the UX design, not the other way around. Write the overview first, then the UX design, then the brief.
-- **Don't write application code.** Your output is documentation that dev agents execute. If the user asks for an ad hoc code change, push back and suggest creating a slice.
-- **Iterate with the user.** Ambiguous items need clarification. Ask questions early — don't guess and create a slice based on assumptions.
-- **Use subagents for parallel work.** Research, slice documentation creation, and UX design prompts can all be parallelized. Batch work to keep throughput high.
-- **All information must have a home.** When triage is done, the user should be able to delete the test-results document and slice backlog — all information lives in the slice documentation and the summary.
+- **Ground only to understand.** Read enough code to understand and de-risk each item. Leave the
+  deep file:line grounding to the slice writer — doing it twice wastes effort and goes stale.
+- **Don't write slices, don't design.** Triage's output is grouped, absorbed work packages. No
+  acceptance criteria, no briefs, no API contracts, no implementation proposals.
+- **Favor larger groups.** Splitting later is cheap; missing adjacent work is expensive.
+- **Iterate with the operator.** Ambiguous items get a QUESTION and a conversation, not a guess.
+- **All information must have a home in the bundle.** When triage is done, the triage working
+  document is deleted and every fact lives in a `change_request.md` or its attachments.
+- **Don't write application code.** If the operator asks for an ad hoc code change, push back and
+  route it through a bundle (or, if it truly qualifies, the interactive minimal-change exception).

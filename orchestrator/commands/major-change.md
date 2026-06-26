@@ -4,6 +4,10 @@ Workflow for substantive changes — anything that introduces new patterns, cros
 
 For small, pattern-following changes, use `/minor-change` instead.
 
+## Before you start: the dispatch contract
+
+When `/run-slice` dispatched you as the subproject dev agent, **the orchestrator gates you to a questions-only round first** — your first turn on the brief is informed questions, **not** code. **Never implement or commit a change before the orchestrator has answered and explicitly told you to run this workflow.** Implementing straight from the brief bypasses the plan → plan-review → code → code-review gates this workflow exists to enforce; the orchestrator verifies those gates ran by checking the `change_brief.md` / `plan.md` / `code_review.md` artifacts, and will send a bypassed change back through them.
+
 ## Step 0: Establish the slice subproject directory
 
 Your working directory is the brief's parent: `<slice_dir>/<subproject>/`. The orchestrator (`/run-slice`) created the slice directory and placed `brief.md` there; your subproject is the name of that parent directory.
