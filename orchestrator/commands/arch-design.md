@@ -18,7 +18,7 @@ Use this skill when a slice or feature involves:
 **Do not use** for:
 - Slices that follow established patterns — the dev agent's planning phase handles those.
 - Implementation-level decisions within a single subproject (callback threading, DI wiring).
-- Questions that are answered by `docs/conventions.md` or `docs/architecture_decisions.md`.
+- Questions already answered by a subproject's `docs/` or the decision index (`{{ specs_repo_path }}/decisions.md`).
 
 ## Procedure
 
@@ -42,7 +42,7 @@ Launch the `arch-design` agent with:
 
 - **Question** — the specific architectural question.
 - **Requirements** — the user's stated requirements, listed as fixed constraints.
-- **Context** — point to the relevant docs and code. Include architecture decisions (`docs/architecture_decisions.md`), conventions (`docs/conventions.md`), and any slice-specific documents.
+- **Context** — point to the relevant docs and code. Include the `DNNN` decisions (indexed in `{{ specs_repo_path }}/decisions.md`, with rationale in the project `docs/`), per-subproject design under each subproject's `docs/`, and any slice-specific documents.
 - **Output path** — where the design should be written (typically `{{ specs_repo_path }}/slices/<SLICE_DIR>/design_<area>.md`).
 
 ### Step 4: Review with the user

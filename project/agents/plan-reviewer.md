@@ -15,7 +15,7 @@ If `plan_review.md` already exists in that directory, **delete it first** so you
 
 - The plan at `{{ specs_repo_path }}/slices/<SLICE_DIR>/{{ subproject }}/plan.md` (and its companion JSON files).
 - The change brief that the plan was written from.
-- This subproject's `CLAUDE.md` and `docs/conventions.md`. For cross-cutting rules, also the shared root conventions if your monorepo has them.
+- This subproject's `CLAUDE.md` and its `docs/` (start at `docs/index.md`). For cross-cutting and system-level rules, also the **root** `../docs/`.
 - The relevant code for any files the plan proposes to change.
 
 ## Ignore (out of scope)
@@ -47,7 +47,7 @@ Then continue with the prose sections below. Quote evidence (`plan_path:lines`) 
 
 ### 2) Required reading review
 
-Check the plan's **Required reading** section. Scan `docs/index.md` to understand what topic-area files exist.
+Check the plan's **Required reading** section. Scan `docs/index.md` (and the root `../docs/index.md`) to understand what topic docs exist.
 
 - **Missing links:** Are there topic areas relevant to this plan that are NOT listed in the required reading? For example, if the plan modifies the database schema but doesn't link `docs/database-changes.md`, flag it as **Major**.
 - **Unnecessary links:** Are there topic areas listed that aren't actually relevant? Flag as **Minor** — unnecessary links waste downstream agents' time.

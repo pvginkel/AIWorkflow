@@ -14,7 +14,7 @@ root CLAUDE.md              ← prepended to every orchestrator turn
         └─ dispatches dev sessions (backend, frontend, portal, …)
 
 per-subproject CLAUDE.md    ← prepended to every turn in that subproject's session
-  └─ docs/conventions.md    ← detailed rules, read on demand
+  └─ docs/ topic docs (indexed by docs/index.md)  ← detailed rules, read on demand
   └─ workflow docs (major/minor change workflow)
         └─ dispatches dev-agent subagents (plan-writer, code-writer, …)
               └─ dev-agent definition files   ← own the agent's role, sections to produce, unique behavior
@@ -34,7 +34,7 @@ per-subproject CLAUDE.md    ← prepended to every turn in that subproject's ses
 
 Should **not** contain:
 - Details about how any one skill works (that's the skill file).
-- Project-specific patterns (that belongs in per-subproject `CLAUDE.md` or `docs/conventions.md`).
+- Project-specific patterns (that belongs in per-subproject `CLAUDE.md` or its `docs/` topic docs).
 - Agent management procedures that appear in the skills (the skills describe their own workflow).
 
 Target: **≤ 100 lines.** This file is prepended to every turn of the orchestrator session.
@@ -45,21 +45,25 @@ Target: **≤ 100 lines.** This file is prepended to every turn of the orchestra
 - Sandbox environment (paths, toolchain, container mounts).
 - Testing expectations — what "done" looks like for a dev agent.
 - Code quality commands (lint/type/test) with literal shell invocations.
-- A pointer to `docs/conventions.md` for detailed rules.
+- A pointer to the subproject's `docs/` (indexed by `docs/index.md`) for detailed rules.
 - Generic Claude Code behavior hints (parallel tool calls, decision-making) if you want them — these are cross-project but scoped to the subproject's session.
 
 Should **not** contain:
-- Detailed architectural patterns (DI, layering, error handling) — put them in `docs/conventions.md` and point at them.
+- Detailed architectural patterns (DI, layering, error handling) — put them in the subproject's `docs/` topic docs and point at them.
 - Restatements of the workflow doc or agent definitions.
 - Project overview content that already lives in the root `CLAUDE.md`.
 
 Target: **≤ 100 lines.** This file is prepended to every turn of that subproject's dev session *and* to every user-defined dev-agent subagent dispatched from it.
 
-### `docs/index.md` and topic-area files (per-subproject)
+### `docs/index.md` and topic-area files (every scope)
+
+Every scope has a `docs/` — the **root** (cross-cutting and system-level design) and **each subproject**. The full rules for how the set is organized and kept current are stated once in [`orchestrator/docs/documentation-model.md`](orchestrator/docs/documentation-model.md), which ships in the template (it renders to `docs/documentation-model.md` in a real project). This guide covers how to *write* the artifacts; that meta-doc covers how the doc set is *organized and maintained* — read it alongside this section. The essentials:
 
 Documentation is organized by **topic area** — "what are you working on?" — not by document type. Each topic area is a self-contained file that mixes binding rules and how-to recipes together, because when you're building a service you need both.
 
 `docs/index.md` is the entry point. It is a **pure fan-out document** that contains no rules itself — only links to topic-area files with one-line descriptions. It includes a "Maintaining this index" section explaining that plan-writers dispatch Explore agents to survey the directory.
+
+Decision rationale lives in these topic docs under stable `DNNN` anchors — there is no fat append-only decisions log. `{{ specs_repo_path }}/decisions.md` is only a thin **decision index** (id · one-line description · link to the topic doc). Doc upkeep follows authorship: a change that alters a decision or convention isn't done until its topic doc and the index row reflect it.
 
 **Typical topic areas** (vary by project and stack):
 
@@ -92,7 +96,7 @@ When adding documentation, ask: **"What task would make a developer reach for th
 | "When I'm building an API endpoint" | `api-design.md` |
 | "When I'm changing the schema" | `database-changes.md` |
 | "When I'm orienting on the architecture" | `reference/architecture.md` |
-| "It doesn't fit a single task — it's a project-wide rule" | Root `docs/conventions.md` or `CLAUDE.md` |
+| "It doesn't fit a single task — it's a project-wide rule" | Root `docs/` topic docs or `CLAUDE.md` |
 
 The goal: each topic-area file is a self-contained reference for one kind of work. A plan links to 2–5 topic areas, and the code-writer reads exactly those files.
 
@@ -119,7 +123,7 @@ Each agent definition contains:
 5. **Unique behavioral rules** — adversarial sweep requirement, decision-block format, "don't act before instructions," etc. Anything that makes this agent different from a plain `code-writer` doing the same job.
 
 Should **not** contain:
-- Project architecture rules — those live in `CLAUDE.md` and `docs/conventions.md`. The agent reads them; it doesn't need the rules repeated.
+- Project architecture rules — those live in `CLAUDE.md` and the `docs/` topic docs. The agent reads them; it doesn't need the rules repeated.
 - "Read CLAUDE.md first" — it's loaded automatically. Just say what to read for the *specific task*.
 - Filler like "be comprehensive, be constructive" — if the instruction is generic, delete it.
 
@@ -164,7 +168,7 @@ Duplication is not just a token cost. It is a drift trap: two copies will diverg
 
 Per Anthropic's own Claude Code guidance: `CLAUDE.md` should grow only when the same issue has bitten you twice, and it should never exceed one screen (~80–100 lines). If you need to add something new and the file is already full, something old has to come out.
 
-When something comes out of `CLAUDE.md`, it usually moves to `docs/conventions.md` — not deleted, just demoted from every-turn to on-demand.
+When something comes out of `CLAUDE.md`, it usually moves to a `docs/` topic doc — not deleted, just demoted from every-turn to on-demand.
 
 ## Keeping the hierarchy honest
 
@@ -173,7 +177,7 @@ A quarterly (or per-slice, when you feel friction) check:
 1. Read each `CLAUDE.md` end to end. Delete anything stale, anything restated from another file, anything you don't remember adding.
 2. Scan agent definitions for sentences that restate `CLAUDE.md` or the workflow doc. Delete them.
 3. Scan workflow docs for sentences that describe what each agent *does* (vs. when it runs). Delete them.
-4. If `docs/conventions.md` has sections that are now obsolete, delete them.
+4. If a `docs/` topic doc has sections that are now obsolete, delete them (or rewrite — no tombstones).
 5. If two files reference the same rule, pick one and delete the other.
 
 The goal isn't minimalism for its own sake. The goal is that every claim about how the project works lives in exactly one place, so a reader (human or agent) always knows where to look and never has to reconcile conflicting versions.

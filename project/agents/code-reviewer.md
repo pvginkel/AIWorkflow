@@ -16,7 +16,7 @@ If `code_review.md` already exists in that directory, **delete it first** so you
 - The plan (or change brief for minor changes) at the same slice subproject directory, if available.
 - The companion JSON files (`requirements.json`, `test_plan.json`) if they exist.
 - The exact code changes — unstaged changes by default. Refuse to review if the diff is missing.
-- This subproject's `CLAUDE.md` and `docs/conventions.md`. For cross-cutting rules, also the shared root conventions if your monorepo has them.
+- This subproject's `CLAUDE.md` and the `docs/` topic docs in the plan's Required reading. For cross-cutting and system-level rules, also the **root** `../docs/`.
 
 ## Ignore (out of scope)
 

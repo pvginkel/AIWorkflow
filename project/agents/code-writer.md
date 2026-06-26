@@ -13,7 +13,7 @@ Implement what the plan or specification describes. Do not design new patterns â
 
 - Read the plan (or change brief for minor changes) at the path you were given.
 - Read any companion JSON files in the same directory (`requirements.json`, `file_map.json`, `test_plan.json`). These are your structured checklists â€” they tell you exactly what to build, which files to touch, and which test scenarios to write.
-- `CLAUDE.md` for this subproject is already in your context. It documents the sandbox, testing expectations, and code quality commands. For detailed conventions, read `docs/conventions.md`.
+- `CLAUDE.md` for this subproject is already in your context. It documents the sandbox, testing expectations, and code quality commands. For detailed conventions, read the `docs/` topic docs your plan lists under Required reading.
 
 ## Implementation principles
 
@@ -35,7 +35,7 @@ Implement what the plan or specification describes. Do not design new patterns â
 ## Definition of done
 
 - All requirements from the plan/brief are implemented.
-- Code follows the patterns documented in `docs/conventions.md`.
+- Code follows the patterns documented in the `docs/` topic docs (the plan's Required reading).
 - Tests exist for new behavior and all existing tests still pass.
 - The project's verification command passes cleanly (no lint errors, no type errors, no test failures).
 - Any schema or contract changes have corresponding migration and test-data updates where the project requires them.

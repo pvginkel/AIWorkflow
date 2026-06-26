@@ -37,7 +37,7 @@ Planning documents (change briefs, plans, plan reviews, code reviews) are stored
 
 ## Documentation
 
-Project-specific documentation is organized by topic area in **`docs/`**. See **`docs/index.md`** for the full index — it links to topic areas like code style, testing, and any project-specific conventions. `docs/index.md` is the entry point; plan-writers survey it to build the required reading list for each plan.
+This subproject's design + conventions live in **`docs/`** as small, single-topic docs indexed by **`docs/index.md`** — the entry point a plan's required-reading list is built from, so keep each doc small and its index line precise. Cross-cutting and system-level design lives in the **root** [`docs/`](../docs/index.md), and the [documentation model](../docs/documentation-model.md) is how the whole set is organized and kept current. A change that alters the design or a convention here is not done until its doc — and, for a decision, the thin `DNNN` index (`{{ specs_repo_path }}/decisions.md`) — reflects it.
 
 This `CLAUDE.md` intentionally stays lean. It is prepended to every turn and to every dev-agent subagent dispatched from this subproject, so every line here is paid for many times over.
 

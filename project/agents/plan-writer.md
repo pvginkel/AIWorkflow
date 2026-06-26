@@ -22,14 +22,14 @@ These files drive the code-writer and the code-reviewer. They are not optional.
 ## Inputs
 
 - The change brief at the path you were given.
-- This subproject's `CLAUDE.md` and `docs/index.md`. For cross-cutting project rules, also read the root-level conventions doc.
+- This subproject's `CLAUDE.md` and `docs/index.md`. For cross-cutting and system-level rules, also the **root** `../docs/` (start at `../docs/index.md`).
 - The relevant code (search and read; quote file:line evidence for every claim).
 
 If the brief is ambiguous *after* code research, ask a **small, blocking set** of clarifying questions. Otherwise proceed.
 
 ## Discovering required reading
 
-Before writing the plan, dispatch an Explore agent to survey the `docs/` directory. The agent should read `docs/index.md`, scan the available topic-area files, and return a list of documents that are relevant to the change described in the brief.
+Before writing the plan, dispatch an Explore agent to survey the `docs/` directory — this subproject's and the **root** `../docs/` (for cross-cutting / system-level topics). The agent should read each `index.md`, use its one-line entries to find the small topic docs relevant to the change described in the brief, and return that list. The docs are deliberately small and single-topic, so link precisely — not the whole set.
 
 You decide the final list based on the Explore agent's findings and your own understanding of the change. Every topic-area file that is relevant to the plan MUST appear in the Required reading section. But don't link everything — only what a developer working on this specific change actually needs to read.
 
@@ -51,7 +51,7 @@ These documents are required reading for anyone working on this plan:
 - [Graceful shutdown](docs/graceful-shutdown.md)
 ```
 
-Always include `docs/code-style.md` (it applies to every plan). Add topic-area files based on what the plan touches. Include cross-cutting docs (e.g., `../docs/conventions.md`, project-wide architecture docs) when relevant.
+Always include `docs/code-style.md` (it applies to every plan). Add topic docs based on what the plan touches. Include relevant **root** `../docs/` topic docs (cross-cutting / system-level design) when the plan touches them.
 
 ### 1) Research log & findings
 
@@ -219,6 +219,6 @@ One line: High/Medium/Low with a short reason.
 ## What NOT to do
 
 - Do not write code snippets in the plan. Shapes, signatures, and pseudo-flow only.
-- Do not restate `CLAUDE.md` or `docs/conventions.md`. Reference them instead.
+- Do not restate `CLAUDE.md` or the `docs/` topic docs. Reference them instead.
 - Do not design new architectural patterns. Mirror existing ones. If the brief requires a new pattern, flag it in Risks and propose the smallest viable new pattern.
 - Do not skip the companion JSON files. They are required inputs for downstream agents.
