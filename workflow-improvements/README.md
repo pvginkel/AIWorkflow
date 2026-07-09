@@ -6,10 +6,11 @@ Execution (and later sync-back into this AIWorkflow repo) happens in a separate 
 
 ## Contents
 
-- **[`PLAN.md`](PLAN.md)** — card #175 pulled apart into workstreams, each with intent (verbatim where
-  prescriptive), current-state evidence (`file:line`), concrete changes, and target files. Includes
-  what the recent KubeCoder commits already did (§0), a suggested sequence (§M), and open decisions for
-  the operator (§N). Targets `../KubeCoder`.
+- **[`PLAN.md`](PLAN.md)** — the **settled design** (2026-07-09/10): the task-runner architecture
+  ("files durable, sessions ephemeral"), the four-session pipeline, and the mapping from card #175's
+  original workstreams to what was delivered in `../KubeCoder`. The original A–L workstream plan is
+  in git history. Cross-document migration steps for adopting repos:
+  [`../CHANGELOG-workflow.md`](../CHANGELOG-workflow.md).
 - **[`ANALYSIS.md`](ANALYSIS.md)** — execution-history analysis: how much each slice cost (all-in,
   deduped), the 3 selected slices (052 / 038 / 044) deep-read, and cross-cutting patterns mapped to
   #175. **Written as source material for a secondary analysis by a different agent.**
