@@ -1,0 +1,3306 @@
+{
+  "038": {
+    "manager:root": {
+      "cost": 114.58,
+      "tokens": 121473148,
+      "turns": 667,
+      "n": 12
+    },
+    "manager:worker": {
+      "cost": 8.19,
+      "tokens": 8864168,
+      "turns": 59,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 8.04,
+      "tokens": 11172297,
+      "turns": 103,
+      "n": 3
+    },
+    "subagent:general-purpose": {
+      "cost": 7.49,
+      "tokens": 9413553,
+      "turns": 125,
+      "n": 5
+    },
+    "subagent:Explore": {
+      "cost": 6.69,
+      "tokens": 4508086,
+      "turns": 144,
+      "n": 17
+    },
+    "subagent:plan-writer": {
+      "cost": 5.65,
+      "tokens": 6952079,
+      "turns": 48,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 3.22,
+      "tokens": 2934111,
+      "turns": 38,
+      "n": 3
+    },
+    "subagent:plan-reviewer": {
+      "cost": 2.79,
+      "tokens": 2418815,
+      "turns": 27,
+      "n": 3
+    },
+    "manager:controller": {
+      "cost": 1.77,
+      "tokens": 1299509,
+      "turns": 18,
+      "n": 1
+    },
+    "subagent:arch-design": {
+      "cost": 1.46,
+      "tokens": 921521,
+      "turns": 11,
+      "n": 1
+    },
+    "manager:vscode-extension": {
+      "cost": 1.41,
+      "tokens": 978225,
+      "turns": 16,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.39,
+      "tokens": 1440036,
+      "turns": 20,
+      "n": 1
+    }
+  },
+  "034": {
+    "manager:root": {
+      "cost": 38.32,
+      "tokens": 50300921,
+      "turns": 273,
+      "n": 4
+    },
+    "subagent:code-writer": {
+      "cost": 9.44,
+      "tokens": 11810522,
+      "turns": 103,
+      "n": 2
+    },
+    "manager:worker": {
+      "cost": 9.21,
+      "tokens": 9084453,
+      "turns": 56,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 6.1,
+      "tokens": 6605472,
+      "turns": 80,
+      "n": 3
+    },
+    "manager:vscode-extension": {
+      "cost": 5.34,
+      "tokens": 3961943,
+      "turns": 38,
+      "n": 2
+    },
+    "subagent:code-reviewer": {
+      "cost": 5.03,
+      "tokens": 4888843,
+      "turns": 55,
+      "n": 2
+    },
+    "subagent:plan-reviewer": {
+      "cost": 3.65,
+      "tokens": 2946705,
+      "turns": 42,
+      "n": 4
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.66,
+      "tokens": 1848181,
+      "turns": 24,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.4,
+      "tokens": 483192,
+      "turns": 24,
+      "n": 3
+    }
+  },
+  "059": {
+    "manager:root": {
+      "cost": 21.94,
+      "tokens": 29762932,
+      "turns": 205,
+      "n": 2
+    },
+    "subagent:code-writer": {
+      "cost": 8.44,
+      "tokens": 13087474,
+      "turns": 126,
+      "n": 3
+    },
+    "manager:worker": {
+      "cost": 5.25,
+      "tokens": 5532509,
+      "turns": 48,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 2.91,
+      "tokens": 2611086,
+      "turns": 25,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 2.79,
+      "tokens": 2952920,
+      "turns": 40,
+      "n": 3
+    },
+    "manager:vscode-extension": {
+      "cost": 2.11,
+      "tokens": 1685014,
+      "turns": 23,
+      "n": 1
+    },
+    "manager:controller": {
+      "cost": 2.01,
+      "tokens": 1712490,
+      "turns": 25,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.3,
+      "tokens": 1382677,
+      "turns": 19,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 1.25,
+      "tokens": 1176267,
+      "turns": 13,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.08,
+      "tokens": 261498,
+      "turns": 11,
+      "n": 1
+    }
+  },
+  "047": {
+    "subagent:code-writer": {
+      "cost": 21.34,
+      "tokens": 30967949,
+      "turns": 153,
+      "n": 2
+    },
+    "manager:root": {
+      "cost": 21.25,
+      "tokens": 27248953,
+      "turns": 136,
+      "n": 1
+    },
+    "manager:worker": {
+      "cost": 9.07,
+      "tokens": 8872021,
+      "turns": 52,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 6.61,
+      "tokens": 7915483,
+      "turns": 52,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 5.45,
+      "tokens": 6562434,
+      "turns": 54,
+      "n": 3
+    },
+    "manager:vscode-extension": {
+      "cost": 4.43,
+      "tokens": 3373375,
+      "turns": 33,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 3.43,
+      "tokens": 3161689,
+      "turns": 25,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 2.66,
+      "tokens": 3329920,
+      "turns": 35,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.05,
+      "tokens": 114539,
+      "turns": 6,
+      "n": 1
+    }
+  },
+  "037": {
+    "manager:root": {
+      "cost": 3.9,
+      "tokens": 3583066,
+      "turns": 42,
+      "n": 1
+    },
+    "manager:vscode-extension": {
+      "cost": 2.34,
+      "tokens": 1544194,
+      "turns": 22,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 0.96,
+      "tokens": 689775,
+      "turns": 16,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 0.53,
+      "tokens": 389465,
+      "turns": 9,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 0.37,
+      "tokens": 214563,
+      "turns": 7,
+      "n": 1
+    }
+  },
+  "031": {
+    "manager:root": {
+      "cost": 72.18,
+      "tokens": 68119123,
+      "turns": 385,
+      "n": 6
+    },
+    "subagent:general-purpose": {
+      "cost": 10.8,
+      "tokens": 14554961,
+      "turns": 141,
+      "n": 2
+    },
+    "subagent:code-writer": {
+      "cost": 10.07,
+      "tokens": 13807882,
+      "turns": 161,
+      "n": 6
+    },
+    "manager:controller": {
+      "cost": 6.53,
+      "tokens": 6962017,
+      "turns": 64,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 6.06,
+      "tokens": 4866726,
+      "turns": 98,
+      "n": 8
+    },
+    "subagent:code-reviewer": {
+      "cost": 4.29,
+      "tokens": 3962361,
+      "turns": 72,
+      "n": 5
+    },
+    "subagent:plan-writer": {
+      "cost": 2.58,
+      "tokens": 2506670,
+      "turns": 34,
+      "n": 2
+    },
+    "manager:bot": {
+      "cost": 2.39,
+      "tokens": 1704248,
+      "turns": 23,
+      "n": 1
+    },
+    "manager:worker": {
+      "cost": 2.38,
+      "tokens": 1811569,
+      "turns": 25,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 2.27,
+      "tokens": 3011385,
+      "turns": 44,
+      "n": 1
+    },
+    "manager:contracts": {
+      "cost": 2.16,
+      "tokens": 1715994,
+      "turns": 25,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 1.41,
+      "tokens": 1441192,
+      "turns": 16,
+      "n": 1
+    }
+  },
+  "005": {
+    "manager:root": {
+      "cost": 41.41,
+      "tokens": 53811224,
+      "turns": 213,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 13.68,
+      "tokens": 18909618,
+      "turns": 224,
+      "n": 9
+    },
+    "manager:contracts": {
+      "cost": 7.4,
+      "tokens": 6818634,
+      "turns": 56,
+      "n": 1
+    },
+    "manager:bot": {
+      "cost": 6.9,
+      "tokens": 5685697,
+      "turns": 49,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 6.76,
+      "tokens": 6865987,
+      "turns": 107,
+      "n": 7
+    },
+    "manager:worker": {
+      "cost": 5.7,
+      "tokens": 5375871,
+      "turns": 44,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 4.06,
+      "tokens": 3975504,
+      "turns": 56,
+      "n": 3
+    },
+    "subagent:plan-reviewer": {
+      "cost": 3.25,
+      "tokens": 2718129,
+      "turns": 37,
+      "n": 3
+    },
+    "manager:controller": {
+      "cost": 3.18,
+      "tokens": 2595609,
+      "turns": 43,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.87,
+      "tokens": 2409134,
+      "turns": 38,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.1,
+      "tokens": 220586,
+      "turns": 15,
+      "n": 3
+    }
+  },
+  "001": {
+    "manager:worker": {
+      "cost": 17.67,
+      "tokens": 22615991,
+      "turns": 128,
+      "n": 1
+    },
+    "manager:root": {
+      "cost": 8.13,
+      "tokens": 6103537,
+      "turns": 60,
+      "n": 3
+    },
+    "subagent:claude": {
+      "cost": 7.82,
+      "tokens": 9733744,
+      "turns": 138,
+      "n": 5
+    },
+    "subagent:slice-verifier": {
+      "cost": 0.72,
+      "tokens": 650460,
+      "turns": 16,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.1,
+      "tokens": 316624,
+      "turns": 20,
+      "n": 2
+    }
+  },
+  "044": {
+    "manager:root": {
+      "cost": 65.01,
+      "tokens": 69986628,
+      "turns": 402,
+      "n": 7
+    },
+    "subagent:code-writer": {
+      "cost": 48.66,
+      "tokens": 85528115,
+      "turns": 364,
+      "n": 3
+    },
+    "subagent:plan-writer": {
+      "cost": 10.44,
+      "tokens": 13494205,
+      "turns": 107,
+      "n": 3
+    },
+    "manager:worker": {
+      "cost": 10.02,
+      "tokens": 10797331,
+      "turns": 67,
+      "n": 1
+    },
+    "manager:controller": {
+      "cost": 9.67,
+      "tokens": 10009496,
+      "turns": 76,
+      "n": 2
+    },
+    "subagent:code-reviewer": {
+      "cost": 7.29,
+      "tokens": 7646562,
+      "turns": 66,
+      "n": 3
+    },
+    "subagent:general-purpose": {
+      "cost": 6.48,
+      "tokens": 4686434,
+      "turns": 77,
+      "n": 9
+    },
+    "subagent:plan-reviewer": {
+      "cost": 5.74,
+      "tokens": 5775777,
+      "turns": 58,
+      "n": 4
+    },
+    "subagent:Explore": {
+      "cost": 3.46,
+      "tokens": 4062018,
+      "turns": 104,
+      "n": 9
+    },
+    "subagent:slice-verifier": {
+      "cost": 2.22,
+      "tokens": 2824432,
+      "turns": 34,
+      "n": 1
+    },
+    "subagent:arch-design": {
+      "cost": 1.6,
+      "tokens": 1317350,
+      "turns": 12,
+      "n": 1
+    },
+    "subagent:fork": {
+      "cost": 0.25,
+      "tokens": 386584,
+      "turns": 2,
+      "n": 1
+    }
+  },
+  "055": {
+    "manager:root": {
+      "cost": 26.44,
+      "tokens": 34061707,
+      "turns": 166,
+      "n": 2
+    },
+    "subagent:code-writer": {
+      "cost": 23.55,
+      "tokens": 39556031,
+      "turns": 184,
+      "n": 3
+    },
+    "manager:controller": {
+      "cost": 10.35,
+      "tokens": 10324199,
+      "turns": 53,
+      "n": 1
+    },
+    "manager:worker": {
+      "cost": 8.49,
+      "tokens": 8627596,
+      "turns": 52,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 8.18,
+      "tokens": 8171662,
+      "turns": 67,
+      "n": 3
+    },
+    "manager:contracts": {
+      "cost": 5.71,
+      "tokens": 5244907,
+      "turns": 48,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 5.3,
+      "tokens": 5131199,
+      "turns": 35,
+      "n": 2
+    },
+    "subagent:plan-reviewer": {
+      "cost": 3.86,
+      "tokens": 3440476,
+      "turns": 28,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 3.03,
+      "tokens": 3857729,
+      "turns": 34,
+      "n": 1
+    },
+    "subagent:general-purpose": {
+      "cost": 0.44,
+      "tokens": 216194,
+      "turns": 5,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.29,
+      "tokens": 116224,
+      "turns": 5,
+      "n": 1
+    }
+  },
+  "014": {
+    "manager:worker": {
+      "cost": 2.35,
+      "tokens": 1650142,
+      "turns": 23,
+      "n": 1
+    },
+    "subagent:general-purpose": {
+      "cost": 1.34,
+      "tokens": 1317801,
+      "turns": 30,
+      "n": 2
+    },
+    "manager:root": {
+      "cost": 0.65,
+      "tokens": 279511,
+      "turns": 8,
+      "n": 1
+    }
+  },
+  "025": {
+    "manager:root": {
+      "cost": 30.07,
+      "tokens": 36239999,
+      "turns": 264,
+      "n": 4
+    },
+    "subagent:code-writer": {
+      "cost": 17.97,
+      "tokens": 27856136,
+      "turns": 161,
+      "n": 4
+    },
+    "manager:worker": {
+      "cost": 8.91,
+      "tokens": 8034019,
+      "turns": 60,
+      "n": 2
+    },
+    "subagent:plan-writer": {
+      "cost": 5.27,
+      "tokens": 6448282,
+      "turns": 57,
+      "n": 2
+    },
+    "subagent:code-reviewer": {
+      "cost": 3.31,
+      "tokens": 3529950,
+      "turns": 43,
+      "n": 3
+    },
+    "subagent:plan-reviewer": {
+      "cost": 3.18,
+      "tokens": 3296621,
+      "turns": 33,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 2.05,
+      "tokens": 1954487,
+      "turns": 21,
+      "n": 1
+    },
+    "manager:bot": {
+      "cost": 1.38,
+      "tokens": 943969,
+      "turns": 19,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.04,
+      "tokens": 114328,
+      "turns": 7,
+      "n": 1
+    }
+  },
+  "024": {
+    "manager:root": {
+      "cost": 71.06,
+      "tokens": 84938028,
+      "turns": 360,
+      "n": 4
+    },
+    "manager:worker": {
+      "cost": 12.45,
+      "tokens": 11701531,
+      "turns": 86,
+      "n": 2
+    },
+    "subagent:code-writer": {
+      "cost": 11.24,
+      "tokens": 16016359,
+      "turns": 154,
+      "n": 5
+    },
+    "subagent:Explore": {
+      "cost": 4.97,
+      "tokens": 3719853,
+      "turns": 79,
+      "n": 7
+    },
+    "subagent:code-reviewer": {
+      "cost": 4.55,
+      "tokens": 5383767,
+      "turns": 80,
+      "n": 4
+    },
+    "subagent:general-purpose": {
+      "cost": 4.28,
+      "tokens": 2753539,
+      "turns": 72,
+      "n": 6
+    },
+    "manager:contracts": {
+      "cost": 2.58,
+      "tokens": 1754119,
+      "turns": 22,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 1.78,
+      "tokens": 1779587,
+      "turns": 19,
+      "n": 1
+    },
+    "manager:bot": {
+      "cost": 1.78,
+      "tokens": 1324785,
+      "turns": 22,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 1.55,
+      "tokens": 1532513,
+      "turns": 16,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.35,
+      "tokens": 1547361,
+      "turns": 25,
+      "n": 1
+    },
+    "subagent:arch-design": {
+      "cost": 1.25,
+      "tokens": 1200142,
+      "turns": 16,
+      "n": 1
+    }
+  },
+  "067": {
+    "manager:root": {
+      "cost": 62.02,
+      "tokens": 73081513,
+      "turns": 377,
+      "n": 5
+    },
+    "subagent:code-writer": {
+      "cost": 16.18,
+      "tokens": 31105447,
+      "turns": 215,
+      "n": 6
+    },
+    "manager:worker": {
+      "cost": 15.1,
+      "tokens": 14571239,
+      "turns": 147,
+      "n": 5
+    },
+    "subagent:plan-writer": {
+      "cost": 7.26,
+      "tokens": 10429121,
+      "turns": 77,
+      "n": 4
+    },
+    "subagent:code-reviewer": {
+      "cost": 5.82,
+      "tokens": 5958134,
+      "turns": 83,
+      "n": 6
+    },
+    "subagent:plan-reviewer": {
+      "cost": 3.03,
+      "tokens": 2966566,
+      "turns": 34,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 2.14,
+      "tokens": 2324651,
+      "turns": 45,
+      "n": 2
+    },
+    "subagent:Explore": {
+      "cost": 0.52,
+      "tokens": 169466,
+      "turns": 8,
+      "n": 2
+    },
+    "subagent:general-purpose": {
+      "cost": 0.51,
+      "tokens": 261762,
+      "turns": 7,
+      "n": 2
+    }
+  },
+  "052": {
+    "manager:root": {
+      "cost": 127.81,
+      "tokens": 139258586,
+      "turns": 605,
+      "n": 6
+    },
+    "subagent:code-writer": {
+      "cost": 38.73,
+      "tokens": 61221895,
+      "turns": 437,
+      "n": 9
+    },
+    "manager:bot": {
+      "cost": 19.5,
+      "tokens": 22099528,
+      "turns": 98,
+      "n": 1
+    },
+    "manager:controller": {
+      "cost": 14.04,
+      "tokens": 14732385,
+      "turns": 117,
+      "n": 3
+    },
+    "subagent:plan-writer": {
+      "cost": 12.89,
+      "tokens": 16314939,
+      "turns": 171,
+      "n": 6
+    },
+    "subagent:code-reviewer": {
+      "cost": 11.79,
+      "tokens": 13408579,
+      "turns": 148,
+      "n": 8
+    },
+    "manager:worker": {
+      "cost": 9.97,
+      "tokens": 10553517,
+      "turns": 64,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 9.78,
+      "tokens": 10707152,
+      "turns": 102,
+      "n": 6
+    },
+    "subagent:general-purpose": {
+      "cost": 8.44,
+      "tokens": 3080897,
+      "turns": 41,
+      "n": 2
+    },
+    "subagent:Explore": {
+      "cost": 7.27,
+      "tokens": 5810509,
+      "turns": 113,
+      "n": 11
+    },
+    "subagent:fork": {
+      "cost": 4.37,
+      "tokens": 8086762,
+      "turns": 26,
+      "n": 1
+    },
+    "manager:contracts": {
+      "cost": 4.35,
+      "tokens": 4098961,
+      "turns": 56,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 4.09,
+      "tokens": 5618347,
+      "turns": 54,
+      "n": 1
+    }
+  },
+  "066": {
+    "subagent:code-writer": {
+      "cost": 24.68,
+      "tokens": 49199422,
+      "turns": 205,
+      "n": 2
+    },
+    "manager:root": {
+      "cost": 24.26,
+      "tokens": 28618446,
+      "turns": 191,
+      "n": 2
+    },
+    "manager:worker": {
+      "cost": 19.68,
+      "tokens": 20247429,
+      "turns": 125,
+      "n": 2
+    },
+    "subagent:plan-writer": {
+      "cost": 10.73,
+      "tokens": 16272459,
+      "turns": 86,
+      "n": 2
+    },
+    "subagent:code-reviewer": {
+      "cost": 6.12,
+      "tokens": 6269594,
+      "turns": 51,
+      "n": 2
+    },
+    "subagent:plan-reviewer": {
+      "cost": 5.89,
+      "tokens": 5206419,
+      "turns": 41,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 3.34,
+      "tokens": 3739538,
+      "turns": 47,
+      "n": 2
+    },
+    "subagent:Explore": {
+      "cost": 0.55,
+      "tokens": 303900,
+      "turns": 11,
+      "n": 2
+    }
+  },
+  "041": {
+    "manager:root": {
+      "cost": 62.61,
+      "tokens": 52463222,
+      "turns": 295,
+      "n": 3
+    },
+    "subagent:code-writer": {
+      "cost": 13.56,
+      "tokens": 20637446,
+      "turns": 142,
+      "n": 2
+    },
+    "manager:bot": {
+      "cost": 6.3,
+      "tokens": 7131907,
+      "turns": 56,
+      "n": 1
+    },
+    "manager:worker": {
+      "cost": 4.19,
+      "tokens": 4314430,
+      "turns": 49,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 3.73,
+      "tokens": 3716193,
+      "turns": 37,
+      "n": 2
+    },
+    "subagent:plan-reviewer": {
+      "cost": 3.53,
+      "tokens": 3638240,
+      "turns": 30,
+      "n": 2
+    },
+    "subagent:code-reviewer": {
+      "cost": 2.67,
+      "tokens": 2870374,
+      "turns": 32,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.72,
+      "tokens": 1334086,
+      "turns": 13,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.69,
+      "tokens": 716920,
+      "turns": 22,
+      "n": 2
+    }
+  },
+  "048": {
+    "manager:root": {
+      "cost": 52.05,
+      "tokens": 57262551,
+      "turns": 309,
+      "n": 5
+    },
+    "subagent:general-purpose": {
+      "cost": 7.78,
+      "tokens": 6223578,
+      "turns": 113,
+      "n": 11
+    },
+    "subagent:code-writer": {
+      "cost": 4.88,
+      "tokens": 5423428,
+      "turns": 89,
+      "n": 3
+    },
+    "manager:contracts": {
+      "cost": 4.18,
+      "tokens": 3416456,
+      "turns": 41,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 2.65,
+      "tokens": 2987891,
+      "turns": 57,
+      "n": 3
+    },
+    "manager:worker": {
+      "cost": 1.97,
+      "tokens": 1665245,
+      "turns": 26,
+      "n": 1
+    },
+    "manager:controller": {
+      "cost": 1.78,
+      "tokens": 1542048,
+      "turns": 26,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 1.21,
+      "tokens": 473584,
+      "turns": 24,
+      "n": 5
+    },
+    "subagent:slice-verifier": {
+      "cost": 0.91,
+      "tokens": 893364,
+      "turns": 17,
+      "n": 1
+    }
+  },
+  "015": {
+    "manager:root": {
+      "cost": 18.27,
+      "tokens": 25381892,
+      "turns": 168,
+      "n": 1
+    },
+    "manager:worker": {
+      "cost": 11.37,
+      "tokens": 11481299,
+      "turns": 93,
+      "n": 2
+    },
+    "subagent:code-writer": {
+      "cost": 6.83,
+      "tokens": 9085285,
+      "turns": 82,
+      "n": 3
+    },
+    "subagent:code-reviewer": {
+      "cost": 2.71,
+      "tokens": 3116711,
+      "turns": 43,
+      "n": 2
+    },
+    "subagent:plan-writer": {
+      "cost": 1.81,
+      "tokens": 1781857,
+      "turns": 23,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.65,
+      "tokens": 2154324,
+      "turns": 38,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 1.41,
+      "tokens": 1443521,
+      "turns": 19,
+      "n": 2
+    },
+    "subagent:Explore": {
+      "cost": 0.05,
+      "tokens": 144992,
+      "turns": 9,
+      "n": 1
+    }
+  },
+  "003": {
+    "manager:root": {
+      "cost": 150.03,
+      "tokens": 208837849,
+      "turns": 620,
+      "n": 6
+    },
+    "subagent:general-purpose": {
+      "cost": 84.94,
+      "tokens": 95495499,
+      "turns": 1243,
+      "n": 56
+    },
+    "manager:worker": {
+      "cost": 21.08,
+      "tokens": 25553581,
+      "turns": 101,
+      "n": 1
+    },
+    "manager:contracts": {
+      "cost": 8.02,
+      "tokens": 8418931,
+      "turns": 59,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 7.03,
+      "tokens": 5512114,
+      "turns": 135,
+      "n": 12
+    },
+    "manager:bot": {
+      "cost": 5.12,
+      "tokens": 4721865,
+      "turns": 40,
+      "n": 1
+    },
+    "manager:controller": {
+      "cost": 4.04,
+      "tokens": 3380562,
+      "turns": 37,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 2.87,
+      "tokens": 2222911,
+      "turns": 35,
+      "n": 1
+    }
+  },
+  "none": {
+    "manager:root": {
+      "cost": 358.83,
+      "tokens": 471006652,
+      "turns": 1851,
+      "n": 30
+    },
+    "subagent:Explore": {
+      "cost": 1.79,
+      "tokens": 1612138,
+      "turns": 46,
+      "n": 4
+    },
+    "subagent:fork": {
+      "cost": 1.38,
+      "tokens": 2575109,
+      "turns": 8,
+      "n": 1
+    },
+    "subagent:Plan": {
+      "cost": 0.82,
+      "tokens": 695014,
+      "turns": 12,
+      "n": 1
+    },
+    "manager:worker": {
+      "cost": 0.57,
+      "tokens": 213599,
+      "turns": 7,
+      "n": 4
+    },
+    "subagent:claude-code-guide": {
+      "cost": 0.16,
+      "tokens": 436949,
+      "turns": 14,
+      "n": 2
+    },
+    "manager:controller": {
+      "cost": 0.14,
+      "tokens": 35724,
+      "turns": 1,
+      "n": 1
+    }
+  },
+  "009": {
+    "manager:root": {
+      "cost": 23.75,
+      "tokens": 29608586,
+      "turns": 192,
+      "n": 2
+    },
+    "manager:contracts": {
+      "cost": 2.55,
+      "tokens": 2201403,
+      "turns": 33,
+      "n": 1
+    },
+    "manager:controller": {
+      "cost": 2.51,
+      "tokens": 2286752,
+      "turns": 39,
+      "n": 2
+    },
+    "subagent:code-reviewer": {
+      "cost": 2.05,
+      "tokens": 1999970,
+      "turns": 52,
+      "n": 4
+    },
+    "subagent:code-writer": {
+      "cost": 1.46,
+      "tokens": 1381507,
+      "turns": 38,
+      "n": 3
+    },
+    "manager:worker": {
+      "cost": 1.42,
+      "tokens": 1014127,
+      "turns": 18,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.13,
+      "tokens": 1406281,
+      "turns": 34,
+      "n": 1
+    }
+  },
+  "002": {
+    "manager:root": {
+      "cost": 41.65,
+      "tokens": 50395995,
+      "turns": 261,
+      "n": 3
+    },
+    "subagent:general-purpose": {
+      "cost": 33.34,
+      "tokens": 41621119,
+      "turns": 464,
+      "n": 26
+    },
+    "manager:worker": {
+      "cost": 18.7,
+      "tokens": 19685946,
+      "turns": 89,
+      "n": 1
+    },
+    "manager:controller": {
+      "cost": 5.12,
+      "tokens": 4493659,
+      "turns": 45,
+      "n": 1
+    },
+    "subagent:arch-design": {
+      "cost": 1.97,
+      "tokens": 1455050,
+      "turns": 26,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.81,
+      "tokens": 2017426,
+      "turns": 24,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 1.38,
+      "tokens": 782057,
+      "turns": 27,
+      "n": 3
+    }
+  },
+  "073": {
+    "manager:root": {
+      "cost": 81.76,
+      "tokens": 104465599,
+      "turns": 444,
+      "n": 6
+    },
+    "subagent:code-writer": {
+      "cost": 24.92,
+      "tokens": 36672317,
+      "turns": 272,
+      "n": 8
+    },
+    "subagent:code-reviewer": {
+      "cost": 10.11,
+      "tokens": 10615504,
+      "turns": 156,
+      "n": 8
+    },
+    "manager:worker": {
+      "cost": 9.48,
+      "tokens": 9228152,
+      "turns": 73,
+      "n": 2
+    },
+    "manager:controller": {
+      "cost": 9.34,
+      "tokens": 9501489,
+      "turns": 83,
+      "n": 2
+    },
+    "subagent:plan-writer": {
+      "cost": 6.69,
+      "tokens": 7068347,
+      "turns": 61,
+      "n": 3
+    },
+    "subagent:plan-reviewer": {
+      "cost": 4.05,
+      "tokens": 3909377,
+      "turns": 43,
+      "n": 3
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.95,
+      "tokens": 2253210,
+      "turns": 27,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.53,
+      "tokens": 224311,
+      "turns": 10,
+      "n": 2
+    }
+  },
+  "039": {
+    "manager:root": {
+      "cost": 25.68,
+      "tokens": 35805504,
+      "turns": 189,
+      "n": 3
+    },
+    "subagent:code-writer": {
+      "cost": 21.71,
+      "tokens": 35636910,
+      "turns": 213,
+      "n": 2
+    },
+    "subagent:plan-writer": {
+      "cost": 10.37,
+      "tokens": 12932609,
+      "turns": 107,
+      "n": 2
+    },
+    "manager:controller": {
+      "cost": 7.89,
+      "tokens": 7225797,
+      "turns": 55,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 6.7,
+      "tokens": 7052432,
+      "turns": 68,
+      "n": 3
+    },
+    "manager:worker": {
+      "cost": 5.7,
+      "tokens": 5413795,
+      "turns": 45,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 3.33,
+      "tokens": 3801609,
+      "turns": 38,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 2.03,
+      "tokens": 2631817,
+      "turns": 35,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.2,
+      "tokens": 1048447,
+      "turns": 40,
+      "n": 2
+    }
+  },
+  "040": {
+    "manager:root": {
+      "cost": 31.71,
+      "tokens": 40477222,
+      "turns": 279,
+      "n": 3
+    },
+    "manager:worker": {
+      "cost": 1.73,
+      "tokens": 1291332,
+      "turns": 20,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.47,
+      "tokens": 1910024,
+      "turns": 34,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 0.65,
+      "tokens": 639969,
+      "turns": 14,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 0.59,
+      "tokens": 540670,
+      "turns": 13,
+      "n": 1
+    }
+  },
+  "012": {
+    "manager:root": {
+      "cost": 102.54,
+      "tokens": 123799993,
+      "turns": 516,
+      "n": 6
+    },
+    "subagent:general-purpose": {
+      "cost": 14.88,
+      "tokens": 18769634,
+      "turns": 225,
+      "n": 7
+    },
+    "subagent:code-writer": {
+      "cost": 7.21,
+      "tokens": 8476815,
+      "turns": 138,
+      "n": 8
+    },
+    "manager:controller": {
+      "cost": 5.48,
+      "tokens": 5397490,
+      "turns": 41,
+      "n": 1
+    },
+    "manager:contracts": {
+      "cost": 4.38,
+      "tokens": 3651319,
+      "turns": 57,
+      "n": 2
+    },
+    "subagent:code-reviewer": {
+      "cost": 4.19,
+      "tokens": 3562237,
+      "turns": 79,
+      "n": 7
+    },
+    "subagent:slice-verifier": {
+      "cost": 3.42,
+      "tokens": 4882547,
+      "turns": 52,
+      "n": 1
+    },
+    "manager:bot": {
+      "cost": 2.78,
+      "tokens": 1859462,
+      "turns": 25,
+      "n": 1
+    },
+    "manager:worker": {
+      "cost": 2.7,
+      "tokens": 2171132,
+      "turns": 26,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 2.32,
+      "tokens": 1302078,
+      "turns": 42,
+      "n": 5
+    },
+    "subagent:arch-design": {
+      "cost": 2.06,
+      "tokens": 1874065,
+      "turns": 28,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 1.14,
+      "tokens": 811402,
+      "turns": 9,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 1.05,
+      "tokens": 828033,
+      "turns": 10,
+      "n": 1
+    }
+  },
+  "050": {
+    "manager:root": {
+      "cost": 14.81,
+      "tokens": 17599817,
+      "turns": 102,
+      "n": 1
+    },
+    "manager:worker": {
+      "cost": 4.97,
+      "tokens": 4948447,
+      "turns": 39,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 4.44,
+      "tokens": 5992232,
+      "turns": 51,
+      "n": 2
+    },
+    "subagent:code-reviewer": {
+      "cost": 2.06,
+      "tokens": 2460938,
+      "turns": 22,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 1.86,
+      "tokens": 2054419,
+      "turns": 20,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 1.61,
+      "tokens": 1293815,
+      "turns": 13,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.11,
+      "tokens": 740464,
+      "turns": 9,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.06,
+      "tokens": 262280,
+      "turns": 11,
+      "n": 1
+    }
+  },
+  "004": {
+    "manager:root": {
+      "cost": 58.79,
+      "tokens": 72950082,
+      "turns": 310,
+      "n": 3
+    },
+    "manager:worker": {
+      "cost": 19.45,
+      "tokens": 24747623,
+      "turns": 81,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 14.66,
+      "tokens": 21184687,
+      "turns": 252,
+      "n": 7
+    },
+    "manager:controller": {
+      "cost": 10.42,
+      "tokens": 10682219,
+      "turns": 67,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 9.56,
+      "tokens": 10939978,
+      "turns": 154,
+      "n": 6
+    },
+    "subagent:code-reviewer": {
+      "cost": 7.57,
+      "tokens": 8505134,
+      "turns": 143,
+      "n": 7
+    },
+    "subagent:plan-reviewer": {
+      "cost": 6.67,
+      "tokens": 6757253,
+      "turns": 90,
+      "n": 6
+    },
+    "manager:contracts": {
+      "cost": 4.91,
+      "tokens": 4692255,
+      "turns": 44,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 3.22,
+      "tokens": 4679509,
+      "turns": 59,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 2.9,
+      "tokens": 2652507,
+      "turns": 74,
+      "n": 7
+    },
+    "manager:bot": {
+      "cost": 2.34,
+      "tokens": 1969737,
+      "turns": 29,
+      "n": 1
+    },
+    "subagent:claude-code-guide": {
+      "cost": 0.05,
+      "tokens": 59639,
+      "turns": 3,
+      "n": 1
+    }
+  },
+  "068": {
+    "manager:root": {
+      "cost": 11.11,
+      "tokens": 12098685,
+      "turns": 82,
+      "n": 1
+    },
+    "manager:worker": {
+      "cost": 10.05,
+      "tokens": 9558693,
+      "turns": 60,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 7.86,
+      "tokens": 11637599,
+      "turns": 92,
+      "n": 2
+    },
+    "subagent:plan-writer": {
+      "cost": 5.61,
+      "tokens": 6627025,
+      "turns": 43,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 4.06,
+      "tokens": 4060686,
+      "turns": 32,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 3.6,
+      "tokens": 4301395,
+      "turns": 50,
+      "n": 2
+    },
+    "manager:controller": {
+      "cost": 3.09,
+      "tokens": 2708197,
+      "turns": 36,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 2.77,
+      "tokens": 3687709,
+      "turns": 34,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.24,
+      "tokens": 100101,
+      "turns": 5,
+      "n": 1
+    }
+  },
+  "060": {
+    "manager:root": {
+      "cost": 20.17,
+      "tokens": 27608319,
+      "turns": 175,
+      "n": 2
+    },
+    "subagent:code-writer": {
+      "cost": 8.1,
+      "tokens": 11691712,
+      "turns": 82,
+      "n": 2
+    },
+    "manager:worker": {
+      "cost": 7.17,
+      "tokens": 7017880,
+      "turns": 52,
+      "n": 1
+    },
+    "manager:contracts": {
+      "cost": 3.18,
+      "tokens": 2805962,
+      "turns": 35,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 2.39,
+      "tokens": 2550134,
+      "turns": 21,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 2.35,
+      "tokens": 2478313,
+      "turns": 32,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 2.08,
+      "tokens": 2758706,
+      "turns": 37,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 1.57,
+      "tokens": 1542196,
+      "turns": 15,
+      "n": 1
+    },
+    "subagent:general-purpose": {
+      "cost": 0.43,
+      "tokens": 217103,
+      "turns": 5,
+      "n": 1
+    }
+  },
+  "028": {
+    "manager:root": {
+      "cost": 17.07,
+      "tokens": 21750338,
+      "turns": 110,
+      "n": 1
+    },
+    "manager:worker": {
+      "cost": 5.87,
+      "tokens": 5497897,
+      "turns": 41,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 2.81,
+      "tokens": 3874859,
+      "turns": 45,
+      "n": 2
+    },
+    "subagent:plan-writer": {
+      "cost": 2.14,
+      "tokens": 1899796,
+      "turns": 28,
+      "n": 2
+    },
+    "subagent:code-reviewer": {
+      "cost": 1.53,
+      "tokens": 1768044,
+      "turns": 20,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.48,
+      "tokens": 1748747,
+      "turns": 26,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 1.36,
+      "tokens": 1042091,
+      "turns": 17,
+      "n": 2
+    },
+    "subagent:Explore": {
+      "cost": 0.02,
+      "tokens": 47092,
+      "turns": 4,
+      "n": 1
+    }
+  },
+  "018": {
+    "manager:root": {
+      "cost": 44.94,
+      "tokens": 61379801,
+      "turns": 216,
+      "n": 1
+    },
+    "manager:worker": {
+      "cost": 15.48,
+      "tokens": 16381645,
+      "turns": 93,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 6.98,
+      "tokens": 7749020,
+      "turns": 119,
+      "n": 7
+    },
+    "subagent:code-writer": {
+      "cost": 6.24,
+      "tokens": 8549926,
+      "turns": 84,
+      "n": 3
+    },
+    "subagent:plan-writer": {
+      "cost": 3.55,
+      "tokens": 3543675,
+      "turns": 54,
+      "n": 3
+    },
+    "subagent:plan-reviewer": {
+      "cost": 3.12,
+      "tokens": 2329319,
+      "turns": 33,
+      "n": 4
+    },
+    "subagent:slice-verifier": {
+      "cost": 2.33,
+      "tokens": 2365399,
+      "turns": 37,
+      "n": 2
+    },
+    "subagent:Explore": {
+      "cost": 0.04,
+      "tokens": 79049,
+      "turns": 5,
+      "n": 1
+    }
+  },
+  "057": {
+    "manager:root": {
+      "cost": 16.37,
+      "tokens": 22576664,
+      "turns": 147,
+      "n": 2
+    },
+    "subagent:fork": {
+      "cost": 8.56,
+      "tokens": 24435448,
+      "turns": 86,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 8.21,
+      "tokens": 11626667,
+      "turns": 99,
+      "n": 2
+    },
+    "subagent:plan-writer": {
+      "cost": 5.65,
+      "tokens": 6095594,
+      "turns": 68,
+      "n": 3
+    },
+    "manager:worker": {
+      "cost": 5.13,
+      "tokens": 5097870,
+      "turns": 48,
+      "n": 1
+    },
+    "manager:controller": {
+      "cost": 4.57,
+      "tokens": 4583705,
+      "turns": 39,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 3.74,
+      "tokens": 3589571,
+      "turns": 46,
+      "n": 3
+    },
+    "subagent:code-reviewer": {
+      "cost": 2.94,
+      "tokens": 2919019,
+      "turns": 37,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.65,
+      "tokens": 2001855,
+      "turns": 27,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.12,
+      "tokens": 533923,
+      "turns": 26,
+      "n": 2
+    }
+  },
+  "061": {
+    "manager:root": {
+      "cost": 26.42,
+      "tokens": 30281817,
+      "turns": 141,
+      "n": 2
+    },
+    "subagent:code-writer": {
+      "cost": 21.47,
+      "tokens": 32259873,
+      "turns": 243,
+      "n": 5
+    },
+    "subagent:plan-writer": {
+      "cost": 14.76,
+      "tokens": 18357796,
+      "turns": 133,
+      "n": 4
+    },
+    "subagent:code-reviewer": {
+      "cost": 7.99,
+      "tokens": 9004179,
+      "turns": 106,
+      "n": 4
+    },
+    "manager:contracts": {
+      "cost": 7.97,
+      "tokens": 7833702,
+      "turns": 52,
+      "n": 1
+    },
+    "manager:controller": {
+      "cost": 7.53,
+      "tokens": 6301104,
+      "turns": 47,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 7.51,
+      "tokens": 6630023,
+      "turns": 63,
+      "n": 4
+    },
+    "manager:worker": {
+      "cost": 6.55,
+      "tokens": 5217992,
+      "turns": 40,
+      "n": 1
+    },
+    "manager:bot": {
+      "cost": 3.35,
+      "tokens": 2822118,
+      "turns": 33,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 2.01,
+      "tokens": 2326319,
+      "turns": 28,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.91,
+      "tokens": 480099,
+      "turns": 24,
+      "n": 4
+    },
+    "subagent:general-purpose": {
+      "cost": 0.4,
+      "tokens": 257368,
+      "turns": 7,
+      "n": 1
+    }
+  },
+  "049": {
+    "manager:root": {
+      "cost": 25.33,
+      "tokens": 30446013,
+      "turns": 180,
+      "n": 2
+    },
+    "subagent:code-writer": {
+      "cost": 18.08,
+      "tokens": 24583082,
+      "turns": 247,
+      "n": 6
+    },
+    "subagent:code-reviewer": {
+      "cost": 9.06,
+      "tokens": 10502864,
+      "turns": 141,
+      "n": 6
+    },
+    "manager:worker": {
+      "cost": 7.45,
+      "tokens": 6891081,
+      "turns": 48,
+      "n": 1
+    },
+    "manager:contracts": {
+      "cost": 5.75,
+      "tokens": 6159016,
+      "turns": 50,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 4.41,
+      "tokens": 4407207,
+      "turns": 57,
+      "n": 3
+    },
+    "manager:controller": {
+      "cost": 4.21,
+      "tokens": 3525862,
+      "turns": 40,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 3.5,
+      "tokens": 3212668,
+      "turns": 41,
+      "n": 3
+    },
+    "manager:bot": {
+      "cost": 2.89,
+      "tokens": 2408839,
+      "turns": 29,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 2.14,
+      "tokens": 2647388,
+      "turns": 31,
+      "n": 1
+    },
+    "subagent:general-purpose": {
+      "cost": 0.25,
+      "tokens": 63243,
+      "turns": 2,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.09,
+      "tokens": 400413,
+      "turns": 15,
+      "n": 1
+    }
+  },
+  "022": {
+    "manager:root": {
+      "cost": 5.85,
+      "tokens": 6936570,
+      "turns": 67,
+      "n": 1
+    },
+    "manager:contracts": {
+      "cost": 2.38,
+      "tokens": 1923772,
+      "turns": 27,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 2.28,
+      "tokens": 2297185,
+      "turns": 57,
+      "n": 4
+    },
+    "manager:worker": {
+      "cost": 2.07,
+      "tokens": 1638105,
+      "turns": 24,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 1.5,
+      "tokens": 1579736,
+      "turns": 37,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 0.77,
+      "tokens": 782273,
+      "turns": 19,
+      "n": 1
+    }
+  },
+  "007": {
+    "manager:root": {
+      "cost": 25.83,
+      "tokens": 33924083,
+      "turns": 200,
+      "n": 2
+    },
+    "manager:controller": {
+      "cost": 8.15,
+      "tokens": 7696817,
+      "turns": 67,
+      "n": 2
+    },
+    "subagent:code-writer": {
+      "cost": 7.06,
+      "tokens": 10001615,
+      "turns": 123,
+      "n": 5
+    },
+    "subagent:plan-writer": {
+      "cost": 5.46,
+      "tokens": 6645729,
+      "turns": 86,
+      "n": 3
+    },
+    "manager:contracts": {
+      "cost": 4.23,
+      "tokens": 3815368,
+      "turns": 43,
+      "n": 1
+    },
+    "manager:bot": {
+      "cost": 3.56,
+      "tokens": 2667967,
+      "turns": 28,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 3.23,
+      "tokens": 2846675,
+      "turns": 37,
+      "n": 3
+    },
+    "subagent:code-reviewer": {
+      "cost": 2.33,
+      "tokens": 2219810,
+      "turns": 42,
+      "n": 3
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.49,
+      "tokens": 1932721,
+      "turns": 36,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.03,
+      "tokens": 93485,
+      "turns": 6,
+      "n": 1
+    }
+  },
+  "017": {
+    "manager:root": {
+      "cost": 42.25,
+      "tokens": 47319264,
+      "turns": 238,
+      "n": 3
+    },
+    "subagent:code-writer": {
+      "cost": 10.08,
+      "tokens": 15286617,
+      "turns": 138,
+      "n": 4
+    },
+    "manager:controller": {
+      "cost": 6.45,
+      "tokens": 6651266,
+      "turns": 46,
+      "n": 1
+    },
+    "manager:contracts": {
+      "cost": 4.72,
+      "tokens": 3957871,
+      "turns": 40,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 3.49,
+      "tokens": 3677691,
+      "turns": 43,
+      "n": 2
+    },
+    "subagent:plan-reviewer": {
+      "cost": 2.78,
+      "tokens": 2733958,
+      "turns": 31,
+      "n": 2
+    },
+    "subagent:arch-design": {
+      "cost": 2.45,
+      "tokens": 2314481,
+      "turns": 28,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 2.05,
+      "tokens": 1861494,
+      "turns": 27,
+      "n": 2
+    },
+    "subagent:Explore": {
+      "cost": 1.59,
+      "tokens": 767032,
+      "turns": 30,
+      "n": 5
+    },
+    "subagent:slice-verifier": {
+      "cost": 0.93,
+      "tokens": 684615,
+      "turns": 12,
+      "n": 1
+    },
+    "subagent:general-purpose": {
+      "cost": 0.25,
+      "tokens": 100090,
+      "turns": 5,
+      "n": 1
+    }
+  },
+  "021": {
+    "manager:root": {
+      "cost": 23.57,
+      "tokens": 28263829,
+      "turns": 149,
+      "n": 1
+    },
+    "manager:bot": {
+      "cost": 4.41,
+      "tokens": 3322883,
+      "turns": 31,
+      "n": 1
+    },
+    "manager:controller": {
+      "cost": 3.52,
+      "tokens": 3023507,
+      "turns": 36,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 3.35,
+      "tokens": 3584192,
+      "turns": 80,
+      "n": 6
+    },
+    "manager:contracts": {
+      "cost": 2.64,
+      "tokens": 2238662,
+      "turns": 31,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 2.37,
+      "tokens": 2505513,
+      "turns": 53,
+      "n": 3
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.12,
+      "tokens": 1237165,
+      "turns": 26,
+      "n": 1
+    }
+  },
+  "027": {
+    "manager:root": {
+      "cost": 23.14,
+      "tokens": 26671738,
+      "turns": 168,
+      "n": 2
+    },
+    "subagent:code-writer": {
+      "cost": 9.22,
+      "tokens": 11208406,
+      "turns": 122,
+      "n": 6
+    },
+    "manager:controller": {
+      "cost": 6.14,
+      "tokens": 5961736,
+      "turns": 49,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 3.56,
+      "tokens": 3326272,
+      "turns": 56,
+      "n": 4
+    },
+    "manager:bot": {
+      "cost": 3.42,
+      "tokens": 2663167,
+      "turns": 25,
+      "n": 1
+    },
+    "manager:contracts": {
+      "cost": 2.93,
+      "tokens": 2475050,
+      "turns": 32,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 2.23,
+      "tokens": 2060272,
+      "turns": 32,
+      "n": 2
+    },
+    "subagent:plan-reviewer": {
+      "cost": 1.58,
+      "tokens": 1181122,
+      "turns": 18,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.05,
+      "tokens": 1123019,
+      "turns": 22,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.03,
+      "tokens": 50653,
+      "turns": 4,
+      "n": 1
+    }
+  },
+  "054": {
+    "manager:root": {
+      "cost": 32.68,
+      "tokens": 35820701,
+      "turns": 192,
+      "n": 2
+    },
+    "subagent:code-writer": {
+      "cost": 15.75,
+      "tokens": 27115627,
+      "turns": 138,
+      "n": 2
+    },
+    "manager:controller": {
+      "cost": 9.49,
+      "tokens": 9870756,
+      "turns": 58,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 6.45,
+      "tokens": 8003934,
+      "turns": 53,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 3.69,
+      "tokens": 3393605,
+      "turns": 30,
+      "n": 2
+    },
+    "subagent:code-reviewer": {
+      "cost": 3.3,
+      "tokens": 3925687,
+      "turns": 41,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 2.28,
+      "tokens": 2832134,
+      "turns": 33,
+      "n": 1
+    },
+    "manager:contracts": {
+      "cost": 1.75,
+      "tokens": 1378209,
+      "turns": 21,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 1.32,
+      "tokens": 982983,
+      "turns": 33,
+      "n": 4
+    }
+  },
+  "026": {
+    "manager:root": {
+      "cost": 49.74,
+      "tokens": 54481308,
+      "turns": 306,
+      "n": 5
+    },
+    "subagent:code-writer": {
+      "cost": 22.62,
+      "tokens": 34735653,
+      "turns": 221,
+      "n": 4
+    },
+    "subagent:fork": {
+      "cost": 20.33,
+      "tokens": 35938878,
+      "turns": 116,
+      "n": 2
+    },
+    "manager:controller": {
+      "cost": 10.69,
+      "tokens": 9566480,
+      "turns": 77,
+      "n": 2
+    },
+    "subagent:Explore": {
+      "cost": 10.62,
+      "tokens": 9167641,
+      "turns": 164,
+      "n": 13
+    },
+    "subagent:code-reviewer": {
+      "cost": 7.97,
+      "tokens": 8864158,
+      "turns": 120,
+      "n": 5
+    },
+    "subagent:plan-writer": {
+      "cost": 6.36,
+      "tokens": 7422688,
+      "turns": 85,
+      "n": 3
+    },
+    "subagent:plan-reviewer": {
+      "cost": 4.58,
+      "tokens": 4901968,
+      "turns": 51,
+      "n": 3
+    },
+    "subagent:general-purpose": {
+      "cost": 2.82,
+      "tokens": 1610712,
+      "turns": 44,
+      "n": 5
+    },
+    "manager:contracts": {
+      "cost": 2.52,
+      "tokens": 2301736,
+      "turns": 35,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 2.11,
+      "tokens": 2715793,
+      "turns": 36,
+      "n": 1
+    }
+  },
+  "042": {
+    "manager:root": {
+      "cost": 8.59,
+      "tokens": 9856476,
+      "turns": 85,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 3.15,
+      "tokens": 4153526,
+      "turns": 72,
+      "n": 3
+    },
+    "manager:bot": {
+      "cost": 2.45,
+      "tokens": 2053099,
+      "turns": 28,
+      "n": 1
+    },
+    "manager:contracts": {
+      "cost": 1.75,
+      "tokens": 1347606,
+      "turns": 21,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 1.62,
+      "tokens": 1294286,
+      "turns": 28,
+      "n": 3
+    },
+    "manager:controller": {
+      "cost": 1.33,
+      "tokens": 933069,
+      "turns": 17,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.02,
+      "tokens": 1069611,
+      "turns": 19,
+      "n": 1
+    }
+  },
+  "046": {
+    "manager:root": {
+      "cost": 51.99,
+      "tokens": 59060349,
+      "turns": 319,
+      "n": 4
+    },
+    "subagent:code-writer": {
+      "cost": 12.63,
+      "tokens": 18656586,
+      "turns": 126,
+      "n": 2
+    },
+    "manager:controller": {
+      "cost": 6.98,
+      "tokens": 6206756,
+      "turns": 44,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 5.52,
+      "tokens": 6605127,
+      "turns": 45,
+      "n": 1
+    },
+    "subagent:arch-design": {
+      "cost": 4.41,
+      "tokens": 2546747,
+      "turns": 18,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 3.44,
+      "tokens": 3686492,
+      "turns": 50,
+      "n": 3
+    },
+    "subagent:plan-reviewer": {
+      "cost": 2.25,
+      "tokens": 1913066,
+      "turns": 21,
+      "n": 2
+    },
+    "manager:contracts": {
+      "cost": 2.13,
+      "tokens": 1480321,
+      "turns": 23,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.27,
+      "tokens": 1186210,
+      "turns": 15,
+      "n": 1
+    },
+    "subagent:general-purpose": {
+      "cost": 1.1,
+      "tokens": 827875,
+      "turns": 17,
+      "n": 2
+    },
+    "subagent:Explore": {
+      "cost": 0.88,
+      "tokens": 420633,
+      "turns": 30,
+      "n": 9
+    }
+  },
+  "030": {
+    "manager:root": {
+      "cost": 26.16,
+      "tokens": 34320939,
+      "turns": 197,
+      "n": 3
+    },
+    "subagent:code-writer": {
+      "cost": 12.8,
+      "tokens": 19549786,
+      "turns": 145,
+      "n": 5
+    },
+    "manager:controller": {
+      "cost": 7.33,
+      "tokens": 7157362,
+      "turns": 48,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 4.83,
+      "tokens": 6023613,
+      "turns": 60,
+      "n": 2
+    },
+    "subagent:plan-reviewer": {
+      "cost": 2.96,
+      "tokens": 3195613,
+      "turns": 33,
+      "n": 2
+    },
+    "manager:bot": {
+      "cost": 2.75,
+      "tokens": 2334433,
+      "turns": 30,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 2.7,
+      "tokens": 2763204,
+      "turns": 49,
+      "n": 3
+    },
+    "manager:contracts": {
+      "cost": 2.62,
+      "tokens": 2144256,
+      "turns": 35,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 2.07,
+      "tokens": 2425989,
+      "turns": 32,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.04,
+      "tokens": 138013,
+      "turns": 10,
+      "n": 1
+    }
+  },
+  "058": {
+    "subagent:code-writer": {
+      "cost": 67.79,
+      "tokens": 114747863,
+      "turns": 395,
+      "n": 4
+    },
+    "manager:root": {
+      "cost": 62.71,
+      "tokens": 76610083,
+      "turns": 323,
+      "n": 3
+    },
+    "manager:controller": {
+      "cost": 12.66,
+      "tokens": 11046629,
+      "turns": 65,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 10.57,
+      "tokens": 14562151,
+      "turns": 69,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 8.97,
+      "tokens": 9454157,
+      "turns": 78,
+      "n": 3
+    },
+    "manager:bot": {
+      "cost": 5.26,
+      "tokens": 4048294,
+      "turns": 33,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 4.95,
+      "tokens": 6843103,
+      "turns": 42,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 3.6,
+      "tokens": 3604870,
+      "turns": 32,
+      "n": 2
+    },
+    "manager:contracts": {
+      "cost": 3.41,
+      "tokens": 3095555,
+      "turns": 33,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 3.16,
+      "tokens": 1987140,
+      "turns": 46,
+      "n": 5
+    }
+  },
+  "011": {
+    "manager:root": {
+      "cost": 17.43,
+      "tokens": 21645040,
+      "turns": 155,
+      "n": 2
+    },
+    "manager:controller": {
+      "cost": 2.11,
+      "tokens": 1542692,
+      "turns": 21,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 0.69,
+      "tokens": 736797,
+      "turns": 15,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 0.68,
+      "tokens": 569647,
+      "turns": 12,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 0.45,
+      "tokens": 362165,
+      "turns": 12,
+      "n": 1
+    }
+  },
+  "010": {
+    "manager:root": {
+      "cost": 10.4,
+      "tokens": 10483754,
+      "turns": 116,
+      "n": 2
+    },
+    "manager:bot": {
+      "cost": 3.48,
+      "tokens": 2672300,
+      "turns": 33,
+      "n": 1
+    },
+    "manager:controller": {
+      "cost": 3.35,
+      "tokens": 2320076,
+      "turns": 30,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 3.15,
+      "tokens": 3248189,
+      "turns": 70,
+      "n": 5
+    },
+    "subagent:code-reviewer": {
+      "cost": 2.12,
+      "tokens": 1999893,
+      "turns": 37,
+      "n": 3
+    },
+    "subagent:slice-verifier": {
+      "cost": 0.84,
+      "tokens": 842921,
+      "turns": 21,
+      "n": 1
+    }
+  },
+  "185": {
+    "manager:root": {
+      "cost": 42.08,
+      "tokens": 56335140,
+      "turns": 179,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 3.03,
+      "tokens": 2057922,
+      "turns": 36,
+      "n": 3
+    },
+    "subagent:general-purpose": {
+      "cost": 0.87,
+      "tokens": 972151,
+      "turns": 25,
+      "n": 1
+    }
+  },
+  "062": {
+    "manager:root": {
+      "cost": 29.74,
+      "tokens": 34207463,
+      "turns": 186,
+      "n": 2
+    },
+    "subagent:code-writer": {
+      "cost": 17.53,
+      "tokens": 27776464,
+      "turns": 103,
+      "n": 1
+    },
+    "manager:controller": {
+      "cost": 8.95,
+      "tokens": 8510749,
+      "turns": 55,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 8.0,
+      "tokens": 9450241,
+      "turns": 46,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 4.81,
+      "tokens": 4749110,
+      "turns": 30,
+      "n": 1
+    },
+    "subagent:general-purpose": {
+      "cost": 4.37,
+      "tokens": 4254130,
+      "turns": 59,
+      "n": 4
+    },
+    "subagent:code-reviewer": {
+      "cost": 3.08,
+      "tokens": 4052608,
+      "turns": 30,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.31,
+      "tokens": 1151056,
+      "turns": 16,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.31,
+      "tokens": 153037,
+      "turns": 6,
+      "n": 1
+    }
+  },
+  "023": {
+    "manager:root": {
+      "cost": 30.26,
+      "tokens": 30108291,
+      "turns": 227,
+      "n": 6
+    },
+    "subagent:code-writer": {
+      "cost": 17.02,
+      "tokens": 25153923,
+      "turns": 204,
+      "n": 5
+    },
+    "manager:controller": {
+      "cost": 11.97,
+      "tokens": 10634333,
+      "turns": 85,
+      "n": 2
+    },
+    "subagent:code-reviewer": {
+      "cost": 6.15,
+      "tokens": 7557119,
+      "turns": 89,
+      "n": 4
+    },
+    "subagent:general-purpose": {
+      "cost": 5.64,
+      "tokens": 6075874,
+      "turns": 80,
+      "n": 4
+    },
+    "subagent:Explore": {
+      "cost": 4.15,
+      "tokens": 2788691,
+      "turns": 64,
+      "n": 6
+    },
+    "subagent:plan-writer": {
+      "cost": 3.97,
+      "tokens": 4813537,
+      "turns": 57,
+      "n": 2
+    },
+    "subagent:plan-reviewer": {
+      "cost": 2.38,
+      "tokens": 2540040,
+      "turns": 32,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 2.37,
+      "tokens": 2888693,
+      "turns": 32,
+      "n": 1
+    },
+    "manager:bot": {
+      "cost": 2.33,
+      "tokens": 1896454,
+      "turns": 30,
+      "n": 1
+    }
+  },
+  "053": {
+    "manager:root": {
+      "cost": 43.71,
+      "tokens": 49571439,
+      "turns": 255,
+      "n": 4
+    },
+    "subagent:Explore": {
+      "cost": 1.09,
+      "tokens": 627569,
+      "turns": 21,
+      "n": 3
+    },
+    "subagent:claude-code-guide": {
+      "cost": 0.1,
+      "tokens": 225147,
+      "turns": 6,
+      "n": 1
+    }
+  },
+  "064": {
+    "manager:root": {
+      "cost": 1.33,
+      "tokens": 292459,
+      "turns": 5,
+      "n": 1
+    }
+  },
+  "035": {
+    "manager:root": {
+      "cost": 28.72,
+      "tokens": 24603095,
+      "turns": 150,
+      "n": 4
+    }
+  },
+  "069": {
+    "manager:root": {
+      "cost": 45.88,
+      "tokens": 54241904,
+      "turns": 197,
+      "n": 3
+    },
+    "manager:controller": {
+      "cost": 7.61,
+      "tokens": 6846167,
+      "turns": 49,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 7.6,
+      "tokens": 8575220,
+      "turns": 84,
+      "n": 4
+    },
+    "subagent:code-reviewer": {
+      "cost": 4.27,
+      "tokens": 3866300,
+      "turns": 47,
+      "n": 3
+    },
+    "subagent:Explore": {
+      "cost": 3.99,
+      "tokens": 2986942,
+      "turns": 63,
+      "n": 6
+    },
+    "subagent:plan-writer": {
+      "cost": 3.49,
+      "tokens": 4156137,
+      "turns": 29,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 2.29,
+      "tokens": 3064060,
+      "turns": 39,
+      "n": 1
+    },
+    "manager:bot": {
+      "cost": 1.91,
+      "tokens": 1315332,
+      "turns": 18,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 1.58,
+      "tokens": 1251676,
+      "turns": 11,
+      "n": 1
+    }
+  },
+  "036": {
+    "manager:root": {
+      "cost": 23.66,
+      "tokens": 27900227,
+      "turns": 167,
+      "n": 2
+    },
+    "subagent:code-reviewer": {
+      "cost": 3.89,
+      "tokens": 3863773,
+      "turns": 53,
+      "n": 2
+    },
+    "manager:controller": {
+      "cost": 2.83,
+      "tokens": 2162130,
+      "turns": 26,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 2.08,
+      "tokens": 2382230,
+      "turns": 43,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.63,
+      "tokens": 2167968,
+      "turns": 42,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 1.21,
+      "tokens": 1054268,
+      "turns": 16,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 1.18,
+      "tokens": 885009,
+      "turns": 12,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.09,
+      "tokens": 456255,
+      "turns": 22,
+      "n": 1
+    }
+  },
+  "032": {
+    "manager:root": {
+      "cost": 15.39,
+      "tokens": 16627625,
+      "turns": 89,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 3.35,
+      "tokens": 3464072,
+      "turns": 42,
+      "n": 2
+    },
+    "manager:bot": {
+      "cost": 2.38,
+      "tokens": 1443709,
+      "turns": 19,
+      "n": 1
+    },
+    "subagent:plan-reviewer": {
+      "cost": 2.0,
+      "tokens": 2215257,
+      "turns": 21,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 1.02,
+      "tokens": 745704,
+      "turns": 27,
+      "n": 3
+    }
+  },
+  "045": {
+    "manager:root": {
+      "cost": 31.55,
+      "tokens": 30392256,
+      "turns": 199,
+      "n": 4
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.02,
+      "tokens": 738249,
+      "turns": 10,
+      "n": 1
+    }
+  },
+  "006": {
+    "manager:root": {
+      "cost": 46.19,
+      "tokens": 60390375,
+      "turns": 285,
+      "n": 2
+    },
+    "subagent:code-writer": {
+      "cost": 17.52,
+      "tokens": 27503293,
+      "turns": 213,
+      "n": 6
+    },
+    "manager:controller": {
+      "cost": 15.65,
+      "tokens": 14990392,
+      "turns": 120,
+      "n": 3
+    },
+    "manager:bot": {
+      "cost": 6.8,
+      "tokens": 7440893,
+      "turns": 57,
+      "n": 1
+    },
+    "subagent:plan-writer": {
+      "cost": 5.97,
+      "tokens": 6536450,
+      "turns": 66,
+      "n": 3
+    },
+    "subagent:code-reviewer": {
+      "cost": 5.74,
+      "tokens": 6653148,
+      "turns": 87,
+      "n": 4
+    },
+    "subagent:plan-reviewer": {
+      "cost": 4.34,
+      "tokens": 4404528,
+      "turns": 45,
+      "n": 3
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.52,
+      "tokens": 1705743,
+      "turns": 27,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 0.16,
+      "tokens": 635127,
+      "turns": 25,
+      "n": 2
+    }
+  },
+  "051": {
+    "manager:root": {
+      "cost": 24.08,
+      "tokens": 33575437,
+      "turns": 156,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 4.9,
+      "tokens": 6263261,
+      "turns": 75,
+      "n": 2
+    },
+    "manager:bot": {
+      "cost": 4.42,
+      "tokens": 3872691,
+      "turns": 41,
+      "n": 1
+    },
+    "manager:controller": {
+      "cost": 3.08,
+      "tokens": 2007097,
+      "turns": 25,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 2.25,
+      "tokens": 1932276,
+      "turns": 32,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 1.21,
+      "tokens": 1366315,
+      "turns": 22,
+      "n": 1
+    }
+  },
+  "008": {
+    "manager:root": {
+      "cost": 13.09,
+      "tokens": 13279063,
+      "turns": 113,
+      "n": 2
+    },
+    "subagent:code-reviewer": {
+      "cost": 0.53,
+      "tokens": 389391,
+      "turns": 11,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 0.33,
+      "tokens": 197864,
+      "turns": 8,
+      "n": 1
+    }
+  },
+  "056": {
+    "manager:root": {
+      "cost": 71.58,
+      "tokens": 106058625,
+      "turns": 286,
+      "n": 1
+    }
+  },
+  "016": {
+    "manager:root": {
+      "cost": 5.23,
+      "tokens": 5866078,
+      "turns": 49,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 0.73,
+      "tokens": 744169,
+      "turns": 20,
+      "n": 1
+    }
+  },
+  "013": {
+    "manager:root": {
+      "cost": 4.24,
+      "tokens": 4466506,
+      "turns": 51,
+      "n": 1
+    },
+    "manager:bot": {
+      "cost": 3.16,
+      "tokens": 2432709,
+      "turns": 27,
+      "n": 1
+    },
+    "subagent:code-writer": {
+      "cost": 2.82,
+      "tokens": 3835102,
+      "turns": 54,
+      "n": 2
+    },
+    "subagent:slice-verifier": {
+      "cost": 0.83,
+      "tokens": 734608,
+      "turns": 14,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 0.75,
+      "tokens": 686249,
+      "turns": 13,
+      "n": 1
+    }
+  },
+  "029": {
+    "manager:root": {
+      "cost": 7.92,
+      "tokens": 10386976,
+      "turns": 92,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 0.73,
+      "tokens": 652867,
+      "turns": 15,
+      "n": 1
+    }
+  },
+  "065": {
+    "manager:root": {
+      "cost": 2.34,
+      "tokens": 1017676,
+      "turns": 10,
+      "n": 1
+    },
+    "subagent:Explore": {
+      "cost": 1.17,
+      "tokens": 872090,
+      "turns": 11,
+      "n": 1
+    }
+  },
+  "020": {
+    "subagent:code-writer": {
+      "cost": 4.32,
+      "tokens": 5415800,
+      "turns": 66,
+      "n": 2
+    },
+    "manager:bot": {
+      "cost": 3.52,
+      "tokens": 2704832,
+      "turns": 28,
+      "n": 1
+    },
+    "manager:root": {
+      "cost": 3.09,
+      "tokens": 3040396,
+      "turns": 36,
+      "n": 1
+    },
+    "subagent:code-reviewer": {
+      "cost": 1.31,
+      "tokens": 1583257,
+      "turns": 24,
+      "n": 1
+    },
+    "subagent:slice-verifier": {
+      "cost": 0.57,
+      "tokens": 490462,
+      "turns": 14,
+      "n": 1
+    }
+  }
+}
