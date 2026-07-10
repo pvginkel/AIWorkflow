@@ -88,3 +88,37 @@ orchestrator share (53% baseline) and per-session inline-verification share (~30
 sharply; watch planning quality (task premises) — the task folder is now the only dispatch context,
 so plan-writer/plan-reviewer carry the weight the per-project managers used to improvise. Then sync
 the settled result back into this repo (`orchestrator/`, `project/`, `tools/`).
+
+## Validation run 1 — slice 072 (2026-07-10)
+
+First real slice through the runner (bot reliability + UX; 5 tasks, 11 requirements, ~2.1k
+insertions). All 5 tasks merged, suites green, 12/12 acceptance criteria + V13 independently
+audited; the only escalation was the final-verification bail (below). Reviewed end-to-end
+(operator + Fable session, 2026-07-10); the merged diff held up under an independent read — no new
+blockers, and the loop's own rounds caught real bugs (task 01's budget arithmetic ×2, task 04's
+display-name regression).
+
+**Cost** (sticker, dedup by message.id; `tools/analysis/runner_sessions.py`): run fleet ≈ **$100**
+— writers $71 (task 04 alone $31), reviewers $13, testers $11 (Sonnet), 5 checkpoint consults
+$3.8, test-agent $2. `/plan-slice` ≈ **$29** (interactive session $10 + plan-writer $12 +
+plan-reviewer $7; 3 review rounds — round 2 caught a genuine wrong-env-safety MAJOR, so the spend
+bought real value). Writers dominate; consults are noise-level.
+
+**Fixes landed from the run review** (KubeCoder, to ride the sync-back):
+
+1. **Two-tier checkpoint consults** — evidence: of the 5 checkpoints, 3 were decidable from the
+   run-history summaries alone, 1 borderline, 1 genuinely needed code (same-file overlap with a
+   remaining task's plan grounding); the deep diff dives never changed an outcome. The runner now
+   embeds the merge's `--stat` in the prompt and prescribes tier-1 (summaries + stat) with tier-2
+   (targeted diff reads) only on genuine uncertainty.
+2. **Final-verification findings go through a consult** (`fix_tasks` · `proceed_flagged` · `bail`)
+   — 072 hard-bailed over ONE low-severity, pre-existing, dormant residual the test-agent itself
+   framed as a tracking gap; the runner had no severity routing at exactly the one judgment point
+   that lacked a consult. Non-blocking findings now land in `flagged_findings` (operator still
+   sees them as Triage cards at close-out) and the slice completes.
+3. **Conversation traceability** — `state.json` history entries now carry the transcript path per
+   session (and `log.txt` names every session id + path at spawn); close-out commits `log.txt`
+   instead of deleting it (072's 234 KB log was dropped). `runner_sessions.py` (this repo) turns a
+   slice folder into the full session inventory. Interactive sessions (`/plan-slice`,
+   `/run-slice`) remain findable only by grepping `~/.claude/projects/` — a SessionStart-hook
+   registry is the clean fix if that hurts again.
