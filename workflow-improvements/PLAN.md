@@ -122,3 +122,17 @@ bought real value). Writers dominate; consults are noise-level.
    slice folder into the full session inventory. Interactive sessions (`/plan-slice`,
    `/run-slice`) remain findable only by grepping `~/.claude/projects/` — a SessionStart-hook
    registry is the clean fix if that hurts again.
+
+**Baseline comparison + behavior profile (post-run analysis, same day).** Old-workflow median was
+$64/slice across 67 slices, but the size-comparable majors (038/058/044/052) ran **$150–283 at
+15–42 active hours**; 072 all-in was **~$137 at ~5 active hours** with a far higher verification
+bar, and the orchestrator share collapsed **53% → ~13%** — the redesign's target metric, delivered.
+Transcript profiling of 7 fleet sessions found the agents disciplined (waste ≈ 10–15%: a few
+E501 lint round-trips, stale-`old_string` Edit retries, one `-v | tail -300` suite dump; zero
+scope creep, real adversarial probing, clean artifact hygiene). The dominant residual cost is
+**turn count × context size** (cache reads ~40× output tokens): sessions rarely batch — the
+reviewer/tester/test-agent sessions had *zero* multi-tool-call turns and every session serialized
+the same 3–4-file bootstrap. Fix landed: every spawned-agent definition now carries a
+batch-independent-tool-calls rule (+ `-q` suite output for test-running roles) — measure its
+effect on validation run 2. Next lever if needed: task 04 was a $31 writer session (866-line
+diff); plan-slice could split that scale of task, trading a longer pipeline for smaller contexts.
