@@ -29,7 +29,7 @@ The operator's pipeline (one session each, operator-initiated):
    Triage allocates the slice number, creates the Kanban card, and pre-resolves all Trello content
    into `slice.md` (nothing is read from boards mid-run).
 2. **`/plan-slice`** (new) — interactive, slice-scoped planning. Plan-writer + plan-reviewer break
-   the slice into **2–4 ordered, project-local tasks** (`tasks/NNN_slug/`), each with its own plan;
+   the slice into **3–6 ordered, project-local tasks** (`tasks/NN_slug/`; max 10), each with its own plan;
    cross-project interfaces are defined up front (producing task first); acceptance criteria and
    verification artifacts are emitted here. Planning Q&A with the operator happens once, here — not
    per-project at run time.
@@ -58,9 +58,9 @@ fixed; the lesson — scream, don't adapt — is now contract).
 | B standardize skills | Superseded for the retired skills; project-specific commands live in per-project docs/CLAUDE.md and the runner's config, not in skill bodies. |
 | C task model + bounded loops | The core delivery: task folders + runner + verdict contract. Branch-per-task (operator's suggestion) kept — clone-per-slice makes it safe, the runner makes it mechanical, review scope = `merge-base..HEAD`. |
 | D test agent | `test-agent` (Sonnet, handover in / findings out) runs final verification from the runner. Findings **bail out** in v1 (`test_findings.md`) — the `/run-slice` session authors fix tasks via `/write-task` and relaunches; scripting the findings loop end-to-end is v2. Live-deploy verification stays post-push in `/run-slice` close-out. |
-| E resizing | Retargeted at `/triage` (bundle = slice now, so triage groups sizing-aware) and `/plan-slice` (sizes to 2–4 tasks; may propose splitting a too-big slice during Q&A). |
+| E resizing | Retargeted at `/triage` (bundle = slice now, so triage groups sizing-aware) and `/plan-slice` (sizes to 3–6 tasks, max 10; may propose splitting a too-big slice during Q&A). |
 | F triage fidelity | Already shipped (`a3eccbf`); `slice.md` carries operator specs at signature fidelity. |
-| G agent trims | All dev agents rewritten thin: identity + output contract (now literally the verdict schema) + bounds. Reviewers describe, never fix; no plan fed to tester or code-reviewer; external-surface/substitution-test blocks (commit `179f3fe`) deleted, replaced by a one-line grounded-claims rule. |
+| G agent trims | All dev agents rewritten thin: identity + output contract (now literally the verdict schema) + bounds. Reviewers describe, never fix; tester and code-reviewer get `slice.md` + `plan.md` as requirements with outcome framing (coverage-not-truth for the tester, outcomes-not-approach for the reviewer); external-surface/substitution-test blocks (commit `179f3fe`) deleted, replaced by a one-line grounded-claims rule. |
 | H CLAUDE.md | Root CLAUDE.md becomes a **generic KubeCoder brief** (orchestrator role guidance removed — it serves the root session *and* every spawned dev session, which now pay its cost per spawn). Issue-log + push-notifications → `~/.claude/CLAUDE.md` + env template; deploy/cexec → `docs/operations/`; skill list deleted (frontmatter descriptions suffice); Decision-making sections deleted; subproject duplication collapsed. |
 | I docs diet | "State every fact exactly once; no recap sentences" added to `documentation-model.md`; moved content lands terse. |
 | J claude_session.py | Gains `--cwd`, `--agent`, `--model`, quiet-by-default stderr (`-v` restores streaming); its `_run` machinery is the runner's session backend. |
