@@ -1,0 +1,33 @@
+services:
+  llmbox:
+    image: registry:5000/llmbox:latest
+    network_mode: host
+    pid: host
+    working_dir: /work/AIWorkflow
+    tty: true
+    user: "${UID}:${GID}"
+    environment:
+      TERM: "${TERM}"
+      COLORTERM: "${COLORTERM}"
+      HA_URL: "${HA_URL}"
+      HA_TOKEN: "${HA_TOKEN}"
+      KUBECONFIG: /home/ubuntu/claude-kubeconfig.yaml
+      KUBE_NAMESPACE: development
+      ANSIBLE_VAULT_PASSWORD_FILE: ".vault_pass"
+      GIT_TOKEN: "${GIT_TOKEN}"
+      JENKINS_TOKEN: "${JENKINS_TOKEN}"
+    volumes:
+      - ${HOME}/.claude.json:/home/ubuntu/.claude.json:rw
+      - ${HOME}/.claude:/home/ubuntu/.claude:rw
+      - ${HOME}/.codex:/home/ubuntu/.codex:rw
+      - ${HOME}/.vimrc:/home/ubuntu/.vimrc:ro
+      - ${HOME}/.gitconfig:/home/ubuntu/.gitconfig:ro
+      - ${HOME}/.cache:/home/ubuntu/.cache:rw
+      - ${HOME}/.terraformrc:/home/ubuntu/.terraformrc:ro
+      - ${HOME}/.kube:/home/ubuntu/.kube:ro
+      - ${HOME}/claude-kubeconfig.yaml:/home/ubuntu/claude-kubeconfig.yaml:ro
+      - .:/work/AIWorkflow:rw
+      - ../KubeCoder-2:/work/KubeCoder:rw
+      - ../KubeCoderSpecs:/work/KubeCoderSpecs:rw
+      - ../DockerImages:/work/DockerImages:rw
+      - ../HelmCharts:/work/HelmCharts:rw
