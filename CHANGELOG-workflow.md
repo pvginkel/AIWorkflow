@@ -84,16 +84,15 @@ hard (exit 2, both in the runner and `scripts/preflight.py`) on a dirty working 
 sentences; 100 lines is big") + primary doc keeper is `/plan-slice`.
 
 **Deploy verification → a project slice test plan.** `/run-slice`'s close-out no longer hardcodes
-the push/CI/live-test dance. It now holds a generic contract and **defers to the project's slice
-test plan**: an ungated pre-push E2E pass (via the `test-agent`), and — only where a project has no
-isolated per-slice test environment — a single-gate push + live-verification phase (the push is
-tied to the live step; no live step ⇒ no push, leave the deploy to the operator). Findings resolve
-in-slice only on significant breakage (the work is broken, or it broke something else, in a way
-that matters), minor/cosmetic defer to a related slice, doubt goes to the operator; each in-slice
-fix re-runs the plan, so a live-phase project sees multiple push-and-test gates per slice. An
-adopting repo **authors its own `docs/operations/slice-test-plan.md`** (KubeCoder's is the
-push→CI→live-tests example) and repoints the deploy-verification line in
-`docs/conventions/task-workflow.md`.
+the push/CI/live-test dance. The skill is repo-agnostic (this repo owns it; targets hold a copy), so
+its deploy-verification section is now a **bare pointer**: run the project's slice test plan once the
+tasks are merged. All testing-strategy detail — whether it pushes, what it checks, how findings
+resolve — lives in the **project-owned** `docs/operations/slice-test-plan.md`. An adopting repo
+**authors its own** such doc and repoints the deploy-verification line in
+`docs/conventions/task-workflow.md`. KubeCoder's plan (the worked example, because it has no isolated
+per-slice test environment): one operator gate → fetch/rebase/push/CI → live tests on prd, findings
+fixed in-slice only on significant breakage (minor/cosmetic defer to a related slice; doubt to the
+operator), so each in-slice fix means another push-and-test gate.
 
 **Known open items.** Skill-vs-agent-type naming collisions (`arch-design`, `update-docs` vs
 `update-architecture`) unresolved; Trello **Accepted** list is vestigial (triage now archives
