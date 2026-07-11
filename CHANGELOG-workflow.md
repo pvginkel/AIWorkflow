@@ -83,6 +83,18 @@ hard (exit 2, both in the runner and `scripts/preflight.py`) on a dirty working 
 **Docs.** `documentation-model.md`: diet rule ("state every fact exactly once; no recap
 sentences; 100 lines is big") + primary doc keeper is `/plan-slice`.
 
+**Deploy verification → a project slice test plan.** `/run-slice`'s close-out no longer hardcodes
+the push/CI/live-test dance. It now holds a generic contract and **defers to the project's slice
+test plan**: an ungated pre-push E2E pass (via the `test-agent`), and — only where a project has no
+isolated per-slice test environment — a single-gate push + live-verification phase (the push is
+tied to the live step; no live step ⇒ no push, leave the deploy to the operator). Findings resolve
+in-slice only on significant breakage (the work is broken, or it broke something else, in a way
+that matters), minor/cosmetic defer to a related slice, doubt goes to the operator; each in-slice
+fix re-runs the plan, so a live-phase project sees multiple push-and-test gates per slice. An
+adopting repo **authors its own `docs/operations/slice-test-plan.md`** (KubeCoder's is the
+push→CI→live-tests example) and repoints the deploy-verification line in
+`docs/conventions/task-workflow.md`.
+
 **Known open items.** Skill-vs-agent-type naming collisions (`arch-design`, `update-docs` vs
 `update-architecture`) unresolved; Trello **Accepted** list is vestigial (triage now archives
 source cards directly); docs-diet splitting of oversized topic docs (`config-model.md` etc.) not
