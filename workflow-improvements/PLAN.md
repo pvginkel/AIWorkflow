@@ -136,3 +136,78 @@ the same 3–4-file bootstrap. Fix landed: every spawned-agent definition now ca
 batch-independent-tool-calls rule (+ `-q` suite output for test-running roles) — measure its
 effect on validation run 2. Next lever if needed: task 04 was a $31 writer session (866-line
 diff); plan-slice could split that scale of task, trading a longer pipeline for smaller contexts.
+
+## Validation runs 2–6 — slices 074–078 (2026-07-10/11)
+
+Five slices in ~36h wall (074 project introspection 4 tasks · 075 headless session control 5 ·
+076 MCP server 6 · 077 service/tool instructions 4 · 078 env CLAUDE.md conventions 1); ~17.7k
+insertions total, ~9 fleet-active hours. All 19 tasks merged; every test-agent came back clean
+round 1; zero flagged findings, zero bailouts, **no round cap ever hit** (worst case one writer
+round 2 in each of 075/076/077 — the loop absorbed every finding without escalation). Reviewed
+2026-07-11 (Fable session; Sonnet sub-agents on transcripts per REVIEW-QUICKSTART).
+
+**Cost** (sticker, dedup by message.id; plan/orch figures include their sub-agents):
+
+| slice | fleet | plan | orch | all-in | 072-scale comparison |
+|---|---|---|---|---|---|
+| 074 | $25 | $12 | $10 | ~$47 | old-workflow median slice was $64 |
+| 075 | $97 | $69 | $15 | ~$181 | biggest slice yet (8.5k ins, net-new concurrent Go engine); old majors $150–283 at 15–42h |
+| 076 | $74 | $15 | $21 | ~$110 | first net-new deployable (5.8k ins) |
+| 077 | $26 | $14 | $9 | ~$49 | |
+| 078 | $3 | $4 | $7 | ~$15 | floor case: 1 task, 238 ins |
+
+Batch ≈ **$402**; orchestrator share ≈ 15% (held at 072's ~13% vs 53% baseline). 075's plan is the
+one planning outlier ever recorded: 4 review rounds because the operator reframed the architecture
+at the review gate *after* round 2 had already gone GO on the discarded shape — the other four
+slices planned in one write+review pass ($4–15 incl. sub-agents).
+
+**Post-072 fixes verified on real runs:**
+
+1. **Two-tier checkpoint consults ✓** — every inspected consult prompt carried the 30-line-capped
+   `--stat` only; tier-2 escalation was always scoped (grep, single-commit `show`, offset-bounded
+   reads); no transcript ran an unbounded diff. Consults cost $0.31–1.28. Star exhibit: 076/03's
+   **amend** verdict caught task 05's plan still grounding on a 15s HTTP client right after task
+   03 had to introduce a 600s one for buffered project commands — a latent cross-task bug no
+   task-scoped agent could see; the consult surgically edited task 05's plan.md and it landed
+   clean in one round. (The *final-verification* consult path `fix_tasks/proceed_flagged/bail`
+   remains unexercised — all five test-agents were clean r1.)
+2. **Traceability ✓** — all 92 history entries across the five state.json files carry transcript
+   paths; log.txt committed at close-out in all five slices.
+3. **Batching rule: measurable win, unevenly distributed.** Fleet turns/session 38.8 (072) → 17.1
+   (074) / 21.2 (077) / 31.1 (076) / 11.6 (078); 075 stayed at 38.5 but on a much bigger slice.
+   Cache-read/turn fell 132k → 76–106k except 075 (139k, context-size-driven). Reviewers took the
+   rule best: 22.5 → 8.8–18.6 turns/session with multi-tool-turn share 23% → 47–64%. Consults
+   8.0 → 5.0–7.0 turns. Testers improved least (9–18% multi): transcript profiling found two
+   mechanical anti-patterns — `git diff > /tmp/f && Read` next turn (2 turns per diff, ~19% of one
+   session) and authoring throwaway Go probe files via Bash heredoc (self-inflicted compile errors
+   + resync Reads). Writers' waste is only ~7–14% of turns but lands late (200–250k cached tokens
+   per replay): independent new-file Writes and end-of-session doc passes issued one-per-turn —
+   the rule text names Read/Bash, and the writers never batch Edit/Write.
+
+**Code verdict:** the merged diffs held up under independent read. 075's headless engine is
+carefully built (documented lock invariants; the tester's round-1 End/reap-mid-turn log-corruption
+find was real and the `detached`-guard fix is principled — the writer even proved the regression
+test has teeth by neutering the guard and watching it fail). 076's MCP layer is disciplined
+(docstrings anchored to acceptance-criteria ids, omits unknowable fields rather than fabricating).
+Cross-slice template composition 074/077/078 is clean. Two minor findings, both parked as Triage
+cards: 074/04's template section never documented in `claude-md-template.md` (visible only
+cross-slice); 075 is the only run without a `test_findings.md` audit write-up (protocol-legal —
+the runner only mandates it on findings — but thinner than its four siblings).
+
+**Fixes landed from this review** (KubeCoder `.claude/agents/`, same day):
+
+1. Batching rule extended to **Edit/Write** in `code-writer.md` ("N files with no data dependency
+   → N calls in one message") — targets the writers' doc-pass/new-file pattern, the highest-$
+   residual waste.
+2. `code-tester.md` + `test-agent.md`: **read command output directly** — never
+   redirect-to-file-then-Read; author probe files with Write/Edit, not Bash heredocs.
+
+**Levers recommended, not landed (operator judgment):**
+
+3. **New-deployable slices need an explicit infra/deploy task at planning time**: 076's
+   orchestrator hand-authored Helm templates + five architecture-doc edits (138 turns, $21 —
+   the one "thin orchestrator" violation) because nothing else owned that work.
+4. Surface consult **amend** verdicts as an explicit close-out line item (076's only shows as a
+   commit trailer).
+5. Plan-slice: ask the shape-level design question (AskUserQuestion) *before* the first
+   plan-writer draft — would likely have saved 075's rounds 3–4 (~$25).

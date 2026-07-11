@@ -64,27 +64,30 @@ session from zero to that review without re-deriving the method.
 | Cache-read : output tokens | ~40 : 1 (cost ≈ turns × context) | — |
 | Measured waste | ~10–15% of writer/tester/reviewer spend | — |
 
-## What changed after 072 — verify each on the next run
+## What changed after 072 — status after runs 2–6 (074–078, reviewed 2026-07-11)
 
-KubeCoder commits `35a7639` + `3e3dd3d` (this repo: `06f0942`, `8fb0b26`):
+All four post-072 fixes verified on real runs — full record in [`PLAN.md`](PLAN.md) §"Validation
+runs 2–6": two-tier consults hold (stat-only prompts, scoped tier-2, the 076/03 **amend** caught a
+real cross-task bug); traceability held in all five slices; batching cut reviewer turns/session
+22.5 → 9–19 (multi-tool share 23% → 47–64%) and fleet turns/session 38.8 → 17–31 on comparable
+slices. Still unexercised: the final-verification findings consult (`fix_tasks` /
+`proceed_flagged` / `bail`) and every round-cap consult — all five runs were clean-r1 with worst
+case one writer r2.
 
-1. **Two-tier checkpoint consults** (merge `--stat` in prompt; tier 2 only on plan-grounding
-   overlap) → expect: fewer/no unbounded diff dumps in consult transcripts; call out whether the
-   genuinely-overlapping case still goes tier 2 (it should — 072's consult 3 was the model).
-2. **Final-verification findings → consult** (`fix_tasks` / `proceed_flagged` / `bail`) → a
-   dormant/pre-existing residual must NOT hard-bail; check the consult's judgment and that
-   `flagged_findings` → Triage cards at close-out.
-3. **Transcript paths in `state.json` + session ids in `log.txt` + log.txt committed** → confirm
-   the close-out actually kept them (072's log was deleted; the convention flipped after).
-4. **Batching rule in every agent definition + `-q` suites** → measure: multi-tool-call turns per
-   session (was ~zero for reviewers/testers/test-agent), turns/session and cache-read/session vs
-   072's fleet, no `-v | tail -N` suite dumps. This is the fix with a measurable target: material
-   turn-count drop at equal quality.
+Verify on the NEXT run (landed 2026-07-11, KubeCoder `.claude/agents/`):
 
-Open levers if cost is still unsatisfying: split task-04-sized tasks at planning time (072's
-biggest writer session was $31 on an 866-line diff); a SessionStart-hook registry for interactive
-sessions; Sonnet writers for mechanical tasks (only after 2+ clean runs — writers are where the
-quality came from).
+1. **Edit/Write batching in `code-writer.md`** → expect writers' new-file pairs and end-of-session
+   doc passes issued in one message (075's writers had zero multi-tool turns after the research
+   phase; the doc pass was 6 files = 6 turns at ~250k cache-read each).
+2. **Tester/test-agent output-directly rule** → no `cmd > /tmp/f` + Read-next-turn (cost one 075
+   tester ~19% of its turns), no Bash-heredoc probe files.
+
+Open levers if cost is still unsatisfying: an explicit infra/deploy task when a slice stands up a
+new deployable (076's orchestrator absorbed Helm + arch-docs work, $21); pre-draft shape questions
+in /plan-slice (075's operator reframe after a GO round cost ~2 review rounds); split
+task-04-sized tasks at planning time; a SessionStart-hook registry for interactive sessions;
+Sonnet writers for mechanical tasks (only after 2+ clean runs — writers are where the quality
+came from).
 
 ## Report shape the operator expects
 
