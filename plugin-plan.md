@@ -1,11 +1,17 @@
 # Plan — rework AIWorkflow into the `dev` plugin (kc-native)
 
-**Status:** reviewed 2026-07-12 — facts verified against KubeCoder, this repo, and the plugin docs;
-review findings applied (see §9 additions). Open decisions resolved (§9). Deliverable is this plan,
-not an implementation. Supersedes the "sync the #175 rework back into `orchestrator/`/`project/`
-templates" direction recorded in `CHANGELOG-workflow.md` — instead of copy-and-fill templates,
-the workflow becomes an **installable Claude Code plugin** named `dev`, and this repo becomes its
-home.
+**Status:** **EXECUTED 2026-07-12** — the plugin is built (`plugins/dev/`) and the repo is reworked
+into a marketplace. Phases 2 (scaffold), 3 (kc-native runner), 4 (preflight + contract), and 5 (repo
+shell) are done; phase 1's mechanics were pre-verified. The `kc` surface was re-verified against the
+**actual** implementation (KubeCoderSpecs slice **079**, which landed cards #191 + #192) and the
+runner/preflight were written against it — with the corrections noted inline below (the biggest:
+the flag is `--output=json`, **not** the `--output-json` this plan originally assumed). **Not yet
+live-tested against `kc`** (no `kc` in the authoring env); the operator validates on a real slice.
+Remaining follow-ups are collected in §11.
+
+Supersedes the "sync the #175 rework back into `orchestrator/`/`project/` templates" direction
+recorded in `CHANGELOG-workflow.md` — instead of copy-and-fill templates, the workflow becomes an
+**installable Claude Code plugin** named `dev`, and this repo becomes its home.
 
 **Scope.** This plugin version targets the **KubeCoder environment only**, so a hard dependency on
 `kc` is fine — no abstract provider interface, no non-`kc` fallback. The plugin is **developed in
@@ -48,7 +54,7 @@ changes is the three seams that were project-specific, each now backed by a `kc`
 
 | Seam (was) | Becomes |
 |---|---|
-| `PROJECT_DIRS` / `VALID_PROJECTS` hardcoded maps | `kc project list --output-json` (name → effective cwd → description, from `.kubecoder/project.yaml`; `--output-json` is Triage #192, in flight) |
+| `PROJECT_DIRS` / `VALID_PROJECTS` hardcoded maps | `kc project list --output=json` (name → effective cwd → description, from `.kubecoder/project.yaml`; `--output=json` — the flag name shipped in slice **079**, correcting this plan's original `--output-json` assumption) |
 | "test/build/lint commands" read from each subproject's `CLAUDE.md` | `kc project test\|build\|lint --project <name>` (curated, terse, fail-fast, exit-coded) |
 | `claude_session.py` (801 ln) shelling `claude --agent` over stream-json | `kc session create-headless \| send \| status \| end \| interrupt` — the docs state these "do what `claude_session.py` does today, done right" |
 
@@ -156,14 +162,18 @@ memory discovered by walking the repo tree), the plugin ships a **prose descript
 
 ## 6. The `kc` integration — the real engineering
 
-### 6a. Subproject discovery → `kc project list --output-json`
-Replace `PROJECT_DIRS` (task_runner.py:51–58) / `VALID_PROJECTS` (claude_session.py:60) and the
-project enum baked into `plan-writer` + the `task.json` schema with **`kc project list
---output-json`** (Triage **#192**, being executed now — supersedes the earlier "read
-`.kubecoder/project.yaml` directly" decision). The runner and plan-writer take the valid project
-set and each project's *effective* cwd from the JSON, so the cwd-resolution rule stays implemented
-exactly once, in `kc` (`ResolveCwd`), and the runner needs no YAML parser — it stays stdlib-only.
-`.kubecoder/project.yaml` remains the source manifest; only `kc` reads it.
+### 6a. Subproject discovery → `kc project list --output=json`
+Replace `PROJECT_DIRS` / `VALID_PROJECTS` and the project enum baked into `plan-writer` + the
+`task.json` schema with **`kc project list --output=json`** (shipped in slice **079** — supersedes
+the earlier "read `.kubecoder/project.yaml` directly" decision). **As built:** `load_project_dirs()`
+runs `kc project list --output=json` (cwd = target repo) and parses the bare JSON array of
+`{name, cwd, description}` into a name→cwd map; the cwd-resolution rule stays implemented exactly
+once, in `kc` (`ResolveCwd`), and the runner needs no YAML parser — it stays stdlib-only.
+`.kubecoder/project.yaml` remains the source manifest; only `kc` reads it. **New structural fact
+(implementation):** the plugin's runner no longer lives inside the target repo, so `REPO_ROOT` can
+no longer be derived from `__file__` — it comes from `git rev-parse --show-toplevel` at the
+invocation cwd (`/dev:run-slice` runs the runner from the target code repo). An absent/malformed
+manifest is a loud non-zero from `kc`, which the runner surfaces as a bail.
 
 ### 6b. Curated automation → `kc project test|build|lint`
 `code-tester` and `test-agent` run `kc project test --project <name>` (and `build`/`lint`) for the
@@ -182,16 +192,23 @@ kc session status "$name" --output=json                          # for state/ver
 kc session end "$name"
 ```
 `kc session` already owns: offset-based SSE reconnect on drop, interrupt-on-kill, busy/usage/unknown
-exit codes, `--resume`. So `claude_session.py` (801 ln) is **deleted**, and `task_runner.py` shrinks
-(no raw subprocess/stream-json management, no reimplemented crash recovery). The runner keeps
-everything above the session boundary: the task loop, caps, consults, verdict-file validation, git
-management, `state.json`, resume, exit codes. Map the current `MODELS`/`TIMEOUTS`/nudge behavior onto
-`kc session` flags (`--model`, `--reasoning-effort`) and `status` polling. **Prompt-caching:** `FORCE_PROMPT_CACHING_5M=1` is set in
-the child env today; `kc session create-headless` does not thread caller env to the spawned session.
-Resolution (operator decision): add a **repeatable `-e NAME=VALUE` env pass-through** to
-`kc session create-headless` (docker-style; future-proofs Claude Code's env-controlled knobs) rather
-than a caching-specific flag — **Triage #191, being executed now**. Usage is `-e NAME=VALUE` (takes a
-value; not a bare `-e`); the runner passes `-e FORCE_PROMPT_CACHING_5M=1` once that lands.
+exit codes, `--resume`. So `claude_session.py` (801 ln) is **deleted**, and its ~150-line kc-native
+replacement (`run_kc_session` + `_kc_send` + `_kc_session_id`) is **inlined into `task_runner.py`**
+(the plugin's `tools/` ships only `task_runner.py` + `preflight.py`). The runner keeps everything
+above the session boundary: the task loop, caps, consults, verdict-file validation, git management,
+`state.json`, resume, exit codes. `MODELS` → `--model`; `TIMEOUTS` → a deadline the runner enforces
+around `send` (on expiry it SIGINTs `send`, which fires a worker interrupt, then `end`s the session).
+
+**Prompt-caching (as built).** The `-e NAME=VALUE` env pass-through on `kc session create-headless`
+shipped in slice **079** (with a `--env` long alias; cobra `StringArray`, so a value may contain
+`,`/`=`; a malformed token — no `=` or empty NAME — is a usage error, exit 2). The runner threads
+`SPAWN_ENV` as `-e FORCE_PROMPT_CACHING_5M=1`.
+
+**Session-id timing (verified against the `StatusSnapshot` contract).** `create-headless` prints the
+assigned **name**; the claude **`sessionId`** is empty until the first turn completes, so the runner
+reads it from `kc session status <name> --output=json` *after* `send` and records it (for `--resume`
+across rounds and the transcript locator). This shifts `on_session` from init-time (old claude path)
+to post-send — a narrowed window for crash-during-turn reattach, flagged in §10/§11.
 
 ### 6d. Preflight — plugin-shipped, expressed over `kc` (spec agreed 2026-07-12)
 `scripts/preflight.py` (project-owned today) is replaced by one plugin-shipped, **stdlib-only**
@@ -205,7 +222,7 @@ does **not** re-run preflight — `run-slice` is the gate.
 | Check | triage | plan | run |
 |---|:-:|:-:|:-:|
 | `kc` on PATH | ✓ | ✓ | ✓ |
-| Manifest valid: `kc project list --output-json` returns ≥1 project | – | ✓ | ✓ |
+| Manifest valid: `kc project list --output=json` returns ≥1 project | – | ✓ | ✓ |
 | Spec-repo entry in `CLAUDE.md`, path exists | ✓ | ✓ | ✓ |
 | Testing-strategy pointer in `CLAUDE.md`, target doc exists | – | – | ✓ |
 | Design-philosophy pointer in `CLAUDE.md`, target doc exists | – | – | ✓ |
@@ -230,15 +247,15 @@ list. Full `kc project test` is not a preflight step. **No daemon-reachability c
 until it lands, the first `create-headless` failure is the signal. This section becomes
 `docs/preflight.md` when the plugin is built.
 
-### 6e. Dependency ordering
-`kc project` (slice 074) and `kc session` headless (slice 075) are already landed in KubeCoder. Two
-confirmed `kc` gaps, both carded and being executed now: **#191** (`-e NAME=VALUE` pass-through on
-`create-headless`, §6c — lands *before* the session-drive cutover so caching parity is preserved)
-and **#192** (`--output-json` on `kc project list`, §6a — the runner's machine-readable project
-map). Separately, **no adopting repo has a `.kubecoder/project.yaml` yet** — KubeCoder itself
-included. The operator onboards IoTSupport first and authors its manifest; real-slice validation
-(§8 phase 3) needs at least one repo with a manifest. The plugin is authored against `kc` and not
-shipped until the `kc` surface it calls is confirmed present.
+### 6e. Dependency ordering — resolved
+`kc project` (slice 074) and `kc session` headless (slice 075) were already landed. The two
+remaining gaps — **#191** (`-e NAME=VALUE` pass-through on `create-headless`) and **#192**
+(`--output=json` on `kc project list`) — **both shipped in slice 079**, so the full `kc` surface the
+runner/preflight call is present. The runner and preflight were written against slice 079's actual
+surface (see the corrections in §6a/§6c). Still outstanding, and the reason this is not yet
+end-to-end validated: **no adopting repo has a `.kubecoder/project.yaml` yet**. The operator onboards
+a first repo (e.g. IoTSupport) and authors its manifest; real-slice validation (§8 phase 3) needs at
+least one repo with a manifest + a live `kc` (absent from the authoring env). See §11.
 
 ---
 
@@ -335,23 +352,25 @@ ships first and stands alone.
 
 ## 8. Sequencing (phases)
 
-1. **Verify the mechanics** (small, do first): ✅ plugin-agent discovery verified 2026-07-12
-   (stub-plugin test, §4) — residual is one smoke test after the real marketplace install.
-   Remaining gates are in `kc`: `--output-json` on `kc project list` (#192) and the `-e`
-   pass-through / headless caching (#191), both carded and being executed now. Gate phase 3 on them.
-2. **Scaffold the plugin** in `plugins/dev/` + `marketplace.json`; move the 6 commands and 8 agents
-   over verbatim (still KubeCoder-flavored), install into `~/.claude`, confirm `dev:*` invocations
-   and agent dispatch work end-to-end on a trivial slice.
-3. **Cut the three seams to `kc`** (§6a–6c): project discovery, curated automation, session drive.
-   Retire `claude_session.py`. This is the bulk of the engineering; validate on a real slice and
-   re-measure with the workshop tools (orchestrator share should stay ~15%).
-4. **Preflight + project contract** (§6d, §5): implement the agreed §6d profile spec; write
-   `project-contract.md` (incl. the three line prefixes); make `triage`/`plan-slice` bail on a
-   missing spec-repo entry; change `run-slice` to the "slice testing strategy defined for this
+1. **Verify the mechanics** — ✅ done. Plugin-agent discovery verified 2026-07-12 (stub-plugin test,
+   §4); manifest schemas re-confirmed against the current plugin docs. The `kc` gates (#191/#192)
+   landed in slice 079. Residual: one smoke test after the real marketplace install.
+2. **Scaffold the plugin** — ✅ done. `plugins/dev/` + `marketplace.json` + `plugin.json`; the 6
+   commands and 8 agents moved over (then adapted, phase-B commit) and the contract docs shipped.
+   *End-to-end install + trivial-slice confirmation is deferred to the operator's live-test pass
+   (no `kc` / no manifest in the authoring env).*
+3. **Cut the three seams to `kc`** (§6a–6c): ✅ implemented. `task_runner.py` rewritten kc-native;
+   `claude_session.py` retired (its replacement inlined). Written against slice 079's actual surface;
+   ruff-clean and compiles. *Not yet run/validated on a real slice — the operator's pass; then
+   re-measure with the workshop tools (orchestrator share should stay ~15%).*
+4. **Preflight + project contract** (§6d, §5): ✅ done. `preflight.py` (profiles, exit 0/1/2, silent
+   on success) + `project-contract.md` (the three line prefixes) + `preflight.md`; `triage`/`plan`
+   bail on a missing spec-repo entry; `run-slice` uses the "slice testing strategy defined for this
    project" wording.
-5. **Rework the AIWorkflow repo shell** (§7): delete `orchestrator/`/`project/`/`EXAMPLE.md`/
-   `MERGING.md`; rewrite `README.md`, `ADOPTING.md`, `AUTHORING.md`; repurpose `CHANGELOG-workflow.md`
-   as the plugin changelog.
+5. **Rework the AIWorkflow repo shell** (§7): ✅ done. Deleted `orchestrator/`/`project/`/`EXAMPLE.md`
+   and the retired `tools/ai_workflow` scripts; **moved** `MERGING.md` → `runbooks/`; rewrote
+   `README.md`, `docs/ADOPTING.md`, `docs/AUTHORING.md`; repurposed `CHANGELOG-workflow.md`; parked
+   the `upkeep` backlog.
 Development happens in this repo. **Iteration loop:** `--plugin-dir` reaches only the operator's
 own session — the runner's agents live in kc-spawned headless sessions, which see only what is
 actually installed in `~/.claude` (guaranteed to be the same home). So iterate by adding this repo
@@ -374,7 +393,7 @@ that is expected and not this plan's concern.
 4. **Where developed:** ✅ in this repo. KubeCoder-copy cleanup is out of scope (see Scope note).
 5. **`documentation-model.md`:** ✅ ships with the second plugin (`upkeep`) as its reference doc —
    not in `dev`, not project-owned.
-6. **Project map (review amendment 2026-07-12):** ✅ `kc project list --output-json` (#192) —
+6. **Project map (review amendment 2026-07-12):** ✅ `kc project list --output=json` (#192) —
    supersedes the earlier direct `.kubecoder/project.yaml` read.
 7. **`MERGING.md` (review amendment):** ✅ moved to `runbooks/`, not deleted — it's the monorepo-merge
    runbook with pending runs, unrelated to templates.
@@ -390,15 +409,45 @@ that is expected and not this plan's concern.
 - **Plugin-agent discovery for `kc session --agent dev:<role>`** — ✅ verified 2026-07-12 (§4):
   namespaced and bare names both resolve headlessly; unknown names fail loudly (exit 1). Residual:
   one smoke test after the real marketplace install (the stub test used `--plugin-dir`).
-- **Project map** — ✅ resolved: `kc project list --output-json` (#192, in flight; §6a). The
-  cwd-resolution rule stays in `kc` only. New caveat: no adopting repo has a manifest yet —
-  IoTSupport onboards first (§6e).
-- **Headless prompt-caching** — ✅ resolved as a known `kc` gap: `-e NAME=VALUE` pass-through on
-  `kc session create-headless` (§6c), Triage #191, being executed now. Lands before the §6c cutover.
-- **Crash-recovery parity** — `state.json` in-flight-session reattach must map onto
-  `kc session --resume` + `status`; confirm a killed run reattaches cleanly.
+- **Project map** — ✅ resolved and implemented: `kc project list --output=json` (slice 079; §6a).
+  The cwd-resolution rule stays in `kc` only. Caveat: no adopting repo has a manifest yet — a first
+  repo onboards before validation (§6e).
+- **Headless prompt-caching** — ✅ resolved and implemented: `-e NAME=VALUE` pass-through on
+  `kc session create-headless` (slice 079; §6c). The runner passes `-e FORCE_PROMPT_CACHING_5M=1`.
+- **Crash-recovery parity** — the runner reattaches via `kc session create-headless --resume
+  <sessionId>` + `status`, mirroring the old path. Caveat surfaced during implementation (§6c): the
+  `sessionId` is only known post-first-turn, so a crash *mid-turn* leaves `in_flight.session` unset
+  and the stage re-runs fresh (safe, but loses the crashed turn's uncommitted work) rather than
+  reattaching. Confirm a killed run reattaches cleanly on the live-test pass; enhance if the
+  mid-turn window matters.
 - **Existing-backlog layout** — most on-disk slices still use the pre-#175 `overview.md` +
   per-project-subfolder shape; the plugin targets the `tasks/NN_slug/` layout. Backlog re-planning is
   independent of this rework but worth noting so nobody points the new runner at an old-shape slice.
 - **`runner_sessions.py` / `slice_costs.py`** — see §7 Repurpose/keep: the runner must keep
-  recording session-id → transcript locations under `kc session`, or the workshop goes blind.
+  recording session-id → transcript locations under `kc session`, or the workshop goes blind. **As
+  built:** `state.json`'s `history` still records `transcript` = `_transcript_path(cwd, sessionId)`
+  (`~/.claude/projects/<munged-cwd>/<sessionId>.jsonl`) — an assumption to confirm live (that `kc`'s
+  headless `claude` writes the transcript to the same location under the same `~/.claude`).
+
+---
+
+## 11. Remaining follow-ups (post-execution, for the operator's live-test pass)
+
+The build is complete and self-consistent, but was written without a live `kc` or a real manifest.
+Before relying on it, validate:
+
+1. **Marketplace install smoke test.** `/plugin marketplace add /work/AIWorkflow`, `/plugin install
+   dev@aiworkflow`, confirm `/dev:*` commands resolve and `kc session create-headless --agent
+   dev:code-writer` resolves the agent headlessly (the stub test used `--plugin-dir`).
+2. **First manifest.** Onboard a repo with a `.kubecoder/project.yaml` + the three `CLAUDE.md` lines;
+   run `preflight.py --for run` and confirm each gate (manifest, entries, clean tree, baseline
+   build) passes/fails as intended, and the failure messages read well.
+3. **Runner on a trivial real slice.** Confirm `create-headless → send → status → end` drives a
+   task; the `sessionId` reads back from `status --output=json`; `-e FORCE_PROMPT_CACHING_5M=1`
+   reaches the spawned `claude`; timeouts SIGINT-interrupt cleanly; `--resume` chains across writer
+   fix rounds; and a killed run reattaches (note the mid-turn caveat in §10).
+4. **`kc project` verbs from the agents.** Confirm `code-tester`/`test-agent` running `kc project
+   test|build|lint --project <name>` produces the green signal expected.
+5. **Workshop still sees runs** (§10 last bullet): transcript paths recorded in `state.json` resolve.
+6. **Then:** re-measure orchestrator share (~15%), and — separately, operator-owned — retire
+   KubeCoder's in-repo `.claude/commands` + `.claude/agents` copies (out of scope here).
