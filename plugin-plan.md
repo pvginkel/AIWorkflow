@@ -96,7 +96,8 @@ plugins/dev/
 │   ├── code-writer.md   code-reviewer.md   code-tester.md   test-agent.md
 │   ├── plan-writer.md   plan-reviewer.md   slice-verifier.md   arch-design.md
 ├── tools/
-│   └── task_runner.py                  # kc-native; claude_session.py RETIRED
+│   ├── task_runner.py                  # kc-native; claude_session.py RETIRED
+│   └── preflight.py                    # profile-based preflight, stdlib-only (§6d)
 └── docs/
     ├── task-workflow.md                # the canonical contract (unchanged in substance)
     ├── project-contract.md             # what .kubecoder/project.yaml + CLAUDE.md must provide
@@ -134,13 +135,15 @@ to fill:
 
 1. **`.kubecoder/project.yaml`** present and valid → `kc project list` returns the subprojects.
    Absent/malformed manifest = preflight bail.
-2. **`CLAUDE.md` — spec repo entry.** A line of the form "The spec repo is at `<path>`". `triage`
-   and `plan-slice` **bail if this is absent** (they cannot allocate/plan a slice with nowhere to
-   write it).
-3. **`CLAUDE.md` — slice testing strategy pointer.** A line pointing at the project's slice
-   test-plan doc, so `run-slice`'s "run the slice testing strategy defined for this project"
-   resolves. The doc itself (`docs/operations/slice-test-plan.md` in KubeCoder) is project-owned.
-4. **`CLAUDE.md` — design-philosophy pointer** (change-discipline). `code-writer` reads it.
+2. **`CLAUDE.md` — spec repo entry.** The line `Spec repo: <path>` (machine-checkable prefix, §6d).
+   `triage` and `plan-slice` **bail if this is absent** (they cannot allocate/plan a slice with
+   nowhere to write it).
+3. **`CLAUDE.md` — slice testing strategy pointer.** The line `Slice testing strategy:
+   <path-to-doc>`, so `run-slice`'s "run the slice testing strategy defined for this project"
+   resolves. The doc itself (`docs/operations/slice-test-plan.md` in KubeCoder) is project-owned;
+   `run-slice` preflight bails if the line or the doc is absent.
+4. **`CLAUDE.md` — design-philosophy pointer.** The line `Design philosophy: <path-to-doc>`
+   (change-discipline). `code-writer` reads it; `run-slice` preflight bails if absent.
 5. **`~/.claude/CLAUDE.md`** (host) provides the issue-tracker + notification conventions the
    commands reference generically.
 
@@ -190,19 +193,42 @@ Resolution (operator decision): add a **repeatable `-e NAME=VALUE` env pass-thro
 than a caching-specific flag — **Triage #191, being executed now**. Usage is `-e NAME=VALUE` (takes a
 value; not a bare `-e`); the runner passes `-e FORCE_PROMPT_CACHING_5M=1` once that lands.
 
-### 6d. Preflight re-envisioned on `kc` primitives
-`scripts/preflight.py` (project-owned today) becomes a plugin-shipped preflight expressed over `kc`:
-- `kc project info` / `kc project list` succeed → manifest present, subprojects known (else bail with
-  the "not set up" message `kc` itself emits).
-- Optionally `kc project build && kc project test` as a clean baseline before a run (the "safe to
-  push" signal), gated by the slice test strategy.
-- spec-repo entry present in `CLAUDE.md` (§5.2) → else bail.
-- clean working tree (existing check); `kc` on PATH and the worker daemon reachable (needed for
-  `kc session`).
+### 6d. Preflight — plugin-shipped, expressed over `kc` (spec agreed 2026-07-12)
+`scripts/preflight.py` (project-owned today) is replaced by one plugin-shipped, **stdlib-only**
+script: `${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage|plan|run`. **Silent on success.** On
+failure it prints one actionable message — what's missing, the exact line to add, and a pointer to
+`project-contract.md` — so a new repo self-onboards from the error text. Exit codes: **0** pass,
+**1** contract violation (the project must fix something), **2** environment broken (`kc` missing).
+Each command runs its profile as step one and relays the message verbatim on non-zero; the runner
+does **not** re-run preflight — `run-slice` is the gate.
 
-*(Check set, per-command profiles, and bail semantics are being specced — 2026-07-12 sketch under
-discussion with the operator; the agreed result replaces this section and becomes
-`docs/preflight.md`.)*
+| Check | triage | plan | run |
+|---|:-:|:-:|:-:|
+| `kc` on PATH | ✓ | ✓ | ✓ |
+| Manifest valid: `kc project list --output-json` returns ≥1 project | – | ✓ | ✓ |
+| Spec-repo entry in `CLAUDE.md`, path exists | ✓ | ✓ | ✓ |
+| Testing-strategy pointer in `CLAUDE.md`, target doc exists | – | – | ✓ |
+| Design-philosophy pointer in `CLAUDE.md`, target doc exists | – | – | ✓ |
+| Clean working tree | – | – | ✓ |
+| Baseline: `kc project build` (all projects) | – | – | ✓ |
+
+All three `CLAUDE.md` entries **bail, not warn** — each is one line to add. They are
+machine-checkable line prefixes (defined in `project-contract.md`, read by preflight and agents
+alike, §5):
+
+```
+Spec repo: <path>
+Slice testing strategy: <path-to-doc>
+Design philosophy: <path-to-doc>
+```
+
+The baseline is `kc project build` only, always on (no skip flag). The old pytest-collection step
+has no `kc` equivalent and is an accepted loss: a baseline-broken suite screams on task 1's
+code-tester round, and a project that cares can put a cheap collect step in its manifest's `build`
+list. Full `kc project test` is not a preflight step. **No daemon-reachability check in v1** — a
+`kc status` health command is carded (Triage **#194**, "add this to the preflight when delivered");
+until it lands, the first `create-headless` failure is the signal. This section becomes
+`docs/preflight.md` when the plugin is built.
 
 ### 6e. Dependency ordering
 `kc project` (slice 074) and `kc session` headless (slice 075) are already landed in KubeCoder. Two
@@ -319,9 +345,10 @@ ships first and stands alone.
 3. **Cut the three seams to `kc`** (§6a–6c): project discovery, curated automation, session drive.
    Retire `claude_session.py`. This is the bulk of the engineering; validate on a real slice and
    re-measure with the workshop tools (orchestrator share should stay ~15%).
-4. **Preflight + project contract** (§6d, §5): rewrite preflight over `kc`; write
-   `project-contract.md`; make `triage`/`plan-slice` bail on a missing spec-repo entry; change
-   `run-slice` to the "slice testing strategy defined for this project" wording.
+4. **Preflight + project contract** (§6d, §5): implement the agreed §6d profile spec; write
+   `project-contract.md` (incl. the three line prefixes); make `triage`/`plan-slice` bail on a
+   missing spec-repo entry; change `run-slice` to the "slice testing strategy defined for this
+   project" wording.
 5. **Rework the AIWorkflow repo shell** (§7): delete `orchestrator/`/`project/`/`EXAMPLE.md`/
    `MERGING.md`; rewrite `README.md`, `ADOPTING.md`, `AUTHORING.md`; repurpose `CHANGELOG-workflow.md`
    as the plugin changelog.
@@ -352,6 +379,9 @@ that is expected and not this plan's concern.
 7. **`MERGING.md` (review amendment):** ✅ moved to `runbooks/`, not deleted — it's the monorepo-merge
    runbook with pending runs, unrelated to templates.
 8. **`ux-design` command (review amendment):** ✅ deleted — unused.
+9. **Preflight spec (agreed 2026-07-12):** ✅ per-command profiles, bail-not-warn contract entries as
+   machine-checkable line prefixes, baseline = `kc project build` only (always on, pytest-collection
+   loss accepted), no daemon check until `kc status` (#194) lands.
 
 ---
 
