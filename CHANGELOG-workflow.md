@@ -1,9 +1,38 @@
-# Workflow change log — cross-document migrations
+# `dev` plugin — changelog
 
-Template diffs in this repo don't capture the *cross-document* edits an adopting repo must make
-(skill ↔ agent ↔ CLAUDE.md ↔ docs moves). This log records them, newest first: one entry per
-workflow change, listing the edits to replay in a target repo. Companion to
-[`ADOPTING.md`](ADOPTING.md) (the from-scratch runbook).
+Notable changes to the `dev` slice-workflow plugin, newest first. Entries below the plugin rework
+are retained as history — they document the template-era workflow this plugin supersedes (when the
+workflow was copy-and-fill templates rather than an installed plugin).
+
+## 2026-07-12 — the workflow becomes the `dev` plugin (v0.1.0)
+
+The slice workflow stops being templates you copy into a repo and becomes an installable Claude Code
+plugin, `dev`, hosted in this repo's marketplace (`.claude-plugin/marketplace.json`). Instead of
+copy-and-fill, a repo describes itself: everything that was a Jinja blank or a hardcoded per-repo
+constant is now either a `kc` call or a short `CLAUDE.md` entry.
+
+- **kc-native runner.** `task_runner.py`'s three project-specific seams collapse into `kc`:
+  `PROJECT_DIRS` → `kc project list --output=json`; the `claude_session.py` wrapper (retired) →
+  `kc session create-headless|send|status|end`; `FORCE_PROMPT_CACHING_5M=1` → `-e` on
+  create-headless. `REPO_ROOT` now comes from `git rev-parse --show-toplevel` (the runner no longer
+  lives in the target repo). Agents spawn namespaced as `dev:<role>`; consults spawn bare. Verified
+  against the actual kc surface (KubeCoderSpecs slice 079): the flag is `--output=json`, and the
+  status snapshot carries `sessionId` (empty until the first turn).
+- **Plugin surface.** 6 commands (`triage`, `plan-slice`, `run-slice`, `write-task`, `slice-dag`,
+  `arch-design`) → `/dev:*`; 8 agents; `task_runner.py` + a new stdlib-only `preflight.py`; contract
+  docs (`task-workflow.md`, `project-contract.md`, `preflight.md`). All plugin-internal paths use
+  `${CLAUDE_PLUGIN_ROOT}`.
+- **Project contract.** `.kubecoder/project.yaml` + three machine-checkable `CLAUDE.md` lines
+  (`Spec repo:`, `Slice testing strategy:`, `Design philosophy:`), enforced by preflight (profiles
+  `--for triage|plan|run`). Issue-tracker + notification wiring is referenced generically; the
+  concrete form lives in the host `~/.claude/CLAUDE.md`.
+- **Repo rework.** `orchestrator/`, `project/`, `EXAMPLE.md`, and the retired `tools/ai_workflow`
+  scripts are deleted; `MERGING.md` moved to `runbooks/`; `README`/`ADOPTING`/`AUTHORING` rewritten;
+  the auxiliary commands + `documentation-model.md` parked under `plugins/upkeep/` as backlog for a
+  planned second plugin.
+
+Not yet live-tested against `kc` (no `kc` in the authoring env) — the operator validates on a real
+slice. See `plugin-plan.md` for the full plan and open items.
 
 ## 2026-07-10 — #175: the task-runner workflow (developed in KubeCoder, not yet synced here)
 

@@ -1,3 +1,7 @@
+---
+description: Sub-session worker for /quality-improver: scan one subproject for duplication and produce a ranked JSON backlog plus a markdown summary.
+---
+
 # Quality Issue Finder
 
 Scan this subproject for duplicated patterns and reinvented utilities. Produce a ranked JSON backlog and a human-readable markdown summary.
@@ -18,23 +22,7 @@ The dispatching prompt provides:
 
 Build a map of what's already shared in this subproject. For each utility, record `{ name, path, purpose }`. This is the reference set for Phase 2's "reinvented utility" detection.
 
-{% block inventory_scope %}
-{# Project-specific inventory locations. Edit per subproject — typical patterns:
-
-   - Backend (Python): scan `app/utils/`, `app/common/`, `app/helpers*.py`,
-     any `*_utils.py`, and clearly-shared service modules / mixins / base
-     classes.
-   - Frontend / portal (TS/React): scan `src/lib/` (especially
-     `src/lib/utils/`), `src/hooks/`, and any file imported from a shared
-     package (e.g., `packages/shared-ui/`).
-
-   Replace the bullets below with the actual paths for your stack.
-#}
-Inventory locations vary by subproject — check this subproject's `docs/conventions.md` for where shared utilities live, or fall back to common patterns:
-
-- Python: `app/utils/`, `app/common/`, `*_utils.py`, shared service modules / mixins / base classes.
-- TypeScript: `src/lib/`, `src/hooks/`, shared-package re-exports.
-{% endblock %}
+Python (uv workspace): each app keeps code under `<app>/src/<package>/` (e.g. `controller/src/kubecoder_controller/`). Scan the app's own modules plus any repeated helpers across controller/worker/bot; the shared wire-contract models live in `packages/kubecoder-contracts/src/`. There is no separate utils package.
 
 Load `.codehealthignore` from the subproject root. Files listed there **are still valid inventory entries** — if a callsite duplicates a utility owned by a template, the fix is to use the utility (not to move the utility). What changes is Phase 2's handling of extraction candidates below.
 
@@ -64,34 +52,7 @@ Incremental mode catches drift from recent work only — pre-existing duplicatio
 
 ### Phase 3: Apply the template-ownership rule
 
-{% block template_ownership_rule %}
-{# If this project consumes a copier/cookiecutter/etc. template that owns
-   certain files (and they are duplicated by design across sibling
-   subprojects), document the rule here. Otherwise delete this block — the
-   skill works fine without it.
-
-   Pattern for the rule: list the template-owned paths (or rely on
-   `.codehealthignore` to be authoritative). Drop Category B findings whose
-   callsites fall under those paths. Category A findings are always fine —
-   using a utility (even a template-owned one) is correct.
-
-   Example wording:
-
-   Template-owned files are intentionally duplicated across sibling
-   subprojects per `docs/conventions.md`. The template is freely improved
-   during normal work and synced back, but the files must stay in place —
-   never moved to a shared package.
-
-   Apply to findings:
-   - Category A findings are fine as-is.
-   - Category B findings involving template-owned callsites are invalid
-     and must be dropped. If any listed callsite is in a file matched by
-     `.codehealthignore`, drop the finding.
-
-   `.codehealthignore` is authoritative.
-#}
-If this project does not consume a shared template, skip this phase. Otherwise: respect the project's template-ownership rule (typically: `.codehealthignore` is authoritative — Category B findings whose callsites match it are invalid and must be dropped; Category A findings are always fine).
-{% endblock %}
+This project does not consume a shared template, so skip this phase. `.codehealthignore` remains authoritative for exclusions.
 
 ### Phase 4: Rank, filter, cap
 
@@ -170,7 +131,7 @@ Keep markdown findings ordered the same way as JSON.
 ### Phase 6: Commit to the specs repo
 
 ```bash
-cd {{ specs_repo_absolute_path }}
+cd /work/KubeCoderSpecs
 mkdir -p quality-audits
 git add quality-audits/<date>-<subproject>.json quality-audits/<date>-<subproject>.md
 git commit -m "Quality audit: <subproject> <date>"

@@ -7,9 +7,9 @@ description: Bring the project documentation set into line with reality — smal
 Get the docs current. One job: make every scope's `docs/` reflect how the code actually works and
 why, organized so the right doc can be found and pulled into a per-change reading list. There are
 **no modes** — if a scope has no docs yet, that is simply more work (you are seeding); if it has
-them, you reconcile drift. An optional **hint** narrows the focus: a subproject (`{{ subproject }}`),
-an area (`the {{ subproject }}'s public API`), or a decision to absorb (`absorb D094`). With no hint,
-the whole set is in scope.
+them, you reconcile drift. An optional **hint** narrows the focus: a subproject (`bot`), an area
+(`the bot's Telegram UX`), or a decision to absorb (`absorb D094`). With no hint, the whole set is in
+scope.
 
 ## Why this is a skill, not an agent
 
@@ -25,14 +25,15 @@ out. Run it from the main loop.
 2. The target scope's existing `docs/` and its `index.md` — what is already documented.
 3. The sources of truth, for the scope in question:
    - the **code** (ground every claim in it);
-   - `{{ specs_repo_path }}/decisions.md` (the `DNNN` rationale, until it is fully absorbed);
-   - `{{ specs_repo_path }}/slices/**` overviews + acceptance criteria (the design intent behind changes);
+   - `../KubeCoderSpecs/decisions.md` (the `DNNN` rationale, until it is fully absorbed);
+   - `../KubeCoderSpecs/slices/**` overviews + acceptance criteria (the design intent behind changes);
    - recent `git log` for the scope (what changed since the docs were last touched).
 
 ## Steps
 
 1. **Scope it.** From the hint (or the whole set by default) pick the scopes to work: the root and/or
-   one or more subprojects (`{{ subproject }}`, …).
+   one or more subprojects (`controller`, `worker`, `bot`, `packages/kubecoder-contracts`,
+   `vscode-extension`).
 
 2. **Survey — fan out Explore agents.** Launch Explore agents in parallel (one per scope or area).
    Give each the documentation model and ask it to return, with `file:line` evidence:
@@ -62,8 +63,8 @@ out. Run it from the main loop.
    resolve. The index matches the docs on disk (no orphan entries, no undocumented docs). Decision
    rows fit in 100 characters.
 
-6. **Commit.** Per the repo's commit-as-you-go rule, in the repo each file lives in (docs in the main
-   repo, the decision index in `{{ specs_repo_path }}`). Stage only the files you touched.
+6. **Commit.** Per the repo's commit-as-you-go rule, in the repo each file lives in (docs in this
+   repo, the decision index in `../KubeCoderSpecs`). Stage only the files you touched.
 
 ## Constraints
 

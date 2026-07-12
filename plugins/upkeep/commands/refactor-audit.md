@@ -1,3 +1,7 @@
+---
+description: Analyze codebase structural health (code-health tool + targeted review) and recommend grouped refactoring work for /triage.
+---
+
 # Refactor Audit
 
 Analyze the codebase for structural health issues and recommend refactoring slices. Uses the `code-health` tool output as a starting point, then does targeted code review to produce grounded, grouped recommendations.
@@ -11,10 +15,10 @@ You are the orchestrator. You do not write application code — you produce a pr
 **1a. Run the code health grader** to get the current state:
 
 ```bash
-poetry run code-health --json
+uv run python -m tools.code_health --json
 ```
 
-Parse the JSON output. Note the flagged files, their scores, ratings, and findings. The tool reports structural metrics (SLOC, function length, cyclomatic complexity, nesting depth, parameter count, class method count, inline imports) and cognitive complexity (via a TypeScript sub-tool in `tools/code_health/cognitive/`). Both metric types are combined into a single composite score per file.
+Parse the JSON output. Note the flagged files, their scores, ratings, and findings. The tool reports structural metrics (SLOC, function length, cyclomatic complexity, nesting depth, parameter count, class method count, inline imports) and cognitive complexity (computed in-process via the **complexipy** Python library, wired up in `tools/code_health/cognitive_analyzer.py`). Both metric types are combined into a single composite score per file.
 
 **1b. Present a quick summary** to the user: how many files have findings, score distribution, dominant rule categories. This gives context before the deep dive.
 
@@ -31,7 +35,7 @@ Parse the JSON output. Note the flagged files, their scores, ratings, and findin
 - **Import graphs** — which flagged files import from each other? Files that are tightly coupled should be refactored together.
 - **Shared domain concepts** — do multiple flagged files operate on the same models or services? They may share the same structural problem (e.g., a missing service that both are compensating for).
 - **Duplicated patterns** — the health report may flag the same pattern in multiple files (e.g., inline imports, duplicate trigger resolution). These are a single fix, not N fixes.
-- **Sibling-subproject mirrors** — files that exist in multiple subprojects (e.g., `frontend/` and `portal/`) with identical or near-identical code. These may indicate missing shared abstractions (check whether a shared package exists, e.g., `packages/shared-ui/`).
+- **Sibling-subproject mirrors** — files that exist in multiple subprojects (e.g., `controller/` and `worker/`) with identical or near-identical code. These may indicate missing shared abstractions (check whether they belong in the shared wire-contract package, `packages/kubecoder-contracts/`).
 - **Caller/callee chains** — a long function may be long because the service it calls has the wrong API. The fix is in the callee, not the caller.
 
 Use Explore agents in parallel to investigate import relationships and shared patterns across the flagged files.
@@ -77,7 +81,7 @@ Call these out explicitly so they can be suppressed. Preferred approaches, in or
 
 ### Phase 5: Write the report
 
-**5a. Write the audit report** to `docs/refactor_audit_YYYY-MM-DD.md` with these sections:
+**5a. Write the audit report** to `../KubeCoderSpecs/quality-audits/refactor_audit_YYYY-MM-DD.md` with these sections:
 
 1. **Summary** — health score distribution, key patterns, number of recommendations.
 2. **Refactoring groups** — the grouped recommendations from Phase 3, in priority order.

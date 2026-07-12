@@ -1,0 +1,88 @@
+# Authoring guide — keeping the plugin's artifacts lean and drift-free
+
+Rules for writing and maintaining the plugin's artifacts: agent definitions, commands, the contract
+docs, and the `CLAUDE.md` entries each project provides. They exist to prevent duplication, keep
+context windows clean, and make drift easy to spot. The mechanics of adopting the plugin are in
+[`ADOPTING.md`](ADOPTING.md); the project contract is
+[`plugins/dev/docs/project-contract.md`](../plugins/dev/docs/project-contract.md).
+
+## Single source of truth (the no-duplication rule)
+
+**Every claim about how things work lives in exactly one place.** Before adding content to a file,
+search for anything that already says it. If it exists: delete the new copy and reference the
+existing location, promote the content to a broader scope if it should apply more widely, or
+reconcile the drift if the two say subtly different things.
+
+Duplication is a drift trap first, a token cost second: two copies diverge, and agents reading
+different copies behave differently. This is why the plugin references generic concerns (issue
+tracker, notifications, the spec repo, the testing strategy) rather than restating them — the
+concrete facts live once, in the project's `CLAUDE.md`/manifest or the host `~/.claude/CLAUDE.md`.
+
+## Agent definitions — thin: identity + output contract + bounds
+
+Each `agents/<name>.md` contains only what makes *this* agent different:
+
+1. **Frontmatter** — `name` and `description` (**both required**; see below), plus `model` if the
+   role pins one.
+2. **Role** — one paragraph: what the agent is and what it produces.
+3. **Output contract** — where it writes its artifact and the exact verdict-JSON shape it must end
+   with (the runner reads that verdict; a missing/invalid one is a protocol failure).
+4. **Bounds** — the rules that make it different: adversarial sweep, "describe the problem never the
+   fix", "run don't read", commit discipline, "never work around an environmental problem → report
+   `blocked`".
+
+It must **not** contain project architecture rules (those load from the component's `CLAUDE.md`/docs
+at dispatch — the agent reads them, it doesn't repeat them), "read CLAUDE.md first" (it's automatic),
+or generic filler.
+
+## `description` is mandatory — an agent without one silently isn't registered
+
+**Every agent needs a `description`.** Claude Code only registers an agent that has one — an agent
+with just a `name` is silently dropped and **cannot be dispatched at all**, not even by name. (Learned
+the hard way: dev agents once shipped with no description on the theory that name-dispatched agents
+don't need one, and *every* run silently fell back to `general-purpose`. The files were present and
+valid — they just weren't registered.) The official plugin docs don't call this out; treat a missing
+`description` as the first thing to check when an agent "isn't there."
+
+The description is also what an LLM reads to *choose* an agent, so make it accurate: for a
+conditionally-dispatched agent (e.g. `arch-design`) say **when to use it**; for one always dispatched
+by name (`code-writer`, `code-reviewer`, …) a one-line role statement is enough — but it is still
+mandatory.
+
+Installed in the plugin, agents resolve as `dev:<name>` everywhere (and `kc session
+create-headless --agent dev:<name>` resolves them headlessly). Project-local `.claude/agents/` still
+merge hierarchically from the session cwd up to the git root, if a project adds its own.
+
+## Commands — the orchestration sequence, not the agents' content
+
+A command is a task-specific workflow the user triggers by name. It contains: what it does (one
+paragraph), the numbered procedure, real shell invocations (reference plugin files via
+`${CLAUDE_PLUGIN_ROOT}/...`), and the decision points where it stops and asks. Frontmatter carries
+`description` and an `argument-hint`.
+
+It must **not** restate an agent's behavior (the agent definition owns that), restate `CLAUDE.md`,
+or carry generic Claude Code etiquette. Think of a command as a script that choreographs agents, not
+a place to explain what they do.
+
+## `CLAUDE.md` discipline (the project side)
+
+The plugin can't ship a `CLAUDE.md` (it is project/user memory, discovered by walking the repo). A
+project provides one; keep it disciplined:
+
+- **State every fact once.** A rule that belongs in a `docs/` topic doc goes there, with a pointer —
+  not inline and also in the doc.
+- **Two strikes, one screen.** Per Anthropic's guidance, `CLAUDE.md` grows only when the same issue
+  has bitten twice, and never exceeds ~one screen (~80–100 lines). When it's full and something new
+  must go in, something old moves out — usually demoted to a `docs/` topic doc (on-demand instead of
+  every-turn), not deleted.
+- The three contract lines (`Spec repo:`, `Slice testing strategy:`, `Design philosophy:`) are
+  read by preflight and by agents — keep them exactly as the labels above.
+
+## Keep the set honest
+
+Periodically (or whenever you feel friction): read each artifact end to end and delete anything
+stale, restated elsewhere, or that you don't remember adding. Scan agent definitions for sentences
+that restate `CLAUDE.md` or the workflow contract; scan commands for sentences describing what an
+agent *does* (vs. when it runs). If two files reference the same rule, pick one and delete the other.
+The goal isn't minimalism — it's that every claim lives in exactly one place, so a reader (human or
+agent) always knows where to look and never reconciles conflicting versions.

@@ -1,3 +1,7 @@
+---
+description: Scan a subproject for duplicated patterns and reinvented utilities, producing a prioritized backlog for /triage.
+---
+
 # Quality Improver
 
 Scan a subproject for duplicated patterns and reinvented utilities, producing a prioritized backlog for `/triage`. Argument: `<subproject> [--since <git-ref> | --last <N>]`.
@@ -14,7 +18,7 @@ This skill does **not** create slices or dispatch dev agents. Its output is a fi
 
 Parse `$ARGUMENTS`:
 
-- **Required positional**: the subproject name (e.g., `{{ subproject }}`).
+- **Required positional**: the subproject name (e.g., `<subproject>`).
 - **Optional flags** (mutually exclusive):
   - `--since <git-ref>` — scan only hunks changed since `<git-ref>`.
   - `--last <N>` — scan only hunks changed in the last `<N>` commits.
@@ -24,12 +28,12 @@ If the subproject is invalid for this monorepo, stop and tell the user the allow
 
 ### Step 2: Compute paths
 
-The sub-session runs with `cwd=<subproject>` (e.g., `{{ project_root }}/{{ subproject }}/`), so the specs repo path resolves differently from the subproject CWD. Use **absolute paths** in the prompt to avoid ambiguity:
+The sub-session runs with `cwd=<subproject>` (e.g., `/work/KubeCoder/<subproject>/`), so the specs repo path resolves differently from the subproject CWD. Use **absolute paths** in the prompt to avoid ambiguity:
 
-- Specs repo: `{{ specs_repo_absolute_path }}`
-- Output dir: `{{ specs_repo_absolute_path }}/quality-audits/`
-- JSON: `{{ specs_repo_absolute_path }}/quality-audits/YYYY-MM-DD-<subproject>.json`
-- Markdown: `{{ specs_repo_absolute_path }}/quality-audits/YYYY-MM-DD-<subproject>.md`
+- Specs repo: `/work/KubeCoderSpecs`
+- Output dir: `/work/KubeCoderSpecs/quality-audits/`
+- JSON: `/work/KubeCoderSpecs/quality-audits/YYYY-MM-DD-<subproject>.json`
+- Markdown: `/work/KubeCoderSpecs/quality-audits/YYYY-MM-DD-<subproject>.md`
 
 Use today's date. The sub-session creates the `quality-audits/` dir if it doesn't exist.
 
@@ -50,7 +54,7 @@ When done, print "AUDIT_COMPLETE: N findings" as the final line of your response
 Dispatch:
 
 ```bash
-python3 {{ session_manager_path }} start --project <subproject> --timeout 3600 \
+python3 tools/ai_workflow/claude_session.py start --project <subproject> --timeout 3600 \
     --prompt-file /tmp/quality-improver-<subproject>-prompt.txt \
     --response-file /tmp/quality-improver-<subproject>-response.txt
 ```
@@ -68,14 +72,14 @@ Verify the run:
 - Final line of `/tmp/quality-improver-<subproject>-response.txt` is `AUDIT_COMPLETE: N findings`.
 - The JSON file exists, parses, and has `findings` matching the reported count.
 - The markdown file exists.
-- The files are committed in the specs repo (`cd {{ specs_repo_absolute_path }} && git log -1 -- quality-audits/` should show the scanner's commit).
+- The files are committed in the specs repo (`cd /work/KubeCoderSpecs && git log -1 -- quality-audits/` should show the scanner's commit).
 
 If any check fails, report to the user and stop. Do not fabricate success.
 
 Finish the session:
 
 ```bash
-python3 {{ session_manager_path }} finish --project <subproject>
+python3 tools/ai_workflow/claude_session.py finish --project <subproject>
 ```
 
 ### Step 5: Report
@@ -90,7 +94,7 @@ Suggest the next step:
 
 ```
 To turn these into slices, when you're ready:
-    /triage {{ specs_repo_path }}/quality-audits/YYYY-MM-DD-<subproject>.md
+    /triage ../KubeCoderSpecs/quality-audits/YYYY-MM-DD-<subproject>.md
 ```
 
 Send a push notification only if the run took over 10 minutes (per root `CLAUDE.md`).
