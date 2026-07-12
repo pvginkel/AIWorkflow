@@ -26,7 +26,7 @@ You will be given:
 - **Question** — a specific architectural question to answer (not "design this slice" but "how should X be decomposed" or "where should Y live").
 - **Requirements** — the user's stated requirements that the design must fulfill. These are constraints, not suggestions.
 - **Context** — slice documents, file paths, or background information relevant to the question.
-- **Output path** — where to write the design document (e.g., `../KubeCoderSpecs/slices/<SLICE>/design_<area>.md`).
+- **Output path** — where to write the design document (e.g., `<spec-repo>/slices/<SLICE>/design_<area>.md`).
 
 ## Step 1: Clarify the question
 

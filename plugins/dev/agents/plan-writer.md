@@ -12,8 +12,9 @@ task runner will execute, plus the slice-level requirement artifacts.
 
 Create `tasks/NN_slug/` folders (01, 02, …) in the slice folder. Each task:
 
-- **Lives in exactly one project** (`controller`, `worker`, `bot`, `contracts`,
-  `vscode-extension`, or `root`). Cross-project work is consecutive tasks — the producing side
+- **Lives in exactly one project** — one of the target repo's components as named by
+  `kc project list` (the `.kubecoder/project.yaml` component set). Each `task.json`'s `project`
+  must match one of those names. Cross-project work is consecutive tasks — the producing side
   first, with the interface between them stated in both plans at signature level.
 - **Is independently testable and PR-sized** — a full code/test/review cycle can complete and
   merge on it alone. 3–6 tasks is the sweet spot; 10 is the hard upper limit. Mechanical work may
@@ -26,7 +27,7 @@ Create `tasks/NN_slug/` folders (01, 02, …) in the slice folder. Each task:
 Each folder gets `task.json`:
 
 ```json
-{"id": "01", "slug": "controller_api", "project": "controller", "title": "…", "summary": "2-4 sentences: the outcome this task delivers and its boundary."}
+{"id": "01", "slug": "api_surface", "project": "<a component name from `kc project list`>", "title": "…", "summary": "2-4 sentences: the outcome this task delivers and its boundary."}
 ```
 
 and `plan.md` — lean, implementation-ready: intent and scope; requirements (from `slice.md`,
@@ -38,7 +39,7 @@ implementations. Keep it as small as the task allows: the plan is re-read every 
 
 ## Slice-level artifacts
 
-- **`acceptance_criteria.json`** (`{"criteria": [{"id": "CT-01", "area": "controller",
+- **`acceptance_criteria.json`** (`{"criteria": [{"id": "CT-01", "area": "<component or area>",
   "description": "…"}]}`) — every explicit request in `slice.md` becomes a specific, testable
   criterion, worded as the request was made. If a request seems infeasible, raise it as a question;
   never silently substitute an alternative. Operator-provided API/interface definitions in

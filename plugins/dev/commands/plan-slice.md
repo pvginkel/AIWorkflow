@@ -1,16 +1,24 @@
 ---
 description: Interactively break a triaged slice into 3-6 ordered, project-local tasks (plan-writer + plan-reviewer) with acceptance criteria and a seeded verification log. The task runner executes the result.
+argument-hint: <slice-number-or-path>
 ---
 
 # Plan Slice
 
 Break a slice into its executable task breakdown. **Required input: a slice folder** produced by
-`/triage` (`../KubeCoderSpecs/slices/backlog/NNN_slug/` with a `slice.md`). Argument: the slice
+`/triage` (`<spec-repo>/slices/backlog/NNN_slug/` with a `slice.md`). Argument: the slice
 number or path. This is the interactive planning session — the operator is present; everything downstream of
 you runs unattended, so what you freeze here is the only dispatch context the dev agents get.
 
+`<spec-repo>` is the path in your `CLAUDE.md`'s `Spec repo:` line (a machine-checkable entry).
 The workflow contract (folder layout, task rules, verdict schema) is
-[`docs/conventions/task-workflow.md`](../../docs/conventions/task-workflow.md).
+`${CLAUDE_PLUGIN_ROOT}/docs/task-workflow.md`; the project contract (what `CLAUDE.md` and
+`.kubecoder/project.yaml` must provide) is `${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md`.
+
+**Preflight (step 0).** Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for plan` and relay
+its message verbatim if it exits non-zero — it bails when the manifest or the `Spec repo:` entry is
+missing (you cannot allocate a plan with nowhere to write it). A silent exit 0 means every gate
+passed.
 
 **Normative keywords.** MUST / MUST NOT / SHOULD / SHOULD NOT / MAY in `slice.md` and the
 artifacts you produce carry their RFC 2119 meaning.
@@ -83,16 +91,16 @@ steps 2–4. Do **not** start `/run-slice` — running is a separate operator in
 ### 7. Lodge decisions and commit
 
 Decisions or conventions the slice establishes are project documentation: write each into the
-owning `docs/` topic doc and its row in the thin `DNNN` index (`../KubeCoderSpecs/decisions.md`),
-per [`docs/documentation-model.md`](../../docs/documentation-model.md). Commit the slice folder to
-the specs repo as pieces settle — stage files **by name** (shared working tree).
+owning `docs/` topic doc per your project's documentation model (e.g. a decision index the spec
+repo maintains). Commit the slice folder to the spec repo as pieces settle — stage files **by
+name** (shared working tree).
 
 ### 8. Promote the slice out of the backlog
 
 Once the plan is approved and committed, move the slice from the backlog into the active set so
 `/run-slice` can pick it up:
 
-- `git mv ../KubeCoderSpecs/slices/backlog/NNN_slug ../KubeCoderSpecs/slices/NNN_slug` and commit
+- `git mv <spec-repo>/slices/backlog/NNN_slug <spec-repo>/slices/NNN_slug` and commit
   the move (stage by name).
 - Move the slice's Kanban card from **To Do** to **Ready**.
 

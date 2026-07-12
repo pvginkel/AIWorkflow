@@ -1,13 +1,17 @@
 ---
 description: Produce and maintain slices/DAG.md — a check-off lane plan that schedules every pending slice across N parallel /run-slice sessions, honouring ordering requirements while minimising merge work, plus the dependency graph and per-slice analysis behind it.
+argument-hint: "[lane-count]"
 ---
 
 # Slice run DAG
 
-Produce and maintain **`../KubeCoderSpecs/slices/DAG.md`** — a check-off **lane plan** that
+Produce and maintain **`<spec-repo>/slices/DAG.md`** — a check-off **lane plan** that
 schedules every pending slice across the operator's parallel `/run-slice` sessions, plus the
 dependency graph and the per-slice analysis behind it. Argument (optional): the number of lanes
 (default **3**).
+
+`<spec-repo>` is the path in your `CLAUDE.md`'s `Spec repo:` line; a slice's subprojects are the
+components in the target repo's `.kubecoder/project.yaml` (`kc project list`).
 
 The operator works off **one thing**: a grid of checkboxes, one column per session, that says
 which slices may run together. The plan honours every hard ordering requirement and packs the
@@ -32,7 +36,7 @@ move a slice, or re-pack, and everything needed is already on the page.
 ### Phase 1 — Enumerate the pending slices (the filesystem is the truth)
 
 ```bash
-ls -d ../KubeCoderSpecs/slices/[0-9][0-9][0-9]_*/
+ls -d <spec-repo>/slices/[0-9][0-9][0-9]_*/
 ```
 
 These — and only these — are pending. Anything under `slices/completed/`, `slices/deferred/`,
@@ -42,7 +46,7 @@ or moved since the README was last touched).
 
 ### Phase 2 — Load the existing DAG.md (the cache)
 
-If `../KubeCoderSpecs/slices/DAG.md` exists, read it and parse the **Inventory** table into one
+If `<spec-repo>/slices/DAG.md` exists, read it and parse the **Inventory** table into one
 record per slice (`subprojects`, `needs`, `gate`, `scope`) plus the current **Lane plan** (its
 check-off state and cell positions). Then reconcile against Phase 1:
 
@@ -59,16 +63,17 @@ On the first run there is no `DAG.md`, so every pending slice is "new".
 For each **new** slice capture exactly four fields. Keep the cost down:
 
 - **Subprojects** — from the **subfolders only**, never by reading files:
-  `ls -d ../KubeCoderSpecs/slices/<slice>/*/`. The folder names *are* the subprojects touched
-  (`contracts/ controller/ worker/ bot/ vscode-extension/ dockerimages/ helmcharts/ …`). This is
-  the entire merge-conflict surface; it is free.
+  `ls -d <spec-repo>/slices/<slice>/*/`. The folder names *are* the subprojects touched — the
+  target repo's components (the names `kc project list` reports). This is the entire merge-conflict
+  surface; it is free.
 - **Scope** — one short line, lifted from the slice's `## Pending` entry in
-  `../KubeCoderSpecs/README.md` (one read covers all slices).
+  `<spec-repo>/README.md` (one read covers all slices).
 - **Needs** — the slice numbers that **must run before** this one (hard ordering). Take what the
   README one-liner states ("after 049 + 047", "must precede D-S4", "run order 038 → 039 → 052",
-  "depends on 046's post-state"); where it is silent or ambiguous, read that slice's `overview.md`,
-  targeting the ordering signal (grep for `depends|after|before|must run|precede|sequence|run order|
-  prerequisite|blocked`). A `needs` is a slice that must be **done first**, not merely related.
+  "depends on 046's post-state"); where it is silent or ambiguous, read that slice's `slice.md`
+  (older slices may still use `overview.md`), targeting the ordering signal (grep for
+  `depends|after|before|must run|precede|sequence|run order|prerequisite|blocked`). A `needs` is a
+  slice that must be **done first**, not merely related.
 - **Gate** — an external blocker that must clear before the slice can run at all (e.g. 055's
   *esp-idf spike* ⛔ RUN GATE; an operator action; a secret to mint). Short text, or `—`.
 
@@ -84,7 +89,7 @@ the lane count in the argument, else **3**.
 
 ### Phase 5 — Write DAG.md and commit
 
-Write `../KubeCoderSpecs/slices/DAG.md` in the format below. **Preserve every `[x]`** the operator
+Write `<spec-repo>/slices/DAG.md` in the format below. **Preserve every `[x]`** the operator
 had ticked for a carried-over slice, and keep carried-over slices in their existing cells where the
 constraints still allow (minimise churn — see the algorithm). Then commit it to the specs repo
 (stage only `slices/DAG.md`), per the commit-as-you-go convention. This is a quick skill; no push
@@ -139,10 +144,11 @@ derived from the shared subprojects in the inventory.
 
 ## Hotspots & gates
 
-- **Subproject touch counts** (merge pressure): controller ×N, worker ×N, contracts ×N, bot ×N, …
-- **contracts is the Go-codegen drift gate** — two `contracts` slices running concurrently is the
-  costliest merge there is; never share a wave between two unless forced.
-- **Gates:** 055 — esp-idf spike must be run before `/run-slice`. <others…>
+- **Subproject touch counts** (merge pressure): `<component> ×N, …` for each component.
+- **Codegen/drift-gated component** — if the project has one (e.g. a shared contracts package that
+  regenerates across languages), two slices touching it concurrently is the costliest merge there
+  is; never share a wave between two unless forced.
+- **Gates:** `<slice> — <external blocker that must clear before /run-slice>`. <others…>
 - **Lane rationale:** brief notes on any non-obvious placement, so a re-pack keeps the intent.
 ````
 
@@ -156,9 +162,9 @@ the nodes, the `needs` edges, each slice's subproject set, the gates, and the la
 - **needs (hard).** B needs A ⟹ A must be in an **earlier wave** than B. Non-negotiable.
 - **merge (soft).** Two slices that **share a subproject** create merge work if they run in the
   same wave (concurrent sessions, two diffs to the same area). Avoid it where the schedule allows;
-  accept it where avoiding it would strand the plan. Weight by the shared subproject: `contracts`
-  is severe (Go regen); `controller` is touched by most slices, so some controller overlap per
-  wave is unavoidable — don't stall the plan chasing zero. Compute touch-counts from the inventory
+  accept it where avoiding it would strand the plan. Weight by the shared subproject: a
+  codegen/drift-gated component is severe; a component touched by most slices makes some overlap per
+  wave unavoidable — don't stall the plan chasing zero. Compute touch-counts from the inventory
   and treat the **hottest shared subproject** as the strongest serialise signal.
 
 **Packing (default L = 3):**
@@ -194,7 +200,7 @@ ever**:
 
 - **Subprojects from `ls`, never from file contents.** The merge analysis is free.
 - **Scope and most `needs` from the README `## Pending` block** — one read for all slices.
-- **Deep-read an `overview.md` only for a *new* slice**, only for `needs`/gate, and only where the
+- **Deep-read a `slice.md` only for a *new* slice**, only for `needs`/gate, and only where the
   README is silent — via a parallel `Explore` agent that returns just the four fields, so the read
   never enters this session's context.
 - **Carried-over slices are never re-read.** Their inventory rows are the cache.

@@ -10,9 +10,10 @@ findings. You execute the checks; you do not fix anything.
 
 ## Rules
 
-1. **Run what the handover names, completely.** Each project's `CLAUDE.md` and docs state its
-   test commands. For acceptance criteria, verify what your dispatch scopes you to — sandbox-
-   runnable checks unless it explicitly hands you live-cluster verification.
+1. **Run what the handover names, completely.** Run each affected project's suite via
+   `kc project test --project <name>` (and `build`/`lint` as the check calls for). For acceptance
+   criteria, verify what your dispatch scopes you to — sandbox-runnable checks unless it explicitly
+   hands you live-cluster verification.
 2. **Never dismiss a failure as flaky or pre-existing.** The suite was green before this slice's
    work; a failure now is a finding. This assumption has been wrong every time it was made.
 3. **Fix nothing; change nothing.** Your value is an untainted report. If a check cannot run

@@ -1,12 +1,19 @@
 ---
 description: Group a batch of findings, bugs, or requests into grounded slice folders (slice.md under slices/backlog/NNN_slug/) — the required input to /plan-slice. Does not plan slices.
+argument-hint: "[findings-document]"
 ---
 
 # Triage
 
 Turn a batch of findings, requests, and issue-tracker items into grounded **slice folders** —
-self-contained change requests under `../KubeCoderSpecs/slices/backlog/NNN_slug/`, the input to
+self-contained change requests under `<spec-repo>/slices/backlog/NNN_slug/`, the input to
 `/plan-slice` (which plans them and promotes them up into `slices/`). Argument (optional): path to a findings document (e.g., `tmp/uat_testing.md`).
+
+`<spec-repo>` is the path in your `CLAUDE.md`'s `Spec repo:` line. **Preflight (step 0):** run
+`python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage` and relay its message verbatim on a
+non-zero exit — it bails when the `Spec repo:` entry is missing (there is nowhere to write a slice).
+The issue-tracker and notification wiring this command references generically (boards, lists, the
+project's owner tag, how to notify) is defined by your host convention (`~/.claude/CLAUDE.md`).
 
 The input can be a UAT run, a list of bugs, a change-request dump, chat discussion, or any
 unstructured collection of issues. Triage understands it, groups it by subject, and writes one
@@ -40,12 +47,12 @@ execute.
 ### Phase 1: Collect and consolidate
 
 **1a. Gather every input.** Read the findings document if one was passed. Pull in the relevant
-chat discussion. Fetch the outstanding `KubeCoder`-tagged cards in the Triage board's **Inbox**
-list — the project's intake queue. Leave cards tagged for other projects alone, and treat untagged
-cards as not-yet-claimed; if asked to consider a card without the `KubeCoder` tag, say so rather than
-adopting it. All three are inputs and are considered together.
+chat discussion. Fetch the outstanding cards carrying **this project's owner tag** in the Triage
+board's **Inbox** list — the project's intake queue. Leave cards tagged for other projects alone,
+and treat untagged cards as not-yet-claimed; if asked to consider a card without the project's tag,
+say so rather than adopting it. All three are inputs and are considered together.
 
-**1b. Write a transient triage working document** at `../KubeCoderSpecs/handovers/triage_YYYY-MM-DD.md`
+**1b. Write a transient triage working document** at `<spec-repo>/handovers/triage_YYYY-MM-DD.md`
 (transient docs live in `handovers/`, never at the specs root). Give every item a numbered entry
 with:
 
@@ -122,8 +129,8 @@ Group the remaining items into **slices**. Follow these rules:
 For each group, allocate a slice number and create the slice folder:
 
 ```bash
-N=$(../KubeCoderSpecs/scripts/allocate-next-slice.sh)   # prints e.g. 074
-mkdir ../KubeCoderSpecs/slices/backlog/${N}_<snake_case_slug>
+N=$(<spec-repo>/scripts/allocate-next-slice.sh)   # prints e.g. 074
+mkdir <spec-repo>/slices/backlog/${N}_<snake_case_slug>
 ```
 
 (The allocator is flock-guarded so concurrent sessions never collide; a burned number is a harmless
@@ -155,7 +162,7 @@ Each slice folder contains:
   prior work that informs the request. If a relevant document already lives in `handovers/` (a
   prior design or proposal), **move it into the slice folder** so the planner has it in one place.
 
-Finally, add the slice to the **Pending** section of `../KubeCoderSpecs/README.md` as a single
+Finally, add the slice to the **Pending** section of `<spec-repo>/README.md` as a single
 line matching the existing entries — `- **NNN** — <short title>: <one-clause summary> (#refs)` —
 and commit the slice folder to the specs repo (stage files by name).
 
@@ -165,10 +172,10 @@ invent design, write acceptance criteria, or propose an implementation.
 ### Phase 6: Update the issue tracker
 
 The Triage cards are just collected thoughts and ideas — they have no standalone value once a slice
-exists. For each `KubeCoder` card that was folded into a slice:
+exists. For each of this project's cards that was folded into a slice:
 
 - **Create one card on the Kanban board (To Do) per slice you wrote** — title `[NNN] <slice
-  title>`, the `KubeCoder` label and no other, a short highlights summary (not a restatement), a
+  title>`, this project's owner tag and no other, a short highlights summary (not a restatement), a
   pointer to the slice folder, and the source-card ids it subsumes. That card flows **To Do → In
   Progress → Done** through `/run-slice`.
 - **Archive the source cards** the slice subsumes — their content now lives in `slice.md`. Also
@@ -182,11 +189,8 @@ exists. For each `KubeCoder` card that was folded into a slice:
 slices — the operator should be able to delete the triage scratch doc with nothing lost. If
 anything would be lost, it has not been absorbed yet; fix that before deleting.
 
-**7b. Notify the operator:**
-
-```bash
-python3 scripts/send_message.py --title "Triage complete" "N items triaged into M slices under ../KubeCoderSpecs/slices/. Run /plan-slice on a slice when ready."
-```
+**7b. Notify the operator** per the host's notification convention — "N items triaged into M slices
+under `<spec-repo>/slices/`. Run /plan-slice on a slice when ready."
 
 Then stop. Do not start `/plan-slice` (except under the narrow interactive minimal-change
 exception at the top of this skill).

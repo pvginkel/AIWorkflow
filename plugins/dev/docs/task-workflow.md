@@ -3,17 +3,23 @@
 How a change moves from idea to merged code. Three operator-initiated sessions plus one script:
 
 1. **`/triage`** — turns findings/requests into **slice folders** (numbered, under
-   `../KubeCoderSpecs/slices/backlog/`), each holding a self-contained `slice.md` change request.
+   `<spec-repo>/slices/backlog/`), each holding a self-contained `slice.md` change request.
 2. **`/plan-slice`** — interactive planning: breaks one slice into ordered, project-local **tasks**
    (plan-writer + plan-reviewer), emits acceptance criteria and verification artifacts, and
    promotes the slice from `slices/backlog/` up into `slices/`.
-3. **`/run-slice`** — launches `tools/ai_workflow/task_runner.py` as a background shell and handles
-   bail-outs. The **script**, not a session, drives execution.
+3. **`/run-slice`** — launches `${CLAUDE_PLUGIN_ROOT}/tools/task_runner.py` as a background shell
+   and handles bail-outs. The **script**, not a session, drives execution.
 
 The design principle: **files are durable, sessions are ephemeral.** No long-lived session drives the
-work. The runner is the only resident process; every agent it spawns is a fresh `claude --agent`
-session that reads its inputs from the slice folder, does one job, writes its outputs (including a
-machine-readable verdict), and exits.
+work. The runner is the only resident process; every agent it spawns is a fresh headless
+`kc session` (a `claude --agent` under the hood) that reads its inputs from the slice folder, does
+one job, writes its outputs (including a machine-readable verdict), and exits.
+
+**Two repos, two placeholders.** `<spec-repo>` is the path in the target repo's `CLAUDE.md`
+`Spec repo:` line — where slices, tasks, and the run's `state.json`/`log.txt` live. The **target
+code repo** is where the runner branches and merges (its git root). A task's `project` is one of
+the target repo's components, as named by `kc project list` (from `.kubecoder/project.yaml`). The
+project contract is `${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md`.
 
 ## Escalation ladder
 
@@ -37,7 +43,7 @@ credentials). They stop and report `blocked` — screaming early is correct beha
 adds the planning artifacts below and promotes the folder to `slices/NNN_slug/`.
 
 ```
-../KubeCoderSpecs/slices/NNN_slug/
+<spec-repo>/slices/NNN_slug/
   slice.md                   ← /triage: the change request (intent, absorbed sources, Q&A,
                                 operator-provided API/spec definitions at signature fidelity)
   acceptance_criteria.json   ← /plan-slice (unchanged schema: id, area, description)
@@ -69,14 +75,15 @@ never `git add -A`.
 ```json
 {
   "id": "01",
-  "slug": "controller_api",
-  "project": "controller",
+  "slug": "api_surface",
+  "project": "<a component name from `kc project list`>",
   "title": "One-line imperative title",
   "summary": "2-4 sentences: what this task delivers and why it is its own task."
 }
 ```
 
-`project` is exactly one of `controller`, `worker`, `bot`, `contracts`, `vscode-extension`, `root` —
+`project` is exactly one of the target repo's components — the names `kc project list --output=json`
+reports (from `.kubecoder/project.yaml`); the runner validates `project` against that set —
 **a task never spans projects.** Cross-project work is consecutive tasks with the interface defined
 at planning time (the producing task first). Execution order is the two-digit prefix (99 tasks is
 plenty, and two digits keeps task ids visually distinct from three-digit slice numbers); there is
@@ -157,10 +164,11 @@ findings block** (the test-agent is a finder, not a judge): `fix_tasks` → bail
 `reason=test_findings`, and the `/run-slice` session turns the findings into new task folders
 (`/write-task`) and relaunches the runner, which executes them as ordinary tasks;
 `proceed_flagged` → the findings are non-blocking (pre-existing, dormant, out-of-scope) — recorded
-in `flagged_findings` for the operator (Trello cards at close-out) and the slice completes. **Cap:
+in `flagged_findings` for the operator (issue-tracker items at close-out) and the slice completes. **Cap:
 3 verification rounds** (tracked in `state.json`); a 4th bails to the operator. Deploy verification
-is separate — `/run-slice`'s final close-out step runs the project's slice test plan
-([`operations/slice-test-plan.md`](../operations/slice-test-plan.md)).
+is separate — `/run-slice`'s final close-out step runs the **slice testing strategy defined for this
+project**, resolved through the target repo's `CLAUDE.md` `Slice testing strategy:` pointer (this
+plugin never names the doc).
 
 ## Consults
 
@@ -175,8 +183,8 @@ Standard vocabularies:
 - **Tester limit (3rd `issues`):** `fresh_writer` (restart with a fresh writer, original input,
   told to test its own work) · `fresh_writer_reset` (same, after dropping all tester commits) ·
   `proceed_to_review` · `bail`.
-- **Review limit (round 2 not signoff):** `merge_flagged` (merge; findings surface at slice end for
-  Trello cards + operator review) · `bail`.
+- **Review limit (round 2 not signoff):** `merge_flagged` (merge; findings surface at slice end as
+  issue-tracker items + operator review) · `bail`.
 - **Agent flagged `blocked`/protocol failure:** `retry` (once) · `bail`.
 - **Checkpoint:** `proceed` · `amend` · `bail`. The prompt carries the merge's file stat and
   prescribes **two-tier judgment**: tier 1 from the history summaries, review verdict, and stat;
@@ -214,8 +222,11 @@ a recovery prompt (reassess, finish, commit, write the verdict). Consults are ne
 
 ## Session mechanics
 
-The runner spawns sessions through the `claude_session.py` machinery (stream-json, PID-namespace
-cleanup, timeout handling), with:
+The runner drives every session through `kc session` — `create-headless` (assigns a name),
+`send` (synchronous; owns SSE reconnect and interrupt-on-kill), `status --output=json` (reads back
+the claude `sessionId`), `end`. `kc` owns the raw process/stream mechanics the retired
+`claude_session.py` used to; the runner keeps only the loop, caps, git, and verdict validation.
+Details:
 
 - All runner and session output written to `<slice>/log.txt` (stdout only under `-v/--verbose`) —
   progress never lands in a calling session's context; outcomes are read from the exit code,
@@ -223,11 +234,14 @@ cleanup, timeout handling), with:
   is **committed with the slice artifacts at close-out** — with `state.json` it is the complete
   who-did-what record of the run.
 
-- `--agent <role>` for dev agents; consults run bare.
-- `cwd` = the task's project directory (dev agents) or the repo root (consults, test-agent) — so a
-  dev session loads its project's `CLAUDE.md` and docs.
-- `FORCE_PROMPT_CACHING_5M=1` in the environment — ephemeral sessions must not pay the 1-hour
-  cache-write premium.
+- `--agent dev:<role>` for dev agents (the plugin's agents install namespaced as `dev:<role>`);
+  consults run bare (no `--agent`).
+- `--cwd` = the task's component directory (dev agents; the effective cwd from `kc project list`)
+  or the target repo root (consults, test-agent) — so a dev session loads its component's
+  `CLAUDE.md` and docs. The repo root comes from `git rev-parse --show-toplevel`.
+- `-e FORCE_PROMPT_CACHING_5M=1` on `create-headless` — ephemeral sessions must not pay the 1-hour
+  cache-write premium (the env pass-through threads it to the spawned `claude`).
 - Models: code-tester and test-agent run `--model sonnet`; everything else inherits the default.
 - Timeouts: writer/tester/test-agent 7200s, reviewer 3600s, consults 1800s, nudges 900s. A timeout
   is a bail (`reason=timeout`), not a retry — a stuck agent is a problem to surface, not to mask.
+  On timeout the runner SIGINTs the `send` (which fires a worker interrupt) and ends the session.

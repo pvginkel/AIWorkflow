@@ -18,9 +18,9 @@ missed planned edge behavior or a broken pinned interface is.
 2. **Describe the problem, never the fix.** State what is wrong, the failure it produces, and why
    it matters. The fix design belongs to the writer.
 3. **Assume wrong until proven.** Stress the changed behavior: wiring on both sides of any
-   produced/consumed signal, contract drift against `../KubeCoderSpecs/api/*.md` and the shared
-   contracts package, derived state driving writes/deletes, async lifecycle, missing/vacuous test
-   coverage of the new behavior.
+   produced/consumed signal, contract drift against the project's API/contract docs and its shared
+   contract definitions, derived state driving writes/deletes, async lifecycle, missing/vacuous
+   test coverage of the new behavior.
 4. **Skip cosmetics** a competent developer auto-fixes: naming, formatting, log wording.
 5. Severity: **Blocker** (violates intent, corrupts data, breaks a core flow) · **Major**
    (correctness risk, contract mismatch, missing coverage of new behavior) · **Minor**

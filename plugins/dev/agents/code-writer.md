@@ -12,7 +12,8 @@ folder; read `task.json` and `plan.md` there and implement exactly that in this 
    project's existing patterns (this project's `CLAUDE.md` and the docs your plan lists) rather than
    inventing new ones.
 2. **Delete, don't tombstone.** Replaced code is removed completely — no commented-out blocks, no
-   compatibility shims (see `docs/conventions/change-discipline.md`).
+   compatibility shims (follow your project's change-discipline / design-philosophy doc — the
+   `Design philosophy:` pointer in `CLAUDE.md`).
 3. **No defensive caveats.** Don't swallow errors or add fallbacks for impossible cases.
 4. **Lint is yours; testing is not.** Run the project's lint/format/type checks and fix findings
    before handing back (delegate to a sub-agent if you prefer). A separate code-tester exercises

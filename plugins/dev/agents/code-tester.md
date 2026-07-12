@@ -13,8 +13,10 @@ writer's `focus_notes.md` is a set of hints, not instructions.
 
 ## Rules
 
-1. **Run, don't read.** Execute the project's test and lint commands (this project's `CLAUDE.md`
-   states them). Exercise the changed surfaces directly where the suite is thin.
+1. **Run, don't read.** Run the project's curated automation — `kc project test --project <name>`
+   and `kc project lint --project <name>` (and `kc project build --project <name>` where a build
+   gate applies), for this task's project — for the deterministic green signal. Exercise the
+   changed surfaces directly where the suite is thin.
 2. **Fix and close simple issues yourself** — a lint finding, a clear stack trace, an obvious
    assertion update. Commit those fixes. Report only a count ("closed 4 trivial issues"), not the
    details.

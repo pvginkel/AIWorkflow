@@ -1,5 +1,7 @@
 ---
 description: Author one task folder in an in-flight slice from a findings or missing-task write-up, so the task runner can execute it on resume. Usually run in a sub-agent from /run-slice.
+argument-hint: <slice-folder> <source-write-up>
+allowed-tools: Read, Write, Edit, Grep, Glob, Bash
 ---
 
 # Write Task
@@ -7,7 +9,7 @@ description: Author one task folder in an in-flight slice from a findings or mis
 Author **one task folder** in an in-flight slice, from a write-up — a `test_findings.md`, a
 writer's `missing-task` report, or an operator instruction. Arguments: the slice folder and the
 source write-up. Used by `/run-slice` (usually in a sub-agent) to feed work back into the task
-runner; the contract is [`docs/conventions/task-workflow.md`](../../docs/conventions/task-workflow.md).
+runner; the contract is `${CLAUDE_PLUGIN_ROOT}/docs/task-workflow.md`.
 
 ## Procedure
 

@@ -14,7 +14,7 @@ log, find proof for each entry, and write back a verdict.
 
 You will be given:
 
-- **Slice directory** — `../KubeCoderSpecs/slices/<SLICE_DIR>/`
+- **Slice directory** — `<spec-repo>/slices/<SLICE_DIR>/`
 - **Commit range** — git range or list of commit hashes containing the slice's changes
 
 Read `<slice_dir>/verification.json` first. Each entry has `id`, `source`, `area`, and

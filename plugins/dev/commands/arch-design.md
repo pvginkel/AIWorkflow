@@ -1,24 +1,27 @@
 ---
 description: Design a well thought out architecture with options and trade-offs, grounded in the project's code base. Proactively suggest to the user to use this skill when creating complex slices that involve cross-cutting decisions or new patterns.
+argument-hint: <architectural-question>
 ---
 
 # Architecture Design
 
-Produce a grounded architecture design document for a specific question. Argument: a short description of the architectural question (e.g., "how should session decomposition work across controller and worker").
+Produce a grounded architecture design document for a specific question. Argument: a short description of the architectural question (e.g., "how should session decomposition work across the API service and the worker").
+
+`<spec-repo>` below is the path in your `CLAUDE.md`'s `Spec repo:` line.
 
 ## When to use
 
 Use this skill when a slice or feature involves:
 
-- Cross-subproject coordination (controller + worker + bot need to agree on an approach).
-- New patterns not covered by existing conventions (a new SSE event type, a new delivery pattern, a new storage strategy).
+- Cross-subproject coordination (two or more of the target repo's components must agree on an approach).
+- New patterns not covered by existing conventions (a new event type, a new delivery pattern, a new storage strategy).
 - Structural changes that affect multiple modules or services.
 - Decisions where there are genuine trade-offs the user should weigh before committing.
 
 **Do not use** for:
 - Slices that follow established patterns — the dev agent's planning phase handles those.
 - Implementation-level decisions within a single subproject (callback threading, DI wiring).
-- Questions already answered by an app's `docs/` or the decision index (`../KubeCoderSpecs/decisions.md`).
+- Questions already answered by an app's `docs/` or the project's decision index.
 
 ## Procedure
 
@@ -42,8 +45,8 @@ Launch the `arch-design` agent with:
 
 - **Question** — the specific architectural question.
 - **Requirements** — the user's stated requirements, listed as fixed constraints.
-- **Context** — point to the relevant docs and code. Include the `DNNN` decisions (indexed in `../KubeCoderSpecs/decisions.md`, with rationale in the project `docs/`), per-app design under each app's `docs/`, and any slice-specific documents.
-- **Output path** — where the design should be written (typically `../KubeCoderSpecs/slices/<SLICE_DIR>/design_<area>.md`).
+- **Context** — point to the relevant docs and code. Include the project's recorded decisions (its decision index, with rationale in the project `docs/`), per-app design under each app's `docs/`, and any slice-specific documents.
+- **Output path** — where the design should be written (typically `<spec-repo>/slices/<SLICE_DIR>/design_<area>.md`).
 
 ### Step 4: Review with the user
 
