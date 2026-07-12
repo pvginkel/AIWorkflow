@@ -1,0 +1,12 @@
+{
+  "name": "aiworkflow",
+  "owner": { "name": "Pieter van Ginkel", "email": "pvginkel@gmail.com" },
+  "description": "The slice-development workflow, packaged as installable Claude Code plugins for KubeCoder projects.",
+  "plugins": [
+    {
+      "name": "dev",
+      "source": "./plugins/dev",
+      "description": "The kc-native slice pipeline: triage → plan-slice → run-slice, driven by a bounded per-task dev loop (write → test → review → merge)."
+    }
+  ]
+}
