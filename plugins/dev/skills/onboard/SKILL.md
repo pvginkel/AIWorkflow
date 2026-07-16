@@ -60,13 +60,43 @@ Delete (the plugin provides each):
   that contract now (`${CLAUDE_PLUGIN_ROOT}/docs/task-workflow.md`); a project copy is a second
   source of truth that will drift and be believed.
 
-Leave everything else, and **say what you left**. A repo's own agents and commands are its own. The
-sharp case: auxiliary workflow commands the `dev` plugin does *not* replace — `update-docs`,
-`refactor-audit`, `quality-improver`, `quality-issue-finder` — belong to the planned `upkeep`
-plugin, which is not built. Deleting them removes capability nothing restores. Same for project
+Leave everything else, and **say what you left**. A repo's own agents and commands are its own —
+including auxiliary workflow ones `dev` does not replace (`update-docs` belongs to the planned
+`upkeep` plugin, which is not built; deleting it removes capability nothing restores), and project
 tooling that merely shares the folder (a build tracker, a codegen script).
 
+**Leaving a file means leaving it working.** What you kept may reference what you just deleted —
+`update-docs` and the quality commands all hand off to `/triage`, which is now `/dev:triage`.
+Rewrite those references to their `/dev:` names, and report what you rewrote:
+
+```bash
+grep -rn '/triage\|/plan-slice\|/run-slice\|/write-task\|/slice-dag\|/arch-design' \
+  <each .claude found in step 1>
+```
+
 Commit this as its own change, so the deletion is reviewable apart from the additions.
+
+### 2b. Sweep out the quality capability
+
+Separate from the above, because these are **not** being left: `quality-improver`,
+`quality-issue-finder`, `refactor-audit`, and the `tools/code_health/` grader they feed on are
+retired pending a rebuild of the tool. They must not stay in the project — a private fork of a tool
+that is about to be replaced is exactly what is being cleaned up.
+
+They are not yours to delete outright, though: the copies in each project have **drifted apart**,
+and that divergence is the most useful input the rebuild has. So tell the operator to archive
+before you remove:
+
+1. List what this repo has — the commands (at every `.claude` from step 1) and `tools/code_health/`.
+2. Ask the operator to copy them into the AIWorkflow repo under
+   `archive/quality/<this-repo-name>/` (its README explains the layout), and to commit them there.
+3. Only once they confirm the archive is committed, delete them here — and say what you deleted.
+
+Do not archive them yourself: it is a different repo, and whether that repo is even checked out is
+the operator's business, not an assumption you get to make.
+
+`update-docs` is **not** part of this. It is not quality, touches no `code_health`, and nothing
+blocks it — it stays (with its references rewritten, above).
 
 ### 3. The manifest and its curated automation
 
@@ -193,6 +223,7 @@ ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for run    # must exit 0
 ```
 
 A green run profile means the contract holds, the tree is clean, and the baseline builds. Report to
-the operator: what was deleted, what was left behind and why, the automation each component now
-declares (naming any that declare no tests, as a decision they made), what the spec-repo migration
-moved, and anything still open. Then hand off to `/dev:triage`.
+the operator: what was deleted, what was left behind and why, which references you rewrote, what was
+archived out to `archive/quality/`, the automation each component now declares (naming any that
+declare no tests, as a decision they made), what the spec-repo reshaping moved, and anything still
+open. Then hand off to `/dev:triage`.

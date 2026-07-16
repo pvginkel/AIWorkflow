@@ -41,18 +41,20 @@ contract and tells a new repo exactly what is missing. See **[`docs/ADOPTING.md`
 - **`tools/analysis/`** — `slice_costs.py` and `runner_sessions.py`: how a run's cost and session
   timeline are measured from `state.json` + the recorded transcript paths.
 - **`workflow-improvements/`** — the R&D / evidence trail behind the workflow's design.
-- **`tools/code_health/`** — the code-health grader. Kept as backlog: it will be rebuilt as a proper
-  tool for the second plugin (see below).
+- **`archive/quality/`** — the retired quality capability (`quality-improver`,
+  `quality-issue-finder`, `refactor-audit`) and the `code_health` grader, one folder per source
+  project because the copies drifted apart. Parked while the tool is rebuilt; `/dev:onboard` sweeps
+  each project's copies in here. See [`archive/quality/README.md`](archive/quality/README.md).
 - **`runbooks/MERGING.md`** — the monorepo-merge runbook (`git filter-repo` phases, Jenkinsfile
   consolidation) with per-repo status; unrelated to the plugin.
 
 ## The `upkeep` plugin (planned)
 
-`plugins/upkeep/` parks the **codebase-maintenance capabilities that feed `/dev:triage`** —
-`update-docs`, `refactor-audit`, `quality-improver`, `quality-issue-finder`, and
-`documentation-model.md` — as migration backlog. It is **not built yet** (not listed in
-`marketplace.json`); `dev` ships first and stands alone. See
-[`plugins/upkeep/README.md`](plugins/upkeep/README.md).
+`plugins/upkeep/` parks **`update-docs`** and `documentation-model.md` as migration backlog — the
+maintenance capability that feeds `/dev:triage` and is **not** blocked on anything. It is **not
+built yet** (not listed in `marketplace.json`); `dev` ships first and stands alone. The quality
+capability that used to be parked alongside it now lives in `archive/quality/`, blocked on the
+`code_health` rebuild. See [`plugins/upkeep/README.md`](plugins/upkeep/README.md).
 
 ## Docs
 

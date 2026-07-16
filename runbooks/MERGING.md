@@ -271,7 +271,13 @@ adjustments:
   `packages=[{include="tools"}]`) **plus** the `run-suite` script and **`psutil`** (the only dep
   `suite_runner` actually imports). **Do NOT add** `portpicker`/`jsonschema`/`jsonpatch`
   (unused) or `run-suite-remote` (DA's k8s remote runner — dropped). **No** canon dep.
-- **`tools/code_health/`** copy whole (generic, incl. the `cognitive/` TS sidecar). **
+- **`tools/code_health/`** — ⛔ **do not copy into a new merge (2026-07-16).** The tool is retired
+  to [`../archive/quality/`](../archive/quality/) pending a rebuild, and `/dev:onboard` is sweeping
+  it *out* of the projects — seeding a fresh copy here would re-create the fork the cleanup is
+  removing. Drop it, and with it the `code-health` script in `pyproject.toml`, the
+  `tools/code_health/cognitive` sidecar install, and the `code-health --help` smoke below. It
+  returns as an `upkeep` skill once rebuilt. The rest of this bullet is kept for the record:
+  copy whole (generic, incl. the `cognitive/` TS sidecar). **
   `tools/suite_runner/`** — ⚠️ **bigger than "drop portal" (Learning #2).** Copy
   `__init__.py` (set `ALL_SUITES = ["backend", "frontend"]`), `display.py`, `process.py` as-is
   from `../DesignAssistant/tools/suite_runner/`. **Do NOT copy `remote.py`** (DA k8s runner).
