@@ -1,6 +1,6 @@
 {
   "name": "dev",
   "version": "0.1.0",
-  "description": "The kc-native slice-development pipeline. Skills: /dev:triage, /dev:plan-slice, /dev:run-slice, /dev:write-task, /dev:slice-dag, /dev:arch-design. Ships 8 agents and a kc-native task runner; targets KubeCoder projects (each project describes itself in .kubecoder/project.yaml).",
+  "description": "The kc-native slice-development pipeline. Skills: /dev:onboard, /dev:triage, /dev:plan-slice, /dev:run-slice, /dev:write-task, /dev:slice-dag, /dev:arch-design. Ships 8 agents and a kc-native task runner; targets KubeCoder projects (each project describes itself in .kubecoder/project.yaml).",
   "author": { "name": "Pieter van Ginkel", "email": "pvginkel@gmail.com" }
 }

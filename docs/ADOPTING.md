@@ -71,11 +71,19 @@ kanban tool, board/list names, the owner-tag rule, the notify command — lives 
 
 ### 2d. The spec repo
 
-Slices live in the spec repo under `slices/` (backlog → active → `completed/`). `/dev:triage`
-allocates slice numbers with a concurrency-safe helper the spec repo owns — see
-[`specs/scripts/allocate-next-slice.sh`](../specs/scripts/allocate-next-slice.sh) for a reference
-implementation (flock-guarded counter; prints a zero-padded 3-digit number). Commit spec-repo
-artifacts early and often, staging **by name** (it is a shared working tree).
+Slices live in the spec repo under `slices/` (backlog → active → `completed/`), which needs a
+specific layout — `/dev:onboard` scaffolds a new spec repo and migrates an old one, so run it rather
+than building the tree by hand. Slice numbers come from the plugin's own flock-guarded allocator
+(`${CLAUDE_PLUGIN_ROOT}/tools/allocate-next-slice.sh <spec-repo>`), which `/dev:triage` calls; the
+spec repo carries no copy. Commit spec-repo artifacts early and often, staging **by name** (it is a
+shared working tree).
+
+## 2e. Onboard a repo
+
+`/dev:onboard` does all of section 2 as a guided pass — it inventories what a repo already has,
+retires any in-repo copy of the pre-plugin workflow, settles the manifest's curated automation, adds
+the contract lines, and scaffolds or migrates the spec repo. It finishes when
+`preflight.py --for run` exits 0.
 
 ## 3. Worked example
 

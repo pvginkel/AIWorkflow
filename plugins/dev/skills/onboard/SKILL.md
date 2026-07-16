@@ -1,0 +1,189 @@
+---
+name: onboard
+description: Make a repo usable by the dev pipeline — retire any in-repo copy of the pre-plugin workflow, settle the manifest's curated automation, add the contract lines, and scaffold or migrate the spec repo. Finishes when preflight --for run is green.
+argument-hint: "[spec-repo-path]"
+---
+
+# Onboard
+
+Bring one repo onto the `dev` pipeline. Installing the plugin is the operator's job (`/plugin
+install dev@aiworkflow`); yours is everything the *repo* must provide — the contract in
+`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md`, plus a spec repo the pipeline can actually work
+in. There is nothing to copy: the plugin ships the skills, agents, runner, and allocator. What is
+left is the project describing itself, and the cleanup of whatever it used before.
+
+**Done means one thing:** `${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for run` exits 0. Everything
+below exists to get there, except the spec-repo work, which preflight cannot see (it checks only
+that the path is a directory — `/dev:triage` needs much more).
+
+**This skill changes the operator's repos and rewrites their spec history.** Inventory first, act
+second, and stop at every decision point below. Never delete something you cannot name a
+replacement for.
+
+## Procedure
+
+### 1. Inventory — report before you touch anything
+
+Establish what is already true. Do not fix anything yet; a repo part-way onto the workflow is the
+normal case, and the gap list drives the rest.
+
+```bash
+kc project list --output=json                       # components + effective cwds (empty/error = no usable manifest)
+cat .kubecoder/project.yaml 2>/dev/null             # the manifest, if any
+grep -nE '^[[:space:]>*`-]*(Spec repo|Slice testing strategy|Design philosophy):' CLAUDE.md
+find . -name .claude -type d -not -path './.git/*'  # recursive: older layouts put agents per-subproject
+${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for run  # the gap list, in its own words
+```
+
+Preflight fails on the **first** violation, so re-run it as you go — it is a worklist, not a report.
+Summarize for the operator: which contract pieces exist, what the components are, whether a spec
+repo is named and what state it is in, and what pre-plugin workflow remains. Then work down.
+
+### 2. Retire the in-repo copy of the old workflow
+
+A repo that ran the pre-plugin workflow carries its own skills, agents, and runner. They now shadow
+the plugin: a stale in-repo `code-writer` or `task-workflow.md` outranks nothing, it just gets read
+instead. Delete **only** what `dev` supersedes, by name.
+
+Delete (the plugin provides each):
+
+- the six pipeline skills/commands — `triage`, `plan-slice`, `run-slice`, `write-task`, `slice-dag`,
+  `arch-design` — under `.claude/commands/` or `.claude/skills/`, at **every** `.claude` found in
+  step 1, not just the root;
+- the eight dev agents — `code-writer`, `code-reviewer`, `plan-writer`, `plan-reviewer`,
+  `test-fixer` (or an older `code-tester`), `test-agent`, `slice-verifier`, `arch-design` — likewise
+  at every `.claude`;
+- the runner and its session machinery — `tools/ai_workflow/task_runner.py`,
+  `claude_session.py`, `codex_exec.py`, their tests, and any `scripts/preflight.py` the plugin's
+  preflight replaces;
+- **the in-repo contract doc** — a `docs/**/task-workflow.md` describing the loop. The plugin owns
+  that contract now (`${CLAUDE_PLUGIN_ROOT}/docs/task-workflow.md`); a project copy is a second
+  source of truth that will drift and be believed.
+
+Leave everything else, and **say what you left**. A repo's own agents and commands are its own. The
+sharp case: auxiliary workflow commands the `dev` plugin does *not* replace — `update-docs`,
+`refactor-audit`, `quality-improver`, `quality-issue-finder` — belong to the planned `upkeep`
+plugin, which is not built. Deleting them removes capability nothing restores. Same for project
+tooling that merely shares the folder (a build tracker, a codegen script).
+
+Commit this as its own change, so the deletion is reviewable apart from the additions.
+
+### 3. The manifest and its curated automation
+
+`.kubecoder/project.yaml` is contract item 1 and the pipeline's only source of the component set.
+A repo may already have one for its envs while declaring no automation — which is the part that
+matters here, because **the manifest's `test:` statements are the gate**: `/dev:run-slice`'s runner
+executes `kc project test --project <name>` itself and merges nothing that comes back red.
+
+Work through it with the operator, per component:
+
+- **`test:`** — what proves this component works? This is a decision, not a discovery. A component
+  that declares no test statements is **green by definition**, and for a docs-only or config-only
+  component that is the right answer, not a gap. Say so plainly rather than inventing a gate.
+- **`build:`** — preflight's run profile runs `kc project build` repo-wide as the baseline gate, so
+  a component whose build is red blocks every slice. Confirm it is green now.
+- **`lint:`** — the `code-writer` runs the project's lint before handing back.
+
+Verify rather than assume — a manifest that parses but does not run is worse than none:
+
+```bash
+kc project list --output=json      # names + cwds resolve
+kc project build                   # the baseline preflight will demand
+kc project test --project <name>   # per component: does it do what the operator just described?
+```
+
+### 4. The contract lines and the `CLAUDE.md` diet
+
+Add the three lines to the **root** `CLAUDE.md`; preflight reads them by exact label prefix and
+bails without them. `${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md` is authoritative on their
+meaning; do not restate it here or in the repo.
+
+```
+Spec repo: <path>
+Slice testing strategy: <path-to-doc>
+Design philosophy: <path-to-doc>
+```
+
+Two of those point at **project-owned docs that must exist** — preflight checks the files, and
+agents read them:
+
+- **Slice testing strategy** — how a *slice* is proven once its tasks are merged: what gets
+  deployed, which live checks run, where the operator gate sits, how findings resolve. `run-slice`
+  resolves its close-out through this line and never names the doc. If the repo has no such
+  procedure, this is the moment to write one with the operator; if it has no meaningful
+  deploy-verification at all, say that in the doc rather than leaving the line dangling.
+- **Design philosophy** — the change-discipline rules `code-writer` obeys (breaking changes,
+  tombstones, defensive caveats, what "tested" means here).
+
+While in `CLAUDE.md`, apply the diet in `docs/AUTHORING.md` ("`CLAUDE.md` discipline") — one screen,
+every fact stated once, demote to a `docs/` topic doc rather than inline. Onboarding is when it is
+cheapest to cut. Propose the trim; let the operator approve it.
+
+### 5. The spec repo
+
+Preflight only checks the path is a directory, but the pipeline needs a shape:
+
+```
+<spec-repo>/
+  README.md                 # a `## Pending` list — triage appends, slice-dag reads it as a convenience
+  .gitignore                # slices/.next-slice, slices/.slice-alloc.lock (host-local, self-seeding)
+  slices/
+    backlog/                # triage writes NNN_slug/slice.md here; plan-slice promotes out of it
+    NNN_slug/               # planned + in flight (slice.md, tasks/, state.json, log.txt)
+    completed/  deferred/  cancelled/  archive/
+```
+
+Slice numbers come from `${CLAUDE_PLUGIN_ROOT}/tools/allocate-next-slice.sh <spec-repo>`, which the
+plugin ships and `/dev:triage` calls. A spec repo carries **no copy** — if you find one
+(`<spec-repo>/scripts/allocate-next-slice.sh`), delete it once triage resolves to the plugin's, and
+keep the `.gitignore` entries.
+
+**No spec repo named?** Stop and ask the operator — its location and whether it is a fresh repo or
+an existing one is theirs to decide, not yours to guess. Then `git init` it, scaffold the tree, and
+add the `Spec repo:` line.
+
+**A spec repo that predates the current format?** Migrating it is in scope, and it is real work.
+Inventory it first and put the disposition to the operator **before** moving anything:
+
+- **Finished work → `archive/`.** Anything the current pipeline will never read again — old bundles,
+  a `major-change`/`minor-change`-era tree, completed slices in a superseded layout. Archive
+  wholesale; do not modernize what is done.
+- **Outstanding work → migrate for real.** A slice still to be built must land in the current format
+  or `/dev:plan-slice` cannot read it. The common one: `overview.md` is the pre-2026-07 name for
+  `slice.md`. Renaming is not enough — `slice.md` must be *self-contained* (the planner works from
+  the slice alone), so an `overview.md` that leaned on a sibling doc needs those facts folded in.
+  Check each against `${CLAUDE_PLUGIN_ROOT}/skills/triage/SKILL.md`'s slice.md contract.
+- **Genuinely stale → ask.** A years-old backlog slice may be worth cancelling rather than
+  migrating. Propose; the operator decides. `cancelled/` and `deferred/` exist for exactly this.
+- **Numbering.** The allocator floors above the highest `NNN_` anywhere under `slices/`, so
+  archiving never recycles a number. Do not renumber migrated slices — the numbers are referenced
+  from cards, commits, and docs.
+
+Commit spec-repo changes as you go, staged **by name**: it is a shared working tree and parallel
+sessions live in it.
+
+### 6. Issue-tracker wiring
+
+The skills reference the tracker generically; the host `~/.claude/CLAUDE.md` holds the concrete
+wiring. Per repo, only the identity is new: the owner tag is the **bare repo name from `origin`**
+(not the folder name).
+
+```bash
+git remote get-url origin
+```
+
+Make sure that tag exists on whichever boards the host convention names, and that migrated
+outstanding slices are represented — an in-flight slice with no card is invisible to the operator.
+Reconciling a migrated backlog against the boards is a judgment call: propose what to create or
+close, do not bulk-write cards.
+
+### 7. Finish
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for run    # must exit 0
+```
+
+A green run profile means the contract holds, the tree is clean, and the baseline builds. Report to
+the operator: what was deleted, what was left behind and why, the automation each component now
+declares (naming any that declare no tests, as a decision they made), what the spec-repo migration
+moved, and anything still open. Then hand off to `/dev:triage`.

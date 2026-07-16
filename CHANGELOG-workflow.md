@@ -4,6 +4,35 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-07-16 — `/dev:onboard`, and the allocator moves into the plugin
+
+A seventh skill: `/dev:onboard` brings a repo onto the pipeline. In the template era onboarding was
+mostly copying — skills, agents, scripts. The plugin ships all of that, so what is left is the parts
+a plugin *cannot* provide: the project describing itself, and the cleanup of whatever it used before.
+
+- **Retiring the old in-repo workflow** is by name, not by folder, and sweeps **every** `.claude`
+  found recursively (older layouts put agents per-subproject). It deletes only what `dev`
+  supersedes — including a `docs/**/task-workflow.md`, which the plugin now owns and which would
+  otherwise sit there as a second, drifting contract. The four `upkeep`-era commands (`update-docs`,
+  `refactor-audit`, `quality-*`) are explicitly **left**: `upkeep` is not built, so deleting them
+  removes capability nothing restores.
+- **The manifest's `test:` statements are the onboarding decision**, now that the runner gates on
+  `kc project test`. A component that declares none is green by definition — right for a docs-only
+  component, and the skill says so rather than inventing a gate.
+- **The spec repo is scaffolded or migrated, not assumed.** Preflight only checks the path is a
+  directory, so a repo can pass preflight and still die at `/dev:triage`. New: scaffold the tree.
+  Old: archive what is finished, migrate what is outstanding into the current format (`overview.md`
+  → a self-contained `slice.md`), and ask about the genuinely stale. Numbers are never recycled —
+  the allocator floors above the highest `NNN_` anywhere under `slices/`.
+- **Done is machine-checkable:** `preflight.py --for run` exits 0.
+
+**`allocate-next-slice.sh` moves into `plugins/dev/tools/`** and takes the spec repo as an argument
+instead of deriving it from its own location. `/dev:triage` calls the plugin's copy, so a spec repo
+carries none: N copies across N spec repos were N chances to drift, and the numbering space is the
+project's while the algorithm is the workflow's. The repo's template-era `specs/` reference tree
+(the last of the Jinja placeholders — `{{ project_short }}`, `{{ specs_repo_path }}`) is deleted
+with it.
+
 ## 2026-07-16 — the six commands become skills
 
 `plugins/dev/commands/<name>.md` → `plugins/dev/skills/<name>/SKILL.md`, one directory per skill,

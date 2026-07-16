@@ -130,7 +130,7 @@ Group the remaining items into **slices**. Follow these rules:
 For each group, allocate a slice number and create the slice folder:
 
 ```bash
-N=$(<spec-repo>/scripts/allocate-next-slice.sh)   # prints e.g. 074
+N=$(${CLAUDE_PLUGIN_ROOT}/tools/allocate-next-slice.sh <spec-repo>)   # prints e.g. 074
 mkdir <spec-repo>/slices/backlog/${N}_<snake_case_slug>
 ```
 

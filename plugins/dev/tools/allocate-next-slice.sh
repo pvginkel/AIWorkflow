@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
 #
-# Allocate the next {{ project_short }} slice number — concurrency-safe.
+# Allocate the next slice number for a spec repo — concurrency-safe.
 #
-# Lives in the SPECS repo ({{ specs_repo_path }}/scripts/), because the slice
-# numbering space it guards lives there too (slices/). /write-slice calls it as
-# {{ specs_repo_path }}/scripts/allocate-next-slice.sh.
+# Usage:  allocate-next-slice.sh <spec-repo>
 #
 # Prints a zero-padded 3-digit slice number (e.g. 043) to stdout and nothing else,
 # so callers can capture it directly:
 #
-#     N=$(scripts/allocate-next-slice.sh)
+#     N=$(${CLAUDE_PLUGIN_ROOT}/tools/allocate-next-slice.sh <spec-repo>)
 #
-# Why a counter and not "scan slices/ for the max": several /write-slice sessions
-# run concurrently against this one working tree. flock serializes them, and the
-# reservation is persisted to slices/.next-slice *before* the slice directory
-# exists, so a parallel session sees the bump immediately (a dir scan can't — the
-# other session's folder isn't created yet).
+# The plugin ships this rather than each spec repo carrying a copy: the numbering
+# space it guards is the project's (<spec-repo>/slices/), but the algorithm is the
+# workflow's, and N copies across N spec repos is N chances to drift. /dev:triage
+# is its only caller.
+#
+# Why a counter and not "scan slices/ for the max": several triage sessions run
+# concurrently against one working tree. flock serializes them, and the reservation
+# is persisted to slices/.next-slice *before* the slice directory exists, so a
+# parallel session sees the bump immediately (a dir scan can't — the other
+# session's folder isn't created yet).
 #
 # slices/.next-slice and slices/.slice-alloc.lock are host-local coordination
 # (git-ignored, not spec artifacts). .next-slice self-seeds from the highest NNN_
@@ -27,7 +30,16 @@
 # suffix tied to that slice (e.g. 087b) instead.
 set -euo pipefail
 
-slices_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../slices" && pwd)"
+spec_repo="${1:-}"
+if [[ -z "$spec_repo" ]]; then
+  echo "usage: allocate-next-slice.sh <spec-repo>" >&2
+  exit 2
+fi
+if [[ ! -d "$spec_repo/slices" ]]; then
+  echo "no slices/ under $spec_repo — is that the spec repo? (/dev:onboard scaffolds it)" >&2
+  exit 2
+fi
+slices_dir="$(cd "$spec_repo/slices" && pwd)"
 
 # Critical section: held until the script exits (fd 9 closes on exit).
 exec 9>"$slices_dir/.slice-alloc.lock"
