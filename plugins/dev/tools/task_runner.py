@@ -517,12 +517,16 @@ class Runner:
         os.replace(tmp, self.state_path)
 
     def _task_state(self, task_id: str) -> dict:
-        return self.state["tasks"].setdefault(task_id, {
+        defaults = {
             "status": "pending", "stage": None, "branch": None,
             "writer_session": None, "writer_rounds": 0, "test_rounds": 0,
             "review_rounds": 0, "review_grants": 0, "last_writer_commit": None,
             "gate_runs": 0, "gate_green_commit": None,
-        })
+        }
+        ts = self.state["tasks"].setdefault(task_id, dict(defaults))
+        for key, value in defaults.items():
+            ts.setdefault(key, value)  # states written before a key existed
+        return ts
 
     def _record(self, task: str | None, role: str, round_: int,
                 outcome: str, summary: str, session: str | None,
