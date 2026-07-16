@@ -14,11 +14,14 @@ a KubeCoder pod).
 The validated slice pipeline: **`/dev:triage` → `/dev:plan-slice` → `/dev:run-slice`**, plus
 `/dev:write-task`, `/dev:slice-dag`, `/dev:arch-design`. `run-slice` launches a kc-native task
 runner (`task_runner.py`) that drives each task through a bounded loop — branch → code-writer →
-code-tester (cap 3) → code-reviewer (cap 2) → ff-merge → checkpoint — spawning every agent as a
-headless `kc session`. **Files are durable; sessions are ephemeral;** scripts drive, agents judge.
+test gate + test-fixer (cap 3) → code-reviewer (cap 3, extendable to 5) → ff-merge → checkpoint —
+spawning every agent as a headless `kc session`. The gate is `kc project test`, run by the runner
+itself: detecting green needs no model, only fixing red does. **Files are durable; sessions are
+ephemeral;** scripts drive, agents judge.
 
-- **`plugins/dev/`** — the plugin: 6 commands, 8 agents, the `task_runner.py` + `preflight.py`
-  tools, and the contract docs (`task-workflow.md`, `project-contract.md`, `preflight.md`).
+- **`plugins/dev/`** — the plugin: 6 commands, 8 agents, the `task_runner.py` (+ its suite) and
+  `preflight.py` tools, and the contract docs (`task-workflow.md`, `project-contract.md`,
+  `preflight.md`).
 - **`.claude-plugin/marketplace.json`** — makes this repo installable.
 
 ### Install

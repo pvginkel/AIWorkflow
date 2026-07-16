@@ -4,6 +4,42 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-07-16 — the runner runs the gate; the tester becomes a fixer
+
+Syncs the workflow changes KubeCoder validated after the plugin rework (its commits `ca1d5c1`,
+`2d7c320`, `6f8a9c2`, `8b1d6b6`, `c88c3d8`, `d08d5ea`). The rework of 2026-07-12 migrated from
+KubeCoder's `.claude/` + `tools/`, so that is this sync's baseline; everything KubeCoder changed
+since is either here, or recorded below as deliberately not ported.
+
+- **The runner runs the gate.** The `code-tester` agent is gone. Detecting green is deterministic —
+  no session is spawned to learn the gate's color — and only fixing red needs a model, so a
+  `test-fixer` spawns on red and its `clean` is confirmed by a gate re-run, never trusted. **A red
+  gate cannot merge** (new bail reason: `gate_red`); red can stall a task, never ship it.
+- **The gate is `kc project test --project <name>`, not a script path.** KubeCoder's
+  `<project>/tools/run_tests.py` is a stopgap for exactly this by its own docstring, and
+  `project-contract.md` already declared the seam — so the contract ported, not the path. It runs
+  from the repo root: `kc` resolves `.kubecoder/project.yaml` against its own cwd with no upward
+  walk. What "test" means for a component is the operator's call, declared in the manifest; a
+  component that declares no statements is green by definition, and that is a valid answer, not a
+  gap for the runner to second-guess. `kc` rejecting the component *name* is different — that is
+  `protocol_failure`, since the name came from `kc project list`.
+- **`grounding.md` replaces `focus_notes.md`.** The writer keeps a claim→source ledger for
+  behavior-describing prose; the reviewer verifies citations instead of re-deriving every claim
+  (slice 084: each fix round minted new false claims — a vague sentence sharpened into a precisely
+  false one).
+- **The review cap becomes a budget** (2 → 3, extendable by 2 grants to 5). A finding raised in the
+  final round had its fix written but never re-reviewed; `another_round` buys the confirming round
+  instead of merging it unseen (slice 082: 4 of 11 tasks, every one a real defect).
+- **The plugin has tests.** KubeCoder's runner suite ports (23 tests), with the `kc` seams stubbed.
+  It caught a real port defect immediately: `_task_state` must back-fill keys missing from states
+  written before those keys existed, or any resume across this change dies on `KeyError gate_runs`.
+
+Not ported, deliberately: `af72dfc` (adds `RETEST_PROMPT`, which `d08d5ea` then deletes — the
+plugin never carried it); KubeCoder's `CLAUDE.md` changes (project facts with no plugin
+destination — the plugin cannot ship a `CLAUDE.md` by design); and KubeCoder's `slice-dag.md`, where
+the plugin is the fresher copy. `run-slice.md`'s `gate_red` route was authored here — KubeCoder's
+own copy never grew one.
+
 ## 2026-07-12 — the workflow becomes the `dev` plugin (v0.1.0)
 
 The slice workflow stops being templates you copy into a repo and becomes an installable Claude Code
