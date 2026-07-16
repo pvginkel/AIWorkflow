@@ -37,6 +37,13 @@ You are a **coordinator and the PO's advocate**, not the technical architect. Yo
 The plan-writer reads the code and designs the breakdown; the plan-reviewer attacks it. You drive
 them and validate fidelity.
 
+**Stay idle while a sub-agent works.** The sub-agent mechanism notifies you when each one finishes.
+Do **not** poll for its progress — no `ls` of the slice folder, no `grep`/`test -f` for an artifact
+it has not written yet, no reading a file it is mid-write. Polling burns tokens to learn nothing the
+notification won't tell you for free, and a half-written artifact is worse than no artifact. Wait,
+then read what it produced. While you wait, the only useful work is grounding **you** need for the
+fidelity check (step 3) — never a check on the agent.
+
 ## Procedure
 
 ### 1. Absorb the slice

@@ -38,8 +38,9 @@ that shells out to it. The repo root and `CLAUDE.md` are resolved from `git rev-
 
 - The baseline is **`kc project build` only, always on** (no skip flag). The old pytest-collection
   step has no `kc` equivalent and is an accepted loss: a baseline-broken suite screams on task 1's
-  code-tester round anyway, and a project that cares can put a cheap collect step in its manifest's
-  `build` list. Full `kc project test` is **not** a preflight step.
+  first gate run anyway, and a project that cares can put a cheap collect step in its manifest's
+  `build` list. Full `kc project test` is **not** a preflight step — it is the per-task gate the
+  runner owns.
 - **No daemon-reachability check in v1.** A `kc status` health command is planned (Triage #194 —
   "add this to the preflight when delivered"); until it lands, the first `kc session create-headless`
   failure is the signal.

@@ -90,6 +90,14 @@ anything**. Then route by `reason`:
   the root cause. Fix it only when it is genuinely environmental (a stale checkout, a dead
   service) — never by telling an agent to work around it, and never by patching application code
   yourself. If the cause is unclear or the fix isn't yours, notify the operator and stop.
+- **`gate_red`** — the task reached merge with a red test gate, so the runner refused to merge it
+  (a red gate can stall a task; it can never ship). This is a real failure the writer/fixer loop
+  could not close, not an environmental one — usually a fix-round consult chose `proceed_to_review`
+  and nothing turned the gate green afterwards. Read the last `gate_r<N>.log` named in the bail
+  details and the `test_results_r*.md` escalations. If the failure needs a decision the loop could
+  not make (a task plan is wrong, an interface moved, the fix belongs in another task), make it,
+  record it in the task folder, and relaunch with `--resume`. Never make the gate green by
+  weakening what it checks; if the fix isn't a small clear decision, defer to the operator.
 - **`tester_limit` / `review_limit` / `consult_bail` / `verification_limit`** — a consult chose to
   stop or a cap ran out. Read the consult's reasoning. If a clear, small decision unblocks it
   (adjust a task plan, add guidance to the task folder, drop a bad direction), make it, record it
