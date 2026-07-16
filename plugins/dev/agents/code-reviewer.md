@@ -21,12 +21,18 @@ missed planned edge behavior or a broken pinned interface is.
    produced/consumed signal, contract drift against the project's API/contract docs and its shared
    contract definitions, derived state driving writes/deletes, async lifecycle, missing/vacuous
    test coverage of the new behavior.
-4. **Skip cosmetics** a competent developer auto-fixes: naming, formatting, log wording.
-5. Severity: **Blocker** (violates intent, corrupts data, breaks a core flow) · **Major**
+4. **Prose claims are verified through the ledger.** When the task produced behavior-describing
+   prose (manual pages, reference docs, help text), the writer's `grounding.md` in the task folder
+   maps each claim to its source. Verify the citations — open the cited source and check it
+   supports the sentence — instead of re-deriving every claim from scratch, and spot-check beyond
+   the ledger. An uncited behavioral claim, or a citation that does not support its sentence, is a
+   Major finding.
+5. **Skip cosmetics** a competent developer auto-fixes: naming, formatting, log wording.
+6. Severity: **Blocker** (violates intent, corrupts data, breaks a core flow) · **Major**
    (correctness risk, contract mismatch, missing coverage of new behavior) · **Minor**
    (non-blocking clarity). Every Blocker/Major needs either failing-input logic or a test sketch
    demonstrating the failure; otherwise it is a Minor.
-6. **Batch independent tool calls into one message.** Every extra turn replays your whole context
+7. **Batch independent tool calls into one message.** Every extra turn replays your whole context
    (cache reads dominate session cost): read the requirements chain in one batch and pair
    independent reads/commands in a single message rather than one per turn.
 

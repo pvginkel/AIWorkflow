@@ -3,8 +3,10 @@
 
 The runner is a state machine, not a judge (see
 ${CLAUDE_PLUGIN_ROOT}/docs/task-workflow.md — the canonical contract). Per task, in
-order: branch → code-writer → code-tester loop (cap 3) → code-reviewer loop
-(cap 2) → ff-merge → checkpoint. Judgment calls go to fresh consult sessions;
+order: branch → code-writer → gate + test-fixer loop (cap 3) → code-reviewer
+loop (cap 3, extendable to 5) → ff-merge → checkpoint. The test gate is
+deterministic and the runner runs it itself — detecting green needs no model,
+only fixing red does. Judgment calls go to fresh consult sessions;
 anything neither can resolve becomes a bail-out (bailout.json + exit 3) for
 the /run-slice session to handle.
 
@@ -61,18 +63,35 @@ from pathlib import Path
 
 AGENT_NAMESPACE = "dev"  # plugin name; installed agents resolve as dev:<role>
 
-MODELS = {"code-tester": "sonnet", "test-agent": "sonnet", "consult": "opus"}
+MODELS = {"test-fixer": "sonnet", "test-agent": "sonnet", "consult": "opus"}
 
 TIMEOUTS = {
     "code-writer": 7200,
-    "code-tester": 7200,
+    "test-fixer": 3600,
     "code-reviewer": 3600,
     "test-agent": 7200,
     "consult": 1800,
 }
 
-TEST_ROUND_CAP = 3
-REVIEW_ROUND_CAP = 2
+# The deterministic per-task test gate: `kc project test --project <name>`,
+# exit 0 = green. The runner runs it as a subprocess — no session is ever
+# spawned just to learn the gate's color; the test-fixer exists only to make a
+# red gate green again. What "test" means for a component is the operator's
+# call, declared in the manifest's statements: a component that declares none
+# (a docs-only project, say) is green by definition, and that is a valid
+# answer, not a gap for the runner to second-guess.
+GATE_TIMEOUT = 3600
+
+TEST_ROUND_CAP = 3  # caps test-fixer rounds (state key: test_rounds)
+# 3, not 2: at 2, a Major found in the final review round can only ever ship
+# unreviewed — the writer's fix has no round left to land in, and the cap consult
+# has no "one more round" option (slice 082: 4 of 11 tasks, every one a real
+# defect whose fix a consult then had to hand-verify in the reviewer's place).
+REVIEW_ROUND_CAP = 3
+# The cap is a budget the consult may extend, not a wall: at the cap it can spend
+# a round to CONFIRM a fix it judges close (mirroring the fix-round cap's valve).
+# Bounds the extension so a writer/reviewer that never converges still terminates.
+REVIEW_GRANT_CAP = 2
 VERIFICATION_ROUND_CAP = 3
 NUDGE_TIMEOUT = 900
 
@@ -81,7 +100,7 @@ SPAWN_ENV = {"FORCE_PROMPT_CACHING_5M": "1"}
 
 VERDICTS = {
     "code-writer": {"done", "blocked", "missing-task"},
-    "code-tester": {"clean", "issues", "blocked"},
+    "test-fixer": {"clean", "issues", "blocked"},
     "code-reviewer": {"signoff", "issues", "critical"},
     "test-agent": {"clean", "findings", "blocked"},
 }
@@ -336,46 +355,42 @@ You are implementing task {task_id} of slice {slice_name}.
 Task folder: {task_dir}
 
 Read task.json and plan.md there, then implement the task in this project.
-When done: commit all your work (code in this repo; task-folder artifacts in the
-specs repo, staged by name), write {task_dir}/focus_notes.md for the code-tester
-(what to exercise, where to focus — hints, not instructions), then write your
-verdict to {verdict_path}.
+When done: commit all your work (code in this repo; task-folder artifacts in
+the specs repo, staged by name). If the task produced prose that describes
+system behavior, {task_dir}/grounding.md must be current (your contract has
+the rule). Then write your verdict to {verdict_path}.
 """
 
 WRITER_RETRY_NOTE = """\
-A previous attempt at this task hit the tester-round limit. {prior_state}
+A previous attempt at this task hit the fix-round limit. {prior_state}
 Complete the task, and test your own work thoroughly before handing back —
-there will be no separate tester round before review.
+the deterministic gate and the code-reviewer are the only checks after you.
 """
 
 WRITER_FIX_PROMPT = """\
-The code-tester could not close all issues itself. Read {results_path} and fix
-the non-trivial issues it reports. Commit your fixes, update focus_notes.md if
-the focus changed, then write your verdict to {verdict_path}.
+The test-fixer escalated gate failures it must not fix itself. Read
+{results_path} and fix them. Commit your fixes, update grounding.md if any
+behavioral claims changed, then write your verdict to {verdict_path}.
 """
 
 WRITER_REVIEW_FIX_PROMPT = """\
 The code-reviewer found issues with the task's branch. Read {review_path} and
 resolve every finding (the reviewer describes problems; the fix design is
-yours). Commit your fixes, then write your verdict to {verdict_path}.
+yours). Update the grounding.md entries your fixes touch — re-open the source
+for each. Commit your fixes, then write your verdict to {verdict_path}.
 """
 
-TESTER_PROMPT = """\
-You are testing task {task_id} of slice {slice_name} (branch {branch}, test
-round {round}). Task folder: {task_dir}
+FIXER_PROMPT = """\
+The test gate for task {task_id} of slice {slice_name} is red (branch
+{branch}, fix round {round}). Task folder: {task_dir}
 
-The intent is {slice_dir}/slice.md. The task's requirements are task.json's
-summary, plan.md (its edge-behavior and what-must-be-tested sections drive
-your coverage — use them for coverage, never as verified truth), and the
-acceptance criteria in {slice_dir}/acceptance_criteria.json that touch this
-project. The slice spans multiple tasks: lower-numbered tasks are merged,
-higher-numbered ones are not built yet — only this task's scope is under
-test. The writer left hints in focus_notes.md — treat them as hints only;
-test from your own reading of the change (git diff {merge_base}..HEAD shows
-the branch).
+The gate command was `kc project test --project {project}`; its output is in
+{gate_log}. The gate is fail-fast and terse, so the log ends at the FIRST
+failing statement — there may be more behind it. Make the gate green: fix and
+commit what is mechanical; escalate what is not by writing
+{task_dir}/test_results_r{round}.md and reporting `issues`. The change under
+test is git diff {merge_base}..HEAD.
 
-Fix-and-commit what is simple (lint findings, clear stack traces) and report
-only a count. Write non-trivial findings to {task_dir}/test_results_r{round}.md.
 Then write your verdict to {verdict_path}.
 """
 
@@ -391,6 +406,10 @@ cross-task interfaces), and the relevant acceptance criteria in
 from the plan's approach while meeting the requirements is not a finding; a
 missed planned edge behavior or a broken pinned interface is. The slice spans
 multiple tasks — only this task's scope is under review.
+
+When the task produced behavior-describing prose, {task_dir}/grounding.md is
+the writer's claim→source ledger: verify the citations rather than re-deriving
+every claim from scratch (your contract has the rule).
 
 Write your review to {task_dir}/code_review_r{round}.md and your verdict to
 {verdict_path}.
@@ -501,7 +520,8 @@ class Runner:
         return self.state["tasks"].setdefault(task_id, {
             "status": "pending", "stage": None, "branch": None,
             "writer_session": None, "writer_rounds": 0, "test_rounds": 0,
-            "review_rounds": 0, "last_writer_commit": None,
+            "review_rounds": 0, "review_grants": 0, "last_writer_commit": None,
+            "gate_runs": 0, "gate_green_commit": None,
         })
 
     def _record(self, task: str | None, role: str, round_: int,
@@ -581,6 +601,67 @@ class Runner:
                     + (" after a commit nudge" if session_id
                        else "; no session to nudge"),
         )
+
+    # -- the deterministic test gate -------------------------------------------
+
+    def _gate_argv(self, project: str) -> list[str]:
+        """The gate command for a component. A seam: the suite overrides this
+        to point at a stub instead of putting a fake `kc` on PATH."""
+        return ["kc", "project", "test", "--project", project]
+
+    def _run_gate(self, task_id: str, ts: dict, task_dir: Path,
+                  project: str) -> tuple[bool, Path]:
+        """Run the component's test gate (`kc project test`) as a subprocess.
+        Green/red is the exit code; full output goes to gate_r<N>.log in the
+        task folder. The runner never parses suite output and never spawns a
+        session to learn the gate's color.
+
+        Runs from the repo root, not the component dir: kc resolves
+        .kubecoder/project.yaml relative to its own cwd with no upward
+        tree-walk, and resolves the component's cwd itself from --project."""
+        argv = self._gate_argv(project)
+        ts["gate_runs"] += 1
+        n = ts["gate_runs"]
+        self._save_state()
+        log_path = task_dir / f"gate_r{n}.log"
+        self.log(f"[task {task_id}] gate #{n} running ({' '.join(argv)})")
+        t0 = time.monotonic()
+        try:
+            with open(log_path, "w") as log_file:
+                result = subprocess.run(
+                    argv, cwd=self.repo_root,
+                    stdout=log_file, stderr=subprocess.STDOUT,
+                    timeout=GATE_TIMEOUT,
+                )
+        except subprocess.TimeoutExpired:
+            raise Bailout(
+                "timeout", task=task_id,
+                details=f"gate `{' '.join(argv)}` exceeded {GATE_TIMEOUT}s "
+                        f"(output in {log_path})",
+            ) from None
+        duration_s = int(time.monotonic() - t0)
+        # rc 2 is kc's usage error — an unknown --project. The name came from
+        # kc's own project list, so that is a runner bug, not a red suite.
+        if result.returncode == 2:
+            raise Bailout(
+                "protocol_failure", task=task_id,
+                details=f"`{' '.join(argv)}` rejected the project name "
+                        f"(output in {log_path})",
+            )
+        green = result.returncode == 0
+        tail = ""
+        try:
+            lines = [ln for ln in log_path.read_text().splitlines() if ln.strip()]
+            tail = lines[-1] if lines else ""
+        except OSError:
+            pass
+        if green:
+            ts["gate_green_commit"] = self.git("rev-parse", "HEAD")
+        self._record(task_id, "gate", n, "green" if green else "red",
+                     tail, None, duration_s)
+        self.log(f"[task {task_id}] gate #{n} → "
+                 f"{'green' if green else 'RED'} ({duration_s}s) {tail[:120]}")
+        return green, log_path
 
     # -- task discovery --------------------------------------------------------
 
@@ -847,75 +928,119 @@ class Runner:
             ts["stage"] = "testing"
             self._save_state()
 
-        # ---- test loop ----
-        skip_test_loop = False
+        def reattach_pending(role: str) -> bool:
+            """A crashed run left this role's session in flight for this task:
+            its round is already counted, so caps must not re-fire and counters
+            must not advance again — the spawn below reattaches it."""
+            return bool(self._reattach and self._reattach.get("session")
+                        and self._reattach.get("role") == role
+                        and self._reattach.get("task") == task_id)
+
+        def spawn_fixer(r: int, gate_log: Path) -> dict:
+            verdict, fixer_session = self._spawn(
+                "test-fixer",
+                FIXER_PROMPT.format(
+                    task_id=task_id, slice_name=self.slice_name,
+                    branch=branch, round=r, task_dir=task_dir,
+                    gate_log=gate_log, merge_base=merge_base,
+                    project=meta["project"],
+                    verdict_path=task_dir / f"fixer_result_r{r}.json",
+                ),
+                project_dir, task_dir / f"fixer_result_r{r}.json",
+                task_id, r, agent="test-fixer",
+            )
+            self._ensure_committed(task_id, "test-fixer",
+                                   fixer_session, project_dir)
+            return verdict
+
+        # ---- gate + fix loop ----
+        # The runner runs the deterministic gate itself; a test-fixer session
+        # exists only to make a red gate green. Green exits the loop — a
+        # fixer's `clean` is confirmed by re-running the gate, never trusted.
         if ts["stage"] == "testing":
-            while not skip_test_loop:
-                if ts["test_rounds"] >= TEST_ROUND_CAP:
-                    skip_test_loop = self._tester_limit_consult(
-                        task_dir, ts, task_id, branch)
-                    break
-                ts["test_rounds"] += 1
-                r = ts["test_rounds"]
-                self._save_state()
-                verdict, tester_session = self._spawn(
-                    "code-tester",
-                    TESTER_PROMPT.format(
-                        task_id=task_id, slice_name=self.slice_name,
-                        branch=branch, round=r, task_dir=task_dir,
-                        slice_dir=self.slice_dir, merge_base=merge_base,
-                        verdict_path=task_dir / f"tester_result_r{r}.json",
-                    ),
-                    project_dir, task_dir / f"tester_result_r{r}.json",
-                    task_id, r, agent="code-tester",
-                )
-                self._ensure_committed(task_id, "code-tester",
-                                       tester_session, project_dir)
-                if verdict["outcome"] == "clean":
-                    break
+            while True:
+                if reattach_pending("test-fixer"):
+                    r = ts["test_rounds"]
+                    gate_log = task_dir / f"gate_r{ts['gate_runs']}.log"
+                else:
+                    green, gate_log = self._run_gate(
+                        task_id, ts, task_dir, meta["project"])
+                    if green:
+                        break
+                    if ts["test_rounds"] >= TEST_ROUND_CAP:
+                        self._tester_limit_consult(
+                            task_dir, ts, task_id, branch, gate_log)
+                        break
+                    ts["test_rounds"] += 1
+                    r = ts["test_rounds"]
+                    self._save_state()
+                verdict = spawn_fixer(r, gate_log)
                 if verdict["outcome"] == "blocked":
-                    if handle_blocked(verdict, "code-tester") == "retry":
+                    if handle_blocked(verdict, "test-fixer") == "retry":
                         ts["test_rounds"] -= 1  # the retry re-runs this round
                         self._save_state()
                     continue
-                # issues → same writer fixes (unless that would exceed the cap)
-                if ts["test_rounds"] >= TEST_ROUND_CAP:
-                    continue  # loop top handles the limit consult
-                fix = spawn_writer(lambda vp, _r=r: WRITER_FIX_PROMPT.format(
-                    results_path=task_dir / f"test_results_r{_r}.md",
-                    verdict_path=vp,
-                ), fresh=False)
-                if fix["outcome"] == "blocked":
-                    handle_blocked(fix, "code-writer")
-                    spawn_writer(initial_writer_prompt, fresh=True)
+                if verdict["outcome"] == "issues":
+                    # escalation → same writer fixes (unless at the cap: the
+                    # gate re-runs and the loop top holds the limit consult)
+                    if ts["test_rounds"] >= TEST_ROUND_CAP:
+                        continue
+                    fix = spawn_writer(lambda vp, _r=r: WRITER_FIX_PROMPT.format(
+                        results_path=task_dir / f"test_results_r{_r}.md",
+                        verdict_path=vp,
+                    ), fresh=False)
+                    if fix["outcome"] == "blocked":
+                        handle_blocked(fix, "code-writer")
+                        spawn_writer(initial_writer_prompt, fresh=True)
+                # clean → the loop re-runs the gate to confirm
             ts["stage"] = "review"
             self._save_state()
 
         # ---- review loop ----
         if ts["stage"] == "review":
             while True:
-                if ts["review_rounds"] >= REVIEW_ROUND_CAP:
+                grants = ts.get("review_grants", 0)
+                if not reattach_pending("code-reviewer") \
+                        and ts["review_rounds"] >= REVIEW_ROUND_CAP + grants:
+                    last_r = ts["review_rounds"]
+                    actions = {
+                        "merge_flagged": "merge the task; the findings are "
+                                         "surfaced to the operator at slice "
+                                         "end as issue-tracker items / rework",
+                        "bail": "stop the slice for the orchestrator",
+                    }
+                    # A finding raised in the final round has had its fix written
+                    # but never re-reviewed. Let the consult buy the confirming
+                    # round rather than merge on its own say-so — verifying a
+                    # writer's fix is the reviewer's job, not the consult's.
+                    if grants < REVIEW_GRANT_CAP:
+                        actions = {
+                            "another_round": f"the round-{last_r} findings look "
+                                             "FIXED but no reviewer has seen the "
+                                             "fix; spend one more review round to "
+                                             "confirm it",
+                            **actions,
+                        }
                     choice = self._consult(
-                        f"Review round {REVIEW_ROUND_CAP} did not sign off "
+                        f"Review round {last_r} did not sign off "
                         f"(see the latest code_review_r*.md).",
-                        {
-                            "merge_flagged": "merge the task; the findings are "
-                                             "surfaced to the operator at slice "
-                                             "end for Trello cards / rework",
-                            "bail": "stop the slice for the orchestrator",
-                        },
-                        [task_dir / f"code_review_r{ts['review_rounds']}.md"],
+                        actions,
+                        [task_dir / f"code_review_r{last_r}.md"],
                         task_id,
                     )
+                    if choice["outcome"] == "another_round":
+                        ts["review_grants"] = grants + 1
+                        self._save_state()
+                        continue
                     self.state["flagged_findings"].append({
                         "task": task_id,
-                        "review": str(
-                            task_dir / f"code_review_r{ts['review_rounds']}.md"),
+                        "review": str(task_dir / f"code_review_r{last_r}.md"),
                         "consult_summary": choice.get("summary", ""),
                     })
                     self._save_state()
                     break
-                ts["review_rounds"] += 1
+                if not reattach_pending("code-reviewer"):
+                    ts["review_rounds"] += 1
                 r = ts["review_rounds"]
                 self._save_state()
                 verdict, _ = self._spawn(
@@ -936,34 +1061,40 @@ class Runner:
                         ts["review_rounds"] -= 1
                         self._save_state()
                     continue
-                # issues / critical → writer fixes, one fresh tester re-test
+                # issues / critical → writer fixes; the gate then re-checks
                 fix = spawn_writer(lambda vp, _r=r: WRITER_REVIEW_FIX_PROMPT.format(
                     review_path=task_dir / f"code_review_r{_r}.md",
                     verdict_path=vp,
                 ), fresh=False)
                 if fix["outcome"] == "blocked":
                     handle_blocked(fix, "code-writer")
-                retest_r = ts["test_rounds"] + 1
-                ts["test_rounds"] = retest_r
-                self._save_state()
-                retest, retest_session = self._spawn(
-                    "code-tester",
-                    TESTER_PROMPT.format(
-                        task_id=task_id, slice_name=self.slice_name,
-                        branch=branch, round=retest_r, task_dir=task_dir,
-                        slice_dir=self.slice_dir, merge_base=merge_base,
-                        verdict_path=task_dir / f"tester_result_r{retest_r}.json",
-                    ),
-                    project_dir, task_dir / f"tester_result_r{retest_r}.json",
-                    task_id, retest_r, agent="code-tester",
-                )
-                self._ensure_committed(task_id, "code-tester",
-                                       retest_session, project_dir)
-                if retest["outcome"] == "issues":
-                    spawn_writer(lambda vp, _r=retest_r: WRITER_FIX_PROMPT.format(
-                        results_path=task_dir / f"test_results_r{_r}.md",
-                        verdict_path=vp,
-                    ), fresh=False)
+                # Red after a review fix gets one fixer round; still red →
+                # the next review round proceeds anyway. Red can stall a task
+                # but never ship: the merge below re-checks the gate.
+                attempts = 0
+                while True:
+                    green, gate_log = self._run_gate(
+                        task_id, ts, task_dir, meta["project"])
+                    if green:
+                        break
+                    if attempts >= 1:
+                        self.log(f"[task {task_id}] gate still red after the "
+                                 "fix round — continuing to the next review "
+                                 "round; a red gate cannot merge")
+                        break
+                    attempts += 1
+                    fr = ts["test_rounds"] + 1
+                    ts["test_rounds"] = fr
+                    self._save_state()
+                    fverdict = spawn_fixer(fr, gate_log)
+                    if fverdict["outcome"] == "blocked":
+                        if handle_blocked(fverdict, "test-fixer") == "retry":
+                            attempts -= 1  # the retry re-runs this round
+                    elif fverdict["outcome"] == "issues":
+                        spawn_writer(lambda vp, _fr=fr: WRITER_FIX_PROMPT.format(
+                            results_path=task_dir / f"test_results_r{_fr}.md",
+                            verdict_path=vp,
+                        ), fresh=False)
             ts["stage"] = "merging"
             self._save_state()
 
@@ -977,6 +1108,17 @@ class Runner:
                     details="worktree dirty at merge — an agent left changes "
                             "outside its commit boundary",
                 )
+            # A red gate cannot merge. HEAD is usually the commit the gate
+            # last verified green; when it is not (red tolerated above, or a
+            # resume from an older state), the gate re-runs here.
+            if ts["gate_green_commit"] != self.git("rev-parse", "HEAD"):
+                green, gate_log = self._run_gate(
+                    task_id, ts, task_dir, meta["project"])
+                if not green:
+                    raise Bailout(
+                        "gate_red", task=task_id,
+                        details=f"cannot merge a red test gate ({gate_log})",
+                    )
             self.git("checkout", base)
             self.git("merge", "--ff-only", branch)
             self.git("branch", "-D", branch)
@@ -1007,28 +1149,32 @@ class Runner:
         if choice["outcome"] == "amend":
             self.log(f"[task {task_id}] checkpoint amended the task list")
 
-    def _tester_limit_consult(self, task_dir: Path, ts: dict,
-                              task_id: str, branch: str) -> bool:
-        """Consult at the 3rd `issues` round. Returns True when the loop should
-        be skipped (a fresh writer self-tests → straight to review)."""
+    def _tester_limit_consult(self, task_dir: Path, ts: dict, task_id: str,
+                              branch: str, gate_log: Path) -> bool:
+        """Consult when the fix-round cap is hit with the gate still red.
+        Returns True when the loop should be skipped (a fresh writer
+        self-tests → straight to review)."""
         r = ts["test_rounds"]
         choice = self._consult(
-            f"The tester-round hard limit ({TEST_ROUND_CAP}) was reached and "
-            f"round {r} still reports issues (test_results_r{r}.md). Judge "
-            f"whether the writer/tester loop went a bad direction (e.g. far "
-            f"too many changes) or is genuinely close.",
+            f"The fix-round hard limit ({TEST_ROUND_CAP}) was reached and the "
+            f"test gate is still red (latest output: {gate_log}; escalations "
+            f"in test_results_r*.md). Judge whether the writer/fixer loop "
+            f"went a bad direction (e.g. far too many changes) or is "
+            f"genuinely close.",
             {
                 "fresh_writer": "start a fresh code-writer with the original "
                                 "task input, told to test its own work; then "
                                 "proceed straight to review",
                 "fresh_writer_reset": "same, but first drop every commit made "
                                       "after the writer's last round (the "
-                                      "tester's changes were bad)",
-                "proceed_to_review": "the remaining findings are review-level; "
-                                     "continue to the code-reviewer",
+                                      "fixer's changes were bad)",
+                "proceed_to_review": "continue to the code-reviewer despite "
+                                     "the red gate — note a red gate cannot "
+                                     "merge; something must still turn it "
+                                     "green before merge",
                 "bail": "stop the slice for the orchestrator",
             },
-            [task_dir / f"test_results_r{r}.md", task_dir],
+            [gate_log, task_dir / f"test_results_r{r}.md", task_dir],
             task_id,
         )
         if choice["outcome"] == "proceed_to_review":

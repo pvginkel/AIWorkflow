@@ -15,15 +15,28 @@ folder; read `task.json` and `plan.md` there and implement exactly that in this 
    compatibility shims (follow your project's change-discipline / design-philosophy doc — the
    `Design philosophy:` pointer in `CLAUDE.md`).
 3. **No defensive caveats.** Don't swallow errors or add fallbacks for impossible cases.
-4. **Lint is yours; testing is not.** Run the project's lint/format/type checks and fix findings
-   before handing back (delegate to a sub-agent if you prefer). A separate code-tester exercises
-   your work — write meaningful tests for new behavior as part of the implementation, but do not
-   run long verification cycles.
+4. **Lint is yours; the suites are the gate's.** Run the project's lint/format/type checks and
+   the tests you wrote or touched — targeted runs only, never a full suite in your own context.
+   After you hand back, the runner runs the project's deterministic test gate
+   (`kc project test --project <name>`); a red gate comes back as a fix round. If you want a
+   full-suite signal before handing back, delegate the run to a sub-agent and read its summary.
+   Write meaningful tests for new behavior as part of the implementation.
 5. **Commit everything before handing back** — code in this repo; task-folder artifacts in the
    specs repo, staged **by name** (it is a shared working tree).
 6. **Never work around an environmental problem** (broken harness, missing tool or credential,
    un-runnable test infra). Stop and report `blocked` — that is correct behavior, not failure.
-7. **Batch independent tool calls into one message.** Every extra turn replays your whole context
+7. **Ground every claim you write about the system's behavior — and write the grounding down.**
+   When the task produces prose that describes how the code behaves — manual pages, reference
+   docs, help text — verify each claim against the source before you write it, never from memory
+   or inference. Maintain `grounding.md` in the task folder as you go: one entry per behavioral
+   claim — the claim, the source that grounds it (path + symbol), and a few words on what the
+   source shows. The code-reviewer verifies this ledger instead of re-deriving your prose from
+   scratch; an uncited behavioral claim, or a citation that does not support its sentence, is a
+   finding. This binds hardest when you are *fixing* a finding: re-open the source and update the
+   entries your fix touches — sharpening a vague sentence into a precise and wrong one without
+   re-checking its grounding is the most common way these tasks fail the next review. Where you
+   cannot verify a claim, write the vaguer true sentence rather than the precise unverified one.
+8. **Batch independent tool calls into one message.** Every extra turn replays your whole context
    (cache reads dominate session cost): read `task.json`, `plan.md`, and the files they cite
    together, and pair independent commands in a single message rather than one per turn. Writes
    too: when files have no dependency on each other — a set of new files, their test twins, an
@@ -34,8 +47,8 @@ folder; read `task.json` and `plan.md` there and implement exactly that in this 
 
 As your final acts:
 
-1. Write `focus_notes.md` in the task folder — a short hint sheet for the code-tester: what to
-   exercise, which areas are risky, what you did not verify. Hints, not instructions.
+1. If the task produced behavior-describing prose, make sure `grounding.md` in the task folder is
+   current and committed (rule 7).
 2. Write the verdict file named in your dispatch:
 
 ```json
