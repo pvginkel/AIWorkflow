@@ -145,9 +145,9 @@ agents read them:
 - **Design philosophy** — the change-discipline rules `code-writer` obeys (breaking changes,
   tombstones, defensive caveats, what "tested" means here).
 
-While in `CLAUDE.md`, apply the diet in `docs/AUTHORING.md` ("`CLAUDE.md` discipline") — one screen,
-every fact stated once, demote to a `docs/` topic doc rather than inline. Onboarding is when it is
-cheapest to cut. Propose the trim; let the operator approve it.
+While in `CLAUDE.md`, apply the diet in `project-contract.md` ("Keeping `CLAUDE.md` disciplined") —
+one screen, every fact stated once, demote to a `docs/` topic doc rather than inline. Onboarding is
+when it is cheapest to cut. Propose the trim; let the operator approve it.
 
 ### 5. The spec repo
 

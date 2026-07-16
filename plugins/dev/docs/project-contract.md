@@ -53,6 +53,23 @@ wiring — which kanban tool, board/list names, the owner-tag rule (the bare rep
 notification command — is environment-specific and lives in the host `~/.claude/CLAUDE.md`, which
 already holds it. The plugin neither ships nor duplicates it.
 
+## Keeping `CLAUDE.md` disciplined
+
+Every dev session loads it, every turn, so its size is a running cost paid by every agent the
+pipeline spawns:
+
+- **State every fact once.** A rule that belongs in a `docs/` topic doc goes there, with a pointer —
+  not inline *and* in the doc. Two copies drift, and agents reading different copies behave
+  differently.
+- **Two strikes, one screen.** Per Anthropic's guidance, `CLAUDE.md` grows only when the same issue
+  has bitten twice, and never exceeds ~one screen (~80–100 lines). When it is full and something new
+  must go in, something old moves out — usually demoted to a `docs/` topic doc (read on demand
+  instead of every turn), not deleted.
+- **The three contract lines are read by machine.** Keep the labels exactly as written above.
+
+`/dev:onboard` proposes the trim when it adds the contract lines — onboarding is when it is
+cheapest to cut.
+
 ## What a good root `CLAUDE.md` contains
 
 Beyond the three required lines, a `CLAUDE.md` that serves the pipeline well describes the project

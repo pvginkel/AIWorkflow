@@ -77,16 +77,11 @@ keep one operator-only (no autonomous invocation), set `disable-model-invocation
 ## `CLAUDE.md` discipline (the project side)
 
 The plugin can't ship a `CLAUDE.md` (it is project/user memory, discovered by walking the repo). A
-project provides one; keep it disciplined:
-
-- **State every fact once.** A rule that belongs in a `docs/` topic doc goes there, with a pointer —
-  not inline and also in the doc.
-- **Two strikes, one screen.** Per Anthropic's guidance, `CLAUDE.md` grows only when the same issue
-  has bitten twice, and never exceeds ~one screen (~80–100 lines). When it's full and something new
-  must go in, something old moves out — usually demoted to a `docs/` topic doc (on-demand instead of
-  every-turn), not deleted.
-- The three contract lines (`Spec repo:`, `Slice testing strategy:`, `Design philosophy:`) are
-  read by preflight and by agents — keep them exactly as the labels above.
+project provides one, and the rules for keeping it disciplined live with the rest of the CLAUDE.md
+contract, in
+[`plugins/dev/docs/project-contract.md`](../plugins/dev/docs/project-contract.md#keeping-claudemd-disciplined)
+— **not here**. They have to ship *inside* the plugin: `/dev:onboard` applies them in repos that have
+this guide nowhere on disk, and a plugin cannot read its own marketplace's docs.
 
 ## Keep the set honest
 
