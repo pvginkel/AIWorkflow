@@ -19,11 +19,13 @@ a plugin *cannot* provide: the project describing itself, and the cleanup of wha
 - **The manifest's `test:` statements are the onboarding decision**, now that the runner gates on
   `kc project test`. A component that declares none is green by definition — right for a docs-only
   component, and the skill says so rather than inventing a gate.
-- **The spec repo is scaffolded or migrated, not assumed.** Preflight only checks the path is a
-  directory, so a repo can pass preflight and still die at `/dev:triage`. New: scaffold the tree.
-  Old: archive what is finished, migrate what is outstanding into the current format (`overview.md`
-  → a self-contained `slice.md`), and ask about the genuinely stale. Numbers are never recycled —
-  the allocator floors above the highest `NNN_` anywhere under `slices/`.
+- **The spec repo is scaffolded or reshaped, not assumed.** Preflight only checks the path is a
+  directory, so a repo can pass preflight and still die at `/dev:triage` on a missing allocator or
+  `slices/backlog/`. The bar is **shape, not contents**: the tree and its lifecycle folders, the
+  `.gitignore`, the README `## Pending` list — plus whole superseded eras archived wholesale.
+  Old-format slice *bodies* are explicitly left alone: `/dev:plan-slice` reads one and deals with it
+  when it plans it, and reworking a slice nobody is planning is speculative effort spent without the
+  context the planner will have. Numbers are never recycled or renumbered.
 - **Done is machine-checkable:** `preflight.py --for run` exits 0.
 
 **`allocate-next-slice.sh` moves into `plugins/dev/tools/`** and takes the spec repo as an argument

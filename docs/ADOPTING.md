@@ -72,8 +72,8 @@ kanban tool, board/list names, the owner-tag rule, the notify command — lives 
 ### 2d. The spec repo
 
 Slices live in the spec repo under `slices/` (backlog → active → `completed/`), which needs a
-specific layout — `/dev:onboard` scaffolds a new spec repo and migrates an old one, so run it rather
-than building the tree by hand. Slice numbers come from the plugin's own flock-guarded allocator
+specific layout — `/dev:onboard` scaffolds a new spec repo and brings an old one's tree into shape,
+so run it rather than building the tree by hand. Slice numbers come from the plugin's own flock-guarded allocator
 (`${CLAUDE_PLUGIN_ROOT}/tools/allocate-next-slice.sh <spec-repo>`), which `/dev:triage` calls; the
 spec repo carries no copy. Commit spec-repo artifacts early and often, staging **by name** (it is a
 shared working tree).

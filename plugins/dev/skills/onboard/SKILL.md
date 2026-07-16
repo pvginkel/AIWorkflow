@@ -142,22 +142,31 @@ keep the `.gitignore` entries.
 an existing one is theirs to decide, not yours to guess. Then `git init` it, scaffold the tree, and
 add the `Spec repo:` line.
 
-**A spec repo that predates the current format?** Migrating it is in scope, and it is real work.
-Inventory it first and put the disposition to the operator **before** moving anything:
+**A spec repo that predates the current format?** The bar is **shape, not contents** — a tree the
+pipeline can navigate, nothing more.
 
-- **Finished work → `archive/`.** Anything the current pipeline will never read again — old bundles,
-  a `major-change`/`minor-change`-era tree, completed slices in a superseded layout. Archive
-  wholesale; do not modernize what is done.
-- **Outstanding work → migrate for real.** A slice still to be built must land in the current format
-  or `/dev:plan-slice` cannot read it. The common one: `overview.md` is the pre-2026-07 name for
-  `slice.md`. Renaming is not enough — `slice.md` must be *self-contained* (the planner works from
-  the slice alone), so an `overview.md` that leaned on a sibling doc needs those facts folded in.
-  Check each against `${CLAUDE_PLUGIN_ROOT}/skills/triage/SKILL.md`'s slice.md contract.
-- **Genuinely stale → ask.** A years-old backlog slice may be worth cancelling rather than
-  migrating. Propose; the operator decides. `cancelled/` and `deferred/` exist for exactly this.
+**Do not rewrite slice bodies.** An old-format slice is not a defect to fix here: `/dev:plan-slice`
+reads one and deals with it, with some effort, at the point it plans it (the runner's preflight
+accepts `overview.md` beside `slice.md`, and `/dev:slice-dag` expects to meet both). Reworking a
+slice you are not planning is speculative effort on something that may never be planned, spent
+without the context the planner will have. Leave them.
+
+In scope:
+
+- **The tree.** `slices/` and its lifecycle folders exist, and each slice sits in the one that
+  reflects its state — finished under `completed/`, abandoned under `cancelled/`. That is what makes
+  the pending set legible to `/dev:slice-dag` and `/dev:plan-slice`; slice bodies are not.
+- **Whole eras → `archive/`.** A layout the current pipeline will never read again — a bundle tree,
+  a `major-change`/`minor-change`-era folder — moves wholesale. Archive it; do not modernize what is
+  done.
+- **The repo's own scaffolding.** The `.gitignore` entries, the README `## Pending` list, and
+  dropping a per-repo `scripts/allocate-next-slice.sh` now the plugin ships one.
 - **Numbering.** The allocator floors above the highest `NNN_` anywhere under `slices/`, so
-  archiving never recycles a number. Do not renumber migrated slices — the numbers are referenced
-  from cards, commits, and docs.
+  archiving never recycles a number. Never renumber — the numbers are referenced from cards,
+  commits, and docs.
+
+Where a slice's *disposition* is genuinely unclear — is this backlog still wanted? — list them and
+ask. That is the operator's call, and it is about state, not format.
 
 Commit spec-repo changes as you go, staged **by name**: it is a shared working tree and parallel
 sessions live in it.
