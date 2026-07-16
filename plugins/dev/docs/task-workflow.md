@@ -270,7 +270,8 @@ Details:
   `CLAUDE.md` and docs. The repo root comes from `git rev-parse --show-toplevel`.
 - `-e FORCE_PROMPT_CACHING_5M=1` on `create-headless` — ephemeral sessions must not pay the 1-hour
   cache-write premium (the env pass-through threads it to the spawned `claude`).
-- Models: test-fixer and test-agent run `--model sonnet`; everything else inherits the default.
+- Models: test-fixer and test-agent run `--model sonnet`, consults `--model opus`; everything else
+  inherits the default.
 - Timeouts: writer/test-agent 7200s, fixer/reviewer 3600s, consults 1800s, nudges 900s. The gate is
   a subprocess, not a session; it gets its own 3600s ceiling. A timeout
   is a bail (`reason=timeout`), not a retry — a stuck agent is a problem to surface, not to mask.

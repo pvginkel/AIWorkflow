@@ -1258,8 +1258,8 @@ class Runner:
                                  "resumes",
                     "proceed_flagged": "the findings are non-blocking: record "
                                        "them as flagged findings for the "
-                                       "operator (Trello cards at close-out) "
-                                       "and complete the slice",
+                                       "operator (issue-tracker items at "
+                                       "close-out) and complete the slice",
                     "bail": "something beyond the findings is wrong; stop the "
                             "slice for the orchestrator",
                 },
