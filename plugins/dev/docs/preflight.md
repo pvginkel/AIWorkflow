@@ -1,13 +1,13 @@
 # Preflight — the pipeline's gate, expressed over `kc`
 
 `${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage|plan|run` is one plugin-shipped,
-**stdlib-only** script each pipeline command runs as **step one**. It replaces the old
+**stdlib-only** script each pipeline skill runs as **step one**. It replaces the old
 project-owned `scripts/preflight.py`: the checks are now `kc` primitives plus the three
 machine-checkable `CLAUDE.md` lines from [`project-contract.md`](project-contract.md).
 
 **Silent on success.** On failure it prints **one** actionable message — what is missing, the exact
 line/fix, and a pointer to `project-contract.md` — so a new repo self-onboards from the error text.
-Each command relays that message verbatim on a non-zero exit and stops; the runner does **not**
+Each skill relays that message verbatim on a non-zero exit and stops; the runner does **not**
 re-run preflight, so `/dev:run-slice` is the gate.
 
 ## Exit codes

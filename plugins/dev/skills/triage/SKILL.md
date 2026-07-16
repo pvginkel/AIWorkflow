@@ -1,4 +1,5 @@
 ---
+name: triage
 description: Group a batch of findings, bugs, or requests into grounded slice folders (slice.md under slices/backlog/NNN_slug/) — the required input to /plan-slice. Does not plan slices.
 argument-hint: "[findings-document]"
 ---
@@ -12,7 +13,7 @@ self-contained change requests under `<spec-repo>/slices/backlog/NNN_slug/`, the
 `<spec-repo>` is the path in your `CLAUDE.md`'s `Spec repo:` line. **Preflight (step 0):** run
 `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage` and relay its message verbatim on a
 non-zero exit — it bails when the `Spec repo:` entry is missing (there is nowhere to write a slice).
-The issue-tracker and notification wiring this command references generically (boards, lists, the
+The issue-tracker and notification wiring this skill references generically (boards, lists, the
 project's owner tag, how to notify) is defined by your host convention (`~/.claude/CLAUDE.md`).
 
 The input can be a UAT run, a list of bugs, a change-request dump, chat discussion, or any

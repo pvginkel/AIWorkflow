@@ -47,7 +47,7 @@ Each **bails, not warns** — it is one line to add:
 
 ## 5. Host conventions (`~/.claude/CLAUDE.md`)
 
-The commands reference the **issue tracker** and **notifications** generically ("file findings to
+The skills reference the **issue tracker** and **notifications** generically ("file findings to
 the issue tracker", "notify per the host convention", "the project's owner tag"). The concrete
 wiring — which kanban tool, board/list names, the owner-tag rule (the bare repo name), the
 notification command — is environment-specific and lives in the host `~/.claude/CLAUDE.md`, which

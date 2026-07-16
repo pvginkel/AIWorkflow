@@ -1,4 +1,5 @@
 ---
+name: arch-design
 description: Design a well thought out architecture with options and trade-offs, grounded in the project's code base. Proactively suggest to the user to use this skill when creating complex slices that involve cross-cutting decisions or new patterns.
 argument-hint: <architectural-question>
 ---

@@ -1,4 +1,5 @@
 ---
+name: run-slice
 description: Execute a planned slice — launch the plugin's task_runner.py in the background, handle bail-outs (write-task + resume, or defer to the operator), and close out. The runner drives; this session only escalates.
 argument-hint: <slice-number-or-path>
 ---
@@ -115,7 +116,7 @@ run the **slice testing strategy defined for this project** — its deploy-verif
 This plugin is shared across projects and owns no project's testing strategy, so the whole plan —
 whether it pushes, what it checks, how findings resolve — lives in a project-owned doc. Resolve it
 through your `CLAUDE.md`'s `Slice testing strategy:` pointer (preflight has already confirmed the
-pointer and its target doc exist); this command never names the doc.
+pointer and its target doc exist); this skill never names the doc.
 
 ## Notes
 

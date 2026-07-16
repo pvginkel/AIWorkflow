@@ -1,4 +1,5 @@
 ---
+name: slice-dag
 description: Produce and maintain slices/DAG.md — a check-off lane plan that schedules every pending slice across N parallel /run-slice sessions, honouring ordering requirements while minimising merge work, plus the dependency graph and per-slice analysis behind it.
 argument-hint: "[lane-count]"
 ---

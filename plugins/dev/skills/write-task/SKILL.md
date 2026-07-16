@@ -1,4 +1,5 @@
 ---
+name: write-task
 description: Author one task folder in an in-flight slice from a findings or missing-task write-up, so the task runner can execute it on resume. Usually run in a sub-agent from /run-slice.
 argument-hint: <slice-folder> <source-write-up>
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash

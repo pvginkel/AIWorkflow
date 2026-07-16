@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-07-16 — the six commands become skills
+
+`plugins/dev/commands/<name>.md` → `plugins/dev/skills/<name>/SKILL.md`, one directory per skill,
+each with a mandatory `name:` matching its directory. **Nothing about invocation changes:**
+`/dev:triage`, `/dev:run-slice`, … resolve exactly as before, and every `${CLAUDE_PLUGIN_ROOT}`
+reference, `argument-hint`, and `write-task`'s `allowed-tools` carry over untouched. Claude Code
+loads skills and commands into one registry — the move is a layout change, not a behavior change.
+
+The motivation is that `commands/` is the legacy path: Claude Code 2.1.211 tags it
+`loadedFrom: "commands_DEPRECATED"` internally while skills load as `"skills"`. Skills also unlock
+per-skill supporting files and `context: fork` if the pipeline ever wants them.
+
+Verified against the running build rather than the docs (the network here resolves them to a
+captive redirect): the binary's own strings confirm plugin-sourced skills are both user- and
+model-invocable, `name`/`description` are the only required frontmatter, and `version:` is **not**
+required. A widely-cited GitHub issue (#41842) claiming plugin `skills/` never register as slash
+commands does **not** hold for this build — Anthropic's own `example-plugin` ships a skill whose
+body states the two formats are "functionally identical … only the file layout differs."
+
 ## 2026-07-16 — the runner runs the gate; the tester becomes a fixer
 
 Syncs the workflow changes KubeCoder validated after the plugin rework (its commits `ca1d5c1`,

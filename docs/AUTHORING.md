@@ -1,6 +1,6 @@
 # Authoring guide — keeping the plugin's artifacts lean and drift-free
 
-Rules for writing and maintaining the plugin's artifacts: agent definitions, commands, the contract
+Rules for writing and maintaining the plugin's artifacts: agent definitions, skills, the contract
 docs, and the `CLAUDE.md` entries each project provides. They exist to prevent duplication, keep
 context windows clean, and make drift easy to spot. The mechanics of adopting the plugin are in
 [`ADOPTING.md`](ADOPTING.md); the project contract is
@@ -53,16 +53,26 @@ Installed in the plugin, agents resolve as `dev:<name>` everywhere (and `kc sess
 create-headless --agent dev:<name>` resolves them headlessly). Project-local `.claude/agents/` still
 merge hierarchically from the session cwd up to the git root, if a project adds its own.
 
-## Commands — the orchestration sequence, not the agents' content
+## Skills — the orchestration sequence, not the agents' content
 
-A command is a task-specific workflow the user triggers by name. It contains: what it does (one
+A skill is a task-specific workflow the user triggers by name. It contains: what it does (one
 paragraph), the numbered procedure, real shell invocations (reference plugin files via
 `${CLAUDE_PLUGIN_ROOT}/...`), and the decision points where it stops and asks. Frontmatter carries
-`description` and an `argument-hint`.
+`name` (mandatory, kebab-case, **identical to the directory name**), `description`, and an
+`argument-hint`; `allowed-tools` and `model` are available when a skill needs them.
+
+One skill per directory: `plugins/dev/skills/<name>/SKILL.md`. The file name is always `SKILL.md` —
+the directory is what names the skill. Supporting files (scripts, references) may sit beside it.
+The legacy `commands/<name>.md` layout still loads, but Claude Code marks it deprecated internally;
+new work goes in `skills/`.
 
 It must **not** restate an agent's behavior (the agent definition owns that), restate `CLAUDE.md`,
-or carry generic Claude Code etiquette. Think of a command as a script that choreographs agents, not
+or carry generic Claude Code etiquette. Think of a skill as a script that choreographs agents, not
 a place to explain what they do.
+
+`description` is the **trigger**, not just a label: it is always in context, and Claude reads it to
+decide whether to invoke the skill on its own. Say when to use the skill, not merely what it is. To
+keep one operator-only (no autonomous invocation), set `disable-model-invocation: true`.
 
 ## `CLAUDE.md` discipline (the project side)
 
@@ -82,7 +92,7 @@ project provides one; keep it disciplined:
 
 Periodically (or whenever you feel friction): read each artifact end to end and delete anything
 stale, restated elsewhere, or that you don't remember adding. Scan agent definitions for sentences
-that restate `CLAUDE.md` or the workflow contract; scan commands for sentences describing what an
+that restate `CLAUDE.md` or the workflow contract; scan skills for sentences describing what an
 agent *does* (vs. when it runs). If two files reference the same rule, pick one and delete the other.
 The goal isn't minimalism — it's that every claim lives in exactly one place, so a reader (human or
 agent) always knows where to look and never reconciles conflicting versions.

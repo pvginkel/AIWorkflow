@@ -19,7 +19,7 @@ spawning every agent as a headless `kc session`. The gate is `kc project test`, 
 itself: detecting green needs no model, only fixing red does. **Files are durable; sessions are
 ephemeral;** scripts drive, agents judge.
 
-- **`plugins/dev/`** — the plugin: 6 commands, 8 agents, the `task_runner.py` (+ its suite) and
+- **`plugins/dev/`** — the plugin: 6 skills, 8 agents, the `task_runner.py` (+ its suite) and
   `preflight.py` tools, and the contract docs (`task-workflow.md`, `project-contract.md`,
   `preflight.md`).
 - **`.claude-plugin/marketplace.json`** — makes this repo installable.
@@ -58,7 +58,7 @@ contract and tells a new repo exactly what is missing. See **[`docs/ADOPTING.md`
 - **[`docs/ADOPTING.md`](docs/ADOPTING.md)** — install the plugin and make a repo adoptable
   (manifest + `CLAUDE.md` entries), with a worked example.
 - **[`docs/AUTHORING.md`](docs/AUTHORING.md)** — the durable rules for writing/maintaining agents,
-  commands, and docs so they stay lean and drift-free.
+  skills, and docs so they stay lean and drift-free.
 - **[`plugins/dev/docs/`](plugins/dev/docs/)** — the plugin's own contract: `task-workflow.md`
   (the canonical loop/verdict/state contract), `project-contract.md`, `preflight.md`.
 - **[`CHANGELOG-workflow.md`](CHANGELOG-workflow.md)** — the plugin's changelog.

@@ -1,4 +1,5 @@
 ---
+name: plan-slice
 description: Interactively break a triaged slice into 3-6 ordered, project-local tasks (plan-writer + plan-reviewer) with acceptance criteria and a seeded verification log. The task runner executes the result.
 argument-hint: <slice-number-or-path>
 ---

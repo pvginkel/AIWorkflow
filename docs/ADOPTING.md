@@ -18,7 +18,7 @@ From any Claude Code session:
 /plugin install dev@aiworkflow
 ```
 
-Installed into `~/.claude`, the plugin's commands resolve as `/dev:triage`, `/dev:plan-slice`,
+Installed into `~/.claude`, the plugin's skills resolve as `/dev:triage`, `/dev:plan-slice`,
 `/dev:run-slice`, `/dev:write-task`, `/dev:slice-dag`, `/dev:arch-design`, and its agents as
 `dev:code-writer`, `dev:code-reviewer`, … . The runner spawns those agents by their namespaced name
 through `kc session create-headless --agent dev:<role>`, so the kc-spawned headless sessions must
@@ -31,7 +31,7 @@ see the same `~/.claude` install (they do — same home).
 ## 2. Make a repo adoptable — the project contract
 
 A repo becomes usable by the pipeline when it provides these. Preflight
-(`${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage|plan|run`, which each command runs as step
+(`${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage|plan|run`, which each skill runs as step
 one) checks every item and, on failure, prints exactly what to add.
 
 ### 2a. `.kubecoder/project.yaml` — the component manifest
@@ -64,7 +64,7 @@ described in [`project-contract.md`](../plugins/dev/docs/project-contract.md#wha
 
 ### 2c. Host conventions (`~/.claude/CLAUDE.md`)
 
-The commands reference the issue tracker and notifications **generically** ("file findings to the
+The skills reference the issue tracker and notifications **generically** ("file findings to the
 issue tracker", "notify per the host convention", "the project's owner tag"). The concrete wiring —
 kanban tool, board/list names, the owner-tag rule, the notify command — lives in the host
 `~/.claude/CLAUDE.md`. Nothing to do per-repo if the host already has it.
@@ -114,5 +114,5 @@ Then, from the `Kestrel` repo:
 /dev:run-slice 042     # launches the runner; drives write→test→review→merge→verify
 ```
 
-If any contract piece is missing, the first command's preflight tells you the exact line or file to
+If any contract piece is missing, the first skill's preflight tells you the exact line or file to
 add — a new repo self-onboards from the error text.
