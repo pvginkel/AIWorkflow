@@ -4,6 +4,33 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-07-16 — the merge runbook becomes `/dev:merge-repos`
+
+`runbooks/MERGING.md` → `plugins/dev/skills/merge-repos/SKILL.md`. Not a move: the runbook was
+written against the template era and three of its load-bearing claims had rotted.
+
+- **Phase 3 pointed at a source of truth that no longer exists** — "execute `AIWorkflow/ADOPTING.md`,
+  apply its Step 1 copy-map and Step 2 variable substitution", at an absolute path predating `/work`.
+  The plugin rework deleted the copy-map, the Jinja vars, and all of `scripts/`. Phase 3 is now two
+  halves: project scaffolding sourced from `../DesignAssistant` (which still has it), then
+  `/plugin install` + `/dev:onboard`. `build-all.py` and `run-suite` stop being copied scripts and
+  become the manifest's `build:`/`test:` statements — the runner gates on `kc project test`, so that
+  is where they belong.
+- **One baked-in decision inverted.** The runbook said the four per-stack dev agents "stay
+  per-subproject in `backend/.claude/agents/` + `frontend/.claude/agents/`". `/dev:onboard` deletes
+  exactly those now. The skill says to leave them for onboard to sweep rather than hand-delete.
+- **Learning #4 (the `orchestrator/pyproject.toml` Jinja vars) is gone** with the templates it
+  described. The other eight survive; their sources re-point from the dead template to
+  DesignAssistant.
+- **Per-repo status moved to the issue tracker** (cards #234–236, one per remaining repo). Work
+  state does not belong in a procedure that rewrites itself after every run. IoTSupport's run
+  history is dropped — it is done, and git has it.
+- `code_health` is not copied into new merges; the runbook was seeding the fork the archive is
+  removing.
+
+The skill is **finite**: DHCPApp, ElectronicsInventory, ZigbeeControl, then delete it. Its own
+frontmatter and card #236 both say so.
+
 ## 2026-07-16 — `/dev:onboard`, and the allocator moves into the plugin
 
 A seventh skill: `/dev:onboard` brings a repo onto the pipeline. In the template era onboarding was

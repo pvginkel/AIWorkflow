@@ -12,15 +12,16 @@ a KubeCoder pod).
 ## The `dev` plugin
 
 The validated slice pipeline: **`/dev:triage` → `/dev:plan-slice` → `/dev:run-slice`**, plus
-`/dev:write-task`, `/dev:slice-dag`, `/dev:arch-design`, and `/dev:onboard` to bring a repo onto the
-pipeline in the first place. `run-slice` launches a kc-native task
+`/dev:write-task`, `/dev:slice-dag`, `/dev:arch-design`, plus `/dev:onboard` to bring a repo onto the
+pipeline in the first place and `/dev:merge-repos` to fold a split backend+UI pair into one repo
+that can be onboarded. `run-slice` launches a kc-native task
 runner (`task_runner.py`) that drives each task through a bounded loop — branch → code-writer →
 test gate + test-fixer (cap 3) → code-reviewer (cap 3, extendable to 5) → ff-merge → checkpoint —
 spawning every agent as a headless `kc session`. The gate is `kc project test`, run by the runner
 itself: detecting green needs no model, only fixing red does. **Files are durable; sessions are
 ephemeral;** scripts drive, agents judge.
 
-- **`plugins/dev/`** — the plugin: 7 skills, 8 agents, the `task_runner.py` (+ its suite),
+- **`plugins/dev/`** — the plugin: 8 skills, 8 agents, the `task_runner.py` (+ its suite),
   `preflight.py`, and `allocate-next-slice.sh` tools, and the contract docs (`task-workflow.md`,
   `project-contract.md`, `preflight.md`).
 - **`.claude-plugin/marketplace.json`** — makes this repo installable.
@@ -45,8 +46,8 @@ contract and tells a new repo exactly what is missing. See **[`docs/ADOPTING.md`
   `quality-issue-finder`, `refactor-audit`) and the `code_health` grader, one folder per source
   project because the copies drifted apart. Parked while the tool is rebuilt; `/dev:onboard` sweeps
   each project's copies in here. See [`archive/quality/README.md`](archive/quality/README.md).
-- **`runbooks/MERGING.md`** — the monorepo-merge runbook (`git filter-repo` phases, Jenkinsfile
-  consolidation) with per-repo status; unrelated to the plugin.
+The monorepo-merge runbook that used to live in `runbooks/` is now the `/dev:merge-repos` skill;
+its per-repo status lives on the issue tracker, where work state belongs.
 
 ## The `upkeep` plugin (planned)
 
