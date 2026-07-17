@@ -1,6 +1,6 @@
 ---
 name: plan-slice
-description: Interactively break a triaged slice into 3-6 ordered, project-local tasks (plan-writer + plan-reviewer) with acceptance criteria and a seeded verification log. The task runner executes the result.
+description: The refinement session — interactively bottom out a triaged slice with the operator and break it into 3-6 ordered, project-local tasks (plan-writer + plan-reviewer) with acceptance criteria seeded 1:1 from the slice's requirements. The task runner executes the result.
 argument-hint: <slice-number-or-path>
 ---
 
@@ -26,7 +26,10 @@ artifacts you produce carry their RFC 2119 meaning.
 
 ## Your role
 
-You are a **coordinator and the PO's advocate**, not the technical architect. Your value:
+You are a **coordinator and the PO's advocate**, not the technical architect. This is the
+**refinement session** — the dev team going through the idea with the PO. Triage recorded the ask
+in the operator's words, asked only comprehension questions, and read no code; grounding each
+requirement and working interactively toward the better solution happens **here**. Your value:
 
 1. **Faithful capture** — every explicit request in `slice.md` becomes an acceptance criterion and
    lands in exactly one task. No silent substitution, ever; infeasibility is discussed, not
@@ -49,11 +52,15 @@ fidelity check (step 3) — never a check on the agent.
 
 ### 1. Absorb the slice
 
-Read `slice.md` and every attachment in the slice folder. It is the authoritative statement of
-intent — triage already clarified it with the operator. Do not re-interview; return to the
-operator **only on a genuine delta**: a conflict with an established pattern (docs, decisions,
-API contracts), an ambiguity the slice does not settle, or something your reading reveals that
-changes the shape. Log every exchange to `qa_log.md` in the slice folder (`Q:`/`A:` pairs).
+Read `slice.md` and every attachment in the slice folder. Its numbered requirements list is the
+authoritative statement of intent, in the operator's own words — and deliberately thin: triage
+asked only comprehension questions and read no code. Bottoming the ask out is yours, with the
+operator: walk the requirements that leave the *how* open, and bring genuine choices, conflicts
+with established patterns (docs, decisions, API contracts), and anything your reading reveals
+that changes the shape. Don't relitigate settled input — a requirement that arrives pinned (a
+debugged root cause, an operator-settled design) is absorbed as spec, not reopened. Treat every
+claim or citation the slice carries as **unverified input**. Log every exchange to `qa_log.md`
+in the slice folder (`Q:`/`A:` pairs).
 
 ### 2. Dispatch the plan-writer
 
@@ -65,11 +72,19 @@ to the operator (and log them).
 If the breakdown wants more than 10 tasks, stop and discuss splitting the slice with the operator
 (a follow-up slice gets its own folder via `/triage`'s allocator conventions).
 
+Triage groups on the asks as written, without code knowledge — bundling mistakes are expected and
+yours to fix: **split** a slice, **kick an item back** to the backlog as its own slice, or **pull
+in** an obviously-adjacent backlog slice. Discuss the re-shape with the operator in-session;
+follow-up folders come from the allocator.
+
 ### 3. Verify fidelity yourself
 
-Walk `slice.md` request by request: each explicit ask has a matching, testable criterion worded as
-the request was made, and a task that owns it. Operator-provided API/spec definitions survived at
-signature-level fidelity. This check is yours — do not delegate it.
+The slice's numbered requirements are the **starting acceptance-criteria set, 1:1** — each becomes
+a criterion carrying the requirement's wording, and a criterion may drop or re-word a requirement
+**only on an explicit operator ruling logged in `qa_log.md`**. Walk the list requirement by
+requirement: a matching, testable criterion in the operator's wording, and a task that owns it.
+Operator-provided API/spec definitions survived at signature-level fidelity. This check is yours —
+do not delegate it.
 
 ### 4. Dispatch the plan-reviewer
 
@@ -116,7 +131,8 @@ The slice is now Ready; running it is a separate operator instruction.
 
 ## Quality checklist
 
-- [ ] Every explicit request in `slice.md` → acceptance criterion + owning task.
+- [ ] Every numbered requirement in `slice.md` → acceptance criterion (1:1, operator's wording) +
+      owning task; any dropped or re-worded requirement has an operator ruling in `qa_log.md`.
 - [ ] Tasks are project-local, ordered producers-first, 3–6 (max 10), each independently
       testable and PR-sized.
 - [ ] Cross-project interfaces stated identically in both plans, at signature level.

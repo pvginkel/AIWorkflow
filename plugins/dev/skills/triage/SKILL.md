@@ -1,14 +1,14 @@
 ---
 name: triage
-description: Group a batch of findings, bugs, or requests into grounded slice folders (slice.md under slices/backlog/NNN_slug/) — the required input to /plan-slice. Does not plan slices.
+description: Sort a batch of findings, bugs, or requests into slice folders that record the operator's requirements verbatim (slice.md under slices/backlog/NNN_slug/) — the required input to /plan-slice. Does not ground, design, or plan slices.
 argument-hint: "[findings-document]"
 ---
 
 # Triage
 
-Turn a batch of findings, requests, and issue-tracker items into grounded **slice folders** —
-self-contained change requests under `<spec-repo>/slices/backlog/NNN_slug/`, the input to
-`/plan-slice` (which plans them and promotes them up into `slices/`). Argument (optional): path to a findings document (e.g., `tmp/uat_testing.md`).
+Sort a batch of findings, requests, and issue-tracker items into **slice folders** — recorded
+change requests under `<spec-repo>/slices/backlog/NNN_slug/`, the input to `/plan-slice`
+(which refines and plans them and promotes them up into `slices/`). Argument (optional): path to a findings document (e.g., `tmp/uat_testing.md`).
 
 `<spec-repo>` is the path in your `CLAUDE.md`'s `Spec repo:` line. **Preflight (step 0):** run
 `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage` and relay its message verbatim on a
@@ -19,7 +19,9 @@ project's owner tag, how to notify) is defined by your host convention (`~/.clau
 The input can be a UAT run, a list of bugs, a change-request dump, chat discussion, or any
 unstructured collection of issues. Triage understands it, groups it by subject, and writes one
 slice per group. **Triage does not plan slices** — the task breakdown is `/plan-slice`'s job, in a
-separate, deliberate act.
+separate, deliberate act. Triage is the **first line**: it makes sure each ask is understood *as
+written*, records it in the operator's words, and routes it. `/plan-slice` is the second line —
+the refinement session that grounds the ask in code and bottoms it out with the operator.
 
 ## Triage is mandatory — and it stops at the slice request
 
@@ -36,6 +38,24 @@ separate, deliberate act.
   asks but you judge the change is not minimal, say so. Even when you do proceed, `slice.md` is
   still produced, the full planning process still applies, and you **never** do this from a
   sub-agent.
+
+## Hard rules
+
+- **Never open application code.** Not even a quick grep, not via a sub-agent. Triage's sources
+  are the cards, the documents they cite, and the chat — never the repo. If an item can't be
+  understood without reading code, it's a planning question, not a triage question.
+- **Requirements are recorded in the operator's words.** Quote, don't restate: a paraphrase can
+  invert an ask (slice 087 turned "put an empty line above the shortcuts line" into an acceptance
+  criterion asserting the opposite); a quote cannot.
+- **Every input becomes a numbered requirement** — the planner's starting acceptance criteria,
+  1:1. Nothing gets lost, bundled away, or summarized out of existence.
+- **Claims stay claims.** A card's diagnosis, cause, or line reference is carried attributed and
+  unverified — never endorsed, never checked against the code.
+- **Nothing is "operator-approved" without an explicit answer.** Silence on a default you proposed
+  is not approval; don't record assumptions — leave the open point to the planner.
+- **No design — and a feasibility verdict *is* design.** No fixes, no task shapes, no acceptance
+  criteria, no test enumerations, no "settled / do not re-open". A design doc that arrives as
+  input is attached and pointed at, not validated.
 
 ## What this skill does
 
@@ -57,16 +77,19 @@ say so rather than adopting it. All three are inputs and are considered together
 (transient docs live in `handovers/`, never at the specs root). Give every item a numbered entry
 with:
 
-- A clear description of the issue.
+- The ask, in the operator's words (quote it — the phrasing carries the requirement).
 - Its source (findings-document reference, issue-tracker id, or both).
 
 This document is scratch — it exists to drive the clarification loop and is **deleted at the end
 of triage** (Phase 7), once all information has been absorbed into the slices.
 
-**1c. Clarify until you fully understand every item.** For every item that is vague, missing
-information, or that simply needs research before it can be understood, add a **QUESTION** marker.
-Present the document to the operator and iterate until every item is understood. Understanding the
-request fully is the whole point of this phase — do not guess.
+**1c. The comprehension interview.** For every item that is vague or incomplete *as a request*,
+add a **QUESTION** marker; present the document to the operator and iterate until every item is
+understood. The scope is "do I understand what you wrote?" — the test for a triage question is
+that **the operator can answer it from memory**. "You want a Cancel button — on which screen?"
+qualifies. Anything that would require someone to open a file — where the screen lives, whether it
+exists yet, whether a reported cause is right — is the planner's question, not yours. Do not
+guess, and do not research your way past an ambiguity the operator can resolve in a sentence.
 
 When an item hands you an **API or interface definition** — tool signatures, endpoint shapes, a
 schema, a wire contract, anything with named operations, parameters, and return shapes — **ask
@@ -77,31 +100,29 @@ through as a spec (Phase 5). Don't assume — ask.
 **Do not group items into slices yet.** Phase 1 is about understanding individual items, not
 deciding how they cluster.
 
-### Phase 2: Ground enough to understand
+### Phase 2: Understand the ask — never the code
 
-Research items only to the depth needed to *understand* them — not to design or implement them.
-The deep, file:line grounding that task plans depend on is the **planner's** job, not triage's.
+There is no grounding phase. Understanding the *ask* is a conversation with the operator
+(Phase 1c); understanding the *code* is the planner's refinement session. Do not read application
+code, do not dispatch sub-agents into the repo, and do not verify that the things an item names
+exist — a screen the operator mentions may be unbuilt in another pending slice, and "add a Cancel
+button to screen X", noted down, is a complete triage result.
 
-- For an item whose meaning or feasibility is unclear, read the relevant code (use `Explore`
-  sub-agents in parallel for groups of related items) until you understand what is actually being
-  asked and whether it is coherent.
-- Record findings back into the triage working document, and raise follow-up **QUESTION** markers
-  where the code contradicts the reported behaviour or the request is ambiguous.
-- If an item genuinely required research to understand, capture that research as a separate
-  document — it becomes an attachment in the item's slice folder (Phase 5).
+What you do read: the sources the items cite — cards, findings documents, handover docs, chat.
+An item that arrives with depth (a debugging session's write-up, an operator-settled design) is
+absorbed as **input**, with provenance; you carry it, you don't check it.
 
-A concrete goal of this phase is to gather enough information that you can group the items **with
-confidence** in Phase 4 — you have to understand what each item really is before you can judge what
-it belongs with. If you cannot yet tell where an item clusters, you do not understand it well enough.
-
-Iterate follow-up questions with the operator until resolved or explicitly deferred.
+If an item still cannot be stated as a one-or-two-sentence requirement after the interview, it is
+not ready to route — take it back to the operator; research on your side cannot fix that.
 
 ### Phase 3: Separate non-actionable items
 
 Identify items that should not become slice work:
 
-- **Already implemented, or a duplicate** → **archive the card** (leave a short comment saying why).
-  It never reaches a slice.
+- **A duplicate within this triage set** (or of a card a plain board-list query surfaces) →
+  **archive the card** (leave a short comment saying why). Do not hunt beyond that, and never
+  check the code for "already implemented" — if a slice turns out to be already done, the planner
+  discovers that cheaply and closes it.
 - **Pure discussion / no actionable work** → flag for the operator.
 - **Infrastructure or tooling work that bypasses the dev-agent slice workflow** (e.g. orchestrator
   tooling, chart-only ops) → note it for the operator; it is handled outside slices.
@@ -120,10 +141,10 @@ Group the remaining items into **slices**. Follow these rules:
   independently testable, project-local tasks. A group that would plan to more than that is fine —
   raise it with the operator and split it into two slices here. It is easier to split now than to
   notice adjacent work scattered across separate slices later; when in doubt, group together.
-- **Sanity-check against under-grouping.** Before finalizing, glance at the areas/files each item
-  touches (from Phase 2's grounding): items that hit the same area or the same file almost certainly
-  belong together. Over-grouping is cheap to split; *scattering* related work across separate
-  slices is the expensive miss — that is the one to catch here.
+- **Group on the asks as written — and accept bundling mistakes.** You have no code knowledge in
+  this session, by design. If the subjects say the items belong together, group them; the planner
+  re-shapes cheaply during refinement (split, kick an item back to the backlog, pull in an
+  adjacent slice). When in doubt, group together.
 
 ### Phase 5: Write the slices
 
@@ -141,11 +162,17 @@ a slice sitting in `backlog/` is awaiting `/plan-slice`, which plans it and prom
 
 Each slice folder contains:
 
-- **`slice.md`** — a self-contained write-up of the change request. It must absorb **all**
-  the relevant material so the planner can work from the slice alone:
-  - A one-line summary, then the detail of what is being requested and why.
-  - **Abstracts of every referenced artifact** — the relevant content of findings-document
-    sections, issue-tracker cards, and chat discussion, pulled in (not just linked).
+- **`slice.md`** — the recorded change request. Its spine is a **numbered requirements list,
+  each requirement in the operator's words** — quote the card, the findings doc, the chat; your
+  own phrasing only where no operator wording exists, and marked as yours. The list is the
+  planner's **starting acceptance-criteria set, 1:1** — input to triage never gets lost, however
+  small the ask. Around the list, absorb the relevant material so the planner can work from the
+  slice alone:
+  - A one-line summary, then what is being requested and why, as the sources give it.
+  - **The relevant source material, pulled in** (quoted, not just linked): findings-document
+    sections, issue-tracker cards, chat discussion. A source's diagnosis, cause, or line
+    reference is carried **attributed and unverified** — "the card claims…" — never restated
+    as fact.
   - **Operator-provided API/spec definitions are carried through as specs.** When the operator hands
     you an API or interface definition (tool signatures, endpoint shapes, schemas, wire contracts),
     preserve it **in `slice.md`** at signature-level fidelity — named operations, parameters and
@@ -156,19 +183,19 @@ Each slice folder contains:
     is that the planner must not end up building a **substantially different** API than the one
     the operator specified. Mark the **deltas** from the operator's original for provenance. (This is
     absorbing the operator's own spec, not authoring a new contract — see "Don't design" below.)
-  - The **Q&A** you did with the operator during clarification, captured so the planner
-    inherits that understanding.
+  - The **Q&A** from the comprehension interview, captured so the planner inherits that
+    understanding.
   - **References to the issue-tracker items** that belong to this change request (by id).
-- **Attachments (optional)** — any research document you produced in Phase 2, and any pre-existing
-  prior work that informs the request. If a relevant document already lives in `handovers/` (a
-  prior design or proposal), **move it into the slice folder** so the planner has it in one place.
+- **Attachments (optional)** — pre-existing material that informs the request (a debugging
+  write-up, a prior design or proposal). If it already lives in `handovers/`, **move it into the
+  slice folder** so the planner has it in one place. You author no research documents of your own.
 
 Finally, add the slice to the **Pending** section of `<spec-repo>/README.md` as a single
 line matching the existing entries — `- **NNN** — <short title>: <one-clause summary> (#refs)` —
 and commit the slice folder to the specs repo (stage files by name).
 
 Your job here is to *absorb existing material* into a form the planner can focus on — not to
-invent design, write acceptance criteria, or propose an implementation.
+invent design, write acceptance criteria, issue feasibility verdicts, or propose an implementation.
 
 ### Phase 6: Update the issue tracker
 
@@ -198,10 +225,13 @@ exception at the top of this skill).
 
 ## Key principles
 
-- **Ground only to understand.** Read enough code to understand and de-risk each item. Leave the
-  deep file:line grounding to the planner — doing it twice wastes effort and goes stale.
+- **Understand the ask, not the code.** The interview asks what the operator meant — it never
+  sends you into the repo. All grounding, however shallow, is the planner's.
+- **The operator's words are the record.** Requirements are quoted and numbered, and arrive at
+  the planner as the starting acceptance criteria, 1:1. What the operator asks is what happens.
 - **Don't plan, don't design.** Triage's output is grouped, absorbed change requests. No task
-  breakdowns, no acceptance criteria, no *new* API contracts, no implementation proposals.
+  breakdowns, no acceptance criteria, no feasibility verdicts, no *new* API contracts, no
+  implementation proposals.
   (Preserving an API the operator *hands* you is not designing — see the next principle.)
 - **Treat operator-provided specs as specs.** An API or interface the operator gives you (tool
   signatures, endpoint shapes, schemas — any API service) is source material, not a prompt to

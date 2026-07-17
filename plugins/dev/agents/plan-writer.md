@@ -40,11 +40,12 @@ implementations. Keep it as small as the task allows: the plan is re-read every 
 ## Slice-level artifacts
 
 - **`acceptance_criteria.json`** (`{"criteria": [{"id": "CT-01", "area": "<component or area>",
-  "description": "…"}]}`) — every explicit request in `slice.md` becomes a specific, testable
-  criterion, worded as the request was made. If a request seems infeasible, raise it as a question;
-  never silently substitute an alternative. Operator-provided API/interface definitions in
-  `slice.md` are specs: carry them through at signature-level fidelity (record deltas if you evolve
-  them).
+  "description": "…"}]}`) — `slice.md`'s numbered requirements list seeds the criteria **1:1**:
+  each requirement becomes a specific, testable criterion in the operator's wording (you add more
+  criteria freely, but you never drop or re-word a requirement without an operator ruling logged
+  in `qa_log.md`). If a requirement seems infeasible, raise it as a question; never silently
+  substitute an alternative. Operator-provided API/interface definitions in `slice.md` are specs:
+  carry them through at signature-level fidelity (record deltas if you evolve them).
 - **`api_contract.json`** — when the slice changes wire surfaces (same schema as prior slices).
 
 ## Method
