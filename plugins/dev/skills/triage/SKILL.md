@@ -45,13 +45,9 @@ requirement. A triage question is one **the operator can answer from memory** �
 button: on which screen?" qualifies; where that screen lives in the code does not. Don't guess,
 and don't research your way past an ambiguity the operator can resolve in a sentence.
 
-Two things to pin down while you talk:
-
-- **Proposed defaults.** Only an explicit answer settles one. If the operator doesn't answer, the
-  point stays open for the planner — don't record your proposal as their decision.
-- **API or interface definitions** (named operations, parameters, return shapes): ask whether it
-  is a rough sketch or a considered surface. A sketch the planner may reshape; a considered
-  surface you carry through as a spec (step 4). They look alike on the page — ask.
+One caution while you talk: a proposed default is only settled by an explicit answer. If the
+operator doesn't answer, the point stays open for the planner — don't record your proposal as
+their decision.
 
 ### 3. Sort
 
@@ -64,9 +60,10 @@ Separate what shouldn't become a slice, and confirm the separation with the oper
 - **Infrastructure or tooling outside the dev-agent slice workflow** → note for the operator; it
   is handled outside slices.
 
-Group the rest **by subject, on the asks as written**. Favor larger groups — a slice runs as 2–4
-(max 5) project-local tasks, and a group that is clearly bigger than that is split with the
-operator now — but don't count API surfaces or applications touched: delivering a feature
+Group the rest **by subject, on the asks as written**. Favor larger groups — a slice plans into
+3–6 (max 10) project-local, independently testable, PR-sized tasks, and a group that would
+clearly blow past that is split with the operator now — but don't count API surfaces or
+applications touched: delivering a feature
 end-to-end beats limiting development complexity. Bundling mistakes are fine; the planner splits,
 merges, and kicks items back cheaply during refinement. When in doubt, group together.
 
@@ -86,16 +83,15 @@ this conversation. It holds:
 
 - A one-line summary, then what is being requested and why, as the sources give it.
 - **The numbered requirements list** — every input item, in the operator's words. Quote: a
-  paraphrase can invert an ask (slice 087 turned "put an empty line above the shortcuts line"
-  into its opposite); your own phrasing appears only where no operator wording exists, marked as
-  yours. The planner seeds acceptance criteria from this list 1:1, so an ask that isn't on it is
-  lost.
+  paraphrase can silently invert an ask; a quote cannot. Your own phrasing appears only where no
+  operator wording exists, marked as yours. The planner seeds acceptance criteria from this list
+  1:1, so an ask that isn't on it is lost.
 - The relevant source material, quoted in (not just linked). A source's diagnosis, cause, or line
   reference stays attributed — "the card claims…" — you have no way to verify it and don't try.
-- **Operator-provided API/spec definitions at signature-level fidelity** — named operations,
-  parameters and defaults, return shapes, enums. Fold in simplifications the operator agreed to
-  and mark the deltas; the planner must not end up building a substantially different surface
-  than the one the operator specified.
+- **Operator-provided API/spec definitions, carried over as given** — signature-level fidelity:
+  named operations, parameters and defaults, return shapes, enums. Don't restate a definition as
+  high-level intent; the definition itself is the record. If the conversation evolved it, carry
+  the final agreed version and let the Q&A show the evolution.
 - The interview **Q&A**, and the ids of the cards this slice subsumes.
 
 Requirements, not solutions: no fixes, no task shapes, no acceptance criteria, no feasibility
