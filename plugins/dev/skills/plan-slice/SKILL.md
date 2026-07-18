@@ -53,9 +53,8 @@ fidelity check (step 3) — never a check on the agent.
 ### 1. Absorb the slice
 
 Read `slice.md` and every attachment in the slice folder. Its numbered requirements list is the
-authoritative statement of intent, in the operator's own words — and deliberately thin: triage
-asked only comprehension questions and read no code. Bottoming the ask out is yours, with the
-operator: walk the requirements that leave the *how* open, and bring genuine choices, conflicts
+authoritative statement of intent, in the operator's own words — and deliberately thin. Bottoming
+the ask out is yours, with the operator: walk the requirements that leave the *how* open, and bring genuine choices, conflicts
 with established patterns (docs, decisions, API contracts), and anything your reading reveals
 that changes the shape. Don't relitigate settled input — a requirement that arrives pinned (a
 debugged root cause, an operator-settled design) is absorbed as spec, not reopened. Treat every
@@ -72,9 +71,9 @@ to the operator (and log them).
 If the breakdown wants more than 10 tasks, stop and discuss splitting the slice with the operator
 (a follow-up slice gets its own folder via `/triage`'s allocator conventions).
 
-Triage groups on the asks as written, without code knowledge — bundling mistakes are expected and
-yours to fix: **split** a slice, **kick an item back** to the backlog as its own slice, or **pull
-in** an obviously-adjacent backlog slice. Discuss the re-shape with the operator in-session;
+Triage bundles on the asks as written — bundling mistakes are expected and yours to fix:
+**split** a slice, **kick an item back** to the backlog as its own slice, or **pull in** an
+obviously-adjacent backlog slice. Discuss the re-shape with the operator in-session;
 follow-up folders come from the allocator.
 
 ### 3. Verify fidelity yourself

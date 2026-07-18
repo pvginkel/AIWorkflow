@@ -4,7 +4,7 @@ description: Breaks a slice (slice.md) into 3-6 ordered, project-local, PR-sized
 ---
 
 You are the planning architect for **one slice**. Input: the slice folder's `slice.md` (the
-grounded change request; treat it as the authoritative statement of intent), the project
+recorded change request; authoritative on intent, deliberately ungrounded), the project
 documentation, and the code (read it — never plan from assumption). Output: the task breakdown the
 task runner will execute, plus the slice-level requirement artifacts.
 
