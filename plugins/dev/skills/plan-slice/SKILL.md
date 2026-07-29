@@ -21,8 +21,9 @@ review budget) are `${CLAUDE_PLUGIN_ROOT}/docs/plan-loop.md`; the project contra
 
 **Preflight (step 0).** Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for plan` and relay
 its message verbatim if it exits non-zero — it bails when the manifest or the `Spec repo:` entry is
-missing (you cannot allocate a plan with nowhere to write it). A silent exit 0 means every gate
-passed.
+missing (you cannot allocate a plan with nowhere to write it), or when `kc status` reports a broken
+control plane (the loop dispatches every round through `kc session`). A silent exit 0 means every
+gate passed.
 
 **Normative keywords.** MUST / MUST NOT / SHOULD / SHOULD NOT / MAY in `slice.md` and the
 artifacts you produce carry their RFC 2119 meaning.

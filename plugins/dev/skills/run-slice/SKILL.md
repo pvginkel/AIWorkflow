@@ -27,9 +27,10 @@ needs nothing from you between launch and final report. The loop it enforces is
 ## Step 1: Preflight
 
 1. **Environment + contract.** Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for run`.
-   It is the gate: `kc` on PATH, a valid manifest, the three `CLAUDE.md` pointers (`Spec repo:`,
-   `Slice testing strategy:`, `Design philosophy:`) present with their target docs existing, a
-   clean working tree, and a baseline `kc project build`. Its output is deliberately minimal and
+   It is the gate: `kc` on PATH, a healthy control plane (`kc status`), a valid manifest, the three
+   `CLAUDE.md` pointers (`Spec repo:`, `Slice testing strategy:`, `Design philosophy:`) present with
+   their target docs existing, a clean working tree, and a baseline `kc project build`. Its output
+   is deliberately minimal and
    reports solely through the exit code, so a silent exit 0 means every gate passed. On a non-zero
    exit, **relay its message verbatim** and stop: do **not** work around it and do **not** start the
    runner — fix the root cause only if it is clearly environmental, otherwise notify the operator.

@@ -15,6 +15,7 @@ lines (see docs/project-contract.md):
 | Check                                         | triage | plan | run |
 |-----------------------------------------------|:------:|:----:|:---:|
 | kc on PATH                                     |   x    |  x   |  x  |
+| Control plane healthy (kc status)              |        |  x   |  x  |
 | Manifest valid (kc project list ≥1 component)  |        |  x   |  x  |
 | `Spec repo:` in CLAUDE.md, path exists         |   x    |  x   |  x  |
 | `Slice testing strategy:` set, target exists   |        |      |  x  |
@@ -28,7 +29,7 @@ a new repo self-onboards from the error text. Exit codes:
 
     0  pass
     1  contract violation (the project must fix something)
-    2  environment broken (kc missing / not in a git repo)
+    2  environment broken (kc missing / control plane down / not in a git repo)
 
 The command runs the profile and relays this message verbatim on non-zero.
 """
@@ -78,6 +79,25 @@ def check_kc() -> None:
         fail(2, "`kc` is not on PATH. The dev plugin is kc-native and requires the "
                 "KubeCoder CLI — run inside a KubeCoder pod, where `kc` is always "
                 "available.")
+
+
+def check_kc_status() -> None:
+    """The control plane must be up before a command that dispatches sessions.
+
+    `kc status` probes the worker daemon (one loopback /healthz) and the
+    controller (the authenticated env self-read), and exits non-zero when
+    either fails. Both probes are bounded by the CLI itself (5s + 10s), so no
+    timeout is needed here. Its report goes to stdout; a precondition failure
+    (a broken or outdated pod) goes to stderr — relay whichever spoke.
+    """
+    result = subprocess.run(["kc", "status"], capture_output=True, text=True)
+    if result.returncode != 0:
+        report = (result.stdout + result.stderr).strip()
+        fail(2,
+             "`kc status` reports a broken control plane. Every agent this "
+             "pipeline dispatches runs through `kc session`, so the first "
+             "dispatch would fail — fix the environment before retrying (the "
+             "report says which half is down).\n" + report)
 
 
 def _claude_md(root: Path) -> str:
@@ -166,10 +186,13 @@ def check_baseline_build(root: Path) -> None:
              + "\n".join(tail))
 
 
+# Triage deliberately has no `kc_status`: it dispatches nothing and touches no
+# kc surface — it is intake, doable without the repo. Gating it on live
+# controller reachability would fail work that needs none of it.
 PROFILES = {
     "triage": ["kc", "spec_repo"],
-    "plan": ["kc", "manifest", "spec_repo"],
-    "run": ["kc", "manifest", "spec_repo", "testing_strategy",
+    "plan": ["kc", "kc_status", "manifest", "spec_repo"],
+    "run": ["kc", "kc_status", "manifest", "spec_repo", "testing_strategy",
             "design_philosophy", "clean_tree", "baseline_build"],
 }
 
@@ -181,9 +204,12 @@ def main() -> None:
     args = parser.parse_args()
     checks = PROFILES[args.profile]
 
-    # kc first (env gate), before anything that shells out to it.
+    # kc first (env gate), before anything that shells out to it; the control
+    # plane next — both are environment, and neither needs the repo.
     if "kc" in checks:
         check_kc()
+    if "kc_status" in checks:
+        check_kc_status()
     root = repo_root()
     if "manifest" in checks:
         check_manifest(root)

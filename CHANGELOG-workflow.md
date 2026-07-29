@@ -4,6 +4,22 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-07-29 — `kc status` joins the preflight (v0.3.1)
+
+Preflight's v1 note said "no daemon-reachability check — the first `kc session create-headless`
+failure is the signal". `kc status` now exists (worker daemon over loopback `/healthz`, controller
+reachable *and* authenticated), so the signal moves to step one: **`--for plan` and `--for run` gate
+on it**, as an environment failure (**exit 2**, alongside the `kc`-on-PATH check) — a dead control
+plane means every dispatch fails, but nothing in the project is wrong, so the project is not the one
+asked to fix it. The check runs before the repo is resolved and relays `kc status`'s own report,
+whichever stream it came out of.
+
+**`--for triage` is deliberately exempt.** Triage dispatches nothing and touches no `kc` surface —
+it is intake, doable without the repo. The cost of the check there is a false gate, not the 20ms.
+
+`preflight.py` gains its first suite (7 tests) covering the check, its exit code, its position in
+the sequence, and the profile split.
+
 ## 2026-07-29 — the last KubeCoder sync (v0.3.0)
 
 KubeCoder — the repo the workflow was developed and validated in — now runs inside a KubeCoder
