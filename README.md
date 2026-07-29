@@ -22,8 +22,9 @@ itself: detecting green needs no model, only fixing red does. **Files are durabl
 ephemeral;** scripts drive, agents judge.
 
 - **`plugins/dev/`** — the plugin: 8 skills, 8 agents, the `task_runner.py` (+ its suite),
-  `preflight.py`, and `allocate-next-slice.sh` tools, and the contract docs (`task-workflow.md`,
-  `project-contract.md`, `preflight.md`).
+  `preflight.py`, `grounding_check.py` (+ its dispatch helper and their suites), and
+  `allocate-next-slice.sh` tools, and the contract docs (`task-workflow.md`,
+  `project-contract.md`, `preflight.md`, `grounding-ledger.md`).
 - **`.claude-plugin/marketplace.json`** — makes this repo installable.
 
 ### Install
@@ -64,5 +65,6 @@ capability that used to be parked alongside it now lives in `archive/quality/`, 
 - **[`docs/AUTHORING.md`](docs/AUTHORING.md)** — the durable rules for writing/maintaining agents,
   skills, and docs so they stay lean and drift-free.
 - **[`plugins/dev/docs/`](plugins/dev/docs/)** — the plugin's own contract: `task-workflow.md`
-  (the canonical loop/verdict/state contract), `project-contract.md`, `preflight.md`.
+  (the canonical loop/verdict/state contract), `project-contract.md`, `preflight.md`,
+  `grounding-ledger.md` (the claim→source ledger format and its drift checker).
 - **[`CHANGELOG-workflow.md`](CHANGELOG-workflow.md)** — the plugin's changelog.

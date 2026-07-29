@@ -58,7 +58,7 @@ adds the planning artifacts below and promotes the folder to `slices/NNN_slug/`.
       plan.md                ← plan-writer: the task's implementation plan
       plan_review.md         ← plan-reviewer verdict on the breakdown/plan
       grounding.md           ← code-writer: claim→source ledger for behavior-describing prose
-                               (path + symbol per claim; the code-reviewer verifies citations)
+                               (format: grounding-ledger.md; the code-reviewer verifies citations)
       gate_r<N>.log          ← full output of the runner's Nth test-gate run for this task
       test_results_r<N>.md   ← test-fixer round-N escalation writeup (non-trivial failures only)
       code_review_r<N>.md    ← code-reviewer round-N review
