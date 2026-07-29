@@ -50,15 +50,17 @@ Delete (the plugin provides each):
 - the six pipeline skills/commands — `triage`, `plan-slice`, `run-slice`, `write-task`, `slice-dag`,
   `arch-design` — under `.claude/commands/` or `.claude/skills/`, at **every** `.claude` found in
   step 1, not just the root;
-- the eight dev agents — `code-writer`, `code-reviewer`, `plan-writer`, `plan-reviewer`,
-  `test-fixer` (or an older `code-tester`), `test-agent`, `slice-verifier`, `arch-design` — likewise
-  at every `.claude`;
-- the runner and its session machinery — `tools/ai_workflow/task_runner.py`,
+- the eleven dev agents — `code-writer`, `code-reviewer`, `plan-writer`, `plan-reviewer`,
+  `plan-briefer`, `plan-scribe`, `slice-grounder`, `test-fixer` (or an older `code-tester`),
+  `test-agent`, `slice-verifier`, `arch-design` — likewise at every `.claude`;
+- the pipeline scripts and their session machinery — `tools/ai_workflow/task_runner.py`,
+  `plan_loop.py`, `grounding_check.py`, `grounding_dispatch.py`, `close_slice.py`,
   `claude_session.py`, `codex_exec.py`, their tests, and any `scripts/preflight.py` the plugin's
   preflight replaces;
-- **the in-repo contract doc** — a `docs/**/task-workflow.md` describing the loop. The plugin owns
-  that contract now (`${CLAUDE_PLUGIN_ROOT}/docs/task-workflow.md`); a project copy is a second
-  source of truth that will drift and be believed.
+- **the in-repo contract docs** — a `docs/**/task-workflow.md` describing the loop, and its topic
+  siblings `task-runner.md`, `runner-state.md`, `agent-dispatch.md`, `plan-loop.md`,
+  `grounding-ledger.md`. The plugin owns those contracts now (`${CLAUDE_PLUGIN_ROOT}/docs/`); a
+  project copy is a second source of truth that will drift and be believed.
 
 Leave everything else, and **say what you left**. A repo's own agents and commands are its own —
 including auxiliary workflow ones `dev` does not replace (`update-docs` belongs to the planned
