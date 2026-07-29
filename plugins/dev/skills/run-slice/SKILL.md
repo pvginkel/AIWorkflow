@@ -77,10 +77,11 @@ session when one was in flight); `--dry-run` lists the tasks without running.
    dissent.)
 3. Reconcile docs scoped to what the slice changed (drift between authored intent and what was
    built → fix the owning `docs/` topic, or run a docs-update pass if your project provides one).
-4. Move the README slice entry **Pending → Completed** (same single line) and
-   `git mv` the slice folder to `slices/completed/`; commit with the slice artifacts, **including
-   `state.json` and `log.txt`** (they name every agent session id + transcript path — the run's
-   who-did-what record; only a stale `bailout.json` is dropped).
+4. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_slice.py <slice_dir>` (moves the README slice
+   entry Pending → Completed and `git mv`s the folder to `slices/completed/`, staging by name);
+   commit with the slice artifacts, **including `state.json` and `log.txt`** (they name every
+   agent session id + transcript path — the run's who-did-what record; only a stale
+   `bailout.json` is dropped).
 5. Move the Kanban card to **Done**, notify the operator per the host's notification convention,
    and report: per-task rounds from `state.json`, verification outcome, flagged findings, anything
    owed.

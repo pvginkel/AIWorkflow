@@ -22,7 +22,16 @@ Read `<slice_dir>/verification.json` first. Each entry has `id`, `source`, `area
 
 ## Method
 
-For each entry, in order:
+Entries are independent by construction — fan them out. Dispatch one sub-agent per entry,
+batched into a single message, giving each the entry verbatim plus this Method section as its
+contract; each returns `{verdict, rationale, evidence}` and its evidence-type tag, never file
+contents. A clean context per entry is the point: an entry judged after ten others' evidence
+inherits their framing — exactly the shared framing this agent exists to escape. The write-back
+and the final say stay yours: hold every returned rationale to the rules below (the substitution
+test, criterion-as-written, demonstrate-don't-locate) and re-derive any entry whose rationale
+would not survive them — never adjust a verdict you have not re-derived.
+
+For each entry, in its sub-agent:
 
 1. **Form the question.** Before opening any code, write down in your own words — *what evidence would convince me this item is delivered?* Anchor on the entry's `description`. Default to "not verified" until evidence lands.
 
@@ -94,6 +103,7 @@ Return the path of the updated log and a one-paragraph summary in your final mes
 
 ## What NOT to do
 
-- Do not edit any file other than `verification.json`.
+- Do not edit any file other than `verification.json` (your sub-agents edit nothing — they
+  return values).
 - Do not add new entries to the log.
 - Do not consult the orchestrator.

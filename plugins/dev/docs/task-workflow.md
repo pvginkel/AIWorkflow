@@ -7,8 +7,10 @@ How a change moves from idea to merged code. Three operator-initiated sessions p
 2. **`/plan-slice`** — interactive planning: breaks one slice into ordered, project-local **tasks**
    (plan-writer + plan-reviewer), emits acceptance criteria and verification artifacts, and
    promotes the slice from `slices/backlog/` up into `slices/`.
-3. **`/run-slice`** — launches `${CLAUDE_PLUGIN_ROOT}/tools/task_runner.py` as a background shell
-   and handles bail-outs. The **script**, not a session, drives execution.
+3. **`/run-slice`** — launches `${CLAUDE_PLUGIN_ROOT}/tools/task_runner.py` as a background shell,
+   handles bail-outs, and closes out with `${CLAUDE_PLUGIN_ROOT}/tools/close_slice.py` (which moves
+   the folder to `slices/completed/` and the spec README's entry Pending → Completed, staging by
+   name and leaving the commit to the session). The **script**, not a session, drives execution.
 
 The design principle: **files are durable, sessions are ephemeral.** No long-lived session drives the
 work. The runner is the only resident process; every agent it spawns is a fresh headless
@@ -37,6 +39,17 @@ Each level handles what the level below cannot; nothing skips a level.
 
 Agents never work around environmental problems (a broken tool, a failing harness, missing
 credentials). They stop and report `blocked` — screaming early is correct behavior.
+
+## Nested delegation
+
+Every agent — including one a script spawned — can dispatch sub-agents of its own. The working
+rule: **delegate the reading, keep the judgment.** Mechanical, independent, per-item work —
+verifying a ledger's citations, hunting the evidence for one verification entry, surveying one
+axis of a subsystem — fans out to parallel sub-agents that return conclusions; every verdict,
+severity call, and write-back stays with the dispatching agent. Sub-agents hand back **receipts
+and conclusions, never evidence** — evidence handed upward sits in the caller's context for the
+rest of its session. `Explore` is the leaf: it cannot dispatch agents, so it is the terminal
+reader of every fan-out tree.
 
 ## Slice folder layout
 

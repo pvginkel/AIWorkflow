@@ -23,9 +23,10 @@ runner; the contract is `${CLAUDE_PLUGIN_ROOT}/docs/task-workflow.md`.
    specific insertion point (`04a_slug` runs between `04` and `05`; the runner picks it up on
    resume). Never renumber an existing folder.
 4. **Write `task.json` and `plan.md`** exactly as the plan-writer would (see its agent definition
-   for the shape): outcome-focused requirements quoting the findings' evidence, current state with
-   verified citations, what must be tested, a minimal reading list. Findings are requirements —
-   "the reported symptom no longer occurs" style — not fix prescriptions.
+   for the shape, including the `grade` field — when in doubt, `standard`): outcome-focused
+   requirements quoting the findings' evidence, current state with verified citations, what must
+   be tested, a minimal reading list. Findings are requirements — "the reported symptom no longer
+   occurs" style — not fix prescriptions.
 5. **Commit** the task folder to the specs repo, staged by name, and report the created task
    id(s) back.
 

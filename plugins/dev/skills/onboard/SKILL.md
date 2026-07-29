@@ -155,7 +155,8 @@ Preflight only checks the path is a directory, but the pipeline needs a shape:
 
 ```
 <spec-repo>/
-  README.md                 # a `## Pending` list — triage appends, slice-dag reads it as a convenience
+  README.md                 # `## Pending` + `## Completed` lists — triage appends to the first,
+                            #   close_slice.py moves the entry across; slice-dag reads it
   .gitignore                # slices/.next-slice, slices/.slice-alloc.lock (host-local, self-seeding)
   slices/
     backlog/                # triage writes NNN_slug/slice.md here; plan-slice promotes out of it
@@ -189,8 +190,9 @@ In scope:
 - **Whole eras → `archive/`.** A layout the current pipeline will never read again — a bundle tree,
   a `major-change`/`minor-change`-era folder — moves wholesale. Archive it; do not modernize what is
   done.
-- **The repo's own scaffolding.** The `.gitignore` entries, the README `## Pending` list, and
-  dropping a per-repo `scripts/allocate-next-slice.sh` now the plugin ships one.
+- **The repo's own scaffolding.** The `.gitignore` entries, the README's `## Pending` and
+  `## Completed` lists, and dropping a per-repo `scripts/allocate-next-slice.sh` now the plugin
+  ships one.
 - **Numbering.** The allocator floors above the highest `NNN_` anywhere under `slices/`, so
   archiving never recycles a number. Never renumber — the numbers are referenced from cards,
   commits, and docs.

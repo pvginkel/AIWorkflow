@@ -50,6 +50,12 @@ Read the code that the question is about. The depth depends on the question, but
 - **Tests** — what test coverage exists? How are tests structured? This affects what a refactoring can safely change.
 - **Patterns** — how have similar problems been solved elsewhere? Look for precedent.
 
+Fan the survey out: parallel Explore sub-agents, one per axis above, each returning conclusions
+with `file:line` evidence — never file dumps. Their reports are leads, not citations: before a
+decision, constraint, or risk rests on a claim, open that code yourself. "Do NOT skim" binds the
+sub-agents as much as you; what the fan-out buys is your own context staying free for the design
+reasoning.
+
 Take notes on key facts as you go. You will need them for the design document.
 
 Do NOT skim — read the actual code. Architectural recommendations based on assumptions about code structure are worse than useless.
