@@ -14,17 +14,20 @@ a KubeCoder pod).
 The validated slice pipeline: **`/dev:triage` → `/dev:plan-slice` → `/dev:run-slice`**, plus
 `/dev:write-task`, `/dev:slice-dag`, `/dev:arch-design`, plus `/dev:onboard` to bring a repo onto the
 pipeline in the first place and `/dev:merge-repos` to fold a split backend+UI pair into one repo
-that can be onboarded. `run-slice` launches a kc-native task
-runner (`task_runner.py`) that drives each task through a bounded loop — branch → code-writer →
-test gate + test-fixer (cap 3) → code-reviewer (cap 3, extendable to 5) → ff-merge → checkpoint —
-spawning every agent as a headless `kc session`. The gate is `kc project test`, run by the runner
-itself: detecting green needs no model, only fixing red does. **Files are durable; sessions are
-ephemeral;** scripts drive, agents judge.
+that can be onboarded. `plan-slice` settles the design with the operator, then drives a
+plan-writer/plan-reviewer loop (`plan_loop.py`) to a reviewed task breakdown; `run-slice` launches
+a kc-native task runner (`task_runner.py`) that drives each task through a bounded loop — branch →
+code-writer → test gate + test-fixer (cap 3) → consult-funded review rounds against a rising bar
+(backstop 5) → ff-merge → checkpoint — spawning every agent as a headless `kc session`. The gate is
+`kc project test`, run by the runner itself: detecting green needs no model, only fixing red does.
+**Files are durable; sessions are ephemeral;** scripts drive, agents judge.
 
-- **`plugins/dev/`** — the plugin: 8 skills, 8 agents, the `task_runner.py` (+ its suite),
-  `preflight.py`, `grounding_check.py` (+ its dispatch helper and their suites), and
-  `allocate-next-slice.sh` tools, and the contract docs (`task-workflow.md`,
-  `project-contract.md`, `preflight.md`, `grounding-ledger.md`).
+- **`plugins/dev/`** — the plugin: 8 skills, 11 agents, the tools (`task_runner.py`,
+  `plan_loop.py`, `close_slice.py`, `grounding_check.py` + `grounding_dispatch.py`,
+  `preflight.py`, and `allocate-next-slice.sh`, with their suites), and the contract docs
+  (`task-workflow.md` and its topic docs `task-runner.md` / `runner-state.md` /
+  `agent-dispatch.md` / `plan-loop.md`, plus `grounding-ledger.md`, `project-contract.md`,
+  `preflight.md`).
 - **`.claude-plugin/marketplace.json`** — makes this repo installable.
 
 ### Install
@@ -65,6 +68,7 @@ capability that used to be parked alongside it now lives in `archive/quality/`, 
 - **[`docs/AUTHORING.md`](docs/AUTHORING.md)** — the durable rules for writing/maintaining agents,
   skills, and docs so they stay lean and drift-free.
 - **[`plugins/dev/docs/`](plugins/dev/docs/)** — the plugin's own contract: `task-workflow.md`
-  (the canonical loop/verdict/state contract), `project-contract.md`, `preflight.md`,
+  (the shared contract) with `task-runner.md`, `runner-state.md`, `agent-dispatch.md`, and
+  `plan-loop.md` beside it, plus `project-contract.md`, `preflight.md`, and
   `grounding-ledger.md` (the claim→source ledger format and its drift checker).
 - **[`CHANGELOG-workflow.md`](CHANGELOG-workflow.md)** — the plugin's changelog.

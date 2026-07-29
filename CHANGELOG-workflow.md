@@ -4,6 +4,60 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-07-29 — the last KubeCoder sync (v0.3.0)
+
+KubeCoder — the repo the workflow was developed and validated in — now runs inside a KubeCoder
+environment and installs this plugin like every other repo. This sync ports everything its vendored
+copy learned since the 2026-07-16 baseline (KubeCoder `912da03`, 35 commits), after which the
+vendored copy is deleted and **the plugin is the workflow's only home**: improvements land here
+first from now on, there is no upstream left to sync from.
+
+Five sub-syncs, each its own commit:
+
+- **The grounding ledger** (`grounding_check.py` + `grounding_dispatch.py`, suites,
+  `grounding-ledger.md`). Claim→source ledgers with mechanical drift checking: the checker
+  re-greps every entry's anchor, `--repair` fixes `MOVED` lines with no model involved, and
+  tiered handling routes real drift to a scoped re-grounding pass — only a falsified load-bearing
+  claim reaches the operator. Both scripts derive the repo root from `git rev-parse
+  --show-toplevel` at the caller's cwd (the vendored copies hardcoded their repo).
+- **The runner.** The review loop's economics replace the cap-3-plus-2-grants scheme: round 1's
+  fix is automatic, every later `issues` verdict goes to a funding consult that judges the
+  findings against a bar that rises each round, and the old cap survives only as a backstop (5)
+  at which funding is withheld. Rounds bank on a verdict, not on dispatch; rounds 2+ are
+  delta-scoped to the fix range; every round is told the gate's verified state. D177 graded
+  writer routing lands (`task.json`'s `grade` picks round 1's model — `mechanical` → Sonnet,
+  `standard` → Opus, `gnarly` → Fable; every later round runs Opus, and a Sonnet round 1 licenses
+  the fix round to redo rather than patch). Fix rounds are fresh sessions (a resumed round's
+  accumulated context cost ~2.2× per turn). Account session-limit windows are waited out and the
+  round redispatched — never nudged, consulted, or counted. Grounding freshness rides every
+  initial writer dispatch, and the checkpoint consult gets a whole-ledger drift summary as
+  deterministic input.
+- **The plan loop** (`plan_loop.py` + suite, `plan-loop.md`) — `/dev:plan-slice`'s mechanical
+  half, which previously had none: fresh plan-writer/plan-reviewer rounds against a stored review
+  budget (4, `--grant` extends, `--reopen` re-enters a done loop), `questions` verdicts that pause
+  the loop for operator rulings, delta-scoped re-reviews, grounding `--repair` before every
+  dispatch and `--prune` at GO, then hygiene, cross-reference lint, and deterministic
+  `verification.json` seeding. Three new agents — `plan-briefer`, `plan-scribe`,
+  `slice-grounder` — and the `plan-slice` skill rewritten around the loop: the coordinator holds
+  decisions, not documents.
+- **Close-out and the remaining prose** (`close_slice.py` + suite): the mechanical half of
+  `/dev:run-slice`'s close-out — README entry Pending → Completed, folder to `slices/completed/`,
+  staged by name, commit left to the session. Run-slice gains a grounding preflight
+  (whole-ledger `--repair`; tier 2 dispatches a scoped re-grounding, tier 3 stops before the
+  runner starts). The nested-delegation house rule lands — delegate the reading, keep the
+  judgment — and `slice-verifier` / `arch-design` fan their per-item reads out under it.
+- **The contract docs** reconcile into topic docs, one home per claim: `task-workflow.md` keeps
+  the shared contract; `task-runner.md`, `runner-state.md`, and `agent-dispatch.md` (re-authored
+  around the `kc session` seam) take the mechanics. `/dev:onboard`'s delete-list now names
+  everything the plugin supersedes — eleven agents, five scripts, six contract docs.
+
+Not ported, deliberately: `PROJECT_DIRS` and its `mcp-server` fix (the manifest is the component
+source here, so the bug cannot exist); KubeCoder-specific prose — the hardcoded project list in
+`plan-writer`, the `cross-repo-tasks.md` required-reading pointer, the `../KubeCoderSpecs`
+decision-index path, and `task-workflow.md`'s board-states section (tracker wiring is
+host/project business); `update-docs`'s fan-out half (it belongs to the unbuilt `upkeep` plugin);
+and `track_build.py`, which is CI-wait tooling, not workflow, and stays with its project.
+
 ## 2026-07-16 — the merge runbook becomes `/dev:merge-repos`
 
 `runbooks/MERGING.md` → `plugins/dev/skills/merge-repos/SKILL.md`. Not a move: the runbook was
