@@ -20,8 +20,9 @@ repo.
 `${CLAUDE_PLUGIN_ROOT}/tools/task_runner.py` as a background shell, stay idle while it works, and
 act only at the edges: preflight, bail-outs, and close-out. The runner spawns every dev session,
 enforces the bounded loops, and consults fresh decision sessions on its own — an uneventful slice
-needs nothing from you between launch and final report. The contract (loop, verdicts, bail-out
-reasons) is `${CLAUDE_PLUGIN_ROOT}/docs/task-workflow.md`.
+needs nothing from you between launch and final report. The loop it enforces is
+`${CLAUDE_PLUGIN_ROOT}/docs/task-runner.md`; what it records and the bail-out reasons are
+`${CLAUDE_PLUGIN_ROOT}/docs/runner-state.md`.
 
 ## Step 1: Preflight
 
@@ -112,7 +113,7 @@ anything**. Then route by `reason`:
   not make (a task plan is wrong, an interface moved, the fix belongs in another task), make it,
   record it in the task folder, and relaunch with `--resume`. Never make the gate green by
   weakening what it checks; if the fix isn't a small clear decision, defer to the operator.
-- **`tester_limit` / `review_limit` / `consult_bail` / `verification_limit`** — a consult chose to
+- **`tester_limit` / `consult_bail` / `verification_limit`** — a consult chose to
   stop or a cap ran out. Read the consult's reasoning. If a clear, small decision unblocks it
   (adjust a task plan, add guidance to the task folder, drop a bad direction), make it, record it
   in the task folder, and relaunch with `--resume`. Otherwise summarize the situation and defer to

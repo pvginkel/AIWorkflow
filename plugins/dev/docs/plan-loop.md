@@ -6,8 +6,8 @@ session settles the design with the operator first — requirements in `slice.md
 **fresh** plan-writer and plan-reviewer sessions (never resumed except for the two protocol
 nudges) until it reaches a terminal state. Every pass re-reads the slice folder from disk; the
 dispatch prompts carry pointers, never relayed content. The folder layout and verdict schema are
-in [task-workflow.md](task-workflow.md); the session mechanics are `task_runner.py`'s
-`run_kc_session` — the kc dispatch helper both loops share.
+in [task-workflow.md](task-workflow.md); the session mechanics are
+[agent-dispatch.md](agent-dispatch.md).
 
 ```
 plan_loop.py run <slice-dir> [--grant N] [--reopen] [-v]
