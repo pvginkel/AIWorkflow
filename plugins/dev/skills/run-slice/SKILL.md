@@ -34,7 +34,19 @@ reasons) is `${CLAUDE_PLUGIN_ROOT}/docs/task-workflow.md`.
    runner — fix the root cause only if it is clearly environmental, otherwise notify the operator.
    A dirty working tree is never yours to clean up: surface it to the operator. (The runner does not
    re-run preflight — this is the gate.)
-2. **Board.** Move the slice's Kanban card (`[NNN] …`, in Ready) to **In Progress**.
+2. **Grounding freshness.** Run
+   `python3 ${CLAUDE_PLUGIN_ROOT}/tools/grounding_check.py <slice_dir> --repair` — it re-anchors
+   the slice ledger and every plan citation against HEAD (tiers:
+   `${CLAUDE_PLUGIN_ROOT}/docs/grounding-ledger.md`).
+   Exit 0: commit any repaired citations (spec repo, stage `grounding.md` by name) and proceed.
+   Exit 3 (MISSING/GONE entries): dispatch the `slice-grounder` in worklist mode with the
+   checker's filtered `--json` output; it confirms/updates/falsifies exactly those entries. If it
+   reports a falsified **load-bearing** claim (tier 3): **stop — do not launch the runner, do not
+   patch plans.** Notify the operator naming the falsified claims and the recovery path: the
+   ledger is already corrected, so the normal next step is a fresh `/dev:plan-slice` re-plan (its
+   "re-plan, don't patch" rule), or a scoped amendment if the operator judges the fallout local
+   to one task. A clean stop beats an orchestrator steering around a mid-session correction.
+3. **Board.** Move the slice's Kanban card (`[NNN] …`, in Ready) to **In Progress**.
 
 ## Step 2: Launch the runner
 

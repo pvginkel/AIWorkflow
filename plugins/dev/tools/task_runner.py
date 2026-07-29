@@ -2,20 +2,25 @@
 """Task runner — drives a slice's tasks through the bounded dev loop.
 
 The runner is a state machine, not a judge (see
-${CLAUDE_PLUGIN_ROOT}/docs/task-workflow.md — the canonical contract). Per task, in
-order: branch → code-writer → gate + test-fixer loop (cap 3) → code-reviewer
-loop (cap 3, extendable to 5) → ff-merge → checkpoint. The test gate is
-deterministic and the runner runs it itself — detecting green needs no model,
-only fixing red does. Judgment calls go to fresh consult sessions;
-anything neither can resolve becomes a bail-out (bailout.json + exit 3) for
-the /run-slice session to handle.
+${CLAUDE_PLUGIN_ROOT}/docs/task-workflow.md — the canonical contract). Per
+task, in order: branch → code-writer → gate+fix loop (the runner runs the
+component's deterministic test gate itself; a red gate spawns a test-fixer,
+cap 3) → code-reviewer loop (round 1's fix is automatic; from round 2 a
+consult funds each further writer round against a bar that rises per round;
+backstop cap 5) → gate-checked ff-merge → checkpoint. Judgment calls go to
+fresh consult sessions; anything neither can resolve becomes a bail-out
+(bailout.json + exit 3) for the /run-slice session to handle.
 
 Every spawned agent must end by writing the verdict JSON file named in its
 dispatch prompt and leave the worktree committed; a session that misses either
 gets one resume-nudge, after which a missing verdict counts as `blocked` and
-an uncommitted tree bails. The runner's own execution state lives in <slice>/state.json
-(written atomically; the runner is its only writer) and doubles as the resume
-point and the consult sessions' decision substrate.
+an uncommitted tree bails. A session the account's session-limit window killed
+is not an agent outcome at all: the runner waits out the stated reset and
+redispatches the same round — no nudge, no consult, nothing counted.
+
+The runner's own execution state lives in <slice>/state.json (written
+atomically; the runner is its only writer) and doubles as the resume point and
+the consult sessions' decision substrate.
 
 All runner and session output goes to <slice>/log.txt (tail -f to watch);
 stdout stays silent — one line naming the log file — unless -v/--verbose
@@ -40,8 +45,12 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from grounding_dispatch import commit_ledger, run_check  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -63,7 +72,19 @@ from pathlib import Path
 
 AGENT_NAMESPACE = "dev"  # plugin name; installed agents resolve as dev:<role>
 
-MODELS = {"test-fixer": "sonnet", "test-agent": "sonnet", "consult": "opus"}
+MODELS = {
+    "code-writer": "opus",
+    "code-reviewer": "opus",
+    "test-fixer": "sonnet",
+    "test-agent": "sonnet",
+    "consult": "opus",
+}
+
+# task.json's `grade` routes the code-writer's initial implementation round
+# only; every later writer round runs the code-writer default, so a misgraded
+# round 1 is corrected (or redone) by the default model, never compounded by
+# the graded one. An absent or unknown grade routes to the default.
+GRADE_MODELS = {"mechanical": "sonnet", "standard": "opus", "gnarly": "fable"}
 
 TIMEOUTS = {
     "code-writer": 7200,
@@ -83,20 +104,45 @@ TIMEOUTS = {
 GATE_TIMEOUT = 3600
 
 TEST_ROUND_CAP = 3  # caps test-fixer rounds (state key: test_rounds)
-# 3, not 2: at 2, a Major found in the final review round can only ever ship
-# unreviewed — the writer's fix has no round left to land in, and the cap consult
-# has no "one more round" option (slice 082: 4 of 11 tasks, every one a real
-# defect whose fix a consult then had to hand-verify in the reviewer's place).
-REVIEW_ROUND_CAP = 3
-# The cap is a budget the consult may extend, not a wall: at the cap it can spend
-# a round to CONFIRM a fix it judges close (mirroring the fix-round cap's valve).
-# Bounds the extension so a writer/reviewer that never converges still terminates.
-REVIEW_GRANT_CAP = 2
+# The review loop's runaway backstop, not its working budget. Round 1's fix is
+# automatic; from round 2 on a funding consult judges every `issues` verdict
+# against a bar that rises each round (_review_bar) BEFORE a writer round is
+# spent. The cap only bounds a consult that keeps funding: at the cap the
+# consult may merge (findings carded) or bail, never fund. Worst case matches
+# the old cap+grants ceiling (5 reviews / 6 writer rounds); the typical case
+# ends rounds earlier — measured 2026-07-20, slice 099 task 03 spent rounds
+# 3-6 converging one contract paragraph the funding bar would have carded.
+REVIEW_ROUND_CAP = 5
 VERIFICATION_ROUND_CAP = 3
 NUDGE_TIMEOUT = 900
 
 # Ephemeral sessions must not pay the 1-hour cache-write premium.
 SPAWN_ENV = {"FORCE_PROMPT_CACHING_5M": "1"}
+
+# The deterministic grounding freshness check (its format, statuses and tiers
+# are normative in ${CLAUDE_PLUGIN_ROOT}/docs/grounding-ledger.md; the dispatch
+# mechanics are grounding_dispatch.py). The runner runs it at every task's
+# initial dispatch and once per checkpoint; its JSON report is an input to a
+# prompt, never a reason to stop the run.
+GROUNDING_COMMIT_MSG = "grounding: repair drifted citations (task {task} dispatch)"
+GROUNDING_DRIFT_STATUSES = ("MOVED", "MISSING", "GONE")
+# MISSING/GONE at dispatch means "treat these entries as unverified", not
+# "stop": tier-2/3 escalation is /run-slice's preflight job.
+GROUNDING_UNVERIFIED_STATUSES = ("MISSING", "GONE")
+
+# The account's session-limit window: a session killed by it surfaces the
+# API's notice ("You've hit your session limit · resets 10:10pm
+# (Europe/Amsterdam)") as its whole output instead of doing any work. That is
+# an account state, not an agent outcome — the runner waits it out and
+# redispatches the same round (slice 110 task 07: nudging, then consulting into
+# the same wall, cost a protocol_failure and a 100-minute stall).
+SESSION_LIMIT_RE = re.compile(r"you[’']ve hit your session limit", re.IGNORECASE)
+SESSION_LIMIT_RESET_RE = re.compile(
+    r"resets\s+(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<ampm>[ap]\.?m\.?)"
+    r"(?:\s*\((?P<zone>[^)]+)\))?", re.IGNORECASE)
+SESSION_LIMIT_GRACE = 300         # the stated reset is approximate: wait past it
+SESSION_LIMIT_FALLBACK = 1800     # no parseable reset: retry in half an hour
+SESSION_LIMIT_MAX_SLEEP = 12 * 3600   # no single wait may exceed this
 
 VERDICTS = {
     "code-writer": {"done", "blocked", "missing-task"},
@@ -128,6 +174,106 @@ def _read_json(path: Path) -> dict | None:
         return None
 
 
+def _protocol_failure_detail(role: str, returncode: int, verdict: dict | None,
+                             verdict_name: str, valid: bool,
+                             nudged: bool) -> str:
+    """Explain why a dispatch is treated as a protocol failure.
+
+    The return code and the verdict's validity are independent axes: a session
+    can be killed (rc != 0) *after* it committed and wrote a perfectly good
+    verdict — e.g. a SIGTERM'd worker exits 143 — so the two are reported
+    separately. A valid outcome is never mislabelled 'invalid outcome' just
+    because the process died (which previously cost a consult round to diagnose)."""
+    if verdict is None:
+        vstate = "missing/unparseable"
+    elif not valid:
+        vstate = f"invalid outcome {verdict.get('outcome')!r}"
+    else:
+        vstate = f"valid outcome {verdict.get('outcome')!r}"
+    return (
+        f"{role} session ended rc={returncode}; verdict file "
+        f"{verdict_name}: {vstate}"
+        + (" (after one nudge)" if nudged else "")
+    )
+
+
+def session_limit_notice(result) -> str | None:
+    """The API's session-limit notice in a session's final text, or None.
+
+    A session the account's limit window killed does no work at all: its whole
+    result text is the notice. Detecting it is what separates "the account is
+    out of window" (wait, then redispatch) from every other missing-verdict
+    ending (nudge, then consult)."""
+    text = getattr(result, "result_text", "") or ""
+    return text.strip() if SESSION_LIMIT_RE.search(text) else None
+
+
+def parse_session_limit_reset(text: str,
+                              now: datetime | None = None) -> datetime | None:
+    """The moment the limit window reopens, from the notice's stated reset
+    ("resets 10:10pm (Europe/Amsterdam)").
+
+    A 12-hour clock with no date, so a reset that already passed today is
+    tomorrow's. Returns None when the text states no parseable time, or names a
+    zone this host does not know — the caller then falls back to a short fixed
+    wait rather than guessing a wall-clock offset."""
+    match = SESSION_LIMIT_RESET_RE.search(text)
+    if not match:
+        return None
+    zone = match.group("zone")
+    if zone:
+        try:
+            tz = ZoneInfo(zone.strip())
+        except (KeyError, ValueError):
+            return None
+    else:
+        tz = datetime.now().astimezone().tzinfo
+    minute = int(match.group("minute") or 0)
+    if minute > 59:
+        return None
+    hour = int(match.group("hour")) % 12
+    if match.group("ampm").lower().startswith("p"):
+        hour += 12
+    now = now.astimezone(tz) if now else datetime.now(tz)
+    reset = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if reset <= now:
+        reset += timedelta(days=1)
+    return reset
+
+
+def _stamp_text(stamp: dict | None) -> str:
+    """The ledger's `verified:` stamp as `Repo@sha12` pairs."""
+    if not stamp:
+        return "(no stamp)"
+    return ", ".join(f"{name}@{sha[:12]}" for name, sha in stamp.items())
+
+
+def _drifted_text(entries: list[dict]) -> str:
+    return ", ".join(f"{e.get('id')} ({e.get('file') or '?'}, {e.get('status')})"
+                     for e in entries)
+
+
+def grounding_line(report: dict | None) -> str:
+    """The freshness paragraph a code-writer's initial dispatch carries.
+
+    Three mutually exclusive shapes, one per outcome the checker can report:
+    no mechanical check (legacy ledger, or no report at all), anchors hold, or
+    some cited entries no longer anchor. The drift shape names exactly the
+    entries the writer must re-check, so everything it does not name stays
+    verified fact — a blanket "re-verify the grounding" would cost the whole
+    saving the ledger exists to make."""
+    if not report or report.get("legacy"):
+        return GROUNDING_LEGACY_LINE
+    drifted = [e for e in report.get("entries", [])
+               if e.get("status") in GROUNDING_UNVERIFIED_STATUSES]
+    if drifted:
+        return GROUNDING_DRIFT_LINE.format(
+            summary=report.get("summary", ""), drifted=_drifted_text(drifted))
+    return GROUNDING_TRUST_LINE.format(
+        stamp=_stamp_text(report.get("stamp")),
+        summary=report.get("summary", ""))
+
+
 def _transcript_path(cwd: Path | str, session_id: str | None) -> str | None:
     """The Claude Code transcript file for a session spawned with this cwd:
     ~/.claude/projects/<munged-cwd>/<session-id>.jsonl (a session's sub-agents
@@ -140,6 +286,18 @@ def _transcript_path(cwd: Path | str, session_id: str | None) -> str | None:
     munged = re.sub(r"[^A-Za-z0-9-]", "-", str(Path(cwd).resolve()))
     return str(Path.home() / ".claude" / "projects" / munged
                / f"{session_id}.jsonl")
+
+
+def _orchestrator_record() -> dict | None:
+    """The interactive session that launched this run (Claude Code exports
+    its id to Bash children), so cost attribution can count the orchestrator
+    — previously the one session class recorded nowhere. None when run by
+    hand. The transcript path assumes the orchestrator's project dir is the
+    cwd it launched us from."""
+    sid = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if not sid:
+        return None
+    return {"session": sid, "transcript": _transcript_path(Path.cwd(), sid)}
 
 
 # ---------------------------------------------------------------------------
@@ -193,9 +351,11 @@ def load_project_dirs(cwd: Path) -> dict[str, Path]:
 
 
 class SessionResult:
-    """The bit of a driven turn the runner consumes downstream: the claude
-    sessionId (for --resume across rounds and the transcript locator). Mirrors
-    the surface of the retired claude_session.StreamResult that callers read."""
+    """The bits of a driven turn the runner consumes downstream: the claude
+    sessionId (for --resume across rounds and the transcript locator) and the
+    turn's final response text (read ONLY by session_limit_notice — outcomes
+    always come from verdict files). Mirrors the surface of the retired
+    claude_session.StreamResult that callers read."""
 
     def __init__(self) -> None:
         self.session_id: str | None = None
@@ -222,11 +382,13 @@ def _kc_session_id(name: str, cwd: Path) -> str | None:
     return snapshot.get("sessionId") or None
 
 
-def _kc_send(name: str, prompt: str, cwd: Path, timeout: int, progress) -> int:
+def _kc_send(name: str, prompt: str, cwd: Path, timeout: int,
+             progress) -> tuple[int, str]:
     """POST one turn to a headless session and consume its response to the
     terminal result (`kc session send` owns SSE reconnect). The condensed log
     (send's stderr under -v) streams to `progress`; the response text is
-    discarded (the runner reads verdict files, never the turn text).
+    returned so the caller can recognize the account's session-limit notice —
+    the runner reads outcomes from verdict files, never from the turn text.
 
     Enforces `timeout`: on expiry it SIGINTs `kc session send`, which POSTs a
     worker interrupt so the turn is never stranded, then raises
@@ -260,7 +422,11 @@ def _kc_send(name: str, prompt: str, cwd: Path, timeout: int, progress) -> int:
                 elif proc.poll() is not None:
                     break
             proc.wait(timeout=30)
-            return proc.returncode
+            try:
+                response_text = Path(resp_path).read_text()
+            except OSError:
+                response_text = ""
+            return proc.returncode, response_text
         except subprocess.TimeoutExpired:
             proc.send_signal(signal.SIGINT)  # send POSTs an interrupt on SIGINT
             try:
@@ -300,7 +466,9 @@ def run_kc_session(
 
     `agent` is the bare role (e.g. "code-writer"); it is namespaced to
     dev:<role> here. A falsy `agent` spawns bare (consults). `extra_env` is
-    threaded as repeatable `-e NAME=VALUE` (prompt-caching parity). Raises
+    threaded as repeatable `-e NAME=VALUE` (prompt-caching parity). The turn's
+    final response text rides back in result.result_text — the caller reads it
+    only to detect the account's session-limit notice. Raises
     subprocess.TimeoutExpired on timeout — the turn is interrupted and the
     session torn down before it propagates."""
     result = SessionResult()
@@ -328,7 +496,9 @@ def run_kc_session(
         return 1, result
 
     try:
-        returncode = _kc_send(session_name, prompt, Path(cwd), timeout, progress)
+        returncode, response_text = _kc_send(
+            session_name, prompt, Path(cwd), timeout, progress)
+        result.result_text = response_text
         result.session_id = _kc_session_id(session_name, Path(cwd))
         if on_session and result.session_id:
             on_session(result.session_id)
@@ -355,10 +525,37 @@ You are implementing task {task_id} of slice {slice_name}.
 Task folder: {task_dir}
 
 Read task.json and plan.md there, then implement the task in this project.
+
+{grounding_line}
+
 When done: commit all your work (code in this repo; task-folder artifacts in
 the specs repo, staged by name). If the task produced prose that describes
 system behavior, {task_dir}/grounding.md must be current (your contract has
 the rule). Then write your verdict to {verdict_path}.
+"""
+
+# The three shapes of the grounding freshness line (grounding_line() picks
+# one). Only the initial implementation dispatch carries it: a fix round's
+# contract is to re-open the sources its fixes touch, so a trust line there
+# would contradict it.
+GROUNDING_LEGACY_LINE = """\
+grounding.md predates the ledger format — no mechanical freshness check ran;
+treat plan citations as approximate where sources changed since planning.\
+"""
+
+GROUNDING_TRUST_LINE = """\
+Deterministic fact from the runner: the slice ledger was verified at {stamp};
+grounding_check.py re-anchored the entries this task's plan cites against HEAD
+just now — {summary}. Treat cited entries as verified fact: re-open a source
+only where your edits touch it; do not re-derive the rest.\
+"""
+
+GROUNDING_DRIFT_LINE = """\
+Deterministic fact from the runner: grounding_check.py re-anchored this task's
+cited entries against HEAD — {summary}. These entries no longer anchor in
+current source: {drifted}. Treat exactly those as unverified — re-check them
+against the source before relying on them; every other cited entry is verified
+fact.\
 """
 
 WRITER_RETRY_NOTE = """\
@@ -368,16 +565,38 @@ the deterministic gate and the code-reviewer are the only checks after you.
 """
 
 WRITER_FIX_PROMPT = """\
-The test-fixer escalated gate failures it must not fix itself. Read
-{results_path} and fix them. Commit your fixes, update grounding.md if any
-behavioral claims changed, then write your verdict to {verdict_path}.
+You are fixing task {task_id} of slice {slice_name}.
+Task folder: {task_dir}
+
+The test-fixer escalated gate failures it must not fix itself: read
+{results_path}. task.json and plan.md in the task folder carry the task's
+intent; the branch's work so far is git diff {merge_base}..HEAD. Fix the
+escalated failures. Commit your fixes, update grounding.md if any behavioral
+claims changed, then write your verdict to {verdict_path}.
 """
 
 WRITER_REVIEW_FIX_PROMPT = """\
-The code-reviewer found issues with the task's branch. Read {review_path} and
-resolve every finding (the reviewer describes problems; the fix design is
-yours). Update the grounding.md entries your fixes touch — re-open the source
-for each. Commit your fixes, then write your verdict to {verdict_path}.
+You are resolving review findings for task {task_id} of slice {slice_name}.
+Task folder: {task_dir}
+
+The code-reviewer found issues with the task's branch (the work under review
+is git diff {merge_base}..HEAD). Read {review_path} and resolve every finding
+(the reviewer describes problems; the fix design is yours). task.json and
+plan.md carry the task's intent; the writeup_r*.md files record what earlier
+rounds considered and rejected — check them before re-deciding anything.
+For a finding about prose (contract docs, design docs, comments) the default
+fix is deleting or narrowing the claim, not rewording it — a fix that grows
+the section is suspect, and every new sentence is new surface for the next
+review. Fix the false clause; never rewrite the paragraph around it.
+Update the grounding.md entries your fixes touch — re-open the source for
+each. Commit your fixes, then write your verdict to {verdict_path}.
+"""
+
+WRITER_ORIGIN_NOTE = """\
+Round 1 of this task was graded mechanical and ran on Sonnet; this round runs
+on the default model. If the findings point at a structurally weak
+implementation rather than isolated defects, redoing the implementation is a
+legitimate fix — judge that against the plan yourself.
 """
 
 FIXER_PROMPT = """\
@@ -411,9 +630,123 @@ When the task produced behavior-describing prose, {task_dir}/grounding.md is
 the writer's claim→source ledger: verify the citations rather than re-deriving
 every claim from scratch (your contract has the rule).
 
+{gate_line}
+
 Write your review to {task_dir}/code_review_r{round}.md and your verdict to
 {verdict_path}.
 """
+
+REVIEWER_DELTA_PROMPT = """\
+Re-review task {task_id} of slice {slice_name} (review round {round}) on
+branch {branch}. Round {prev_round} reviewed the full branch diff and found
+issues: {prev_review}. The writer's response since then is git diff
+{fix_range} — that range is this round's subject; the rest of the branch
+(git diff {merge_base}..HEAD) was reviewed last round and is context, not
+re-review scope.
+
+Verify that every round-{prev_round} finding is actually resolved — re-open
+the code, do not take the writer's writeup on faith — and review the fix
+commits themselves for new problems, including interactions with the branch
+code they touch. The requirements are unchanged: {slice_dir}/slice.md,
+{task_dir}/task.json, {task_dir}/plan.md, and the relevant acceptance
+criteria in {slice_dir}/acceptance_criteria.json. Re-verify the grounding.md
+entries the fixes touched.
+
+{gate_line}
+
+Write your review to {task_dir}/code_review_r{round}.md and your verdict to
+{verdict_path}.
+"""
+
+# Stated in every reviewer dispatch so the review does not spend turns re-running
+# the suite the runner already ran. Measured 2026-07-20: 70% of 184 recorded
+# code-reviewer runs re-ran the full suite or the linter that the gate had already
+# passed on that very commit. The green claim is only made when it is backed by
+# this commit (see _gate_line) — a reviewer told "green" about a different commit
+# would be worse than one told nothing.
+GATE_GREEN_LINE = """\
+The deterministic test gate ran GREEN on this exact commit ({green_at}):
+`{gate_cmd}` — the curated test entry point the manifest declares for this
+component — with full output in {gate_log}. Tests and lints pass; that is an
+established input to your review, not something to re-derive.
+Do not re-run the suite or the linter to confirm it. Targeted runs remain yours
+to make where they buy a finding: a single test you suspect is vacuous, a case
+the diff leaves uncovered, a mutation that proves a test actually catches the
+behavior it claims. Two limits on what the green means: it covers the task's
+own project only — work this task landed in a sibling repo is outside it and
+yours to verify — and it says the tests pass, never that they are adequate.\
+"""
+
+GATE_UNVERIFIED_LINE = """\
+The deterministic test gate has no green run recorded against this commit — treat
+the branch's test and lint state as unverified, and say so in your review if it
+bears on a finding.\
+"""
+
+# The review-funding bar: stated by the runner (which knows the round number
+# and what the fix range touched), judged by the consult (which reads the
+# findings). Discrete steps rather than a numeric score — each step admits
+# roughly an order of magnitude fewer findings, which is the intended
+# exponential: round cost is flat while the measured marginal value of review
+# rounds decays hard (slice 099 task 03: rounds 1-2 caught real code Majors,
+# rounds 3-6 converged one contract paragraph; token-usage 2026-07-20).
+REVIEW_BAR_BLOCKING = """\
+Fund a fix round only for findings the review shows to be blocking — merging
+them would harm the product (data corruption, a broken flow, a wire-contract
+claim a consumer would implement against). Advisory, Minor-only, or
+prose-only findings are carded, not fixed here.\
+"""
+REVIEW_BAR_BLOCKER = """\
+Only Blocker-grade harm funds another round — data corruption, a broken core
+flow, a wire-contract falsity a consumer would implement against. Ordinary
+Majors, and anything prose, merge and get carded.\
+"""
+REVIEW_BAR_CRITICAL = """\
+Only a `critical` verdict — the task's premise or the slice itself in
+question — funds another round. Everything else merges (carded) or bails.\
+"""
+
+REVIEW_PROSE_FACT = """\
+Deterministic fact from the runner: the fix commits this round reviewed
+({fix_range}) touched no production code — only tests and docs — so the bar
+below is already one step above this round's default.
+
+"""
+
+REVIEW_FUNDING_SITUATION = """\
+Review round {round} reported `{outcome}`: the findings are in {review_path},
+each tagged blocking or advisory. The writer has not yet acted on them. Decide
+whether they fund another writer fix round, or the task merges now — findings
+never vanish: on merge, every unresolved finding is carded for the operator
+(issue-tracker rework at slice close-out).
+
+{prose_fact}This is review round {round} of at most {cap} for this task; the funding bar
+rises every round, and at this round it is:
+
+{bar}
+
+Judge the findings against that bar on the review's own evidence. A red gate
+cannot merge regardless of your choice.\
+"""
+
+REVIEW_BUDGET_SITUATION = """\
+Review round {round} reported `{outcome}` ({review_path}) and this task's
+review budget ({cap} rounds) is exhausted — no further fix round can be
+funded. Decide whether the task merges with its unresolved findings carded
+for the operator (issue-tracker rework at slice close-out), or the slice
+stops.\
+"""
+
+
+def _review_bar(round_: int, prose_only: bool) -> str:
+    """The funding bar for a consulted review round. A prose-only fix range
+    (no production code touched) applies the next round's bar a step early."""
+    effective = round_ + (1 if prose_only else 0)
+    if effective <= 2:
+        return REVIEW_BAR_BLOCKING
+    if effective == 3:
+        return REVIEW_BAR_BLOCKER
+    return REVIEW_BAR_CRITICAL
 
 TEST_AGENT_PROMPT = """\
 Final verification for slice {slice_name} (round {round}). All tasks are merged
@@ -465,6 +798,14 @@ inserts between 04 and 05; commit specs-repo changes by name) and answer
 `amend`. If everything holds, answer `proceed`.\
 """
 
+# Appended to the checkpoint situation: the drift checker's own reading of the
+# whole slice ledger at the merged HEAD. A remaining task's premise breaking is
+# exactly what this makes visible without the consult opening a diff.
+CHECKPOINT_DRIFT_INPUT = """
+
+Deterministic drift input for the remaining tasks: {summary}{drifted}\
+"""
+
 VERDICT_NUDGE_PROMPT = """\
 Your session ended without writing a valid verdict file. Do not start new
 work: if any of your work is uncommitted, commit it, then write your verdict
@@ -505,6 +846,10 @@ class Runner:
         # name → effective cwd, from `kc project list --output=json`; loaded in
         # run() (both fresh and resume need it before any task dispatch).
         self.project_dirs: dict[str, Path] = {}
+        # Per-task grounding freshness lines: the checker runs once per task
+        # per run (see _grounding_line), and every WRITER_PROMPT dispatch for
+        # that task carries the same fact.
+        self._grounding_lines: dict[str, str] = {}
 
     # -- state ---------------------------------------------------------------
 
@@ -520,8 +865,8 @@ class Runner:
         defaults = {
             "status": "pending", "stage": None, "branch": None,
             "writer_session": None, "writer_rounds": 0, "test_rounds": 0,
-            "review_rounds": 0, "review_grants": 0, "last_writer_commit": None,
-            "gate_runs": 0, "gate_green_commit": None,
+            "review_rounds": 0, "last_writer_commit": None,
+            "gate_runs": 0, "gate_green_commit": None, "gate_green_log": None,
         }
         ts = self.state["tasks"].setdefault(task_id, dict(defaults))
         for key, value in defaults.items():
@@ -661,11 +1006,31 @@ class Runner:
             pass
         if green:
             ts["gate_green_commit"] = self.git("rev-parse", "HEAD")
+            # Recorded, not inferred from gate_runs: the reviewer's dispatch cites
+            # this log as the evidence that tests and lints pass (_gate_line).
+            ts["gate_green_log"] = str(log_path)
         self._record(task_id, "gate", n, "green" if green else "red",
                      tail, None, duration_s)
         self.log(f"[task {task_id}] gate #{n} → "
                  f"{'green' if green else 'RED'} ({duration_s}s) {tail[:120]}")
         return green, log_path
+
+    def _gate_line(self, ts: dict, head: str, project: str) -> str:
+        """The gate paragraph in a reviewer dispatch.
+
+        The reviewer is told tests and lints pass so it does not spend turns
+        re-running them (measured: 70% of recorded reviews did). The green claim is
+        made ONLY when the recorded green commit is the commit under review — if the
+        branch moved since, the honest answer is 'unverified', never a stale green.
+        """
+        green_at = ts.get("gate_green_commit")
+        gate_log = ts.get("gate_green_log")
+        if not (green_at and gate_log and green_at == head):
+            return GATE_UNVERIFIED_LINE
+        return GATE_GREEN_LINE.format(
+            green_at=green_at[:12],
+            gate_cmd=" ".join(self._gate_argv(project)), gate_log=gate_log,
+        )
 
     # -- task discovery --------------------------------------------------------
 
@@ -689,32 +1054,100 @@ class Runner:
             )
         return meta
 
+    def _grade_model(self, meta: dict) -> str:
+        return GRADE_MODELS.get(meta.get("grade"), MODELS["code-writer"])
+
+    def _origin_note(self, meta: dict) -> str:
+        """Appended to every fix-round writer prompt when round 1 ran on
+        Sonnet — the fix-round writer owns the call between patching that
+        round's work and redoing it. A Fable round 1 gets no note: the
+        redo license is for work by the weaker model."""
+        if self._grade_model(meta) != "sonnet":
+            return ""
+        return "\n" + WRITER_ORIGIN_NOTE
+
+    # -- grounding freshness ---------------------------------------------------
+
+    def _grounding_line(self, task_id: str, task_dir: Path) -> str:
+        """The grounding freshness paragraph for this task's WRITER_PROMPT.
+
+        Computed once per task per run: grounding_check.py re-anchors the
+        entries this task's plan cites, `--repair` fixes MOVED line numbers
+        (and the repaired ledger is committed in the specs repo), and the
+        resulting line tells the writer what it may treat as verified fact.
+        MISSING/GONE does not stop the dispatch — the drift line names exactly
+        those entries and the checkpoint reports them; tier-2/3 escalation
+        happens at /run-slice's preflight, before the runner ever starts.
+        """
+        if task_id in self._grounding_lines:
+            return self._grounding_lines[task_id]
+        token = task_id.split("_")[0]
+        report = run_check(self.slice_dir, task=token, repair=True)
+        if report is None:
+            self.log(f"[task {task_id}] grounding check produced no report — "
+                     "dispatching with the unverified line")
+        else:
+            self.log(f"[task {task_id}] "
+                     + report.get("summary", "grounding: (no summary)"))
+            if any(e.get("repaired") for e in report.get("entries", [])):
+                committed = commit_ledger(
+                    self.slice_dir, GROUNDING_COMMIT_MSG.format(task=token))
+                self.log(f"[task {task_id}] grounding.md repaired"
+                         + (" and committed" if committed
+                            else " — the commit failed (see the specs repo)"))
+        line = grounding_line(report)
+        self._grounding_lines[task_id] = line
+        return line
+
+    def _checkpoint_drift(self) -> str:
+        """The whole-ledger drift paragraph the checkpoint consult gets as
+        deterministic input. No `--repair` here: the checkpoint reports what
+        the merge moved for the remaining tasks, it does not rewrite the
+        ledger. Empty when the checker produced nothing — the checkpoint is
+        never blocked on it."""
+        report = run_check(self.slice_dir)
+        if not report:
+            return ""
+        drifted = [e for e in report.get("entries", [])
+                   if e.get("status") in GROUNDING_DRIFT_STATUSES]
+        block = ""
+        if drifted:
+            lines = [f"  {e.get('id')} {e.get('status')}  "
+                     f"{e.get('file')}:{e.get('cited_line')} — "
+                     f"{e.get('claim', '')}" for e in drifted]
+            block = ("\nEntries that no longer anchor where the ledger cites "
+                     "them:\n" + "\n".join(lines))
+        return CHECKPOINT_DRIFT_INPUT.format(
+            summary=report.get("summary", ""), drifted=block)
+
     # -- session spawning ------------------------------------------------------
 
     def _spawn(self, role: str, prompt: str, cwd: Path, verdict_path: Path,
                task_id: str | None, round_: int,
                agent: str | None = None,
-               resume_session: str | None = None) -> tuple[dict, str | None]:
-        """Run one session; return (verdict, session_id).
+               model: str | None = None,
+               display: str | None = None) -> tuple[dict, str | None]:
+        """Run one session; return (verdict, session_id). Every spawn is a
+        fresh session — the only resumed sessions are crash reattaches
+        (below) and protocol nudges.
 
         A session failure, timeout, or missing/invalid verdict raises Bailout
         via the caller's policy — here it returns outcome="blocked" with the
-        failure described, which callers route to a consult.
+        failure described, which callers route to a consult. The one exception
+        is a session the account's limit window killed (session_limit_notice):
+        it produced no outcome to route, so the loop below waits the window out
+        and redispatches the same round instead of nudging or consulting into
+        the same wall. Nothing is counted for such a round — the caller cannot
+        tell the wait happened.
         """
-        label = f"[task {task_id}] [{role}]" if task_id else f"[{role}]"
+        shown = display or role
+        label = f"[task {task_id}] [{shown}]" if task_id else f"[{shown}]"
         prompt, resume_session = self._resolve_reattach(
-            role, task_id, prompt, verdict_path, resume_session, label)
-        self.log(f"{label} session starting"
-                 + (" (resume)" if resume_session else ""))
-        verdict_path.unlink(missing_ok=True)
+            role, task_id, prompt, verdict_path, label)
 
-        # Track the in-flight session so a crashed run can reattach on --resume.
-        self.state["in_flight"] = {
-            "task": task_id, "role": role, "round": round_,
-            "verdict_path": str(verdict_path), "session": resume_session,
-            "started_at": _now_iso(),
-        }
-        self._save_state()
+        def _valid(v: dict | None) -> bool:
+            return v is not None and (
+                role not in VERDICTS or v.get("outcome") in VERDICTS[role])
 
         def _note_session(sid: str) -> None:
             self.log(f"{label} session {sid} — transcript "
@@ -724,36 +1157,59 @@ class Runner:
                 in_flight["session"] = sid
                 self._save_state()
 
-        t0 = time.monotonic()
-        try:
-            returncode, result = run_kc_session(
-                prompt=prompt,
-                cwd=str(cwd),
-                timeout=TIMEOUTS[role],
-                agent=agent,
-                model=MODELS.get(role),
-                resume_session=resume_session,
-                extra_env=SPAWN_ENV,
-                progress=lambda line: self._emit(f"    {label} {line}"),
-                on_session=_note_session,
-            )
-        except subprocess.TimeoutExpired:
-            # A timed-out session is stuck, not crashed — never reattach to it.
-            self.state["in_flight"] = None
+        while True:
+            self.log(f"{label} session starting"
+                     + (" (resume)" if resume_session else ""))
+            verdict_path.unlink(missing_ok=True)
+
+            # Track the in-flight session so a crashed run can reattach on
+            # --resume.
+            self.state["in_flight"] = {
+                "task": task_id, "role": role, "round": round_,
+                "verdict_path": str(verdict_path), "session": resume_session,
+                "started_at": _now_iso(),
+            }
             self._save_state()
-            raise Bailout(
-                "timeout", task=task_id,
-                details=f"{role} exceeded {TIMEOUTS[role]}s",
-            ) from None
-        duration_s = int(time.monotonic() - t0)
 
-        session_id = result.session_id
+            t0 = time.monotonic()
+            try:
+                returncode, result = run_kc_session(
+                    prompt=prompt,
+                    cwd=str(cwd),
+                    timeout=TIMEOUTS[role],
+                    agent=agent,
+                    model=model or MODELS.get(role),
+                    resume_session=resume_session,
+                    extra_env=SPAWN_ENV,
+                    progress=lambda line: self._emit(f"    {label} {line}"),
+                    on_session=_note_session,
+                )
+            except subprocess.TimeoutExpired:
+                # A timed-out session is stuck, not crashed — never reattach.
+                self.state["in_flight"] = None
+                self._save_state()
+                raise Bailout(
+                    "timeout", task=task_id,
+                    details=f"{role} exceeded {TIMEOUTS[role]}s",
+                ) from None
+            duration_s = int(time.monotonic() - t0)
 
-        def _valid(v: dict | None) -> bool:
-            return v is not None and (
-                role not in VERDICTS or v.get("outcome") in VERDICTS[role])
+            session_id = result.session_id
+            verdict = _read_json(verdict_path)
+            notice = None if _valid(verdict) else session_limit_notice(result)
+            if notice is None:
+                break
+            # The account's window, not this agent's failure: record it, wait
+            # it out, and dispatch the same round again. Each wait is bounded
+            # and logged, so a redispatch that lands in the window again just
+            # waits again.
+            self.state["in_flight"] = None
+            self._record(task_id, role, round_, "session_limit",
+                         notice.replace("\n", " ")[:200], session_id,
+                         duration_s,
+                         transcript=_transcript_path(cwd, session_id))
+            self._wait_out_session_limit(notice, label)
 
-        verdict = _read_json(verdict_path)
         nudged = False
         if not _valid(verdict) and session_id:
             outcomes = (f"; outcome must be one of {sorted(VERDICTS[role])}"
@@ -767,13 +1223,9 @@ class Runner:
             if _valid(verdict):
                 returncode = 0  # the nudge completed the protocol
         if returncode != 0 or not _valid(verdict):
-            detail = (
-                f"{role} session ended rc={returncode}; verdict file "
-                f"{verdict_path.name} "
-                + ("missing/unparseable" if verdict is None
-                   else f"invalid outcome {verdict.get('outcome')!r}")
-                + (" (after one nudge)" if nudged else "")
-            )
+            detail = _protocol_failure_detail(
+                role, returncode, verdict, verdict_path.name,
+                _valid(verdict), nudged)
             verdict = {"outcome": "blocked", "summary": detail,
                        "_protocol_failure": True}
         outcome = verdict.get("outcome", "blocked")
@@ -785,25 +1237,51 @@ class Runner:
         return verdict, session_id
 
     def _resolve_reattach(self, role: str, task_id: str | None, prompt: str,
-                          verdict_path: Path, resume_session: str | None,
+                          verdict_path: Path,
                           label: str) -> tuple[str, str | None]:
         """If this spawn matches the session a crashed run left in flight,
         resume that session with a recovery prompt instead of dispatching
         fresh. Consults never reattach (cheap, and their action vocabulary
-        may have changed); an intentional resume is never overridden."""
+        may have changed)."""
         r = self._reattach
-        if not (r and r.get("session") and resume_session is None
-                and role in VERDICTS
+        if not (r and r.get("session") and role in VERDICTS
                 and r.get("role") == role and r.get("task") == task_id):
-            return prompt, resume_session
+            return prompt, None
         self._reattach = None
         self.log(f"{label} reattaching to the interrupted session "
                  f"{r['session']}")
         return REATTACH_PROMPT.format(verdict_path=verdict_path), r["session"]
 
-    def _consult(self, situation: str, actions: dict[str, str],
+    def _wait_out_session_limit(self, notice: str, label: str) -> None:
+        """Sleep until the notice's stated reset (plus a grace margin), so the
+        caller can redispatch the same round into a fresh window. An
+        unparseable reset falls back to a short fixed wait rather than a
+        guess; every wait is capped, so no single one can park the run for a
+        day."""
+        reset = parse_session_limit_reset(notice)
+        if reset is None:
+            seconds = float(SESSION_LIMIT_FALLBACK)
+            when = "no parseable reset time"
+        else:
+            seconds = (reset - datetime.now(reset.tzinfo)).total_seconds() \
+                + SESSION_LIMIT_GRACE
+            when = f"resets {reset.isoformat(timespec='minutes')}"
+        seconds = max(0.0, min(seconds, float(SESSION_LIMIT_MAX_SLEEP)))
+        self.log(f"{label} account session limit — {when}; sleeping "
+                 f"{int(seconds)}s, then redispatching the same round "
+                 "(no round spent, no nudge, no consult)")
+        self._sleep(seconds)
+
+    def _sleep(self, seconds: float) -> None:
+        """The runner's only wall-clock wait, isolated so tests can take it
+        out."""
+        time.sleep(seconds)
+
+    def _consult(self, site: str, situation: str, actions: dict[str, str],
                  material: list[Path], task_id: str | None) -> dict:
-        """Spawn a fresh consult session; return its verdict (validated)."""
+        """Spawn a fresh consult session; return its verdict (validated).
+        `site` names the decision point in log lines (`[consult: checkpoint]`)
+        — back-to-back consults are otherwise indistinguishable in log.txt."""
         n = self.state["consult_seq"] = self.state.get("consult_seq", 0) + 1
         self._save_state()
         base = (self.tasks_dir / task_id) if task_id else self.slice_dir
@@ -824,6 +1302,7 @@ class Runner:
         )
         verdict, _ = self._spawn(
             "consult", prompt, self.repo_root, verdict_path, task_id, n,
+            display=f"consult: {site}",
         )
         if verdict.get("outcome") not in actions:
             raise Bailout(
@@ -844,13 +1323,17 @@ class Runner:
         task_id = task_dir.name
         meta = self._load_task_meta(task_dir)
         ts = self._task_state(task_id)
-        project_dir = self.project_dirs[meta["project"]]
+        project = meta["project"]
+        project_dir = self.project_dirs[project]
         branch = (f"task/{self.slice_name.split('_')[0]}-"
                   f"{meta.get('id', task_id.split('_')[0])}")
         base = self.state["base_branch"]
 
-        self.log(f"[task {task_id}] start (project={meta['project']}, "
-                 f"branch={branch})")
+        grade_model = self._grade_model(meta)
+        origin_note = self._origin_note(meta)
+
+        self.log(f"[task {task_id}] start (project={project}, "
+                 f"branch={branch}, writer r1 model={grade_model})")
 
         # Branch setup (fresh or resume).
         existing = self.git("branch", "--list", branch)
@@ -882,21 +1365,25 @@ class Runner:
             return WRITER_PROMPT.format(
                 task_id=task_id, slice_name=self.slice_name,
                 task_dir=task_dir, verdict_path=verdict_path,
+                grounding_line=self._grounding_line(task_id, task_dir),
             )
 
-        def spawn_writer(build_prompt, fresh: bool) -> dict:
+        def spawn_writer(build_prompt, model: str | None = None) -> dict:
             """build_prompt(verdict_path) → prompt; the round number is
-            allocated here so prompt and expected verdict file always agree."""
+            allocated here so prompt and expected verdict file always agree.
+            Every round is a fresh session — fix rounds read their inputs from
+            the durable task folder instead of resuming the prior round's
+            context, whose accumulated size made resumed rounds cost ~2.2×
+            round 1 per turn (token-usage baseline 2026-07-20, §2)."""
             ts["writer_rounds"] += 1
             r = ts["writer_rounds"]
             self._save_state()
             verdict, session = self._spawn(
                 "code-writer", build_prompt(writer_verdict_path(r)),
                 project_dir, writer_verdict_path(r),
-                task_id, r, agent="code-writer",
-                resume_session=None if fresh else ts["writer_session"],
+                task_id, r, agent="code-writer", model=model,
             )
-            if fresh and session:
+            if session:
                 ts["writer_session"] = session
             self._ensure_committed(task_id, "code-writer",
                                    ts["writer_session"], project_dir)
@@ -912,6 +1399,7 @@ class Runner:
             if not ts.get(key):
                 actions["retry"] = "run the same agent once more, fresh"
             choice = self._consult(
+                f"blocked-{role}",
                 f"The {role} reported `blocked`: {verdict.get('summary', '')}",
                 actions,
                 [task_dir], task_id,
@@ -922,10 +1410,10 @@ class Runner:
 
         # ---- write stage ----
         if ts["stage"] == "writer":
-            verdict = spawn_writer(initial_writer_prompt, fresh=True)
+            verdict = spawn_writer(initial_writer_prompt, model=grade_model)
             while verdict["outcome"] == "blocked":
                 handle_blocked(verdict, "code-writer")  # returns retry or raises
-                verdict = spawn_writer(initial_writer_prompt, fresh=True)
+                verdict = spawn_writer(initial_writer_prompt, model=grade_model)
             if verdict["outcome"] == "missing-task":
                 raise Bailout("missing-task", task=task_id,
                               details=verdict.get("summary", ""))
@@ -947,7 +1435,7 @@ class Runner:
                     task_id=task_id, slice_name=self.slice_name,
                     branch=branch, round=r, task_dir=task_dir,
                     gate_log=gate_log, merge_base=merge_base,
-                    project=meta["project"],
+                    project=project,
                     verdict_path=task_dir / f"fixer_result_r{r}.json",
                 ),
                 project_dir, task_dir / f"fixer_result_r{r}.json",
@@ -968,7 +1456,7 @@ class Runner:
                     gate_log = task_dir / f"gate_r{ts['gate_runs']}.log"
                 else:
                     green, gate_log = self._run_gate(
-                        task_id, ts, task_dir, meta["project"])
+                        task_id, ts, task_dir, project)
                     if green:
                         break
                     if ts["test_rounds"] >= TEST_ROUND_CAP:
@@ -990,12 +1478,14 @@ class Runner:
                     if ts["test_rounds"] >= TEST_ROUND_CAP:
                         continue
                     fix = spawn_writer(lambda vp, _r=r: WRITER_FIX_PROMPT.format(
+                        task_id=task_id, slice_name=self.slice_name,
+                        task_dir=task_dir, merge_base=merge_base,
                         results_path=task_dir / f"test_results_r{_r}.md",
                         verdict_path=vp,
-                    ), fresh=False)
+                    ) + origin_note)
                     if fix["outcome"] == "blocked":
                         handle_blocked(fix, "code-writer")
-                        spawn_writer(initial_writer_prompt, fresh=True)
+                        spawn_writer(initial_writer_prompt)
                 # clean → the loop re-runs the gate to confirm
             ts["stage"] = "review"
             self._save_state()
@@ -1003,73 +1493,83 @@ class Runner:
         # ---- review loop ----
         if ts["stage"] == "review":
             while True:
-                grants = ts.get("review_grants", 0)
-                if not reattach_pending("code-reviewer") \
-                        and ts["review_rounds"] >= REVIEW_ROUND_CAP + grants:
-                    last_r = ts["review_rounds"]
-                    actions = {
-                        "merge_flagged": "merge the task; the findings are "
-                                         "surfaced to the operator at slice "
-                                         "end as issue-tracker items / rework",
-                        "bail": "stop the slice for the orchestrator",
-                    }
-                    # A finding raised in the final round has had its fix written
-                    # but never re-reviewed. Let the consult buy the confirming
-                    # round rather than merge on its own say-so — verifying a
-                    # writer's fix is the reviewer's job, not the consult's.
-                    if grants < REVIEW_GRANT_CAP:
-                        actions = {
-                            "another_round": f"the round-{last_r} findings look "
-                                             "FIXED but no reviewer has seen the "
-                                             "fix; spend one more review round to "
-                                             "confirm it",
-                            **actions,
-                        }
-                    choice = self._consult(
-                        f"Review round {last_r} did not sign off "
-                        f"(see the latest code_review_r*.md).",
-                        actions,
-                        [task_dir / f"code_review_r{last_r}.md"],
-                        task_id,
+                # The round number is proposed here and only BANKED once the
+                # round actually produced a review (below). A round that died
+                # — blocked, protocol failure, a session-limit window — funds
+                # nothing and reviewed nothing, so it may move neither the
+                # counter the funding bar reads nor the reviewed_head the next
+                # round's scope is measured from (slice 110 task 07: one dead
+                # round both raised the bar and forced a cold full re-review).
+                # A reattached round keeps the number its interrupted dispatch
+                # ran under, which the in-flight record holds — that is also
+                # what a state written before rounds were banked-on-verdict
+                # recorded, so an old state resumes onto its own round.
+                r = ts["review_rounds"] + 1
+                if reattach_pending("code-reviewer"):
+                    r = (self._reattach or {}).get("round") or r
+                # Round 1 reviews the whole branch; later rounds verify the
+                # previous round's findings against just the fix range. Full
+                # review is the fallback whenever there is no usable range
+                # (a retry on an unchanged HEAD, resumed old state without
+                # reviewed_head).
+                head = self.git("rev-parse", "HEAD")
+                prev_head = ts.get("reviewed_head")
+                gate_line = self._gate_line(ts, head, project)
+                delta = bool(r > 1 and prev_head and prev_head != head)
+                if delta:
+                    reviewer_prompt = REVIEWER_DELTA_PROMPT.format(
+                        task_id=task_id, slice_name=self.slice_name,
+                        round=r, prev_round=r - 1, branch=branch,
+                        merge_base=merge_base,
+                        fix_range=f"{prev_head}..HEAD",
+                        prev_review=task_dir / f"code_review_r{r - 1}.md",
+                        task_dir=task_dir, slice_dir=self.slice_dir,
+                        verdict_path=task_dir / f"review_result_r{r}.json",
+                        gate_line=gate_line,
                     )
-                    if choice["outcome"] == "another_round":
-                        ts["review_grants"] = grants + 1
-                        self._save_state()
-                        continue
-                    self.state["flagged_findings"].append({
-                        "task": task_id,
-                        "review": str(task_dir / f"code_review_r{last_r}.md"),
-                        "consult_summary": choice.get("summary", ""),
-                    })
-                    self._save_state()
-                    break
-                if not reattach_pending("code-reviewer"):
-                    ts["review_rounds"] += 1
-                r = ts["review_rounds"]
-                self._save_state()
-                verdict, _ = self._spawn(
-                    "code-reviewer",
-                    REVIEWER_PROMPT.format(
+                else:
+                    reviewer_prompt = REVIEWER_PROMPT.format(
                         task_id=task_id, slice_name=self.slice_name,
                         round=r, merge_base=merge_base, branch=branch,
                         task_dir=task_dir, slice_dir=self.slice_dir,
                         verdict_path=task_dir / f"review_result_r{r}.json",
-                    ),
+                        gate_line=gate_line,
+                    )
+                verdict, _ = self._spawn(
+                    "code-reviewer", reviewer_prompt,
                     project_dir, task_dir / f"review_result_r{r}.json",
                     task_id, r, agent="code-reviewer",
                 )
+                if verdict["outcome"] == "blocked" or verdict.get("_protocol_failure"):
+                    # No review verdict and no review file: nothing to bank.
+                    # The consult decides retry-or-bail; a retry re-dispatches
+                    # this same round number against the same scope.
+                    handle_blocked(verdict, "code-reviewer")
+                    continue
+                # A real verdict: this round is spent, and its HEAD is what the
+                # next round's fix range is measured against.
+                ts["review_rounds"] = r
+                ts["reviewed_head"] = head
+                self._save_state()
                 if verdict["outcome"] == "signoff":
                     break
-                if verdict["outcome"] == "blocked" or verdict.get("_protocol_failure"):
-                    if handle_blocked(verdict, "code-reviewer") == "retry":
-                        ts["review_rounds"] -= 1
-                        self._save_state()
-                    continue
-                # issues / critical → writer fixes; the gate then re-checks
+                # issues / critical → the funding decision. Round 1's fix is
+                # automatic (the modal healthy task is r1-issues → fix →
+                # r2-signoff; a consult there buys nothing). From round 2 on —
+                # and for any `critical` — a fresh consult judges the findings
+                # against the rising bar BEFORE a writer round is spent.
+                if r >= 2 or verdict["outcome"] == "critical":
+                    fix_range = f"{prev_head}..{head}" if delta else None
+                    choice = self._review_funding_consult(
+                        task_dir, ts, task_id, r, verdict, fix_range)
+                    if choice == "merge":
+                        break
                 fix = spawn_writer(lambda vp, _r=r: WRITER_REVIEW_FIX_PROMPT.format(
+                    task_id=task_id, slice_name=self.slice_name,
+                    task_dir=task_dir, merge_base=merge_base,
                     review_path=task_dir / f"code_review_r{_r}.md",
                     verdict_path=vp,
-                ), fresh=False)
+                ) + origin_note)
                 if fix["outcome"] == "blocked":
                     handle_blocked(fix, "code-writer")
                 # Red after a review fix gets one fixer round; still red →
@@ -1078,7 +1578,7 @@ class Runner:
                 attempts = 0
                 while True:
                     green, gate_log = self._run_gate(
-                        task_id, ts, task_dir, meta["project"])
+                        task_id, ts, task_dir, project)
                     if green:
                         break
                     if attempts >= 1:
@@ -1096,9 +1596,11 @@ class Runner:
                             attempts -= 1  # the retry re-runs this round
                     elif fverdict["outcome"] == "issues":
                         spawn_writer(lambda vp, _fr=fr: WRITER_FIX_PROMPT.format(
+                            task_id=task_id, slice_name=self.slice_name,
+                            task_dir=task_dir, merge_base=merge_base,
                             results_path=task_dir / f"test_results_r{_fr}.md",
                             verdict_path=vp,
-                        ), fresh=False)
+                        ) + origin_note)
             ts["stage"] = "merging"
             self._save_state()
 
@@ -1117,7 +1619,7 @@ class Runner:
             # resume from an older state), the gate re-runs here.
             if ts["gate_green_commit"] != self.git("rev-parse", "HEAD"):
                 green, gate_log = self._run_gate(
-                    task_id, ts, task_dir, meta["project"])
+                    task_id, ts, task_dir, project)
                 if not green:
                     raise Bailout(
                         "gate_red", task=task_id,
@@ -1131,6 +1633,16 @@ class Runner:
             self.log(f"[task {task_id}] merged into {base}")
 
         # ---- checkpoint ----
+        # The checkpoint judges whether the *remaining* breakdown still holds,
+        # so it has no subject once the last pending task has merged — and all
+        # 21 final-task checkpoints in the measured corpus chose `proceed`
+        # (token-usage action plan, 2026-07-20). Follow-up work discovery
+        # belongs to final verification's findings consult.
+        if not [d for d in self.discover_tasks()
+                if self._task_state(d.name)["status"] != "merged"]:
+            self.log(f"[task {task_id}] final task merged — checkpoint "
+                     "skipped")
+            return
         # The merge's file stat rides in the prompt so the consult's tier-1
         # judgment (summaries + stat) needs no git archaeology of its own.
         stat_lines = self.git(
@@ -1138,9 +1650,11 @@ class Runner:
         if len(stat_lines) > 30:
             stat_lines = stat_lines[:30] + [f"… (+{len(stat_lines) - 30} more)"]
         choice = self._consult(
+            "checkpoint",
             CHECKPOINT_SITUATION.format(
                 task_id=task_id, tasks_dir=self.tasks_dir,
-                merge_stat="\n".join(stat_lines) or "(no diff stat available)"),
+                merge_stat="\n".join(stat_lines) or "(no diff stat available)")
+            + self._checkpoint_drift(),
             {
                 "proceed": "the remaining breakdown holds",
                 "amend": "you adjusted/added task folders; the runner "
@@ -1153,6 +1667,64 @@ class Runner:
         if choice["outcome"] == "amend":
             self.log(f"[task {task_id}] checkpoint amended the task list")
 
+    def _production_paths(self, fix_range: str) -> list[str]:
+        """Paths in the range that are production code — not tests, not docs.
+        The deterministic input to the funding consult: a fix round that
+        touched neither is prose/test convergence, which the funding bar
+        treats one step more strictly. Conservative by design — a
+        docstring-only code edit still counts as production."""
+        files = self.git("diff", "--name-only", fix_range).splitlines()
+
+        def _nonprod(path: str) -> bool:
+            parts = path.split("/")
+            return (path.endswith(".md") or path.endswith("_test.go")
+                    or "tests" in parts or "docs" in parts
+                    or "manual" in parts)
+
+        return [f for f in files if f and not _nonprod(f)]
+
+    def _review_funding_consult(self, task_dir: Path, ts: dict, task_id: str,
+                                r: int, verdict: dict,
+                                fix_range: str | None) -> str:
+        """Judge whether review round r's findings fund another writer round
+        or the task merges with them carded. Returns 'fix_round' or 'merge'
+        ('bail' raises inside _consult). The runner states the bar — it knows
+        the round number and what the fix range touched; the consult judges
+        only whether the findings clear it."""
+        review_path = task_dir / f"code_review_r{r}.md"
+        card_note = ("merge now; every unresolved finding is carded for the "
+                     "operator at slice end")
+        if r >= REVIEW_ROUND_CAP:
+            site = "review-budget"
+            situation = REVIEW_BUDGET_SITUATION.format(
+                round=r, outcome=verdict["outcome"],
+                review_path=review_path, cap=REVIEW_ROUND_CAP)
+            actions = {"merge": card_note,
+                       "bail": "stop the slice for the orchestrator"}
+        else:
+            site = "review-funding"
+            prose_only = bool(fix_range) and not self._production_paths(fix_range)
+            situation = REVIEW_FUNDING_SITUATION.format(
+                round=r, outcome=verdict["outcome"], review_path=review_path,
+                cap=REVIEW_ROUND_CAP,
+                prose_fact=(REVIEW_PROSE_FACT.format(fix_range=fix_range)
+                            if prose_only else ""),
+                bar=_review_bar(r, prose_only))
+            actions = {
+                "fix_round": "the findings clear the bar: spend a writer fix "
+                             "round; the next review round verifies it",
+                "merge": f"the findings do not clear the bar: {card_note}",
+                "bail": "stop the slice for the orchestrator",
+            }
+        choice = self._consult(site, situation, actions, [review_path], task_id)
+        if choice["outcome"] == "merge":
+            self.state["flagged_findings"].append({
+                "task": task_id, "review": str(review_path),
+                "consult_summary": choice.get("summary", ""),
+            })
+            self._save_state()
+        return choice["outcome"]
+
     def _tester_limit_consult(self, task_dir: Path, ts: dict, task_id: str,
                               branch: str, gate_log: Path) -> bool:
         """Consult when the fix-round cap is hit with the gate still red.
@@ -1160,6 +1732,7 @@ class Runner:
         self-tests → straight to review)."""
         r = ts["test_rounds"]
         choice = self._consult(
+            "tester-limit",
             f"The fix-round hard limit ({TEST_ROUND_CAP}) was reached and the "
             f"test gate is still red (latest output: {gate_log}; escalations "
             f"in test_results_r*.md). Judge whether the writer/fixer loop "
@@ -1188,14 +1761,20 @@ class Runner:
             prior = "Its work was dropped; the branch is at its last writer commit."
         else:
             prior = "Its work is committed on the branch."
+        meta = self._load_task_meta(task_dir)
         prompt = WRITER_PROMPT.format(
             task_id=task_id, slice_name=self.slice_name, task_dir=task_dir,
             verdict_path=task_dir / f"writer_result_r{ts['writer_rounds'] + 1}.json",
-        ) + "\n" + WRITER_RETRY_NOTE.format(prior_state=prior)
+            # This round re-implements from the same plan, so it carries the
+            # same freshness fact as the initial dispatch — cached, so the
+            # checker does not run (or repair) a second time for this task.
+            grounding_line=self._grounding_line(task_id, task_dir),
+        ) + "\n" + WRITER_RETRY_NOTE.format(prior_state=prior) \
+            + self._origin_note(meta)
         ts["writer_session"] = None
         ts["writer_rounds"] += 1
         self._save_state()
-        project_dir = self.project_dirs[self._load_task_meta(task_dir)["project"]]
+        project_dir = self.project_dirs[meta["project"]]
         verdict, session = self._spawn(
             "code-writer", prompt, project_dir,
             task_dir / f"writer_result_r{ts['writer_rounds']}.json",
@@ -1247,6 +1826,7 @@ class Runner:
             # is flagged for the operator instead of hard-stopping the run
             # (slice 072 bailed on exactly that).
             choice = self._consult(
+                "findings",
                 "Final verification reported findings (test_findings.md). "
                 "Judge whether they block the slice: a regression this slice "
                 "introduced, or an acceptance criterion not actually met, "
@@ -1311,6 +1891,7 @@ class Runner:
             self.state = {
                 "slice": self.slice_name,
                 "created_at": _now_iso(),
+                "orchestrator": _orchestrator_record(),
                 "phase": "tasks",
                 "base_branch": self._current_branch(),
                 "verification_rounds": 0,
@@ -1383,7 +1964,8 @@ class Runner:
         for tid, ts in sorted(tasks.items()):
             lines.append(
                 f"  {tid}: writer×{ts['writer_rounds']} "
-                f"tester×{ts['test_rounds']} review×{ts['review_rounds']}")
+                f"gate×{ts.get('gate_runs', 0)} fixer×{ts['test_rounds']} "
+                f"review×{ts['review_rounds']}")
         if self.state["flagged_findings"]:
             lines.append("FLAGGED FOR OPERATOR (merged with open review findings):")
             for f in self.state["flagged_findings"]:
@@ -1425,7 +2007,8 @@ def cmd_status(args) -> None:
     for tid, ts in sorted(state["tasks"].items()):
         print(f"  {tid}: {ts['status']}"
               + (f" (stage {ts['stage']})" if ts.get("stage") else "")
-              + f"  writer×{ts['writer_rounds']} tester×{ts['test_rounds']} "
+              + f"  writer×{ts['writer_rounds']} "
+                f"gate×{ts.get('gate_runs', 0)} fixer×{ts['test_rounds']} "
                 f"review×{ts['review_rounds']}")
     for h in state["history"][-8:]:
         print(f"  {h['ts']}  {h['task'] or '-'}  {h['role']} r{h['round']} "

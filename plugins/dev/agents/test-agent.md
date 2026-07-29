@@ -28,8 +28,9 @@ findings. You execute the checks; you do not fix anything.
 
 ## Hand-back
 
-Write the findings document at the path your dispatch names (default:
-`test_findings.md` in the slice folder), then the verdict file named in your dispatch:
+Write non-trivial findings to the document at the path your dispatch names (default:
+`test_findings.md` in the slice folder) — a clean pass writes no findings doc. Always write
+the verdict file named in your dispatch:
 
 ```json
 {"outcome": "clean | findings | blocked", "summary": "1-3 sentences: what ran, pass/fail counts", "details": "findings doc path when findings"}
