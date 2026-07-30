@@ -35,10 +35,10 @@ parked:
 - **`aiworkflow/`** — this repo's own resident copy: `code_health` in its fullest form (15 source
   files, incl. the `cognitive/` TypeScript sidecar). The closest thing to an original, and the
   natural starting point for the rebuild.
-- **`KubeCoder/`** — the three commands, byte-identical to KubeCoder's `.claude/commands/` (they were
-  parked in `plugins/upkeep/commands/` as the migration source; provenance is what matters here, so
-  they sit under the project they came from). KubeCoder's `code_health` is the odd one out — a
-  trimmed 10-file variant — and lands here when KubeCoder is onboarded.
+- **`KubeCoder/`** — the three commands and KubeCoder's `code_health` — the odd one out, a trimmed
+  10-file variant. Swept in full 2026-07-30 (the P9 onboarding): `quality-issue-finder` and
+  `refactor-audit` were refreshed past the 07-16 measurement (KubeCoder's `6347fb3`, 07-25);
+  `quality-improver` was still byte-identical.
 - **`<project>/`** — added by `/dev:onboard` as each project is swept.
 
 `refactor-audit` travels with the tool: it is the **only** consumer of `code_health` (`uv run python

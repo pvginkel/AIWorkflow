@@ -24,7 +24,7 @@ Parse the JSON output. Note the flagged files, their scores, ratings, and findin
 
 ### Phase 2: Spot-check the top files
 
-**2a. Read the flagged files.** For each of the flagged files, read the actual source code. You're looking for:
+**2a. Spot-check the flagged files — by fan-out.** Dispatch parallel sub-agents, one per flagged file (or tight cluster), each reading the source and returning a diagnosis — never the code. Each diagnosis answers:
 
 - **Is the score justified?** Some files are legitimately complex (state machines, protocol handlers). Others are just poorly structured. Note which is which.
 - **What are the actual problems?** The health report flags symptoms (long functions, high complexity). You need to diagnose the disease: mixed concerns, missing abstractions, duplicated logic, wrong responsibility boundaries.
@@ -97,4 +97,4 @@ Call these out explicitly so they can be suppressed. Preferred approaches, in or
 - **Group over individual.** The value of this audit is finding _related_ problems, not listing files. A group of 4 related files at 5/10 is more valuable to fix than one file at 2/10 in isolation.
 - **Don't recommend what isn't broken.** A file can be long and healthy if it has a single clear responsibility. Complexity is only a problem when it hurts readability or maintainability.
 - **Think about the refactoring, not the slice.** Your job here is the analysis and grouping. The user will decide which groups become slices and when to run them.
-- **Use agents for parallel investigation.** The spot-check phase involves reading 20+ files — batch the reads and use Explore agents for import graph analysis.
+- **Use agents for parallel investigation.** The spot-check diagnoses and the import-graph analysis both fan out to parallel sub-agents returning conclusions — 20+ source files never enter this session's context.

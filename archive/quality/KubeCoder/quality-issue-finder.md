@@ -36,6 +36,10 @@ Walk source files in the subproject. Skip:
 - generated code and caches (`openapi-cache/`, `alembic/versions/`, `migrations/`)
 - build outputs and dependencies (`node_modules/`, `dist/`, `build/`, `.next/`, `coverage/`)
 
+Fan the walk out: parallel sub-agents, one per top-level module or directory, each handed the
+Phase-1 inventory and returning its candidate regions (category, callsites, snippets) — never
+file contents. Ranking, filtering, and the cap (Phase 4) stay in this session.
+
 For each candidate code region, classify:
 
 - **Category A — reinvented utility**: duplicates (in shape or purpose) a Phase-1 inventory entry. Record the callsite and name the existing utility.
