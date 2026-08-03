@@ -13,10 +13,9 @@ underneath them, and leaving the copies in the projects means every project keep
 a tool that is being replaced. So: out of the projects now, into a plugin when the tool is worth
 one.
 
-**What comes back, and how.** A rebuilt `code_health` as a proper tool, then these three as
-`upkeep` skills alongside `update-docs` (see [`../../plugins/upkeep/README.md`](../../plugins/upkeep/README.md),
-which holds the part that is *not* blocked). Read this archive then, not to restore it verbatim, but
-because four projects each solved things here that a rewrite should know about.
+**What comes back, and how.** A rebuilt `code_health` as a proper tool, then these three as skills
+in whichever plugin owns codebase maintenance by then. Read this archive then, not to restore it
+verbatim, but because four projects each solved things here that a rewrite should know about.
 
 ## Layout — one folder per source, because the copies disagree
 
@@ -43,10 +42,8 @@ parked:
 
 `refactor-audit` travels with the tool: it is the **only** consumer of `code_health` (`uv run python
 -m tools.code_health --json`, plus pointers into `config.py` and `cognitive_analyzer.py`). The
-other two never reference it. That correction matters — the old `upkeep` README claimed the
-quality-* capabilities were the consumers, which made the whole capability look blocked when only
-`refactor-audit` ever was.
+other two never reference it. That distinction matters — read as "the quality-* capabilities
+consume `code_health`", the whole capability looks blocked when only `refactor-audit` ever was.
 
 `update-docs` is **not** here: it is not quality, touches no `code_health`, and nothing blocks it.
-It stays in the projects that have it and is parked for `upkeep` in
-[`../../plugins/upkeep/`](../../plugins/upkeep/).
+It stays in the projects that have it; KubeCoder's copy is the maintained one.

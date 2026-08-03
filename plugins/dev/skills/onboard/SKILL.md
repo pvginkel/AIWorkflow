@@ -63,9 +63,9 @@ Delete (the plugin provides each):
   project copy is a second source of truth that will drift and be believed.
 
 Leave everything else, and **say what you left**. A repo's own agents and commands are its own —
-including auxiliary workflow ones `dev` does not replace (`update-docs` belongs to the planned
-`upkeep` plugin, which is not built; deleting it removes capability nothing restores), and project
-tooling that merely shares the folder (a build tracker, a codegen script).
+including auxiliary workflow ones `dev` does not replace (`update-docs` is the project's own;
+deleting it removes capability nothing restores), and project tooling that merely shares the
+folder (a build tracker, a codegen script).
 
 **Leaving a file means leaving it working.** What you kept may reference what you just deleted —
 `update-docs` and the quality commands all hand off to `/triage`, which is now `/dev:triage`.

@@ -53,14 +53,6 @@ contract and tells a new repo exactly what is missing. See **[`docs/ADOPTING.md`
 The monorepo-merge runbook that used to live in `runbooks/` is now the `/dev:merge-repos` skill;
 its per-repo status lives on the issue tracker, where work state belongs.
 
-## The `upkeep` plugin (planned)
-
-`plugins/upkeep/` parks **`update-docs`** and `documentation-model.md` as migration backlog — the
-maintenance capability that feeds `/dev:triage` and is **not** blocked on anything. It is **not
-built yet** (not listed in `marketplace.json`); `dev` ships first and stands alone. The quality
-capability that used to be parked alongside it now lives in `archive/quality/`, blocked on the
-`code_health` rebuild. See [`plugins/upkeep/README.md`](plugins/upkeep/README.md).
-
 ## Docs
 
 - **[`docs/ADOPTING.md`](docs/ADOPTING.md)** — install the plugin and make a repo adoptable
