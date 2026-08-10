@@ -1,6 +1,6 @@
 ---
 name: merge-repos
-description: Turn a backend repo plus its separate UI repo into one history-preserving monorepo, consolidate its Jenkinsfiles into one, and onboard the result onto the dev pipeline. Run once per repo; the last runs are DHCPApp, ElectronicsInventory, ZigbeeControl.
+description: Turn a backend repo plus its separate UI repo into one history-preserving monorepo, consolidate its Jenkinsfiles and its two architecture producers into one each, and onboard the result onto the dev pipeline. Run once per repo; the last runs are DHCPApp, ElectronicsInventory, ZigbeeControl.
 argument-hint: <Repo>
 ---
 
@@ -60,6 +60,11 @@ These bit once and will bite again. Each is expanded inline in its phase; this i
    launcher. ⚠️ Do **not** follow `backend/.vscode/tasks.json`'s "SSE Gateway" task: it shells into
    a `../../SSEGateway` sibling clone via `SSE_GATEWAY_ROOT`. That sibling path is the wart. Details
    in Phase 3.
+9. **One repo publishes ONE architecture producer** — not one per subrepo. Run 1 consolidated the
+   two architecture *jobs* but left the frontend artifact declaring `producer: <repo>-ui`, and never
+   touched `Architecture.git`'s producer registry. That broke the Architecture pipeline, and it went
+   unnoticed for **six weeks** because the merged job was independently red the whole time. Phase 4c
+   is the full checklist; Phase 6 carries the operator-owned half.
 
 ## Phase 0 — Per-repo inputs
 
@@ -234,7 +239,7 @@ Onboard owns the rest of the contract — the three `CLAUDE.md` lines, the spec 
 subrepos' `.claude/` copies, and the `preflight --for run` green light. Do not hand-build any of it
 here; if onboard reports something missing, fix it there.
 
-## Phase 4 — Jenkinsfiles: 3 build → 1, 2 architecture → 1
+## Phase 4 — CI: 3 build → 1, 2 architecture → 1, 2 producers → 1
 
 ### 4a. Single root `Jenkinsfile`
 
@@ -265,15 +270,17 @@ build, so tag `latest` at build time — no post-validation promote stage.
 
 ### 4b. One combined `Jenkinsfile.architecture`
 
-DA has no architecture stage — it stays its own job. The operator wants **one** architecture job,
-not one per producer, so fold both into a root `Jenkinsfile.architecture` sharing one `python` pod:
+DA has no architecture stage — it stays its own job. The operator wants **one** architecture job
+*and* **one producer** (4c), so fold both into a root `Jenkinsfile.architecture` sharing one
+`python` pod:
 
 - One `withVault` (backend OIDC `kv/jenkins/<repo>-pipeline-oidc`) → `podTemplate(python)` → `node`
   → `stage('Cloning repo'){ checkout scm }`.
 - **Generate backend architecture** — `dir('backend'){ container('python'){ pip install -r
   ./tools/requirements.txt; gen-architecture.py (with `$ARCH_API_URL`/`$ARCH_DATASET_URL`) } }`.
-- **Validate backend / frontend architecture** — `arch-validate.py` per producer. The backend
-  stage's `pip install` runs first in the same pod, so the frontend stage inherits those deps.
+- **Validate backend / frontend architecture** — `arch-validate.py` over each subrepo's
+  `docs/architecture/*.yaml`. The backend stage's `pip install` runs first in the same pod, so the
+  frontend stage inherits those deps. Two stages, but one producer — see 4c.
 - ⚠️ **`dir()` + `archiveArtifacts` gotcha:** `dir()` only moves the cwd for `sh` steps.
   `archiveArtifacts`/`junit` globs resolve **workspace-root-relative** regardless. Keep
   `checkout scm` and `archiveArtifacts` at the top level and **prefix the globs**
@@ -286,6 +293,47 @@ git -C "$WORK/mono" rm backend/Jenkinsfile frontend/Jenkinsfile frontend/Jenkins
 # write the root Jenkinsfile + the combined Jenkinsfile.architecture
 git -C "$WORK/mono" add -A && git -C "$WORK/mono" commit -m "Consolidate CI: single Jenkinsfile + single Jenkinsfile.architecture"
 ```
+
+### 4c. Fold the two producers into one
+
+One repo publishes **one** producer. That is the standard `DesignAssistant` sets: a single
+`design-assistant` producer covers five in-house products (backend, frontend, portal, manuals,
+canon-docs) from one monorepo. The collector accepts many artifact files per producer, so the two
+subrepo trees can stay where they are — what changes is what they *declare*.
+
+In the merged repo:
+
+- `frontend/docs/architecture/architecture.yaml` — change `producer: <repo>-ui` to the backend's
+  producer id (e.g. `iotsupport-app`). **Leave every element id alone**: ids are what the rest of
+  the federated model references; only the provenance stamp moves.
+- Fix `sourceRepository:` on the UI's `applicationComponents` — it still names
+  `git:pvginkel/<Repo>UI`, which Phase 6 retires.
+- Update the artifact's header comment; it typically says the API it consumes "is a separate
+  producer".
+
+In **`Architecture.git`** — a separate repo, and the step run 1 missed entirely:
+
+- Delete the `<repo>-ui` entry from `pipeline-producers.yaml`.
+- Compare `defaultLogo` on both entries first. If they differ, the UI elements silently change logo
+  — carry the value over deliberately rather than by accident.
+- `grep -rn '<repo>-ui'` for live references (`*.yaml`, `*.ts`, `*.py`). Hits under `docs/backfill/`
+  are historical seeding prompts and stay.
+
+⚠️ **Why this bites, and why it hides.** The collector copies a job's artifacts into
+`producer-artifacts/<producer-id>/` and fails when a file's declared `producer:` does not match the
+directory it landed in:
+
+```
+iotsupport-app/frontend/docs/architecture/architecture.yaml: at /producer:
+declared producer 'iotsupport-ui' does not match directory name 'iotsupport-app'
+```
+
+Run 1 shipped exactly this and it stayed invisible for six weeks, because the merged job was
+independently red the whole time: it failed in its first stage, so nothing was ever archived, and
+the collector went on serving the last green artifacts from before the merge. **A red producer job
+does not fail the Architecture pipeline — it silently freezes that producer's slice of the model.**
+So confirm by watching `AaC/Architecture` go green *after* the merged job does. A green Architecture
+run while the producer is red proves nothing.
 
 ## Phase 5 — Validate, then swap into place
 
@@ -335,6 +383,12 @@ Not this skill's to do — report them and stop:
 
 - `git push --force origin main` to `<Repo>.git`, which is now the monorepo.
 - Retire / archive `<Repo>UI.git`.
+- **Delete the `AaC/<Repo>UI` Jenkins job.** Retiring the repo alone leaves the job pointing at a
+  deleted remote, where it lingers as a zombie — it can never build again, but the collector keeps
+  serving its last successful artifact, so the frozen slice goes on looking healthy. IoTSupportUI's
+  job sat like that from 2026-06-22 until someone went looking.
+- Push the `Architecture.git` half of 4c (dropping the `<repo>-ui` producer). Land it together with
+  the monorepo push: until both sides agree, one of them fails validation.
 - Re-point Jenkins: the multibranch build job → the root `Jenkinsfile`; the single architecture job
   → `Jenkinsfile.architecture`.
 
