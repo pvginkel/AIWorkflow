@@ -6,8 +6,8 @@ session they drive: role, phase, and the Claude Code transcript path. This
 tool reads those records, scans each transcript (plus its sub-agent
 transcripts), and prices the whole slice: totals, per-role and per-phase
 breakdowns, a per-session table. Attribution is mechanical — the state files
-*are* the session list — unlike the old workflow's slice_costs.py, which
-guessed slices from "slice NNN" mentions across every project folder.
+*are* the session list — rather than inferred from what a transcript happens
+to mention, which is what the measurement it replaces had to do.
 
 Counted per transcript, deduplicated by message id (the stream-json format
 logs each assistant message several times with identical usage):
