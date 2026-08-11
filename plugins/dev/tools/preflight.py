@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Preflight for the `dev` plugin — the gate a pipeline command runs as step one.
+"""Preflight — the gate a pipeline command runs as step one.
 
 Profiles (``--for triage|plan|run``) check exactly what that command needs. The
 run profile is the full gate; the runner does NOT re-run preflight, so
 ``/dev:run-slice`` is where a broken project is caught.
 
-Contract, expressed over `kc` primitives + three machine-checkable `CLAUDE.md`
-lines (see docs/project-contract.md):
+Contract, expressed over `kc` primitives + four machine-checkable `CLAUDE.md`
+lines (see ${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md):
 
     Spec repo: <path>
     Slice testing strategy: <path-to-doc>
+    Slice doc plan: <path-to-doc>
     Design philosophy: <path-to-doc>
 
 | Check                                         | triage | plan | run |
@@ -19,6 +20,7 @@ lines (see docs/project-contract.md):
 | Manifest valid (kc project list ≥1 component)  |        |  x   |  x  |
 | `Spec repo:` in CLAUDE.md, path exists         |   x    |  x   |  x  |
 | `Slice testing strategy:` set, target exists   |        |      |  x  |
+| `Slice doc plan:` set, target exists           |        |      |  x  |
 | `Design philosophy:` set, target exists        |        |      |  x  |
 | Clean working tree                             |        |      |  x  |
 | Baseline `kc project build` (all components)   |        |      |  x  |
@@ -45,13 +47,14 @@ import sys
 from pathlib import Path
 
 # The project contract, for the pointer in every failure message. Resolved from
-# this script's install location (<plugin>/tools/preflight.py), not a repo path.
-CONTRACT_DOC = Path(__file__).resolve().parent.parent / "docs" / "project-contract.md"
+# this script's location (<plugin>/tools/preflight.py), not the cwd.
+CONTRACT_DOC = Path(__file__).resolve().parents[1] / "docs" / "project-contract.md"
 
-# The three machine-checkable CLAUDE.md entries (label → what its value points at).
+# The four machine-checkable CLAUDE.md entries (label → what its value points at).
 ENTRIES = {
     "Spec repo": "the spec/slices repo (a directory)",
     "Slice testing strategy": "the project's slice-testing-strategy doc (a file)",
+    "Slice doc plan": "the project's slice-doc-plan doc (a file)",
     "Design philosophy": "the project's design-philosophy / change-discipline doc (a file)",
 }
 
@@ -76,7 +79,7 @@ def repo_root() -> Path:
 
 def check_kc() -> None:
     if shutil.which("kc") is None:
-        fail(2, "`kc` is not on PATH. The dev plugin is kc-native and requires the "
+        fail(2, "`kc` is not on PATH. This pipeline is kc-native and requires the "
                 "KubeCoder CLI — run inside a KubeCoder pod, where `kc` is always "
                 "available.")
 
@@ -193,7 +196,7 @@ PROFILES = {
     "triage": ["kc", "spec_repo"],
     "plan": ["kc", "kc_status", "manifest", "spec_repo"],
     "run": ["kc", "kc_status", "manifest", "spec_repo", "testing_strategy",
-            "design_philosophy", "clean_tree", "baseline_build"],
+            "doc_plan", "design_philosophy", "clean_tree", "baseline_build"],
 }
 
 
@@ -217,6 +220,8 @@ def main() -> None:
         check_entry(root, "Spec repo", expect_dir=True)
     if "testing_strategy" in checks:
         check_entry(root, "Slice testing strategy", expect_dir=False)
+    if "doc_plan" in checks:
+        check_entry(root, "Slice doc plan", expect_dir=False)
     if "design_philosophy" in checks:
         check_entry(root, "Design philosophy", expect_dir=False)
     if "clean_tree" in checks:

@@ -42,7 +42,7 @@ Ask the user for their requirements — the things the design must deliver. Thes
 
 ### Step 3: Dispatch the arch-design agent
 
-Launch the `arch-design` agent with:
+Launch the `dev:arch-design` agent with:
 
 - **Question** — the specific architectural question.
 - **Requirements** — the user's stated requirements, listed as fixed constraints.

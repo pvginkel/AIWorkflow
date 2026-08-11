@@ -1,0 +1,19 @@
+# Curated entry points for AIWorkflow. The repo is a plugin marketplace, not an
+# application: nothing is built or deployed from here, so there is no `build:`
+# and no `setup:` — the suites and ruff both run straight out of the python
+# toolchain with `uv run --with`, because the plugin's scripts import nothing
+# outside the standard library.
+#
+# This is the gate that makes the workflow changeable in its own home: run_loop
+# and plan_loop carry ~4,700 lines of suite between them, and before this file
+# existed there was no command that ran them here.
+
+projects:
+  dev-plugin:
+    description: >-
+      The `dev` plugin — the kc-native slice pipeline (run_loop, plan_loop,
+      sweep_slice, close_slice, slice_cost, preflight) and its suites, plus the
+      skills, agents and contract docs they are written against.
+    cwd: .
+    test: cexec python uv run --with pytest pytest
+    lint: cexec python uv run --with ruff ruff check .

@@ -1,0 +1,24 @@
+# AIWorkflow ships no Python package — this file exists only to configure the
+# tools that gate the `dev` plugin's scripts. There is deliberately no
+# `[project]` table: `uv run --with pytest` supplies the one dependency, and the
+# plugin's scripts and suites are stdlib-only by design (they run inside a
+# KubeCoder pod's toolchain sidecar, not out of a venv this repo owns).
+
+[tool.pytest.ini_options]
+# importlib mode: the suites load their subject with
+# `importlib.util.spec_from_file_location`, and the plugin's tools/ is not a
+# package.
+addopts = "--import-mode=importlib -q --tb=short"
+testpaths = ["plugins/dev/tools"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+# Both are frozen record, not maintained code: `archive/quality/` is the retired
+# quality capability parked until it is rebuilt, and `workflow-improvements/` is
+# the R&D evidence trail behind the workflow's design. Reformatting either would
+# edit history to satisfy a linter.
+extend-exclude = ["archive", "workflow-improvements"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP"]

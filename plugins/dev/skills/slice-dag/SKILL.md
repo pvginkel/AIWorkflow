@@ -1,13 +1,13 @@
 ---
 name: slice-dag
-description: Produce and maintain slices/DAG.md — a check-off lane plan that schedules every pending slice across N parallel /run-slice sessions, honouring ordering requirements while minimising merge work, plus the dependency graph and per-slice analysis behind it.
+description: Produce and maintain slices/DAG.md — a check-off lane plan that schedules every pending slice across N parallel /dev:run-slice sessions, honouring ordering requirements while minimising merge work, plus the dependency graph and per-slice analysis behind it.
 argument-hint: "[lane-count]"
 ---
 
 # Slice run DAG
 
 Produce and maintain **`<spec-repo>/slices/DAG.md`** — a check-off **lane plan** that
-schedules every pending slice across the operator's parallel `/run-slice` sessions, plus the
+schedules every pending slice across the operator's parallel `/dev:run-slice` sessions, plus the
 dependency graph and the per-slice analysis behind it. Argument (optional): the number of lanes
 (default **3**).
 
@@ -22,7 +22,7 @@ move a slice, or re-pack, and everything needed is already on the page.
 
 ## What this skill is — and isn't
 
-- It **schedules**; it does not run anything. It never starts `/run-slice`.
+- It **schedules**; it does not run anything. It never starts `/dev:run-slice`.
 - It **always processes every pending slice.** There is no "skip this one" — a slice the operator
   doesn't want in this round is removed by **moving its folder** to `slices/deferred/` (or a
   `slices/delayed/` they create) and re-running; the skill never silently drops a pending slice.
@@ -78,9 +78,9 @@ For each **new** slice capture exactly four fields. Keep the cost down:
 - **Gate** — an external blocker that must clear before the slice can run at all (e.g. 055's
   *esp-idf spike* ⛔ RUN GATE; an operator action; a secret to mint). Short text, or `—`.
 
-When several slices are new, dispatch **parallel `Explore` agents** — one tight brief per slice
-that returns *only* `{subprojects, needs, gate, scope}` — so the overview reads stay out of this
-session's context. Record nothing you can recompute: **do not** store merge edges; they are derived
+When several slices are new, dispatch **parallel `Explore` agents on Sonnet** — one tight brief
+per slice that returns *only* `{subprojects, needs, gate, scope}` — so the overview reads stay
+out of this session's context. Record nothing you can recompute: **do not** store merge edges; they are derived
 from the subproject sets at plan time.
 
 ### Phase 4 — Build the plan (pure reasoning, zero file reads)
@@ -104,7 +104,7 @@ plan can be rebuilt without re-research.
 ````markdown
 # Slice run DAG
 
-_Updated <DATE> · <L> lanes · <K> pending slices. Re-run /slice-dag after slices land or change._
+_Updated <DATE> · <L> lanes · <K> pending slices. Re-run /dev:slice-dag after slices land or change._
 
 ## Lane plan
 
@@ -149,7 +149,7 @@ derived from the shared subprojects in the inventory.
 - **Codegen/drift-gated component** — if the project has one (e.g. a shared contracts package that
   regenerates across languages), two slices touching it concurrently is the costliest merge there
   is; never share a wave between two unless forced.
-- **Gates:** `<slice> — <external blocker that must clear before /run-slice>`. <others…>
+- **Gates:** `<slice> — <external blocker that must clear before /dev:run-slice>`. <others…>
 - **Lane rationale:** brief notes on any non-obvious placement, so a re-pack keeps the intent.
 ````
 
@@ -202,8 +202,8 @@ ever**:
 - **Subprojects from `ls`, never from file contents.** The merge analysis is free.
 - **Scope and most `needs` from the README `## Pending` block** — one read for all slices.
 - **Deep-read a `slice.md` only for a *new* slice**, only for `needs`/gate, and only where the
-  README is silent — via a parallel `Explore` agent that returns just the four fields, so the read
-  never enters this session's context.
+  README is silent — via a parallel `Explore` agent on Sonnet that returns just the four fields,
+  so the read never enters this session's context.
 - **Carried-over slices are never re-read.** Their inventory rows are the cache.
 - **Re-packing (different lane count, a manual edit, a moved slice) is pure reasoning** over the
   existing `DAG.md` — no file reads at all. That is the whole point of keeping the inventory and the

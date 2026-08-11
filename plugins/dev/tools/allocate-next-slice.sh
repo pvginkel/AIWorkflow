@@ -9,7 +9,7 @@
 #
 #     N=$(${CLAUDE_PLUGIN_ROOT}/tools/allocate-next-slice.sh <spec-repo>)
 #
-# The plugin ships this rather than each spec repo carrying a copy: the numbering
+# The workflow ships this rather than each spec repo carrying a copy: the numbering
 # space it guards is the project's (<spec-repo>/slices/), but the algorithm is the
 # workflow's, and N copies across N spec repos is N chances to drift. /dev:triage
 # is its only caller.
@@ -36,7 +36,7 @@ if [[ -z "$spec_repo" ]]; then
   exit 2
 fi
 if [[ ! -d "$spec_repo/slices" ]]; then
-  echo "no slices/ under $spec_repo — is that the spec repo? (/dev:onboard scaffolds it)" >&2
+  echo "no slices/ under $spec_repo — is that the spec repo?" >&2
   exit 2
 fi
 slices_dir="$(cd "$spec_repo/slices" && pwd)"

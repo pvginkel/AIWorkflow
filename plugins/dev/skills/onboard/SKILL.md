@@ -53,7 +53,7 @@ Delete (the plugin provides each):
 - the eleven dev agents — `code-writer`, `code-reviewer`, `plan-writer`, `plan-reviewer`,
   `plan-briefer`, `plan-scribe`, `slice-grounder`, `test-fixer` (or an older `code-tester`),
   `test-agent`, `slice-verifier`, `arch-design` — likewise at every `.claude`;
-- the pipeline scripts and their session machinery — `tools/ai_workflow/task_runner.py`,
+- the pipeline scripts and their session machinery — `${CLAUDE_PLUGIN_ROOT}/tools/task_runner.py`,
   `plan_loop.py`, `grounding_check.py`, `grounding_dispatch.py`, `close_slice.py`,
   `claude_session.py`, `codex_exec.py`, their tests, and any `scripts/preflight.py` the plugin's
   preflight replaces;

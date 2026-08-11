@@ -5,7 +5,7 @@ plane is an *environment* fault (exit 2), it is checked before the repo is
 resolved, and triage — which dispatches nothing — is deliberately exempt. The
 rest of preflight's checks are not covered here.
 
-Run: `python3 plugins/dev/tools/test_preflight.py` or via pytest.
+Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_preflight.py` or via pytest.
 """
 
 import contextlib
@@ -132,6 +132,14 @@ def test_plan_and_run_gate_on_the_control_plane_and_triage_does_not():
     assert "kc_status" in preflight.PROFILES["plan"]
     assert "kc_status" in preflight.PROFILES["run"]
     assert "kc_status" not in preflight.PROFILES["triage"]
+
+
+def test_run_gates_on_both_procedure_doc_pointers():
+    """The run loop resolves its test and doc phases through these pointers;
+    a missing one is caught here, before any session is spawned."""
+    assert "testing_strategy" in preflight.PROFILES["run"]
+    assert "doc_plan" in preflight.PROFILES["run"]
+    assert "Slice doc plan" in preflight.ENTRIES
 
 
 def test_triage_never_shells_out_to_kc_status():

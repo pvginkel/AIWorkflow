@@ -5,10 +5,10 @@ the real one, a slice folder under `slices/`), so the README surgery and the
 `git mv` are exercised against git itself. Every precondition test asserts the
 tool changed NOTHING.
 
-Stdlib only, like the plugin's other suites — `@with_workspace` stands in for
+Stdlib only, like the workflow's other suites — `@with_workspace` stands in for
 the fixture, so each test still takes `ws` and still collects under pytest.
 
-Run: `python3 plugins/dev/tools/test_close_slice.py` or via pytest.
+Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_close_slice.py` or via pytest.
 """
 
 import contextlib

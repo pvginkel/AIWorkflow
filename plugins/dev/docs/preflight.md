@@ -1,13 +1,13 @@
 # Preflight — the pipeline's gate, expressed over `kc`
 
-`${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage|plan|run` is one plugin-shipped,
-**stdlib-only** script each pipeline skill runs as **step one**. It replaces the old
-project-owned `scripts/preflight.py`: the checks are now `kc` primitives plus the three
-machine-checkable `CLAUDE.md` lines from [`project-contract.md`](project-contract.md).
+`${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage|plan|run` is one repo-shipped,
+**stdlib-only** script each pipeline skill runs as **step one**. The checks are `kc` primitives
+plus the four machine-checkable `CLAUDE.md` lines from
+[`project-contract.md`](project-contract.md).
 
 **Silent on success.** On failure it prints **one** actionable message — what is missing, the exact
 line/fix, and a pointer to `project-contract.md` — so a new repo self-onboards from the error text.
-Each skill relays that message verbatim on a non-zero exit and stops; the runner does **not**
+Each skill relays that message verbatim on a non-zero exit and stops; the run loop does **not**
 re-run preflight, so `/dev:run-slice` is the gate.
 
 ## Exit codes
@@ -27,6 +27,7 @@ re-run preflight, so `/dev:run-slice` is the gate.
 | Manifest valid: `kc project list --output=json` returns ≥1 component | – | ✓ | ✓ |
 | `Spec repo:` in `CLAUDE.md`, path exists (directory) | ✓ | ✓ | ✓ |
 | `Slice testing strategy:` in `CLAUDE.md`, target doc exists | – | – | ✓ |
+| `Slice doc plan:` in `CLAUDE.md`, target doc exists | – | – | ✓ |
 | `Design philosophy:` in `CLAUDE.md`, target doc exists | – | – | ✓ |
 | Clean working tree | – | – | ✓ |
 | Baseline: `kc project build` (all components) | – | – | ✓ |
@@ -51,8 +52,7 @@ invocation cwd — so run the command from the target code repo.
 
 ## Notes on the run baseline
 
-- The baseline is **`kc project build` only, always on** (no skip flag). The old pytest-collection
-  step has no `kc` equivalent and is an accepted loss: a baseline-broken suite screams on task 1's
-  first gate run anyway, and a project that cares can put a cheap collect step in its manifest's
-  `build` list. Full `kc project test` is **not** a preflight step — it is the per-task gate the
-  runner owns.
+- The baseline is **`kc project build` only, always on** (no skip flag). A baseline-broken suite
+  screams on the first phase's gate run anyway, and a project that cares can put a cheap collect
+  step in its manifest's `build` list. Full `kc project test` is **not** a preflight step — it is
+  the per-phase gate the run loop owns.
