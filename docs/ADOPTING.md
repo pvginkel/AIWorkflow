@@ -19,8 +19,8 @@ From any Claude Code session:
 ```
 
 Installed into `~/.claude`, the plugin's skills resolve as `/dev:triage`, `/dev:plan-slice`,
-`/dev:run-slice`, `/dev:write-task`, `/dev:slice-dag`, `/dev:arch-design`, and its agents as
-`dev:code-writer`, `dev:code-reviewer`, … . The runner spawns those agents by their namespaced name
+`/dev:run-slice`, `/dev:slice-dag`, `/dev:arch-design`, and its agents as
+`dev:code-writer`, `dev:code-reviewer`, … . The run loop spawns those agents by their namespaced name
 through `kc session create-headless --agent dev:<role>`, so the kc-spawned headless sessions must
 see the same `~/.claude` install (they do — same home).
 
@@ -39,10 +39,10 @@ one) checks every item and, on failure, prints exactly what to add.
 Declare the repo's components and their curated automation so `kc project list --output=json`
 returns the project set + each component's effective cwd, and `kc project build|test|lint --project
 <name>` runs the deterministic checks. This is the **only** source of the project map — the plugin
-never hardcodes it. See `kc`'s `project-manifest.md` for the schema. A task's `project` field must
-be one of these component names.
+never hardcodes it. See `kc`'s `project-manifest.md` for the schema. Each plan phase opens with a
+`Target:` line naming one of these components (or a sibling repo).
 
-### 2b. Three `CLAUDE.md` lines (root of the target repo)
+### 2b. Four `CLAUDE.md` lines (root of the target repo)
 
 Add these machine-checkable lines (markdown decoration around them is tolerated; paths may be
 absolute or relative to the repo root):
@@ -50,13 +50,16 @@ absolute or relative to the repo root):
 ```
 Spec repo: <path to the spec/planning repo>
 Slice testing strategy: <path to the project's slice-test-plan doc>
+Slice doc plan: <path to the project's slice-doc-plan doc>
 Design philosophy: <path to the project's change-discipline doc>
 ```
 
-- **`Spec repo:`** — where slices, tasks, and each run's `state.json`/`log.txt` live (a separate
+- **`Spec repo:`** — where slices and each run's `state.json`/`log.txt` live (a separate
   git repo). Required by all three profiles.
-- **`Slice testing strategy:`** — the project-owned deploy-verification procedure `run-slice`
-  resolves to (it never names the doc). Required by `run`.
+- **`Slice testing strategy:`** — the project-owned deploy-verification procedure the run loop's
+  test phase resolves to (it never names the doc). Required by `run`.
+- **`Slice doc plan:`** — the project-owned doc procedure its doc phase resolves to, the same way.
+  Required by `run`.
 - **`Design philosophy:`** — the change-discipline doc `code-writer` reads. Required by `run`.
 
 The rest of a good root `CLAUDE.md` (overview, repo structure, design summary, doc pointers) is
@@ -97,7 +100,7 @@ projects:
   worker: { cwd: worker, build: [...], test: [...], lint: [...] }
 ```
 
-**`Kestrel/CLAUDE.md`** (the three contract lines among the usual content):
+**`Kestrel/CLAUDE.md`** (the four contract lines among the usual content):
 
 ```markdown
 # Kestrel — build-log aggregator for distributed CI runs
@@ -106,6 +109,7 @@ Kestrel is a two-component service: an `api` and a `worker`.
 
 Spec repo: ../KestrelSpecs
 Slice testing strategy: docs/operations/slice-test-plan.md
+Slice doc plan: docs/operations/slice-doc-plan.md
 Design philosophy: docs/conventions/change-discipline.md
 
 ## Design philosophy
@@ -118,8 +122,8 @@ Then, from the `Kestrel` repo:
 
 ```
 /dev:triage            # groups findings/cards into slice folders in ../KestrelSpecs/slices/backlog/
-/dev:plan-slice 042    # breaks a slice into ordered, component-local tasks
-/dev:run-slice 042     # launches the runner; drives write→test→review→merge→verify
+/dev:plan-slice 042    # settles the slice with you, then plans it as an ordered phase queue
+/dev:run-slice 042     # launches the run loop; drives write→test→review→merge, then test + docs
 ```
 
 If any contract piece is missing, the first skill's preflight tells you the exact line or file to

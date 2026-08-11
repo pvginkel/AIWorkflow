@@ -4,6 +4,57 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-11 — the phased-plan rebuild comes home (v0.4.0)
+
+KubeCoder vendored 0.3.1 back onto its `main` on 2026-07-31 and rebuilt the pipeline there
+(`KubeCoderSpecs/ai-workflow-redesign/`), against a design that replaces the task-folder model with
+a **phased plan**. Four pilot slices ran it end to end — 114, 125, and the parallel pair 104/107 —
+at $56–164 each, with the pathologies the redesign targeted staying dead all four times. This
+release is that rebuild ported home, and KubeCoder's copy is deleted in the same change: the
+workflow has one home again.
+
+**The plan is the queue.** `task_runner.py` becomes **`run_loop.py`**, driving one `plan.md` of
+`### P<id>` phases instead of `tasks/NN_slug/` folders. Each phase opens with a `Target:` line (a
+`kc project list` component *or a sibling repo* — cross-repo phases are first-class now), document
+order is authoritative, and only the driver stamps `✅ DONE`. Every agent in the loop may edit the
+plan; appending a phase is how work grows, bounded by a **generation bar** that folds small in-scope
+touch-ups in early and cards the rest at close-out.
+
+**The loop owns the whole slice, not just the merges.** After the last phase: a loop-tail
+`lint`+`build`+`test` sweep across every touched repo, a completion consult, then a **test phase**
+and a **doc phase**, each "read the project's doc and execute it". The driver holds the spec repo's
+devlock across both, and under that hold pushing and rolling dev for verification is
+pre-authorized — prd stays explicitly operator-gated. Two new agents serve them: **`doc-writer`**
+(diff-based over the whole shipped slice) and **`rebase-agent`** (mechanical rebases onto a moved
+base, on Sonnet). A fourth `CLAUDE.md` contract line, **`Slice doc plan:`**, is what the doc phase
+resolves through.
+
+**The plan loop is one structural round.** `plan_loop.py` no longer iterates: a writer pass, a
+reviewer pass, and exit — findings go to the operator for adjudication, whose rulings land in
+`plan.md` and drive exactly one fix pass. The review is not optional; exit 0 is refused without a
+reviewer verdict on file.
+
+**The grounding ledger is gone** — `grounding_check.py`, `grounding_dispatch.py`, the
+`slice-grounder` agent and `grounding-ledger.md`. Grounding survives as evidence citations in
+`verification.json`, whose acceptance criteria are outcome-level. Also retired: `plan-briefer`,
+`plan-scribe`, `slice-verifier`, and the `write-task` skill (a plan phase is a heading, not a
+folder to author).
+
+**New: the residual-sweep lane** (`sweep_slice.py` + `residual-sweep.md`). Cards whose acceptance
+criteria triage can write from the card text alone batch into a mechanically generated slice that
+skips `/dev:plan-slice` entirely and runs on the ordinary loop.
+
+**This repo gains a gate.** `kc project test|lint` now run the plugin's ~4,700 lines of suite here
+(159 tests) — before, nothing in AIWorkflow could run them, which was survivable only while
+KubeCoder held a copy. `tools/analysis/` retires with the move: `slice_cost.py` ships in the plugin
+and prices a slice from the run's own state records, superseding `slice_costs.py`, which guessed a
+session's slice by regex over raw transcripts and hardcoded a `-work-KubeCoder` project map;
+`runner_sessions.py` read a `task` key `run_loop.py` no longer writes.
+
+Not ported, deliberately: KubeCoder's `update-docs` skill and `track_build.py` stay project-owned —
+the first because a project's documentation model is its own, the second because it is CI tooling
+that never belonged to the pipeline.
+
 ## 2026-07-29 — `kc status` joins the preflight (v0.3.1)
 
 Preflight's v1 note said "no daemon-reachability check — the first `kc session create-headless`

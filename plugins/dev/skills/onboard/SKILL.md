@@ -9,7 +9,7 @@ argument-hint: "[spec-repo-path]"
 Bring one repo onto the `dev` pipeline. Installing the plugin is the operator's job (`/plugin
 install dev@aiworkflow`); yours is everything the *repo* must provide — the contract in
 `${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md`, plus a spec repo the pipeline can actually work
-in. There is nothing to copy: the plugin ships the skills, agents, runner, and allocator. What is
+in. There is nothing to copy: the plugin ships the skills, agents, loops, and allocator. What is
 left is the project describing itself, and the cleanup of whatever it used before.
 
 **Done means one thing:** `${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for run` exits 0. Everything
@@ -30,7 +30,7 @@ normal case, and the gap list drives the rest.
 ```bash
 kc project list --output=json                       # components + effective cwds (empty/error = no usable manifest)
 cat .kubecoder/project.yaml 2>/dev/null             # the manifest, if any
-grep -nE '^[[:space:]>*`-]*(Spec repo|Slice testing strategy|Design philosophy):' CLAUDE.md
+grep -nE '^[[:space:]>*`-]*(Spec repo|Slice testing strategy|Slice doc plan|Design philosophy):' CLAUDE.md
 find . -name .claude -type d -not -path './.git/*'  # recursive: older layouts put agents per-subproject
 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for run  # the gap list, in its own words
 ```
@@ -41,26 +41,38 @@ repo is named and what state it is in, and what pre-plugin workflow remains. The
 
 ### 2. Retire the in-repo copy of the old workflow
 
-A repo that ran the pre-plugin workflow carries its own skills, agents, and runner. They now shadow
-the plugin: a stale in-repo `code-writer` or `task-workflow.md` outranks nothing, it just gets read
+A repo that ran the pre-plugin workflow carries its own skills, agents, and driver. They now shadow
+the plugin: a stale in-repo `code-writer` or `run-loop.md` outranks nothing, it just gets read
 instead. Delete **only** what `dev` supersedes, by name.
+
+The lists below carry **retired names too** — a repo may have stopped at any older version of the
+workflow, and those copies shadow just as effectively as current ones.
 
 Delete (the plugin provides each):
 
-- the six pipeline skills/commands — `triage`, `plan-slice`, `run-slice`, `write-task`, `slice-dag`,
-  `arch-design` — under `.claude/commands/` or `.claude/skills/`, at **every** `.claude` found in
-  step 1, not just the root;
-- the eleven dev agents — `code-writer`, `code-reviewer`, `plan-writer`, `plan-reviewer`,
-  `plan-briefer`, `plan-scribe`, `slice-grounder`, `test-fixer` (or an older `code-tester`),
-  `test-agent`, `slice-verifier`, `arch-design` — likewise at every `.claude`;
-- the pipeline scripts and their session machinery — `${CLAUDE_PLUGIN_ROOT}/tools/task_runner.py`,
-  `plan_loop.py`, `grounding_check.py`, `grounding_dispatch.py`, `close_slice.py`,
-  `claude_session.py`, `codex_exec.py`, their tests, and any `scripts/preflight.py` the plugin's
-  preflight replaces;
-- **the in-repo contract docs** — a `docs/**/task-workflow.md` describing the loop, and its topic
-  siblings `task-runner.md`, `runner-state.md`, `agent-dispatch.md`, `plan-loop.md`,
-  `grounding-ledger.md`. The plugin owns those contracts now (`${CLAUDE_PLUGIN_ROOT}/docs/`); a
-  project copy is a second source of truth that will drift and be believed.
+- the pipeline skills/commands — `triage`, `plan-slice`, `run-slice`, `slice-dag`, `arch-design`,
+  and a retired `write-task` / `major-change` / `minor-change` / `write-slice` — under
+  `.claude/commands/` or `.claude/skills/`, at **every** `.claude` found in step 1, not just the
+  root;
+- the nine dev agents — `code-writer`, `code-reviewer`, `doc-writer`, `plan-writer`,
+  `plan-reviewer`, `test-agent`, `test-fixer`, `rebase-agent`, `arch-design` — plus the retired
+  `plan-briefer`, `plan-scribe`, `slice-grounder`, `slice-verifier` and an older `code-tester`,
+  likewise at every `.claude`;
+- the pipeline scripts and their session machinery — `run_loop.py`, `plan_loop.py`,
+  `sweep_slice.py`, `close_slice.py`, `slice_cost.py`, `preflight.py`, `allocate-next-slice.sh`
+  and their tests (commonly under `tools/ai_workflow/`), plus the retired `task_runner.py`,
+  `grounding_check.py`, `grounding_dispatch.py`, `claude_session.py`, `codex_exec.py`, and any
+  `scripts/preflight.py` the plugin's preflight replaces;
+- **the in-repo contract docs** — `run-loop.md`, `runner-state.md`, `plan-loop.md`,
+  `plan-template.md`, `agent-dispatch.md`, `project-contract.md`, `preflight.md`,
+  `residual-sweep.md`, and the retired `task-workflow.md`, `task-runner.md`,
+  `grounding-ledger.md` (commonly under `docs/conventions/`). The plugin owns those contracts now
+  (`${CLAUDE_PLUGIN_ROOT}/docs/`); a project copy is a second source of truth that will drift and
+  be believed.
+
+**What a project keeps owning** are the two docs the contract lines *point at* — its slice testing
+strategy and its slice doc plan. Those describe this project's deploy verification and its
+documentation set; the plugin resolves them through `CLAUDE.md` and never ships them.
 
 Leave everything else, and **say what you left**. A repo's own agents and commands are its own —
 including auxiliary workflow ones `dev` does not replace (`update-docs` is the project's own;
@@ -72,7 +84,7 @@ folder (a build tracker, a codegen script).
 Rewrite those references to their `/dev:` names, and report what you rewrote:
 
 ```bash
-grep -rn '/triage\|/plan-slice\|/run-slice\|/write-task\|/slice-dag\|/arch-design' \
+grep -rn '/triage\|/plan-slice\|/run-slice\|/slice-dag\|/arch-design' \
   <each .claude found in step 1>
 ```
 
@@ -104,7 +116,7 @@ blocks it — it stays (with its references rewritten, above).
 
 `.kubecoder/project.yaml` is contract item 1 and the pipeline's only source of the component set.
 A repo may already have one for its envs while declaring no automation — which is the part that
-matters here, because **the manifest's `test:` statements are the gate**: `/dev:run-slice`'s runner
+matters here, because **the manifest's `test:` statements are the gate**: `/dev:run-slice`'s run loop
 executes `kc project test --project <name>` itself and merges nothing that comes back red.
 
 Work through it with the operator, per component:
@@ -126,24 +138,29 @@ kc project test --project <name>   # per component: does it do what the operator
 
 ### 4. The contract lines and the `CLAUDE.md` diet
 
-Add the three lines to the **root** `CLAUDE.md`; preflight reads them by exact label prefix and
+Add the four lines to the **root** `CLAUDE.md`; preflight reads them by exact label prefix and
 bails without them. `${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md` is authoritative on their
 meaning; do not restate it here or in the repo.
 
 ```
 Spec repo: <path>
 Slice testing strategy: <path-to-doc>
+Slice doc plan: <path-to-doc>
 Design philosophy: <path-to-doc>
 ```
 
-Two of those point at **project-owned docs that must exist** — preflight checks the files, and
+Three of those point at **project-owned docs that must exist** — preflight checks the files, and
 agents read them:
 
-- **Slice testing strategy** — how a *slice* is proven once its tasks are merged: what gets
-  deployed, which live checks run, where the operator gate sits, how findings resolve. `run-slice`
-  resolves its close-out through this line and never names the doc. If the repo has no such
-  procedure, this is the moment to write one with the operator; if it has no meaningful
+- **Slice testing strategy** — how a *slice* is proven once its phases are merged: what gets
+  deployed, which live checks run, where the operator gate sits, how findings resolve. The run
+  loop's test phase is "read this doc and execute it"; nothing names the doc. If the repo has no
+  such procedure, this is the moment to write one with the operator; if it has no meaningful
   deploy-verification at all, say that in the doc rather than leaving the line dangling.
+- **Slice doc plan** — the same shape for documentation: which doc surfaces a shipped slice must
+  bring up to date, and the rules for each. The doc phase is "read this doc and execute it". A
+  repo whose docs are one README says exactly that; the phase then has little to do, which is a
+  cheap answer rather than a missing one.
 - **Design philosophy** — the change-discipline rules `code-writer` obeys (breaking changes,
   tombstones, defensive caveats, what "tested" means here).
 
@@ -162,7 +179,8 @@ Preflight only checks the path is a directory, but the pipeline needs a shape:
   .gitignore                # slices/.next-slice, slices/.slice-alloc.lock (host-local, self-seeding)
   slices/
     backlog/                # triage writes NNN_slug/slice.md here; plan-slice promotes out of it
-    NNN_slug/               # planned + in flight (slice.md, tasks/, state.json, log.txt)
+    NNN_slug/               # planned + in flight (slice.md, plan.md, verification.json,
+                            #   state.json, log.txt)
     completed/  deferred/  cancelled/  archive/
 ```
 
@@ -179,7 +197,7 @@ add the `Spec repo:` line.
 pipeline can navigate, nothing more.
 
 **Do not rewrite slice bodies.** An old-format slice is not a defect to fix here: `/dev:plan-slice`
-reads one and deals with it, with some effort, at the point it plans it (the runner's preflight
+reads one and deals with it, with some effort, at the point it plans it (the loop's preflight
 accepts `overview.md` beside `slice.md`, and `/dev:slice-dag` expects to meet both). Reworking a
 slice you are not planning is speculative effort on something that may never be planned, spent
 without the context the planner will have. Leave them.

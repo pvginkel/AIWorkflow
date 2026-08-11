@@ -215,8 +215,8 @@ automation — this is what makes the repo a KubeCoder project and what the pipe
   (with the conditional `poetry env use python3.13`, learning #3), frontend `pnpm install`
   (cwd=`frontend`), frontend `pnpm build`.
 - **`test:`** — `poetry run run-suite` and the per-component suites. The runner executes
-  `kc project test --project <name>` as its per-task gate, so this is the statement that decides
-  whether a task merges.
+  `kc project test --project <name>` as its per-phase gate, so this is the statement that decides
+  whether a phase merges.
 - **`lint:`** — backend `poetry run check`, frontend `pnpm run check`.
 
 Then install and smoke it:
