@@ -1050,10 +1050,10 @@ The test phase is not done: work this slice committed is not on origin
 {repos}
 
 A reviewed-but-unpushed commit never reaches the deploy it was meant for
-(slice 125's HelmCharts commit crash-looped the dev controller exactly that
-way). Push what is owed, in whatever order these repos need, per your
-procedure doc's push step — wait for the CI build it names, and redo any live
-check the push invalidates. Do not start other work.
+(one run's dev roll crash-looped exactly that way, its sibling's half of the
+change still local). Push what is owed, in whatever order these repos need,
+per your procedure doc's push step — wait for the CI build it names, and redo
+any live check the push invalidates. Do not start other work.
 """
 
 CONSULT_PROMPT = """\
@@ -1311,8 +1311,8 @@ class RunLoop:
         Nothing else in a run fetches: the driver branches off the LOCAL base
         branch and ff-merges back into it, so a repo cloned days ago keeps
         whatever `origin/<base>` came with the clone, and an agent reading
-        that ref reads the day of the clone. Slice 070's P2 called a
-        HelmCharts commit that had been on `origin/main` for a day "absent
+        that ref reads the day of the clone. One run's executor called a
+        sibling-repo commit that had been on `origin/main` for a day "absent
         from origin" and raised a Blocker over it. Refs only — no local branch
         moves, so a base sitting behind its origin stays the operator's
         call."""

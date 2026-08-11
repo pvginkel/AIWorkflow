@@ -110,8 +110,8 @@ slice.md — there is no fix-verify loop behind it. Handle the exit:
   together with the loop-owned `plan_state.json` and `plan_log.txt` (they are the planning run's
   who-did-what record), staging by name; drop a stale `plan_bailout.json`. The slice folder MUST
   be clean after.
-- Move the slice's Kanban card from **To Do** to **Ready**.
-- Report what is now Ready: the phases (id, target, title, one line each), the acceptance
+- Advance the slice's tracker card from **triaged** to **planned**.
+- Report what is now ready: the phases (id, target, title, one line each), the acceptance
   criteria, and any A/B decisions made with their grounds. A correction on top of this summary
   is a ruling — record it in plan.md (in place) and apply it, per §4's first bullet. Do **not**
   start `/dev:run-slice` — running is a separate operator instruction.
@@ -124,4 +124,4 @@ slice.md — there is no fix-verify loop behind it. Handle the exit:
 - [ ] Attachments only where genuinely underivable, at the smart-dev altitude; no doc-phase
       content anywhere in the plan; rulings edited in place, no correction-chains.
 - [ ] The plan loop exited 0 (reviewer verdict on file; findings adjudicated).
-- [ ] Slice folder committed clean; card moved to Ready.
+- [ ] Slice folder committed clean; card advanced to planned.

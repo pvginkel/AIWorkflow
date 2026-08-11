@@ -25,7 +25,7 @@ nothing from you between launch and close-out.
 1. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for run`. On a non-zero exit, **relay
    its message verbatim** and stop — fix the root cause only if it is clearly environmental,
    otherwise notify the operator. A dirty working tree is never yours to clean up.
-2. Move the slice's Kanban card (`[NNN] …`, in Ready) to **In Progress**.
+2. Advance the slice's tracker card (`[NNN] …`, planned) to **in progress**.
 3. Launch, in the background (`run_in_background: true`):
 
    ```bash
@@ -63,15 +63,15 @@ correction-chains; git holds the history. Then relaunch with `--resume`.
    entry Pending → Completed and `git mv`s the folder to `slices/completed/`, staging by name);
    commit together with the slice artifacts, **including `state.json` and `log.txt`** (the run's
    who-did-what record; only a stale `bailout.json` is dropped).
-2. File `state.json`'s `cards` list on Trello (per the host's issue-tracker convention) — the
+2. File `state.json`'s `cards` list to the issue tracker (per the host convention) — the
    loop recorded every advisory finding disposition there. Dedupe entries that state the same
    finding, then: behavioural and design findings file **one card each**; mechanical trivia —
    comment/formatting residue, cosmetic polish, test-shape nits — batches into **one
    `Slice NNN residuals` card** listing the items. What goes where is the only judgment call
    here; the list itself is a mechanical read.
-3. Move the Kanban card to **Done**, notify the operator per the host's notification convention,
-   and report short: per-phase rounds from `state.json`, test/doc phase outcomes, the cards
-   filed, anything owed.
+3. Advance the tracker card to **done**, notify the operator per the host's notification
+   convention, and report short: per-phase rounds from `state.json`, test/doc phase outcomes,
+   the cards filed, anything owed.
 
 Nothing else is yours: no test running, no pre-exploration, no re-derivation of agent results,
 no suite re-runs, no doc work. **Escalate, don't absorb** — if you find yourself dispatching dev
@@ -86,7 +86,7 @@ agents or fixing code, stop; that work belongs in a phase the loop executes.
   build on the latest state.
 - **The suite is green before every slice.** A failure during the run is the slice's regression —
   never accept "flaky" or "pre-existing" from anyone.
-- **prd's image stays operator-gated.** The loop's devlock hold pre-authorizes the pushes the slice
-  needs — including a HelmCharts push, which reconciles prd's chart as well as dev's; promoting
-  prd's image is the operator's separate, explicit decision
-  (`docs/operations/deploy-operations.md`).
+- **Production stays operator-gated.** The loop's devlock hold pre-authorizes the pushes the slice
+  needs for dev verification — even one whose GitOps effects reach past dev (a shared chart
+  reconciles every environment it deploys); promoting anything into production is the operator's
+  separate, explicit decision, per the project's deploy-operations doc.

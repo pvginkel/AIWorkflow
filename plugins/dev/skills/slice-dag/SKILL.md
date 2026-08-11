@@ -76,7 +76,7 @@ For each **new** slice capture exactly four fields. Keep the cost down:
   `depends|after|before|must run|precede|sequence|run order|prerequisite|blocked`). A `needs` is a
   slice that must be **done first**, not merely related.
 - **Gate** — an external blocker that must clear before the slice can run at all (e.g. 055's
-  *esp-idf spike* ⛔ RUN GATE; an operator action; a secret to mint). Short text, or `—`.
+  *vendor-sdk spike* ⛔ RUN GATE; an operator action; a secret to mint). Short text, or `—`.
 
 When several slices are new, dispatch **parallel `Explore` agents on Sonnet** — one tight brief
 per slice that returns *only* `{subprojects, needs, gate, scope}` — so the overview reads stay
@@ -125,10 +125,10 @@ names in the lane plan, but here scope is fine.
 
 | Slice | Subprojects                          | Needs   | Gate              | Scope                              |
 | ----- | ------------------------------------ | ------- | ----------------- | ---------------------------------- |
-| 045   | worker                               | —       | —                 | home / github-auth robustness      |
-| 046   | contracts, controller                | —       | —                 | per-env storage layout             |
-| 052   | bot, contracts, controller, worker   | 039     | —                 | rename environments                |
-| 055   | contracts, controller, worker        | 053,054 | esp-idf spike     | tool-container parity (keystone)   |
+| 045   | firmware                             | —       | —                 | wifi-reconnect robustness          |
+| 046   | models, backend                      | —       | —                 | per-device storage layout          |
+| 052   | frontend, models, backend, firmware  | 039     | —                 | rename devices                     |
+| 055   | models, backend, firmware            | 053,054 | vendor-sdk spike  | device provisioning (keystone)     |
 
 ## Graph
 
@@ -180,10 +180,10 @@ the nodes, the `needs` edges, each slice's subproject set, the gates, and the la
    earliest legal wave that has a free lane **and** shares no subproject with what's already in that
    wave. If every legal+free wave clashes, prefer to push the slice one wave later when that buys a
    clash-free row cheaply; otherwise place it and accept the merge (the goal is *minimise*, not
-   *eliminate*). Never put two `contracts` slices in the same wave unless there is genuinely no
-   alternative — say so in the rationale when you do.
-4. **Serialise heavy overlaps in one lane.** When two slices overlap a lot (shared `contracts`, or
-   several shared subprojects) and neither needs the other, prefer the **same lane in consecutive
+   *eliminate*). Never put two slices touching the codegen/drift-gated component in the same wave
+   unless there is genuinely no alternative — say so in the rationale when you do.
+4. **Serialise heavy overlaps in one lane.** When two slices overlap a lot (a shared codegen-gated
+   component, or several shared subprojects) and neither needs the other, prefer the **same lane in consecutive
    waves** (sequential in one session = zero cross-session merge) over the same wave.
 5. **Gates.** A gated slice is still placed (every pending slice appears), marked `⛔`, and pushed
    late / off the critical path where possible; note the gate in *Hotspots & gates*.

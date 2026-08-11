@@ -21,7 +21,7 @@ doc phase           → "read the slice-doc-plan doc and execute"; diff-based, s
 Phases are `### P<id> — <title>` headings, id free-form `[A-Za-z0-9]+` — `P3a` inserts between
 `P3` and `P4`. **Document order is authoritative; ids are labels.** Each phase opens with a
 one-line **`Target:`** naming where it lands — a `kc project list` component, or a sibling repo
-path (`../HelmCharts`) — from which the driver roots its git operations (branch, merge,
+path (`../SiblingRepo`) — from which the driver roots its git operations (branch, merge,
 dirty-checks in that repo) and picks the gate: `kc project test --project <name>` for a
 component; `kc project test` from the sibling's own root when it carries a manifest; no
 deterministic gate otherwise (the reviewer is told the state is unverified).
@@ -62,8 +62,8 @@ itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id
   the run has touched before the test phase). Nothing else in a run fetches: the driver branches
   off the **local** base and ff-merges back into it, so a repo cloned days ago keeps the
   `origin/<base>` that came with the clone, and an agent reading that ref reads the day of the
-  clone — slice 070's P2 called a HelmCharts commit that had been on `origin/main` for a day
-  "absent from origin" and raised a Blocker over it. Refs only: no local branch moves, so a base
+  clone — one run's executor called a sibling-repo commit that had been on `origin/main` for a
+  day "absent from origin" and raised a Blocker over it. Refs only: no local branch moves, so a base
   sitting behind its origin stays the operator's call. Agents carry the other half of the rule —
   never conclude a commit is missing from a tree you have not fetched yourself.
 - **Gate** — the driver runs the target's deterministic gate itself; green is recorded
@@ -94,8 +94,8 @@ itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id
   it as deterministic fact — green suites are not re-run by agents — under one principle, stated
   in both dispatches with no special cases: **a branch whose gates are red is not pushed**. A
   red sweep is the consult's to act on — append a fixing phase, or bail with the question — and
-  deliberately not driver-enforced. Slice 152 is the incident this front-loads: a known-red
-  manual "owed to the doc phase" was answered `complete`, pushed by the test phase, and failed
+  deliberately not driver-enforced. The incident this front-loads: a known-red docs build
+  "owed to the doc phase" was answered `complete`, pushed by the test phase, and failed
   in CI — a spent test session and a failed build for a fact knowable at loop-tail entry. The
   sweep runs before the devlock is taken, so its minute never extends the hold.
 - **Completion consult** — one fresh bare session: *"does the plan describe outstanding work?"*,
@@ -114,8 +114,8 @@ itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id
   — it fetches and compares `origin/<base>..<base>`. A repo left behind nudges the test agent's
   session (cap 2), then bails `unpushed`. The driver **checks rather than pushes**: a multi-repo
   slice may need an order only the agent running the verification knows. A reviewed-but-unpushed
-  sibling commit otherwise never reaches the deploy it was meant for — slice 125's HelmCharts
-  commit crash-looped the dev controller exactly that way.
+  sibling commit otherwise never reaches the deploy it was meant for — one run's dev roll
+  crash-looped exactly that way, its sibling's half of the change still local.
 - **Doc phase** — after test-complete: one `doc-writer` session told to read the slice-doc-plan
   doc (`CLAUDE.md`'s `Slice doc plan:` pointer) and execute it — diff-based over the whole
   slice, single pass, manual + dev docs together, on its own branch, **never pushing**. The

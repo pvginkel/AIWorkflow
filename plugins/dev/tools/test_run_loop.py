@@ -1361,8 +1361,8 @@ def test_doc_gate_sweeps_lint_build_test_fail_fast():
 #
 # The driver branches off the LOCAL base and ff-merges back, so it never
 # fetches on its own account; a sibling clone keeps the `origin/<base>` it was
-# cloned with until something refreshes it. Slice 070's P2 read one a day
-# stale and raised a Blocker over a HelmCharts commit that was on origin/main
+# cloned with until something refreshes it. One executor read a ref a day
+# stale and raised a Blocker over a sibling commit that was on origin/main
 # all along.
 
 def fetch_precedes_checkout(loop, root):
@@ -1417,8 +1417,8 @@ def test_test_phase_fetches_every_touched_repo_before_dispatch():
 # Nothing in the driver pushes a code phase — `_run_phase` ff-merges locally
 # in whichever repo the phase targeted — so the push is the test phase's, per
 # its procedure doc. A reviewed-but-unpushed sibling commit never reaches the
-# deploy it was meant for (slice 125's HelmCharts commit crash-looped the dev
-# controller that way), so the driver checks before the doc phase.
+# deploy it was meant for (one run's dev roll crash-looped that way), so the
+# driver checks before the doc phase.
 
 def sibling_phase_slice(tmp):
     """A slice whose one phase targets a sibling repo, so `state["bases"]`

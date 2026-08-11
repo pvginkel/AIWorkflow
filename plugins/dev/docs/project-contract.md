@@ -52,9 +52,12 @@ Each **bails, not warns** — it is one line to add:
 
 ## 6. Host conventions (`~/.claude/CLAUDE.md`)
 
-The skills reference the **issue tracker** and **notifications** generically ("file findings to
-the issue tracker", "notify per the host convention", "the project's owner tag"). The concrete
-wiring — which kanban tool, board/list names, the owner-tag rule (the bare repo name), the
+The skills speak about the **issue tracker** and **notifications** in the workflow's own
+vocabulary, never a concrete tool's: an **intake queue** of owner-tagged cards, the **operator's
+action queue**, **deferred**/**rejected** dispositions, one **slice card** per slice advancing
+**triaged → planned → in progress → done**, and the **Solution Known** mark
+([residual-sweep.md](residual-sweep.md)). The concrete wiring — which tracker, which board, list
+or label realises each of those roles and states, the owner-tag rule (the bare repo name), the
 notification command — is environment-specific and lives in the host `~/.claude/CLAUDE.md`, which
 already holds it. The workflow neither ships nor duplicates it.
 

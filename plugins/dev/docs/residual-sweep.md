@@ -1,6 +1,6 @@
 # The residual sweep — Solution Known cards to a run-ready slice
 
-Slice runs shed residuals: small advisory findings the generation bar routes to Trello cards
+Slice runs shed residuals: small advisory findings the generation bar routes to tracker cards
 instead of fixing mid-run (consult trivia, doc drift, test hygiene). Most are real work but far
 too small to justify a planning session each — yet fixing them ad hoc would lose every gate the
 workflow exists to provide. The sweep is the lane between: `/dev:triage` marks qualifying cards
@@ -25,12 +25,11 @@ storage-layout or wire-contract changes, any card that leaves something open ("i
 "decide", "confirm"), and any fix that **adds behaviour** — a new code path, process, or piece
 of state — rather than correcting what exists in place. Added behaviour carries design surface —
 failure policy, bounds, collisions with documented rulings — that a card cannot prove is
-settled, however completely it argues its diagnosis. The calibration case is card #469
-(image-builder rootfs residue): a root-caused bug with a measured, empirically verified fix
-mechanism, yet implementing it meant composing an argv no card sentence had decided, bounding a
-daemon-owned child against a documented no-timer ruling, and picking a failure policy — three
-design calls, each with teeth. Mechanism-verified is not change-decided; when in doubt, the
-normal route.
+settled, however completely it argues its diagnosis. The calibration case was a root-caused
+resource-leak bug with a measured, empirically verified fix mechanism — yet implementing it
+meant composing an argv no card sentence had decided, bounding a daemon-owned child against a
+documented ruling, and picking a failure policy — three design calls, each with teeth.
+Mechanism-verified is not change-decided; when in doubt, the normal route.
 
 The criteria are appended to the card description under an `## Acceptance criteria` heading —
 that section is the card's only mark, persisting across triage sessions until a sweep archives
@@ -39,7 +38,7 @@ the card; the Solution Known set is confirmed with the operator like every other
 ## The generator
 
 `sweep_slice.py` (docstring holds the payload schema) is filesystem + git only — the triage
-session keeps the Trello half. From a payload of one item per card (title, target, verbatim card
+session keeps the tracker half. From a payload of one item per card (title, target, verbatim card
 body, criteria) it allocates a slice number, writes `slices/NNN_<slug>/` with `slice.md` (the
 record: every card quoted), `plan.md` (one phase per item, card bodies blockquoted — which is
 also what neutralises stray `###`/`Target:` lines for the parser), and `verification.json` (one
@@ -63,5 +62,5 @@ triage-and-fix-inline session both trade the gates for speed; don't re-propose t
 ## Card lifecycle
 
 Criteria onto the card at triage → swept cards archived with a comment naming the slice folder
-when the slice files → one Kanban **To Do** card `[NNN] Residual sweep` → `/dev:run-slice`, launched by the
+when the slice files → one triaged slice card `[NNN] Residual sweep` → `/dev:run-slice`, launched by the
 operator like any other slice, closes out through the normal `close_slice.py` path.

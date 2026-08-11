@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""File a residual-sweep slice from Solution Known Trello cards — mechanically.
+"""File a residual-sweep slice from Solution Known tracker cards — mechanically.
 
 /dev:triage marks a card **Solution Known** — change fully decided, impact plain,
 its acceptance criteria writable from the card text alone — by recording those
@@ -13,16 +13,16 @@ batch skips planning entirely and goes straight to /dev:run-slice
       plan.md             one phase per payload item
       verification.json   one item per acceptance criterion
 
-The payload is JSON the triage session assembles — the session has the Trello
+The payload is JSON the triage session assembles — the session has the tracker
 access; this script touches no network:
 
     {
       "slug": "residual_sweep",            // optional (this is the default)
       "items": [
         {
-          "card": 449,                      // Trello card number (idShort)
+          "card": 449,                      // tracker card number
           "card_name": "<card title>",
-          "card_url": "https://trello.com/c/...",
+          "card_url": "<link to the card>",
           "title": "<phase title, imperative>",
           "target": "root",                 // kc component or ../SiblingRepo
           "body": "<card description, verbatim markdown>",
@@ -47,7 +47,7 @@ Guard rails:
     unstaged, for inspection; the burned slice number is a harmless gap.
 
 Like close_slice.py this stages by name and does not commit — the triage
-session commits, archives the swept cards, and files the Kanban card.
+session commits, archives the swept cards, and files the slice card.
 
 Usage:
     sweep_slice.py <payload.json> [--force]
@@ -359,8 +359,8 @@ def file_sweep(payload_path: Path, code_root: Path, force: bool = False) -> Path
     print()
     print("the session's half, now:")
     print("  1. commit the staged spec-repo files (never `git add -A` there)")
-    print(f"  2. Kanban: one To Do card `[{num}] Residual sweep`")
-    print("  3. Triage board: archive each swept card with a comment naming "
+    print(f"  2. tracker: one triaged slice card `[{num}] Residual sweep`")
+    print("  3. intake queue: archive each swept card with a comment naming "
           "the slice folder")
     print(f"  4. the run stays the operator's move: /dev:run-slice on "
           f"slices/{num}_{slug} when they choose")

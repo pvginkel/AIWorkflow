@@ -6,7 +6,7 @@ argument-hint: "[findings-document]"
 
 # Triage
 
-Turn a batch of raw asks — Triage-board cards, a findings document, chat discussion — into filed
+Turn a batch of raw asks — tracker intake cards, a findings document, chat discussion — into filed
 change requests: one slice folder per subject under `<spec-repo>/slices/backlog/NNN_slug/`, the
 required input to `/dev:plan-slice`. Argument (optional): path to a findings document (e.g.,
 `tmp/uat_testing.md`).
@@ -30,7 +30,7 @@ convention (`~/.claude/CLAUDE.md`).
 ### 1. Collect
 
 Gather the inputs: the findings document if one was passed, the relevant chat discussion, and the
-outstanding Inbox cards on the Triage board carrying **this project's owner tag** (other projects'
+outstanding intake-queue cards carrying **this project's owner tag** (other projects'
 and untagged cards stay; if pointed at an untagged card, say so instead of adopting it).
 
 Write a working document at `<spec-repo>/handovers/triage_YYYY-MM-DD.md` — scratch, deleted at the
@@ -53,13 +53,13 @@ their decision.
 
 Separate what shouldn't become a slice, and confirm the separation with the operator:
 
-- **Duplicates** — within this triage set, or of a card a plain board-list query surfaces →
+- **Duplicates** — within this triage set, or of a card a plain tracker query surfaces →
   archive with a short comment. (Whether something is already *implemented* is a code question;
   the planner discovers that cheaply.)
 - **Pure discussion**, nothing actionable → flag for the operator.
 - **Operator-owned work** — infrastructure or tooling outside the dev-agent slice workflow, or an
-  action only the operator can take → move the card to **Operator Actions**, with a one-line
-  comment saying what is theirs to do.
+  action only the operator can take → move the card to the **operator's action queue**, with a
+  one-line comment saying what is theirs to do.
 - **Solution Known** — a senior dev could deliver quality work from the card alone, and it
   passes the litmus in step 5 → write the acceptance criteria into the card, per step 5. These
   skip filing (step 4) and planning both: step 5 batches them straight into a run-ready slice.
@@ -132,7 +132,7 @@ When a card qualifies, append its criteria to the card description under an
 it persists, so a later session sweeps cards this one only qualified. The Solution Known set is
 part of step 3's confirmation with the operator.
 
-When the Inbox holds **five or more** qualifying cards with this project's owner tag (fewer
+When the intake queue holds **five or more** qualifying cards with this project's owner tag (fewer
 simply accumulate — say so in the close-out), assemble the payload — one item per card: a short
 imperative title, `target` (a `kc project list` component name or a sibling-repo path, read off
 the paths the card itself cites — routing, not code reading), the card description verbatim as
@@ -147,17 +147,18 @@ It allocates the number, writes `slice.md` / `plan.md` / `verification.json` und
 `<spec-repo>/slices/NNN_<slug>/` — born planned, skipping `/dev:plan-slice` — validates the plan with
 the run loop's `--dry-run`, adds the README **Pending** line, and stages by name. Relay its
 errors verbatim; on success, fold the results into step 6: commit the staged spec-repo files, one
-Kanban **To Do** card `[NNN] Residual sweep`, and archive each swept card with a comment naming
-the slice folder. Running the slice stays the operator's move (`/dev:run-slice`), like any other.
+slice card `[NNN] Residual sweep` (triaged, as in step 6), and archive each swept card with a
+comment naming the slice folder. Running the slice stays the operator's move (`/dev:run-slice`), like any other.
 Rules and rationale: `${CLAUDE_PLUGIN_ROOT}/docs/residual-sweep.md`.
 
 ### 6. Close out
 
-- **Kanban:** one **To Do** card per slice — title `[NNN] <slice title>`, this project's owner
-  tag and no other, a short highlights summary, a pointer to the slice folder, and the subsumed
-  card ids.
-- **Triage board:** archive the cards the slices subsume and the duplicates from step 3, each
-  with a short comment. Items the operator parks go to **Later**; rejections to **Won't Do**.
+- **Slice cards:** one per slice, in its **triaged** state — title `[NNN] <slice title>`, this
+  project's owner tag and no other, a short highlights summary, a pointer to the slice folder,
+  and the subsumed card ids.
+- **Intake queue:** archive the cards the slices subsume and the duplicates from step 3, each
+  with a short comment. Items the operator parks take the tracker's **deferred** disposition;
+  rejections its **rejected** one.
 - **Delete the working document** — if deleting it would lose a fact, it isn't absorbed yet.
 - **Notify the operator** per the host convention — "N items triaged into M slices under
   `<spec-repo>/slices/backlog/`. Run /dev:plan-slice on a slice when ready." — plus, when step 5 ran,

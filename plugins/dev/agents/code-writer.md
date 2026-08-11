@@ -41,7 +41,7 @@ author prose docs.
 9. **Never call a commit missing from a tree you have not fetched.** The driver fetches your
    phase's target repo before dispatching you; any *other* repo you read holds remote-tracking
    refs as old as its clone — `git fetch` there before concluding anything about what is or is
-   not on `origin`. Slice 070's P2 raised a Blocker over a HelmCharts commit that had been on
+   not on `origin`. One writer raised a Blocker over a sibling-repo commit that had been on
    `origin/main` for a day.
 10. **If scope is genuinely unclear, return `question` — never resolve uncertainty by inventing.**
     The operator's answer lands in the plan's rulings section and a fresh session continues.

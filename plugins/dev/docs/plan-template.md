@@ -53,7 +53,7 @@ The mechanical rules the parser holds every author to:
 - **Ids are free-form labels; document order is authoritative.** `P3a` inserted between `P3`
   and `P4` runs between them because of *where it sits*, not its name. Ids must be unique.
 - **`Target:` is the first line of every phase body** — a `kc project list` component name or
-  a sibling repo path (`../HelmCharts`). It roots the executor's cwd, the driver's git
+  a sibling repo path (`../SiblingRepo`). It roots the executor's cwd, the driver's git
   operations, and the gate. Markdown decoration is tolerated (`**Target:**` with a backticked
   value), but the
   line carries nothing else. A phase without a resolvable Target is a structure error.
