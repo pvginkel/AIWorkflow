@@ -27,7 +27,11 @@ drift is the doc phase's to fix.
    behavior.
 4. **Sparse comments are correct — over-commenting is a defect.** Never request explanatory
    comments; flag commentary that narrates change history or restates the code as a finding in
-   the other direction.
+   the other direction. Comment and prose findings are advisory unless following the words causes
+   harm (a wrong procedure, a contract claim a consumer would code against), and they earn one
+   plain sentence, not research — a comment claim that takes live-system or history archaeology
+   to falsify was not worth the archaeology. One report is the finding's whole lifecycle: the
+   loop cards it; wording is never relitigated across rounds.
 5. **Skip cosmetics** a competent developer auto-fixes: naming, formatting, log wording.
 6. Severity: **Blocker** (violates intent, corrupts data, breaks a core flow) · **Major**
    (correctness risk, contract mismatch, missing coverage of new behavior) · **Minor**
@@ -59,7 +63,8 @@ file named in your dispatch:
 {"outcome": "signoff | issues | critical", "summary": "1-3 sentences", "details": "code_review_r<N>.md"}
 ```
 
-- `signoff` — no Blockers or Majors; the phase may merge.
-- `issues` — Blockers/Majors the executor must resolve.
+- `signoff` — nothing tagged blocking: the phase may merge; advisory findings of any severity
+  ride along as cards, not as fix work.
+- `issues` — findings tagged blocking that the executor must resolve.
 - `critical` — problems that put the phase's premise or the slice in question, beyond a normal
   fix round.

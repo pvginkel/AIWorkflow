@@ -72,11 +72,14 @@ itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id
   separate fixer in the phase loop.
 - **Review** — fresh **code-reviewer** per round against the phase's outcome, the acceptance
   criteria (`verification.json`) and repo conventions. Round 1 full branch diff; rounds 2+ are
-  delta-scoped to the fix range. Round 1's fix is automatic; from round 2 on (and on any
-  `critical`) a fresh consult judges the findings against a **funding bar that rises per round**
-  — blocking-only, then Blocker-only, then critical-only; a prose-only fix range applies the
-  next step early — before an executor round is spent. Backstop cap 5. Findings that merge
-  unresolved are carded, never lost.
+  delta-scoped to the fix range. A fix round resolves the findings tagged **blocking** and
+  nothing else — advisory findings are carded at close-out (the residue rider mops up the
+  mechanical ones), never fixed mid-loop, so each re-review stays the size of the blocking
+  fixes rather than everything the writer chose to touch. Round 1's fix is automatic; from
+  round 2 on (and on any `critical`) a fresh consult judges the findings against a **funding
+  bar that rises per round** — blocking-only, then Blocker-only, then critical-only; a
+  prose-only fix range applies the next step early — before an executor round is spent.
+  Backstop cap 5. Findings that merge unresolved are carded, never lost.
 - **Merge** — worktree clean, gate green on HEAD (re-run if it moved; red cannot merge),
   ff-merge into the base branch, branch deleted, stamp.
 - Executor terminals: `question` pauses the run for the operator (exit 4 — the answer lands in

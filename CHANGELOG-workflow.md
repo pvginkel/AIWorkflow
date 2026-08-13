@@ -4,6 +4,29 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-13 — fix rounds stop relitigating comments (v0.4.2)
+
+Ansible slice 013 ($45, 3h wall for a small slice) spent the second rounds of two of its three
+phases on comment wording. The chain: the reviewer reported advisory prose findings with forensic
+evidence (Jenkins build-history archaeology to falsify one comment sentence, a git dig to date a
+dead doc anchor); the fix round's "resolve every finding" pulled every advisory in alongside the
+one blocking finding; the comment fixes became the delta review's subject and bred new comment
+findings; the completion consult mopped up what was left. Three prompt-level bounds close it:
+
+- **Fix rounds resolve blocking findings only.** `EXECUTOR_REVIEW_FIX_PROMPT` scopes the round to
+  findings tagged blocking; advisories are the loop's (cards at close-out, the residue rider's
+  in-place mop-up for mechanical comment fixes at loop tail — the cheap path that already
+  existed). An advisory fixed mid-loop widens the next re-review to everything the fix touched.
+- **Delta reviews verify blocking resolutions and stop re-deriving the world.** Unfixed
+  advisories are the protocol working, not a gap to re-report; premises the prior round proved
+  (live registry state, sibling-repo behavior) are re-derived only where a fix commit touches
+  them.
+- **Comment and prose findings are advisory by default and earn one sentence, not research.**
+  Reviewer rule: harm from following the words is what promotes one to blocking; a comment claim
+  that takes live-system or history archaeology to falsify was not worth the archaeology; one
+  report is the finding's whole lifecycle. Verdicts now hinge on the impact tag — `signoff` =
+  nothing blocking — matching what the better reviews already did in practice.
+
 ## 2026-08-11 — the phased-plan rebuild comes home (v0.4.0)
 
 KubeCoder vendored 0.3.1 back onto its `main` on 2026-07-31 and rebuilt the pipeline there

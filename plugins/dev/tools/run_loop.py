@@ -748,8 +748,12 @@ You are resolving review findings for phase P{phase_id} of slice
 
 The code-reviewer found issues with the phase's branch (the work under review
 is git diff {merge_base}..HEAD on {branch}{where}). Read {review_path} and
-resolve every finding — the reviewer describes problems; the fix design is
-yours. The phase's section in the plan carries its intent; earlier rounds'
+resolve every finding tagged blocking — the reviewer describes problems; the
+fix design is yours. Findings tagged advisory are NOT yours to fix: the loop
+cards them at close-out and the residue rider mops up the mechanical ones.
+An advisory fixed here widens the next round's re-review to everything the
+fix touched and breeds its own findings — comment fixes especially. Leave
+them. The phase's section in the plan carries its intent; earlier rounds'
 reviews sit next to this one — check them before re-deciding anything.
 For a finding about prose the default fix is deleting or narrowing the claim,
 not rewording it — a fix that grows the section is suspect. Run the gate
@@ -797,11 +801,15 @@ found issues: {prev_review}. The executor's response since then is git diff
 (git diff {merge_base}..HEAD) was reviewed last round and is context, not
 re-review scope.
 
-Verify that every round-{prev_round} finding is actually resolved — re-open
-the code, do not take the executor's word — and review the fix commits
-themselves for new problems, including interactions with the branch code they
-touch. The requirements are unchanged: the phase's section in {plan_path}
-and the acceptance criteria in {verification_path}.
+Verify that every round-{prev_round} finding tagged blocking is actually
+resolved — re-open the code, do not take the executor's word — and review
+the fix commits themselves for new problems, including interactions with the
+branch code they touch. Advisory findings left unfixed are the protocol
+working, not a gap — the loop cards them at close-out; do not re-report
+them. Ground the prior round already proved stays proved: re-derive a
+premise (live system state, another repo's behavior) only where a fix commit
+touches it. The requirements are unchanged: the phase's section in
+{plan_path} and the acceptance criteria in {verification_path}.
 
 {gate_line}
 
