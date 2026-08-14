@@ -183,16 +183,22 @@ visible in plan output.
 **Status:** new
 **Cost:** S–M · **Rank:** 7 · **Depends on:** A1 (trial gate)
 
-**Summary.** Run plan-writer at `high`/`medium` instead of `xhigh`, escalating to `xhigh` only on
-real signals — writer returns `questions`, reviewer verdict `issues`, AC-coverage gaps.
+**Summary.** Run the producer roles — plan-writer and code-writer — at `high` instead of `xhigh`
+on declared-small shapes, escalating to `xhigh` on real signals: writer `questions`/`escalate`,
+reviewer `issues`, red gates, blocking findings. Judgment roles (reviewers, consults) stay
+`xhigh` unconditionally.
 
-**Decides it.** An A/B on declared-small shapes: plan-reviewer verdict rate and downstream
-gate_red/appended-phase rate hold while planner cost per tier drops.
+**Decides it.** An A/B on declared-small shapes: plan-reviewer verdict rate, gate-red rate,
+blocking-finding rate and downstream appended-phase rate hold while producer cost per tier drops.
 
 **Log**
 
 - 2026-08-14 — catalogued (interventions.md §4) with counter-evidence stated: o1-low scored 35%
   *higher* on overthinking than o1-high in agentic settings. Trial-gated for that reason.
+- 2026-08-14 — scope widened at operator direction: the run side is the large majority of slice
+  spend, so the code-writer's rounds join the step-down (executor r1 shape-gated cheap, every
+  signal-triggered round `xhigh`). Implementation plan written: [a3-plan.md](a3-plan.md).
+  Scheduled after B1+B4.
 
 ## A4 — Upfront complexity grading
 
