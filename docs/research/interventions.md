@@ -7,7 +7,8 @@ Selection happens separately and jointly; nothing in here is a decision.
 Produced 2026-08-14 from: full reads of the six ★ papers and the Opus effort documentation,
 structured extractions of the twelve remaining papers (including Shi et al. 2406.07791, located and
 mirrored into `articles/`), a survey of the current loop (`plugins/dev` at 0.4.2), and a grounding
-sample of five recent slice runs (KubeCoderSpecs 149–153).
+sample of five recent slice runs (KubeCoderSpecs 149–153). The per-paper extraction reports behind
+every citation here live in [extracts/](extracts/).
 
 **How to read an entry.** Each carries: **Status** (`in place` / `partial` / `new` /
 `decision record`), **Evidence** (paper + specific finding), **Effect** (expected, with measured
