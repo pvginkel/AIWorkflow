@@ -155,9 +155,8 @@ the discrimination test A1 still owes.
 or the **counter-evidence bites**: Cuadron et al. found o1-*low* scored 35% *higher* on
 overthinking than o1-high **in agentic settings**, and the run executor is exactly an agentic
 setting. So watch session `duration_s` and cost per tier first: if `high` sessions run longer or
-spend more than `xhigh` ones, the trial self-refutes early. On kill: record in status.md,
-retreat to plan-side-only or full `xhigh` via the flag — one launch-flag change, no revert
-needed.
+spend more than `xhigh` ones, the trial self-refutes early. On kill: record in status.md, flag
+back to `xhigh` — one launch-flag change, no revert needed — and stage 2 stays unbuilt.
 
 ## 6. Why this is not A4's rejected lane
 
@@ -202,9 +201,23 @@ the kill criteria above are pre-committed.
 | `plugins/dev/.claude-plugin/plugin.json` + `CHANGELOG-workflow.md` | version + entry | S |
 | `docs/research/interventions.md` + `status.md` | A3 scope amendment; log line → validating | S |
 
-Ships as **one version** after B1+B4 (no interaction — those are register-only edits on the run
-side's prose rules): the mechanism, flag, and measurement story are one cascade, and per-loop
-attribution stays clean because the metrics are loop-scoped.
+## 8a. Rollout: run loop first, plan loop conditional
+
+Two stages, decided 2026-08-14 (operator + assessment):
+
+- **Stage 1 — the run half** (§3): the simpler build (no new verdict outcome, no loop
+  transition, the shape already on file) for the larger effect (the run side is the large
+  majority of slice spend), with the stronger safety net — a cheap executor round's failure is
+  caught in-loop by the gate and the `xhigh` reviewer, where a cheap plan's failures surface
+  downstream in the run. Ships as its own version after B1+B4, and **only after B1+B4 have a
+  slice or two of `xhigh` data** — both change what the code-writer produces, and that gap keeps
+  B's comment-rate attribution clean (the tier field segments it regardless).
+- **Stage 2 — the plan half** (§2): conditional on stage 1's read. If the run trial shows the
+  redo tax eating the discount, the plan side's `escalate` machinery — the M-cost half — never
+  gets built; if stage 1 holds, stage 2 ships with its precedent established.
+
+Per-loop attribution stays clean across the stages because the metrics are loop-scoped; the
+flag name (`--writer-effort`) and semantics are shared so stage 2 adds no new operator surface.
 
 ## 9. Open decision: flag default
 

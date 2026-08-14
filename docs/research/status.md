@@ -199,6 +199,9 @@ blocking-finding rate and downstream appended-phase rate hold while producer cos
   spend, so the code-writer's rounds join the step-down (executor r1 shape-gated cheap, every
   signal-triggered round `xhigh`). Implementation plan written: [a3-plan.md](a3-plan.md).
   Scheduled after B1+B4.
+- 2026-08-14 — staged run-loop-first (a3-plan.md §8a): the simpler build for the larger effect,
+  with failures contained in-loop by the gate and the `xhigh` reviewer; the plan half's
+  `escalate` machinery is now conditional on the run trial's read.
 
 ## A4 — Upfront complexity grading
 
