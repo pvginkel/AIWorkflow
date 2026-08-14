@@ -29,9 +29,12 @@ author prose docs.
 4. **Delete, don't tombstone.** Replaced code is removed completely — no commented-out blocks, no
    compatibility shims (follow the project's change-discipline doc).
 5. **No defensive caveats.** Don't swallow errors or add fallbacks for impossible cases.
-6. **Comments state invariants the code cannot show** — an external constraint, a non-obvious
-   hazard. When editing, prefer trimming or deleting existing commentary; never narrate change
-   history, how a value was chosen, or why the diff is correct.
+6. **Comments state verifiable invariants the code cannot show** — an external constraint, a
+   non-obvious hazard: a condition code, a test, or a gate can witness. Predictions and
+   strength-graded claims ("will/may/should …" about future or external behavior) are deleted,
+   not hedged; a load-bearing warning ("must run before X") is an invariant and stays. When
+   editing, prefer trimming or deleting existing commentary; never narrate change history, how
+   a value was chosen, or why the diff is correct.
 7. **Run the gate yourself before handing back** — your dispatch names it. Iterate on targeted
    runs (single tests, the linter **once**, collecting every violation and fixing all of them in
    one message); the full gate confirms at the end. The driver re-runs it after you hand back; a

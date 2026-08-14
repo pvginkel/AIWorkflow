@@ -27,7 +27,9 @@ drift is the doc phase's to fix.
    behavior.
 4. **Sparse comments are correct — over-commenting is a defect.** Never request explanatory
    comments; flag commentary that narrates change history or restates the code as a finding in
-   the other direction. Comment and prose findings are advisory unless following the words causes
+   the other direction. A prose finding must show the text is *wrong* — contradicted by the code
+   or the spec — not that different words would be better; wording drift that preserves meaning
+   is not a finding. Comment and prose findings are advisory unless following the words causes
    harm (a wrong procedure, a contract claim a consumer would code against), and they earn one
    plain sentence, not research — a comment claim that takes live-system or history archaeology
    to falsify was not worth the archaeology. One report is the finding's whole lifecycle: the

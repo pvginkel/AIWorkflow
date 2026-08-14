@@ -240,7 +240,7 @@ the planner is 11–29% of slice cost and this doubles plan latency.
 
 ## B1 — Coder comment policy: verifiable invariants only
 
-**Status:** new
+**Status:** validating
 **Cost:** S · **Rank:** 6 (with B4) · **Depends on:** — (interacts with B3)
 
 **Summary.** Adds the missing criterion to the existing "invariants only" rule: a comment must state
@@ -256,6 +256,11 @@ load-bearing warnings.
   trimming; verifiability is the missing half.
 - 2026-08-14 — sequencing noted: cheap and compatible either way, but B's baseline (49% comment
   share) predates 0.4.2, so measurement comes first.
+- 2026-08-14 — implemented (plugin 0.4.5), after B2's first measurement landed (comment cost at
+  zero on 144+145, count barely moved — B1 attacks the count): the code-writer's comment rule
+  gains the verifiability criterion — a condition code, a test, or a gate can witness;
+  predictions and strength-graded claims deleted, not hedged; load-bearing warnings stay.
+  Reaches runs after push + marketplace update. → validating.
 
 ## B2 — Reviewer comment scope
 
@@ -300,7 +305,7 @@ the explanation no longer sitting next to the code is a real onboarding cost.
 
 ## B4 — Semantic-equivalence bar for prose findings
 
-**Status:** new
+**Status:** validating
 **Cost:** S · **Rank:** 6 (with B1) · **Depends on:** — (subsumed by B2's extension if that lands)
 
 **Summary.** A prose finding must show the text is *wrong* — contradicted by code or spec — not that
@@ -312,6 +317,10 @@ case this folds into it.
 **Log**
 
 - 2026-08-14 — catalogued (interventions.md §5). One register rule.
+- 2026-08-14 — implemented (plugin 0.4.5), with B1: one sentence in the code-reviewer's
+  comment/prose rule — a prose finding must show the text is wrong (contradicted by code or
+  spec); meaning-preserving wording drift is not a finding. Kept to a single sentence per D2's
+  register-growth warning. → validating.
 
 ---
 

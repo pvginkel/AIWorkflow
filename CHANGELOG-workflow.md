@@ -4,6 +4,19 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-14 — comments must be witnessable, prose findings must show wrongness (v0.4.5)
+
+The comment-economy pair from `docs/research/interventions.md` (B1+B4), one rule each side of the
+review boundary. Coder side (B1): the "invariants only" comment rule gains its missing criterion —
+verifiability. A comment must state a condition code, a test, or a gate can witness; predictions
+and strength-graded claims ("will/may/should …" about future or external behavior) are deleted,
+not hedged, while load-bearing warnings ("must run before X") are invariants and stay. Reviewer
+side (B4): a prose finding must show the text is *wrong* — contradicted by the code or the spec —
+not that different words would be better; meaning-preserving wording drift is not a finding.
+Together they remove the substrate the will→may findings grow on and the reviewer's license to
+prefer its own phrasing. Effect is read off I1's comment-category finding rate and comment density
+per diff (`docs/research/status.md` tracks both entries).
+
 ## 2026-08-14 — triage filters the cruft before planning spends on it (v0.4.4)
 
 The triage skill, reworked ground-up around a filtering layer — the plan phase was where items
