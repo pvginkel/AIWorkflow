@@ -72,10 +72,19 @@ itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id
   separate fixer in the phase loop.
 - **Review** — fresh **code-reviewer** per round against the phase's outcome, the acceptance
   criteria (`verification.json`) and repo conventions. Round 1 full branch diff; rounds 2+ are
-  delta-scoped to the fix range. A fix round resolves the findings tagged **blocking** and
+  delta-scoped to the fix range. A `blocking` tag needs an anchor from the closed list in the
+  reviewer's contract (no anchor is advisory by construction), and the verdict reports every
+  finding machine-readably — severity, impact, category, anchor — which the driver persists
+  into `state.json`'s history. A fix round resolves the findings tagged **blocking** and
   nothing else — advisory findings are carded at close-out (the residue rider mops up the
   mechanical ones), never fixed mid-loop, so each re-review stays the size of the blocking
-  fixes rather than everything the writer chose to touch. Round 1's fix is automatic; from
+  fixes rather than everything the writer chose to touch. Fix rounds are **failure-first**:
+  a finding with an executable anchor is witnessed — the failing test written, the claimed
+  repro run — before any code changes. Witnessed, the test rides the fix as its regression
+  test; unable to fail, the finding is **refuted** — no code change, carded with the
+  refutation evidence, the record appended to the round's review file, never relitigated. A
+  fix round that changes no code and refutes every blocking finding settles the review; no
+  further round is spawned. Round 1's fix is automatic; from
   round 2 on (and on any `critical`) a fresh consult judges the findings against a **funding
   bar that rises per round** — blocking-only, then Blocker-only, then critical-only; a
   prose-only fix range applies the next step early — before an executor round is spent.

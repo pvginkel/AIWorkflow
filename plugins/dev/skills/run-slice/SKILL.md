@@ -59,17 +59,20 @@ correction-chains; git holds the history. Then relaunch with `--resume`.
 
 ## Job 4 — close out (exit 0)
 
-1. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_slice.py <slice_dir>` (moves the README slice
+1. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/slice_cost.py <slice_dir> --write-state` — it appends
+   the slice's derived cost ratios to `state.json` as `cost`, so the committed run record prices
+   itself. Report its warnings if any; never hand-edit the numbers.
+2. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_slice.py <slice_dir>` (moves the README slice
    entry Pending → Completed and `git mv`s the folder to `slices/completed/`, staging by name);
    commit together with the slice artifacts, **including `state.json` and `log.txt`** (the run's
    who-did-what record; only a stale `bailout.json` is dropped).
-2. File `state.json`'s `cards` list to the issue tracker (per the host convention) — the
+3. File `state.json`'s `cards` list to the issue tracker (per the host convention) — the
    loop recorded every advisory finding disposition there. Dedupe entries that state the same
    finding, then: behavioural and design findings file **one card each**; mechanical trivia —
    comment/formatting residue, cosmetic polish, test-shape nits — batches into **one
    `Slice NNN residuals` card** listing the items. What goes where is the only judgment call
    here; the list itself is a mechanical read.
-3. Advance the tracker card to **done**, notify the operator per the host's notification
+4. Advance the tracker card to **done**, notify the operator per the host's notification
    convention, and report short: per-phase rounds from `state.json`, test/doc phase outcomes,
    the cards filed, anything owed.
 

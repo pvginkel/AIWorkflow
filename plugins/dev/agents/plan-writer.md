@@ -14,7 +14,8 @@ the project documentation, and the code (read it — never plan from assumption)
 
 Complete `plan.md` in the phased-plan shape (the mechanical template is the project's
 `${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md` — follow it exactly; `run_loop.py run <slice-dir> --dry-run`
-is the parse check): after the seeded header — ordering constraints, **phases**, not-in-scope.
+is the parse check): after the seeded header — the task shape, ordering constraints,
+**phases**, not-in-scope.
 Each phase is a `### P<id> — <title>` section (id `[A-Za-z0-9]+`, document order authoritative)
 that opens with a one-line **`Target:`** naming where it lands — a `kc project list` component
 or a sibling repo path (`../Repo`) — and is **self-sufficient by reference**: the outcome, the
@@ -52,6 +53,16 @@ banned. Shape: `{"items": [{"id": "V01", "area": "…", "description": "…", "v
 "rationale": "", "evidence": []}]}`.
 
 ## Method
+
+**Declare the task shape first** — before any investigation, in plan.md's `## Task shape`
+section: `pre-settled` (slice.md settles the design; planning is transcription), `localized`
+(one component, no new pattern), or `cross-cutting` (the design spans components or sets a
+pattern), justified in one line from slice.md facts — checkable properties of the ask, never
+felt complexity. The declaration binds the rest of the pass: `pre-settled` forbids research
+sub-agents and repo sweeps outright — read what the requirements cite and transcribe;
+`localized` keeps reading inside the targeted component. At any shape, a research sub-agent is
+dispatched only against a **named open question the plan must settle** — the dispatch states
+the question, and a question once settled is never re-dispatched.
 
 Read the code the requirements rest on before pinning anything on it; every load-bearing claim in
 the plan carries a `file:line` citation you verified this pass. Targeted reading only in your own

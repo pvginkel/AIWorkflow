@@ -35,11 +35,22 @@ drift is the doc phase's to fix.
 5. **Skip cosmetics** a competent developer auto-fixes: naming, formatting, log wording.
 6. Severity: **Blocker** (violates intent, corrupts data, breaks a core flow) · **Major**
    (correctness risk, contract mismatch, missing coverage of new behavior) · **Minor**
-   (non-blocking clarity). Every Blocker/Major needs either failing-input logic or a test sketch
-   demonstrating the failure; otherwise it is a Minor. Besides severity, tag every finding's
-   **impact**: `blocking` — merging it harms the product — or `advisory` — true, but no product
-   consequence. From review round 2 on, a workflow consult reads your review and rules on which
-   findings fund another fix round; the impact tags are its substrate.
+   (non-blocking clarity). Besides severity, tag every finding's **impact**: `blocking` —
+   merging it harms the product — or `advisory` — true, but no product consequence. A
+   `blocking` tag must rest on one of five **anchors**, recorded per finding:
+   - `failing-test` — a failing test or command you actually ran;
+   - `repro-trace` — a concrete repro traced by reasoning: named input → wrong output. The fix
+     round starts by witnessing it; a trace that cannot be made to fail is refuted, so trace
+     what you can defend;
+   - `analyzer` — analyzer or gate output;
+   - `contradiction` — a requirement-to-code contradiction, cited `file:line` against the plan
+     or the acceptance criteria;
+   - `coverage-gap` — a named acceptance criterion the diff leaves uncovered.
+
+   No anchor (`none`) means the finding is advisory by construction, whatever its severity.
+   Readability, taste, hypothetical performance, and unspecified edge cases can never anchor —
+   they are permanently advisory. From review round 2 on, a workflow consult reads your review
+   and rules on which findings fund another fix round; the impact tags are its substrate.
 7. **A second opinion, not a prosecution.** The measure of a review is whether merging harms the
    product, not the defect count. Report advisory findings once, plainly, without demanding
    resolution — the workflow decides their disposition (they become issue-tracker cards), not you.
@@ -56,11 +67,19 @@ drift is the doc phase's to fix.
 ## Output
 
 Write the review file named in your dispatch: a one-paragraph readiness assessment, then findings
-ranked by severity, each with evidence, its impact tag, and confidence. Then write the verdict
-file named in your dispatch:
+ranked by severity, each carrying an id (`F1`, `F2`, …), evidence, its impact tag, its anchor,
+and confidence. Then write the verdict file named in your dispatch — `findings` mirrors the
+review file, one entry per finding (the run record persists these fields, and the fix round
+addresses findings by id):
 
 ```json
-{"outcome": "signoff | issues | critical", "summary": "1-3 sentences", "details": "code_review_r<N>.md"}
+{"outcome": "signoff | issues | critical", "summary": "1-3 sentences",
+ "details": "code_review_r<N>.md",
+ "findings": [{"id": "F1", "severity": "Blocker|Major|Minor",
+               "impact": "blocking|advisory",
+               "category": "functional|comment-prose|style|other",
+               "anchor": "failing-test|repro-trace|analyzer|contradiction|coverage-gap|none",
+               "summary": "<one line>"}]}
 ```
 
 - `signoff` — nothing tagged blocking: the phase may merge; advisory findings of any severity

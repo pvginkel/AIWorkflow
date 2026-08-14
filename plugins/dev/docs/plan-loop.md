@@ -46,6 +46,11 @@ heading levels, the `Target:` line, done-record shape, the `verification.json` s
   requirement and operator ruling, in the operator's words; this section is authoritative on
   intent, is preserved verbatim by the writer, and is where `/dev:run-slice` records mid-run
   operator answers.
+- **Task shape** — declared by the plan-writer *before* it investigates, checked by the review:
+  `pre-settled` / `localized` / `cross-cutting`, with a one-line justification anchored in
+  slice.md facts. The declaration binds the writer's investigation budget — its register
+  carries the binding (`pre-settled` forbids research sub-agents and repo sweeps; research runs
+  only against a named open question).
 - **Ordering constraints** and **not-in-scope**.
 - **Phases** — `### P<id> — <title>` sections (format details: [run-loop.md](run-loop.md)), each
   opening with its `Target:` line, **self-sufficient by reference**: outcome, the few constraints
@@ -71,7 +76,8 @@ Checked off in the run loop's test phase.
 
 ## The reviewer's charter
 
-ACs outcome-level and complete against slice.md; detailed designs correct (load-bearing citations
+ACs outcome-level and complete against slice.md; the task shape declared and justified from
+slice.md facts that hold; detailed designs correct (load-bearing citations
 verified against the code); every phase's `Target:` present and real; phases independently
 reviewable and roughly PR-sized; attachments at the altitude above; no doc-phase content (an
 altitude finding — flagged, never fact-checked claim by claim); no correction-chained rulings;

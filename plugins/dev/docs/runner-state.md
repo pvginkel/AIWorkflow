@@ -7,7 +7,10 @@ those files record is [run-loop.md](run-loop.md).
 
 ## state.json
 
-Written atomically by the driver and by nothing else. Slice level:
+Written atomically by the driver and by nothing else while the run lives; the one post-run
+exception is the `cost` block `slice_cost.py --write-state` appends at close-out — the derived
+spend ratios (planner, research-subagent and rework shares, with any pricing warnings), so the
+committed run record prices itself. Slice level:
 
 `slice`, `created_at`, `updated_at`, `orchestrator` (the launching session's id and transcript
 path, or `null` for a hand-run), `run_phase` (`phases` | `consult` | `test` | `docs` | `done` |
@@ -25,7 +28,10 @@ Per phase: `status` (`pending` | `in_progress` | `merged`), `stage` (`executor` 
 
 `history` is append-only, one entry per agent run plus one per gate run (role `gate`), one per
 loop-tail sweep (role `sweep`), one per doc gate (role `doc-gate`) and one per consult: `ts`,
-`phase`, `role`, `round`, `outcome`, `summary`, `session`, `transcript`, `duration_s`. The
+`phase`, `role`, `round`, `outcome`, `summary`, `session`, `transcript`, `duration_s`. A
+code-reviewer row additionally carries the verdict's `findings` list (id, severity, impact,
+category, anchor per finding — the review contract's telemetry) and a review-fix executor row
+its `refuted` list, exactly as the agent reported them. The
 **transcript path** points at that session's conversation JSONL under
 `~/.claude/projects/`, with its own sub-agents beside it under `<session-id>/subagents/`, so any
 later session can research exactly what an agent saw and did. That is why `/dev:run-slice` commits
@@ -38,7 +44,8 @@ local wall clock**, taken from the process's `TZ` (UTC when unset). The ISO stam
 offset-aware, so they remain unambiguous to anything that parses them back.
 
 **`cards`** is the close-out hand-off list — one entry per finding disposition (a review merged
-with unresolved advisory findings, a below-bar test finding, anything an agent's verdict carded),
+with unresolved advisory findings, a below-bar test finding, a refuted blocking finding with its
+refutation evidence attached, anything an agent's verdict carded),
 each with its source and timestamp, recorded as findings land. `/dev:run-slice` files one
 issue-tracker card per entry at close-out; the list is a mechanical read, not a memory.
 

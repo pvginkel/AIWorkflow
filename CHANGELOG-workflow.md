@@ -4,6 +4,39 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-14 — the intervention catalogue's first batch ships (v0.4.3)
+
+Six entries from `docs/research/interventions.md`, actioned together: the instrumented review/fix
+contract (I1, C1, C2), the cost readout (I2), and the shape-bound plan contract (A1, A2). Per-entry
+state and success criteria are tracked in `docs/research/status.md`.
+
+- **Findings telemetry (I1).** The code-reviewer's verdict reports every finding
+  machine-readably — id, severity, impact, category, anchor — and the driver persists the list
+  into `state.json`'s history rows, alongside a fix round's `refuted` list. Problems B and C
+  become measurable per run; slices 143+ against the ≤153 baseline is the 0.4.2 before/after.
+- **Anchoring taxonomy (C1).** A `blocking` impact tag now requires one of five recorded
+  anchors — failing test/command, repro trace, analyzer output, requirement-to-code
+  contradiction, coverage gap against a named AC. No anchor is advisory by construction, and
+  readability/taste/hypothetical-performance/unspecified-edge-case findings can never anchor.
+  Replaces the looser "failing-input logic or a test sketch" severity bar.
+- **Demonstrate-failure-first fix rounds (C2).** A fix round witnesses each executable-anchor
+  blocking finding before changing code — the failing test rides the fix as its regression
+  test. A finding that cannot be made to fail is **refuted**: no code change, carded with the
+  refutation evidence, the record appended to the round's review file, never relitigated; a fix
+  round that refutes every blocking finding with no code change settles the review outright.
+  Inspection anchors (contradiction, coverage gap) keep their current handling.
+- **Cost readout (I2).** `slice_cost.py` derives the close-out ratios — planner share,
+  research-subagent share, rework share (rounds ≥2 + consults) — and `--write-state` appends
+  them to `state.json` as `cost`; `/dev:run-slice` runs it at close-out, so cost trends read
+  off committed run records instead of transcript archaeology.
+- **Task shape + question-gated research (A1+A2).** The plan-writer declares
+  `pre-settled` / `localized` / `cross-cutting` in plan.md before investigating, justified in
+  one line from slice.md facts; `pre-settled` forbids research sub-agents and repo sweeps, and
+  at any shape a research dispatch must name the open question it settles — a settled question
+  is never re-dispatched. The plan-reviewer checks the declaration against slice.md. Grounding:
+  slice 153 spent $27.72 before any code existed on a slice whose slice.md said "you are not
+  designing anything".
+
 ## 2026-08-13 — fix rounds stop relitigating comments (v0.4.2)
 
 Ansible slice 013 ($45, 3h wall for a small slice) spent the second rounds of two of its three

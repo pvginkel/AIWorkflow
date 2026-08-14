@@ -749,7 +749,18 @@ You are resolving review findings for phase P{phase_id} of slice
 The code-reviewer found issues with the phase's branch (the work under review
 is git diff {merge_base}..HEAD on {branch}{where}). Read {review_path} and
 resolve every finding tagged blocking — the reviewer describes problems; the
-fix design is yours. Findings tagged advisory are NOT yours to fix: the loop
+fix design is yours.
+Resolve each blocking finding failure-first. If its anchor is executable — a
+failing test, a repro trace, analyzer output — witness the failure before
+changing code: write the failing test or run the claimed repro. Witnessed,
+fix it; the witnessing test rides your commit as the regression test. If you
+cannot make it fail, the finding is refuted: change no code for it and report
+it in your verdict's `refuted` list — its id plus one line of evidence, what
+you ran or wrote and why it cannot fail. The loop records the refutation; do
+not argue it in prose. Findings anchored by inspection — a requirement
+contradiction, a coverage gap — have no failure to witness: check the cited
+requirement and resolve them directly.
+Findings tagged advisory are NOT yours to fix: the loop
 cards them at close-out and the residue rider mops up the mechanical ones.
 An advisory fixed here widens the next round's re-review to everything the
 fix touched and breeds its own findings — comment fixes especially. Leave
@@ -761,6 +772,20 @@ yourself before handing back{gate_hint}. Commit your fixes, update the
 phase's done-record if what landed changed, then write your verdict to
 {verdict_path}.
 {bookkeeping}"""
+
+# Appended by the driver to a round's review file when the fix round refuted
+# findings, so the next round's reviewer reads the refutation where it reads
+# the findings — one record, never relitigated.
+REFUTATION_TAG = """
+
+## Refuted findings (fix round after review round {round})
+
+The fix round witnessed each of these findings' claimed failures and could
+not make them fail. They are refuted — settled by that evidence and carded
+for the operator with the refutation attached; they fund no further work:
+
+{entries}
+"""
 
 OPERATOR_RULING_TAG = """
 
@@ -806,7 +831,10 @@ resolved — re-open the code, do not take the executor's word — and review
 the fix commits themselves for new problems, including interactions with the
 branch code they touch. Advisory findings left unfixed are the protocol
 working, not a gap — the loop cards them at close-out; do not re-report
-them. Ground the prior round already proved stays proved: re-derive a
+them. A finding the fix round refuted — witnessed as unable to fail, per the
+refutation record appended to the prior review — is settled by that
+evidence: do not re-raise it unless a fix commit invalidates the
+refutation. Ground the prior round already proved stays proved: re-derive a
 premise (live system state, another repo's behavior) only where a fix commit
 touches it. The requirements are unchanged: the phase's section in
 {plan_path} and the acceptance criteria in {verification_path}.
@@ -1182,11 +1210,13 @@ class RunLoop:
 
     def _record(self, phase: str | None, role: str, round_: int,
                 outcome: str, summary: str, session: str | None,
-                duration_s: int, transcript: str | None = None) -> None:
+                duration_s: int, transcript: str | None = None,
+                extra: dict | None = None) -> None:
         self.state["history"].append({
             "ts": _now_iso(), "phase": phase, "role": role, "round": round_,
             "outcome": outcome, "summary": summary, "session": session,
             "transcript": transcript, "duration_s": duration_s,
+            **(extra or {}),
         })
         self._save_state()
 
@@ -1617,9 +1647,15 @@ class RunLoop:
         outcome = verdict.get("outcome", "blocked")
         self.state["in_flight"] = None
         self.log(f"{label} → {outcome}: {verdict.get('summary', '')[:160]}")
+        # Per-finding telemetry rides the history row: the reviewer's
+        # `findings` (severity/impact/category/anchor per finding) and a fix
+        # round's `refuted` list persist as the agent reported them.
+        telemetry = {k: verdict[k] for k in ("findings", "refuted")
+                     if isinstance(verdict.get(k), list) and verdict[k]}
         self._record(phase_id, role, round_, outcome,
                      verdict.get("summary", ""), session_id, duration_s,
-                     transcript=_transcript_path(cwd, session_id))
+                     transcript=_transcript_path(cwd, session_id),
+                     extra=telemetry)
         self._card(f"{role} P{phase_id}" if phase_id else role,
                    verdict.get("cards"))
         return verdict, session_id
@@ -1913,18 +1949,16 @@ class RunLoop:
                     + OPERATOR_RULING_TAG.format(round=r, question=question))
                 self.log(f"[P{phase_id}] operator ruling tagged onto "
                          f"{review_path.name}; dispatching the writer")
-                spawn_executor(lambda vp, _r=r:
-                               EXECUTOR_REVIEW_FIX_PROMPT.format(
-                                   phase_id=phase_id,
-                                   slice_name=self.slice_name,
-                                   plan_path=self.plan_path, branch=branch,
-                                   merge_base=merge_base, where=where,
-                                   review_path=outputs
-                                   / f"code_review_r{_r}.md",
-                                   gate_hint=gate_hint, verdict_path=vp,
-                                   bookkeeping=self._bookkeeping_note(
-                                       target)))
+                fix_verdict = spawn_executor(
+                    lambda vp, _r=r: EXECUTOR_REVIEW_FIX_PROMPT.format(
+                        phase_id=phase_id, slice_name=self.slice_name,
+                        plan_path=self.plan_path, branch=branch,
+                        merge_base=merge_base, where=where,
+                        review_path=outputs / f"code_review_r{_r}.md",
+                        gate_hint=gate_hint, verdict_path=vp,
+                        bookkeeping=self._bookkeeping_note(target)))
                 self._after_session_plan_check()
+                self._handle_refutations(outputs, phase_id, r, fix_verdict)
                 self._gate_until_green(phase, ps, outputs, target, branch,
                                        merge_base, where, spawn_executor)
 
@@ -2082,17 +2116,73 @@ class RunLoop:
                     outputs, phase_id, r, verdict, fix_range, root)
                 if choice == "merge":
                     return
-            spawn_executor(lambda vp, _r=r:
-                           EXECUTOR_REVIEW_FIX_PROMPT.format(
-                               phase_id=phase_id, slice_name=self.slice_name,
-                               plan_path=self.plan_path, branch=branch,
-                               merge_base=merge_base, where=where,
-                               review_path=outputs / f"code_review_r{_r}.md",
-                               gate_hint=gate_hint, verdict_path=vp,
-                               bookkeeping=self._bookkeeping_note(target)))
+            fix_verdict = spawn_executor(
+                lambda vp, _r=r: EXECUTOR_REVIEW_FIX_PROMPT.format(
+                    phase_id=phase_id, slice_name=self.slice_name,
+                    plan_path=self.plan_path, branch=branch,
+                    merge_base=merge_base, where=where,
+                    review_path=outputs / f"code_review_r{_r}.md",
+                    gate_hint=gate_hint, verdict_path=vp,
+                    bookkeeping=self._bookkeeping_note(target)))
             self._after_session_plan_check()
+            refuted = self._handle_refutations(outputs, phase_id, r,
+                                               fix_verdict)
             self._gate_until_green(phase, ps, outputs, target, branch,
                                    merge_base, where, spawn_executor)
+            if self._refutation_settles_review(verdict, refuted, ps, root):
+                self.log(f"[P{phase_id}] every blocking finding of round {r} "
+                         "was refuted with no code change — review settled")
+                return
+
+    def _handle_refutations(self, outputs: Path, phase_id: str, r: int,
+                            fix_verdict: dict) -> set[str]:
+        """The refuted-verdict path: a blocking finding the fix round could
+        not make fail is carded with its refutation evidence and recorded
+        onto the round's review file, where the next round's reviewer reads
+        it. Returns the refuted finding ids."""
+        entries = fix_verdict.get("refuted")
+        if not isinstance(entries, list) or not entries:
+            return set()
+        review_path = outputs / f"code_review_r{r}.md"
+        ids: set[str] = set()
+        lines, cards = [], []
+        for e in entries:
+            fid = str(e.get("id", "?")) if isinstance(e, dict) else str(e)
+            evidence = str(e.get("evidence", "")) if isinstance(e, dict) \
+                else ""
+            ids.add(fid)
+            lines.append(f"- {fid}: {evidence}" if evidence else f"- {fid}")
+            cards.append(f"refuted blocking finding {fid} "
+                         f"({review_path.name}): {evidence}")
+        if review_path.exists():
+            review_path.write_text(
+                review_path.read_text()
+                + REFUTATION_TAG.format(round=r, entries="\n".join(lines)))
+        self._card(f"refuted P{phase_id}", cards)
+        self.log(f"[P{phase_id}] fix round refuted "
+                 f"{len(ids)} finding(s): {', '.join(sorted(ids))}")
+        return ids
+
+    def _refutation_settles_review(self, review_verdict: dict,
+                                   refuted: set[str], ps: dict,
+                                   root: Path) -> bool:
+        """True when the fix round changed no code and refuted every
+        blocking finding of the round it answered: re-reviewing the
+        identical diff would be relitigation by construction. Requires the
+        review verdict's machine-readable findings — without them the loop
+        cannot know the blocking set and falls back to another round."""
+        if not refuted:
+            return False
+        if self.git("rev-parse", "HEAD", root=root) != ps.get("reviewed_head"):
+            return False
+        findings = review_verdict.get("findings")
+        if not isinstance(findings, list) or not findings:
+            return False
+        blocking = {str(f.get("id")) for f in findings
+                    if isinstance(f, dict) and f.get("impact") == "blocking"}
+        if not blocking or "None" in blocking:
+            return False
+        return blocking <= refuted
 
     def _production_paths(self, fix_range: str, root: Path) -> list[str]:
         """Paths in the range that are production code — not tests, not

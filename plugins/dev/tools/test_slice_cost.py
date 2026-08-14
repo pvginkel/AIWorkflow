@@ -277,3 +277,83 @@ def test_main_missing_dir_exits_2(tmp_path, capsys):
 def test_main_no_state_exits_2(tmp_path, capsys):
     slice_dir = _slice(tmp_path)
     assert main([str(slice_dir)]) == 2
+
+
+# -- derived ratios and the close-out write ---------------------------------
+
+def test_derived_ratios_split_planner_research_rework(tmp_path):
+    def t(name):
+        return tmp_path / "proj" / f"{name}.jsonl"
+
+    for name in ("w1", "w2", "consult", "planner"):
+        _write_transcript(t(name),
+                          [_message(f"m-{name}", output_tokens=1_000_000)])
+    sub = tmp_path / "proj" / "planner" / "subagents" / "agent-r1.jsonl"
+    _write_transcript(sub, [_message("s1", output_tokens=1_000_000)])
+    sub.with_suffix(".meta.json").write_text(
+        json.dumps({"agentType": "Explore"}))
+    slice_dir = _slice(
+        tmp_path,
+        state={
+            "orchestrator": None,
+            "history": [
+                _history_entry("w1", t("w1")),                    # round 1
+                {**_history_entry("w2", t("w2")), "round": 2},    # rework
+                _history_entry("consult", t("consult"),           # rework
+                               role="consult"),
+            ],
+        },
+        plan_state={
+            "orchestrator": None,
+            "history": [{"role": "plan-writer", "round": 1,
+                         "outcome": "done", "summary": "",
+                         "session": "planner", "transcript": str(t("planner")),
+                         "duration_s": 5}],
+        },
+    )
+    convs, warnings = collect(slice_dir)
+    report = build_report(slice_dir, convs, warnings)
+    d = report["derived"]
+    out = PRICES[OPUS]["output"]     # every conversation costs exactly this
+    total = 5 * out
+    assert d["cost_usd"] == pytest.approx(total, abs=0.01)
+    assert d["planner_cost_usd"] == pytest.approx(out, abs=0.01)
+    assert d["planner_share"] == pytest.approx(out / total, abs=0.001)
+    assert d["research_cost_usd"] == pytest.approx(out, abs=0.01)
+    assert d["research_share"] == pytest.approx(out / total, abs=0.001)
+    assert d["rework_cost_usd"] == pytest.approx(2 * out, abs=0.01)
+    assert d["rework_share"] == pytest.approx(2 * out / total, abs=0.001)
+
+
+def test_run_subagents_ride_their_dispatchers_rework_bucket(tmp_path):
+    t = tmp_path / "proj" / "w2.jsonl"
+    _write_transcript(t, [_message("m1", output_tokens=1_000_000)])
+    sub = tmp_path / "proj" / "w2" / "subagents" / "agent-f1.jsonl"
+    _write_transcript(sub, [_message("s1", output_tokens=1_000_000)])
+    sub.with_suffix(".meta.json").write_text(
+        json.dumps({"agentType": "test-fixer"}))
+    slice_dir = _slice(tmp_path, state={
+        "orchestrator": None,
+        "history": [{**_history_entry("w2", t), "round": 2}],
+    })
+    convs, warnings = collect(slice_dir)
+    report = build_report(slice_dir, convs, warnings)
+    d = report["derived"]
+    assert d["rework_share"] == pytest.approx(1.0, abs=0.001)
+    assert d["research_share"] == 0.0     # run-loop sub-agents never are
+
+
+def test_write_state_appends_cost_block(tmp_path, capsys):
+    t = tmp_path / "proj" / "s1.jsonl"
+    _write_transcript(t, [_message("m1", output_tokens=200_000)])
+    slice_dir = _slice(tmp_path, state={
+        "orchestrator": None, "history": [_history_entry("s1", t)]})
+    assert main([str(slice_dir), "--write-state", "--json"]) == 0
+    state = json.loads((slice_dir / "state.json").read_text())
+    assert state["history"], "existing state keys must survive the write"
+    cost = state["cost"]
+    assert cost["cost_usd"] == pytest.approx(
+        0.2 * PRICES[OPUS]["output"], abs=0.01)
+    assert cost["planner_share"] == 0.0 and cost["rework_share"] == 0.0
+    assert cost["warnings"] == []
+    assert "ts" in cost

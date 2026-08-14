@@ -23,6 +23,14 @@ prints the gates without touching anything.
 - R1. …
 - Ruling (YYYY-MM-DD): …
 
+## Task shape
+
+<!-- Declared by the plan-writer BEFORE it investigates; checked by the plan
+     review against slice.md. One of pre-settled | localized | cross-cutting,
+     justified in one line from slice.md facts. -->
+
+pre-settled — slice.md's design section fixes the mechanism; planning is transcription.
+
 ## Ordering constraints
 
 <!-- Only what is genuinely ordered beyond "producers before consumers". Often empty. -->
@@ -52,6 +60,10 @@ The mechanical rules the parser holds every author to:
   non-phase sections use `##`; the driver ignores those entirely.
 - **Ids are free-form labels; document order is authoritative.** `P3a` inserted between `P3`
   and `P4` runs between them because of *where it sits*, not its name. Ids must be unique.
+- **`## Task shape` is the plan-writer's declaration** — `pre-settled`, `localized`, or
+  `cross-cutting`, one line of justification anchored in slice.md facts. It binds the writer's
+  investigation and the plan review checks it (semantics: [plan-loop.md](plan-loop.md)); the
+  run loop's parser ignores it like every other `##` section.
 - **`Target:` is the first line of every phase body** — a `kc project list` component name or
   a sibling repo path (`../SiblingRepo`). It roots the executor's cwd, the driver's git
   operations, and the gate. Markdown decoration is tolerated (`**Target:**` with a backticked

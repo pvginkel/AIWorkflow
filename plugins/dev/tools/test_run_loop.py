@@ -631,6 +631,139 @@ def test_production_paths_classification():
         assert prod == ["controller/app/api.py", "worker/cmd/main.go"]
 
 
+# The reviewer's machine-readable findings (id/severity/impact/category/
+# anchor) and the fix round's refuted-verdict path.
+
+REVIEW_FINDINGS = [
+    {"id": "F1", "severity": "Major", "impact": "blocking",
+     "category": "functional", "anchor": "repro-trace",
+     "summary": "wrong branch on empty input"},
+    {"id": "F2", "severity": "Minor", "impact": "advisory",
+     "category": "comment-prose", "anchor": "none",
+     "summary": "stale comment"},
+]
+
+
+def write_review_file(text="findings\n"):
+    def effect(loop):
+        outputs = loop.slice_dir / "phases" / "P1"
+        outputs.mkdir(parents=True, exist_ok=True)
+        (outputs / "code_review_r1.md").write_text(text)
+    return effect
+
+
+def test_review_fix_round_is_failure_first():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [V["exec_done"], V["review_issues"], V["exec_done"],
+                  V["review_signoff"], *TAIL]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        fix_prompt = r.prompts[2][1]
+        assert "witness the failure" in fix_prompt
+        assert "`refuted` list" in fix_prompt
+        assert "have no failure to witness" in fix_prompt
+
+
+def test_all_blocking_refuted_without_code_change_settles_review():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            V["exec_done"],
+            ("code-reviewer", {"outcome": "issues", "summary": "gaps",
+                               "findings": REVIEW_FINDINGS},
+             write_review_file()),
+            ("code-writer",
+             {"outcome": "done", "summary": "refuted",
+              "refuted": [{"id": "F1",
+                           "evidence": "ran the repro; output correct"}]}),
+            *TAIL,                       # no second review round is spawned
+        ]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert not r.script
+        state = load_state(slice_dir)
+        ps = state["phases"]["1"]
+        assert ps["status"] == "merged"
+        assert ps["review_rounds"] == 1
+        review = (slice_dir / "phases" / "P1"
+                  / "code_review_r1.md").read_text()
+        assert "Refuted findings" in review
+        assert "F1: ran the repro; output correct" in review
+        cards = state["cards"]
+        assert len(cards) == 1
+        assert cards[0]["source"] == "refuted P1"
+        assert "refuted blocking finding F1" in cards[0]["text"]
+        assert "code_review_r1.md" in cards[0]["text"]
+
+
+def test_partial_refutation_funds_the_next_review_round():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        two_blocking = [
+            REVIEW_FINDINGS[0],
+            {"id": "F2", "severity": "Major", "impact": "blocking",
+             "category": "functional", "anchor": "contradiction",
+             "summary": "contract drift"},
+        ]
+
+        def fix_moves_head(loop):
+            loop.fake_git.head = "head2fix00000"
+
+        script = [
+            V["exec_done"],
+            ("code-reviewer", {"outcome": "issues", "summary": "gaps",
+                               "findings": two_blocking},
+             write_review_file()),
+            ("code-writer",
+             {"outcome": "done", "summary": "fixed F2",
+              "refuted": [{"id": "F1", "evidence": "cannot fail"}]},
+             fix_moves_head),
+            V["review_signoff"],         # round 2 verifies the fix
+            *TAIL,
+        ]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert not r.script
+        state = load_state(slice_dir)
+        assert state["phases"]["1"]["review_rounds"] == 2
+        delta_prompt = r.prompts[3][1]
+        assert "refutation record" in delta_prompt
+        review = (slice_dir / "phases" / "P1"
+                  / "code_review_r1.md").read_text()
+        assert "- F1: cannot fail" in review
+
+
+def test_finding_telemetry_persists_to_history():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            ("code-writer", {"outcome": "done", "summary": "built"}),
+            ("code-reviewer", {"outcome": "issues", "summary": "gaps",
+                               "findings": REVIEW_FINDINGS}),
+            ("code-writer",
+             {"outcome": "done", "summary": "refuted",
+              "refuted": [{"id": "F1", "evidence": "cannot fail"}]}),
+            ("consult", {"outcome": "complete", "summary": "done"}),
+            ("test-agent", {"outcome": "clean", "summary": "ok"}),
+            ("doc-writer", {"outcome": "done", "summary": "docs"}),
+        ]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        state = load_state(slice_dir)
+        reviewer_rows = [h for h in state["history"]
+                         if h["role"] == "code-reviewer"]
+        assert reviewer_rows[0]["findings"] == REVIEW_FINDINGS
+        fix_row = next(h for h in state["history"]
+                       if h["role"] == "code-writer" and h["round"] == 2)
+        assert fix_row["refuted"] == [{"id": "F1", "evidence": "cannot fail"}]
+        # rows without telemetry stay exactly as before — no empty keys
+        first = next(h for h in state["history"]
+                     if h["role"] == "code-writer" and h["round"] == 1)
+        assert "findings" not in first and "refuted" not in first
+
+
 def test_executor_question_bails_as_operator_question():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)

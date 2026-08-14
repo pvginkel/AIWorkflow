@@ -57,7 +57,7 @@ author prose docs.
 Write the verdict file named in your dispatch:
 
 ```json
-{"outcome": "done | question | blocked", "summary": "1-3 sentences", "cards": ["optional: out-of-scope findings worth an issue-tracker card"]}
+{"outcome": "done | question | blocked", "summary": "1-3 sentences", "cards": ["optional: out-of-scope findings worth an issue-tracker card"], "refuted": [{"id": "F2", "evidence": "review-fix rounds only: a blocking finding you witnessed as unable to fail — one line, what you ran or wrote"}]}
 ```
 
 - `done` — implemented, gated, committed, done-record appended.

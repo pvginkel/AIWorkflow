@@ -122,10 +122,11 @@ Slice folder: {slice_dir}
 
 Read slice.md and plan.md there. plan.md's requirements/rulings section is
 the operator's settled input — preserve it verbatim. Complete the plan per
-your contract: the phases (each opening with its `Target:` line), ordering
-constraints, not-in-scope, attachments/ only where an executor genuinely
-cannot derive the design, and verification.json's outcome-level acceptance
-criteria. Commit to the spec repo (stage by name), then write your verdict
+your contract: the task-shape declaration (before you investigate), the
+phases (each opening with its `Target:` line), ordering constraints,
+not-in-scope, attachments/ only where an executor genuinely cannot derive
+the design, and verification.json's outcome-level acceptance criteria.
+Commit to the spec repo (stage by name), then write your verdict
 to {verdict_path}. Blocking questions go to {questions_path} with verdict
 `questions`.
 """

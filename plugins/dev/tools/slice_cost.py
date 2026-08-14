@@ -22,8 +22,14 @@ Missing transcript files (cleaned ~/.claude, another machine) and unknown
 model ids are reported as warnings, never silently priced at zero without
 notice.
 
+The report carries a `derived` block — the close-out ratios read across
+slices as trend lines: planner share (the plan loop's own sessions),
+research share (the plan loop's sub-agents), rework share (run-loop rounds
+≥2 plus consults). `--write-state` appends that block to the run loop's
+state.json as `cost`, so the committed run record prices itself.
+
 Usage:
-    slice_cost.py <slice-dir> [--json]
+    slice_cost.py <slice-dir> [--json] [--write-state]
 
 Exit codes: 0 report printed · 2 no state file found in the slice dir.
 """
@@ -86,12 +92,16 @@ class Conv:
     or an orchestrator."""
 
     def __init__(self, session: str, role: str, phase: str | None,
-                 kind: str, transcript: Path):
+                 kind: str, transcript: Path, loop: str | None = None,
+                 round_: int | None = None, parent: "Conv | None" = None):
         self.session = session
         self.role = role          # code-writer / subagent:<type> / orchestrator:<loop>
         self.phase = phase        # phase id, or None for phaseless roles
         self.kind = kind          # "session" | "subagent" | "orchestrator"
         self.transcript = transcript
+        self.loop = loop          # "run" | "plan" — the state file that recorded it
+        self.round = round_       # the history entry's round; None for orchestrators
+        self.parent = parent      # the recorded session a sub-agent rides under
         self.tok_by_model: dict[str, dict[str, int]] = defaultdict(
             lambda: dict.fromkeys(USAGE_KEYS, 0))
         self.turns = 0            # deduplicated billed assistant messages
@@ -171,7 +181,7 @@ def _subagent_convs(parent: Conv) -> list[Conv]:
             except (json.JSONDecodeError, OSError):
                 pass
         c = Conv(f.stem, f"subagent:{agent_type}", parent.phase,
-                 "subagent", f)
+                 "subagent", f, loop=parent.loop, parent=parent)
         scan_transcript(f, c)
         if c.turns:
             convs.append(c)
@@ -188,12 +198,14 @@ def collect(slice_dir: Path) -> tuple[list[Conv], list[str]]:
     found_state = False
 
     def add(session: str | None, role: str, phase: str | None,
-            kind: str, transcript: str | None) -> None:
+            kind: str, transcript: str | None, loop: str,
+            round_: int | None = None) -> None:
         if not session or not transcript or session in seen_sessions:
             return
         seen_sessions.add(session)
         path = Path(transcript)
-        conv = Conv(session, role, phase, kind, path)
+        conv = Conv(session, role, phase, kind, path, loop=loop,
+                    round_=round_)
         if not path.is_file():
             warnings.append(f"transcript missing for {role} "
                             f"session {session}: {path}")
@@ -214,16 +226,52 @@ def collect(slice_dir: Path) -> tuple[list[Conv], list[str]]:
         found_state = True
         orch = state.get("orchestrator") or {}
         add(orch.get("session"), f"orchestrator:{loop}", None,
-            "orchestrator", orch.get("transcript"))
+            "orchestrator", orch.get("transcript"), loop)
         for entry in state.get("history", []):
             add(entry.get("session"), entry.get("role", "unknown"),
-                entry.get("phase"), "session", entry.get("transcript"))
+                entry.get("phase"), "session", entry.get("transcript"),
+                loop, entry.get("round"))
 
     if not found_state:
         raise FileNotFoundError(
             f"no state.json or plan_state.json in {slice_dir} — "
             "the loops have not run this slice")
     return convs, warnings
+
+
+def derive(convs: list[Conv], total_cost: float) -> dict:
+    """The close-out ratios. Planner = the plan loop's own sessions (the
+    interactive orchestrator, plan-writer, plan-reviewer); research = the
+    plan loop's sub-agents; rework = run-loop spend past first delivery —
+    writer/reviewer rounds ≥2 (gate fixes, review fixes, re-reviews) plus
+    every consult, sub-agents riding their dispatcher's bucket."""
+
+    def is_rework(c: Conv) -> bool:
+        o = c.parent or c
+        if o.loop != "run":
+            return False
+        return o.role == "consult" or (
+            o.role in ("code-writer", "code-reviewer")
+            and (o.round or 0) >= 2)
+
+    planner = sum(c.cost() for c in convs
+                  if c.loop == "plan" and c.kind != "subagent")
+    research = sum(c.cost() for c in convs
+                   if c.loop == "plan" and c.kind == "subagent")
+    rework = sum(c.cost() for c in convs if is_rework(c))
+
+    def share(cost: float) -> float:
+        return round(cost / total_cost, 3) if total_cost else 0.0
+
+    return {
+        "cost_usd": round(total_cost, 2),
+        "planner_cost_usd": round(planner, 2),
+        "planner_share": share(planner),
+        "research_cost_usd": round(research, 2),
+        "research_share": share(research),
+        "rework_cost_usd": round(rework, 2),
+        "rework_share": share(rework),
+    }
 
 
 def build_report(slice_dir: Path, convs: list[Conv],
@@ -275,6 +323,7 @@ def build_report(slice_dir: Path, convs: list[Conv],
             "wall_s": (end - start).total_seconds() if start and end else 0.0,
             "active_s": active_s,
         },
+        "derived": derive(convs, cost),
         "roles": {r: {**v, "cost": round(v["cost"], 2)}
                   for r, v in sorted(roles.items(),
                                      key=lambda kv: -kv[1]["cost"])},
@@ -301,6 +350,12 @@ def print_report(report: dict) -> None:
     print(f"  {t['conversations']} conversations, {t['turns']:,} billed "
           f"messages  ·  wall {t['wall_s'] / 3600:.1f}h, "
           f"active {t['active_s'] / 3600:.1f}h")
+    d = report["derived"]
+    print(f"  planner ${d['planner_cost_usd']:,.2f} "
+          f"({d['planner_share']:.0%})  ·  "
+          f"research ${d['research_cost_usd']:,.2f} "
+          f"({d['research_share']:.0%})  ·  "
+          f"rework ${d['rework_cost_usd']:,.2f} ({d['rework_share']:.0%})")
 
     print(f"\n{'role':26} {'n':>3} {'turns':>6} {'tokens':>13} {'cost':>9}")
     for role, v in report["roles"].items():
@@ -325,6 +380,23 @@ def print_report(report: dict) -> None:
             print(f"  - {w}")
 
 
+def write_state(slice_dir: Path, report: dict) -> None:
+    """Append the derived block to the run loop's state.json as `cost` —
+    the one write anything but the driver makes there, at close-out, after
+    the run is done. Warnings ride along: a share computed over missing
+    transcripts must say so where the number is read."""
+    state_path = slice_dir / "state.json"
+    state = json.loads(state_path.read_text())
+    state["cost"] = {
+        "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
+        **report["derived"],
+        "warnings": report["warnings"],
+    }
+    tmp = state_path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(state, indent=2) + "\n")
+    tmp.replace(state_path)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__.splitlines()[0],
@@ -332,6 +404,8 @@ def main(argv=None) -> int:
     ap.add_argument("slice_dir", help="path to slices/NNN_slug/")
     ap.add_argument("--json", action="store_true",
                     help="emit the report as JSON instead of a table")
+    ap.add_argument("--write-state", action="store_true",
+                    help="append the derived ratios to state.json as `cost`")
     args = ap.parse_args(argv)
 
     slice_dir = Path(args.slice_dir).resolve()
@@ -345,6 +419,13 @@ def main(argv=None) -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 2
     report = build_report(slice_dir, convs, warnings)
+    if args.write_state:
+        try:
+            write_state(slice_dir, report)
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"Error: cannot write cost into state.json: {e}",
+                  file=sys.stderr)
+            return 2
     if args.json:
         print(json.dumps(report, indent=2))
     else:

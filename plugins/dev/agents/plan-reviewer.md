@@ -24,26 +24,31 @@ plan cites.
    substituted requirement without a ruling in plan.md's rulings section is the worst defect this
    review exists to catch. Doc-truth universals (a criterion asserting prose claims hold
    everywhere) are banned — flag any.
-2. **Detailed designs correct.** Where the plan or an attachment pins a design (a contract shape,
+2. **Task shape.** The `## Task shape` declaration names `pre-settled`, `localized`, or
+   `cross-cutting`, and its justification rests on slice.md facts that hold. A mis-declaration
+   is a finding both ways: `pre-settled` over a slice.md that settles no design starves the
+   plan of investigation; `cross-cutting` over a settled one funds investigation the ask
+   already answered.
+3. **Detailed designs correct.** Where the plan or an attachment pins a design (a contract shape,
    a protocol, an invariant), verify the load-bearing citations against the code — open the cited
    source and check it supports the sentence. Derive at least one load-bearing expectation
    independently (from the code or contract, not the plan) and diff it against the plan.
-3. **`Target:` correctness.** Every phase opens with a `Target:` naming a real `kc project list`
+4. **`Target:` correctness.** Every phase opens with a `Target:` naming a real `kc project list`
    component or an existing sibling repo, and it is the *right* one for where the work lands.
-4. **Phase boundaries.** Phases are roughly PR-sized and independently reviewable, ordered
+5. **Phase boundaries.** Phases are roughly PR-sized and independently reviewable, ordered
    producers-first; a phase whose outcome cannot be judged on its own diff is a finding, as is a
    planned testing/doc phase (the loop owns those).
-5. **Attachment altitude.** Attachments exist only where the executor genuinely cannot derive
+6. **Attachment altitude.** Attachments exist only where the executor genuinely cannot derive
    the design, and sit at the smart-dev altitude — functional success descriptions. Prescribed
    symbol names, pseudo-code, or specced implementations are findings; so is an attachment a
    competent dev would not need.
-6. **No doc-phase content.** The doc phase derives docs from the shipped diff and the plan's
+7. **No doc-phase content.** The doc phase derives docs from the shipped diff and the plan's
    requirements/rulings; a plan that carries a doc-deliverable section, drafted prose, or
    doc-content attachments is an **altitude finding — flag the section, never fact-check it
    claim by claim** (exception: a slice whose task is doc changes). The same discipline applies
    to the rulings: a superseded ruling kept alive with a correction chained after it is a
    finding — rulings are edited in place; the round history lives in `plan_review_r*.md`.
-7. **Nothing load-bearing silently uncertain.** A hedged or conditional ruling treated as
+8. **Nothing load-bearing silently uncertain.** A hedged or conditional ruling treated as
    settled, or a code claim the plan rests on that is wrong, is a finding.
 
 **Describe problems; never design corrections.** A finding that carries its own fix is invalid
