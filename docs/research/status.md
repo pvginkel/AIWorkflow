@@ -39,7 +39,7 @@ caused it; `(pre-catalogue)` marks history that predates 2026-08-14.
 
 ## I1 — Findings telemetry in the review contract
 
-**Status:** new
+**Status:** validating
 **Cost:** S · **Rank:** 1 (with I2) · **Depends on:** — (shares a schema change with C1)
 
 **Summary.** Reviewer verdicts gain machine-readable per-finding fields — severity, impact tag,
@@ -55,10 +55,14 @@ hand archaeology; self-proving, so acceptance is essentially "it shipped and the
   measurement, and it gives the 0.4.2 before/after for free.
 - 2026-08-14 — operator direction: run-phase changes get tested on a new slice. Open decision
   whether the run batch is I1 alone or I1+C1+C2.
+- 2026-08-14 — implemented (plugin 0.4.3): reviewer verdicts carry per-finding id/severity/
+  impact/category/anchor, persisted into `state.json` history with the fix rounds' `refuted`
+  lists. Operator resolved the run batch to I1+C1+C2. Reaches runs after push + marketplace
+  update → validating.
 
 ## I2 — Standard cost readout per run
 
-**Status:** new
+**Status:** validating
 **Cost:** S · **Rank:** 1 (with I1) · **Depends on:** —
 
 **Summary.** `slice_cost.py` gains derived close-out ratios appended to `state.json`: planner share,
@@ -70,6 +74,9 @@ research-subagent share, rework share, cost per merged slice.
 
 - 2026-08-14 — catalogued (interventions.md §3). Noted as behaviour-neutral and
   phase-independent — implementing it commits us to nothing else.
+- 2026-08-14 — implemented (plugin 0.4.3): `slice_cost.py` derives planner/research/rework
+  shares and `--write-state` appends them to `state.json` as `cost`; `/dev:run-slice` runs it
+  at close-out. → validating.
 
 ## I3 — Sampled blocking-finding precision audit
 
@@ -107,7 +114,7 @@ C6 can stay unbuilt; a growing one says it is.
 
 ## A1 — Task-shape declaration in the plan contract
 
-**Status:** new
+**Status:** validating
 **Cost:** M · **Rank:** 4 · **Depends on:** — (enables A3)
 
 **Summary.** The plan-writer declares a task shape (`pre-settled` / `localized` / `cross-cutting`)
@@ -123,10 +130,13 @@ no rise in downstream gate_red or appended phases.
   slice whose slice.md said "you are not designing anything".
 - 2026-08-14 — operator direction: a planning session is imminent, so plan-phase changes can be
   implemented now and exercised by it. Not yet implemented.
+- 2026-08-14 — implemented (plugin 0.4.3): `## Task shape` in the plan template, declared by
+  the plan-writer before it investigates and checked by the plan-reviewer; `pre-settled`
+  forbids research sub-agents and repo sweeps. → validating.
 
 ## A2 — Question-gated research budget
 
-**Status:** new
+**Status:** validating
 **Cost:** S · **Rank:** 5 · **Depends on:** A1 (complement)
 
 **Summary.** Research subagents may only be dispatched against a named open question the plan must
@@ -141,6 +151,9 @@ visible in plan output.
 - 2026-08-14 — catalogued (interventions.md §4). Deliberately structural: TALE's token elasticity
   says tight numeric budgets backfire.
 - 2026-08-14 — operator direction: rides with A1 in the plan-phase batch.
+- 2026-08-14 — implemented (plugin 0.4.3), in the plan-writer register with A1: a research
+  dispatch names the open question it settles; a settled question is never re-dispatched.
+  → validating.
 
 ## A3 — Effort step-down for the plan registers
 
@@ -266,7 +279,7 @@ case this folds into it.
 
 ## C1 — Anchoring taxonomy for blocking findings
 
-**Status:** new
+**Status:** validating
 **Cost:** S · **Rank:** 2 · **Depends on:** — (schema shared with I1; C2 builds on it)
 
 **Summary.** Replaces "failing-input logic or a test sketch" with a closed anchor list — failing
@@ -282,10 +295,13 @@ failures; the anchor-type distribution (I1) shows what the old bar was letting t
   false rejections would fail this bar.
 - 2026-08-14 — pairs with I1 at no extra cost (same verdict-schema change). Part of the open
   decision on the run batch.
+- 2026-08-14 — implemented (plugin 0.4.3): the closed anchor list replaces "failing-input logic
+  or a test sketch" in the reviewer register; `blocking` requires an anchor, `none` is advisory
+  by construction, the never-anchor categories are named. → validating.
 
 ## C2 — Demonstrate-failure-first fix protocol
 
-**Status:** new
+**Status:** validating
 **Cost:** M · **Rank:** 3 · **Depends on:** C1
 
 **Summary.** A fix round for a blocking finding starts by witnessing the failure — write the failing
@@ -301,6 +317,11 @@ Success target for the C1+C2 pair: precision ≥80% with rework share stable or 
   fix-guided verification filter cut false rejection by 30–67 points at ≤2.5 points added false
   acceptance.
 - 2026-08-14 — operator: proposed starter #2 (C1+C2) neither accepted nor rejected. Open.
+- 2026-08-14 — operator accepted the pair by actioning the batch. Implemented (plugin 0.4.3):
+  fix rounds witness executable-anchor findings before touching code; an unwitnessable finding
+  is refuted via the executor verdict's `refuted` list — carded with evidence, recorded onto
+  the review file, never relitigated; all-blocking-refuted with no code change settles the
+  review without another round. Inspection anchors keep their current handling. → validating.
 
 ## C3 — Round caps, rising bar, one-report lifecycle
 

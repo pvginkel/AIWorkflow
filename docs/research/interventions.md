@@ -438,8 +438,10 @@ measured analog, not a promise.
 
 ## 10. Status (2026-08-14) — where the selection discussion landed
 
-Recorded so a fresh session can continue without this conversation's transcript. Nothing below is
-implemented yet.
+Recorded so a fresh session can continue without this conversation's transcript. **Per-entry
+state now lives in [status.md](status.md)** — later the same day the operator actioned
+I1+I2+C1+C2+A1+A2, shipped as plugin 0.4.3; the phase split and constraints below remain the
+implementation map.
 
 **Phase split of the starters** (what committing to each actually touches):
 
@@ -451,9 +453,9 @@ implemented yet.
   no commitment implied.
 
 **Operator direction so far:** a planning session is imminent, so plan-phase changes (**A1+A2**)
-can be implemented now and exercised by it; run-phase changes get tested on a new slice. **Open
-decision:** whether the run batch is I1 alone or **I1+C1+C2** — C1+C2 (proposed starter #2) was
-neither accepted nor rejected. I2 is uncontroversial.
+can be implemented now and exercised by it; run-phase changes get tested on a new slice. The
+run-batch decision resolved to **I1+C1+C2** when the operator actioned the batch (status.md holds
+the per-entry log). I2 is uncontroversial.
 
 **Practical constraints for whoever implements:**
 
