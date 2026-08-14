@@ -432,3 +432,35 @@ measured analog, not a promise.
 3. **A1 (+A2)** — the task-shape declaration with question-gated research. Success: planner+research
    share on pre-settled/small shapes drops toward the floor; no rise in downstream gate_red or
    appended phases.
+
+---
+
+## 10. Status (2026-08-14) — where the selection discussion landed
+
+Recorded so a fresh session can continue without this conversation's transcript. Nothing below is
+implemented yet.
+
+**Phase split of the starters** (what committing to each actually touches):
+
+- **A1+A2** — plan loop only (`plan-template.md`, plan-writer, plan-reviewer registers).
+- **I1** — run loop (code-reviewer verdict schema + `state.json`); if C1 is taken, I1's per-finding
+  anchor/category fields are the same schema change — they land together nearly free.
+- **C1+C2** — run loop (code-reviewer register + fix-round protocol in `run_loop.py`).
+- **I2** — close-out tooling (`slice_cost.py` ratios); behavior-neutral, phase-independent,
+  no commitment implied.
+
+**Operator direction so far:** a planning session is imminent, so plan-phase changes (**A1+A2**)
+can be implemented now and exercised by it; run-phase changes get tested on a new slice. **Open
+decision:** whether the run batch is I1 alone or **I1+C1+C2** — C1+C2 (proposed starter #2) was
+neither accepted nor rejected. I2 is uncontroversial.
+
+**Practical constraints for whoever implements:**
+
+- The loops execute the installed marketplace clone (`~/.claude/plugins/marketplaces/aiworkflow/`),
+  so changes reach planning/run sessions only after push + marketplace update. The operator
+  confirms every push.
+- Plugin changes bump `plugins/dev/.claude-plugin/plugin.json` and get a `CHANGELOG-workflow.md`
+  entry; commit subjects carry the version (repo `CLAUDE.md`).
+- Measurement baseline: KubeCoderSpecs slices ≤153 are pre-0.4.2 (comment findings ≈49% there);
+  slice 143 is the first run on 0.4.2 — 0.4.2's effect on problem B is read off slices 143+
+  against that baseline, via I1 once it exists.
