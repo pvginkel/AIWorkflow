@@ -59,6 +59,10 @@ hand archaeology; self-proving, so acceptance is essentially "it shipped and the
   impact/category/anchor, persisted into `state.json` history with the fix rounds' `refuted`
   lists. Operator resolved the run batch to I1+C1+C2. Reaches runs after push + marketplace
   update → validating.
+- 2026-08-14 — first validation data (slices 144+145, the first runs on 0.4.3): all 12 findings
+  across both runs carry the fields in `review_result_r*.json` and `state.json` history. The B/C
+  readouts logged under B2, C1 and C2 below were produced from the fields alone — no transcript
+  archaeology.
 
 ## I2 — Standard cost readout per run
 
@@ -77,6 +81,11 @@ research-subagent share, rework share, cost per merged slice.
 - 2026-08-14 — implemented (plugin 0.4.3): `slice_cost.py` derives planner/research/rework
   shares and `--write-state` appends them to `state.json` as `cost`; `/dev:run-slice` runs it
   at close-out. → validating.
+- 2026-08-14 — first validation data (144+145): both close-outs wrote the `cost` block
+  (144: $55.02, planner 18.6%, research 3.1%, rework 15.4%; 145: $47.65, planner 26.9%, research
+  4.1%, rework 4.9%; no warnings). Known limitation: the readout undercounts ~2–3% — re-pricing
+  later gives $56.02/$49.02 — because the run orchestrator's own close-out tail lands after the
+  readout is computed.
 
 ## I3 — Sampled blocking-finding precision audit
 
@@ -109,6 +118,10 @@ C6 can stay unbuilt; a growing one says it is.
 
 - 2026-08-14 — catalogued (interventions.md §3). Grounding sample found within-run amplification
   bounded but the cross-slice path unmeasured (slice 153 deferred a finding to 143).
+- 2026-08-14 — evidence ahead of implementation: slices 144+145 minted 8 advisory cards in one
+  afternoon (2+6), plus three cut-requirement Trello cards that 145's own consult carded as
+  "needing a disposition; no phase covers it". The cross-slice queue the entry would measure is
+  visibly the active pressure point.
 
 ---
 
@@ -133,6 +146,12 @@ no rise in downstream gate_red or appended phases.
 - 2026-08-14 — implemented (plugin 0.4.3): `## Task shape` in the plan template, declared by
   the plan-writer before it investigates and checked by the plan-reviewer; `pre-settled`
   forbids research sub-agents and repo sweeps. → validating.
+- 2026-08-14 — first validation data (144+145): both plans declared `pre-settled` with
+  slice.md-anchored justifications, honestly both times. Planner+research $11.94/$14.76 against
+  slice 153's $27.72 analog; no gate_red, no appended phases, generation 0 in both runs — and the
+  plan-reviewer still did real work in each (144: caught P2 falsifying the wire contract; 145:
+  three structural findings that fed the R2/R5/R6 cut). Only `pre-settled` exercised so far; the
+  discrimination test — a cross-cutting slice declaring itself honestly — is still open.
 
 ## A2 — Question-gated research budget
 
@@ -154,6 +173,10 @@ visible in plan output.
 - 2026-08-14 — implemented (plugin 0.4.3), in the plan-writer register with A1: a research
   dispatch names the open question it settles; a settled question is never re-dispatched.
   → validating.
+- 2026-08-14 — first validation data (144+145): plan-writers dispatched zero research subagents
+  ("no attachments were needed"); the 3–4% research share in I2's readout is the interactive
+  refinement session's Explore agents, outside this gate's scope. Unexercised on a shape that
+  permits research.
 
 ## A3 — Effort step-down for the plan registers
 
@@ -243,6 +266,12 @@ baseline. Churn gone ⇒ accepted as-is; churn persists ⇒ take the extension.
 - 2026-08-14 — catalogued (interventions.md §5) as in place → measure. Baseline recorded: comment
   findings ≈49% of all findings on slices 149–153, all pre-0.4.2; slice 143 is the first run on
   0.4.2. Measurement blocked on I1.
+- 2026-08-14 — first post-0.4.2 measurement (144+145, via I1): comment-prose findings 5 of 12
+  (~42% by count vs ≈49% baseline) but all advisory, one sentence each, zero fix rounds, zero
+  relitigation — $0 of prose rework against slice 153's $11.70 analog. The mechanically-fixable
+  prose residue was absorbed by the completion consults (~$2 each, one claim verified by actually
+  running node); the judgment calls became cards. Count barely moved, cost went to zero — the
+  design intent. The blocking carve-out extension stays held.
 
 ## B3 — Explanatory prose lives in docs, not comments
 
@@ -298,6 +327,13 @@ failures; the anchor-type distribution (I1) shows what the old bar was letting t
 - 2026-08-14 — implemented (plugin 0.4.3): the closed anchor list replaces "failing-input logic
   or a test sketch" in the reviewer register; `blocking` requires an anchor, `none` is advisory
   by construction, the never-anchor categories are named. → validating.
+- 2026-08-14 — first validation data (144+145). Anchor distribution: repro-trace 2, coverage-gap
+  1, none 9; every `none` was advisory, and the single blocking finding (144 P2 F1, Major) carried
+  a repro-trace with a file:line evidence trail and was confirmed real. Anchored ≠ blocking held
+  in the right direction too: 145 P3 F1 (Major, repro-trace) stayed advisory because it contests
+  an operator ruling's premise, and was routed to a card. One boundary case for I3's audit: 145
+  P4 F1 (a mutation-survival claim — deleting the growth guard leaves the suite green) was
+  labeled `none` rather than coverage-gap, defensibly, since no named AC covers it.
 
 ## C2 — Demonstrate-failure-first fix protocol
 
@@ -322,6 +358,13 @@ Success target for the C1+C2 pair: precision ≥80% with rework share stable or 
   is refuted via the executor verdict's `refuted` list — carded with evidence, recorded onto
   the review file, never relitigated; all-blocking-refuted with no code change settles the
   review without another round. Inspection anchors keep their current handling. → validating.
+- 2026-08-14 — first live firing (144 P2 r2), textbook: the executor witnessed before fixing —
+  removed the fabricating harness helper and watched three tests fail exactly as the reviewer
+  traced (0 rolled, 3 failed) — then fixed the harness, pinned the exposed pass-wide refusal
+  with a test red against the old predicate, and carded the surfaced product question (upgrade
+  roll cascading on an at-cap node) instead of changing production behavior unilaterally. The r2
+  reviewer mutation-verified and signed off; no relitigation. Refute path not yet exercised;
+  blocking precision so far 1/1.
 
 ## C3 — Round caps, rising bar, one-report lifecycle
 
@@ -387,6 +430,11 @@ cards skipped by two consecutive triages.
 **Log**
 
 - 2026-08-14 — catalogued (interventions.md §6). Process change, no loop code.
+- 2026-08-14 — card pressure from 144+145 acknowledged (see I4's log), but the operator is
+  attacking the queue at intake instead: the triage skill was reworked (plugin 0.4.4) to filter
+  cruft and quickly close cards not worth progressing. C6's catalogued mechanism (slice-dag batch
+  triage + two-triage auto-expiry) stays unbuilt; whether the intake filter alone keeps the net
+  backlog flat is exactly what I4 would measure.
 
 ---
 
