@@ -44,9 +44,10 @@ invocation cwd — so run the command from the target code repo.
   proves the per-env token is accepted); it exits non-zero when either fails. A dead control plane
   means every `kc session` dispatch fails — nothing in the project is wrong, so the project is not
   the one asked to fix it.
-- **Not in the triage profile.** Triage dispatches nothing and touches no `kc` surface; it is
-  intake, doable without the repo. Gating it on live controller reachability would fail work that
-  needs none of it — the cost of the check there is a false gate, not the 20ms.
+- **Not in the triage profile.** Triage spawns no `kc` session and touches no `kc` surface; it
+  is intake — its optional category fact-checks are session-local sub-agents needing no control
+  plane. Gating it on live controller reachability would fail work that needs none of it — the
+  cost of the check there is a false gate, not the 20ms.
 - Both probes are bounded by the CLI itself (5s daemon, 10s controller), so preflight adds no
   timeout of its own.
 

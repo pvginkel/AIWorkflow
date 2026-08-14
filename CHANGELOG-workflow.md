@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-14 — triage filters the cruft before planning spends on it (v0.4.4)
+
+The triage skill, reworked ground-up around a filtering layer — the plan phase was where items
+that should never progress got expensive. Raw material lands on disk verbatim before anything
+else (also when triage starts mid-session); items are split mechanically and labelled against a
+worked-example rubric — nit pick (user-visible/internal), corner case, minor, major, improvement,
+feature, invalid — with every label justified by a verbatim source quote, never a generated
+rationale, judged per-item in isolation, keyed on the stated consequence (a claimed severity
+stands until the operator or a research verdict says otherwise). One consolidated operator pass
+adjudicates via typed rulings — close / answer / override / remark — where a bare remark never
+moves a label. Items whose label neither the source nor the operator settles get one read-only
+sub-agent answering one named question ("cannot determine" allowed); the verdict settles the
+label and none of it carries into the slice. Invalid and corner case are guarded — never
+assignable from belief — and no item is ever closed by machine judgment alone. The final
+category is stamped on each slice.md requirement and the README Pending line. Steps that don't
+apply are skipped. Design honed against the docs/research corpus (judge-mode bias, sycophancy,
+fact-vs-impact reliability split, premature disengagement); scope note added to interventions.md
+A4 — an operator-adjudicated label is not the rejected automatic-routing grade.
+
 ## 2026-08-14 — the intervention catalogue's first batch ships (v0.4.3)
 
 Six entries from `docs/research/interventions.md`, actioned together: the instrumented review/fix

@@ -15,10 +15,11 @@ with no preparation: **what to change** is fully decided — no choice with cons
 the implementer — and **the impact** is plain from the card — what the change touches and what
 breaks if it goes wrong. Moderate size is fine; an open decision is not. Operationally: the
 card's acceptance criteria can be written from its text alone — outcome-level, no code opened.
-Triage never opens application code, and this litmus is what makes the lane safe anyway: the
-cards that qualify were written by the run loop's own consults, which already did the grounding
-(file:line, expected behaviour, an "advisory" marker). If the criteria would need research, the
-card goes the normal triage → plan route.
+Triage grounds nothing itself — its only code reads are dispatched fact-checks that settle a
+category label, never acceptance criteria — and this litmus is what makes the lane safe anyway:
+the cards that qualify were written by the run loop's own consults, which already did the
+grounding (file:line, expected behaviour, an "advisory" marker). If the criteria would need
+research, the card goes the normal triage → plan route.
 
 Categorically excluded regardless of how known the fix looks: concurrency or timing behaviour,
 storage-layout or wire-contract changes, any card that leaves something open ("investigate",
