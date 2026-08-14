@@ -197,6 +197,12 @@ and judges are least reliable exactly on near-ties (Shi et al.: position consist
 the quality gap δq → 0) — an upfront grader lives entirely in that regime. Escalation designs (A3)
 condition on *outcomes*, which is strictly more information.
 
+**Scope, to prevent misreading:** what this record rejects is the grade as an **automatic routing
+input** — model or effort selection keyed on predicted difficulty, where a misjudged grade
+silently ships its consequences. A label a human adjudicates before anything acts on it — the
+triage category filter (v0.4.4) — is not this lane: the grade carries no automatic consequence,
+and the near-tie unreliability lands on the operator's desk instead of a dispatcher.
+
 ### A5. Best-of-k cheap plans with bias-controlled selection — **new, M–L, rank low**
 Generate k=2 plans at low effort; a bare comparative judge picks one, with order swap and (if close)
 a third vote.
