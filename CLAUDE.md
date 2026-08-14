@@ -14,6 +14,11 @@ non-`kc` fallback.
 `README.md` is the map; `docs/AUTHORING.md` is required reading before touching any agent, skill,
 or contract doc.
 
+All workflow code is **stdlib-only**. That limitation does however not apply to that written
+purely for analysis and research. E.g. the scripts in the `docs/research/` folder use
+non-stdlib features. The **stdlib-only** limitation applies only to scripts we distribute
+as part of the Claude plugin.
+
 ## Commands
 
 ```bash
