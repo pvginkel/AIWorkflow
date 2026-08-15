@@ -149,6 +149,38 @@ def test_fresh_slice_happy_path():
         assert "Target:" in writer_prompt
 
 
+def test_the_loop_creates_and_commits_the_close_out_report_first():
+    """The plan loop is the first to run on a slice, so it is the one that
+    creates close-out.md — before the first dispatch, committed by name —
+    and every dispatch names it. A rerun leaves the existing report alone."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        report = slice_dir / "close-out.md"
+        seen_at_spawn = []
+
+        def writer_effect(loop):
+            seen_at_spawn.append(report.exists())
+            write_phases(loop)
+
+        loop = ScriptedLoop(slice_dir, [(*W_DONE[:2], writer_effect), R_ISSUES])
+        assert run_to_exit(loop) == 4
+        assert seen_at_spawn == [True], "the report predates the first dispatch"
+        assert report.read_text().startswith("# Close-out — slice 099 test_slice\n")
+        assert ("add", str(report)) in loop.git_calls
+        commits = [c for c in loop.git_calls if c[:1] == ("commit",)]
+        assert commits == [("commit", "-m", "slice 099: close-out report")]
+        for role, prompt in loop.prompts:
+            assert f"close-out report is {report}" in prompt, role
+        # The rerun (fix pass) finds the report and neither recreates nor
+        # recommits it; the writer's fix dispatch names it too.
+        report.write_text(report.read_text() + "\n### Q1 — planning asked\n")
+        rerun = ScriptedLoop(slice_dir, [W_DONE])
+        assert run_to_exit(rerun) == 0
+        assert "### Q1 — planning asked" in report.read_text()
+        assert not [c for c in rerun.git_calls if c[:1] == ("commit",)]
+        assert f"close-out report is {report}" in rerun.prompts[0][1]
+
+
 def test_announce_lines_mark_pass_starts(capsys):
     """stdout carries one terse timestamped line per pass start and the
     final verdict — the watching caller's progress feed."""

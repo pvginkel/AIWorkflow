@@ -19,7 +19,10 @@ the slice — the doc phase's diff base), `known_phases` (the plan's phase ids i
 as last parsed), `generation` (follow-up generations spent), `test_rounds`, `sweep_runs`,
 `gate_sweep` (the loop-tail sweep's record: per-command `results` with log paths, `green`, and
 the exact `commits` it ran on — reused while every swept HEAD matches, re-run otherwise),
-`consult_seq`, `in_flight`, `cards`, `phases`, and `history`.
+`consult_seq`, `in_flight`, `bailouts` (every stop this run made — `reason`, `phase`,
+`question`, `ts` — kept here because `bailout.json` is unlinked on resume), `appended_phases`
+(the ids the plan gained after the run started — a consult's, the test phase's, or the
+operator's, as opposed to the phases it began with), `phases`, and `history`.
 
 Per phase: `status` (`pending` | `in_progress` | `merged`), `stage` (`executor` | `gate` |
 `review` | `merging` | `null`), `branch`, `target`, `executor_rounds`, `gate_fix_rounds`,
@@ -43,11 +46,11 @@ complete who-did-what record.
 local wall clock**, taken from the process's `TZ` (UTC when unset). The ISO stamps stay
 offset-aware, so they remain unambiguous to anything that parses them back.
 
-**`cards`** is the close-out hand-off list — one entry per finding disposition (a review merged
-with unresolved advisory findings, a below-bar test finding, a refuted blocking finding with its
-refutation evidence attached, anything an agent's verdict carded),
-each with its source and timestamp, recorded as findings land. `/dev:run-slice` files one
-issue-tracker card per entry at close-out; the list is a mechanical read, not a memory.
+**`close-out.md`** sits beside `state.json` and is not the driver's: created by the loops from the
+template, written by every agent, stamped by the driver — the header the driver writes at
+completion is read off this state (`created_at` → `updated_at`, `known_phases` against
+`appended_phases`, `bailouts`, `test_rounds`, `doc_phase.stage`, and `cost` once
+`slice_cost.py --write-state` has run). What goes in it is [close-out.md](close-out.md).
 
 Session outputs live under `<slice>/phases/P<id>/` (review docs, gate logs, verdict files) and at
 the slice root for the consult/test/doc stages; the loop-tail sweep's logs live under

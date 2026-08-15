@@ -19,7 +19,7 @@ From any Claude Code session:
 ```
 
 Installed into `~/.claude`, the plugin's skills resolve as `/dev:triage`, `/dev:plan-slice`,
-`/dev:run-slice`, `/dev:slice-dag`, `/dev:arch-design`, and its agents as
+`/dev:run-slice`, `/dev:close-out`, `/dev:slice-dag`, `/dev:arch-design`, and its agents as
 `dev:code-writer`, `dev:code-reviewer`, … . The run loop spawns those agents by their namespaced name
 through `kc session create-headless --agent dev:<role>`, so the kc-spawned headless sessions must
 see the same `~/.claude` install (they do — same home).
@@ -124,6 +124,7 @@ Then, from the `Kestrel` repo:
 /dev:triage            # groups findings/cards into slice folders in ../KestrelSpecs/slices/backlog/
 /dev:plan-slice 042    # settles the slice with you, then plans it as an ordered phase queue
 /dev:run-slice 042     # launches the run loop; drives write→test→review→merge, then test + docs
+/dev:close-out 042     # walks the slice's close-out.md with you and executes your dispositions
 ```
 
 If any contract piece is missing, the first skill's preflight tells you the exact line or file to

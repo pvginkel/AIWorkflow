@@ -5,7 +5,8 @@ phased plan (`<slice>/plan.md`). It owns the whole flow — every phase's dev ro
 consult, the test phase, the doc phase — and bails only on **errors** (exit 3) and **operator
 questions** (exit 4); the `/dev:run-slice` session that launches it has exactly four jobs and never
 drives. What the loop records is [runner-state.md](runner-state.md); session mechanics and models
-are [agent-dispatch.md](agent-dispatch.md); the plan's authoring is [plan-loop.md](plan-loop.md).
+are [agent-dispatch.md](agent-dispatch.md); the plan's authoring is [plan-loop.md](plan-loop.md);
+where every agent puts what the loop will not act on is [close-out.md](close-out.md).
 
 ```
 while phase := next_unfinished_phase(plan.md):   # re-parsed every iteration, document order
@@ -76,19 +77,20 @@ itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id
   reviewer's contract (no anchor is advisory by construction), and the verdict reports every
   finding machine-readably — severity, impact, category, anchor — which the driver persists
   into `state.json`'s history. A fix round resolves the findings tagged **blocking** and
-  nothing else — advisory findings are carded at close-out (the residue rider mops up the
-  mechanical ones), never fixed mid-loop, so each re-review stays the size of the blocking
-  fixes rather than everything the writer chose to touch. Fix rounds are **failure-first**:
-  a finding with an executable anchor is witnessed — the failing test written, the claimed
-  repro run — before any code changes. Witnessed, the test rides the fix as its regression
-  test; unable to fail, the finding is **refuted** — no code change, carded with the
-  refutation evidence, the record appended to the round's review file, never relitigated. A
-  fix round that changes no code and refutes every blocking finding settles the review; no
-  further round is spawned. Round 1's fix is automatic; from
-  round 2 on (and on any `critical`) a fresh consult judges the findings against a **funding
-  bar that rises per round** — blocking-only, then Blocker-only, then critical-only; a
-  prose-only fix range applies the next step early — before an executor round is spent.
-  Backstop cap 5. Findings that merge unresolved are carded, never lost.
+  nothing else — advisory findings stay in the review file and the close-out report (the
+  residue rider mops up the mechanical ones), never fixed mid-loop, so each re-review stays the
+  size of the blocking fixes rather than everything the writer chose to touch. Fix rounds are
+  **failure-first**: a finding with an executable anchor is witnessed — the failing test
+  written, the claimed repro run — before any code changes. Witnessed, the test rides the fix as
+  its regression test; unable to fail, the finding is **refuted** — no code change, the record
+  appended to the round's review file and a Notable-events entry with the refutation evidence
+  written to the close-out report by the driver, never relitigated. A fix round that changes no
+  code and refutes every blocking finding settles the review; no further round is spawned.
+  Round 1's fix is automatic; from round 2 on (and on any `critical`) a fresh consult judges
+  the findings against a **funding bar that rises per round** — blocking-only, then
+  Blocker-only, then critical-only; a prose-only fix range applies the next step early — before
+  an executor round is spent. Backstop cap 5. Findings that merge unresolved are never lost:
+  they stay in the review file, and the driver records the merge in the close-out report.
 - **Merge** — worktree clean, gate green on HEAD (re-run if it moved; red cannot merge),
   ff-merge into the base branch, branch deleted, stamp.
 - Executor terminals: `question` pauses the run for the operator (exit 4 — the answer lands in
@@ -118,7 +120,8 @@ itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id
   driver holds the devlock** across the test and doc phases (a `flock` on the spec repo's lease
   inode; it releases on crash); under that hold pushing and rolling dev for verification is
   pre-authorized — the lock *is* the coordination. prd stays operator-gated. Blocking findings
-  come back as appended phases; sub-bar findings as cards; `verification.json` is checked off.
+  come back as appended phases; sub-bar findings go in the close-out report;
+  `verification.json` is checked off.
 - **The push check** — nothing in the driver pushes a code phase (`_run_phase` ff-merges into the
   base branch locally, primary repo and siblings alike), so pushing what the slice committed is
   the test phase's job. Before the doc phase the driver verifies it happened: for every repo in
@@ -136,13 +139,18 @@ itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id
   pushes; the dev roll that push triggers is left to land on its own, untracked.
 
 **The generation bar** terminates the append loop: the first follow-up generation absorbs small
-in-scope touch-ups (absorbed beats carded), the second appends blocking work only, a third
-pending generation bails to the operator. Advisory leftovers become cards at close-out — recorded
-in `state.json` as findings land, so the card list is a mechanical read, not a memory. One rider
-holds at every generation: mechanical residue — comment or formatting fixes with no behaviour
-change, in files the slice's diff already touched — is neither carded nor appended; the finder
-fixes it in place and commits, and the driver's full-sweep gate covers it. A card must never
-cost the operator more to triage than the fix costs to make.
+in-scope touch-ups (absorbed beats reported), the second appends blocking work only, a third
+pending generation bails to the operator. Advisory leftovers go in the close-out report as they
+are found. One rider holds at every generation: mechanical residue — comment or formatting fixes
+with no behaviour change, in files the slice's diff already touched — is neither reported nor
+appended; the finder fixes it in place and commits, and the driver's full-sweep gate covers it.
+
+**Close-out.** Nothing from a run is carded per finding. Everything an agent noticed but the loop
+did not act on is in the slice's `close-out.md` ([close-out.md](close-out.md)) — created by the
+plan loop, or by the driver at run start when planning predates it; appended to by every agent;
+reconciled by the completion consult; Summary and Focus lines by the doc-writer; the run header
+stamped by the driver from `state.json` when the run completes. The launching session re-stamps
+it once the cost block has landed and files **one** tracker card pointing at the report.
 
 ## Protocol invariants
 

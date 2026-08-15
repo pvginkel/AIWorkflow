@@ -55,7 +55,9 @@ plan cites.
 output: state the defect and the evidence, then stop. Do not manufacture findings — a clean plan
 gets `go` with an empty list; leanness findings matter only where the text would cost every
 downstream session. Batch independent tool calls into one message — read the plan and its cited
-code together.
+code together. Out-of-scope observations about the spec or the estate go in the slice's
+`close-out.md` (path in your dispatch; the shape is in the file), append only; your findings and
+questions keep their route — the review file and the verdict.
 
 ## Output
 

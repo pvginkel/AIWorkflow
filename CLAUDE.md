@@ -6,8 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AIWorkflow is a **Claude Code plugin marketplace**, not an application — nothing is built or
 deployed from here. It hosts the `dev` plugin (the slice pipeline: `/dev:triage` →
-`/dev:plan-slice` → `/dev:run-slice`, plus `/dev:onboard`, `/dev:slice-dag`, `/dev:arch-design`,
-`/dev:merge-repos`), and it is the workshop where that pipeline is measured and improved. The
+`/dev:plan-slice` → `/dev:run-slice` → `/dev:close-out`, plus `/dev:onboard`, `/dev:slice-dag`,
+`/dev:arch-design`, `/dev:merge-repos`), and it is the workshop where that pipeline is measured
+and improved. The
 plugin is **kc-native**: it targets the KubeCoder environment and expects `kc` on PATH, with no
 non-`kc` fallback.
 
@@ -39,17 +40,19 @@ kc project lint        # cexec python uv run --with ruff ruff check .
 
 ## Architecture
 
-- **`plugins/dev/tools/`** — the drivers, each with a `test_*.py` beside it. `run_loop.py` (~2.9k
-  lines) and `plan_loop.py` carry most of the logic and most of the ~4.7k lines of suite; plus
-  `preflight.py`, `sweep_slice.py`, `close_slice.py`, `slice_cost.py`, `allocate-next-slice.sh`.
+- **`plugins/dev/tools/`** — the drivers, each with a `test_*.py` beside it. `run_loop.py` (~3k
+  lines) and `plan_loop.py` carry most of the logic and most of the ~4.4k lines of suite; plus
+  `close_out.py` (the close-out report's mechanics, imported by both loops), `preflight.py`,
+  `sweep_slice.py`, `close_slice.py`, `slice_cost.py`, `allocate-next-slice.sh`.
   Suites load their subject via `importlib.util.spec_from_file_location` (`tools/` is not a
   package) and fake sessions, git, `kc` and the gate — no agent is ever spawned by a test.
-- **`plugins/dev/agents/`** (9) and **`plugins/dev/skills/<name>/SKILL.md`** (7) — the dispatched
+- **`plugins/dev/agents/`** (9) and **`plugins/dev/skills/<name>/SKILL.md`** (8) — the dispatched
   roles and the operator-triggered workflows.
 - **`plugins/dev/docs/`** — the **canonical contract** for all of the above: `run-loop.md`,
-  `plan-loop.md`, `runner-state.md`, `plan-template.md`, `agent-dispatch.md`,
-  `project-contract.md`, `preflight.md`, `residual-sweep.md`. Behaviour changes here and in the
-  code together; a doc that describes a loop the code no longer runs is a defect.
+  `plan-loop.md`, `runner-state.md`, `plan-template.md`, `agent-dispatch.md`, `close-out.md`,
+  `close-out-template.md`, `project-contract.md`, `preflight.md`, `residual-sweep.md`. Behaviour
+  changes here and in the code together; a doc that describes a loop the code no longer runs is a
+  defect.
 
 Four ideas span the files and explain most design choices:
 
@@ -65,7 +68,9 @@ Four ideas span the files and explain most design choices:
    agents (`test-agent`, `test-fixer`, `rebase-agent`) which pin `model:` in their own definitions.
 4. **The loops bail, they don't chat:** exit 3 = error, exit 4 = operator question. `state.json`,
    `bailout.json` and the exit code are the entire interface to the launching session — loop stdout
-   never reaches it.
+   never reaches it. What an agent noticed but the loop will not act on has one destination —
+   the slice's `close-out.md` (`plugins/dev/docs/close-out.md`) — never a tracker card per
+   finding.
 
 **Portability is the constraint on every change.** The pipeline is generic; each project describes
 itself through `.kubecoder/project.yaml` and four machine-read `CLAUDE.md` lines (`Spec repo:`,

@@ -19,8 +19,9 @@ drift is the doc phase's to fix.
 
 1. **Claims must be grounded.** Every finding cites `file:line` evidence from the diff or the
    code it touches. An ungrounded claim is itself a Major issue — do not make one.
-2. **Describe the problem, never the fix.** State what is wrong, the failure it produces, and why
-   it matters. The fix design belongs to the executor.
+2. **Describe the problem, never the fix** — in the review file. State what is wrong, the failure
+   it produces, and why it matters; the fix design belongs to the executor. The close-out
+   report's Suggestions section is the one place a fix idea of yours may go.
 3. **Assume wrong until proven.** Stress the changed behavior: wiring on both sides of any
    produced/consumed signal, contract drift against the project's API/contract docs, derived
    state driving writes/deletes, async lifecycle, missing/vacuous test coverage of the new
@@ -32,8 +33,8 @@ drift is the doc phase's to fix.
    is not a finding. Comment and prose findings are advisory unless following the words causes
    harm (a wrong procedure, a contract claim a consumer would code against), and they earn one
    plain sentence, not research — a comment claim that takes live-system or history archaeology
-   to falsify was not worth the archaeology. One report is the finding's whole lifecycle: the
-   loop cards it; wording is never relitigated across rounds.
+   to falsify was not worth the archaeology. One report is the finding's whole lifecycle: it
+   stays in the review file and the close-out report; wording is never relitigated across rounds.
 5. **Skip cosmetics** a competent developer auto-fixes: naming, formatting, log wording.
 6. Severity: **Blocker** (violates intent, corrupts data, breaks a core flow) · **Major**
    (correctness risk, contract mismatch, missing coverage of new behavior) · **Minor**
@@ -55,14 +56,15 @@ drift is the doc phase's to fix.
    and rules on which findings fund another fix round; the impact tags are its substrate.
 7. **A second opinion, not a prosecution.** The measure of a review is whether merging harms the
    product, not the defect count. Report advisory findings once, plainly, without demanding
-   resolution — the workflow decides their disposition (they become issue-tracker cards), not you.
+   resolution — the operator decides their disposition from the close-out report, not you.
 8. **The test gate is an input, not your work.** Your dispatch states whether the deterministic
    gate ran green on the commit under review, with the log. Take it: do not re-run the suite or
    the linter to confirm it. Targeted runs still earn their turn: a test you suspect is vacuous,
    an uncovered case, a mutation proving a test catches what it claims. If the dispatch says the
    gate state is *unverified*, the branch's test state is genuinely unknown and yours to probe.
 9. **You may edit the plan doc** only to record a review-settled fact later phases must see —
-   never to change scope, and never a `###` heading or a `✅ DONE` stamp.
+   never to change scope, and never a `###` heading or a `✅ DONE` stamp — and the slice's
+   `close-out.md`, append only.
 10. **Batch independent tool calls into one message.** Every extra turn replays your whole
     context: read the plan section, the diff, and the cited code together, not one file per turn.
 
@@ -70,9 +72,11 @@ drift is the doc phase's to fix.
 
 Write the review file named in your dispatch: a one-paragraph readiness assessment, then findings
 ranked by severity, each carrying an id (`F1`, `F2`, …), evidence, its impact tag, its anchor,
-and confidence. Then write the verdict file named in your dispatch — `findings` mirrors the
-review file, one entry per finding (the run record persists these fields, and the fix round
-addresses findings by id):
+and confidence. Advisory findings of any severity you also enter, once, in the slice's
+`close-out.md` (Bugs or Suggestions; path in your dispatch, shape in the file) — the review file
+stays the full record, and they are never fix work. Then write the verdict file named in your
+dispatch — `findings` mirrors the review file, one entry per finding (the run record persists
+these fields, and the fix round addresses findings by id):
 
 ```json
 {"outcome": "signoff | issues | critical", "summary": "1-3 sentences",
@@ -85,7 +89,7 @@ addresses findings by id):
 ```
 
 - `signoff` — nothing tagged blocking: the phase may merge; advisory findings of any severity
-  ride along as cards, not as fix work.
+  ride along in the close-out report, not as fix work.
 - `issues` — findings tagged blocking that the executor must resolve.
 - `critical` — problems that put the phase's premise or the slice in question, beyond a normal
   fix round.

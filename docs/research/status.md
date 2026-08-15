@@ -126,6 +126,10 @@ C6 can stay unbuilt; a growing one says it is.
   close-out report — entries by section, dispositions by kind, cards the operator files at
   disposition. Same question (does the queue clear?), new place to count; the plan's
   `entry_counts` and the close-out skill's tally are the instrument.
+- 2026-08-15 — C7 shipped (plugin 0.5.0): `state.json["cards"]` no longer exists for new runs,
+  so the ledger's original data source ends at 0.4.5. From here the count is `close_out.py
+  counts` per report plus the close-out skill's disposition tally at step 5; the pre-0.5.0
+  `cards` lists stay readable as the baseline.
 
 ---
 
@@ -461,12 +465,15 @@ cards skipped by two consecutive triages.
   into one document per slice, dispositioned by the operator; C6's mechanism is not built — the
   question it governed no longer exists in that form. Stays `new` as a record; revisit only if
   operator-filed cards from close-out dispositions accumulate the same way.
+- 2026-08-15 — C7 shipped (plugin 0.5.0); the run loop mints no per-finding cards from this
+  version on. What reaches the board is one close-out card per slice plus whatever the operator
+  files at disposition — the queue C6 would govern is now operator-made.
 
 ---
 
 ## C7 — Close-out report replaces per-finding cards
 
-**Status:** new
+**Status:** validating
 **Cost:** M · **Rank:** — (operator-directed, 2026-08-15) · **Depends on:** — (rides I2 for the header's cost line)
 
 **Summary.** One `close-out.md` per slice, created at plan start, written by every agent in one
@@ -488,6 +495,17 @@ Kill signal is reports that grow *and* stop being read — answered by shape, ne
   minor/nit/doc) with the assessment; design note and implementation plan written the same day at
   plugin 0.4.5. Baselines for the read: 007 — 11 entries → 10 cards, 3 appended phases, rework
   13.8 %; KubeCoderSpecs 117/135/107 — 24/17/16 card entries; 149–153 rework band 9.3–15.7 %.
+- 2026-08-15 — implemented as plugin **0.5.0**, per the plan: `docs/close-out.md` +
+  `close-out-template.md`, `tools/close_out.py` (init / append / stamp / counts, imported by
+  both loops), the `close-out` skill; every agent register lost `cards` and gained the report;
+  `state.json` lost `cards`, gained `bailouts` and `appended_phases`; `/dev:run-slice` files one
+  close-out card; `/dev:triage` reads the report. Open decisions closed: 0.5.0 (a contract
+  change touching every agent); the driver's entries carry a blank `Disposition:` like every
+  other; no Summary/Focus pass on a `blocked`/`question` doc phase. **Validating from the first
+  slice planned or run on 0.5.0** — the run's `state.json` will show `bailouts`/`appended_phases`
+  and its folder a `close-out.md`; measurement per design §7 (entry counts by section,
+  dispositions by kind, cards filed at disposition, gen-1 appended phases, rework share,
+  bail-outs) logged here per slice as the 0.4.3 batch was.
 
 ---
 

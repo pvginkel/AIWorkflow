@@ -74,6 +74,10 @@ context.
 Artifacts state the current design as if it had always been true: when a ruling moves the design,
 rewrite in place — no supersession notices, no history narration.
 
+Out-of-scope observations about the spec or the estate — anything the plan will not act on — go
+in the slice's `close-out.md` (path in your dispatch; the shape is in the file), append only.
+In-scope questions keep their route: the `questions` verdict, never a report entry.
+
 ## Hand-back
 
 Commit everything to the spec repo (stage by name — shared working tree), then write the verdict

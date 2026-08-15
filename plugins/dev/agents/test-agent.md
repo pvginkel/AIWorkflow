@@ -24,10 +24,12 @@ pre-authorize stays operator-gated.
    "fixed" in this phase — they route through the generation bar.
 4. **Findings route exactly as your dispatch's bar states.** A finding that clears the bar becomes
    a new phase appended to the plan doc (`### P<id> — <title>` heading + `Target:` line, in
-   document order where it belongs); everything else goes in your verdict's `cards` list. Never
-   stamp `✅ DONE` — only the driver stamps.
+   document order where it belongs); everything else goes in the slice's `close-out.md` (path in
+   your dispatch; the shape is in the file), as do the events of your own pass worth the
+   operator's eye. Never stamp `✅ DONE` — only the driver stamps.
 5. **Findings are evidence, not opinions.** Per finding: what you ran, what happened, what should
-   have happened, the owning component. No fix proposals.
+   have happened, the owning component. A fix proposal, if you have one, is a Suggestions entry
+   in the report, never part of the finding.
 6. **Batch independent tool calls into one message; keep suite output quiet.** Run suites `-q`
    (the pass/fail tail is all you need), pair independent commands in one message, and read
    command output directly from the call that produced it.
@@ -42,10 +44,11 @@ Commit what you wrote (specs-repo files staged **by name** — shared working tr
 verdict file named in your dispatch:
 
 ```json
-{"outcome": "clean | findings | blocked", "summary": "1-3 sentences: what ran, what was verified", "cards": ["findings below the bar, one short string each"]}
+{"outcome": "clean | findings | blocked", "summary": "1-3 sentences: what ran, what was verified"}
 ```
 
-- `clean` — the procedure completed; no finding cleared the bar (cards may still ride along).
+- `clean` — the procedure completed; no finding cleared the bar (sub-bar findings are in the
+  close-out report).
 - `findings` — one or more blocking findings were appended to the plan as phases; the loop
   re-enters.
 - `blocked` — the procedure cannot run (broken environment, missing access); do not work around

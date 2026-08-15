@@ -36,6 +36,11 @@ Rulings reach agents through plan.md only — dispatch prompts carry pointers,
 not relayed content. State persists in <slice>/plan_state.json across
 invocations.
 
+The loop is the first to run on a slice, so it is the one that creates the
+slice's close-out report (<slice>/close-out.md, from the plugin's template)
+and commits it, before the first dispatch: planning agents write their
+out-of-scope observations there from the start (docs/close-out.md).
+
 All loop and session output goes to <slice>/plan_log.txt; stdout carries the
 log-file line plus one terse timestamped line per pass start and the final
 verdict, so a watching caller can follow progress cheaply; -v/--verbose
@@ -64,6 +69,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # plan-shape authority, and the target repo's root comes from `git rev-parse
 # --show-toplevel` in the process cwd — not from `__file__`, which locates the
 # plugin these tools ship in, never the repo being planned.
+from close_out import init_report, report_path  # noqa: E402
 from run_loop import (  # noqa: E402
     AGENTS_DIR,
     SPAWN_ENV,
@@ -126,6 +132,7 @@ your contract: the task-shape declaration (before you investigate), the
 phases (each opening with its `Target:` line), ordering constraints,
 not-in-scope, attachments/ only where an executor genuinely cannot derive
 the design, and verification.json's outcome-level acceptance criteria.
+The slice's close-out report is {report_path}.
 Commit to the spec repo (stage by name), then write your verdict
 to {verdict_path}. Blocking questions go to {questions_path} with verdict
 `questions`.
@@ -140,6 +147,7 @@ the review where they speak. Apply every ruling the plan does not yet
 reflect and resolve every blocking finding the rulings do not overrule —
 the reviewer and the operator state problems; the fix design is yours. This
 is the only fix pass: no review follows it, the operator's read does.
+The slice's close-out report is {report_path}.
 Commit (stage by name), then write your verdict to {verdict_path}. A
 finding the rulings leave genuinely unresolved goes to {questions_path}
 with verdict `questions`.
@@ -154,6 +162,7 @@ REVIEWER_PROMPT = """\
 Review the plan for slice {slice_name} — the full plan, in your one and
 only round: no fix-verify loop follows; your findings go to the operator.
 Slice folder: {slice_dir}
+The slice's close-out report is {report_path}.
 
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
@@ -181,7 +190,9 @@ class PlanLoop:
                  fixes_applied: bool = False):
         self.slice_dir = slice_dir.resolve()
         self.slice_name = self.slice_dir.name
+        self.slice_num = self.slice_name.split("_")[0]
         self.plan_path = self.slice_dir / "plan.md"
+        self.report_path = report_path(self.slice_dir)
         self.state_path = self.slice_dir / "plan_state.json"
         self.log_path = self.slice_dir / "plan_log.txt"
         self.verbose = verbose
@@ -365,12 +376,14 @@ class PlanLoop:
         if initial:
             prompt = WRITER_INITIAL_PROMPT.format(
                 slice_name=self.slice_name, slice_dir=self.slice_dir,
+                report_path=self.report_path,
                 verdict_path=verdict_path, questions_path=questions_path)
         else:
             review_path = (self.slice_dir /
                            f"plan_review_r{self.state['pending_review']}.md")
             prompt = WRITER_FIX_PROMPT.format(
                 slice_name=self.slice_name, slice_dir=self.slice_dir,
+                report_path=self.report_path,
                 review_path=review_path, verdict_path=verdict_path,
                 questions_path=questions_path)
         if self.state.get("pending_questions"):
@@ -401,6 +414,7 @@ class PlanLoop:
         verdict_path = self.slice_dir / f"plan_review_result_r{r}.json"
         prompt = REVIEWER_PROMPT.format(
             slice_name=self.slice_name, slice_dir=self.slice_dir,
+            report_path=self.report_path,
             review_path=review_path, verdict_path=verdict_path)
 
         self.announce(f"plan-reviewer r{r}")
@@ -521,6 +535,17 @@ class PlanLoop:
                 "history": [],
             }
         self._save_state()
+        self._ensure_report()
+
+    def _ensure_report(self) -> None:
+        """The slice's close-out report exists before the first dispatch —
+        created from the template and committed by the loop (by name; the
+        spec repo is a shared tree). A rerun finds it and leaves it be."""
+        if init_report(self.slice_dir):
+            self.git("add", str(self.report_path))
+            self.git("commit", "-m",
+                     f"slice {self.slice_num}: close-out report")
+            self.log(f"created {self.report_path.name} from the template")
 
     def run(self) -> None:
         if not (self.slice_dir / "slice.md").exists():

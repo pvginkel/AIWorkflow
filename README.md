@@ -11,30 +11,33 @@ a KubeCoder pod).
 
 ## The `dev` plugin
 
-The validated slice pipeline: **`/dev:triage` → `/dev:plan-slice` → `/dev:run-slice`**, plus
-`/dev:slice-dag`, `/dev:arch-design`, plus `/dev:onboard` to bring a repo onto the
-pipeline in the first place and `/dev:merge-repos` to fold a split backend+UI pair into one repo
-that can be onboarded. `plan-slice` settles the design with the operator, then drives a
-plan-writer/plan-reviewer round (`plan_loop.py`) to a reviewed **phase queue**; `run-slice` launches
-a kc-native run loop (`run_loop.py`) that takes each phase through a bounded loop — fetch → branch →
-code-writer → test gate + test-fixer → consult-funded review rounds against a rising bar → ff-merge
-→ `✅ DONE` — then closes the slice out with a loop-tail gate sweep, a completion consult, a test
-phase and a doc phase, spawning every agent as a headless `kc session`. The gate is
-`kc project test`, run by the loop itself: detecting green needs no model, only fixing red does.
-**Files are durable; sessions are ephemeral;** scripts drive, agents judge.
+The validated slice pipeline: **`/dev:triage` → `/dev:plan-slice` → `/dev:run-slice` →
+`/dev:close-out`**, plus `/dev:slice-dag`, `/dev:arch-design`, plus `/dev:onboard` to bring a
+repo onto the pipeline in the first place and `/dev:merge-repos` to fold a split backend+UI pair
+into one repo that can be onboarded. `plan-slice` settles the design with the operator, then
+drives a plan-writer/plan-reviewer round (`plan_loop.py`) to a reviewed **phase queue**;
+`run-slice` launches a kc-native run loop (`run_loop.py`) that takes each phase through a bounded
+loop — fetch → branch → code-writer → test gate + test-fixer → consult-funded review rounds
+against a rising bar → ff-merge → `✅ DONE` — then closes the slice out with a loop-tail gate
+sweep, a completion consult, a test phase and a doc phase, spawning every agent as a headless
+`kc session`. The gate is `kc project test`, run by the loop itself: detecting green needs no
+model, only fixing red does. **Files are durable; sessions are ephemeral;** scripts drive, agents
+judge.
 
 **The plan is the queue.** One `plan.md` per slice holds phases as `### P<id> — <title>` headings,
 each opening with a `Target:` line naming a `kc project list` component or a sibling repo. Document
 order is authoritative; only the driver stamps a phase done. Every agent in the loop may edit the
 plan — appending a phase is how work grows, bounded by a generation bar that folds small in-scope
-touch-ups in early and cards the rest at close-out.
+touch-ups in early. **Everything out of the loops' scope goes in one close-out report per slice**
+(`close-out.md`, created at planning, written by every agent as it goes): nothing from a run is
+carded per finding; the operator dispositions the report and `/dev:close-out` executes.
 
-- **`plugins/dev/`** — the plugin: 7 skills, 9 agents, the tools (`run_loop.py`,
-  `plan_loop.py`, `sweep_slice.py`, `close_slice.py`, `slice_cost.py`,
+- **`plugins/dev/`** — the plugin: 8 skills, 9 agents, the tools (`run_loop.py`,
+  `plan_loop.py`, `close_out.py`, `sweep_slice.py`, `close_slice.py`, `slice_cost.py`,
   `preflight.py`, and `allocate-next-slice.sh`, with their suites), and the contract docs
   (`run-loop.md` / `runner-state.md` / `plan-loop.md` / `plan-template.md` /
-  `agent-dispatch.md`, plus `residual-sweep.md`, `project-contract.md`,
-  `preflight.md`).
+  `agent-dispatch.md` / `close-out.md` / `close-out-template.md`, plus `residual-sweep.md`,
+  `project-contract.md`, `preflight.md`).
 - **`.claude-plugin/marketplace.json`** — makes this repo installable.
 
 `kc project test` and `kc project lint` gate the plugin from this repo — the suites are the reason
@@ -72,6 +75,8 @@ its per-repo status lives on the issue tracker, where work state belongs.
   skills, and docs so they stay lean and drift-free.
 - **[`plugins/dev/docs/`](plugins/dev/docs/)** — the plugin's own contract: `run-loop.md` (the
   phase queue and the consult/test/doc ladder) with `runner-state.md`, `plan-loop.md`,
-  `plan-template.md` and `agent-dispatch.md` beside it, plus `project-contract.md`,
-  `preflight.md`, and `residual-sweep.md` (the planning-free lane for card-described residuals).
+  `plan-template.md`, `agent-dispatch.md`, and `close-out.md` / `close-out-template.md` (the
+  per-slice report every agent writes its out-of-scope observations to) beside it, plus
+  `project-contract.md`, `preflight.md`, and `residual-sweep.md` (the planning-free lane for
+  card-described residuals).
 - **[`CHANGELOG-workflow.md`](CHANGELOG-workflow.md)** — the plugin's changelog.

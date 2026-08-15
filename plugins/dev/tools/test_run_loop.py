@@ -181,9 +181,9 @@ class ScriptedLoop(RunLoop):
         self.spawned.append((role, phase_id, round_, verdict["outcome"],
                              resume_session))
         self._record(phase_id, role, round_, verdict["outcome"],
-                     verdict.get("summary", ""), "sess-test", 1)
-        self._card(f"{role} P{phase_id}" if phase_id else role,
-                   verdict.get("cards"))
+                     verdict.get("summary", ""), "sess-test", 1,
+                     extra={k: verdict[k] for k in ("findings", "refuted")
+                            if verdict.get(k)})
         if len(step) > 2:
             step[2](self)
         return verdict, "sess-test"
@@ -309,6 +309,10 @@ def load_state(slice_dir):
     return json.loads((slice_dir / "state.json").read_text())
 
 
+def load_report(slice_dir):
+    return (slice_dir / "close-out.md").read_text()
+
+
 class patched:
     """Swap module attributes for the duration of a `with` block — the tests
     run under pytest and standalone, so no fixtures."""
@@ -426,12 +430,16 @@ def test_happy_path_two_phases():
         assert all("--ff-only" in c for _, c in merges)
         plan = (slice_dir / "plan.md").read_text()
         assert plan.count("✅ DONE") == 2
-        # the stamp is committed in the specs repo, plan.md staged by name
+        # the stamp is committed in the specs repo, plan.md staged by name;
+        # the only other driver commit there is the close-out report's
+        # creation, also by name
         specs = r.fake_git.specs_ops()
         adds = [c for c in specs if c[2] == "add"]
         commits = [c for c in specs if c[2] == "commit"]
-        assert len(adds) == 2 and all("plan.md" in c[3] for c in adds)
+        assert [Path(c[3]).name for c in adds] == \
+            ["close-out.md", "plan.md", "plan.md"]
         assert any("stamp P1 done" in " ".join(c) for c in commits)
+        assert any("close-out report" in " ".join(c) for c in commits)
         assert not (slice_dir / "bailout.json").exists()
 
 
@@ -526,13 +534,14 @@ def test_review_issues_round1_fix_is_automatic():
         assert ps["review_rounds"] == 2 and ps["executor_rounds"] == 2
 
 
-def test_review_funding_consult_merges_and_cards():
+def test_review_funding_consult_merges_and_reports():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         script = [
             V["exec_done"],
             V["review_issues"], V["exec_done"],       # round 1 + auto fix
-            V["review_issues"],                       # round 2 → consult
+            ("code-reviewer", {"outcome": "issues", "summary": "gaps",
+                               "findings": REVIEW_FINDINGS}),   # r2 → consult
             ("consult", {"outcome": "merge", "summary": "advisory only"}),
             *TAIL,
         ]
@@ -541,13 +550,24 @@ def test_review_funding_consult_merges_and_cards():
         assert not r.script
         state = load_state(slice_dir)
         assert state["phases"]["1"]["status"] == "merged"
-        cards = state["cards"]
-        assert len(cards) == 1
-        assert "code_review_r2.md" in cards[0]["text"]
+        assert "cards" not in state
+        # The merge is a Notable event in the close-out report, standing on
+        # its own: the consult's reasoning, the findings as tagged, the
+        # review file.
+        report = load_report(slice_dir)
+        assert ("### N1 — P1 merged with unresolved review findings after r2"
+                in report)
+        assert "advisory only" in report
+        assert "F1 [Major/blocking]: wrong branch on empty input" in report
+        assert "F2 [Minor/advisory]: stale comment" in report
+        assert "code_review_r2.md" in report
+        assert "Provenance: consult 1 (review-funding, P1 r2)" in report
+        assert report.count("Disposition:") == 1
         fund = next(p for role, p in r.prompts
                     if role == "consult" and "funding bar" in p)
         assert "Review round 2" in fund and "fix_round" in fund
         assert "harm the product" in fund
+        assert "close-out report" in fund and "cards" not in fund
 
 
 def test_review_funding_consult_can_fund_a_fix_round():
@@ -568,7 +588,7 @@ def test_review_funding_consult_can_fund_a_fix_round():
         ps = state["phases"]["1"]
         assert ps["status"] == "merged"
         assert ps["review_rounds"] == 3 and ps["executor_rounds"] == 3
-        assert state["cards"] == []
+        assert "### N" not in load_report(slice_dir)
 
 
 def test_review_budget_cap_forces_merge_or_bail():
@@ -690,11 +710,14 @@ def test_all_blocking_refuted_without_code_change_settles_review():
                   / "code_review_r1.md").read_text()
         assert "Refuted findings" in review
         assert "F1: ran the repro; output correct" in review
-        cards = state["cards"]
-        assert len(cards) == 1
-        assert cards[0]["source"] == "refuted P1"
-        assert "refuted blocking finding F1" in cards[0]["text"]
-        assert "code_review_r1.md" in cards[0]["text"]
+        # The refutation is a Notable event carrying the reviewer's claim,
+        # the writer's evidence, and the review file — nothing to chase.
+        report = load_report(slice_dir)
+        assert "### N1 — Fix round after review r1 of P1 refuted F1" in report
+        assert '"wrong branch on empty input"' in report
+        assert "ran the repro; output correct" in report
+        assert "code_review_r1.md" in report
+        assert "Provenance: code-writer P1, fix round after review r1" in report
 
 
 def test_partial_refutation_funds_the_next_review_round():
@@ -775,6 +798,126 @@ def test_executor_question_bails_as_operator_question():
         assert bail["reason"] == "operator_question"
         assert bail["question"] is True
         assert "which auth scheme?" in bail["details"]
+
+
+# -- the close-out report -----------------------------------------------------
+#
+# Every out-of-scope observation goes in <slice>/close-out.md; the driver
+# creates it (idempotently), points every dispatch at it, appends its own
+# deterministic entries, records what the header needs (bail-outs, appended
+# phases), and stamps the header when the run completes.
+
+def test_run_start_creates_and_commits_the_report_once():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0
+        report = load_report(slice_dir)
+        assert report.startswith("# Close-out — slice 074 test_slice\n")
+        specs = r.fake_git.specs_ops()
+        creates = [c for c in specs if c[2] == "commit"
+                   and "close-out report" in c[4]]
+        assert len(creates) == 1
+        # A run started with the plan loop's report in place leaves it be.
+        (slice_dir / "state.json").unlink()
+        (slice_dir / "close-out.md").write_text(
+            "# Close-out — slice 074 test_slice\n\nRun: <not yet stamped>\n\n"
+            "## Summary\n\n## Outstanding actions\n\n## Notable events\n\n"
+            "### N1 — planning saw something\n\nbody\n\nDisposition:\n\n"
+            "## Bugs\n\n## Open questions and rulings\n\n## Suggestions\n")
+        plan = (slice_dir / "plan.md").read_text()
+        (slice_dir / "plan.md").write_text(re.sub(r" ✅ DONE \S+", "", plan))
+        r2 = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                      *TAIL], repo_root=repo)
+        assert run_to_exit(r2) == 0
+        assert "### N1 — planning saw something" in load_report(slice_dir)
+        assert not [c for c in r2.fake_git.specs_ops()
+                    if c[2] == "commit" and "close-out report" in c[4]]
+
+
+def test_resume_creates_the_report_when_the_run_predates_it():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        (slice_dir / "state.json").write_text(
+            json.dumps(resume_state(PROJECT, stage="executor")))
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        assert run_to_exit(r) == 0
+        assert (slice_dir / "close-out.md").exists()
+        assert any(c[2] == "commit" and "close-out report" in c[4]
+                   for c in r.fake_git.specs_ops())
+
+
+def test_every_dispatch_carries_the_report_path():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First")])
+        script = [
+            V["exec_done"], V["exec_done"],           # executor, gate-fix
+            V["review_issues"], V["exec_done"],       # round 1 + review-fix
+            V["review_signoff"],
+            *TAIL,
+        ]
+        r = ScriptedLoop(slice_dir, script, gates=[False, True],
+                         repo_root=repo)
+        assert run_to_exit(r) == 0
+        pointer = f"close-out report is {slice_dir / 'close-out.md'}"
+        by_role = {}
+        for role, prompt in r.prompts:
+            by_role.setdefault(role, []).append(prompt)
+        # initial executor, gate-fix round, review-fix round
+        assert len(by_role["code-writer"]) == 3
+        assert all(pointer in p for p in by_role["code-writer"])
+        # round 1 full review and the round 2 delta review
+        assert len(by_role["code-reviewer"]) == 2
+        assert all(pointer in p for p in by_role["code-reviewer"])
+        assert all(pointer in p for p in by_role["test-agent"])
+        assert all(pointer in p for p in by_role["doc-writer"])
+        assert all(f"Close-out report: {slice_dir / 'close-out.md'}" in p
+                   for p in by_role["consult"])
+        # and no prompt still speaks of cards
+        assert not any("card" in p for _, p in r.prompts)
+
+
+def test_bail_outs_and_appended_phases_are_recorded_for_the_header():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [("code-writer", {"outcome": "blocked",
+                                                       "summary": "no creds"})],
+                         repo_root=repo)
+        assert run_to_exit(r) == 3
+        state = load_state(slice_dir)
+        assert [b["reason"] for b in state["bailouts"]] == ["blocked"]
+        assert state["bailouts"][0]["phase"] == "1"
+        assert state["bailouts"][0]["question"] is False
+        # The count survives the resume that unlinks bailout.json, and a
+        # consult's appended phase is recorded as appended, not planned.
+        script = [
+            V["exec_done"], V["review_signoff"],
+            ("consult", {"outcome": "appended", "summary": "one gap"},
+             append_phase("2", "The gap")),
+            V["exec_done"], V["review_signoff"],
+            *TAIL,
+        ]
+        r2 = ScriptedLoop(slice_dir, script, resume=True, repo_root=repo)
+        assert run_to_exit(r2) == 0
+        state = load_state(slice_dir)
+        assert len(state["bailouts"]) == 1
+        assert state["known_phases"] == ["1", "2"]
+        assert state["appended_phases"] == ["2"]
+        # The header is stamped from that state when the run completes.
+        report = load_report(slice_dir)
+        assert "<not yet stamped>" not in report
+        header = report[report.index("Run:"):report.index("## Summary")]
+        header = " ".join(header.split())
+        assert "2 phases (1 planned, P2 appended)" in header
+        assert "1 bail-out" in header
+        assert "1 test round" in header
+        assert "doc phase done" in header
+        assert "$" not in header      # no cost block yet — omitted, not guessed
+        log = (slice_dir / "log.txt").read_text()
+        assert "close-out report: A 0 · N 0 · B 0 · Q 0 · S 0" in log
 
 
 def test_writer_question_resume_dispatches_writer_with_tagged_ruling():
@@ -961,7 +1104,7 @@ def test_operator_broken_plan_on_resume_is_an_operator_question():
             "orchestrator": None, "run_phase": "phases",
             "bases": {}, "slice_base": {}, "known_phases": [],
             "phases": {}, "generation": 0, "test_rounds": 0,
-            "consult_seq": 0, "in_flight": None, "cards": [], "history": [],
+            "consult_seq": 0, "in_flight": None, "history": [],
         }
         (slice_dir / "state.json").write_text(json.dumps(state))
         r = ScriptedLoop(slice_dir, [], resume=True, repo_root=repo)
@@ -1162,7 +1305,7 @@ def resume_state(target, stage="review"):
                          "gate_green_commit": None, "gate_green_log": None,
                          "reviewed_head": None}},
         "generation": 0, "test_rounds": 0, "consult_seq": 0,
-        "in_flight": None, "cards": [], "history": [],
+        "in_flight": None, "history": [],
     }
 
 
@@ -1234,7 +1377,7 @@ def test_generation_bar_carries_trivia_rider():
         assert "mechanical residue" in test_prompt
 
 
-def test_later_consults_see_the_carded_list():
+def test_consults_get_the_report_path_and_a_cards_list_is_ignored():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         script = [
@@ -1247,10 +1390,42 @@ def test_later_consults_see_the_carded_list():
         ]
         r = ScriptedLoop(slice_dir, script, repo_root=repo)
         assert run_to_exit(r) == 0
-        first, second = [p for role, p in r.prompts if role == "consult"]
-        assert "Already carded" not in first
-        assert "Already carded" in second
-        assert "byte-order sort in the picker" in second
+        for _, prompt in [(role, p) for role, p in r.prompts
+                          if role == "consult"]:
+            assert f"Close-out report: {slice_dir / 'close-out.md'}" in prompt
+            assert "Already carded" not in prompt
+            assert '"cards"' not in prompt
+        completion = next(p for role, p in r.prompts
+                          if role == "consult" and "stamped done" in p)
+        assert "one pass that reconciles" in completion
+        # A stale register's `cards` list is not state and never reaches
+        # the report.
+        state = load_state(slice_dir)
+        assert "cards" not in state
+        assert "byte-order sort" not in load_report(slice_dir)
+
+
+def test_a_cards_list_in_a_verdict_is_logged_and_dropped():
+    """A pre-0.5.0 register on an installed clone still emits `cards`; the
+    real _spawn takes the verdict, notes the list once, and moves on — no
+    protocol failure."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            ("code-writer", {"outcome": "done", "summary": "built",
+                             "cards": ["stale line pointer in D31"]}),
+            ("code-reviewer", {"outcome": "signoff", "summary": "ok"}),
+            ("consult", {"outcome": "complete", "summary": "done"}),
+            ("test-agent", {"outcome": "clean", "summary": "ok"}),
+            ("doc-writer", {"outcome": "done", "summary": "docs"}),
+        ]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        log = (slice_dir / "log.txt").read_text()
+        assert "verdict carried a `cards` list — ignored" in log
+        assert "cards" not in load_state(slice_dir)
+        assert "stale line pointer" not in load_report(slice_dir)
 
 
 def test_consult_appended_without_phases_treated_complete():
@@ -1296,7 +1471,7 @@ def test_test_phase_findings_loop_with_rising_bar_then_third_generation_bails():
         assert state["generation"] == 3
 
 
-def test_test_phase_cards_ride_the_verdict():
+def test_test_phase_prompt_routes_sub_bar_findings_to_the_report():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         script = [
@@ -1307,8 +1482,11 @@ def test_test_phase_cards_ride_the_verdict():
         ]
         r = ScriptedLoop(slice_dir, script, repo_root=repo)
         assert run_to_exit(r) == 0
-        cards = load_state(slice_dir)["cards"]
-        assert len(cards) == 1 and "banner typo" in cards[0]["text"]
+        prompt = next(p for role, p in r.prompts if role == "test-agent")
+        assert f"close-out report is {slice_dir / 'close-out.md'}" in prompt
+        assert "goes in the close-out report" in prompt
+        assert "`cards`" not in prompt
+        assert "cards" not in load_state(slice_dir)
 
 
 def test_test_phase_prompt_states_devlock_and_procedure_doc():
@@ -1465,7 +1643,7 @@ def test_doc_gate_sweeps_lint_build_test_fail_fast():
         slice_dir, repo = make_slice(tmp)
         loop = RunLoop(slice_dir, resume=False)
         loop.repo_root = repo
-        loop.state = {"history": [], "cards": []}
+        loop.state = {"history": []}
         calls = []
 
         def fake_exec(argv, log_file):
@@ -1736,7 +1914,7 @@ def test_doc_landing_resume_with_merged_branch_only_pushes():
                              "executor_rounds": 1, "review_rounds": 1,
                              "gate_runs": 1, "gate_fix_rounds": 0}},
             "generation": 0, "test_rounds": 1, "consult_seq": 1,
-            "in_flight": None, "cards": [], "history": [],
+            "in_flight": None, "history": [],
             "doc_phase": {"stage": "landing", "gate_runs": 1, "nudges": 0,
                           "session": "sess-old"},
         }
@@ -1951,7 +2129,7 @@ def test_resume_reattaches_the_in_flight_session():
             "generation": 0, "test_rounds": 0, "consult_seq": 0,
             "in_flight": {"phase": "1", "role": "code-writer", "round": 1,
                           "verdict_path": "x", "session": "sess-crashed"},
-            "cards": [], "history": [],
+            "history": [],
         }
         (slice_dir / "state.json").write_text(json.dumps(state))
         script = [V["exec_done"], V["review_signoff"], *TAIL]
@@ -1981,7 +2159,7 @@ def test_resume_at_docs_skips_consult_and_test():
                              "gate_green_log": "x",
                              "reviewed_head": "abc123"}},
             "generation": 0, "test_rounds": 1, "consult_seq": 1,
-            "in_flight": None, "cards": [], "history": [],
+            "in_flight": None, "history": [],
         }
         (slice_dir / "state.json").write_text(json.dumps(state))
         r = ScriptedLoop(slice_dir, [V["doc_done"]], resume=True,

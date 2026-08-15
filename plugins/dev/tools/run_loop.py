@@ -32,6 +32,13 @@ re-enter the loop through a generation bar: the first generation absorbs
 small in-scope touch-ups, the second appends blocking work only, a third
 pending generation bails to the operator.
 
+Everything an agent notices but the loop will not act on goes in one
+document, <slice>/close-out.md (${CLAUDE_PLUGIN_ROOT}/docs/close-out.md is
+the contract): the driver creates it if the plan loop did not, appends its
+own deterministic entries (refuted findings, funding-consult merges) through
+close_out.py, and stamps the run header when the run completes. Nothing from
+a run is carded per finding.
+
 The plan doc is writable by every agent in the loop — deliberately. The
 driver's job is keeping the shared doc parseable: a parse error, a vanished
 phase, or a missing/unknown Target is nudged back to the session that
@@ -46,8 +53,8 @@ session-limit window killed is not an agent outcome at all: the driver waits
 out the stated reset and redispatches the same round.
 
 Execution state lives in <slice>/state.json (written atomically; the driver
-is its only writer): known phase ids, per-phase rounds, the card list built
-from finding dispositions, per-session transcript paths. Session outputs land
+is its only writer): known phase ids, per-phase rounds, the bail-out and
+appended-phase records, per-session transcript paths. Session outputs land
 in <slice>/phases/P<id>/ (review docs, gate logs, verdicts); executor inputs
 come from plan.md, never from copies. A phase may target the specs repo
 itself, which holds that whole record — so the `slices/` tree stays out of the
@@ -82,6 +89,18 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from close_out import (  # noqa: E402
+    ReportError,
+    append_entry,
+    counts_line,
+    entry_counts,
+    init_report,
+    report_path,
+    stamp_header,
+)
 
 # ---------------------------------------------------------------------------
 # Configuration — the one place models and efforts are set. Every outer
@@ -715,7 +734,15 @@ When done:
 - Commit everything: code on the branch; the plan edit in the specs repo,
   staged by name (shared working tree).
 - Write your verdict to {verdict_path}.
-{bookkeeping}"""
+{pointers}"""
+
+# Carried by every executor and reviewer dispatch: where the slice's
+# close-out report is. The agent registers hold the rule (out-of-scope
+# observations go there, append only), the file holds the shape — the
+# prompt carries only the path.
+CLOSE_OUT_LINE = """
+The slice's close-out report is {report_path}.
+"""
 
 # Carried by every executor dispatch whose target repo holds the slice
 # folder — the specs repo as a `Target:`. The driver's run record is written
@@ -740,7 +767,7 @@ may be more behind it. The phase's work so far is git diff
 checks; test your own work before handing back. Commit your fixes, update the
 phase's done-record if what landed changed, then write your verdict to
 {verdict_path}.
-{bookkeeping}"""
+{pointers}"""
 
 EXECUTOR_REVIEW_FIX_PROMPT = """\
 You are resolving review findings for phase P{phase_id} of slice
@@ -760,8 +787,8 @@ you ran or wrote and why it cannot fail. The loop records the refutation; do
 not argue it in prose. Findings anchored by inspection — a requirement
 contradiction, a coverage gap — have no failure to witness: check the cited
 requirement and resolve them directly.
-Findings tagged advisory are NOT yours to fix: the loop
-cards them at close-out and the residue rider mops up the mechanical ones.
+Findings tagged advisory are NOT yours to fix: they stay in the review file
+and the close-out report, and the residue rider mops up the mechanical ones.
 An advisory fixed here widens the next round's re-review to everything the
 fix touched and breeds its own findings — comment fixes especially. Leave
 them. The phase's section in the plan carries its intent; earlier rounds'
@@ -771,7 +798,7 @@ not rewording it — a fix that grows the section is suspect. Run the gate
 yourself before handing back{gate_hint}. Commit your fixes, update the
 phase's done-record if what landed changed, then write your verdict to
 {verdict_path}.
-{bookkeeping}"""
+{pointers}"""
 
 # Appended by the driver to a round's review file when the fix round refuted
 # findings, so the next round's reviewer reads the refutation where it reads
@@ -781,8 +808,9 @@ REFUTATION_TAG = """
 ## Refuted findings (fix round after review round {round})
 
 The fix round witnessed each of these findings' claimed failures and could
-not make them fail. They are refuted — settled by that evidence and carded
-for the operator with the refutation attached; they fund no further work:
+not make them fail. They are refuted — settled by that evidence and
+recorded in the close-out report with the refutation attached; they fund no
+further work:
 
 {entries}
 """
@@ -814,7 +842,7 @@ phase's scope is under review; end-to-end testing and prose docs have their
 own later phases, so their absence here is not a finding.
 
 {gate_line}
-
+{close_out_line}
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
 
@@ -830,17 +858,17 @@ Verify that every round-{prev_round} finding tagged blocking is actually
 resolved — re-open the code, do not take the executor's word — and review
 the fix commits themselves for new problems, including interactions with the
 branch code they touch. Advisory findings left unfixed are the protocol
-working, not a gap — the loop cards them at close-out; do not re-report
-them. A finding the fix round refuted — witnessed as unable to fail, per the
-refutation record appended to the prior review — is settled by that
-evidence: do not re-raise it unless a fix commit invalidates the
-refutation. Ground the prior round already proved stays proved: re-derive a
+working, not a gap — they are in the review file and the close-out report;
+do not re-report them. A finding the fix round refuted — witnessed as
+unable to fail, per the refutation record appended to the prior review — is
+settled by that evidence: do not re-raise it unless a fix commit
+invalidates the refutation. Ground the prior round already proved stays proved: re-derive a
 premise (live system state, another repo's behavior) only where a fix commit
 touches it. The requirements are unchanged: the phase's section in
 {plan_path} and the acceptance criteria in {verification_path}.
 
 {gate_line}
-
+{close_out_line}
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
 
@@ -874,16 +902,17 @@ REVIEW_BAR_BLOCKING = """\
 Fund a fix round only for findings the review shows to be blocking — merging
 them would harm the product (data corruption, a broken flow, a wire-contract
 claim a consumer would implement against). Advisory, Minor-only, or
-prose-only findings are carded, not fixed here.\
+prose-only findings go to the close-out report, not a fix round here.\
 """
 REVIEW_BAR_BLOCKER = """\
 Only Blocker-grade harm funds another round — data corruption, a broken core
 flow, a wire-contract falsity a consumer would implement against. Ordinary
-Majors, and anything prose, merge and get carded.\
+Majors, and anything prose, merge and go to the close-out report.\
 """
 REVIEW_BAR_CRITICAL = """\
 Only a `critical` verdict — the phase's premise or the slice itself in
-question — funds another round. Everything else merges (carded) or bails.\
+question — funds another round. Everything else merges (recorded in the
+close-out report) or bails.\
 """
 
 REVIEW_PROSE_FACT = """\
@@ -898,7 +927,8 @@ Review round {round} for phase P{phase_id} reported `{outcome}`: the findings
 are in {review_path}, each tagged blocking or advisory. The executor has not
 yet acted on them. Decide whether they fund another executor fix round, or
 the phase merges now — findings never vanish: on merge, every unresolved
-finding is carded for the operator (issue-tracker rework at slice close-out).
+finding stays in the review file and the driver records the merge in the
+close-out report for the operator.
 
 {prose_fact}This is review round {round} of at most {cap} for this phase; the
 funding bar rises every round, and at this round it is:
@@ -913,7 +943,8 @@ REVIEW_BUDGET_SITUATION = """\
 Review round {round} for phase P{phase_id} reported `{outcome}`
 ({review_path}) and this phase's review budget ({cap} rounds) is exhausted —
 no further fix round can be funded. Decide whether the phase merges with its
-unresolved findings carded for the operator, or the slice stops.\
+unresolved findings recorded in the close-out report for the operator, or the
+slice stops.\
 """
 
 
@@ -933,24 +964,24 @@ GENERATION_BARS = {
     1: """\
 This is the loop's first follow-up generation: fold small in-scope touch-ups
 directly into the plan as new phases — a missing test, a doc line, a gap the
-merged work exposed. Absorbed beats carded. Everything out of scope or
-advisory goes to cards, never phases.\
+merged work exposed. Absorbed beats reported. Everything out of scope or
+advisory goes in the close-out report, never phases.\
 """,
     2: """\
 This is the loop's second follow-up generation: append BLOCKING work only —
 work without which the slice's acceptance criteria are not met or the product
-is harmed. Everything else goes to cards. A generation after this one bails
-to the operator, so append nothing you would not stop the slice over.\
+is harmed. Everything else goes in the close-out report. A generation after
+this one bails to the operator, so append nothing you would not stop the
+slice over.\
 """,
 }
 
 # The rider holds at every generation: run-created mechanical residue is
-# cheaper to fix on the spot than to card — a card costs the operator a
-# triage pass and a future session's context to close a two-line edit.
+# fixed on the spot — a fix is not a report.
 GENERATION_RIDER = """\
 Exception, at every generation: mechanical residue — comment or formatting
 fixes with no behaviour change, in files this slice's diff already touched —
-is neither carded nor appended. Fix it in this session: make the edit, keep
+is neither reported nor appended. Fix it in this session: make the edit, keep
 gofmt honest where the change is Go, and commit to the checked-out branch.
 The driver's later full-sweep gate covers it.\
 """
@@ -970,8 +1001,11 @@ edited to depend on something nothing produced.
 If outstanding work clears that bar, append new phases to {plan_path}
 (`### P<id> — <title>` with a `Target:` line; a suffix like P3a inserts
 between P3 and P4 — document order is authoritative) and answer `appended`.
-Record everything that does not clear the bar in your verdict's `cards` list
-(one short string each). If nothing is outstanding, answer `complete`.\
+Record everything that does not clear the bar as entries in the close-out
+report, {report_path} — and you are the one pass that reconciles that
+report: strike what you absorbed into an appended phase (name the phase),
+merge duplicates you are sure of, mark what a phase resolved. If nothing is
+outstanding, answer `complete`.\
 """
 
 # The loop-tail sweep's report, as it rides the completion-consult and
@@ -1037,6 +1071,7 @@ Deterministic facts from the driver:
   prd stays operator-gated; nothing here touches it.
 - The slice folder is {slice_dir}; the plan is {plan_path}. Check off
   {verification_path} as you verify (verdict + evidence per item).
+- The slice's close-out report is {report_path}.
 
 {sweep_block}
 
@@ -1046,8 +1081,8 @@ Findings route through a generation bar, stated for this pass:
 
 A finding that clears the bar becomes a new phase appended to the plan
 (`### P<id> — <title>` + `Target:` line); report `findings` so the loop
-re-enters. A finding that does not clear it goes in your verdict's `cards`
-list. A clean pass reports `clean`. Commit what you write (specs files staged
+re-enters. A finding that does not clear it goes in the close-out report. A
+clean pass reports `clean`. Commit what you write (specs files staged
 by name), then write your verdict to {verdict_path}.
 """
 
@@ -1060,6 +1095,7 @@ Deterministic facts from the driver:
 - The slice's shipped work is {diff_ranges} — write docs from that diff with
   the whole shipped behavior in view.
 - The slice folder is {slice_dir}; the plan is {plan_path}.
+- The slice's close-out report is {report_path}.
 - Work on branch {branch}, which is checked out. Never push — any repo, any
   branch. After your hand-back the driver runs the full gate sweep —
   `kc project lint` + `build` + `test` (a red comes back to this session) —
@@ -1098,6 +1134,9 @@ decision point it does not decide itself.
 
 Situation: {situation}
 {phase_line}Slice folder: {slice_dir} (state.json holds the run history)
+Close-out report: {report_path} — out-of-scope findings and sub-bar
+leftovers go there as entries, in the shape the file shows; read it before
+you write, add if in doubt.
 
 Investigate as needed — read the material below, the plan, git log/diff.
 {material}
@@ -1106,8 +1145,7 @@ Choose exactly one action:
 {actions}
 
 Write {verdict_path} as JSON:
-  {{"outcome": "<action>", "summary": "<your reasoning, 1-5 sentences>",
-    "cards": ["<optional: findings to card for the operator>"]}}
+  {{"outcome": "<action>", "summary": "<your reasoning, 1-5 sentences>"}}
 Optionally write a longer write-up next to it as {consult_md_name}.
 """
 
@@ -1172,6 +1210,7 @@ class RunLoop:
         self.slice_num = self.slice_name.split("_")[0]
         self.plan_path = self.slice_dir / "plan.md"
         self.verification_path = self.slice_dir / "verification.json"
+        self.report_path = report_path(self.slice_dir)
         self.state_path = self.slice_dir / "state.json"
         self.log_path = self.slice_dir / "log.txt"
         self.resume = resume
@@ -1219,15 +1258,6 @@ class RunLoop:
             **(extra or {}),
         })
         self._save_state()
-
-    def _card(self, source: str, items) -> None:
-        """Finding dispositions land here as they happen, so close-out's card
-        list is a mechanical read, not a memory."""
-        for item in items or []:
-            self.state["cards"].append({"source": source, "text": str(item),
-                                        "ts": _now_iso()})
-        if items:
-            self._save_state()
 
     def _emit(self, line: str) -> None:
         """All driver/session output lands in <slice>/log.txt; stdout echoes
@@ -1445,7 +1475,11 @@ class RunLoop:
             fresh = [pid for pid in known
                      if pid not in self.state.get("known_phases", [])]
             if fresh and self.state.get("known_phases"):
+                # Phases the plan gained after the run started — appended
+                # by a consult, the test phase, or the operator; the
+                # close-out header reads planned vs appended off this.
                 self.log(f"new phase(s) in the plan: {', '.join(fresh)}")
+                self.state.setdefault("appended_phases", []).extend(fresh)
             self.state["known_phases"] = known
             self._save_state()
 
@@ -1656,8 +1690,11 @@ class RunLoop:
                      verdict.get("summary", ""), session_id, duration_s,
                      transcript=_transcript_path(cwd, session_id),
                      extra=telemetry)
-        self._card(f"{role} P{phase_id}" if phase_id else role,
-                   verdict.get("cards"))
+        if verdict.get("cards"):
+            # A pre-0.5.0 register still on an installed clone: not a
+            # protocol failure — the findings belong in close-out.md.
+            self.log(f"{label} verdict carried a `cards` list — ignored; "
+                     f"out-of-scope findings go in {self.report_path.name}")
         return verdict, session_id
 
     def _resolve_reattach(self, role: str, phase_id: str | None, prompt: str,
@@ -1707,20 +1744,12 @@ class RunLoop:
         base.mkdir(parents=True, exist_ok=True)
         verdict_path = base / f"consult_{n}.json"
         phase_line = f"Phase: P{phase_id}\n" if phase_id else ""
-        # Earlier passes' cards ride along so a later consult does not pay
-        # to re-find what is already settled.
-        if self.state.get("cards"):
-            listing = "\n".join(f"  - [{c['source']}] {c['text'][:300]}"
-                                for c in self.state["cards"])
-            situation += (
-                "\n\nAlready carded this run — settled, do not re-report "
-                "(only evidence that changes one is a new finding):\n"
-                + listing)
         prompt = CONSULT_PROMPT.format(
             slice_name=self.slice_name,
             situation=situation,
             phase_line=phase_line,
             slice_dir=self.slice_dir,
+            report_path=self.report_path,
             material="\n".join(f"- {p}" for p in material) or "- (state.json only)",
             actions="\n".join(f"- `{a}` — {why}" for a, why in actions.items()),
             verdict_path=verdict_path,
@@ -1847,6 +1876,15 @@ class RunLoop:
             return ""
         return BOOKKEEPING_NOTE.format(slice_dir=self.slice_dir)
 
+    def _pointers(self, target: ResolvedTarget) -> str:
+        """What every executor dispatch carries at its tail: the close-out
+        report's path, plus the bookkeeping fence where it applies."""
+        return (CLOSE_OUT_LINE.format(report_path=self.report_path)
+                + self._bookkeeping_note(target))
+
+    def _close_out_line(self) -> str:
+        return CLOSE_OUT_LINE.format(report_path=self.report_path)
+
     def _gate_hint(self, target: ResolvedTarget) -> str:
         if target.kind == "project":
             return f" (`kc project test --project {target.name}`)"
@@ -1921,7 +1959,7 @@ class RunLoop:
                 slice_name=self.slice_name, target=phase.target,
                 branch=branch, where=where, gate_hint=gate_hint,
                 verdict_path=vp,
-                bookkeeping=self._bookkeeping_note(target)))
+                pointers=self._pointers(target)))
             self._after_session_plan_check()
             ps["stage"] = "gate"
             self._save_state()
@@ -1956,7 +1994,7 @@ class RunLoop:
                         merge_base=merge_base, where=where,
                         review_path=outputs / f"code_review_r{_r}.md",
                         gate_hint=gate_hint, verdict_path=vp,
-                        bookkeeping=self._bookkeeping_note(target)))
+                        pointers=self._pointers(target)))
                 self._after_session_plan_check()
                 self._handle_refutations(outputs, phase_id, r, fix_verdict)
                 self._gate_until_green(phase, ps, outputs, target, branch,
@@ -2048,7 +2086,7 @@ class RunLoop:
                                gate_cmd=" ".join(target.gate_argv or []),
                                gate_log=_log, merge_base=merge_base,
                                where=where, verdict_path=vp,
-                               bookkeeping=self._bookkeeping_note(target)))
+                               pointers=self._pointers(target)))
             self._after_session_plan_check()
 
     def _review_loop(self, phase: Phase, ps: dict, outputs: Path,
@@ -2081,6 +2119,7 @@ class RunLoop:
                     verification_path=self.verification_path,
                     review_path=review_path, verdict_path=verdict_path,
                     gate_line=gate_line,
+                    close_out_line=self._close_out_line(),
                 )
             else:
                 prompt = REVIEWER_PROMPT.format(
@@ -2090,6 +2129,7 @@ class RunLoop:
                     verification_path=self.verification_path,
                     review_path=review_path, verdict_path=verdict_path,
                     gate_line=gate_line,
+                    close_out_line=self._close_out_line(),
                 )
             verdict, _ = self._spawn(
                 "code-reviewer", prompt, self.repo_root, verdict_path,
@@ -2123,7 +2163,7 @@ class RunLoop:
                     merge_base=merge_base, where=where,
                     review_path=outputs / f"code_review_r{_r}.md",
                     gate_hint=gate_hint, verdict_path=vp,
-                    bookkeeping=self._bookkeeping_note(target)))
+                    pointers=self._pointers(target)))
             self._after_session_plan_check()
             refuted = self._handle_refutations(outputs, phase_id, r,
                                                fix_verdict)
@@ -2137,31 +2177,71 @@ class RunLoop:
     def _handle_refutations(self, outputs: Path, phase_id: str, r: int,
                             fix_verdict: dict) -> set[str]:
         """The refuted-verdict path: a blocking finding the fix round could
-        not make fail is carded with its refutation evidence and recorded
-        onto the round's review file, where the next round's reviewer reads
-        it. Returns the refuted finding ids."""
+        not make fail is recorded onto the round's review file, where the
+        next round's reviewer reads it, and entered in the close-out report
+        with its refutation evidence for the operator. Returns the refuted
+        finding ids."""
         entries = fix_verdict.get("refuted")
         if not isinstance(entries, list) or not entries:
             return set()
         review_path = outputs / f"code_review_r{r}.md"
         ids: set[str] = set()
-        lines, cards = [], []
+        lines = []
         for e in entries:
             fid = str(e.get("id", "?")) if isinstance(e, dict) else str(e)
             evidence = str(e.get("evidence", "")) if isinstance(e, dict) \
                 else ""
             ids.add(fid)
             lines.append(f"- {fid}: {evidence}" if evidence else f"- {fid}")
-            cards.append(f"refuted blocking finding {fid} "
-                         f"({review_path.name}): {evidence}")
+            claim = self._finding_summary(phase_id, r, fid)
+            self._report(
+                "Notable events",
+                f"Fix round after review r{r} of P{phase_id} refuted {fid}",
+                ("The fix round witnessed the claimed failure of the "
+                 f"reviewer's finding {fid}"
+                 + (f' — "{claim}" —' if claim else "")
+                 + " and could not make it fail: no code changed for it, "
+                 "and the finding funds no further work. The writer's "
+                 "evidence: " + (evidence or "(none given)")
+                 + f"\n\nThe full finding and the refutation record are in "
+                 f"{review_path}."),
+                provenance=f"code-writer P{phase_id}, fix round after "
+                           f"review r{r}; the review verdict's findings "
+                           "list in state.json")
         if review_path.exists():
             review_path.write_text(
                 review_path.read_text()
                 + REFUTATION_TAG.format(round=r, entries="\n".join(lines)))
-        self._card(f"refuted P{phase_id}", cards)
         self.log(f"[P{phase_id}] fix round refuted "
                  f"{len(ids)} finding(s): {', '.join(sorted(ids))}")
         return ids
+
+    def _finding_summary(self, phase_id: str, r: int,
+                         fid: str) -> str | None:
+        """The one-line summary the round-r reviewer reported for finding
+        `fid`, from the history row that persisted its `findings` list."""
+        for row in reversed(self.state.get("history", [])):
+            if (row.get("phase") == phase_id and row.get("round") == r
+                    and row.get("role") == "code-reviewer"):
+                for f in row.get("findings") or []:
+                    if isinstance(f, dict) and str(f.get("id")) == fid:
+                        return str(f.get("summary") or "") or None
+                return None
+        return None
+
+    def _report(self, section: str, headline: str, body: str,
+                provenance: str | None = None) -> None:
+        """The driver's own close-out entries — deterministic events the
+        operator should see without reading the log. A report an agent
+        removed is logged, never a bail: the run's outcome does not hang on
+        its narrative."""
+        try:
+            eid = append_entry(self.slice_dir, section, headline, body,
+                               provenance=provenance)
+        except ReportError as e:
+            self.log(f"close-out entry not written ({e}): {headline}")
+            return
+        self.log(f"close-out {eid}: {headline}")
 
     def _refutation_settles_review(self, review_verdict: dict,
                                    refuted: set[str], ps: dict,
@@ -2203,17 +2283,19 @@ class RunLoop:
                                 verdict: dict, fix_range: str | None,
                                 root: Path) -> str:
         """Judge whether review round r's findings fund another executor
-        round or the phase merges with them carded. Returns 'fix_round' or
-        'merge' ('bail' raises inside _consult)."""
+        round or the phase merges with them recorded in the close-out
+        report. Returns 'fix_round' or 'merge' ('bail' raises inside
+        _consult)."""
         review_path = outputs / f"code_review_r{r}.md"
-        card_note = ("merge now; every unresolved finding is carded for the "
-                     "operator at slice close-out")
+        merge_note = ("merge now; the unresolved findings stay in the review "
+                      "file and the merge is recorded in the close-out "
+                      "report for the operator")
         if r >= REVIEW_ROUND_CAP:
             site = "review-budget"
             situation = REVIEW_BUDGET_SITUATION.format(
                 round=r, phase_id=phase_id, outcome=verdict["outcome"],
                 review_path=review_path, cap=REVIEW_ROUND_CAP)
-            actions = {"merge": card_note,
+            actions = {"merge": merge_note,
                        "bail": "stop the slice for the orchestrator"}
         else:
             site = "review-funding"
@@ -2228,15 +2310,30 @@ class RunLoop:
             actions = {
                 "fix_round": "the findings clear the bar: spend an executor "
                              "fix round; the next review round verifies it",
-                "merge": f"the findings do not clear the bar: {card_note}",
+                "merge": f"the findings do not clear the bar: {merge_note}",
                 "bail": "stop the slice for the orchestrator",
             }
         choice = self._consult(site, situation, actions, [review_path],
                                phase_id)
         if choice["outcome"] == "merge":
-            self._card(f"review P{phase_id}",
-                       [f"unresolved review findings: {review_path} — "
-                        + choice.get("summary", "")])
+            findings = [f for f in verdict.get("findings") or []
+                        if isinstance(f, dict)]
+            listing = "\n".join(
+                f"- {f.get('id', '?')} [{f.get('severity', '?')}/"
+                f"{f.get('impact', '?')}]: {f.get('summary', '')}"
+                for f in findings)
+            self._report(
+                "Notable events",
+                f"P{phase_id} merged with unresolved review findings "
+                f"after r{r}",
+                (f"Review round {r} reported `{verdict.get('outcome')}` and "
+                 f"the {site} consult chose to merge rather than fund another "
+                 f"fix round. Its reasoning: {choice.get('summary', '')}"
+                 + (f"\n\nThe unresolved findings, as the reviewer tagged "
+                    f"them:\n{listing}" if listing else "")
+                 + f"\n\nThe full review is {review_path}."),
+                provenance=f"consult {self.state.get('consult_seq')} "
+                           f"({site}, P{phase_id} r{r})")
         return choice["outcome"]
 
     # -- the loop-tail gate sweep ---------------------------------------------
@@ -2376,7 +2473,7 @@ class RunLoop:
                 details=f"{source} appended more work after "
                         f"{GENERATION_CAP} follow-up generations — decide "
                         "what of it still runs in this slice (edit the plan, "
-                        "then resume) and what becomes cards.")
+                        "then resume) and what goes in the close-out report.")
         self.log(f"follow-up generation {self.state['generation']} "
                  f"({source} appended phases)")
 
@@ -2396,6 +2493,7 @@ class RunLoop:
             COMPLETION_CONSULT_SITUATION.format(
                 verification_path=self.verification_path,
                 plan_path=self.plan_path,
+                report_path=self.report_path,
                 sweep_block=self._sweep_block(sweep,
                                               SWEEP_STANCE_CONSULT_GREEN,
                                               SWEEP_STANCE_CONSULT_RED),
@@ -2446,6 +2544,7 @@ class RunLoop:
                 test_plan_doc=test_plan_doc, slice_dir=self.slice_dir,
                 plan_path=self.plan_path,
                 verification_path=self.verification_path,
+                report_path=self.report_path,
                 sweep_block=self._sweep_block(self.state["gate_sweep"],
                                               SWEEP_STANCE_TEST_GREEN,
                                               SWEEP_STANCE_TEST_RED),
@@ -2463,7 +2562,8 @@ class RunLoop:
         self._after_session_plan_check()
         if not self._has_unfinished_phase():
             self.log("test phase reported `findings` but appended no phase "
-                     "— its cards carry the findings; treating as clean")
+                     "— its findings are in the close-out report; treating "
+                     "as clean")
             self._assert_pushed(session)
             return False
         self._spend_generation("the test phase")
@@ -2574,6 +2674,7 @@ class RunLoop:
                     slice_name=self.slice_name, doc_plan_doc=doc_plan_doc,
                     diff_ranges="; ".join(ranges) or "(no recorded range)",
                     slice_dir=self.slice_dir, plan_path=self.plan_path,
+                    report_path=self.report_path,
                     branch=branch, base_branch=base,
                     verdict_path=verdict_path),
                 self.repo_root, verdict_path, None, 1, agent="doc-writer",
@@ -2767,7 +2868,8 @@ class RunLoop:
                 "gate_sweep": None,
                 "consult_seq": 0,
                 "in_flight": None,
-                "cards": [],
+                "bailouts": [],
+                "appended_phases": [],
                 "history": [],
             }
         (self.slice_dir / "bailout.json").unlink(missing_ok=True)
@@ -2783,6 +2885,7 @@ class RunLoop:
                 self.preflight()
                 self._base_branch(self.repo_root)
                 self._slice_base(self.repo_root)
+            self._ensure_report()
 
             if resume_at != "docs":
                 while True:
@@ -2809,8 +2912,33 @@ class RunLoop:
 
         self.state["run_phase"] = "done"
         self._save_state()
+        self._stamp_report()
         self._summary()
         sys.exit(0)
+
+    def _ensure_report(self) -> None:
+        """close-out.md exists from here on: created from the template and
+        committed by the driver when the plan loop left none (a slice
+        planned before the report existed) — idempotent, so a resume picks
+        one up mid-run rather than running without."""
+        try:
+            created = init_report(self.slice_dir)
+        except ReportError as e:
+            raise Bailout("protocol_failure", details=str(e)) from None
+        if created:
+            self.specs_git("add", str(self.report_path))
+            self.specs_git("commit", "-m",
+                           f"slice {self.slice_num}: close-out report")
+            self.log(f"created {self.report_path.name} from the template")
+
+    def _stamp_report(self) -> None:
+        """The run header, from the completed state; /dev:run-slice
+        re-stamps once the cost block has landed. Never a failure — the
+        run is done whatever the report's state."""
+        try:
+            self.log(stamp_header(self.slice_dir))
+        except ReportError as e:
+            self.log(f"close-out header not stamped: {e}")
 
     def _test_phase_under_lock(self) -> bool:
         """The devlock is taken before the test phase and held through the
@@ -2829,6 +2957,11 @@ class RunLoop:
 
     def _bail(self, bail: Bailout) -> None:
         self.state["run_phase"] = "bailed"
+        # bailout.json is unlinked on resume; the count lives here so the
+        # close-out header can say how often the run stopped.
+        self.state.setdefault("bailouts", []).append(
+            {"reason": bail.reason, "phase": bail.phase,
+             "question": bail.question, "ts": _now_iso()})
         self._save_state()
         payload = {
             "reason": bail.reason,
@@ -2851,17 +2984,20 @@ class RunLoop:
 
     def _summary(self) -> None:
         phases = self.state["phases"]
+        try:
+            report = "close-out report: " + counts_line(
+                entry_counts(self.slice_dir))
+        except ReportError:
+            report = "close-out report missing"
         lines = [f"slice {self.slice_name} complete: "
                  f"{len(phases)} phase(s) merged, "
                  f"{self.state.get('test_rounds', 0)} test round(s), "
-                 f"{len(self.state['cards'])} card(s) for close-out"]
+                 + report]
         for pid, ps in phases.items():
             lines.append(
                 f"  P{pid}: executor×{ps['executor_rounds']} "
                 f"gate×{ps.get('gate_runs', 0)} "
                 f"review×{ps['review_rounds']}")
-        for card in self.state["cards"]:
-            lines.append(f"  card [{card['source']}]: {card['text'][:120]}")
         for line in lines:
             self.log(line)
         self.announce(lines[0])
@@ -2927,7 +3063,7 @@ def cmd_status(args) -> None:
         return
     print(f"slice {state['slice']}  run_phase={state['run_phase']}  "
           f"generation={state.get('generation', 0)}  "
-          f"cards={len(state.get('cards', []))}")
+          f"bail-outs={len(state.get('bailouts', []))}")
     for pid in state.get("known_phases", []):
         ps = state.get("phases", {}).get(pid)
         if not ps:

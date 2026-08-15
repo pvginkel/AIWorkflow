@@ -4,6 +4,34 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-15 — the close-out report replaces per-finding cards (v0.5.0)
+
+Everything a plan or run agent notices but the loops will not act on — a bug it will not fix, a
+keystroke only the operator can make, an event that deviated from an uneventful run, a question
+the run did not need answered, an idea — now goes into **one document per slice**,
+`close-out.md`, in one fixed shape, as it happens (`docs/close-out.md` is the contract,
+`docs/close-out-template.md` the shape; design and decisions in
+`docs/research/close-out-report.md`, C7 on the status board). Nothing from a run is carded per
+finding any more: the run's only tracker output is one `[NNN] close-out: …` card pointing at
+the report. The operator reads the report in one sitting, writes a disposition under each entry
+(`card` · `fix now` · `fold into <slice>` · `close` · `defer`, free form), and the new
+`/dev:close-out` skill executes them; what remains is `/dev:triage`'s input.
+
+What moved: the plan loop creates the report from the template before its first dispatch (the run
+loop does if planning predates it); every agent register lost its verdict `cards` field and
+gained the report — the code-reviewer enters its advisories there itself, the completion consult
+is the one pass that reconciles (strike what it absorbed, merge duplicates, mark what a phase
+resolved), the doc-writer writes the Summary and Focus lines as its last act; the driver's own
+entries — refuted findings, funding-consult merges — go in as Notable events through the new
+stdlib `tools/close_out.py` (init / append / stamp / counts), and the driver stamps the run header
+from `state.json` at completion (`/dev:run-slice` re-stamps once the cost block has landed).
+`state.json` lost `cards` and gained `bailouts` and `appended_phases`, which the header reads.
+Gates whose purpose was to limit reporting came out — "worth a card", "no fix proposals", "a card
+must never cost the operator more to triage than the fix costs to make", the consult carry-over
+list; the gates that govern what funds work (fix rounds blocking-only, the generation bars, the
+mechanical-residue rider) are unchanged. A pre-0.5.0 register still emitting `cards` is logged
+and ignored, never a protocol failure. Hypotheses and how they are read: design note §7.
+
 ## 2026-08-14 — comments must be witnessable, prose findings must show wrongness (v0.4.5)
 
 The comment-economy pair from `docs/research/interventions.md` (B1+B4), one rule each side of the

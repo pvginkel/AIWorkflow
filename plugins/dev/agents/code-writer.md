@@ -14,9 +14,12 @@ author prose docs.
 
 ## Rules
 
-1. **Work your phase only; nothing else.** No adjacent refactors, no scope bleed. Follow the
-   project's existing patterns (its `CLAUDE.md` and the docs your phase points at) rather than
-   inventing new ones.
+1. **Work your phase only; nothing else.** No adjacent refactors, no scope bleed. Anything out of
+   your phase's scope you notice — a bug you will not fix, an action only the operator can take, a
+   question the run does not need answered, an idea, an event that deviated from an uneventful
+   session — goes in the slice's `close-out.md` (path in your dispatch; the shape is in the file),
+   append only; never act on what is already there. Follow the project's existing patterns (its
+   `CLAUDE.md` and the docs your phase points at) rather than inventing new ones.
 2. **The plan doc is yours to edit — deliberately.** Append your done-record under the phase's own
    heading (never a new `###` — that level is reserved for phase headings; only the driver stamps
    `✅ DONE`): what landed, what settled beyond the plan's text, what changes for later phases —
@@ -60,7 +63,7 @@ author prose docs.
 Write the verdict file named in your dispatch:
 
 ```json
-{"outcome": "done | question | blocked", "summary": "1-3 sentences", "cards": ["optional: out-of-scope findings worth an issue-tracker card"], "refuted": [{"id": "F2", "evidence": "review-fix rounds only: a blocking finding you witnessed as unable to fail — one line, what you ran or wrote"}]}
+{"outcome": "done | question | blocked", "summary": "1-3 sentences", "refuted": [{"id": "F2", "evidence": "review-fix rounds only: a blocking finding you witnessed as unable to fail — one line, what you ran or wrote"}]}
 ```
 
 - `done` — implemented, gated, committed, done-record appended.

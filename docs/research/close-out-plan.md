@@ -4,6 +4,16 @@ Companion to [close-out-report.md](close-out-report.md) (the design and the deci
 first; this plan does not restate the why) and [status.md](status.md) C7. Written 2026-08-15 at
 plugin 0.4.5, before implementation. Line numbers cite 0.4.5 and are where to look, not proof.
 
+**Implemented 2026-08-15 as plugin 0.5.0** (status.md C7 has the log line). Where the build
+departed from the text below: `init_report` returns `bool` (created or not) rather than the
+path — the loops need exactly that to decide whether to commit; the driver also stamps the
+header itself when the run completes, and `/dev:run-slice` re-stamps after the cost block lands
+(idempotent); the consult carry-over line and the `CONSULT_PROMPT` pointer are one line in the
+prompt, not two; the driver's refutation and merge entries quote the reviewer's finding
+summaries (from the history row) so they stand alone. §12's open decisions: 0.5.0; yes, blank
+`Disposition:` on the driver's entries; no Summary/Focus pass on a `blocked`/`question` doc
+phase.
+
 ---
 
 ## 1. The build in one paragraph

@@ -35,6 +35,12 @@ the slice folder committed (stage by name — the spec repo is a shared working 
 nudges once, then bails. Round counts persist in `plan_state.json`; a plan that already parses
 with phases (a reset re-plan) enters at review.
 
+The loop is the first thing to run on a slice, so it creates the slice's **close-out report**
+(`close-out.md`, from the plugin's template — [close-out.md](close-out.md)) and commits it before
+its first dispatch. Planning agents write their out-of-scope observations about the spec or the
+estate there; nothing in scope moves — findings stay in the review file, blocking questions in
+the `questions` verdict.
+
 ## The plan doc
 
 `plan.md` is **the one plan** — read by every executor, and by the operator (legibility is a
