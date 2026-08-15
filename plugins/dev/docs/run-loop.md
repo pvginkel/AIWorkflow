@@ -138,12 +138,15 @@ itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id
   is nudged back to the writer's session) — rebase-merges the branch onto the base branch and
   pushes; the dev roll that push triggers is left to land on its own, untracked.
 
-**The generation bar** terminates the append loop: the first follow-up generation absorbs small
-in-scope touch-ups (absorbed beats reported), the second appends blocking work only, a third
-pending generation bails to the operator. Advisory leftovers go in the close-out report as they
-are found. One rider holds at every generation: mechanical residue — comment or formatting fixes
-with no behaviour change, in files the slice's diff already touched — is neither reported nor
-appended; the finder fixes it in place and commits, and the driver's full-sweep gate covers it.
+**The generation bar** terminates the append loop: the first follow-up generation appends only
+work the plan *owes* and no phase delivered — a requirement, ruling or acceptance criterion left
+undelivered; a touch-up the slice ships without is a close-out entry (one operator word), not a
+phase (an executor round, a review round and the consult the generation forces) — the second
+appends blocking work only, a third pending generation bails to the operator. Advisory leftovers
+go in the close-out report as they are found. One rider holds at every generation: mechanical
+residue — comment or formatting fixes with no behaviour change, in files the slice's diff already
+touched — is neither reported nor appended; the finder fixes it in place and commits, and the
+driver's full-sweep gate covers it.
 
 **Close-out.** Nothing from a run is carded per finding: everything an agent noticed but the
 loop did not act on is in the slice's `close-out.md` — who writes what there is

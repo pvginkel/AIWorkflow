@@ -4,9 +4,9 @@
 `<slice>/close-out.md` is the one document every plan and run agent writes
 its out-of-scope observations to (${CLAUDE_PLUGIN_ROOT}/docs/close-out.md is
 the contract; docs/close-out-template.md the shape). Agents write it by hand
-in the shape the file shows; this tool is for the deterministic parts —
-importable by both loops (the way plan_loop imports run_loop) and a CLI for
-the skills:
+in the shape the file's head comment shows; this tool is for the
+deterministic parts — importable by both loops (the way plan_loop imports
+run_loop) and a CLI for the skills:
 
   init   create close-out.md from the template if absent — the title takes
          the slice's `NNN <slug>`; an existing file is never touched.
@@ -18,14 +18,19 @@ the skills:
          rounds, doc phase, and the `cost` block once slice_cost.py
          --write-state has run. Missing pieces are omitted, not guessed;
          re-stamping overwrites the same block.
-  counts non-struck entries per section, one line.
+  counts non-struck entries per section, one line — plus, when there are
+         any, the number of `###` headings in the entry sections that are
+         not in the entry shape (an author that drifted from the shape,
+         which would otherwise count as zero entries).
 
-Headings are read outside fenced code blocks only — an entry that quotes
-a document's `## Bugs` or a `### B3` inside a ``` fence (the entry rules ask
-for liberal quoting) neither moves a section boundary nor shifts an id.
+Headings are read outside fenced code blocks and outside HTML comments
+only — an entry that quotes a document's `## Bugs` or a `### B3` inside a
+``` fence (the entry rules ask for liberal quoting) neither moves a section
+boundary nor shifts an id, and the template's own head comment shows the
+entry shape with a `### B2 — …` line in it.
 
-Deliberately not here: any validation beyond "the section heading exists",
-dedup, disposition parsing.
+Deliberately not here: any validation beyond "the section heading exists"
+and that heading count, dedup, disposition parsing.
 
 Usage:
     close_out.py init <slice-dir>
@@ -65,7 +70,12 @@ SEVERITIES = ("major", "minor", "nit", "cosmetic")
 HEADER_WIDTH = 96
 
 _SECTION_RE = re.compile(r"^## (?P<name>.+?)\s*$")
+_ENTRY_RE = re.compile(r"^### (~~)?(?P<letter>[A-Z])(?P<num>\d+)\b")
+_ANY_HEADING_RE = re.compile(r"^### ")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
+# An HTML comment counts only when it opens a line (the template's comments
+# all do); `<!--` mentioned mid-line in prose opens nothing.
+_COMMENT_OPEN_RE = re.compile(r"^\s*<!--")
 
 
 class ReportError(Exception):
@@ -109,13 +119,24 @@ def _read(slice_dir: Path | str) -> tuple[Path, str]:
 
 
 def _unfenced_lines(text: str):
-    """(offset, line) for every line outside a fenced code block — the only
-    lines a heading can stand on."""
-    offset, fenced = 0, False
+    """(offset, line) for every line outside a fenced code block and outside
+    an HTML comment — the only lines a heading can stand on. A comment runs
+    from a line it opens to the line holding its `-->`; a fence opened
+    inside a comment, or a comment inside a fence, is text."""
+    offset, fenced, commented = 0, False, False
     for line in text.split("\n"):
-        if _FENCE_RE.match(line):
+        hidden = True
+        if commented:
+            commented = "-->" not in line
+        elif _FENCE_RE.match(line):
             fenced = not fenced
-        elif not fenced:
+        elif fenced:
+            pass
+        elif _COMMENT_OPEN_RE.match(line):
+            commented = "-->" not in line
+        else:
+            hidden = False
+        if not hidden:
             yield offset, line
         offset += len(line) + 1
 
@@ -146,15 +167,28 @@ def _section_span(text: str, section: str) -> tuple[int, int]:
 def _entry_headings(body: str, letter: str,
                     struck: bool = True) -> list[int]:
     """The entry numbers under a section, from `### <letter><n>` headings
-    outside fences — struck ones included when `struck` (ids are never
-    reused), excluded for a live count."""
-    pattern = re.compile(rf"^### (~~)?{letter}(\d+)\b")
+    outside fences and comments — struck ones included when `struck` (ids
+    are never reused), excluded for a live count."""
     numbers = []
     for _, line in _unfenced_lines(body):
-        m = pattern.match(line)
-        if m and (struck or not m.group(1)):
-            numbers.append(int(m.group(2)))
+        m = _ENTRY_RE.match(line)
+        if m and m.group("letter") == letter and (struck or not m.group(1)):
+            numbers.append(int(m.group("num")))
     return numbers
+
+
+def _unshaped_headings(body: str, letter: str) -> int:
+    """`###` headings under a section that are not entries of it — no id,
+    or another section's letter. Zero in a report every author wrote in
+    the file's shape."""
+    count = 0
+    for _, line in _unfenced_lines(body):
+        if not _ANY_HEADING_RE.match(line):
+            continue
+        m = _ENTRY_RE.match(line)
+        if m is None or m.group("letter") != letter:
+            count += 1
+    return count
 
 
 def append_entry(slice_dir: Path | str, section: str, headline: str,
@@ -190,21 +224,34 @@ def append_entry(slice_dir: Path | str, section: str, headline: str,
     return eid
 
 
+UNSHAPED = "unshaped"
+
+
 def entry_counts(slice_dir: Path | str) -> dict[str, int]:
-    """Non-struck entries per section, in section order."""
+    """Non-struck entries per section, in section order — plus, under
+    `UNSHAPED`, the `###` headings in the entry sections that are not in
+    the entry shape and so counted as no entry at all."""
     _, text = _read(slice_dir)
     counts = dict.fromkeys(SECTIONS, 0)
+    unshaped = 0
     for name, start, end in _sections(text):
         if name in counts:
-            counts[name] = len(_entry_headings(text[start:end], SECTIONS[name],
-                                               struck=False))
+            body, letter = text[start:end], SECTIONS[name]
+            counts[name] = len(_entry_headings(body, letter, struck=False))
+            unshaped += _unshaped_headings(body, letter)
+    counts[UNSHAPED] = unshaped
     return counts
 
 
 def counts_line(counts: dict[str, int]) -> str:
-    """`A 1 · N 3 · B 2 · Q 0 · S 1` — the summary form."""
-    return " · ".join(f"{SECTIONS[name]} {counts.get(name, 0)}"
+    """`A 1 · N 3 · B 2 · Q 0 · S 1` — the summary form; a trailing
+    `· 6 headings not in entry shape` only when there are any."""
+    line = " · ".join(f"{SECTIONS[name]} {counts.get(name, 0)}"
                       for name in SECTIONS)
+    unshaped = counts.get(UNSHAPED, 0)
+    if unshaped:
+        line += f" · {_plural(unshaped, 'heading')} not in entry shape"
+    return line
 
 
 # -- the run header ----------------------------------------------------------

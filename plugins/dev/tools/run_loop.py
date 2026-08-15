@@ -28,9 +28,9 @@ and a clean pass that left any repo the slice touched behind its origin is
 nudged, capped, then bails), then the doc phase ("read the slice-doc-plan
 doc and execute", diff-based, single writer, gated by the driver's own
 lint+build+test sweep). Phases appended by the consult or the test phase
-re-enter the loop through a generation bar: the first generation absorbs
-small in-scope touch-ups, the second appends blocking work only, a third
-pending generation bails to the operator.
+re-enter the loop through a generation bar: the first generation appends
+only work the plan owes and no phase delivered, the second blocking work
+only, a third pending generation bails to the operator.
 
 The driver's part in the slice's close-out report (<slice>/close-out.md —
 ${CLAUDE_PLUGIN_ROOT}/docs/close-out.md): create it if the plan loop did
@@ -960,10 +960,13 @@ def _review_bar(round_: int, prose_only: bool) -> str:
 # The generation bar on appended work (completion consult + test phase).
 GENERATION_BARS = {
     1: """\
-This is the loop's first follow-up generation: fold small in-scope touch-ups
-directly into the plan as new phases — a missing test, a doc line, a gap the
-merged work exposed. Absorbed beats reported. Everything out of scope or
-advisory goes in the close-out report, never phases.\
+This is the loop's first follow-up generation: append a phase only for work
+the plan owes and no phase delivered — a requirement or ruling nothing
+carried out, an acceptance criterion with no implementing work to point at.
+Price it: a phase costs an executor round, a review round and the consult
+this generation forces; a close-out entry costs the operator one word.
+Everything else — out of scope, advisory, in scope but not owed — goes in
+the close-out report, never a phase.\
 """,
     2: """\
 This is the loop's second follow-up generation: append BLOCKING work only —

@@ -27,8 +27,9 @@ judge.
 **The plan is the queue.** One `plan.md` per slice holds phases as `### P<id> — <title>` headings,
 each opening with a `Target:` line naming a `kc project list` component or a sibling repo. Document
 order is authoritative; only the driver stamps a phase done. Every agent in the loop may edit the
-plan — appending a phase is how work grows, bounded by a generation bar that folds small in-scope
-touch-ups in early. **Everything out of the loops' scope goes in one close-out report per slice**
+plan — appending a phase is how work grows, bounded by a generation bar (work the plan owes
+first, blocking work only after, then the operator). **Everything out of the loops' scope goes in
+one close-out report per slice**
 (`close-out.md`, created at planning, written by every agent as it goes): nothing from a run is
 carded per finding; the operator dispositions the report and `/dev:close-out` executes.
 

@@ -4,6 +4,35 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-15 — the entry shape is in the file; the gen-1 bar prices a phase against one word (v0.5.1)
+
+Read off the first slice run end to end on 0.5.0 (KubeCoder 146). **The close-out report's
+entries landed without ids, `Provenance:` or `Disposition:` lines** — every register says "the
+shape is in the file", and the file `close_out.py init` wrote carried only the section charters,
+so the first author wrote freehand and every later one copied the precedent; `counts` read zero
+for a six-entry report and the consult deleted where it should have struck (Trello #630). Now the
+template's head comment carries the entry shape and the struck form, so `init` writes them into
+every report; `close_out.py` reads headings outside HTML comments as well as outside fences;
+`counts` (and the driver's completion line and the close-out card that carry it) says how many
+`###` headings in the entry sections are not in the entry shape, so a drifted report announces
+itself instead of counting zero; the Notable-events charter names workflow deviations (a tool
+missing from the sidecar, a wait that hit a cap) beside product ones. **The first-generation bar
+was still priced against a card**: "absorbed beats reported" was written when the alternative to
+appending a phase was a tracker card the operator had to open and relate to nine others; under
+the report the alternative is one word under an entry, and 146's consult appended a phase for a
+test nit ($4.02 with the consult it forced) reasoning "cheaper to fix than to card". The bar now
+appends only work the plan owes and no phase delivered — a requirement or ruling nothing carried
+out, an acceptance criterion with no implementing work to point at — and prices it plainly: a
+phase costs an executor round, a review round and the consult the generation forces; a close-out
+entry costs the operator one word. **`slice_cost.py`'s rework share now sees appended phases**:
+every round of a phase in `state.json`'s `appended_phases` counts as spend past first delivery
+(their round 1 sat outside the share, which is exactly the quantity the report's H2 hypothesis
+moves; pre-0.5.0 records carry no such field and are unaffected). One reviewer-register clause:
+the `coverage-gap` anchor names vacuous coverage — a mutation the criterion's test survives —
+explicitly, so the class 146 and 145 each produced once stops arriving as evidence-free
+advisory. Catalogued, not built: I5 (a `witnessed` field on the review verdict) and C8
+(mutation-witnessed signoff for test-only phases) in `docs/research/interventions.md`.
+
 ## 2026-08-15 — the close-out report replaces per-finding cards (v0.5.0)
 
 Everything a plan or run agent notices but the loops will not act on — a bug it will not fix, a

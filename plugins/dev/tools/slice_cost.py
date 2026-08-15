@@ -24,9 +24,11 @@ notice.
 
 The report carries a `derived` block — the close-out ratios read across
 slices as trend lines: planner share (the plan loop's own sessions),
-research share (the plan loop's sub-agents), rework share (run-loop rounds
-≥2 plus consults). `--write-state` appends that block to the run loop's
-state.json as `cost`, so the committed run record prices itself.
+research share (the plan loop's sub-agents), rework share (run-loop spend
+past first delivery: rounds ≥2, consults, and every round of a phase the
+run appended — state.json's `appended_phases`, 0.5.0+). `--write-state`
+appends that block to the run loop's state.json as `cost`, so the committed
+run record prices itself.
 
 Usage:
     slice_cost.py <slice-dir> [--json] [--write-state]
@@ -93,7 +95,8 @@ class Conv:
 
     def __init__(self, session: str, role: str, phase: str | None,
                  kind: str, transcript: Path, loop: str | None = None,
-                 round_: int | None = None, parent: "Conv | None" = None):
+                 round_: int | None = None, parent: "Conv | None" = None,
+                 appended: bool = False):
         self.session = session
         self.role = role          # code-writer / subagent:<type> / orchestrator:<loop>
         self.phase = phase        # phase id, or None for phaseless roles
@@ -102,6 +105,7 @@ class Conv:
         self.loop = loop          # "run" | "plan" — the state file that recorded it
         self.round = round_       # the history entry's round; None for orchestrators
         self.parent = parent      # the recorded session a sub-agent rides under
+        self.appended = appended  # the phase was appended by the run (a consult / test round)
         self.tok_by_model: dict[str, dict[str, int]] = defaultdict(
             lambda: dict.fromkeys(USAGE_KEYS, 0))
         self.turns = 0            # deduplicated billed assistant messages
@@ -199,13 +203,13 @@ def collect(slice_dir: Path) -> tuple[list[Conv], list[str]]:
 
     def add(session: str | None, role: str, phase: str | None,
             kind: str, transcript: str | None, loop: str,
-            round_: int | None = None) -> None:
+            round_: int | None = None, appended: bool = False) -> None:
         if not session or not transcript or session in seen_sessions:
             return
         seen_sessions.add(session)
         path = Path(transcript)
         conv = Conv(session, role, phase, kind, path, loop=loop,
-                    round_=round_)
+                    round_=round_, appended=appended)
         if not path.is_file():
             warnings.append(f"transcript missing for {role} "
                             f"session {session}: {path}")
@@ -227,10 +231,15 @@ def collect(slice_dir: Path) -> tuple[list[Conv], list[str]]:
         orch = state.get("orchestrator") or {}
         add(orch.get("session"), f"orchestrator:{loop}", None,
             "orchestrator", orch.get("transcript"), loop)
+        # Phases the run itself appended (0.5.0+ state; absent before —
+        # then nothing is marked, and the share reads as it always did).
+        appended = {str(p) for p in state.get("appended_phases") or []}
         for entry in state.get("history", []):
+            phase = entry.get("phase")
             add(entry.get("session"), entry.get("role", "unknown"),
-                entry.get("phase"), "session", entry.get("transcript"),
-                loop, entry.get("round"))
+                phase, "session", entry.get("transcript"),
+                loop, entry.get("round"),
+                appended=phase is not None and str(phase) in appended)
 
     if not found_state:
         raise FileNotFoundError(
@@ -243,14 +252,16 @@ def derive(convs: list[Conv], total_cost: float) -> dict:
     """The close-out ratios. Planner = the plan loop's own sessions (the
     interactive orchestrator, plan-writer, plan-reviewer); research = the
     plan loop's sub-agents; rework = run-loop spend past first delivery —
-    writer/reviewer rounds ≥2 (gate fixes, review fixes, re-reviews) plus
-    every consult, sub-agents riding their dispatcher's bucket."""
+    writer/reviewer rounds ≥2 (gate fixes, review fixes, re-reviews), every
+    consult, and every round of a phase the run appended (its round 1 is
+    work the first delivery did not include), sub-agents riding their
+    dispatcher's bucket."""
 
     def is_rework(c: Conv) -> bool:
         o = c.parent or c
         if o.loop != "run":
             return False
-        return o.role == "consult" or (
+        return o.role == "consult" or o.appended or (
             o.role in ("code-writer", "code-reviewer")
             and (o.round or 0) >= 2)
 

@@ -48,7 +48,8 @@ drift is the doc phase's to fix.
    - `analyzer` — analyzer or gate output;
    - `contradiction` — a requirement-to-code contradiction, cited `file:line` against the plan
      or the acceptance criteria;
-   - `coverage-gap` — a named acceptance criterion the diff leaves uncovered.
+   - `coverage-gap` — a named acceptance criterion the diff leaves uncovered, or covers only
+     vacuously: a mutation you ran that the criterion's test survives.
 
    No anchor (`none`) means the finding is advisory by construction, whatever its severity.
    Readability, taste, hypothetical performance, and unspecified edge cases can never anchor —

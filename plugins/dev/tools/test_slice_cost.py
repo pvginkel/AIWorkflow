@@ -325,6 +325,37 @@ def test_derived_ratios_split_planner_research_rework(tmp_path):
     assert d["rework_share"] == pytest.approx(2 * out / total, abs=0.001)
 
 
+def test_appended_phases_are_rework_from_their_first_round(tmp_path):
+    """A phase the run appended (state.json `appended_phases`) is spend past
+    first delivery whatever its round number — writer, reviewer, and their
+    sub-agents; a planned phase's round 1 is not. A state without the field
+    (pre-0.5.0) marks nothing."""
+    def t(name):
+        return tmp_path / "proj" / f"{name}.jsonl"
+
+    for name in ("w1", "w4", "r4"):
+        _write_transcript(t(name), [_message(f"m-{name}", output_tokens=1_000_000)])
+    sub = tmp_path / "proj" / "w4" / "subagents" / "agent-x.jsonl"
+    _write_transcript(sub, [_message("s1", output_tokens=1_000_000)])
+    sub.with_suffix(".meta.json").write_text(json.dumps({"agentType": "Explore"}))
+    history = [
+        _history_entry("w1", t("w1"), phase="1"),                       # planned, r1
+        _history_entry("w4", t("w4"), phase="4"),                       # appended, r1
+        _history_entry("r4", t("r4"), role="code-reviewer", phase="4"),  # appended, r1
+    ]
+    slice_dir = _slice(tmp_path, state={
+        "orchestrator": None, "appended_phases": ["4"], "history": history})
+    convs, warnings = collect(slice_dir)
+    d = build_report(slice_dir, convs, warnings)["derived"]
+    assert d["rework_share"] == pytest.approx(3 / 4, abs=0.001)   # w4 + its sub-agent + r4
+
+    (slice_dir / "state.json").write_text(json.dumps({"orchestrator": None,
+                                                      "history": history}))
+    convs, warnings = collect(slice_dir)
+    d = build_report(slice_dir, convs, warnings)["derived"]
+    assert d["rework_share"] == 0.0
+
+
 def test_run_subagents_ride_their_dispatchers_rework_bucket(tmp_path):
     t = tmp_path / "proj" / "w2.jsonl"
     _write_transcript(t, [_message("m1", output_tokens=1_000_000)])

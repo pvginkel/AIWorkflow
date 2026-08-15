@@ -562,7 +562,9 @@ def test_review_funding_consult_merges_and_reports():
         assert "F2 [Minor/advisory]: stale comment" in report
         assert "code_review_r2.md" in report
         assert "Provenance: consult 1 (review-funding, P1 r2)" in report
-        assert report.count("Disposition:") == 1
+        # One entry, one operator line (the head comment's example is
+        # indented and not one).
+        assert len(re.findall(r"^Disposition:\s*$", report, re.M)) == 1
         fund = next(p for role, p in r.prompts
                     if role == "consult" and "funding bar" in p)
         assert "Review round 2" in fund and "fix_round" in fund

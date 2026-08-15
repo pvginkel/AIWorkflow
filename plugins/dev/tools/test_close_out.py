@@ -64,6 +64,18 @@ def test_init_creates_from_template_with_the_slice_in_the_title():
         assert "\n## Summary\n" in text
         # The template's own placeholder title never leaks through.
         assert "NNN <slug>" not in text
+        # The entry shape is in the file — every author reads it there —
+        # ahead of the first section, as a comment: the id form, the
+        # Provenance/Disposition tail, and the struck form.
+        head = text[:text.index("## Summary")]
+        assert "### B2 — <headline" in head
+        assert "Provenance: <" in head and "Disposition:\n" in head
+        assert "### ~~S3 — <headline>~~ — absorbed by" in head
+        # …and none of it counts as an entry or a stray heading.
+        counts = close_out.entry_counts(slice_dir)
+        assert counts == {**dict.fromkeys(close_out.SECTIONS, 0),
+                          close_out.UNSHAPED: 0}
+        assert close_out.counts_line(counts) == "A 0 · N 0 · B 0 · Q 0 · S 0"
 
 
 def test_init_never_touches_an_existing_report():
@@ -108,7 +120,9 @@ def test_append_allocates_ids_per_section_in_the_entry_shape():
         # the section order is untouched.
         bugs = text.index("## Bugs")
         questions = text.index("## Open questions and rulings")
-        assert bugs < text.index("### B1") < text.index("### B2") < questions
+        # (`### B2` also occurs in the head comment's example — search from
+        # the section.)
+        assert bugs < text.index("### B1") < text.index("### B2", bugs) < questions
         assert text.index("## Notable events") < text.index("### N1") < bugs
         assert re.search(r"Disposition:\n\n## Open questions", text)
 
@@ -141,12 +155,71 @@ def test_quoted_headings_inside_fences_are_not_headings():
         counts = close_out.entry_counts(slice_dir)
         assert counts == {"Outstanding actions": 0, "Notable events": 2,
                           "Bugs": 1, "Open questions and rulings": 0,
-                          "Suggestions": 0}
+                          "Suggestions": 0, close_out.UNSHAPED: 0}
         text = report(slice_dir)
         # B1 landed under the real Bugs heading (the last one — the first
         # is the quoted one), after the quoted block.
         assert text.index("```\n\nwhich is wrong") < text.rindex("\n## Bugs\n") \
             < text.index("### B1 — real bug")
+
+
+def test_headings_inside_html_comments_are_not_headings():
+    """The template's head comment shows the entry shape with a `### B2`
+    line in it, and section charters are comments too: nothing inside
+    `<!-- … -->` is a section boundary, an entry, or a stray heading —
+    whether the comment is one line or many. A `<!--` mid-line in prose
+    opens nothing."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        close_out.append_entry(
+            slice_dir, "Bugs", "a comment quoting headings",
+            "Seen in the page source:\n\n<!-- one-liner: ### B9 — not real -->\n"
+            "<!--\n## Suggestions\n### B7 — inside a block comment\n"
+            "### N4 — wrong letter, still hidden\n-->\n"
+            "and the prose mentions `<!--` here without opening anything.\n"
+            "### B8 — a real heading after the comment, hand-written")
+        assert close_out.append_entry(slice_dir, "Bugs", "next", "b") == "B9"
+        counts = close_out.entry_counts(slice_dir)
+        assert counts["Bugs"] == 3 and counts["Suggestions"] == 0
+        assert counts[close_out.UNSHAPED] == 0
+        # The one section a comment could hide a boundary from: `## Bugs`
+        # itself stays where it is, and B9 landed under it.
+        text = report(slice_dir)
+        assert text.rindex("\n## Bugs\n") < text.index("### B1") < text.index("### B9 — next")
+
+
+def test_counts_report_headings_not_in_entry_shape():
+    """An author that wrote `### minor — …` or `### Consult 1 (…) …` instead
+    of the id shape has produced no entry the counter can see; the line
+    says so rather than reading zero in silence. Ids under the wrong
+    section's letter are unshaped too."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        close_out.append_entry(slice_dir, "Bugs", "shaped", "b")
+        text = report(slice_dir)
+        text = text.replace(
+            "## Notable events\n",
+            "## Notable events\n\n### Consult 1 (2026-08-15) appended P4\n\nbody\n\n"
+            "### Test phase round 1 — clean\n\nbody\n\n### S1 — a suggestion's id\n\nbody\n")
+        text = text.replace(
+            "## Bugs\n",
+            "## Bugs\n\n### minor — the reset is unbounded\n\nbody\n\nDisposition:\n")
+        (slice_dir / "close-out.md").write_text(text)
+        counts = close_out.entry_counts(slice_dir)
+        assert counts["Bugs"] == 1 and counts["Notable events"] == 0
+        assert counts[close_out.UNSHAPED] == 4
+        assert close_out.counts_line(counts) == \
+            "A 0 · N 0 · B 1 · Q 0 · S 0 · 4 headings not in entry shape"
+        # A struck entry is in shape, and one stray heading reads singular.
+        text = report(slice_dir).replace("### B1 — shaped", "### ~~B1 — shaped~~ — dup")
+        text = text.replace("### Test phase round 1 — clean\n\nbody\n\n", "")
+        text = text.replace("### S1 — a suggestion's id\n\nbody\n", "")
+        text = text.replace("### minor — the reset is unbounded\n\nbody\n\nDisposition:\n", "")
+        (slice_dir / "close-out.md").write_text(text)
+        assert close_out.counts_line(close_out.entry_counts(slice_dir)) == \
+            "A 0 · N 0 · B 0 · Q 0 · S 0 · 1 heading not in entry shape"
 
 
 def test_append_into_an_unknown_or_missing_section_raises():
@@ -194,7 +267,8 @@ def test_entry_counts_ignore_struck_entries():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         close_out.init_report(slice_dir)
-        assert close_out.entry_counts(slice_dir) == dict.fromkeys(close_out.SECTIONS, 0)
+        assert close_out.entry_counts(slice_dir) == {
+            **dict.fromkeys(close_out.SECTIONS, 0), close_out.UNSHAPED: 0}
         close_out.append_entry(slice_dir, "Bugs", "one", "b")
         close_out.append_entry(slice_dir, "Bugs", "two", "b")
         close_out.append_entry(slice_dir, "Outstanding actions", "do", "b")
@@ -219,8 +293,9 @@ def test_stamp_writes_the_run_shape_and_is_idempotent():
         text = report(slice_dir)
         assert "<not yet stamped>" not in text
         assert text.count("Run:") == 1
-        # The block is the header wrapped, then the blank line, then Summary.
-        block = text[text.index("Run:"):text.index("## Summary")]
+        # The block is the header wrapped, then the blank line, then the
+        # head comment that shows the entry shape (untouched by the stamp).
+        block = text[text.index("Run:"):text.index("<!-- Every entry")]
         assert " ".join(block.split()) == header
         assert block.endswith("\n\n")
         # Re-stamping with cost replaces the block rather than adding one.
@@ -231,7 +306,7 @@ def test_stamp_writes_the_run_shape_and_is_idempotent():
         assert header2.endswith("· $118.41 (planner 18 %, research 4 %, rework 14 %)")
         text2 = report(slice_dir)
         assert text2.count("Run:") == 1
-        assert " ".join(text2[text2.index("Run:"):text2.index("## Summary")].split()) \
+        assert " ".join(text2[text2.index("Run:"):text2.index("<!-- Every entry")].split()) \
             == header2
         assert close_out.stamp_header(slice_dir) == header2
         assert report(slice_dir) == text2

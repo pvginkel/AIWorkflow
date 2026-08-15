@@ -16,8 +16,9 @@ from your host convention (`~/.claude/CLAUDE.md`).
 ## Procedure
 
 1. **Locate the report.** The argument names it (a slice number or a slice dir); without one,
-   the newest `slices/**/close-out.md` under `<spec-repo>` that still has a blank
-   `Disposition:` line. Say which report you opened.
+   the newest `slices/**/close-out.md` under `<spec-repo>` that still has an entry with a blank
+   `Disposition:` line (the file's head comment shows one as the shape — that is not an entry).
+   Say which report you opened.
 2. **Present it — ask nothing yet.** Read the whole file. Show the `Run:` header, the Summary,
    every `Focus:` line, and every entry as `id — headline` (struck entries marked as such). The
    operator reads; you wait.

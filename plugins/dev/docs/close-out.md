@@ -21,14 +21,14 @@ everything an agent would otherwise have to decide what to do with — the desti
 (put it in the report), the shape is fixed (the entry), and the operator routes.
 
 The sections, in the template's order — Summary, Outstanding actions, Notable events, Bugs, Open
-questions and rulings, Suggestions — each carry their own charter as a comment in the file; every
-section may be empty, and empty is the normal state of most. Two things the comments do not
-spell out: **Notable events** takes product *and* workflow deviations — bail-outs and what
-resolved them, appended phases and why, blocked proofs and their re-routing, defects a live run
-exposed that the suite hid, refuted findings, funding-consult merges, a session that hit
-something odd — so plugin defects surface there instead of living only in `log.txt`; and
-**Suggestions** is where a fix idea may go — the reviewer's "describe the problem, never the fix"
-governs review files, not this section.
+questions and rulings, Suggestions — each carry their own charter as a comment in the file, and
+the file's head comment carries the entry shape; every section may be empty, and empty is the
+normal state of most. Two things the comments do not spell out: **Notable events** takes
+workflow deviations as much as product ones (its charter names both kinds — a bail-out, an
+appended phase, a blocked proof re-routed, a tool missing from the sidecar, a wait that hit a
+cap) so plugin defects surface there instead of living only in `log.txt`; and **Suggestions** is
+where a fix idea may go — the reviewer's "describe the problem, never the fix" governs review
+files, not this section.
 
 ## Reading aids
 
@@ -106,6 +106,9 @@ operator's.
    `Disposition:` remains.
 5. What remains — `defer`, or no disposition yet — is a `/dev:triage` source, one item per entry.
 
-Deliberately absent: any validation beyond "the section heading exists", dedup tooling,
-disposition parsing, and — for now — an automated triage pass over the report; the shape is
-meant not to change when that comes.
+Deliberately absent: any validation beyond "the section heading exists" and one count —
+`close_out.py counts` says how many `###` headings in the entry sections are not in the entry
+shape, so an author that drifted from it shows in the run's completion line and the close-out
+card instead of as a report that counts zero — dedup tooling, disposition parsing, and — for
+now — an automated triage pass over the report; the shape is meant not to change when that
+comes.

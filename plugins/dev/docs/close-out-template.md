@@ -4,7 +4,8 @@ The concrete shape of a slice's `close-out.md`: the fixed sections, the one entr
 struck-entry form, and the run header. Both loops create the file from this template
 (`close_out.py init` lifts the first fenced block below, substituting the slice's number and
 slug into the title), and every agent that writes to it reads the shape off the file itself —
-so what is settled here is what every author produces. Semantics — what the report is for, who
+so what is settled here is what every author produces, and the file carries the entry shape in
+its own head comment: no author has to open this doc. Semantics — what the report is for, who
 writes what and when, the entry rules, the lifecycle — are [close-out.md](close-out.md); this
 doc is the shape.
 
@@ -15,6 +16,25 @@ doc is the shape.
 
 <!-- Run header: stamped by the driver at close-out from state.json. Agents never edit it. -->
 Run: <not yet stamped>
+
+<!-- Every entry, in every section, has exactly this shape. The id is the section's letter
+     (A · N · B · Q · S) and the next number — count the section's `###` headings, struck ones
+     included. Severity (major | minor | nit | cosmetic) sits in the heading of Bugs only.
+     `Disposition:` is the operator's line: leave it blank.
+
+     ### B2 — <headline: one line, the claim itself> · minor · <repo or component>
+
+     <What: the thing itself, quoted where it is text or output — the sentence, the command and
+     what it printed, the file and lines. Why it matters: the consequence, or "none" said plainly.
+     How it was found. As many paragraphs as it takes.>
+
+     Provenance: <role, phase, round; the artifact that holds the full record>
+     Disposition:
+
+     An entry is never deleted. Struck, it keeps its heading, with the reason appended:
+
+     ### ~~S3 — <headline>~~ — absorbed by P11 (97b5313), struck by consult 1
+-->
 
 ## Summary
 
@@ -32,9 +52,11 @@ Focus: <!-- doc-writer: what the operator must do before the slice's outcome hol
 
 Focus: <!-- doc-writer: the shape of the run — bail-outs, appended phases, surprises -->
 
-<!-- Everything that deviated from a completely uneventful run — product and workflow. What
-     happened, when, how it resolved, what it says. The driver appends refuted findings and
-     funding-consult merges here itself. -->
+<!-- Everything that deviated from a completely uneventful run — product and workflow alike: a
+     bail-out, an appended phase, a live run that exposed what the suite hid; a tool missing from
+     the sidecar, a wait that hit a cap, a call the harness refused. What happened, when, how it
+     resolved, what it says. The driver appends refuted findings and funding-consult merges here
+     itself. -->
 
 ## Bugs
 
@@ -59,34 +81,16 @@ Focus: <!-- doc-writer -->
 
 ## The entry
 
-The same shape in every section. The id prefix is the section's letter — `A` Outstanding
-actions · `N` Notable events · `B` Bugs · `Q` Open questions and rulings · `S` Suggestions —
-numbered in order of arrival (`close_out.py append` allocates the next number; an agent writing
-by hand counts the section's `###` headings, struck ones included):
-
-```markdown
-### B2 — <headline: one line, the claim itself> · minor · <repo or component>
-
-<What: the thing itself, quoted where it is text or output — the sentence, the command and what
-it printed, the file and lines. Why it matters: the consequence, or "none" said plainly. How it
-was found. As many paragraphs as it takes; as few as it takes.>
-
-Provenance: <role, phase, round; the artifact that holds the full record — e.g. "P3 review r1 F3
-(advisory); consult 1 judged it too small for a phase">
-Disposition:
-```
-
-The severity slot appears on Bug entries only (the vocabulary and what each grade means:
-[close-out.md](close-out.md)). Outstanding actions read as imperatives ("Create the
-`IaC/ArgoCDTools` Jenkins job"). `Disposition:` is left blank by every agent — it is the
-operator's line.
-
-**A struck entry** keeps its heading, struck through, with the reason appended; the body may
-stay or go:
-
-```markdown
-### ~~S3 — D31's image-contents list is stale~~ — absorbed by P11 (97b5313), struck by consult 1
-```
+The head comment above is the whole shape — the same in every section, ids by section letter in
+order of arrival, `Provenance:` then a blank `Disposition:` under every body. `close_out.py
+append` mints exactly that shape for the driver's own entries; agents write it by hand. What the
+comment leaves to this doc: Outstanding actions read as imperatives ("Create the
+`IaC/ArgoCDTools` Jenkins job"); the severity grades' meanings are in
+[close-out.md](close-out.md); the head comment and the section charters are the file's, never
+edited or removed. `close_out.py counts` reads entries off the `###` headings and says, next to
+the per-section counts, how many headings in the entry sections are not in the entry shape — the
+one smoke check, so an author that drifted from the shape shows in the run's completion line
+instead of as a report that counts zero.
 
 ## The run header
 
