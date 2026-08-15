@@ -63,6 +63,10 @@ hand archaeology; self-proving, so acceptance is essentially "it shipped and the
   across both runs carry the fields in `review_result_r*.json` and `state.json` history. The B/C
   readouts logged under B2, C1 and C2 below were produced from the fields alone — no transcript
   archaeology.
+- 2026-08-15 — slice 146 (first run on 0.5.0, third on 0.4.3): all four findings carry the
+  fields in `review_result_r1.json` and `state.json` history; every number in the 146 assessment
+  came from them plus `slice_cost.py`. Distribution: Minor · advisory · `anchor: none` ×4;
+  category functional 2, comment-prose 1, other 1.
 
 ## I2 — Standard cost readout per run
 
@@ -86,6 +90,15 @@ research-subagent share, rework share, cost per merged slice.
   4.1%, rework 4.9%; no warnings). Known limitation: the readout undercounts ~2–3% — re-pricing
   later gives $56.02/$49.02 — because the run orchestrator's own close-out tail lands after the
   readout is computed.
+- 2026-08-15 — slice 146: the `cost` block wrote clean ($45.06 — planner 26.7 %, research 0.7 %,
+  rework 9.9 %); the undercount reproduced (re-priced $46.21, 2.5 %). A limitation found and
+  fixed (plugin 0.5.1): an appended phase runs as round 1, so its whole cost sat outside
+  `is_rework` — exactly the quantity C7's H2 moves between "appended phase" and "close-out
+  entry". `slice_cost.py` now marks every round of a phase in `state.json`'s `appended_phases`
+  as rework. A definition change, but a contained one: states without the field (every run
+  before 0.5.0) are unaffected, so 144/145 stand; 146 re-priced under it is rework $6.75 =
+  14.6 % — the high end of the 9.3–15.7 % band, not the low — the honest number for a run that
+  spent 8.7 % of itself pinning a test assertion. 146's committed record was re-stamped.
 
 ## I3 — Sampled blocking-finding precision audit
 
@@ -130,6 +143,28 @@ C6 can stay unbuilt; a growing one says it is.
   so the ledger's original data source ends at 0.4.5. From here the count is `close_out.py
   counts` per report plus the close-out skill's disposition tally at step 5; the pre-0.5.0
   `cards` lists stay readable as the baseline.
+- 2026-08-15 — slice 146, the instrument's first reading, void: `counts` read `A 0 · N 0 · B 0 ·
+  Q 0 · S 0` for a six-entry report because no entry carried an id (Trello #630; cause under
+  C7). By hand: 3 Notable events, 3 Bugs, A/Q/S empty; dispositions so far: 1 card (#632). From
+  0.5.1 `counts` also says how many `###` headings are not in the entry shape, so a void reading
+  announces itself instead of reading zero.
+
+## I5 — Witnessed-signoff field in the review verdict
+
+**Status:** new
+**Cost:** S · **Rank:** — · **Depends on:** I1 (same schema path); feeds I3
+
+**Summary.** The reviewer verdict gains `witnessed: mutation | targeted-run | none` — what the
+review rests on beyond reading — persisted into `state.json` history beside the findings.
+
+**Decides it.** Whether I3's audit, given the field, separates witnessed signoffs from read ones
+without archaeology; and whether the field's presence moves review cost.
+
+**Log**
+
+- 2026-08-15 — catalogued (interventions.md §3) from the slice 146 assessment: 4/4 reviews
+  mutation-verified, the evidence in prose only. Not implemented — a register field, so D2's
+  batch-and-A/B discipline applies; the operator picks batches.
 
 ---
 
@@ -160,6 +195,11 @@ no rise in downstream gate_red or appended phases.
   plan-reviewer still did real work in each (144: caught P2 falsifying the wire contract; 145:
   three structural findings that fed the R2/R5/R6 cut). Only `pre-settled` exercised so far; the
   discrimination test — a cross-cutting slice declaring itself honestly — is still open.
+- 2026-08-15 — slice 146: `pre-settled` declared from slice.md's 2026-08-14 grounding pass,
+  checked by the plan-reviewer, no attachments taken. Planner $12.03 (26.7 %) + research $0.33 =
+  $12.36 (27 %) against slice 153's $27.72 (34 %). The planner *share* looks unchanged from
+  baseline; that is a floor effect on a $45 slice — the absolute figure sits at the bottom of the
+  $11–19 band on a four-phase slice. Still only `pre-settled` exercised.
 
 ## A2 — Question-gated research budget
 
@@ -185,6 +225,8 @@ visible in plan output.
   ("no attachments were needed"); the 3–4% research share in I2's readout is the interactive
   refinement session's Explore agents, outside this gate's scope. Unexercised on a shape that
   permits research.
+- 2026-08-15 — slice 146: research $0.33 (0.7 %), the lowest recorded — one two-minute Explore
+  in the plan loop, nothing from the plan-writer.
 
 ## A3 — Effort step-down for the plan registers
 
@@ -269,6 +311,12 @@ load-bearing warnings.
   gains the verifiability criterion — a condition code, a test, or a gate can witness;
   predictions and strength-graded claims deleted, not hedged; load-bearing warnings stay.
   Reaches runs after push + marketplace update. → validating.
+- 2026-08-15 — first data point (146, the first run with B1 in the writer register): the writer
+  still shipped one unwitnessable claim — P3's `"A reset that fails leaves the root as it found
+  it"`, a post-condition the daemon cannot observe, precisely the claim B1 says to delete rather
+  than hedge. B1 did not prevent it; B4 caught it at review; the consult fixed it in place as
+  mechanical residue (`6de4795`). Comment findings 1 of 4 (25 %) against ≈49 % baseline — one
+  finding, not a trend on its own.
 
 ## B2 — Reviewer comment scope
 
@@ -294,6 +342,8 @@ baseline. Churn gone ⇒ accepted as-is; churn persists ⇒ take the extension.
   prose residue was absorbed by the completion consults (~$2 each, one claim verified by actually
   running node); the judgment calls became cards. Count barely moved, cost went to zero — the
   design intent. The blocking carve-out extension stays held.
+- 2026-08-15 — 146: comment-prose findings 1 of 4 (25 %), advisory, one sentence, no fix
+  round; prose rework $0 for the third consecutive run.
 
 ## B3 — Explanatory prose lives in docs, not comments
 
@@ -329,6 +379,9 @@ case this folds into it.
   comment/prose rule — a prose finding must show the text is wrong (contradicted by code or
   spec); meaning-preserving wording drift is not a finding. Kept to a single sentence per D2's
   register-growth warning. → validating.
+- 2026-08-15 — first data point (146): the one prose finding was a wrongness finding as B4
+  asks — the comment claimed a post-condition the code cannot observe — not a wording
+  preference. Held.
 
 ---
 
@@ -360,6 +413,16 @@ failures; the anchor-type distribution (I1) shows what the old bar was letting t
   an operator ruling's premise, and was routed to a card. One boundary case for I3's audit: 145
   P4 F1 (a mutation-survival claim — deleting the growth guard leaves the suite green) was
   labeled `none` rather than coverage-gap, defensibly, since no named AC covers it.
+- 2026-08-15 — 146: 4/4 findings `anchor: none`, all advisory, no fix round — C1 holding, and
+  no data added to I3. Cumulative over three runs: repro-trace 2, coverage-gap 1, none 13. Two
+  limits of the read named: (a) anchors are required only for `blocking`, so advisories carrying
+  full file:line traces (146's goroutine-leak finding spans five call sites) record `none` and
+  the "what the old bar let through" read is not available from the field — noted, not acted
+  on (a register line for a measurement's sake). (b) The 144/145 boundary case recurred — 146
+  P1 F1 is a surviving mutation on the slice's own new test, recorded `none`/`other` — and is
+  resolved (plugin 0.5.1): the `coverage-gap` anchor now names vacuous coverage explicitly, "a
+  mutation you ran that the criterion's test survives". 145 P4 F1 stays `none` under it: no AC
+  covers the guard it concerns.
 
 ## C2 — Demonstrate-failure-first fix protocol
 
@@ -391,6 +454,12 @@ Success target for the C1+C2 pair: precision ≥80% with rework share stable or 
   roll cascading on an at-cap node) instead of changing production behavior unilaterally. The r2
   reviewer mutation-verified and signed off; no relitigation. Refute path not yet exercised;
   blocking precision so far 1/1.
+- 2026-08-15 — 146: did not fire (no blocking finding). Blocking precision still 1/1 lifetime;
+  two of the last three runs produced no blocking finding at all — I3 accumulates slowly. What
+  did move: every review in 146 verified by mutation unprompted (4/4; 10/12 across 144–146
+  against 13/29 on 149–153, keyword proxy), P4's re-witnessing the phase's own done-condition —
+  the discipline C2 encodes has generalised into signoff. Catalogued as I5 (make it countable)
+  and C8 (make it mandatory where cheapest, test-only phases); neither implemented.
 
 ## C3 — Round caps, rising bar, one-report lifecycle
 
@@ -506,6 +575,51 @@ Kill signal is reports that grow *and* stop being read — answered by shape, ne
   and its folder a `close-out.md`; measurement per design §7 (entry counts by section,
   dispositions by kind, cards filed at disposition, gen-1 appended phases, rework share,
   bail-outs) logged here per slice as the 0.4.3 batch was.
+- 2026-08-15 — first slice run end to end on 0.5.0 (KubeCoder 146; assessment in the operator's
+  hands). **Content held**: 6 entries (3 Notable events, 3 Bugs; A/Q/S empty), one close-out
+  card, one bug accepted at disposition — its claim and line numbers verified from the report's
+  text alone (H3's writing rule working); the doc-writer's Focus lines ranked the bugs and drove
+  the pick; the header read `4 phases (3 planned, P4 appended) · 0 bail-outs · 1 test round · doc
+  phase done · $45.06 (…)`, correct against `state.json`; live-committed through the whole
+  lifecycle (plan-loop init → reviewers → consults → test agent → doc-writer → driver stamp); the
+  P1–P3 reviewers wrote their advisories into the report directly. H1 ✓ (10 → 1). H3 ✓. H4
+  partial: every Notable event is product-side; P3's `gofmt: command not found` and the test
+  agent's five tool errors around `track_build.py` went unreported. **Shape did not hold**: no
+  entry carried an id, `Provenance:` or `Disposition:` (`### minor — …`, `### Consult 1 (…) …`),
+  so `counts` read 0 (Trello #630) and consult 1 deleted the two entries it absorbed instead of
+  striking them. Cause: every register says "the shape is in the file" and `init` wrote a file
+  holding section charters only — the plan-writer wrote the first entry freehand, every later
+  author read the file and copied the precedent (transcripts: Read then Edit, each time). Fixed
+  in plugin 0.5.1: the template's head comment carries the entry shape and the struck form, so
+  `init` writes it; `close_out.py` reads headings outside HTML comments; `counts` reports
+  headings not in entry shape; the Notable-events charter names workflow deviations. **H2 not
+  readable from 146**: I2 could not see appended-phase cost (fixed — I2's log), and the gen-1
+  bar still carried card economics — consult 1 appended P4 for a test-durability nit ($4.02
+  with the consult it forced, 8.7 % of the slice) reasoning "cheaper to fix than to card", a
+  comparison 0.5.0 deleted. The bar was re-priced in 0.5.1: append only work the plan owes and no
+  phase delivered; a phase's three rounds against one operator word. From 0.5.1 the gen-1 count
+  reads against a moved bar; 146's P4 is the last append under the old one, and would be an
+  entry under the new (consult 1 itself found implementing work for every AC). Redundancy
+  watch, early: two of the three Notable events narrate things going right (consult 2's restates
+  `consult_2.json`); noted against the kill signal, not acted on from one slice.
+
+## C8 — Mutation-witnessed signoff for test-only phases
+
+**Status:** new
+**Cost:** S · **Rank:** — · **Depends on:** C1's 0.5.1 coverage-gap clause; I3 to judge
+
+**Summary.** One reviewer-register sentence scoped to test-only phases: a signoff names one
+mutation that takes the phase's new test red; a test-only phase whose reviewer cannot has been
+read, not reviewed.
+
+**Decides it.** I3 precision on test-only phases and their fix-round rate before/after; the
+rule dies if precision falls.
+
+**Log**
+
+- 2026-08-15 — catalogued (interventions.md §6) from 146 P1 F1 ($4.02 to fix a self-satisfying
+  test one generation late) and 145 P4 F1. Not implemented — a reviewer-register rule, batched
+  and A/B'd per D2.
 
 ---
 

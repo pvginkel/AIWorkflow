@@ -127,6 +127,24 @@ Track advisory-card flow: created vs closed per slice, net backlog. Answers whet
 the trust-collapse literature is about unmanaged queues, not individual findings.
 **Cost:** S (cards are already recorded in `state.json`; this is aggregation).
 
+### I5. Witnessed-signoff field in the review verdict — **new, S** (added 2026-08-15)
+The reviewer verdict gains one field — `witnessed: mutation | targeted-run | none` — naming what
+the review rests on beyond reading: a mutation it ran that took a test red, a targeted run, or
+nothing executed. Persisted into `state.json` history beside the findings, on I1's path.
+**Evidence:** slice 146 — every review verified by mutation and said so in prose only (P4's
+re-witnessed the phase's own done-condition rather than taking the done-record's word). Keyword
+proxy across the record ("mentions mutation", not "verified one"): 13/29 reviews on 149–153
+(pre-0.4.3), 10/12 on 144–146, 4/4 on 146 — the shift lines up with C2 landing, witness-first
+generalising from the fix round into signoff, the cheaper and more frequent half. Today I3 cannot
+tell a mutation-verified signoff from a read one.
+**Effect:** signoff evidence becomes countable the way I1 made findings countable — I3 gains a
+second axis (precision of blocking findings, evidence behind clean signoffs). **Measure:**
+self-proving. **Cost:** S (one verdict field, one persist line in `run_loop.py`, the register's
+Output section). **Risks:** D2 — a named field nudges toward filling it with something other than
+`none`, i.e. more mutation work per review; 146's most mutation-heavy review cost $2.74 (10 m),
+affordable per phase and worth watching if it becomes universal. An honest `none` must stay
+costless.
+
 ---
 
 ## 4. A — Planner effort (problem A)
@@ -379,6 +397,24 @@ ids, never by caps; the report becoming a scope-bleed source — phase agents ap
 completion consult alone reconciles. **Overlap:** subsumes C6's governance question by moving the
 queue off the board; I4's ledger reframes as per-report counts; the 0.4.4 triage filter keeps its
 role for deferred entries.
+
+### C8. Mutation-witnessed signoff for test-only phases — **new, S** (added 2026-08-15)
+One sentence in the reviewer register, scoped to phases whose diff is test-only: a signoff names
+one mutation that takes the phase's new test red; a test-only phase whose reviewer cannot has
+been read, not reviewed. Nothing for mixed phases.
+**Evidence:** slice 146 P1 F1 — the reserved-`-e` test pinned the echoed token, not the refusal
+reason, a self-satisfying assertion — was found by mutation in P1's review, recorded advisory
+`anchor: none` / `category: other`, and cost $4.02 (P4 + the consult it forced, 8.7 % of the
+slice) to fix a generation later; witnessed in P1 it is a fix round in P1. 145 P4 F1 (deleting the
+growth guard leaves the suite green) is the same shape. Reviews already do this unprompted most of
+the time (I5's proxy: 10/12 on 144–146), so the rule mostly binds the remainder.
+**Effect:** the one finding class that is mechanically checkable stops arriving as evidence-free
+advisory. **Measure:** I3 finding precision on test-only phases before/after; their fix-round
+rate. **Cost:** S. **Risks:** D2 — register elaboration shifts the decision boundary (S7: FNR
+26 %→73 % Direct→Full); one sentence, test-only scope, A/B-checked, never a general "verify by
+mutation". **Depends on:** the 0.5.1 clarification of C1's `coverage-gap` anchor (a mutation the
+criterion's test survives is a coverage gap) — that clause makes the class anchorable, this entry
+would make checking it mandatory where it is cheapest.
 
 ---
 
