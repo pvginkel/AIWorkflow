@@ -33,9 +33,10 @@ governs review files, not this section.
 ## Reading aids
 
 The report is written for the operator. Prose is not limited; it is made easy to read: a
-**Focus** line at the head of every section (one or two lines: what to look at first, why),
-an id on every entry so a disposition can name it in one line ("card B1, close B6, fold S1 into
-009"), the run's shape stamped at the top, and a blank `Disposition:` line under every entry.
+**Focus** line at the head of every entry section (one or two lines: what to look at first,
+why), an id on every entry so a disposition can name it in one line ("card B1, close B6, fold S1
+into 009"), the run's shape stamped at the top, and a blank `Disposition:` line under every
+entry.
 
 ## Who writes what, when
 
@@ -53,9 +54,9 @@ live with each agent's own commit (staged by name, like every other slice-folder
   it may strike an entry it absorbed into an appended phase (the struck headline names the phase
   and commit), merge duplicates it is sure of, and mark what a later phase resolved.
 - **test-agent** — below-bar findings; live-check events.
-- **doc-writer** — doc debt; and, **as its last act, the Summary and every section's Focus
-  line** — it has the whole shipped diff in view. If the run ends before the doc phase, or the
-  doc phase reports `blocked`/`question`, the operator reads the report raw.
+- **doc-writer** — doc debt; and, **as its last act before a `done` verdict, the Summary and
+  every `Focus:` line** — it has the whole shipped diff in view. If the run ends before the doc
+  phase, or the doc phase reports `blocked`/`question`, the operator reads the report raw.
 - **the driver** — deterministic entries only, through `close_out.py`: a refuted finding and a
   funding-consult merge each become a Notable event; the run header is stamped from
   `state.json` when the run completes (run window, phases planned/appended, bail-outs, test
@@ -94,8 +95,9 @@ operator's.
    lines; the driver stamps the header when the run completes, and `/dev:run-slice` re-stamps
    it after the cost block lands (`close_out.py stamp`).
 3. `/dev:run-slice` files **one** tracker card — `[NNN] close-out: <slice title>`, in the intake
-   queue — whose body is the report's Summary, its Focus lines, its entry counts, and its path.
-   That card is the "a report is waiting" marker; nothing else from the run is carded.
+   queue — whose body is the report's Summary, its `Focus:` lines, its entry counts, and its
+   path. That card is the "a report is waiting" marker, never an ask (`/dev:triage` reads the
+   report it names, not the card); nothing else from the run is carded.
 4. The operator reads the report and writes dispositions in place. The `close-out` skill (or an
    ad hoc session following it) executes them: `card` files a tracker card with the entry as its
    body, `fix now` does the small thing or bails to a slice, `fold into` appends the entry to

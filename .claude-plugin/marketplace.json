@@ -6,7 +6,7 @@
     {
       "name": "dev",
       "source": "./plugins/dev",
-      "description": "The kc-native slice pipeline: triage → plan-slice → run-slice, driven by a bounded per-phase dev loop (write → test → review → merge) over the slice's plan.md."
+      "description": "The kc-native slice pipeline: triage → plan-slice → run-slice → close-out, driven by a bounded per-phase dev loop (write → test → review → merge) over the slice's plan.md, with one close-out report per slice for everything out of the loops' scope."
     }
   ]
 }

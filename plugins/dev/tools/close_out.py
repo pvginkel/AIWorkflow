@@ -20,6 +20,10 @@ the skills:
          re-stamping overwrites the same block.
   counts non-struck entries per section, one line.
 
+Headings are read outside fenced code blocks only — an entry that quotes
+a document's `## Bugs` or a `### B3` inside a ``` fence (the entry rules ask
+for liberal quoting) neither moves a section boundary nor shifts an id.
+
 Deliberately not here: any validation beyond "the section heading exists",
 dedup, disposition parsing.
 
@@ -60,7 +64,8 @@ SEVERITIES = ("major", "minor", "nit", "cosmetic")
 
 HEADER_WIDTH = 96
 
-_SECTION_RE = re.compile(r"^## (?P<name>.+?)\s*$", re.M)
+_SECTION_RE = re.compile(r"^## (?P<name>.+?)\s*$")
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
 
 
 class ReportError(Exception):
@@ -103,14 +108,30 @@ def _read(slice_dir: Path | str) -> tuple[Path, str]:
                           "(both loops do at start)") from None
 
 
+def _unfenced_lines(text: str):
+    """(offset, line) for every line outside a fenced code block — the only
+    lines a heading can stand on."""
+    offset, fenced = 0, False
+    for line in text.split("\n"):
+        if _FENCE_RE.match(line):
+            fenced = not fenced
+        elif not fenced:
+            yield offset, line
+        offset += len(line) + 1
+
+
 def _sections(text: str) -> list[tuple[str, int, int]]:
     """(name, body_start, body_end) per `## ` heading; the body runs to the
     next `## ` heading or the end of the file."""
-    heads = list(_SECTION_RE.finditer(text))
+    heads = []
+    for offset, line in _unfenced_lines(text):
+        m = _SECTION_RE.match(line)
+        if m:
+            heads.append((m.group("name"), offset + len(line), offset))
     out = []
-    for i, m in enumerate(heads):
-        end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
-        out.append((m.group("name"), m.end(), end))
+    for i, (name, body_start, _) in enumerate(heads):
+        end = heads[i + 1][2] if i + 1 < len(heads) else len(text)
+        out.append((name, body_start, end))
     return out
 
 
@@ -122,11 +143,18 @@ def _section_span(text: str, section: str) -> tuple[int, int]:
                       + ", ".join(SECTIONS))
 
 
-def _entry_numbers(body: str, letter: str) -> list[int]:
-    """Every entry number under the section, struck or not — ids are never
-    reused."""
-    return [int(n) for n in re.findall(
-        rf"^### (?:~~)?{letter}(\d+)\b", body, re.M)]
+def _entry_headings(body: str, letter: str,
+                    struck: bool = True) -> list[int]:
+    """The entry numbers under a section, from `### <letter><n>` headings
+    outside fences — struck ones included when `struck` (ids are never
+    reused), excluded for a live count."""
+    pattern = re.compile(rf"^### (~~)?{letter}(\d+)\b")
+    numbers = []
+    for _, line in _unfenced_lines(body):
+        m = pattern.match(line)
+        if m and (struck or not m.group(1)):
+            numbers.append(int(m.group(2)))
+    return numbers
 
 
 def append_entry(slice_dir: Path | str, section: str, headline: str,
@@ -142,7 +170,7 @@ def append_entry(slice_dir: Path | str, section: str, headline: str,
     path, text = _read(slice_dir)
     start, end = _section_span(text, section)
     letter = SECTIONS[section]
-    numbers = _entry_numbers(text[start:end], letter)
+    numbers = _entry_headings(text[start:end], letter)
     eid = f"{letter}{max(numbers, default=0) + 1}"
 
     head = f"### {eid} — {' '.join(headline.split())}"
@@ -168,8 +196,8 @@ def entry_counts(slice_dir: Path | str) -> dict[str, int]:
     counts = dict.fromkeys(SECTIONS, 0)
     for name, start, end in _sections(text):
         if name in counts:
-            counts[name] = len(re.findall(
-                rf"^### {SECTIONS[name]}\d+\b", text[start:end], re.M))
+            counts[name] = len(_entry_headings(text[start:end], SECTIONS[name],
+                                               struck=False))
     return counts
 
 

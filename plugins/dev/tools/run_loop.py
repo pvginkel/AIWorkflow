@@ -32,12 +32,10 @@ re-enter the loop through a generation bar: the first generation absorbs
 small in-scope touch-ups, the second appends blocking work only, a third
 pending generation bails to the operator.
 
-Everything an agent notices but the loop will not act on goes in one
-document, <slice>/close-out.md (${CLAUDE_PLUGIN_ROOT}/docs/close-out.md is
-the contract): the driver creates it if the plan loop did not, appends its
-own deterministic entries (refuted findings, funding-consult merges) through
-close_out.py, and stamps the run header when the run completes. Nothing from
-a run is carded per finding.
+The driver's part in the slice's close-out report (<slice>/close-out.md —
+${CLAUDE_PLUGIN_ROOT}/docs/close-out.md): create it if the plan loop did
+not, enter refuted findings and funding-consult merges through close_out.py,
+stamp the run header at completion.
 
 The plan doc is writable by every agent in the loop — deliberately. The
 driver's job is keeping the shared doc parseable: a parse error, a vanished

@@ -145,12 +145,12 @@ are found. One rider holds at every generation: mechanical residue — comment o
 with no behaviour change, in files the slice's diff already touched — is neither reported nor
 appended; the finder fixes it in place and commits, and the driver's full-sweep gate covers it.
 
-**Close-out.** Nothing from a run is carded per finding. Everything an agent noticed but the loop
-did not act on is in the slice's `close-out.md` ([close-out.md](close-out.md)) — created by the
-plan loop, or by the driver at run start when planning predates it; appended to by every agent;
-reconciled by the completion consult; Summary and Focus lines by the doc-writer; the run header
-stamped by the driver from `state.json` when the run completes. The launching session re-stamps
-it once the cost block has landed and files **one** tracker card pointing at the report.
+**Close-out.** Nothing from a run is carded per finding: everything an agent noticed but the
+loop did not act on is in the slice's `close-out.md` — who writes what there is
+[close-out.md](close-out.md). The driver's own part is deterministic: it creates the report at
+run start when planning left none, enters refuted findings and funding-consult merges, and stamps
+the run header from `state.json` when the run completes; the launching session re-stamps it once
+the cost block has landed and files **one** tracker card pointing at the report.
 
 ## Protocol invariants
 

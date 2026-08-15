@@ -10,7 +10,11 @@ path — the loops need exactly that to decide whether to commit; the driver als
 header itself when the run completes, and `/dev:run-slice` re-stamps after the cost block lands
 (idempotent); the consult carry-over line and the `CONSULT_PROMPT` pointer are one line in the
 prompt, not two; the driver's refutation and merge entries quote the reviewer's finding
-summaries (from the history row) so they stand alone. §12's open decisions: 0.5.0; yes, blank
+summaries (from the history row) so they stand alone; the doc-writer's last-act instruction
+lives in its register only (conditioned on a `done` verdict), the `DOC_PHASE_PROMPT` carries the
+path; the header says `0 bail-outs` when the state carries an empty list and omits the piece
+only when the key is absent (a pre-0.5.0 state); headings inside fenced blocks are not headings
+to `close_out.py`, so a quoted `## Bugs` moves nothing. §12's open decisions: 0.5.0; yes, blank
 `Disposition:` on the driver's entries; no Summary/Focus pass on a `blocked`/`question` doc
 phase.
 

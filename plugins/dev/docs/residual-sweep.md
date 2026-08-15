@@ -3,10 +3,11 @@
 Slice runs shed residuals: small advisory findings the generation bar routes to the close-out
 report instead of fixing mid-run (consult trivia, doc drift, test hygiene), which the operator
 then cards at disposition. Most are real work but far too small to justify a planning session
-each — yet fixing them ad hoc would lose every gate the workflow exists to provide. The sweep is the lane between: `/dev:triage` marks qualifying cards
-**Solution Known** by writing their acceptance criteria onto the card, and
-`${CLAUDE_PLUGIN_ROOT}/tools/sweep_slice.py` batches them into a mechanically generated slice that skips
-`/dev:plan-slice` and executes through the ordinary run loop, gates intact.
+each — yet fixing them ad hoc would lose every gate the workflow exists to provide. The sweep is
+the lane between: `/dev:triage` marks qualifying cards **Solution Known** by writing their
+acceptance criteria onto the card, and `${CLAUDE_PLUGIN_ROOT}/tools/sweep_slice.py` batches them
+into a mechanically generated slice that skips `/dev:plan-slice` and executes through the
+ordinary run loop, gates intact.
 
 ## The mark, and the litmus
 
@@ -17,10 +18,10 @@ breaks if it goes wrong. Moderate size is fine; an open decision is not. Operati
 card's acceptance criteria can be written from its text alone — outcome-level, no code opened.
 Triage grounds nothing itself — its only code reads are dispatched fact-checks that settle a
 category label, never acceptance criteria — and this litmus is what makes the lane safe anyway:
-the cards that qualify were written by the run loop's own agents into the slice's close-out
-report, which already did the grounding (file:line, expected behaviour, the review's advisory
-marker), and carded verbatim at the operator's disposition. If the criteria would need
-research, the card goes the normal triage → plan route.
+the cards that qualify are close-out entries the run loop's own agents wrote, which already did
+the grounding (file:line, expected behaviour, the review's advisory marker), carded verbatim at
+the operator's disposition. If the criteria would need research, the card goes the normal
+triage → plan route.
 
 Categorically excluded regardless of how known the fix looks: concurrency or timing behaviour,
 storage-layout or wire-contract changes, any card that leaves something open ("investigate",

@@ -19,8 +19,8 @@ from your host convention (`~/.claude/CLAUDE.md`).
    the newest `slices/**/close-out.md` under `<spec-repo>` that still has a blank
    `Disposition:` line. Say which report you opened.
 2. **Present it — ask nothing yet.** Read the whole file. Show the `Run:` header, the Summary,
-   every section's Focus line, and every entry as `id — headline` (struck entries marked as
-   such). The operator reads; you wait.
+   every `Focus:` line, and every entry as `id — headline` (struck entries marked as such). The
+   operator reads; you wait.
 3. **Take dispositions.** The operator writes them into the file under the entries, or says them
    in chat ("card B1, close B6, fold S1 into 009"). Chat dispositions you write into the file on
    the entry's `Disposition:` line **in the operator's words** — never paraphrased, never

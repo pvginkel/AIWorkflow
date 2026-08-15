@@ -17,7 +17,9 @@ so the path the caller passes (resolved from the target repo's `Spec repo:`
 CLAUDE.md line) is the only input.
 
 It does not commit: the calling session commits the README and the moved
-folder together with the run's state.json and log.txt.
+folder together with the run's state.json, log.txt and close-out.md — staged
+by name at their new path (`git mv` stages the rename with HEAD's content, so
+the driver's late edits to those files are still unstaged).
 
 Every precondition is checked before anything is mutated — a missing README
 entry, a missing folder, or a slice already under `slices/completed/` exits 2
@@ -169,7 +171,8 @@ def close_slice(slice_dir: Path) -> list[str]:
         f"git mv slices/{slice_dir.name} → slices/completed/{slice_dir.name}",
         f"README.md: slice {number} entry moved Pending → Completed "
         f"({shift} line{'' if shift == 1 else 's'})",
-        "staged README.md (not committed — commit it with state.json/log.txt)",
+        "staged README.md (not committed — commit it with state.json/log.txt/"
+        "close-out.md, added by name at their new path)",
     ]
 
 

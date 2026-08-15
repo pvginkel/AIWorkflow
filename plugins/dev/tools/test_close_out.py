@@ -125,6 +125,30 @@ def test_append_counts_struck_headings_when_allocating():
         assert close_out.append_entry(slice_dir, "Suggestions", "three", "b") == "S3"
 
 
+def test_quoted_headings_inside_fences_are_not_headings():
+    """The entry rules ask agents to quote liberally; a quoted `## Bugs` or
+    `### B7` inside a fenced block must move no section boundary and shift
+    no id."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        close_out.append_entry(
+            slice_dir, "Notable events", "the doc-writer quoted a whole page",
+            "The page as shipped:\n\n```markdown\n## Bugs\n\n### B7 — not an "
+            "entry\n\n## Suggestions\n```\n\nwhich is wrong because …")
+        assert close_out.append_entry(slice_dir, "Bugs", "real bug", "b") == "B1"
+        assert close_out.append_entry(slice_dir, "Notable events", "two", "b") == "N2"
+        counts = close_out.entry_counts(slice_dir)
+        assert counts == {"Outstanding actions": 0, "Notable events": 2,
+                          "Bugs": 1, "Open questions and rulings": 0,
+                          "Suggestions": 0}
+        text = report(slice_dir)
+        # B1 landed under the real Bugs heading (the last one — the first
+        # is the quoted one), after the quoted block.
+        assert text.index("```\n\nwhich is wrong") < text.rindex("\n## Bugs\n") \
+            < text.index("### B1 — real bug")
+
+
 def test_append_into_an_unknown_or_missing_section_raises():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
@@ -234,6 +258,9 @@ def test_stamp_counts_operator_questions_among_bail_outs():
                                   {"reason": "gate_red", "question": False}])
     header = close_out.run_header(state)
     assert "2 bail-outs (1 operator question)" in header
+    # Zero is a fact the state carries and is said; only an absent key is
+    # omitted (the previous test).
+    assert "· 0 bail-outs ·" in close_out.run_header(dict(STATE, bailouts=[]))
 
 
 def test_stamp_needs_a_state_file_and_a_run_line():

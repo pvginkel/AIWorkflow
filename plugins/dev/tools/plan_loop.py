@@ -36,10 +36,9 @@ Rulings reach agents through plan.md only — dispatch prompts carry pointers,
 not relayed content. State persists in <slice>/plan_state.json across
 invocations.
 
-The loop is the first to run on a slice, so it is the one that creates the
-slice's close-out report (<slice>/close-out.md, from the plugin's template)
-and commits it, before the first dispatch: planning agents write their
-out-of-scope observations there from the start (docs/close-out.md).
+The loop is the first to run on a slice, so it creates and commits the
+slice's close-out report (<slice>/close-out.md — docs/close-out.md) before
+its first dispatch.
 
 All loop and session output goes to <slice>/plan_log.txt; stdout carries the
 log-file line plus one terse timestamped line per pass start and the final
@@ -69,7 +68,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # plan-shape authority, and the target repo's root comes from `git rev-parse
 # --show-toplevel` in the process cwd — not from `__file__`, which locates the
 # plugin these tools ship in, never the repo being planned.
-from close_out import init_report, report_path  # noqa: E402
+from close_out import ReportError, init_report, report_path  # noqa: E402
 from run_loop import (  # noqa: E402
     AGENTS_DIR,
     SPAWN_ENV,
@@ -535,13 +534,18 @@ class PlanLoop:
                 "history": [],
             }
         self._save_state()
-        self._ensure_report()
 
     def _ensure_report(self) -> None:
         """The slice's close-out report exists before the first dispatch —
         created from the template and committed by the loop (by name; the
-        spec repo is a shared tree). A rerun finds it and leaves it be."""
-        if init_report(self.slice_dir):
+        spec repo is a shared tree). A rerun finds it and leaves it be. Runs
+        under the bail handler: a git or template failure is a bail
+        (plan_bailout.json), never a traceback."""
+        try:
+            created = init_report(self.slice_dir)
+        except ReportError as e:
+            raise Bailout("protocol_failure", details=str(e)) from None
+        if created:
             self.git("add", str(self.report_path))
             self.git("commit", "-m",
                      f"slice {self.slice_num}: close-out report")
@@ -602,6 +606,7 @@ class PlanLoop:
             self._save_state()
 
         try:
+            self._ensure_report()
             while True:
                 phase = self.state["phase"]
                 if phase == "writing":

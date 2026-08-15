@@ -72,11 +72,11 @@ correction-chains; git holds the history. Then relaunch with `--resume`.
    `close-out.md`** (the run's who-did-what record and its report; only a stale `bailout.json`
    is dropped).
 4. File **one** tracker card in the intake queue (per the host convention) —
-   `[NNN] close-out: <slice title>` — whose body is the report's Summary, its six Focus lines,
+   `[NNN] close-out: <slice title>` — whose body is the report's Summary, its `Focus:` lines,
    its entry counts, and the report's path in the spec repo (its `slices/completed/…` form,
-   after step 3's move). That card is the
-   "a report is waiting" marker; nothing else from the run is carded — the operator
-   dispositions the report's entries (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`).
+   after step 3's move). That card is the "a report is waiting" marker, never an ask; nothing
+   else from the run is carded — the operator dispositions the report's entries
+   (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`).
 5. Advance the slice's tracker card to **done**, notify the operator per the host's notification
    convention, and report short: per-phase rounds from `state.json`, test/doc phase outcomes,
    the report's entry counts, anything owed.

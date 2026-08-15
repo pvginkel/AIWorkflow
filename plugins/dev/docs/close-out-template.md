@@ -76,9 +76,10 @@ Provenance: <role, phase, round; the artifact that holds the full record — e.g
 Disposition:
 ```
 
-The severity slot (`major | minor | nit | cosmetic`) appears on Bug entries only. Outstanding
-actions read as imperatives ("Create the `IaC/ArgoCDTools` Jenkins job"). `Disposition:` is
-left blank by every agent — it is the operator's line.
+The severity slot appears on Bug entries only (the vocabulary and what each grade means:
+[close-out.md](close-out.md)). Outstanding actions read as imperatives ("Create the
+`IaC/ArgoCDTools` Jenkins job"). `Disposition:` is left blank by every agent — it is the
+operator's line.
 
 **A struck entry** keeps its heading, struck through, with the reason appended; the body may
 stay or go:

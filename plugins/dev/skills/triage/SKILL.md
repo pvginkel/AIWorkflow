@@ -37,10 +37,11 @@ only when it changed.
 
 Gather the inputs: the findings document if one was passed, the relevant chat discussion, and the
 outstanding intake-queue cards carrying **this project's owner tag** (other projects' and untagged
-cards stay; if pointed at an untagged card, say so instead of adopting it). A slice's
-`close-out.md` (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`) is a findings document too: its
-entries whose `Disposition:` line is blank or says `defer` are the items — one per entry, the
-entry verbatim as the source.
+cards stay; if pointed at an untagged card, say so instead of adopting it). A
+`[NNN] close-out: …` card is not an ask but the marker that a slice's `close-out.md` is waiting
+(`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`): read the report it names, take as items its entries
+whose `Disposition:` line is blank or says `defer` — one per entry, the entry verbatim as the
+source — and never itemize the card itself.
 
 Before anything else, write the raw material verbatim to
 `<spec-repo>/handovers/triage_YYYY-MM-DD_raw.md` — full card contents, the chat passages being

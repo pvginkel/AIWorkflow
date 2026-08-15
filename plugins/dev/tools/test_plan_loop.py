@@ -181,6 +181,27 @@ def test_the_loop_creates_and_commits_the_close_out_report_first():
         assert f"close-out report is {report}" in rerun.prompts[0][1]
 
 
+def test_report_creation_failure_is_a_bail_not_a_traceback():
+    """The report's git work runs under the loop's bail handler: a failing
+    commit in the shared spec tree writes plan_bailout.json (exit 3)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+
+        class GitFailsToCommit(ScriptedLoop):
+            def git(self, *args):
+                if args[:1] == ("commit",):
+                    raise plan_loop.Bailout(
+                        "protocol_failure", details="git commit failed: index.lock")
+                return super().git(*args)
+
+        loop = GitFailsToCommit(slice_dir, [W_DONE, R_GO])
+        assert run_to_exit(loop) == 3
+        bail = json.loads((slice_dir / "plan_bailout.json").read_text())
+        assert bail["reason"] == "protocol_failure"
+        assert "index.lock" in bail["details"]
+        assert not loop.spawned, "nothing is dispatched without the report"
+
+
 def test_announce_lines_mark_pass_starts(capsys):
     """stdout carries one terse timestamped line per pass start and the
     final verdict — the watching caller's progress feed."""
