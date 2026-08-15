@@ -122,6 +122,10 @@ C6 can stay unbuilt; a growing one says it is.
   afternoon (2+6), plus three cut-requirement Trello cards that 145's own consult carded as
   "needing a disposition; no phase covers it". The cross-slice queue the entry would measure is
   visibly the active pressure point.
+- 2026-08-15 — reframed by C7: once the run stops carding per finding, the ledger's unit is the
+  close-out report — entries by section, dispositions by kind, cards the operator files at
+  disposition. Same question (does the queue clear?), new place to count; the plan's
+  `entry_counts` and the close-out skill's tally are the instrument.
 
 ---
 
@@ -453,6 +457,37 @@ cards skipped by two consecutive triages.
   cruft and quickly close cards not worth progressing. C6's catalogued mechanism (slice-dag batch
   triage + two-triage auto-expiry) stays unbuilt; whether the intake filter alone keeps the net
   backlog flat is exactly what I4 would measure.
+- 2026-08-15 — C7 (close-out report) decided: the per-finding card queue moves off the board
+  into one document per slice, dispositioned by the operator; C6's mechanism is not built — the
+  question it governed no longer exists in that form. Stays `new` as a record; revisit only if
+  operator-filed cards from close-out dispositions accumulate the same way.
+
+---
+
+## C7 — Close-out report replaces per-finding cards
+
+**Status:** new
+**Cost:** M · **Rank:** — (operator-directed, 2026-08-15) · **Depends on:** — (rides I2 for the header's cost line)
+
+**Summary.** One `close-out.md` per slice, created at plan start, written by every agent in one
+fixed shape as it goes, reconciled by the completion consult, Summary and Focus lines by the
+doc-writer, header stamped by the driver. Everything out of the loops' own scope goes there;
+nothing from a run is carded per finding; one close-out card per slice; the operator dispositions
+entries in place, the `close-out` skill executes, triage reads what remains. Design and decisions
+in [close-out-report.md](close-out-report.md); build in [close-out-plan.md](close-out-plan.md).
+
+**Decides it.** After a handful of slices: the operator processes reports in one sitting and
+files markedly fewer cards than the run used to; gen-1 appended phases and rework share not up
+(hypothesis: down); Notable events surface workflow defects that today live only in `log.txt`.
+Kill signal is reports that grow *and* stop being read — answered by shape, never by caps.
+
+**Log**
+
+- 2026-08-15 — decided by the operator after reviewing Ansible slice 007's ten cards (615–624:
+  one must-act, one real cross-project bug, one ruling, one already fixed in-run, six
+  minor/nit/doc) with the assessment; design note and implementation plan written the same day at
+  plugin 0.4.5. Baselines for the read: 007 — 11 entries → 10 cards, 3 appended phases, rework
+  13.8 %; KubeCoderSpecs 117/135/107 — 24/17/16 card entries; 149–153 rework band 9.3–15.7 %.
 
 ---
 

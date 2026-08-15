@@ -353,6 +353,33 @@ of C must live, and it's unmeasured (I4). **Cost:** S (process, `triage`/`slice-
 **Risks:** auto-expiry drops a real issue — mitigated by the two-triage rule and the card's
 provenance link back to its slice.
 
+### C7. Close-out report replaces per-finding cards — **new, M** (added 2026-08-15)
+One document per slice, `close-out.md`, created at plan start and written by every agent as it
+goes, in one fixed shape (Summary · Outstanding actions · Notable events · Bugs · Open questions
+and rulings · Suggestions; one entry shape; a `Disposition:` line per entry for the operator).
+Everything out of the loops' own scope goes there — nothing from a run is carded per finding;
+the run's only tracker output is one card pointing at the report; the operator dispositions
+entries in place and an interactive session executes them; triage reads what remains. Design,
+evidence and decisions: [close-out-report.md](close-out-report.md); build:
+[close-out-plan.md](close-out-plan.md).
+**Evidence:** Ansible slice 007 — ten cards from one run, decided in five places blind to each
+other, one already fixed in-run when filed (the consult's absorb never fed back), the operator
+runbook not standing alone; KubeCoderSpecs 117/135/107 → 24/17/16 card entries. Mechanism: Fan
+et al. (detection without a licensed act → re-visiting) and ProCo (a specific fill-in slot
+converges where open-ended critique regresses) — the fixed shape removes the *completion*
+decision, the single destination removes the *routing* decision; TALE (limits structural, never
+numeric); §8's "detection is never suppressed" taken to its end.
+**Effect:** cards per run 10 → 1 by construction; the hypotheses are fewer gen-1 appended phases
+and lower rework share (agents stop resolving "what do I do with this?" by doing it), and a report
+the operator processes in one sitting. **Measure:** entries and dispositions per report, cards
+filed at disposition, `appended_phases`, I2 rework share, bail-outs surfacing as Notable events.
+**Cost:** M (tool + template + contract doc, every register one line, both loops, two skills, one
+new skill). **Risks:** over-production into a document nobody reads — answered by Focus lines and
+ids, never by caps; the report becoming a scope-bleed source — phase agents append only, the
+completion consult alone reconciles. **Overlap:** subsumes C6's governance question by moving the
+queue off the board; I4's ledger reframes as per-report counts; the 0.4.4 triage filter keeps its
+role for deferred entries.
+
 ---
 
 ## 7. D — Judge design and bias controls (briefing Q6)
