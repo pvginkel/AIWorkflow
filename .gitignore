@@ -6,3 +6,5 @@ __pycache__/
 .ruff_cache/
 
 # Runner scratch (state.json/log.txt live in the target slice folder, not here)
+
+/tmp
