@@ -39,6 +39,9 @@ Guard rails:
   * Fewer than MIN_CARDS distinct cards is refused without --force — a sweep
     amortises the run loop's fixed overhead (consult, test phase, doc phase),
     and a tiny batch wastes it. Labelled cards simply accumulate.
+  * More than MAX_PHASES items is refused without --force — a sweep is a slice
+    and is sized like one, so a larger batch splits by target into several
+    sweeps. The floor counts cards, the ceiling counts phases.
   * The spec repo must be on main/master: the tree is shared, and a parallel
     run's test/doc phase may be holding it on a phase branch.
   * The generated plan is validated twice — parse_plan() in-process, then the
@@ -67,6 +70,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from run_loop import claude_md_entry, parse_plan  # noqa: E402
 
 MIN_CARDS = 5
+MAX_PHASES = 10
 DEFAULT_SLUG = "residual_sweep"
 SLUG_RE = re.compile(r"^[a-z0-9_]+$")
 README_WIDTH = 98
@@ -320,6 +324,11 @@ def file_sweep(payload_path: Path, code_root: Path, force: bool = False) -> Path
             f"only {len(cards)} distinct card(s) — a sweep amortises the run "
             f"loop's fixed overhead, so fewer than {MIN_CARDS} accumulate for "
             "the next triage pass instead (--force overrides).")
+    if len(items) > MAX_PHASES and not force:
+        raise Precondition(
+            f"{len(items)} phases — a sweep is a slice and sized like one; "
+            f"more than {MAX_PHASES} split by target into several sweeps of "
+            "five to ten (--force overrides).")
 
     spec = spec_repo_for(code_root)
     assert_on_main(spec)
@@ -373,7 +382,8 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("payload", help="path to the payload JSON")
     parser.add_argument("--force", action="store_true",
-                        help=f"file even below {MIN_CARDS} distinct cards")
+                        help=f"file below {MIN_CARDS} distinct cards or above "
+                             f"{MAX_PHASES} phases")
     args = parser.parse_args(argv)
 
     result = subprocess.run(["git", "rev-parse", "--show-toplevel"],

@@ -4,6 +4,44 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-16 — triage gets a durable seam: verdicts on the board, dispositions in a vocabulary (v0.5.2)
+
+Read off the reworked skill's first real run — 86 in-scope cards over two days, findings in
+KubeCoderSpecs `handovers/triage_2026-08-14_skill_findings.md`. The skill assumed one session
+start-to-finish and one product (slice folders); the run needed to adjudicate now and dispose
+later, and everything awkward traced back to that: the rubric verdict, the skill's main product,
+was the one thing it never persisted, and step 8 deleted the only document holding it. **Now the
+work has two named halves — adjudicate (steps 1–5) and dispose (steps 6–9) — with a durable
+seam:** every final category is written to its card as a tracker label, `close`/`later` are
+actioned at the seam, the working documents are committed at every pass boundary and deleted only
+when nothing in them is still open, and a later session starts at Sort from the labelled board
+without re-deriving a verdict. The operator chooses per run — either half, both, or a selection
+of cards. **The status document holds at scale:** grouped by verdict (a verdict group is the view
+the operator acts on — the nit picks together are the cull list), each item's source inlined
+whole under `**Card text:**` with headings demoted, stable ids, URLs on headings, no typed
+counts; collection and composition are delegated to parallel sub-agents under two stated
+guardrails — never alter a verdict line, and the merge is verified mechanically, not by eye.
+**The operator pass has a vocabulary,** stated in the document header instead of invented per
+run: label rulings (`answer` / `override` / `remark`) and dispositions (`close` / `later` /
+`agreed` / `apply the suggested edit` as a scope ceiling / `conditional: … if …` /
+`split` / `superseded by`); a conditional ruling is not an approval — the fact becomes a
+`Research:` line and the item comes back for a final ruling; split and superseded carry their
+card mechanics. **Research is a loop, not a terminus** — rulings ask their own questions, the
+round repeats until no `Research:` line is open, "cannot determine" routes to the `Question:`
+line instead of stranding the item, and each verdict is recorded on the card as a dated triage
+comment: durable, and source material a slice quotes attributed like any other card claim
+(triage still authors no design). Rubric: `Test gap` (the run loop's most common shape had no
+rung) and `Decision` (nothing broken; rule on this — the ruling is the disposition) join it;
+operator chores sit outside it; rule 2 states its tie-break (a source's explicit framing beats an
+inferred consequence, stakes on a `Note:` line); the nit-pick sub-split stays a note, not a
+second label. Sweep: a Solution Known mark from an earlier session is re-checked against the
+litmus as it stands, and `sweep_slice.py` gains a ceiling to match its floor — more than ten
+phases refused without `--force`, larger sets split by target. Kept verbatim, on the run's
+evidence: the verbatim-quote rule, rule 5's guard (it caught four already-done cards queued to
+be built twice), the recommend/close split, the SK litmus with its adds-behaviour exclusion, and
+the from-memory constraint on questions. Not adopted, deliberately: execution "lanes" for
+bundles of literal edits — a one-off board clear-out, not workflow.
+
 ## 2026-08-15 — the entry shape is in the file; the gen-1 bar prices a phase against one word (v0.5.1)
 
 Read off the first slice run end to end on 0.5.0 (KubeCoder 146). **The close-out report's
