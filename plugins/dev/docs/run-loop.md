@@ -135,8 +135,10 @@ itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id
   doc (`CLAUDE.md`'s `Slice doc plan:` pointer) and execute it — diff-based over the whole
   slice, single pass, manual + dev docs together, on its own branch, **never pushing**. The
   driver then runs the full gate sweep — `kc project lint` + `build` + `test`, fail-fast (red
-  is nudged back to the writer's session) — rebase-merges the branch onto the base branch and
-  pushes; the dev roll that push triggers is left to land on its own, untracked.
+  is nudged back to the writer's session) — checks local `<base>` against `origin/<base>` (the
+  branch rebases onto origin but ff-merges into local, so a local-ahead base bails `blocked`
+  before anything is mutated), rebase-merges the branch onto the base branch and pushes; the dev
+  roll that push triggers is left to land on its own, untracked.
 
 **The generation bar** terminates the append loop: the first follow-up generation appends only
 work the plan *owes* and no phase delivered — a requirement, ruling or acceptance criterion left

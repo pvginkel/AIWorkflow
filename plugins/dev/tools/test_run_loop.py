@@ -1901,6 +1901,43 @@ def test_doc_sweep_red_past_cap_bails_without_pushing():
         assert not r.fake_git.mutations("push")
 
 
+def test_doc_landing_bails_when_local_base_outruns_origin():
+    """The doc branch rebases onto `origin/{base}` but ff-merges into local
+    `base`. A commit only local `base` carries makes those two divergent, so
+    the landing must bail with the diagnosis before it touches a branch —
+    not die on git's raw "Diverging branches can't be fast-forwarded"."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r.fake_git.branches.add("phase/074-docs")
+        r.fake_git.unpushed[str(repo)] = "1"
+        try:
+            r._land_doc_branch("phase/074-docs", "main")
+        except Bailout as exc:
+            assert exc.reason == "blocked"
+            assert "1 commit(s)" in exc.details
+            assert "origin/main" in exc.details
+        else:
+            raise AssertionError("a diverged local base must bail")
+        # nothing was mutated: no checkout, no rebase, no merge, no push
+        for verb in ("checkout", "rebase", "merge", "push"):
+            assert not r.fake_git.mutations(verb), f"{verb} ran anyway"
+
+
+def test_doc_landing_tolerates_origin_ahead_of_local_base():
+    """The other direction is harmless and must still land: the rebase picks
+    up whatever a parallel session pushed, and local `base` is an ancestor of
+    the rebased branch, so the ff-merge is clean."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r.fake_git.branches.add("phase/074-docs")
+        r._land_doc_branch("phase/074-docs", "main")
+        assert any("origin/main" in c for _, c in r.fake_git.mutations("rebase"))
+        pushes = r.fake_git.mutations("push")
+        assert pushes and pushes[-1][1] == ("push", "origin", "main")
+
+
 def test_doc_landing_resume_with_merged_branch_only_pushes():
     """A crash between the doc merge and the push resumes into a landing
     stage whose branch is gone — the driver must only push, never reset to

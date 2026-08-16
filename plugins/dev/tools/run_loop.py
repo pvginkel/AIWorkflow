@@ -2787,6 +2787,22 @@ class RunLoop:
                         "changes outside its commit boundary")
         if self.git("branch", "--list", branch, root=root):
             self.git("fetch", "origin", root=root)
+            # Before any branch mutation: local `base` must not outrun origin.
+            # The rebase below targets `origin/{base}`, so a commit that only
+            # local `base` carries (an out-of-band fix landed while the run sat
+            # at a bail) leaves the two divergent and the `--ff-only` merge dies
+            # with a raw "Diverging branches can't be fast-forwarded". Origin
+            # moving ahead is the harmless direction — the rebase picks those
+            # commits up and local `base` is still an ancestor.
+            ahead = self.git("rev-list", "--count", f"origin/{base}..{base}",
+                             root=root)
+            if ahead not in ("", "0"):
+                raise Bailout(
+                    "blocked",
+                    details=f"local {base} has {ahead} commit(s) that "
+                            f"origin/{base} lacks, so the doc branch cannot "
+                            f"fast-forward onto it — push {base} (or resolve "
+                            "why it diverged), then resume")
             self.git("checkout", branch, root=root)
             try:
                 self.git("rebase", f"origin/{base}", root=root)
