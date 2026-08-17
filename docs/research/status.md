@@ -604,7 +604,7 @@ Kill signal is reports that grow *and* stop being read — answered by shape, ne
   `consult_2.json`); noted against the kill signal, not acted on from one slice.
 - 2026-08-17 — six reports read across both projects, all dispositioned by the operator in one
   sitting each (Ansible 008 on 0.5.0, 015 on 0.5.1; KubeCoder 154, 155, 156, 157 on 0.5.1/0.5.2):
-  **76 entries** (A 2 · N 8 · B 44 · Q 0 · S 22), 22 struck in-run by the consult or the doc
+  **76 entries** (A 2 · N 6 · B 43 · Q 0 · S 25), 22 struck in-run by the consult or the doc
   phase (154 alone: 10 of 16 Bugs were comment residue consult 1 fixed in one commit, 4 of 9
   Suggestions were doc-phase pointers), **14 progressed by the operator, 7 tracker cards**
   (015 S3 → AIWorkflow; 154 S2/S4/S6; 155 B2, S2+S3 on one card; 156 B3), 3 fixed inline at
