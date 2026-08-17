@@ -561,10 +561,13 @@ def test_review_funding_consult_merges_and_reports():
         assert "F1 [Major/blocking]: wrong branch on empty input" in report
         assert "F2 [Minor/advisory]: stale comment" in report
         assert "code_review_r2.md" in report
-        assert "Provenance: consult 1 (review-funding, P1 r2)" in report
+        assert "**Provenance:** consult 1 (review-funding, P1 r2)" in report
+        # The driver's stock consequence for a merge: the findings stand.
+        assert ("**Consequence:** the findings listed above are in the merged "
+                "tree as the reviewer left them") in report
         # One entry, one operator line (the head comment's example is
         # indented and not one).
-        assert len(re.findall(r"^Disposition:\s*$", report, re.M)) == 1
+        assert len(re.findall(r"^\*\*Disposition:\*\*\s*$", report, re.M)) == 1
         fund = next(p for role, p in r.prompts
                     if role == "consult" and "funding bar" in p)
         assert "Review round 2" in fund and "fix_round" in fund
@@ -719,7 +722,8 @@ def test_all_blocking_refuted_without_code_change_settles_review():
         assert '"wrong branch on empty input"' in report
         assert "ran the repro; output correct" in report
         assert "code_review_r1.md" in report
-        assert "Provenance: code-writer P1, fix round after review r1" in report
+        assert "**Provenance:** code-writer P1, fix round after review r1" in report
+        assert "**Consequence:** none the loop acts on" in report
 
 
 def test_partial_refutation_funds_the_next_review_round():

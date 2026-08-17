@@ -4,6 +4,34 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-17 — the consequence is a line of its own, and the labels are bold (v0.5.3)
+
+Read off six finished close-out reports across two projects (Ansible 008/015, KubeCoder 154–157:
+76 entries, 22 struck in-run by the consult or the doc phase, 14 progressed by the operator, 7
+tracker cards — against ten cards for one slice under per-finding carding). The report does what
+it was built for; what it did unevenly was say **what an entry costs**. The template put the
+consequence inside the body's placeholder prose ("Why it matters: the consequence, or 'none'
+said plainly"), so authors treated it as prose: 154 and 155 wrote a `Consequence:` paragraph on
+most entries, 157 wrote the template's own phrase "Why it matters:", 156 labelled nothing, and
+the one entry the operator called "very dense" (155 B2) had a consequence line that said what
+the code did rather than what a real environment risks. **Now `**Consequence:**` is one of three
+bold labels closing every entry — Consequence, Provenance, Disposition, in that order** — its
+charter written for triage (what an operator or user actually experiences if the entry stays as
+it is, in the deployed shape, in plain words, or `none`; not "better than before", not "none to
+behaviour" when a human would notice something), because it is the stated consequence
+`/dev:triage` rules on and the line the operator scans for. `close_out.py append` mints the three
+labels and requires a consequence (the driver's two stock entries — a refuted finding, a
+funding-consult merge — carry one each), and `counts` names, beside the unshaped-heading count,
+how many live entries lack a `Consequence:` or a `Provenance:` line, bold or bare — the smoke
+check now reaches the line that was dropped most. **One entry per thing, not per turn:** a later
+observation about an existing entry (its premise moved, it was re-tested, a reviewer refuted it —
+157's N1→N2 thread about B1, 156's B6 refuting B4) is a dated paragraph at the end of that
+entry's body, never a new entry. The close-out skill presents each live entry with its
+Consequence line under the headline, treats a blanket ruling ("close the rest") as a `close` on
+every blank entry, strikes a closed entry as `— closed by the operator, <date>` with the reason
+staying on the operator's line, and records what it did after the operator's words on that
+same line — three sessions had invented three places for it.
+
 ## 2026-08-16 — triage gets a durable seam: verdicts on the board, dispositions in a vocabulary (v0.5.2)
 
 Read off the reworked skill's first real run — 86 in-scope cards over two days, findings in

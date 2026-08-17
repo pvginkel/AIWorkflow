@@ -2206,6 +2206,10 @@ class RunLoop:
                  "evidence: " + (evidence or "(none given)")
                  + f"\n\nThe full finding and the refutation record are in "
                  f"{review_path}."),
+                consequence="none the loop acts on — the finding funds no "
+                            "further work and no code changed for it; "
+                            "recorded so the reviewer's claim is not "
+                            "re-filed as open.",
                 provenance=f"code-writer P{phase_id}, fix round after "
                            f"review r{r}; the review verdict's findings "
                            "list in state.json")
@@ -2231,14 +2235,15 @@ class RunLoop:
         return None
 
     def _report(self, section: str, headline: str, body: str,
-                provenance: str | None = None) -> None:
+                consequence: str, provenance: str | None = None) -> None:
         """The driver's own close-out entries — deterministic events the
-        operator should see without reading the log. A report an agent
-        removed is logged, never a bail: the run's outcome does not hang on
-        its narrative."""
+        operator should see without reading the log, each with the stock
+        consequence line its event carries. A report an agent removed is
+        logged, never a bail: the run's outcome does not hang on its
+        narrative."""
         try:
             eid = append_entry(self.slice_dir, section, headline, body,
-                               provenance=provenance)
+                               consequence=consequence, provenance=provenance)
         except ReportError as e:
             self.log(f"close-out entry not written ({e}): {headline}")
             return
@@ -2333,6 +2338,9 @@ class RunLoop:
                  + (f"\n\nThe unresolved findings, as the reviewer tagged "
                     f"them:\n{listing}" if listing else "")
                  + f"\n\nThe full review is {review_path}."),
+                consequence="the findings listed above are in the merged "
+                            "tree as the reviewer left them; nothing later "
+                            "in the run acts on them.",
                 provenance=f"consult {self.state.get('consult_seq')} "
                            f"({site}, P{phase_id} r{r})")
         return choice["outcome"]

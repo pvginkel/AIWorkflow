@@ -33,6 +33,16 @@ def report(slice_dir):
     return (slice_dir / "close-out.md").read_text()
 
 
+# The two labels every driver-minted entry carries; tests not about the
+# labels pass these so the smoke counts stay quiet.
+FULL = {"consequence": "none", "provenance": "P1 r1"}
+
+
+def zero_counts():
+    return {**dict.fromkeys(close_out.SECTIONS, 0), close_out.UNSHAPED: 0,
+            close_out.NO_CONSEQUENCE: 0, close_out.NO_PROVENANCE: 0}
+
+
 STATE = {
     "slice": "007_argocd_tools_presync_hook",
     "created_at": "2026-08-14T19:49:12+02:00",
@@ -65,16 +75,19 @@ def test_init_creates_from_template_with_the_slice_in_the_title():
         # The template's own placeholder title never leaks through.
         assert "NNN <slug>" not in text
         # The entry shape is in the file — every author reads it there —
-        # ahead of the first section, as a comment: the id form, the
-        # Provenance/Disposition tail, and the struck form.
+        # ahead of the first section, as a comment: the id form, the three
+        # bold labels in order, and the struck form.
         head = text[:text.index("## Summary")]
         assert "### B2 — <headline" in head
-        assert "Provenance: <" in head and "Disposition:\n" in head
+        assert "**Consequence:** <" in head and "**Provenance:** <" in head
+        assert "**Disposition:**\n" in head
+        assert (head.index("**Consequence:** <") < head.index("**Provenance:** <")
+                < head.index("**Disposition:**\n"))
         assert "### ~~S3 — <headline>~~ — absorbed by" in head
-        # …and none of it counts as an entry or a stray heading.
+        # …and none of it counts as an entry, a stray heading, or a
+        # label-less entry.
         counts = close_out.entry_counts(slice_dir)
-        assert counts == {**dict.fromkeys(close_out.SECTIONS, 0),
-                          close_out.UNSHAPED: 0}
+        assert counts == zero_counts()
         assert close_out.counts_line(counts) == "A 0 · N 0 · B 0 · Q 0 · S 0"
 
 
@@ -103,6 +116,8 @@ def test_append_allocates_ids_per_section_in_the_entry_shape():
             slice_dir, "Bugs", "presync exits with a traceback",
             "`kubeconfig.identity()` checks that `ca.crt` exists but not that "
             "it parses.\n\nExit is still non-zero.",
+            consequence="an operator sees a Python traceback  instead of the "
+                        "named refusal; the hook still fails closed.",
             provenance="P3 review r1 F3 (advisory)", severity="minor")
         n1 = close_out.append_entry(
             slice_dir, "Notable events", "P3 bailed blocked", "venue off the wire")
@@ -110,12 +125,20 @@ def test_append_allocates_ids_per_section_in_the_entry_shape():
             slice_dir, "Bugs", "second bug", "body")
         assert (b1, n1, b2) == ("B1", "N1", "B2")
         text = report(slice_dir)
+        # Body, then the Consequence paragraph (whitespace-normalised, like
+        # the headline), then the Provenance/Disposition tail — the three
+        # labels bold, in the shape's order.
         assert ("### B1 — presync exits with a traceback · minor\n\n"
                 "`kubeconfig.identity()` checks that `ca.crt` exists but not that "
                 "it parses.\n\nExit is still non-zero.\n\n"
-                "Provenance: P3 review r1 F3 (advisory)\nDisposition:\n") in text
-        # An entry without provenance still carries the operator's line.
-        assert "### N1 — P3 bailed blocked\n\nvenue off the wire\n\nDisposition:\n" in text
+                "**Consequence:** an operator sees a Python traceback instead of "
+                "the named refusal; the hook still fails closed.\n\n"
+                "**Provenance:** P3 review r1 F3 (advisory)\n**Disposition:**\n"
+                ) in text
+        # An entry minted without either label still carries the operator's
+        # line — and counts as one the smoke check names.
+        assert ("### N1 — P3 bailed blocked\n\nvenue off the wire\n\n"
+                "**Disposition:**\n") in text
         # Entries land in their own section, before the next heading, and
         # the section order is untouched.
         bugs = text.index("## Bugs")
@@ -124,7 +147,10 @@ def test_append_allocates_ids_per_section_in_the_entry_shape():
         # the section.)
         assert bugs < text.index("### B1") < text.index("### B2", bugs) < questions
         assert text.index("## Notable events") < text.index("### N1") < bugs
-        assert re.search(r"Disposition:\n\n## Open questions", text)
+        assert re.search(r"\*\*Disposition:\*\*\n\n## Open questions", text)
+        counts = close_out.entry_counts(slice_dir)
+        assert counts[close_out.NO_CONSEQUENCE] == 2   # N1 and B2
+        assert counts[close_out.NO_PROVENANCE] == 2
 
 
 def test_append_counts_struck_headings_when_allocating():
@@ -149,13 +175,12 @@ def test_quoted_headings_inside_fences_are_not_headings():
         close_out.append_entry(
             slice_dir, "Notable events", "the doc-writer quoted a whole page",
             "The page as shipped:\n\n```markdown\n## Bugs\n\n### B7 — not an "
-            "entry\n\n## Suggestions\n```\n\nwhich is wrong because …")
-        assert close_out.append_entry(slice_dir, "Bugs", "real bug", "b") == "B1"
-        assert close_out.append_entry(slice_dir, "Notable events", "two", "b") == "N2"
+            "entry\n\n## Suggestions\n```\n\nwhich is wrong because …", **FULL)
+        assert close_out.append_entry(slice_dir, "Bugs", "real bug", "b", **FULL) == "B1"
+        assert close_out.append_entry(
+            slice_dir, "Notable events", "two", "b", **FULL) == "N2"
         counts = close_out.entry_counts(slice_dir)
-        assert counts == {"Outstanding actions": 0, "Notable events": 2,
-                          "Bugs": 1, "Open questions and rulings": 0,
-                          "Suggestions": 0, close_out.UNSHAPED: 0}
+        assert counts == {**zero_counts(), "Notable events": 2, "Bugs": 1}
         text = report(slice_dir)
         # B1 landed under the real Bugs heading (the last one — the first
         # is the quoted one), after the quoted block.
@@ -197,7 +222,7 @@ def test_counts_report_headings_not_in_entry_shape():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         close_out.init_report(slice_dir)
-        close_out.append_entry(slice_dir, "Bugs", "shaped", "b")
+        close_out.append_entry(slice_dir, "Bugs", "shaped", "b", **FULL)
         text = report(slice_dir)
         text = text.replace(
             "## Notable events\n",
@@ -267,16 +292,53 @@ def test_entry_counts_ignore_struck_entries():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         close_out.init_report(slice_dir)
-        assert close_out.entry_counts(slice_dir) == {
-            **dict.fromkeys(close_out.SECTIONS, 0), close_out.UNSHAPED: 0}
-        close_out.append_entry(slice_dir, "Bugs", "one", "b")
-        close_out.append_entry(slice_dir, "Bugs", "two", "b")
-        close_out.append_entry(slice_dir, "Outstanding actions", "do", "b")
+        assert close_out.entry_counts(slice_dir) == zero_counts()
+        close_out.append_entry(slice_dir, "Bugs", "one", "b", **FULL)
+        close_out.append_entry(slice_dir, "Bugs", "two", "b", **FULL)
+        close_out.append_entry(slice_dir, "Outstanding actions", "do", "b", **FULL)
         text = report(slice_dir).replace("### B1 — one", "### ~~B1 — one~~ — dup of B2")
         (slice_dir / "close-out.md").write_text(text)
         counts = close_out.entry_counts(slice_dir)
         assert counts["Bugs"] == 1 and counts["Outstanding actions"] == 1
         assert close_out.counts_line(counts) == "A 1 · N 0 · B 1 · Q 0 · S 0"
+
+
+def test_counts_name_live_entries_missing_a_consequence_or_provenance_line():
+    """The line the operator triages on is the one authors dropped most
+    (156, 157: none labelled); the count names it. Bare labels count as
+    present (the check is content, not typography), a label inside a fence
+    is quoted text, and a struck entry — nobody's to decide on — is not
+    checked."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        close_out.append_entry(slice_dir, "Bugs", "both bold", "b", **FULL)
+        close_out.append_entry(slice_dir, "Bugs", "bare labels", "b")
+        close_out.append_entry(slice_dir, "Bugs", "no consequence", "b",
+                               provenance="P2 r1")
+        close_out.append_entry(slice_dir, "Bugs", "labels only in a fence",
+                               "```\n**Consequence:** quoted\nProvenance: q\n```")
+        close_out.append_entry(slice_dir, "Suggestions", "struck, unlabelled", "b")
+        text = report(slice_dir)
+        text = text.replace(
+            "### B2 — bare labels\n\nb\n\n**Disposition:**",
+            "### B2 — bare labels\n\nb\n\nConsequence: none.\n\n"
+            "Provenance: P1 r1\nDisposition:")
+        text = text.replace("### S1 — struck, unlabelled",
+                            "### ~~S1 — struck, unlabelled~~ — dup of B1")
+        (slice_dir / "close-out.md").write_text(text)
+        counts = close_out.entry_counts(slice_dir)
+        assert counts["Bugs"] == 4 and counts["Suggestions"] == 0
+        assert counts[close_out.NO_CONSEQUENCE] == 2     # B3, B4
+        assert counts[close_out.NO_PROVENANCE] == 1      # B4
+        assert close_out.counts_line(counts) == (
+            "A 0 · N 0 · B 4 · Q 0 · S 0 · 2 entries without a Consequence "
+            "line · 1 entry without a Provenance line")
+        # …and both trailers ride behind the unshaped one when all apply.
+        line = close_out.counts_line({**counts, close_out.UNSHAPED: 1})
+        assert line.endswith("· 1 heading not in entry shape · 2 entries "
+                             "without a Consequence line · 1 entry without "
+                             "a Provenance line")
 
 
 # -- stamp ------------------------------------------------------------------
@@ -378,16 +440,22 @@ def test_cli_init_append_counts_stamp():
         assert code == 0 and out.startswith("exists ")
         code, out, _ = run_cli("append", str(slice_dir), "--section", "Bugs",
                                "--headline", "h", "--body", "b",
-                               "--severity", "nit", "--provenance", "P1 r1")
+                               "--consequence", "none", "--severity", "nit",
+                               "--provenance", "P1 r1")
         assert code == 0 and out.strip() == "B1"
         code, out, _ = run_cli("counts", str(slice_dir))
         assert code == 0 and out.strip() == "A 0 · N 0 · B 1 · Q 0 · S 0"
+        # The consequence is not optional at the CLI: the driver always has
+        # one, and an entry without it is what the smoke count exists for.
+        code, _, err = run_cli("append", str(slice_dir), "--section", "Bugs",
+                               "--headline", "h", "--body", "b")
+        assert code == 2 and "--consequence" in err and "required" in err
         (slice_dir / "state.json").write_text(json.dumps(STATE))
         code, out, _ = run_cli("stamp", str(slice_dir))
         assert code == 0 and out.startswith("Run: 2026-08-14 19:49")
         code, _, err = run_cli("append", str(slice_dir), "--section", "Bugs",
                                "--headline", "h", "--body", "b",
-                               "--severity", "Blocker")
+                               "--consequence", "none", "--severity", "Blocker")
         assert code == 2 and "invalid choice" in err
         code, _, err = run_cli("counts", str(Path(tmp) / "nowhere"))
         assert code == 2 and "not found" in err

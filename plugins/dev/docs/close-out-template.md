@@ -19,19 +19,27 @@ Run: <not yet stamped>
 
 <!-- Every entry, in every section, has exactly this shape. The id is the section's letter
      (A · N · B · Q · S) and the next number — count the section's `###` headings, struck ones
-     included. Severity (major | minor | nit | cosmetic) sits in the heading of Bugs only.
-     `Disposition:` is the operator's line: leave it blank.
+     included. Severity (major | minor | nit | cosmetic) sits in the heading of Bugs only. Three
+     bold labels close every entry, in this order; `**Disposition:**` is the operator's line:
+     leave it blank.
 
      ### B2 — <headline: one line, the claim itself> · minor · <repo or component>
 
      <What: the thing itself, quoted where it is text or output — the sentence, the command and
-     what it printed, the file and lines. Why it matters: the consequence, or "none" said plainly.
-     How it was found. As many paragraphs as it takes.>
+     what it printed, the file and lines. How it was found. As many paragraphs as it takes.>
 
-     Provenance: <role, phase, round; the artifact that holds the full record>
-     Disposition:
+     **Consequence:** <what an operator or user actually experiences if this stays as it is —
+     unfixed, undone, unanswered — in the deployed shape and in plain words, with what has to
+     happen for it to be reached; or "none", said plainly. Not what changed relative to before,
+     not "none to behaviour" when a human would notice something. The operator triages on this
+     line.>
 
-     An entry is never deleted. Struck, it keeps its heading, with the reason appended:
+     **Provenance:** <role, phase, round; the artifact that holds the full record>
+     **Disposition:**
+
+     A later note about an entry — its premise moved, it was re-checked, a phase resolved it — is
+     a dated paragraph at the end of that entry's body, above its **Consequence:** line, never a
+     new entry. An entry is never deleted. Struck, it keeps its heading, with the reason appended:
 
      ### ~~S3 — <headline>~~ — absorbed by P11 (97b5313), struck by consult 1
 -->
@@ -82,15 +90,19 @@ Focus: <!-- doc-writer -->
 ## The entry
 
 The head comment above is the whole shape — the same in every section, ids by section letter in
-order of arrival, `Provenance:` then a blank `Disposition:` under every body. `close_out.py
-append` mints exactly that shape for the driver's own entries; agents write it by hand. What the
+order of arrival, and under every body the three bold labels in one order: `**Consequence:**` (a
+short paragraph of its own — the operator scans for it and triages on it), `**Provenance:**`,
+then a blank `**Disposition:**`. The labels are bold so the eye finds them in a long report; the
+paragraph before them is where a later note about the entry lands, dated. `close_out.py append`
+mints exactly that shape for the driver's own entries; agents write it by hand. What the
 comment leaves to this doc: Outstanding actions read as imperatives ("Create the
-`IaC/ArgoCDTools` Jenkins job"); the severity grades' meanings are in
-[close-out.md](close-out.md); the head comment and the section charters are the file's, never
-edited or removed. `close_out.py counts` reads entries off the `###` headings and says, next to
-the per-section counts, how many headings in the entry sections are not in the entry shape — the
-one smoke check, so an author that drifted from the shape shows in the run's completion line
-instead of as a report that counts zero.
+`IaC/ArgoCDTools` Jenkins job"); the severity grades' meanings and what a `Consequence:` is
+written for are in [close-out.md](close-out.md); the head comment and the section charters are
+the file's, never edited or removed. `close_out.py counts` reads entries off the `###` headings
+and says, next to the per-section counts, how many headings in the entry sections are not in the
+entry shape and how many live entries lack a `Consequence:` or a `Provenance:` line — the smoke
+checks, so an author that drifted from the shape shows in the run's completion line instead of
+as a report that counts zero.
 
 ## The run header
 

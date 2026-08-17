@@ -20,13 +20,17 @@ from your host convention (`~/.claude/CLAUDE.md`).
    `Disposition:` line (the file's head comment shows one as the shape — that is not an entry).
    Say which report you opened.
 2. **Present it — ask nothing yet.** Read the whole file. Show the `Run:` header, the Summary,
-   every `Focus:` line, and every entry as `id — headline` (struck entries marked as such). The
-   operator reads; you wait.
+   every `Focus:` line, and every live entry as `id — headline` with its `Consequence:` line
+   under it — that line is what the operator triages on; struck entries as their headline only,
+   marked as such. The operator reads; you wait.
 3. **Take dispositions.** The operator writes them into the file under the entries, or says them
    in chat ("card B1, close B6, fold S1 into 009"). Chat dispositions you write into the file on
    the entry's `Disposition:` line **in the operator's words** — never paraphrased, never
    completed. Free form; the usual vocabulary is `card [board]` · `fix now` ·
-   `fold into <slice>` · `close` · `defer`.
+   `fold into <slice>` · `close` · `defer`. A blanket ruling ("close the rest", "I'm not
+   progressing anything else") is a `close` on every entry still blank, each carrying those
+   words. What you then did goes after the operator's words on the same line, after ` — `: the
+   card id and URL, the commit, the slice folded into.
 4. **Execute each disposition:**
    - `card [board]` — one tracker card per entry (the named board, else the intake queue per
      the host convention): title = the entry's headline, body = the entry verbatim + its
@@ -35,7 +39,8 @@ from your host convention (`~/.claude/CLAUDE.md`).
      work; otherwise say so and offer `fold into`.
    - `fold into <slice>` — append the entry verbatim as an ask to that slice's `slice.md` under
      `slices/backlog/`; a slice that does not exist yet becomes a `/dev:triage` item instead.
-   - `close` — strike the entry's heading (`### ~~B6 — …~~ — <the operator's reason>`).
+   - `close` — strike the entry's heading (`### ~~B6 — …~~ — closed by the operator, <date>`;
+     the operator's reason, if given, stays on the `Disposition:` line, not in the heading).
    - `defer` — leave it; it is `/dev:triage`'s.
 5. **Commit and finish.** Commit the report (staged by name — the spec repo is a shared tree).
    When no blank `Disposition:` remains, archive the slice's close-out card

@@ -11,8 +11,10 @@ run_loop) and a CLI for the skills:
   init   create close-out.md from the template if absent — the title takes
          the slice's `NNN <slug>`; an existing file is never touched.
   append add one entry to a section: the next id from the section's letter
-         (struck headings count), the standard entry shape, a blank
-         `Disposition:` line. Prints the id.
+         (struck headings count), the standard entry shape — body, then the
+         three bold labels `**Consequence:**` (required: the line the operator
+         triages on), `**Provenance:**`, and a blank `**Disposition:**`.
+         Prints the id.
   stamp  replace the `Run:` header block with the run's shape read from
          state.json — window, phases planned/appended, bail-outs, test
          rounds, doc phase, and the `cost` block once slice_cost.py
@@ -21,7 +23,9 @@ run_loop) and a CLI for the skills:
   counts non-struck entries per section, one line — plus, when there are
          any, the number of `###` headings in the entry sections that are
          not in the entry shape (an author that drifted from the shape,
-         which would otherwise count as zero entries).
+         which would otherwise count as zero entries) and the number of
+         live entries without a `Consequence:` or a `Provenance:` line
+         (bold or not — the check is for the content, not the typography).
 
 Headings are read outside fenced code blocks and outside HTML comments
 only — an entry that quotes a document's `## Bugs` or a `### B3` inside a
@@ -30,12 +34,13 @@ boundary nor shifts an id, and the template's own head comment shows the
 entry shape with a `### B2 — …` line in it.
 
 Deliberately not here: any validation beyond "the section heading exists"
-and that heading count, dedup, disposition parsing.
+and those smoke counts, dedup, disposition parsing.
 
 Usage:
     close_out.py init <slice-dir>
     close_out.py append <slice-dir> --section <name> --headline <text>
-                 --body <text | -> [--provenance <text>] [--severity <s>]
+                 --body <text | -> --consequence <text>
+                 [--provenance <text>] [--severity <s>]
     close_out.py stamp <slice-dir>
     close_out.py counts <slice-dir>
 
@@ -72,6 +77,12 @@ HEADER_WIDTH = 96
 _SECTION_RE = re.compile(r"^## (?P<name>.+?)\s*$")
 _ENTRY_RE = re.compile(r"^### (~~)?(?P<letter>[A-Z])(?P<num>\d+)\b")
 _ANY_HEADING_RE = re.compile(r"^### ")
+# The two labels every live entry carries above the operator's line. Bold in
+# the shape; a bare `Consequence:` counts too — the check is for the content.
+_LABEL_RES: dict[str, re.Pattern] = {
+    "Consequence": re.compile(r"^\*{0,2}Consequence:"),
+    "Provenance": re.compile(r"^\*{0,2}Provenance:"),
+}
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 # An HTML comment counts only when it opens a line (the template's comments
 # all do); `<!--` mentioned mid-line in prose opens nothing.
@@ -191,10 +202,41 @@ def _unshaped_headings(body: str, letter: str) -> int:
     return count
 
 
+def _entries_missing_labels(body: str, letter: str) -> dict[str, int]:
+    """Live entries under a section that lack a `Consequence:` or a
+    `Provenance:` line — bold or bare — before the next `###` heading.
+    Struck entries are nobody's to decide on and are not checked."""
+    missing = dict.fromkeys(_LABEL_RES, 0)
+    seen: dict[str, bool] | None = None   # None outside a live entry
+
+    def close_entry() -> None:
+        if seen is not None:
+            for label, found in seen.items():
+                if not found:
+                    missing[label] += 1
+
+    for _, line in _unfenced_lines(body):
+        if _ANY_HEADING_RE.match(line):
+            close_entry()
+            m = _ENTRY_RE.match(line)
+            live = (m is not None and m.group("letter") == letter
+                    and not m.group(1))
+            seen = dict.fromkeys(_LABEL_RES, False) if live else None
+        elif seen is not None:
+            for label, pattern in _LABEL_RES.items():
+                if pattern.match(line):
+                    seen[label] = True
+    close_entry()
+    return missing
+
+
 def append_entry(slice_dir: Path | str, section: str, headline: str,
-                 body: str, provenance: str | None = None,
+                 body: str, consequence: str | None = None,
+                 provenance: str | None = None,
                  severity: str | None = None) -> str:
-    """Append one entry in the standard shape; returns its id."""
+    """Append one entry in the standard shape; returns its id. The driver
+    always passes a `consequence` (the CLI requires one); an entry minted
+    without it is one `counts` will name."""
     if section not in SECTIONS:
         raise ReportError(f"unknown section {section!r}; sections are "
                           + ", ".join(SECTIONS))
@@ -211,9 +253,11 @@ def append_entry(slice_dir: Path | str, section: str, headline: str,
     if severity:
         head += f" · {severity}"
     parts = [head, "", body.strip(), ""]
+    if consequence:
+        parts += [f"**Consequence:** {' '.join(consequence.split())}", ""]
     if provenance:
-        parts.append(f"Provenance: {' '.join(provenance.split())}")
-    parts.append("Disposition:")
+        parts.append(f"**Provenance:** {' '.join(provenance.split())}")
+    parts.append("**Disposition:**")
     entry = "\n".join(parts) + "\n"
 
     section_body = text[start:end].rstrip("\n")
@@ -225,32 +269,49 @@ def append_entry(slice_dir: Path | str, section: str, headline: str,
 
 
 UNSHAPED = "unshaped"
+NO_CONSEQUENCE = "no_consequence"
+NO_PROVENANCE = "no_provenance"
 
 
 def entry_counts(slice_dir: Path | str) -> dict[str, int]:
-    """Non-struck entries per section, in section order — plus, under
-    `UNSHAPED`, the `###` headings in the entry sections that are not in
-    the entry shape and so counted as no entry at all."""
+    """Non-struck entries per section, in section order — plus the smoke
+    counts: under `UNSHAPED`, the `###` headings in the entry sections that
+    are not in the entry shape and so counted as no entry at all; under
+    `NO_CONSEQUENCE` / `NO_PROVENANCE`, the live entries lacking that
+    line."""
     _, text = _read(slice_dir)
     counts = dict.fromkeys(SECTIONS, 0)
-    unshaped = 0
+    unshaped = no_consequence = no_provenance = 0
     for name, start, end in _sections(text):
         if name in counts:
             body, letter = text[start:end], SECTIONS[name]
             counts[name] = len(_entry_headings(body, letter, struck=False))
             unshaped += _unshaped_headings(body, letter)
+            missing = _entries_missing_labels(body, letter)
+            no_consequence += missing["Consequence"]
+            no_provenance += missing["Provenance"]
     counts[UNSHAPED] = unshaped
+    counts[NO_CONSEQUENCE] = no_consequence
+    counts[NO_PROVENANCE] = no_provenance
     return counts
 
 
 def counts_line(counts: dict[str, int]) -> str:
-    """`A 1 · N 3 · B 2 · Q 0 · S 1` — the summary form; a trailing
-    `· 6 headings not in entry shape` only when there are any."""
+    """`A 1 · N 3 · B 2 · Q 0 · S 1` — the summary form; the smoke counts
+    trail it (`· 6 headings not in entry shape · 2 entries without a
+    Consequence line · 1 entry without a Provenance line`) only when there
+    are any."""
     line = " · ".join(f"{SECTIONS[name]} {counts.get(name, 0)}"
                       for name in SECTIONS)
     unshaped = counts.get(UNSHAPED, 0)
     if unshaped:
         line += f" · {_plural(unshaped, 'heading')} not in entry shape"
+    for key, label in ((NO_CONSEQUENCE, "Consequence"),
+                       (NO_PROVENANCE, "Provenance")):
+        n = counts.get(key, 0)
+        if n:
+            line += (f" · {_plural(n, 'entry', 'entries')} without a "
+                     f"{label} line")
     return line
 
 
@@ -269,8 +330,8 @@ def _fmt_ts(value, day_of: str | None = None) -> str | None:
     return hm if day_of == day else f"{day} {hm}"
 
 
-def _plural(n: int, noun: str) -> str:
-    return f"{n} {noun}{'' if n == 1 else 's'}"
+def _plural(n: int, noun: str, plural: str | None = None) -> str:
+    return f"{n} {noun if n == 1 else (plural or noun + 's')}"
 
 
 def run_header(state: dict) -> str:
@@ -360,6 +421,8 @@ def main(argv=None) -> int:
     p.add_argument("--section", required=True, choices=list(SECTIONS))
     p.add_argument("--headline", required=True)
     p.add_argument("--body", required=True, help="entry body, or - for stdin")
+    p.add_argument("--consequence", required=True,
+                   help="the line the operator triages on")
     p.add_argument("--provenance")
     p.add_argument("--severity", choices=SEVERITIES)
 
@@ -381,6 +444,7 @@ def main(argv=None) -> int:
         elif args.command == "append":
             body = sys.stdin.read() if args.body == "-" else args.body
             print(append_entry(slice_dir, args.section, args.headline, body,
+                               consequence=args.consequence,
                                provenance=args.provenance,
                                severity=args.severity))
         elif args.command == "stamp":

@@ -35,8 +35,11 @@ files, not this section.
 The report is written for the operator. Prose is not limited; it is made easy to read: a
 **Focus** line at the head of every entry section (one or two lines: what to look at first,
 why), an id on every entry so a disposition can name it in one line ("card B1, close B6, fold S1
-into 009"), the run's shape stamped at the top, and a blank `Disposition:` line under every
-entry.
+into 009"), the run's shape stamped at the top, and three **bold labels** closing every entry in
+one order — `**Consequence:**`, `**Provenance:**`, a blank `**Disposition:**` — so a reader
+scanning a long report finds, under each heading, what it costs, where it came from, and where to
+write. The Consequence line is the one the operator triages on; it is what makes a dense entry
+decidable without reading its body.
 
 ## Who writes what, when
 
@@ -75,8 +78,19 @@ operator's.
   sentence that is wrong, the command and its output, the file and lines. Provenance ids
   (`P3 r1 F3`, `V10`) belong on the `Provenance:` line, not in the body as load-bearing
   references.
+- **`Consequence:` is a line of its own, written for triage.** What an operator or user actually
+  experiences if the entry stays as it is — unfixed, undone, unanswered — in the deployed shape,
+  in plain words, with what has to happen for it to be reached; or `none`, said plainly. It is the
+  stated consequence `/dev:triage` rules on, and the operator reads it the same way, so it is not
+  "better than before", not "none to behaviour" when a human would notice something, and not a
+  restatement of the mechanism the body already gave. A body that leaves the reader asking "what
+  is the risk in a real environment?" has an entry without a consequence, however long it is.
 - **No limit on prose, no limit on count.** Long sections are fine; a cap produces more, not
   less.
+- **One entry per thing, not per turn.** A later observation about an entry that already exists —
+  its premise moved, its symptom was re-tested, a phase resolved it, a reviewer refuted it — is a
+  dated paragraph at the end of that entry's body, never a new entry: the reader who decides on
+  B1 finds everything about B1 under B1, and only the completion consult strikes.
 - **In doubt, add it.** Nobody pre-dedups: every agent reads the same file before it writes, the
   completion consult merges duplicates it is sure of, the operator merges the rest by reading.
 - **Severity vocabulary** for Bugs: `major` (a wrong result or a broken flow, unfixed) · `minor`
@@ -85,7 +99,9 @@ operator's.
   reviewer's own Blocker/Major/Minor never reaches the report: a Blocker gets fixed.
 - **`Disposition:` is the operator's line.** Free form; a suggested vocabulary is `card [board]`
   · `fix now` · `fold into <slice>` · `close` · `defer`. Agents leave it blank; the session that
-  executes it may rewrite the entry's fate (struck, moved) but never the operator's words.
+  executes it may rewrite the entry's fate (struck, moved) and records what it did after the
+  operator's words on the same line — a card id, a commit, the slice folded into — but never
+  edits those words.
 
 ## Lifecycle
 
@@ -106,9 +122,9 @@ operator's.
    `Disposition:` remains.
 5. What remains — `defer`, or no disposition yet — is a `/dev:triage` source, one item per entry.
 
-Deliberately absent: any validation beyond "the section heading exists" and one count —
+Deliberately absent: any validation beyond "the section heading exists" and the smoke counts —
 `close_out.py counts` says how many `###` headings in the entry sections are not in the entry
-shape, so an author that drifted from it shows in the run's completion line and the close-out
-card instead of as a report that counts zero — dedup tooling, disposition parsing, and — for
-now — an automated triage pass over the report; the shape is meant not to change when that
-comes.
+shape and how many live entries lack a `Consequence:` or `Provenance:` line, so an author that
+drifted from the shape shows in the run's completion line and the close-out card instead of as a
+report that counts zero — dedup tooling, disposition parsing, and — for now — an automated triage
+pass over the report; the shape is meant not to change when that comes.
