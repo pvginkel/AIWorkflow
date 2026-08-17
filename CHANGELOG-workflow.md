@@ -4,6 +4,28 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-17 — every claim in the report carries its evidence class (v0.5.4)
+
+The reader-side half of the six-report read, from the S5–S7 papers. The overcorrection study's
+false-rejection mass is claims with no falsifiable counterexample (87 %); symptom claims hold
+(93–100 % match), cause attributions are the half that does not (44–75 %); and Sifting the Noise
+found reading with perfect context no better than reading blind — only running things reaches
+precision. The reports showed the same: the entries later refuted or overtaken (156 B4's first
+bullet, 157 B1) and the one the operator called "very dense" (155 B2) were read, not witnessed,
+and said so only in prose. **Now `**Provenance:**` opens with `witnessed` or `read`, the body
+leads with the symptom and states a cause only where shown, and a strike is a claim like any
+other — resolved / refuted / does-not-reproduce names the commit and what was re-run** (the
+consult is the one in-run judge of other agents' entries; Huang et al.: self-correction without
+external feedback degrades). The doc-writer's Focus lines rank on the Consequence lines and
+evidence class, never on length, and say how many entries are witnessed (Gema: concrete anchors
+correct spurious drift; Saito/Wataoka: same-model ranking favours long, fluent text). The
+close-out skill answers a disposition that asks about a claim from the entry's own body and
+Provenance — quoting what supports or fails the operator's reading, saying when it does not
+settle it — instead of agreeing (Sharma: a challenge flips 32–86 % of correct answers). The
+driver's own entries are stamped `witnessed`. Set as a constraint for the end game, not built:
+an automated triage pass over the report ranks and never closes — the report is mostly the
+judgment/policy class where an agentic filter suppresses 50–85 % of true findings.
+
 ## 2026-08-17 — the consequence is a line of its own, and the labels are bold (v0.5.3)
 
 Read off six finished close-out reports across two projects (Ansible 008/015, KubeCoder 154–157:

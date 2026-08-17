@@ -58,7 +58,9 @@ live with each agent's own commit (staged by name, like every other slice-folder
   and commit), merge duplicates it is sure of, and mark what a later phase resolved.
 - **test-agent** — below-bar findings; live-check events.
 - **doc-writer** — doc debt; and, **as its last act before a `done` verdict, the Summary and
-  every `Focus:` line** — it has the whole shipped diff in view. If the run ends before the doc
+  every `Focus:` line** — it has the whole shipped diff in view. A Focus line ranks on the
+  entries' Consequence lines and evidence class (witnessed before read), never on their length,
+  and says how many are witnessed. If the run ends before the doc
   phase, or the doc phase reports `blocked`/`question`, the operator reads the report raw.
 - **the driver** — deterministic entries only, through `close_out.py`: a refuted finding and a
   funding-consult merge each become a Notable event; the run header is stamped from
@@ -85,6 +87,12 @@ operator's.
   "better than before", not "none to behaviour" when a human would notice something, and not a
   restatement of the mechanism the body already gave. A body that leaves the reader asking "what
   is the risk in a real environment?" has an entry without a consequence, however long it is.
+- **Every claim carries its evidence class.** `**Provenance:**` opens with `witnessed` (the author
+  ran, measured, reproduced or mutated it — the command, the output, the probe are in the body)
+  or `read` (inferred from reading code or text). The body leads with the symptom and states a
+  cause only where it was shown: symptom claims hold up, cause attributions are the half that does
+  not, and a reader deciding what to trust needs the class before the body. The same holds for
+  a strike — resolved, refuted, does-not-reproduce names the commit and what was re-run.
 - **No limit on prose, no limit on count.** Long sections are fine; a cap produces more, not
   less.
 - **One entry per thing, not per turn.** A later observation about an entry that already exists —

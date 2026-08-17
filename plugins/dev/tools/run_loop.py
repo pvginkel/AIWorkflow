@@ -2210,9 +2210,9 @@ class RunLoop:
                             "further work and no code changed for it; "
                             "recorded so the reviewer's claim is not "
                             "re-filed as open.",
-                provenance=f"code-writer P{phase_id}, fix round after "
-                           f"review r{r}; the review verdict's findings "
-                           "list in state.json")
+                provenance=f"witnessed — code-writer P{phase_id}, fix round "
+                           f"after review r{r}; the review verdict's "
+                           "findings list in state.json")
         if review_path.exists():
             review_path.write_text(
                 review_path.read_text()
@@ -2341,7 +2341,7 @@ class RunLoop:
                 consequence="the findings listed above are in the merged "
                             "tree as the reviewer left them; nothing later "
                             "in the run acts on them.",
-                provenance=f"consult {self.state.get('consult_seq')} "
+                provenance=f"witnessed — consult {self.state.get('consult_seq')} "
                            f"({site}, P{phase_id} r{r})")
         return choice["outcome"]
 

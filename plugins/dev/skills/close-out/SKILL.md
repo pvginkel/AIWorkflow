@@ -50,6 +50,10 @@ from your host convention (`~/.claude/CLAUDE.md`).
 
 - Never edit an operator's words, and never re-derive an entry's claim — the run's records are
   in the slice folder if the operator wants to look, and `/dev:triage` grounds what it takes on.
+- When a disposition asks about the claim ("this says we built the wrong thing, right?"), answer
+  from the entry's own body and `Provenance:` — quote what supports or fails to support the
+  operator's reading, and say plainly when the entry does not settle it. Agreeing is not an
+  answer; neither is re-deriving.
 - Present, record, file, edit — no planning, no design here; that is `/dev:triage` →
   `/dev:plan-slice`.
 - Steps that do not apply are skipped silently: an operator who wrote every disposition into

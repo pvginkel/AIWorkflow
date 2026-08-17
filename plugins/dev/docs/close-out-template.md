@@ -26,7 +26,8 @@ Run: <not yet stamped>
      ### B2 — <headline: one line, the claim itself> · minor · <repo or component>
 
      <What: the thing itself, quoted where it is text or output — the sentence, the command and
-     what it printed, the file and lines. How it was found. As many paragraphs as it takes.>
+     what it printed, the file and lines. Lead with the symptom; a cause only where it was shown.
+     How it was found. As many paragraphs as it takes.>
 
      **Consequence:** <what an operator or user actually experiences if this stays as it is —
      unfixed, undone, unanswered — in the deployed shape and in plain words, with what has to
@@ -34,14 +35,19 @@ Run: <not yet stamped>
      not "none to behaviour" when a human would notice something. The operator triages on this
      line.>
 
-     **Provenance:** <role, phase, round; the artifact that holds the full record>
+     **Provenance:** <witnessed | read — witnessed: you ran, measured, reproduced or mutated it
+     and the evidence is in the body; read: inferred from reading code or text — then role, phase,
+     round; the artifact that holds the full record>
      **Disposition:**
 
      A later note about an entry — its premise moved, it was re-checked, a phase resolved it — is
      a dated paragraph at the end of that entry's body, above its **Consequence:** line, never a
-     new entry. An entry is never deleted. Struck, it keeps its heading, with the reason appended:
+     new entry. An entry is never deleted. Struck, it keeps its heading, with the reason appended
+     — and a strike is a claim like any other: resolved, refuted or does-not-reproduce names the
+     commit and what was re-run, not just who decided:
 
      ### ~~S3 — <headline>~~ — absorbed by P11 (97b5313), struck by consult 1
+     ### ~~B1 — <headline>~~ — resolved by P2 r2 (1d7bfe7): repro re-run, one chevron; struck by consult 2
 -->
 
 ## Summary
@@ -68,13 +74,15 @@ Focus: <!-- doc-writer: the shape of the run — bail-outs, appended phases, sur
 
 ## Bugs
 
-Focus: <!-- doc-writer: the worst one first; which are in this slice's repos, which elsewhere -->
+Focus: <!-- doc-writer: the worst one first — ranked on the Consequence lines and the evidence
+     class (witnessed before read), never on length; how many are witnessed; which are in this
+     slice's repos, which elsewhere -->
 
 <!-- Defects the run will not fix. Severity in the headline: major | minor | nit | cosmetic. -->
 
 ## Open questions and rulings
 
-Focus: <!-- doc-writer -->
+Focus: <!-- doc-writer: what most turns on an answer, from the Consequence lines -->
 
 <!-- Questions the operator should settle that the run did not need answered to proceed. What
      turned on it, what the run did meanwhile. A question the run DOES need answered is a
@@ -82,7 +90,8 @@ Focus: <!-- doc-writer -->
 
 ## Suggestions
 
-Focus: <!-- doc-writer -->
+Focus: <!-- doc-writer: which change a decision or another slice, from the Consequence lines;
+     which are witnessed -->
 
 <!-- Ideas, improvements, inputs for other slices, fix proposals for the bugs above. -->
 ```
@@ -91,8 +100,8 @@ Focus: <!-- doc-writer -->
 
 The head comment above is the whole shape — the same in every section, ids by section letter in
 order of arrival, and under every body the three bold labels in one order: `**Consequence:**` (a
-short paragraph of its own — the operator scans for it and triages on it), `**Provenance:**`,
-then a blank `**Disposition:**`. The labels are bold so the eye finds them in a long report; the
+short paragraph of its own — the operator scans for it and triages on it), `**Provenance:**`
+(opening with the evidence class, `witnessed` or `read`), then a blank `**Disposition:**`. The labels are bold so the eye finds them in a long report; the
 paragraph before them is where a later note about the entry lands, dated. `close_out.py append`
 mints exactly that shape for the driver's own entries; agents write it by hand. What the
 comment leaves to this doc: Outstanding actions read as imperatives ("Create the
