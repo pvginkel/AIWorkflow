@@ -212,7 +212,12 @@ reported.
 5. What remains (`defer`, or no disposition yet) is a triage source — `/dev:triage` already
    accepts "a findings document" (`skills/triage/SKILL.md:9`); the report is one.
 6. Later: an automated triage pass over the report after the session completes. Not designed
-   here.
+   here — one constraint set in advance (2026-08-17, from S7): it **ranks and pre-fills, never
+   closes**. Sifting the Noise measured an agentic filter suppressing 0.4–2.4 % of true findings
+   on mechanically checkable classes and 50–85 % on judgment/policy classes; this report is
+   mostly the latter (doc drift, comment claims, anchoring questions). A cheap sort with the
+   ties escalated (FrugalGPT's cascade; Shi: bias concentrates in near-ties) is the shape; the
+   close stays the operator's.
 
 ### 3.6 The `close-out` skill
 
