@@ -636,6 +636,18 @@ Kill signal is reports that grow *and* stop being read — answered by shape, ne
   consult-struck bodies (they are duplicates of the review file, and in 154 they were most of
   the Bugs section). Next read: the first slice on 0.5.3 — Consequence lines written for triage,
   smoke counts at zero, no meta-entries.
+- 2026-08-17 — **0.5.4** (evidence class on every entry: `Provenance:` opens `witnessed | read`,
+  symptom-first bodies, strikes name the re-run, Focus lines rank on Consequence + evidence,
+  skill answers claim-questions from the entry; from S5–S7 — see the design note's revision
+  line) and **0.6.0** (the report is tool-written and rendered: `close_out.py append | note |
+  strike | list | render`; every dispatch of both loops names the installed tool; the consult
+  reconciles through `strike`/`note` only; the driver renders before the doc phase and at
+  completion — verified on 154's pre-disposition report: 6 live Bugs first by severity, 10 struck
+  folded, second render byte-identical). Built by a delegated agent from a written brief, diff
+  reviewed. Both unpushed at time of writing. Next read, first slice on 0.6.0: do headless agents
+  actually use the tool (installed-path `python3` from a kc session), `counts` shows no drift, the
+  consult's strikes carry commit + re-run, and the read cost per dispatch drops now that authors
+  `list` instead of reading the file.
 
 ## C8 — Mutation-witnessed signoff for test-only phases
 

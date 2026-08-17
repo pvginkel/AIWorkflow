@@ -4,7 +4,14 @@ Design note, written 2026-08-15 at plugin 0.4.5, from an operator + assessment s
 Ansible slice 007's ten cards. Catalogue entry: [interventions.md](interventions.md) §6 C7;
 state: [status.md](status.md) C7; implementation: [close-out-plan.md](close-out-plan.md). This
 note stands on its own — a fresh session can implement from it plus the plan without the
-conversation that produced it.
+conversation that produced it. **Revisions since (2026-08-17, plugin 0.5.3 → 0.6.0; see
+`CHANGELOG-workflow.md`):** every entry closes with three bold labels — `**Consequence:**` (a line
+of its own, written for triage), `**Provenance:**` (opening `witnessed` or `read`),
+`**Disposition:**`; a strike names the commit and what was re-run; and the report is
+**tool-written and rendered** — `close_out.py append | note | strike | list | render`, no agent
+edits the file by hand, the driver renders live-first / Bugs-by-severity / struck-folded before
+the doc phase and at completion. §4 below is the 0.5.0 shape as decided; the template doc is
+current.
 
 **The change in one paragraph.** Every observation a plan or run agent has that is *out of scope
 of the loops' own action* — a bug it will not fix, a thing the operator must do, an event that
