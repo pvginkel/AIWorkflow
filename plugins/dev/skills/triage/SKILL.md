@@ -51,9 +51,9 @@ says so). Other projects' and untagged cards stay: if pointed at an untagged car
 of adopting it, and a card under another project's tag whose substance is this project's is
 flagged by id — mine, mis-tagged? — never adopted; retagging is the operator's. A
 `[NNN] close-out: …` card is not an ask but the marker that a slice's `close-out.md` is waiting
-(`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`): read the report it names, take as items its entries
-whose `Disposition:` line is blank or says `defer` — one per entry, the entry verbatim as the
-source — and never itemize the card itself.
+(`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`): read the report it names, take as items its live
+entries whose `Disposition:` line is blank or says `defer` — one per entry, the entry verbatim as
+the source — and never itemize the card itself.
 
 A card already carrying a rubric label is adjudicated — by an earlier session or by the operator's
 own hand — and its verdict is not re-derived; where a working document under `handovers/` holds

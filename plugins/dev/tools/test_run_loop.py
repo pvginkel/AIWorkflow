@@ -810,9 +810,13 @@ def test_executor_question_bails_as_operator_question():
 # -- the close-out report -----------------------------------------------------
 #
 # Every out-of-scope observation goes in <slice>/close-out.md; the driver
-# creates it (idempotently), points every dispatch at it, appends its own
-# deterministic entries, records what the header needs (bail-outs, appended
-# phases), and stamps the header when the run completes.
+# creates it (idempotently), points every dispatch at it and at close_out.py
+# (the only way to write to it), appends its own deterministic entries,
+# records what the header needs (bail-outs, appended phases), renders it
+# before the doc phase and at completion, and stamps the header when the
+# run completes.
+
+CLOSE_OUT_TOOL = str(Path(__file__).resolve().parent / "close_out.py")
 
 def test_run_start_creates_and_commits_the_report_once():
     with tempfile.TemporaryDirectory() as tmp:
@@ -881,10 +885,71 @@ def test_every_dispatch_carries_the_report_path():
         assert all(pointer in p for p in by_role["code-reviewer"])
         assert all(pointer in p for p in by_role["test-agent"])
         assert all(pointer in p for p in by_role["doc-writer"])
-        assert all(f"Close-out report: {slice_dir / 'close-out.md'}" in p
-                   for p in by_role["consult"])
+        assert all(pointer in p for p in by_role["consult"])
+        # …and the tool, once per dispatch — the installed close_out.py by
+        # absolute path, the subcommands that write, and the ban on hand
+        # edits — never restated within a prompt.
+        for _, prompt in r.prompts:
+            assert prompt.count(CLOSE_OUT_TOOL) == 1, prompt
+            assert f"`python3 {CLOSE_OUT_TOOL} append|note|strike`" in prompt
+            assert "never edit the file by hand" in prompt
         # and no prompt still speaks of cards
         assert not any("card" in p for _, p in r.prompts)
+
+
+def test_report_is_rendered_before_the_doc_phase_and_at_completion():
+    """The doc-writer ranks its Focus lines over the report as the operator
+    will read it, so the driver renders before dispatching it: live entries
+    first, Bugs by severity, struck entries folded last. At completion it
+    renders again (idempotent) and then stamps."""
+    plant = {}
+
+    def plant_entries(loop):
+        # The test phase's session leaves a report in arrival order: a
+        # struck nit ahead of a live major, a hand-typed struck heading.
+        d = loop.slice_dir
+        run_loop.append_entry(d, "Bugs", "a nit", "b1", consequence="c1",
+                              provenance="read P1 r1", severity="nit")
+        run_loop.append_entry(d, "Bugs", "the major one", "b2",
+                              consequence="c2", provenance="witnessed P2",
+                              severity="major")
+        run_loop.append_entry(d, "Bugs", "a minor", "b3", consequence="c3",
+                              provenance="read P1 r1", severity="minor")
+        text = (d / "close-out.md").read_text().replace(
+            "### B1 — a nit · nit", "### ~~B1 — a nit · nit~~ — dup of B3")
+        (d / "close-out.md").write_text(text)
+
+    def snapshot(loop):
+        plant["at_doc_dispatch"] = load_report(loop.slice_dir)
+
+    script = [
+        V["exec_done"], V["review_signoff"], V["consult_complete"],
+        ("test-agent", {"outcome": "clean", "summary": "ok"}, plant_entries),
+        ("doc-writer", {"outcome": "done", "summary": "docs"}, snapshot),
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        seen = plant["at_doc_dispatch"]
+        bugs = seen[seen.index("\n## Bugs\n"):seen.index("\n## Open questions")]
+        # Rendered when the doc-writer was dispatched: major, minor, then
+        # the struck nit folded — its body kept, behind the live ones.
+        assert (bugs.index("### B2 — the major one · major")
+                < bugs.index("### B3 — a minor · minor")
+                < bugs.index("### ~~B1 — a nit · nit~~ — dup of B3")
+                < bugs.index("<details><summary>struck — body kept")
+                < bugs.index("b1\n") < bugs.index("</details>"))
+        # Completion rendered again and stamped: byte-identical entry
+        # sections, header stamped, counts unchanged.
+        final = load_report(slice_dir)
+        assert final[final.index("\n## Bugs\n"):] == seen[seen.index("\n## Bugs\n"):]
+        assert "<not yet stamped>" not in final
+        assert "close-out report: A 0 · N 0 · B 2 · Q 0 · S 0" in \
+            (slice_dir / "log.txt").read_text()
+        log = (slice_dir / "log.txt").read_text()
+        assert log.count("close-out rendered: ") == 2
+        assert "Bugs: 2 live, 1 struck" in log
 
 
 def test_bail_outs_and_appended_phases_are_recorded_for_the_header():
@@ -1399,12 +1464,21 @@ def test_consults_get_the_report_path_and_a_cards_list_is_ignored():
         assert run_to_exit(r) == 0
         for _, prompt in [(role, p) for role, p in r.prompts
                           if role == "consult"]:
-            assert f"Close-out report: {slice_dir / 'close-out.md'}" in prompt
+            assert f"close-out report is {slice_dir / 'close-out.md'}" in prompt
             assert "Already carded" not in prompt
             assert '"cards"' not in prompt
         completion = next(p for role, p in r.prompts
                           if role == "consult" and "stamped done" in p)
         assert "one pass that reconciles" in completion
+        # The reconcile goes through the tool — strike with a reason that
+        # names the phase/commit, note for anything else — never a hand
+        # edit of another agent's entry.
+        flat = " ".join(completion.split())
+        assert ('`strike <id> --reason "absorbed by P<x> (<commit>)" --by '
+                '"consult <n>"`') in flat
+        assert '"resolved by P<x> (<commit>): <what was re-run>"' in flat
+        assert "observation about an entry with `note`" in flat
+        assert "never by editing the file" in flat
         # A stale register's `cards` list is not state and never reaches
         # the report.
         state = load_state(slice_dir)

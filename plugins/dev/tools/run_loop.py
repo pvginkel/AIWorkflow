@@ -34,7 +34,9 @@ only, a third pending generation bails to the operator.
 
 The driver's part in the slice's close-out report (<slice>/close-out.md —
 ${CLAUDE_PLUGIN_ROOT}/docs/close-out.md): create it if the plan loop did
-not, enter refuted findings and funding-consult merges through close_out.py,
+not, name it and close_out.py (the only way to write to it) in every
+dispatch, enter refuted findings and funding-consult merges through that
+tool, render it into reading order before the doc phase and at completion,
 stamp the run header at completion.
 
 The plan doc is writable by every agent in the loop — deliberately. The
@@ -94,8 +96,10 @@ from close_out import (  # noqa: E402
     ReportError,
     append_entry,
     counts_line,
+    dispatch_line,
     entry_counts,
     init_report,
+    render_report,
     report_path,
     stamp_header,
 )
@@ -734,12 +738,13 @@ When done:
 - Write your verdict to {verdict_path}.
 {pointers}"""
 
-# Carried by every executor and reviewer dispatch: where the slice's
-# close-out report is. The agent registers hold the rule (out-of-scope
-# observations go there, append only), the file holds the shape — the
-# prompt carries only the path.
+# Carried by every dispatch: where the slice's close-out report is and that
+# close_out.py is the only way to write to it (close_out.dispatch_line — one
+# sentence, shared with the plan loop). The agent registers hold the rule
+# (out-of-scope observations go there, append only), the tool mints the
+# shape — the prompt carries the path and the tool, once.
 CLOSE_OUT_LINE = """
-The slice's close-out report is {report_path}.
+{dispatch_line}
 """
 
 # Carried by every executor dispatch whose target repo holds the slice
@@ -1003,10 +1008,14 @@ If outstanding work clears that bar, append new phases to {plan_path}
 (`### P<id> — <title>` with a `Target:` line; a suffix like P3a inserts
 between P3 and P4 — document order is authoritative) and answer `appended`.
 Record everything that does not clear the bar as entries in the close-out
-report, {report_path} — and you are the one pass that reconciles that
-report: strike what you absorbed into an appended phase (name the phase),
-merge duplicates you are sure of, mark what a phase resolved. If nothing is
-outstanding, answer `complete`.\
+report — and you are the one pass that reconciles that report, through
+close_out.py (its path is in this prompt) and never by editing the file:
+strike what you absorbed into an appended phase (`strike <id> --reason
+"absorbed by P<x> (<commit>)" --by "consult <n>"`), duplicates you are sure
+of (`--reason "duplicate of B3"`), and what a phase resolved (`--reason
+"resolved by P<x> (<commit>): <what was re-run>"`); record any other
+observation about an entry with `note`. If nothing is outstanding, answer
+`complete`.\
 """
 
 # The loop-tail sweep's report, as it rides the completion-consult and
@@ -1072,7 +1081,7 @@ Deterministic facts from the driver:
   prd stays operator-gated; nothing here touches it.
 - The slice folder is {slice_dir}; the plan is {plan_path}. Check off
   {verification_path} as you verify (verdict + evidence per item).
-- The slice's close-out report is {report_path}.
+- {close_out_line}
 
 {sweep_block}
 
@@ -1096,7 +1105,7 @@ Deterministic facts from the driver:
 - The slice's shipped work is {diff_ranges} — write docs from that diff with
   the whole shipped behavior in view.
 - The slice folder is {slice_dir}; the plan is {plan_path}.
-- The slice's close-out report is {report_path}.
+- {close_out_line}
 - Work on branch {branch}, which is checked out. Never push — any repo, any
   branch. After your hand-back the driver runs the full gate sweep —
   `kc project lint` + `build` + `test` (a red comes back to this session) —
@@ -1135,9 +1144,8 @@ decision point it does not decide itself.
 
 Situation: {situation}
 {phase_line}Slice folder: {slice_dir} (state.json holds the run history)
-Close-out report: {report_path} — out-of-scope findings and sub-bar
-leftovers go there as entries, in the shape the file shows; read it before
-you write, add if in doubt.
+{close_out_line} Out-of-scope findings and sub-bar leftovers go there as
+entries; `list` before you write, add if in doubt.
 
 Investigate as needed — read the material below, the plan, git log/diff.
 {material}
@@ -1750,7 +1758,7 @@ class RunLoop:
             situation=situation,
             phase_line=phase_line,
             slice_dir=self.slice_dir,
-            report_path=self.report_path,
+            close_out_line=dispatch_line(self.report_path),
             material="\n".join(f"- {p}" for p in material) or "- (state.json only)",
             actions="\n".join(f"- `{a}` — {why}" for a, why in actions.items()),
             verdict_path=verdict_path,
@@ -1879,12 +1887,13 @@ class RunLoop:
 
     def _pointers(self, target: ResolvedTarget) -> str:
         """What every executor dispatch carries at its tail: the close-out
-        report's path, plus the bookkeeping fence where it applies."""
-        return (CLOSE_OUT_LINE.format(report_path=self.report_path)
-                + self._bookkeeping_note(target))
+        report's path and tool, plus the bookkeeping fence where it
+        applies."""
+        return self._close_out_line() + self._bookkeeping_note(target)
 
     def _close_out_line(self) -> str:
-        return CLOSE_OUT_LINE.format(report_path=self.report_path)
+        return CLOSE_OUT_LINE.format(
+            dispatch_line=dispatch_line(self.report_path))
 
     def _gate_hint(self, target: ResolvedTarget) -> str:
         if target.kind == "project":
@@ -2502,7 +2511,6 @@ class RunLoop:
             COMPLETION_CONSULT_SITUATION.format(
                 verification_path=self.verification_path,
                 plan_path=self.plan_path,
-                report_path=self.report_path,
                 sweep_block=self._sweep_block(sweep,
                                               SWEEP_STANCE_CONSULT_GREEN,
                                               SWEEP_STANCE_CONSULT_RED),
@@ -2553,7 +2561,7 @@ class RunLoop:
                 test_plan_doc=test_plan_doc, slice_dir=self.slice_dir,
                 plan_path=self.plan_path,
                 verification_path=self.verification_path,
-                report_path=self.report_path,
+                close_out_line=dispatch_line(self.report_path),
                 sweep_block=self._sweep_block(self.state["gate_sweep"],
                                               SWEEP_STANCE_TEST_GREEN,
                                               SWEEP_STANCE_TEST_RED),
@@ -2677,13 +2685,17 @@ class RunLoop:
             for repo, sha in self.state["slice_base"].items():
                 ranges.append(f"`git diff {sha[:12]}..HEAD` in {repo}")
             verdict_path = self.slice_dir / "doc_phase_result.json"
+            # The writer ranks the Focus lines over the report as the
+            # operator will read it: rendered — live entries first, Bugs
+            # by severity, struck folded last.
+            self._render_report()
             verdict, session = self._spawn(
                 "doc-writer",
                 DOC_PHASE_PROMPT.format(
                     slice_name=self.slice_name, doc_plan_doc=doc_plan_doc,
                     diff_ranges="; ".join(ranges) or "(no recorded range)",
                     slice_dir=self.slice_dir, plan_path=self.plan_path,
-                    report_path=self.report_path,
+                    close_out_line=dispatch_line(self.report_path),
                     branch=branch, base_branch=base,
                     verdict_path=verdict_path),
                 self.repo_root, verdict_path, None, 1, agent="doc-writer",
@@ -2956,10 +2968,20 @@ class RunLoop:
                            f"slice {self.slice_num}: close-out report")
             self.log(f"created {self.report_path.name} from the template")
 
+    def _render_report(self) -> None:
+        """The report in reading order — before the doc phase and at
+        completion. Idempotent, and never a failure: a report an agent
+        broke is logged, the run goes on."""
+        try:
+            self.log("close-out rendered: " + render_report(self.slice_dir))
+        except ReportError as e:
+            self.log(f"close-out not rendered: {e}")
+
     def _stamp_report(self) -> None:
-        """The run header, from the completed state; /dev:run-slice
-        re-stamps once the cost block has landed. Never a failure — the
-        run is done whatever the report's state."""
+        """Render, then the run header from the completed state;
+        /dev:run-slice re-stamps once the cost block has landed. Never a
+        failure — the run is done whatever the report's state."""
+        self._render_report()
         try:
             self.log(stamp_header(self.slice_dir))
         except ReportError as e:

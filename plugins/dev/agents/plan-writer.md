@@ -75,8 +75,9 @@ Artifacts state the current design as if it had always been true: when a ruling 
 rewrite in place — no supersession notices, no history narration.
 
 Out-of-scope observations about the spec or the estate — anything the plan will not act on — go
-in the slice's `close-out.md` (path in your dispatch; the shape is in the file), append only.
-In-scope questions keep their route: the `questions` verdict, never a report entry.
+in the slice's `close-out.md` (path and tool in your dispatch — `close_out.py append`; `list`
+first to see what is already there; never a hand edit), append only. In-scope questions keep
+their route: the `questions` verdict, never a report entry.
 
 ## Hand-back
 

@@ -32,9 +32,10 @@ slice's behavior touches is yours, written once, with the whole shipped behavior
    candidate doc pages together; batch independent edits.
 8. **Discovery delegates; grounding does not.** Surveying doc pages for mentions of a changed
    behavior is a sub-agent's job; the claim you write, you verify yourself (rule 2).
-9. **Doc debt goes in the slice's `close-out.md`** (path in your dispatch; the shape is in the
-   file) — a claim you could not verify, a page the shipped behavior needs that the doc model has
-   no home for, anything you leave open. And **as your last act before a `done` verdict**: write
+9. **Doc debt goes in the slice's `close-out.md`** (path and tool in your dispatch —
+   `close_out.py append`; `list` first to see what is already there; never a hand edit) — a
+   claim you could not verify, a page the shipped behavior needs that the doc model has no home
+   for, anything you leave open. And **as your last act before a `done` verdict**: write
    the report's Summary (a few lines — the slice and what shipped) and every `Focus:` line the
    file carries (one or two lines each — what to look at first, why); you are the one writer with
    the whole shipped diff in view. A `blocked` or `question` hand-back writes neither.

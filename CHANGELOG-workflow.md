@@ -4,6 +4,34 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-17 — the report is tool-written and rendered: append, note, strike, list, render (v0.6.0)
+
+The same reports read once more, from the writer's side. Every entry was typed by hand off the
+head comment, and it showed: the shape drifted wherever the comment was read loosely (the 0.5.1
+read — unshaped headings, dropped labels), each author read the whole file — 42 KB by the doc
+phase of a long slice — to add one entry, the completion consult reconciled by editing other
+agents' text in place, and struck entries stayed where they arrived: in 154, 10 of the 16 Bugs
+were struck in-run and sat, full-bodied, ahead of the six the operator had to decide on. Scripts
+drive, agents judge — the shape is mechanical, the content is judgment. **Now `close_out.py` is
+the only pen.** `append` mints the entry (as it did for the driver's own since 0.5.0); `note <id>`
+adds the dated paragraph (`<who>, <date> — <text>`) above the Consequence line — above the
+Provenance line on an entry from before that label existed; `strike <id> --reason … --by …`
+rewrites the heading to the struck form and touches nothing else; `list` shows the sections' ids,
+headlines and Consequence lines without the bodies; and `render` puts each entry section in
+reading order, in place and idempotently — live entries first, Bugs by severity (major → minor
+→ nit → cosmetic, then ungraded), headings not in the entry shape as they were, struck entries
+last with their bodies folded once into a `<details>` block. Every dispatch of both loops, consults
+included, names the report and the installed tool's absolute path once, with the ban on hand
+edits; the completion consult's reconcile sentence names `strike` with a reason that carries the
+phase, the commit and what was re-run, and `note` for anything else; the driver renders
+immediately before it dispatches the doc phase — the doc-writer ranks its Focus lines over the
+order the operator will read — and again at completion, before the stamp. The six registers point
+at the tool instead of the file's shape; the close-out skill presents through `list`, executes
+`close` through `strike`, renders before it commits, and archives the card when no *live* entry
+has a blank Disposition (a struck entry needs none — its fate is its heading). Deliberately
+unchanged: no validation beyond the smoke counts, no dedup (`render` orders, never merges), no
+disposition parsing.
+
 ## 2026-08-17 — every claim in the report carries its evidence class (v0.5.4)
 
 The reader-side half of the six-report read, from the S5–S7 papers. The overcorrection study's

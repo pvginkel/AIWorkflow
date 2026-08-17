@@ -153,9 +153,11 @@ driver's full-sweep gate covers it.
 **Close-out.** Nothing from a run is carded per finding: everything an agent noticed but the
 loop did not act on is in the slice's `close-out.md` — who writes what there is
 [close-out.md](close-out.md). The driver's own part is deterministic: it creates the report at
-run start when planning left none, enters refuted findings and funding-consult merges, and stamps
-the run header from `state.json` when the run completes; the launching session re-stamps it once
-the cost block has landed and files **one** tracker card pointing at the report.
+run start when planning left none, names the report and `close_out.py` (the only way to write to
+it) in every dispatch, enters refuted findings and funding-consult merges, renders the report
+into reading order before the doc phase and again at completion, and stamps the run header from
+`state.json` when the run completes; the launching session re-stamps it once the cost block has
+landed and files **one** tracker card pointing at the report.
 
 ## Protocol invariants
 

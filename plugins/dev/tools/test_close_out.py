@@ -84,6 +84,10 @@ def test_init_creates_from_template_with_the_slice_in_the_title():
         assert (head.index("**Consequence:** <") < head.index("**Provenance:** <")
                 < head.index("**Disposition:**\n"))
         assert "### ~~S3 — <headline>~~ — absorbed by" in head
+        # The comment says who writes the shape: the tool, by hand only
+        # when it is unavailable.
+        assert "close_out.py append" in head and "close_out.py note" in head
+        assert "close_out.py strike" in head
         # …and none of it counts as an entry, a stray heading, or a
         # label-less entry.
         counts = close_out.entry_counts(slice_dir)
@@ -419,6 +423,357 @@ def test_stamp_needs_a_state_file_and_a_run_line():
             assert "`Run:` line" in str(e)
 
 
+# -- note -------------------------------------------------------------------
+
+def test_note_lands_above_the_consequence_line_dated_and_signed():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        close_out.append_entry(slice_dir, "Bugs", "one", "body one", **FULL,
+                               severity="minor")
+        close_out.append_entry(slice_dir, "Bugs", "two", "body two", **FULL)
+        para = close_out.add_note(slice_dir, "B1", " consult  1 ",
+                                  "  the premise moved: P4 rewrote it.\n",
+                                  date="2026-08-17")
+        assert para == "consult 1, 2026-08-17 — the premise moved: P4 rewrote it."
+        text = report(slice_dir)
+        assert ("### B1 — one · minor\n\nbody one\n\n"
+                "consult 1, 2026-08-17 — the premise moved: P4 rewrote it.\n\n"
+                "**Consequence:** none\n\n**Provenance:** P1 r1\n**Disposition:**\n\n"
+                "### B2 — two\n\nbody two\n\n**Consequence:** none\n\n") in text
+        # A second note goes under the first, still above the label; a
+        # multi-line note keeps its lines.
+        close_out.add_note(slice_dir, "B1", "test-agent", "re-run:\n  still fails",
+                           date="2026-08-18")
+        text = report(slice_dir)
+        assert ("consult 1, 2026-08-17 — the premise moved: P4 rewrote it.\n\n"
+                "test-agent, 2026-08-18 — re-run:\n  still fails\n\n"
+                "**Consequence:** none\n") in text
+        # Nothing else moved, and the counts see the same two entries.
+        assert "### B2 — two\n\nbody two\n\n**Consequence:** none" in text
+        counts = close_out.entry_counts(slice_dir)
+        assert counts == {**zero_counts(), "Bugs": 2}
+
+
+def test_note_falls_back_to_provenance_then_disposition_then_the_end():
+    """An entry from before the Consequence label (0.5.0/0.5.1 shape, bare
+    labels) takes the note above `Provenance:`; one with only a
+    `Disposition:` line above that; one with no label at all at its
+    end — never inside the next entry."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        text = report(slice_dir).replace(
+            "\n## Bugs\n",
+            "\n### N1 — old shape\n\nold body\n\n"
+            "Provenance: P1 r1\nDisposition:\n\n"
+            "### N2 — only a disposition\n\nbody two\n\n**Disposition:**\n\n"
+            "### N3 — bare\n\nbody three\n\n## Bugs\n")
+        (slice_dir / "close-out.md").write_text(text)
+        for eid in ("N1", "N2", "N3"):
+            close_out.add_note(slice_dir, eid, "consult 1", f"about {eid}",
+                               date="2026-08-17")
+        text = report(slice_dir)
+        assert ("old body\n\nconsult 1, 2026-08-17 — about N1\n\n"
+                "Provenance: P1 r1\nDisposition:\n\n### N2") in text
+        assert ("body two\n\nconsult 1, 2026-08-17 — about N2\n\n"
+                "**Disposition:**\n\n### N3") in text
+        assert "body three\n\nconsult 1, 2026-08-17 — about N3\n\n## Bugs" in text
+        # A label quoted inside a fence is text, not the anchor.
+        close_out.append_entry(slice_dir, "Bugs", "quotes a label",
+                               "```\n**Consequence:** quoted\n```\nprose",
+                               consequence="real", provenance="read P2")
+        close_out.add_note(slice_dir, "B1", "x", "n", date="2026-08-17")
+        assert ("```\n**Consequence:** quoted\n```\nprose\n\nx, 2026-08-17 — n\n\n"
+                "**Consequence:** real\n") in report(slice_dir)
+
+
+def test_note_on_an_unknown_id_or_without_text_raises():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        close_out.append_entry(slice_dir, "Bugs", "one", "b", **FULL)
+        for eid in ("B2", "X1", "b1", "S1"):
+            try:
+                close_out.add_note(slice_dir, eid, "who", "text", date="2026-08-17")
+                raise AssertionError(f"{eid} must raise")
+            except ReportError:
+                pass
+        for bad in ("", "   \n"):
+            try:
+                close_out.add_note(slice_dir, "B1", "who", bad, date="2026-08-17")
+                raise AssertionError("an empty note must raise")
+            except ReportError:
+                pass
+        try:
+            close_out.add_note(slice_dir, "B1", "who", "t", date="17-08-2026")
+            raise AssertionError("a malformed date must raise")
+        except ReportError:
+            pass
+        assert "who, " not in report(slice_dir)
+
+
+def test_note_dates_today_by_default():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        close_out.append_entry(slice_dir, "Bugs", "one", "b", **FULL)
+        para = close_out.add_note(slice_dir, "B1", "op", "t")
+        assert re.fullmatch(r"op, \d{4}-\d{2}-\d{2} — t", para)
+
+
+# -- strike -----------------------------------------------------------------
+
+def test_strike_rewrites_the_heading_and_leaves_the_body():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        close_out.append_entry(slice_dir, "Bugs", "one", "body one", **FULL,
+                               severity="nit")
+        close_out.append_entry(slice_dir, "Bugs", "two", "body two", **FULL)
+        head = close_out.strike_entry(slice_dir, "B1",
+                                      "  absorbed by  P4 (19640d9) ", by=" consult  1 ")
+        assert head == "### ~~B1 — one · nit~~ — absorbed by P4 (19640d9); struck by consult 1"
+        text = report(slice_dir)
+        assert (head + "\n\nbody one\n\n**Consequence:** none\n\n"
+                "**Provenance:** P1 r1\n**Disposition:**\n\n### B2 — two\n") in text
+        # Without --by, no signature; the reason is whitespace-normalised.
+        assert close_out.strike_entry(slice_dir, "B2", "duplicate\nof B1") == \
+            "### ~~B2 — two~~ — duplicate of B1"
+        # counts sees both as struck; ids are still not reused.
+        counts = close_out.entry_counts(slice_dir)
+        assert counts == zero_counts()
+        assert close_out.append_entry(slice_dir, "Bugs", "three", "b", **FULL) == "B3"
+
+
+def test_strike_refuses_an_already_struck_or_unknown_entry():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        close_out.append_entry(slice_dir, "Bugs", "one", "b", **FULL)
+        close_out.strike_entry(slice_dir, "B1", "dup")
+        before = report(slice_dir)
+        for eid, why in (("B1", "already struck"), ("B7", "unknown"), ("Q1", "unknown")):
+            try:
+                close_out.strike_entry(slice_dir, eid, "again")
+                raise AssertionError(f"{eid} ({why}) must raise")
+            except ReportError as e:
+                assert ("already struck" in str(e)) == (why == "already struck")
+        assert report(slice_dir) == before
+
+
+# -- list -------------------------------------------------------------------
+
+def test_list_shows_ids_headlines_and_consequence_lines_only():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        close_out.append_entry(
+            slice_dir, "Bugs", "presync traceback", "long body\n\nmore body",
+            consequence="an operator sees a traceback\ninstead of the named refusal.",
+            provenance="read P3 r1", severity="minor")
+        close_out.append_entry(slice_dir, "Bugs", "no consequence", "b",
+                               provenance="read P1")
+        close_out.append_entry(slice_dir, "Bugs", "gone", "b", **FULL, severity="nit")
+        close_out.append_entry(slice_dir, "Suggestions", "an idea", "b",
+                               consequence="none", provenance="witnessed P2")
+        close_out.strike_entry(slice_dir, "B3", "duplicate of B1", by="consult 1")
+        # A hand-typed heading not in the shape is shown, marked.
+        text = report(slice_dir).replace(
+            "## Notable events\n", "## Notable events\n\n### Consult 1 appended P4\n\nbody\n")
+        (slice_dir / "close-out.md").write_text(text)
+        assert close_out.list_view(slice_dir) == (
+            "## Outstanding actions\n(none)\n"
+            "## Notable events\n(not in entry shape) Consult 1 appended P4\n"
+            "## Bugs\n"
+            "B1 — presync traceback · minor\n"
+            "    Consequence: an operator sees a traceback instead of the named refusal.\n"
+            "B2 — no consequence\n    (no Consequence line)\n"
+            "~~B3~~ — gone · nit — duplicate of B1; struck by consult 1\n"
+            "## Open questions and rulings\n(none)\n"
+            "## Suggestions\nS1 — an idea\n    Consequence: none")
+        # Bodies never leak — not the entry's, not a bare Consequence
+        # paragraph's continuation past a blank line.
+        assert "long body" not in close_out.list_view(slice_dir)
+
+
+# -- render -----------------------------------------------------------------
+
+def _bugs(text):
+    return text[text.index("\n## Bugs\n"):text.index("\n## Open questions")]
+
+
+def test_render_orders_live_by_severity_then_unshaped_then_struck_folded():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        for headline, sev in (("a nit", "nit"), ("ungraded", None), ("a major", "major"),
+                              ("a minor", "minor"), ("struck major", "major"),
+                              ("cosmetic", "cosmetic"), ("struck nit", "nit")):
+            close_out.append_entry(slice_dir, "Bugs", headline, f"body of {headline}",
+                                   consequence=f"c of {headline}",
+                                   provenance="read P1", severity=sev)
+        close_out.strike_entry(slice_dir, "B7", "dup of B1", by="consult 1")
+        close_out.strike_entry(slice_dir, "B5", "resolved by P4 (19640d9): re-run")
+        # A hand-typed heading in the middle of the section.
+        text = report(slice_dir).replace(
+            "### B4 — a minor",
+            "### Test phase round 1 — clean\n\nhand-typed\n\n### B4 — a minor")
+        (slice_dir / "close-out.md").write_text(text)
+        before = report(slice_dir)
+        line = close_out.render_report(slice_dir)
+        assert "Bugs: 5 live, 2 struck, 1 not in entry shape" in line
+        assert line.startswith("Outstanding actions: 0 live, 0 struck; ")
+        after = report(slice_dir)
+        bugs = _bugs(after)
+        order = [m.group(0) for m in re.finditer(r"^### .*$", bugs, re.M)]
+        assert order == [
+            "### B3 — a major · major",
+            "### B4 — a minor · minor",
+            "### B1 — a nit · nit",
+            "### B6 — cosmetic · cosmetic",
+            "### B2 — ungraded",
+            "### Test phase round 1 — clean",
+            "### ~~B5 — struck major · major~~ — resolved by P4 (19640d9): re-run",
+            "### ~~B7 — struck nit · nit~~ — dup of B1; struck by consult 1",
+        ]
+        # The struck body is kept, folded once, labels included; the live
+        # entries and the hand-typed block are byte-identical to before.
+        assert ("### ~~B5 — struck major · major~~ — resolved by P4 (19640d9): re-run\n\n"
+                "<details><summary>struck — body kept for the record</summary>\n\n"
+                "body of struck major\n\n**Consequence:** c of struck major\n\n"
+                "**Provenance:** read P1\n**Disposition:**\n\n</details>\n\n"
+                "### ~~B7") in bugs
+        for piece in ("### B3 — a major · major\n\nbody of a major\n\n**Consequence:** c of "
+                      "a major\n\n**Provenance:** read P1\n**Disposition:**\n\n",
+                      "### Test phase round 1 — clean\n\nhand-typed\n\n"):
+            assert piece in before and piece in after
+        # The section preamble — Focus line and charter — the head comment,
+        # the title and the Run line are untouched.
+        assert after[:after.index("\n## Bugs\n")] == before[:before.index("\n## Bugs\n")]
+        assert bugs.startswith("\n## Bugs\n\nFocus: <!-- doc-writer: the worst one first")
+        assert "<!-- Defects the run will not fix." in bugs
+        assert after[after.index("\n## Open questions"):] == \
+            before[before.index("\n## Open questions"):]
+        # counts are the same before and after.
+        assert close_out.entry_counts(slice_dir) == {**zero_counts(), "Bugs": 5,
+                                                    close_out.UNSHAPED: 1}
+        # A second render is a byte-identical no-op.
+        assert close_out.render_report(slice_dir) == line
+        assert report(slice_dir) == after
+
+
+def test_render_orders_other_sections_by_id_and_keeps_empty_ones():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        for i in range(3):
+            close_out.append_entry(slice_dir, "Suggestions", f"s{i + 1}", "b", **FULL)
+        close_out.append_entry(slice_dir, "Notable events", "n1", "b", **FULL)
+        # Struck first in arrival order, and the section's last entry — the
+        # file's last block, ending in a single newline — moves up.
+        close_out.strike_entry(slice_dir, "S1", "dup of S3")
+        text = report(slice_dir)
+        s2, s3 = text.index("### S2"), text.index("### S3")
+        block2, block3 = text[s2:s3], text[s3:]
+        assert block3.endswith("**Disposition:**\n") and not block3.endswith("\n\n")
+        text = text[:s2] + block3 + "\n" + block2.rstrip("\n") + "\n"
+        (slice_dir / "close-out.md").write_text(text)
+        before = report(slice_dir)
+        line = close_out.render_report(slice_dir)
+        assert "Suggestions: 2 live, 1 struck" in line
+        assert "Notable events: 1 live, 0 struck" in line
+        after = report(slice_dir)
+        tail = after[after.index("\n## Suggestions\n"):]
+        order = re.findall(r"^### .*$", tail, re.M)
+        assert order == ["### S2 — s2", "### S3 — s3", "### ~~S1 — s1~~ — dup of S3"]
+        assert tail.endswith("**Disposition:**\n\n</details>\n")
+        # Untouched sections are byte-identical, empty ones included.
+        assert after[:after.index("\n## Suggestions\n")] == \
+            before[:before.index("\n## Suggestions\n")]
+        assert "## Open questions and rulings\n\nFocus:" in after
+        assert close_out.render_report(slice_dir) == line
+        assert report(slice_dir) == after
+        assert close_out.entry_counts(slice_dir) == {**zero_counts(), "Suggestions": 2,
+                                                    "Notable events": 1}
+
+
+def test_render_reads_headings_outside_fences_and_comments_only():
+    """A `###` quoted in a fence or in a comment is text — it starts no
+    block, so a fenced heading travels with its entry and a fenced `##`
+    moves no section; the head comment's `### B2` example is not an
+    entry to reorder."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        close_out.append_entry(
+            slice_dir, "Bugs", "quotes a report", "seen:\n\n```markdown\n## Bugs\n\n"
+            "### B9 — quoted\n```\n\n<!-- ### B8 — in a comment -->\nafter", **FULL,
+            severity="nit")
+        close_out.append_entry(slice_dir, "Bugs", "major", "b", **FULL, severity="major")
+        before = report(slice_dir)
+        close_out.render_report(slice_dir)
+        after = report(slice_dir)
+        bugs = _bugs(after)
+        # B2 (major) now leads; B1's quoted headings moved with it, intact.
+        assert bugs.index("### B2 — major") < bugs.index("### B1 — quotes a report")
+        assert ("### B1 — quotes a report · nit\n\nseen:\n\n```markdown\n## Bugs\n\n"
+                "### B9 — quoted\n```\n\n<!-- ### B8 — in a comment -->\nafter\n\n"
+                "**Consequence:**") in bugs
+        assert after[:after.index("\n## Bugs\n")] == before[:before.index("\n## Bugs\n")]
+        assert close_out.render_report(slice_dir)
+        assert report(slice_dir) == after
+
+
+def test_note_lands_inside_the_fold_of_a_rendered_struck_entry():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        close_out.append_entry(slice_dir, "Bugs", "one", "body", **FULL)
+        close_out.append_entry(slice_dir, "Bugs", "bare struck", "just a body")
+        close_out.strike_entry(slice_dir, "B1", "dup")
+        close_out.strike_entry(slice_dir, "B2", "dup too")
+        # B2 hand-stripped of every label: the note has only the fold's
+        # end to go before.
+        text = report(slice_dir).replace("just a body\n\n**Disposition:**\n", "just a body\n")
+        (slice_dir / "close-out.md").write_text(text)
+        close_out.render_report(slice_dir)
+        close_out.add_note(slice_dir, "B1", "op", "still true", date="2026-08-17")
+        close_out.add_note(slice_dir, "B2", "op", "no labels here", date="2026-08-17")
+        text = report(slice_dir)
+        assert ("<details><summary>struck — body kept for the record</summary>\n\n"
+                "body\n\nop, 2026-08-17 — still true\n\n**Consequence:** none\n\n"
+                "**Provenance:** P1 r1\n**Disposition:**\n\n</details>\n\n### ~~B2") in text
+        assert ("just a body\n\nop, 2026-08-17 — no labels here\n\n</details>\n") in text
+        # …and the render after that is still a no-op.
+        before = report(slice_dir)
+        close_out.render_report(slice_dir)
+        assert report(slice_dir) == before
+
+
+def test_render_without_a_report_raises():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        try:
+            close_out.render_report(slice_dir)
+            raise AssertionError("no report must raise")
+        except ReportError:
+            pass
+
+
+# -- the dispatch line ------------------------------------------------------
+
+def test_dispatch_line_names_the_report_and_this_tool_once():
+    line = close_out.dispatch_line("/specs/slices/007_x/close-out.md")
+    assert line.startswith("The slice's close-out report is /specs/slices/007_x/close-out.md.")
+    tool = str(Path(close_out.__file__).resolve())
+    assert tool.endswith("/close_out.py")
+    assert line.count(tool) == 1
+    assert f"`python3 {tool} append|note|strike`" in line
+    assert "`list`" in line and "never edit the file by hand" in line
+    assert not line.endswith("\n")
+
+
 # -- CLI --------------------------------------------------------------------
 
 def run_cli(*argv):
@@ -459,6 +814,45 @@ def test_cli_init_append_counts_stamp():
         assert code == 2 and "invalid choice" in err
         code, _, err = run_cli("counts", str(Path(tmp) / "nowhere"))
         assert code == 2 and "not found" in err
+
+
+def test_cli_note_strike_list_render():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        run_cli("init", str(slice_dir))
+        for h, sev in (("first", "nit"), ("second", "major")):
+            run_cli("append", str(slice_dir), "--section", "Bugs", "--headline", h,
+                    "--body", "b", "--consequence", f"c {h}", "--provenance", "read P1",
+                    "--severity", sev)
+        code, out, _ = run_cli("note", str(slice_dir), "B1", "--by", "consult 1",
+                               "--text", "premise moved", "--date", "2026-08-17")
+        assert code == 0 and out.strip() == "B1 noted"
+        assert ("consult 1, 2026-08-17 — premise moved\n\n**Consequence:** c first"
+                in report(slice_dir))
+        code, out, _ = run_cli("strike", str(slice_dir), "B1", "--reason",
+                               "duplicate of B2", "--by", "consult 1")
+        assert code == 0
+        assert out.strip() == "### ~~B1 — first · nit~~ — duplicate of B2; struck by consult 1"
+        code, _, err = run_cli("strike", str(slice_dir), "B1", "--reason", "again")
+        assert code == 2 and "already struck" in err
+        code, _, err = run_cli("strike", str(slice_dir), "B9", "--reason", "x")
+        assert code == 2 and "no entry B9" in err
+        code, _, err = run_cli("note", str(slice_dir), "B9", "--by", "x", "--text", "t")
+        assert code == 2 and "no entry B9" in err
+        code, out, _ = run_cli("list", str(slice_dir))
+        assert code == 0
+        assert ("## Bugs\n~~B1~~ — first · nit — duplicate of B2; struck by consult 1\n"
+                "B2 — second · major\n    Consequence: c second\n") in out
+        code, out, _ = run_cli("render", str(slice_dir))
+        assert code == 0 and "Bugs: 1 live, 1 struck" in out
+        text = report(slice_dir)
+        bugs = _bugs(text)   # (the head comment shows a `### ~~B1` too)
+        assert bugs.index("### B2 — second") < bugs.index("### ~~B1") \
+            < bugs.index("<details><summary>struck")
+        code, out2, _ = run_cli("render", str(slice_dir))
+        assert code == 0 and out2 == out and report(slice_dir) == text
+        code, out, _ = run_cli("counts", str(slice_dir))
+        assert out.strip() == "A 0 · N 0 · B 1 · Q 0 · S 0"
 
 
 if __name__ == "__main__":

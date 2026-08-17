@@ -36,8 +36,9 @@ nudges once, then bails. Round counts persist in `plan_state.json`; a plan that 
 with phases (a reset re-plan) enters at review.
 
 The loop is the first thing to run on a slice, so it creates the slice's **close-out report**
-(`close-out.md`, from the plugin's template) and commits it before its first dispatch; what the
-planning agents write there is [close-out.md](close-out.md)'s.
+(`close-out.md`, from the plugin's template) and commits it before its first dispatch, and every
+dispatch names the report and `close_out.py`, the only way to write to it; what the planning
+agents write there is [close-out.md](close-out.md)'s.
 
 ## The plan doc
 

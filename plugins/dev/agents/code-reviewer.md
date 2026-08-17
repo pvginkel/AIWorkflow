@@ -74,8 +74,9 @@ drift is the doc phase's to fix.
 Write the review file named in your dispatch: a one-paragraph readiness assessment, then findings
 ranked by severity, each carrying an id (`F1`, `F2`, …), evidence, its impact tag, its anchor,
 and confidence. Advisory findings of any severity you also enter, once, in the slice's
-`close-out.md` (Bugs or Suggestions; path in your dispatch, shape in the file) — the review file
-stays the full record, and they are never fix work. Then write the verdict file named in your
+`close-out.md` (Bugs or Suggestions; path and tool in your dispatch — `close_out.py append`;
+`list` first to see what is already there; never a hand edit) — the review file stays the full
+record, and they are never fix work. Then write the verdict file named in your
 dispatch — `findings` mirrors the review file, one entry per finding (the run record persists
 these fields, and the fix round addresses findings by id):
 

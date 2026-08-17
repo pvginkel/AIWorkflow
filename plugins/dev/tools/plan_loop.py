@@ -68,7 +68,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # plan-shape authority, and the target repo's root comes from `git rev-parse
 # --show-toplevel` in the process cwd — not from `__file__`, which locates the
 # plugin these tools ship in, never the repo being planned.
-from close_out import ReportError, init_report, report_path  # noqa: E402
+from close_out import ReportError, dispatch_line, init_report, report_path  # noqa: E402
 from run_loop import (  # noqa: E402
     AGENTS_DIR,
     SPAWN_ENV,
@@ -131,7 +131,7 @@ your contract: the task-shape declaration (before you investigate), the
 phases (each opening with its `Target:` line), ordering constraints,
 not-in-scope, attachments/ only where an executor genuinely cannot derive
 the design, and verification.json's outcome-level acceptance criteria.
-The slice's close-out report is {report_path}.
+{close_out_line}
 Commit to the spec repo (stage by name), then write your verdict
 to {verdict_path}. Blocking questions go to {questions_path} with verdict
 `questions`.
@@ -146,7 +146,7 @@ the review where they speak. Apply every ruling the plan does not yet
 reflect and resolve every blocking finding the rulings do not overrule —
 the reviewer and the operator state problems; the fix design is yours. This
 is the only fix pass: no review follows it, the operator's read does.
-The slice's close-out report is {report_path}.
+{close_out_line}
 Commit (stage by name), then write your verdict to {verdict_path}. A
 finding the rulings leave genuinely unresolved goes to {questions_path}
 with verdict `questions`.
@@ -161,7 +161,7 @@ REVIEWER_PROMPT = """\
 Review the plan for slice {slice_name} — the full plan, in your one and
 only round: no fix-verify loop follows; your findings go to the operator.
 Slice folder: {slice_dir}
-The slice's close-out report is {report_path}.
+{close_out_line}
 
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
@@ -375,14 +375,14 @@ class PlanLoop:
         if initial:
             prompt = WRITER_INITIAL_PROMPT.format(
                 slice_name=self.slice_name, slice_dir=self.slice_dir,
-                report_path=self.report_path,
+                close_out_line=dispatch_line(self.report_path),
                 verdict_path=verdict_path, questions_path=questions_path)
         else:
             review_path = (self.slice_dir /
                            f"plan_review_r{self.state['pending_review']}.md")
             prompt = WRITER_FIX_PROMPT.format(
                 slice_name=self.slice_name, slice_dir=self.slice_dir,
-                report_path=self.report_path,
+                close_out_line=dispatch_line(self.report_path),
                 review_path=review_path, verdict_path=verdict_path,
                 questions_path=questions_path)
         if self.state.get("pending_questions"):
@@ -413,7 +413,7 @@ class PlanLoop:
         verdict_path = self.slice_dir / f"plan_review_result_r{r}.json"
         prompt = REVIEWER_PROMPT.format(
             slice_name=self.slice_name, slice_dir=self.slice_dir,
-            report_path=self.report_path,
+            close_out_line=dispatch_line(self.report_path),
             review_path=review_path, verdict_path=verdict_path)
 
         self.announce(f"plan-reviewer r{r}")

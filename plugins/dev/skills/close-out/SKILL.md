@@ -16,13 +16,14 @@ from your host convention (`~/.claude/CLAUDE.md`).
 ## Procedure
 
 1. **Locate the report.** The argument names it (a slice number or a slice dir); without one,
-   the newest `slices/**/close-out.md` under `<spec-repo>` that still has an entry with a blank
-   `Disposition:` line (the file's head comment shows one as the shape — that is not an entry).
-   Say which report you opened.
-2. **Present it — ask nothing yet.** Read the whole file. Show the `Run:` header, the Summary,
-   every `Focus:` line, and every live entry as `id — headline` with its `Consequence:` line
-   under it — that line is what the operator triages on; struck entries as their headline only,
-   marked as such. The operator reads; you wait.
+   the newest `slices/**/close-out.md` under `<spec-repo>` that still has a **live** entry with a
+   blank `Disposition:` line (the file's head comment shows one as the shape — that is not an
+   entry; a struck entry needs none). Say which report you opened.
+2. **Present it — ask nothing yet.** Show the `Run:` header, the Summary and every `Focus:` line
+   from the file, then `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py list <slice_dir>` as it
+   prints — every live entry as `id — headline` with its `Consequence:` line under it (that line
+   is what the operator triages on), struck entries as their headline only, marked as such. The
+   operator reads; you wait.
 3. **Take dispositions.** The operator writes them into the file under the entries, or says them
    in chat ("card B1, close B6, fold S1 into 009"). Chat dispositions you write into the file on
    the entry's `Disposition:` line **in the operator's words** — never paraphrased, never
@@ -39,12 +40,15 @@ from your host convention (`~/.claude/CLAUDE.md`).
      work; otherwise say so and offer `fold into`.
    - `fold into <slice>` — append the entry verbatim as an ask to that slice's `slice.md` under
      `slices/backlog/`; a slice that does not exist yet becomes a `/dev:triage` item instead.
-   - `close` — strike the entry's heading (`### ~~B6 — …~~ — closed by the operator, <date>`;
-     the operator's reason, if given, stays on the `Disposition:` line, not in the heading).
+   - `close` — `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py strike <slice_dir> <id>
+     --reason "closed by the operator, <date>"` (the operator's reason, if given, stays on the
+     `Disposition:` line, not in the heading).
    - `defer` — leave it; it is `/dev:triage`'s.
-5. **Commit and finish.** Commit the report (staged by name — the spec repo is a shared tree).
-   When no blank `Disposition:` remains, archive the slice's close-out card
-   (`[NNN] close-out: …`). Report short: dispositions by kind, cards filed, anything owed.
+5. **Render, commit and finish.** Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py render
+   <slice_dir>` (live entries first, the newly struck ones folded last), then commit the report
+   (staged by name — the spec repo is a shared tree). When no live entry has a blank
+   `Disposition:`, archive the slice's close-out card (`[NNN] close-out: …`). Report short:
+   dispositions by kind, cards filed, anything owed.
 
 ## Bounds
 

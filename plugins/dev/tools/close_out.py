@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""The close-out report's mechanics — create, append, stamp, count.
+"""The close-out report's mechanics — create, append, note, strike, list, render, stamp, count.
 
 `<slice>/close-out.md` is the one document every plan and run agent writes
 its out-of-scope observations to (${CLAUDE_PLUGIN_ROOT}/docs/close-out.md is
-the contract; docs/close-out-template.md the shape). Agents write it by hand
-in the shape the file's head comment shows; this tool is for the
-deterministic parts — importable by both loops (the way plan_loop imports
-run_loop) and a CLI for the skills:
+the contract; docs/close-out-template.md the shape). Every writer goes
+through this tool — the shape is mechanical, the content is judgment — and
+nobody edits the file by hand; importable by both loops (the way plan_loop
+imports run_loop) and a CLI for the agents and the skills:
 
   init   create close-out.md from the template if absent — the title takes
          the slice's `NNN <slug>`; an existing file is never touched.
@@ -15,6 +15,23 @@ run_loop) and a CLI for the skills:
          three bold labels `**Consequence:**` (required: the line the operator
          triages on), `**Provenance:**`, and a blank `**Disposition:**`.
          Prints the id.
+  note   add a dated paragraph `<who>, <date> — <text>` at the end of one
+         entry's body — above its `**Consequence:**` line (an old-shape entry
+         without one: above `Provenance:`, else `Disposition:`, else at the
+         end); a struck entry takes it inside its fold. Never a new entry.
+  strike rewrite one live entry's heading to the struck form —
+         `### ~~B3 — <rest>~~ — <reason>[; struck by <who>]`. The body stays;
+         a struck entry needs no disposition. Prints the new heading.
+  list   the triage view, without bodies: per section its `## name`, then per
+         entry `B3 — <heading rest>` with its Consequence text under it
+         (`~~B3~~ — …` for a struck one), in file order.
+  render put every entry section in reading order, in place and idempotently:
+         live entries first (Bugs by severity major → minor → nit → cosmetic,
+         then ungraded; other sections by id), then `###` headings not in the
+         entry shape as they were, then struck entries by id — each with its
+         body folded once into `<details>` so the live ones lead. The section
+         preamble (Focus line, charter), the head comment, the Run header
+         and the Summary are not touched. Prints live/struck per section.
   stamp  replace the `Run:` header block with the run's shape read from
          state.json — window, phases planned/appended, bail-outs, test
          rounds, doc phase, and the `cost` block once slice_cost.py
@@ -41,6 +58,11 @@ Usage:
     close_out.py append <slice-dir> --section <name> --headline <text>
                  --body <text | -> --consequence <text>
                  [--provenance <text>] [--severity <s>]
+    close_out.py note <slice-dir> <id> --by <who> --text <text | ->
+                 [--date YYYY-MM-DD]
+    close_out.py strike <slice-dir> <id> --reason <text> [--by <who>]
+    close_out.py list <slice-dir>
+    close_out.py render <slice-dir>
     close_out.py stamp <slice-dir>
     close_out.py counts <slice-dir>
 
@@ -56,6 +78,21 @@ from datetime import datetime
 from pathlib import Path
 
 REPORT_NAME = "close-out.md"
+
+# This file, resolved — the driver runs from the installed plugin clone, so
+# a dispatch that names it names the copy that will run.
+TOOL_PATH = Path(__file__).resolve()
+
+# The one sentence every dispatch carries about the report: where it is and
+# that this tool is the only way to write to it. Both loops use it as-is.
+DISPATCH_LINE = """\
+The slice's close-out report is {report}. Write to it only through
+`python3 {tool} append|note|strike` (`list` shows what is there — ids,
+headlines, Consequence lines); never edit the file by hand.\
+"""
+
+FOLD_OPEN = "<details><summary>struck — body kept for the record</summary>"
+FOLD_CLOSE = "</details>"
 
 # The template ships one level up, next to the contract doc; the skeleton is
 # the doc's first fenced block.
@@ -83,6 +120,8 @@ _LABEL_RES: dict[str, re.Pattern] = {
     "Consequence": re.compile(r"^\*{0,2}Consequence:"),
     "Provenance": re.compile(r"^\*{0,2}Provenance:"),
 }
+_DISPOSITION_RE = re.compile(r"^\*{0,2}Disposition:")
+_ANY_LABEL_RE = re.compile(r"^\*{0,2}(Consequence|Provenance|Disposition):")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 # An HTML comment counts only when it opens a line (the template's comments
 # all do); `<!--` mentioned mid-line in prose opens nothing.
@@ -95,6 +134,12 @@ class ReportError(Exception):
 
 def report_path(slice_dir: Path | str) -> Path:
     return Path(slice_dir) / REPORT_NAME
+
+
+def dispatch_line(report: Path | str) -> str:
+    """The report pointer a dispatch prompt carries — the path and the
+    tool, once."""
+    return DISPATCH_LINE.format(report=report, tool=TOOL_PATH)
 
 
 def template_body() -> str:
@@ -315,6 +360,265 @@ def counts_line(counts: dict[str, int]) -> str:
     return line
 
 
+# -- entries: blocks, note, strike, list, render ----------------------------
+
+class _Block:
+    """One `###` block of an entry section — the heading line and everything
+    to the next unfenced `###` heading (or the section's end). `kind` is
+    `live` or `struck` for a heading in the section's entry shape,
+    `unshaped` for any other `###` heading."""
+
+    __slots__ = ("start", "end", "heading", "kind", "num", "eid")
+
+    def __init__(self, start: int, end: int, heading: str, letter: str):
+        self.start, self.end, self.heading = start, end, heading
+        m = _ENTRY_RE.match(heading)
+        if m is None or m.group("letter") != letter:
+            self.kind, self.num, self.eid = "unshaped", 0, None
+        else:
+            self.kind = "struck" if m.group(1) else "live"
+            self.num = int(m.group("num"))
+            self.eid = f"{letter}{self.num}"
+
+
+def _blocks(text: str, start: int, end: int, letter: str) -> list[_Block]:
+    """The `###` blocks of one section body, in file order, with absolute
+    offsets into `text`."""
+    body = text[start:end]
+    heads = [(off, line) for off, line in _unfenced_lines(body)
+             if _ANY_HEADING_RE.match(line)]
+    blocks = []
+    for i, (off, line) in enumerate(heads):
+        nxt = heads[i + 1][0] if i + 1 < len(heads) else len(body)
+        blocks.append(_Block(start + off, start + nxt, line, letter))
+    return blocks
+
+
+def _find_entry(text: str, eid: str) -> _Block:
+    """The block whose heading carries `eid`, live or struck, under the
+    section its letter names."""
+    eid = eid.strip()
+    m = re.fullmatch(r"([A-Z])\d+", eid)
+    by_letter = {letter: name for name, letter in SECTIONS.items()}
+    section = by_letter.get(m.group(1)) if m else None
+    if section is None:
+        raise ReportError(f"{eid!r} is not an entry id — ids are a section "
+                          "letter (" + ", ".join(SECTIONS.values())
+                          + ") and a number, like B3")
+    start, end = _section_span(text, section)
+    for block in _blocks(text, start, end, SECTIONS[section]):
+        if block.eid == eid:
+            return block
+    raise ReportError(f"no entry {eid} under `## {section}`")
+
+
+def _label_offset(block: str, pattern: re.Pattern) -> int | None:
+    """Offset (within the block) of the first unfenced line matching the
+    label pattern, bold or bare — None when the block has none."""
+    for off, line in _unfenced_lines(block):
+        if pattern.match(line):
+            return off
+    return None
+
+
+def _fold_close_offset(block: str) -> int | None:
+    """Offset of the fold's closing line in a rendered struck block."""
+    for off, line in _unfenced_lines(block):
+        if line.strip() == FOLD_CLOSE:
+            return off
+    return None
+
+
+def _is_folded(block: str) -> bool:
+    _, _, body = block.partition("\n")
+    return body.lstrip("\n").startswith(FOLD_OPEN)
+
+
+def _insert_paragraph(block: str, off: int | None, para: str) -> str:
+    """`para` as a paragraph of its own before offset `off` in the block —
+    or, with no offset, at the block's end (its trailing newlines kept)."""
+    if off is None:
+        stripped = block.rstrip("\n")
+        return stripped + "\n\n" + para + block[len(stripped):]
+    before, after = block[:off], block[off:]
+    if not before.endswith("\n\n"):
+        before = before.rstrip("\n") + "\n\n"
+    return before + para + "\n\n" + after
+
+
+def add_note(slice_dir: Path | str, eid: str, by: str, text: str,
+             date: str | None = None) -> str:
+    """Append `<who>, <date> — <text>` to an entry's body: above its
+    Consequence line, else its Provenance line, else its Disposition line,
+    else at the end — inside the fold when the entry is struck and
+    rendered. Returns the paragraph."""
+    path, report = _read(slice_dir)
+    block = _find_entry(report, eid)
+    body = text.strip()
+    if not body:
+        raise ReportError("a note needs text")
+    who = " ".join(by.split())
+    if date:
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            raise ReportError(f"--date {date!r} is not YYYY-MM-DD") from None
+    day = date or datetime.now().strftime("%Y-%m-%d")
+    para = f"{who}, {day} — {body}"
+    old = report[block.start:block.end]
+    off = None
+    for pattern in (_LABEL_RES["Consequence"], _LABEL_RES["Provenance"],
+                    _DISPOSITION_RE):
+        off = _label_offset(old, pattern)
+        if off is not None:
+            break
+    if off is None and _is_folded(old):
+        off = _fold_close_offset(old)
+    new = _insert_paragraph(old, off, para)
+    path.write_text(report[:block.start] + new + report[block.end:])
+    return para
+
+
+def strike_entry(slice_dir: Path | str, eid: str, reason: str,
+                 by: str | None = None) -> str:
+    """Rewrite a live entry's heading to the struck form; returns the new
+    heading. The body stays as it is — `render` folds it."""
+    path, report = _read(slice_dir)
+    block = _find_entry(report, eid)
+    if block.kind == "struck":
+        raise ReportError(f"{eid} is already struck: {block.heading}")
+    heading = f"### ~~{block.heading[4:].rstrip()}~~ — {' '.join(reason.split())}"
+    if by:
+        heading += f"; struck by {' '.join(by.split())}"
+    hstart = block.start
+    hend = hstart + len(block.heading)
+    path.write_text(report[:hstart] + heading + report[hend:])
+    return heading
+
+
+def _consequence_text(block: str) -> str | None:
+    """The Consequence paragraph of a block, collapsed to one line — None
+    when the block has no Consequence line."""
+    off = _label_offset(block, _LABEL_RES["Consequence"])
+    if off is None:
+        return None
+    lines = block[off:].split("\n")
+    para = [re.sub(r"^\*{0,2}Consequence:\*{0,2}\s*", "", lines[0])]
+    for line in lines[1:]:
+        if not line.strip() or _ANY_LABEL_RE.match(line):
+            break
+        para.append(line)
+    return " ".join(" ".join(para).split())
+
+
+def _list_line(block: _Block) -> str:
+    rest = block.heading[4:].rstrip()
+    if block.kind == "live":
+        return rest
+    if block.kind == "struck":
+        # `~~B3 — headline~~ — reason` → `~~B3~~ — headline — reason`
+        eid = block.eid
+        tail = rest[len("~~" + eid):].replace("~~", "", 1)
+        return f"~~{eid}~~{tail}"
+    return f"(not in entry shape) {rest}"
+
+
+def list_view(slice_dir: Path | str) -> str:
+    """The triage view: per entry section its `## name`, then one line per
+    `###` block in file order — `B3 — <heading rest>`, with the Consequence
+    text indented under a live entry (or `(no Consequence line)`); a struck
+    entry as `~~B3~~ — <heading rest>`; `(none)` for an empty section."""
+    _, text = _read(slice_dir)
+    out: list[str] = []
+    for name, start, end in _sections(text):
+        if name not in SECTIONS:
+            continue
+        out.append(f"## {name}")
+        blocks = _blocks(text, start, end, SECTIONS[name])
+        if not blocks:
+            out.append("(none)")
+        for block in blocks:
+            out.append(_list_line(block))
+            if block.kind == "live":
+                consequence = _consequence_text(text[block.start:block.end])
+                out.append(f"    Consequence: {consequence}" if consequence
+                           else "    (no Consequence line)")
+    return "\n".join(out)
+
+
+def _severity_rank(heading: str) -> int:
+    """Position in SEVERITIES of the ` · <severity>` token a Bugs heading
+    carries; past the end when it carries none."""
+    for token in heading.split(" · ")[1:]:
+        grade = token.strip().lower()
+        if grade in SEVERITIES:
+            return SEVERITIES.index(grade)
+    return len(SEVERITIES)
+
+
+def _fold(block: str) -> str:
+    """A struck block with its body wrapped once in the fold; a block that
+    already carries it, or has no body, comes back as it was."""
+    heading, _, body = block.partition("\n")
+    if not body.strip() or _is_folded(block):
+        return block
+    return (heading + "\n\n" + FOLD_OPEN + "\n\n" + body.strip("\n") + "\n\n"
+            + FOLD_CLOSE + block[len(block.rstrip("\n")):])
+
+
+def _render_section(text: str, name: str, start: int, end: int
+                    ) -> tuple[str, dict[str, int]]:
+    """One entry section's body in reading order — preamble verbatim, then
+    live (Bugs by severity, else by id), unshaped as they were, struck by
+    id and folded — plus its live/struck/unshaped tally."""
+    letter = SECTIONS[name]
+    body = text[start:end]
+    blocks = _blocks(text, start, end, letter)
+    tally = {"live": 0, "struck": 0, "unshaped": 0}
+    for b in blocks:
+        tally[b.kind] += 1
+    if not blocks:
+        return body, tally
+    live = [b for b in blocks if b.kind == "live"]
+    if name == "Bugs":
+        live.sort(key=lambda b: (_severity_rank(b.heading), b.num))
+    else:
+        live.sort(key=lambda b: b.num)
+    unshaped = [b for b in blocks if b.kind == "unshaped"]
+    struck = sorted((b for b in blocks if b.kind == "struck"),
+                    key=lambda b: b.num)
+    pieces = [text[b.start:b.end] for b in live + unshaped]
+    pieces += [_fold(text[b.start:b.end]) for b in struck]
+    preamble = text[start:blocks[0].start]
+    trailing = body[len(body.rstrip("\n")):]
+    return (preamble + "\n\n".join(p.rstrip("\n") for p in pieces) + trailing,
+            tally)
+
+
+def render_report(slice_dir: Path | str) -> str:
+    """Put every entry section in reading order, in place; idempotent — a
+    second run changes nothing. Nothing outside the entry sections is
+    touched. Returns the one-line tally (`Bugs: 6 live, 10 struck; …`)."""
+    path, text = _read(slice_dir)
+    out, cursor, summary = [], 0, []
+    for name, start, end in _sections(text):
+        if name not in SECTIONS:
+            continue
+        rendered, tally = _render_section(text, name, start, end)
+        out.append(text[cursor:start])
+        out.append(rendered)
+        cursor = end
+        line = f"{name}: {tally['live']} live, {tally['struck']} struck"
+        if tally["unshaped"]:
+            line += f", {tally['unshaped']} not in entry shape"
+        summary.append(line)
+    out.append(text[cursor:])
+    new = "".join(out)
+    if new != text:
+        path.write_text(new)
+    return "; ".join(summary)
+
+
 # -- the run header ----------------------------------------------------------
 
 def _fmt_ts(value, day_of: str | None = None) -> str | None:
@@ -426,6 +730,26 @@ def main(argv=None) -> int:
     p.add_argument("--provenance")
     p.add_argument("--severity", choices=SEVERITIES)
 
+    p = sub.add_parser("note", help="add a dated paragraph to one entry's body")
+    p.add_argument("slice_dir")
+    p.add_argument("id", help="the entry's id, like B3")
+    p.add_argument("--by", required=True, help="who notes — role and round")
+    p.add_argument("--text", required=True, help="the note, or - for stdin")
+    p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
+
+    p = sub.add_parser("strike", help="strike one live entry; prints the heading")
+    p.add_argument("slice_dir")
+    p.add_argument("id", help="the entry's id, like B3")
+    p.add_argument("--reason", required=True,
+                   help="why — resolved/refuted names the commit and the re-run")
+    p.add_argument("--by", help="who strikes, e.g. `consult 1`")
+
+    p = sub.add_parser("list", help="the triage view: ids, headlines, Consequence lines")
+    p.add_argument("slice_dir")
+
+    p = sub.add_parser("render", help="put the entry sections in reading order, in place")
+    p.add_argument("slice_dir")
+
     p = sub.add_parser("stamp", help="stamp the Run: header from state.json")
     p.add_argument("slice_dir")
 
@@ -447,6 +771,16 @@ def main(argv=None) -> int:
                                consequence=args.consequence,
                                provenance=args.provenance,
                                severity=args.severity))
+        elif args.command == "note":
+            text = sys.stdin.read() if args.text == "-" else args.text
+            add_note(slice_dir, args.id, args.by, text, date=args.date)
+            print(f"{args.id} noted")
+        elif args.command == "strike":
+            print(strike_entry(slice_dir, args.id, args.reason, by=args.by))
+        elif args.command == "list":
+            print(list_view(slice_dir))
+        elif args.command == "render":
+            print(render_report(slice_dir))
         elif args.command == "stamp":
             print(stamp_header(slice_dir))
         elif args.command == "counts":
