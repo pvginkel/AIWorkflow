@@ -542,7 +542,7 @@ cards skipped by two consecutive triages.
 
 ## C7 — Close-out report replaces per-finding cards
 
-**Status:** validating
+**Status:** accepted (2026-08-17; the 0.5.3 shape refinements get their own read)
 **Cost:** M · **Rank:** — (operator-directed, 2026-08-15) · **Depends on:** — (rides I2 for the header's cost line)
 
 **Summary.** One `close-out.md` per slice, created at plan start, written by every agent in one
@@ -602,6 +602,40 @@ Kill signal is reports that grow *and* stop being read — answered by shape, ne
   entry under the new (consult 1 itself found implementing work for every AC). Redundancy
   watch, early: two of the three Notable events narrate things going right (consult 2's restates
   `consult_2.json`); noted against the kill signal, not acted on from one slice.
+- 2026-08-17 — six reports read across both projects, all dispositioned by the operator in one
+  sitting each (Ansible 008 on 0.5.0, 015 on 0.5.1; KubeCoder 154, 155, 156, 157 on 0.5.1/0.5.2):
+  **76 entries** (A 2 · N 8 · B 44 · Q 0 · S 22), 22 struck in-run by the consult or the doc
+  phase (154 alone: 10 of 16 Bugs were comment residue consult 1 fixed in one commit, 4 of 9
+  Suggestions were doc-phase pointers), **14 progressed by the operator, 7 tracker cards**
+  (015 S3 → AIWorkflow; 154 S2/S4/S6; 155 B2, S2+S3 on one card; 156 B3), 3 fixed inline at
+  close-out, 3 notes into pending slices, the rest closed. Operator's own words: "we struck gold
+  … 1 or 2 things out of anywhere between 10 and 30 … solved the biggest frustration I was
+  having with the system." **H1 ✓** across projects (~1 card per slice against 007's ten).
+  **H2 ✓**: gen-1 appended phases 0 in six runs; rework 8–16 % (008 9, 015 11, 154 10, 155 8, 156
+  16, 157 16) inside the 149–153 band, appended-phase cost now included. **H4 ✓ in part**: 015 N1
+  (`$JENKINS_TOKEN` unset, `track_build.py` could not track — polled by hand) and 015 S3 (V08 is
+  doc-owed but the test phase checks off `verification.json` before the doc phase runs — a loop
+  ordering, carded to AIWorkflow by the operator) are workflow defects surfaced by the report
+  rather than `log.txt`; 154's one bail-out and 155's are in the header, not entries. Kill signal
+  not seen: 154's 42 KB / 25 entries was read whole and dispositioned. **Shape held** on
+  0.5.1+ (ids, `Provenance:`, blank `Disposition:` on every entry; `counts` non-zero; strikes,
+  never deletes) — 008 predates 0.5.1 in its environment and shows why. **What was uneven — the
+  consequence**: the template carried it as body placeholder prose, so 154/155 wrote a
+  `Consequence:` paragraph on most entries, 157 wrote the template's own "Why it matters:",
+  156 none, and the entry the operator called "very dense" (155 B2) had one that said what the
+  code did rather than what a real environment risks. Also seen: entries about entries (157
+  N1→N2 about B1; 156 B6 refuting B4 — the consult struck the bullet and left B6 as "the record
+  of why"); the executor's record in three places across three sessions; 008/015's sessions
+  did not strike on `close`. **0.5.3** answers these: `**Consequence:**` / `**Provenance:**` /
+  `**Disposition:**` bold and in that order on every entry, the Consequence chartered for triage
+  (deployed-shape, plain words, what has to happen for it to be reached; `none` said plainly);
+  `append` requires one; `counts` names live entries lacking Consequence or Provenance; "one
+  entry per thing" — a later note is a dated paragraph under the existing entry; the skill
+  presents Consequence lines, handles blanket closes, strikes as `— closed by the operator,
+  <date>`, records execution after the operator's words. Recommended, not built: collapsing
+  consult-struck bodies (they are duplicates of the review file, and in 154 they were most of
+  the Bugs section). Next read: the first slice on 0.5.3 — Consequence lines written for triage,
+  smoke counts at zero, no meta-entries.
 
 ## C8 — Mutation-witnessed signoff for test-only phases
 
