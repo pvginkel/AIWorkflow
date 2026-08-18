@@ -200,6 +200,21 @@ no rise in downstream gate_red or appended phases.
   $12.36 (27 %) against slice 153's $27.72 (34 %). The planner *share* looks unchanged from
   baseline; that is a floor effect on a $45 slice — the absolute figure sits at the bottom of the
   $11–19 band on a four-phase slice. Still only `pre-settled` exercised.
+- 2026-08-18 — slice 158: `pre-settled` declared honestly again — the justification even names
+  the two requirements (R4, R6) that carry no ruling and must stay reviewable — and the shape
+  read true at run time for what it claims: no design decisions surfaced. Planner $21.13 (26 %) +
+  research $2.01 (2 %): the plan loop's own two writer rounds plus review are $9.34, inside the
+  band; the rest is a 165-minute interactive refinement session ($11.78), which the register does
+  not govern — and the research is that session's four Explore sub-agents; the plan-writer itself
+  ran none, as the register requires. **One defect in the plan's substance:** the r2 plan-writer,
+  rebuilding P1 to the operator's ruling, wrote "Two departures … are known" into P1's
+  *constraints the executor cannot derive* while applying a review whose evidence paragraph named
+  the third (the open redirects' bare 404, `plan_review_r1.md:62`); the plan-reviewer had already
+  run, the code-writer transcribed it, and the code-reviewer caught it at run time for the price
+  of a fix pair. The fact *was* derivable (`controller-api.md:899`, `app.py:356/359/394`), so the
+  label was wrong as well as the count. Logged here because a `pre-settled` plan is where the
+  executor trusts the constraints most; one instance, watch for a second. It is also why slice
+  158's P1 bounce is not counted against A3 (see A3, same date).
 
 ## A2 — Question-gated research budget
 
@@ -266,6 +281,41 @@ blocking-finding rate and downstream appended-phase rate hold while producer cos
   first (the Cuadron counter-evidence — a longer or dearer `high` r1 self-refutes early), then
   gate-red-on-r1, blocking-finding rate, executor-round-≥2 rate, fuse trips, and net slice cost
   against 144/145/146. Kill: flag back to `xhigh` per a3-plan.md §5; stage 2 stays unbuilt.
+- 2026-08-18 — first read: slice 158 (`pre-settled`, 5 phases, 0.7.0; $81.77). Two round-1s
+  ran `high` (P1, P2) and both drew a Major blocking finding; the fuse tripped after P2, and
+  P3–P5's round 1 ran `xhigh` — all three signed off on round 1 with advisories only. Cost per
+  tier: no Cuadron pathology — the `high` rounds were not longer or dearer (P2 r1 `high` 46
+  turns/5 m/$2.84 against P5 r1 `xhigh` 46 turns/6 m/$3.49; different work, not a matched pair,
+  so it bounds nothing). Gate-red-on-r1: 0 and uninformative — P1's target (the spec repo) has no
+  gate, and P2's gate was green with the prose wrong. **Attribution matters more than the count:**
+  P1's finding was plan-authored — the `xhigh` plan-writer's r2 wrote "Two departures … are known"
+  into a constraint labelled *cannot derive* while applying a review whose evidence named the
+  third (`plan_review_r1.md:62`); the writer transcribed it, the code-reviewer caught it — not a
+  tier event. P2's finding is the tier event: the writer lengthened the recovery remedy without
+  asking who renders it, and the bot's 400-char per-issue clamp truncated it mid-word — the
+  skipped "who consumes this?" check, the failure shape the operator saw with Opus 4.x. Baseline
+  for the comparison is the reviewer's round-1 `issues` outcome per phase: 24 % over 140–157
+  (19/80), 27 % on same-era `xhigh` rounds (3/11, 155–158); the arm is 1 tier-attributable in 2.
+  (An earlier read of 5 % was a telemetry artifact — `findings[].impact` is absent from history
+  rows before 144 and on 149–153; use the outcome, not the field.) Rework 19 % — the highest of
+  the measured set — but the attributable part is P2's fix pair ≈ $4.02 against ≈ $0.95 saved on
+  the two `high` rounds: a wash on cost, one qualitative strike on quality. Confound on record:
+  both stepped-down phases were ungated prose, all three `xhigh` phases gated Go, so this slice
+  cannot separate tier from gate coverage. The fuse fired at the first available evidence and the
+  remaining 60 % of the run went clean — but it also counted P4, whose r1 died `rc=1` with no
+  verdict and whose r2 was only the re-dispatch after the operator resumed the loop.
+- 2026-08-18 — 0.7.1: a re-dispatch after a crashed or `blocked` session or a protocol bail-out is
+  not a redo — it runs at the round-1 tier and does not count toward the fuse; `spawn_executor`
+  carries an explicit `redo` flag, an operator-ruled re-dispatch still is one, and the round
+  number stays the attempt counter (a3-plan.md's preface has the note). Without it a crash on the
+  first two phases trips the fuse on noise and moves a `high` phase into the `xhigh` arm unseen.
+- 2026-08-18 — **the next read is pre-registered.** On the next `pre-settled`/`localized` slice,
+  each blocking finding on a `high` round 1 is classified before it is counted: *plan-carried*
+  (a wrong or missing fact the plan handed the writer as a constraint — P1's kind; the plan
+  loop's account, not this one) or *writer-derivable* (a check the writer could have made from
+  the repo and skipped — P2's kind; counts). Operator's rule: **one more writer-derivable event
+  and the step-down is killed** — `--writer-effort xhigh` or flip `DEFAULT_WRITER_EFFORT`, stage
+  2 stays unbuilt. Compare against the 27 % same-era rate, and read the fuse only from 0.7.1.
 
 ## A4 — Upfront complexity grading
 
