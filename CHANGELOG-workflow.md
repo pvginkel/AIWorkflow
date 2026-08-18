@@ -4,6 +4,36 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-18 — the code-writer's round 1 steps down to `high` on a small-shape plan (v0.7.0)
+
+A3, stage 1 (`docs/research/a3-plan.md` §3, §8a) — the trial the catalogue prices as the cheap
+knob with honest uncertainty. Every dispatch has run Opus at `xhigh` since the graded lane was
+retired; the effort documentation says `high` *is* the default and `xhigh` the premium for
+demanding work, and Cuadron et al. found less effort matched more at 57 % of cost — with the
+counter-evidence, stated in the catalogue, that o1-*low* over-thought *more* than o1-high in
+agentic settings. So the change is one rule at one site, self-gating and reversible by a flag:
+**the code-writer's executor round 1 of each phase runs at the run's `writer_effort` (new
+`run_loop.py run --writer-effort {xhigh,high,medium}`, default `high`, persisted in
+`state.json`) iff the plan's `## Task shape` is `pre-settled` or `localized`; `cross-cutting`, an
+undeclared or unparseable shape (every plan predating A1), or a tripped fuse keeps round 1 at
+`xhigh`; every executor round ≥ 2 runs `xhigh`** — each exists only because a signal fired (a
+red gate, a blocking finding, an operator ruling), so "round ≥ 2" is the escalation with no
+bookkeeping. The **fuse**: once two phases in a run have needed an executor round beyond round 1
+(`state.json`'s `effort_fuse`), every later phase's round 1 runs `xhigh` — the self-protective
+answer to the graded lane's failure mode, a slice on which the cheap tier keeps triggering redos
+stops paying the redo tax mid-run rather than at the retrospective. Unchanged at `xhigh`:
+code-reviewer, every consult, doc-writer (no reviewer covers the doc phase, so no signal would
+catch a cheap-tier failure there), plan-writer and plan-reviewer (the plan half is a conditional
+second stage, built only if this one holds); the Sonnet roles are untouched; the writer is not
+told its tier. A crash-reattached session resumes at the tier it was created with (effort is
+fixed within a session). Telemetry rides I1/I2: every session history row in both loops now
+carries `effort` (the value actually dispatched), `state.json` gains `task_shape`,
+`writer_effort` and `effort_fuse`, the close-out `Run:` header names the shape and tier,
+`slice_cost.py` prints a `tiers` line and each session's round and effort, and `run_loop.py
+status` / `--dry-run` show the shape and the round-1 tier. Kill criteria are pre-committed in the
+plan (§5): if `high` sessions run longer or spend more than `xhigh` ones, or the redo tax eats the
+discount, the flag goes back to `xhigh` — one launch-flag change, no revert.
+
 ## 2026-08-17 — the report is tool-written and rendered: append, note, strike, list, render (v0.6.0)
 
 The same reports read once more, from the writer's side. Every entry was typed by hand off the

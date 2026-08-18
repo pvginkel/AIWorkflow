@@ -9,6 +9,7 @@ created, no claude process is spawned, and no real suite runs.
 Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_run_loop.py` or via pytest.
 """
 
+import argparse
 import contextlib
 import importlib.util
 import io
@@ -110,12 +111,15 @@ class ScriptedLoop(RunLoop):
     the loop and stands in for what the session would have done on disk."""
 
     def __init__(self, slice_dir, script, resume=False, gates=None,
-                 doc_gates=None, repo_root=None, sweep_reds=None):
-        super().__init__(Path(slice_dir), resume=resume)
+                 doc_gates=None, repo_root=None, sweep_reds=None,
+                 writer_effort=None):
+        super().__init__(Path(slice_dir), resume=resume,
+                         writer_effort=writer_effort)
         if repo_root is not None:
             self.repo_root = Path(repo_root)
         self.script = list(script)
         self.spawned = []    # (role, phase, round, outcome)
+        self.efforts = []    # (role, phase, round, effort) — the tier dispatched
         self.prompts = []    # (role, prompt)
         self.gates = list(gates or [])
         self.gate_calls = []
@@ -167,9 +171,10 @@ class ScriptedLoop(RunLoop):
                 "green": green, "log": str(log_path), "duration_s": 0}
 
     def _spawn(self, role, prompt, cwd, verdict_path, phase_id, round_,
-               agent=None, display=None):
-        prompt, resume_session = self._resolve_reattach(
+               agent=None, display=None, effort=None):
+        prompt, resume_session, reattach_effort = self._resolve_reattach(
             role, phase_id, prompt, Path(verdict_path), "[t]")
+        effort = reattach_effort or effort or run_loop.MODELS[role][1]
         assert self.script, f"unexpected extra spawn: {role} (P{phase_id})"
         step = self.script.pop(0)
         want_role, verdict = step[0], step[1]
@@ -180,10 +185,12 @@ class ScriptedLoop(RunLoop):
         )
         self.spawned.append((role, phase_id, round_, verdict["outcome"],
                              resume_session))
+        self.efforts.append((role, phase_id, round_, effort))
         self._record(phase_id, role, round_, verdict["outcome"],
                      verdict.get("summary", ""), "sess-test", 1,
-                     extra={k: verdict[k] for k in ("findings", "refuted")
-                            if verdict.get(k)})
+                     extra={"effort": effort,
+                            **{k: verdict[k] for k in ("findings", "refuted")
+                               if verdict.get(k)}})
         if len(step) > 2:
             step[2](self)
         return verdict, "sess-test"
@@ -203,11 +210,11 @@ class SpawningLoop(ScriptedLoop):
         self._pending = None
 
     def _spawn(self, role, prompt, cwd, verdict_path, phase_id, round_,
-               agent=None, display=None):
+               agent=None, display=None, effort=None):
         self._pending = (role, Path(verdict_path))
         verdict, session = RunLoop._spawn(
             self, role, prompt, cwd, Path(verdict_path), phase_id, round_,
-            agent=agent, display=display)
+            agent=agent, display=display, effort=effort)
         self.prompts.append((role, prompt))
         self.spawned.append((role, phase_id, round_, verdict["outcome"],
                              None))
@@ -260,9 +267,10 @@ def phase_section(pid, title, target=PROJECT, done=False, body=""):
             f"Target: {target}\n\n{body}")
 
 
-def make_slice(tmp, phases=None, repo=True):
+def make_slice(tmp, phases=None, repo=True, shape=None):
     """A slice folder inside a specs-shaped tree, plus a fake target repo
-    whose CLAUDE.md carries the procedure-doc pointers."""
+    whose CLAUDE.md carries the procedure-doc pointers. `shape` writes the
+    plan's `## Task shape` section in the template's format."""
     root = Path(tmp)
     slice_dir = root / "specs" / "slices" / "074_test_slice"
     slice_dir.mkdir(parents=True)
@@ -271,7 +279,8 @@ def make_slice(tmp, phases=None, repo=True):
     sections = [phase_section(*p) if isinstance(p, tuple) else p
                 for p in phases]
     (slice_dir / "plan.md").write_text(
-        "# Test slice — plan\n\n## Phases\n\n" + "\n".join(sections))
+        "# Test slice — plan\n\n" + (task_shape_section(shape) if shape else "")
+        + "## Phases\n\n" + "\n".join(sections))
     (slice_dir / "verification.json").write_text('{"items": []}\n')
     if repo:
         repo_root = root / "repo"
@@ -288,6 +297,22 @@ def make_slice(tmp, phases=None, repo=True):
             "projects: {}\n")
         return slice_dir, repo_root
     return slice_dir, None
+
+
+def task_shape_section(shape):
+    """The section as plan-template.md fixes it: heading, the writer's
+    instruction comment, then the declaration line."""
+    return ("## Task shape\n\n"
+            "<!-- Declared by the plan-writer BEFORE it investigates;\n"
+            "     one of pre-settled | localized | cross-cutting. -->\n\n"
+            f"{shape} — slice.md fixes the mechanism.\n\n")
+
+
+def writer_efforts(loop):
+    """(phase, round, effort) for every code-writer dispatch, in order."""
+    return [(phase, round_, effort)
+            for role, phase, round_, effort in loop.efforts
+            if role == "code-writer"]
 
 
 def append_phase(pid, title, target=PROJECT):
@@ -2361,6 +2386,9 @@ def test_dirty_worktree_fails_preflight():
         r = ScriptedLoop(slice_dir, [], repo_root=repo)
         r.fake_git.dirty = " M some/file.py"
         assert run_to_exit(r) == 2
+        assert not (slice_dir / "state.json").exists(), (
+            "a precondition error must not strand a state.json the fixed "
+            "re-run would then need --resume for")
 
 
 def test_existing_state_requires_resume():
@@ -2482,6 +2510,389 @@ def test_dry_run_flags_bad_targets():
         assert "target=INVALID" in out.getvalue()
         assert "neither a `kc project list` component" in err.getvalue()
 
+
+
+# -- task shape and the code-writer's round-1 tier ----------------------------
+
+def test_parse_task_shape_reads_the_template_section():
+    text = ("# Slice 074 — plan\n\n## Requirements / rulings\n\n- R1. x\n\n"
+            + task_shape_section("pre-settled")
+            + "## Ordering constraints\n\nNone.\n")
+    assert run_loop.parse_task_shape(text) == "pre-settled"
+
+
+def test_parse_task_shape_knows_every_shape_and_ignores_decoration():
+    parse = run_loop.parse_task_shape
+    assert parse("## Task shape\n\nlocalized — one file.\n") == "localized"
+    assert parse("## Task shape\n\ncross-cutting: many.\n") == "cross-cutting"
+    assert parse("## Task shape\n\n**pre-settled** — fixed.\n") == "pre-settled"
+    assert parse("## Task shape\n\n`localized`\n") == "localized"
+    assert parse("## Task shape   \n\nPre-Settled — fixed.\n") == "pre-settled"
+
+
+def test_parse_task_shape_reads_nothing_it_cannot_trust():
+    parse = run_loop.parse_task_shape
+    assert parse("# plan\n\n### P1 — x\n\nTarget: app\n") is None
+    assert parse("## Task shape\n\nsmall — my own word.\n") is None
+    assert parse("## Task shape\n\n<!-- nothing but the comment -->\n\n"
+                 "## Phases\n\nlocalized\n") is None
+    # a multi-line comment is skipped whole, the declaration after it read
+    assert parse("## Task shape\n\n<!-- one\n     two -->\n\nlocalized\n") \
+        == "localized"
+    # the section ends at the next heading
+    assert parse("## Task shape\n\n## Phases\n\nlocalized\n") is None
+
+
+def test_declared_small_shape_runs_round_one_at_the_reduced_tier():
+    for shape in ("pre-settled", "localized"):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp, shape=shape)
+            r = ScriptedLoop(slice_dir,
+                             [V["exec_done"], V["review_signoff"], *TAIL],
+                             repo_root=repo)
+            assert run_to_exit(r) == 0
+            assert writer_efforts(r) == [("1", 1, "high")]
+            state = load_state(slice_dir)
+            assert state["task_shape"] == shape
+            assert state["writer_effort"] == "high"
+            assert state["effort_fuse"] == {"phases": [], "tripped": False}
+            assert f"task shape: {shape}" in (slice_dir / "log.txt").read_text()
+
+
+def test_cross_cutting_and_undeclared_shapes_never_step_down():
+    for shape in ("cross-cutting", None):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp, shape=shape)
+            r = ScriptedLoop(slice_dir,
+                             [V["exec_done"], V["review_signoff"], *TAIL],
+                             repo_root=repo)
+            assert run_to_exit(r) == 0
+            assert writer_efforts(r) == [("1", 1, "xhigh")]
+            state = load_state(slice_dir)
+            assert state["task_shape"] == shape
+            # the tier is still recorded — the flag is what it records
+            assert state["writer_effort"] == "high"
+
+
+def test_writer_effort_flag_sets_the_reduced_tier():
+    for flag, want in (("xhigh", "xhigh"), ("medium", "medium")):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp, shape="pre-settled")
+            r = ScriptedLoop(slice_dir,
+                             [V["exec_done"], V["review_signoff"], *TAIL],
+                             repo_root=repo, writer_effort=flag)
+            assert run_to_exit(r) == 0
+            assert writer_efforts(r) == [("1", 1, want)]
+            assert load_state(slice_dir)["writer_effort"] == flag
+
+
+def test_gate_fix_round_runs_at_full_effort():
+    """Every executor round past r1 exists because a signal fired — a red
+    gate here — and those rounds judge a failure at full effort."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, shape="pre-settled")
+        script = [V["exec_done"], V["exec_done"], V["review_signoff"], *TAIL]
+        r = ScriptedLoop(slice_dir, script, gates=[False, True],
+                         repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert writer_efforts(r) == [("1", 1, "high"), ("1", 2, "xhigh")]
+
+
+def test_review_fix_round_runs_at_full_effort():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, shape="localized")
+        script = [V["exec_done"], V["review_issues"], V["exec_done"],
+                  V["review_signoff"], *TAIL]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert writer_efforts(r) == [("1", 1, "high"), ("1", 2, "xhigh")]
+
+
+def test_operator_ruling_writer_round_runs_at_full_effort():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, shape="pre-settled")
+        outputs = slice_dir / "phases" / "P1"
+
+        def write_review(loop):
+            (outputs / "code_review_r1.md").write_text("# Review r1\n\nx\n")
+
+        script = [V["exec_done"],
+                  ("code-reviewer", {"outcome": "issues", "summary": "gaps"},
+                   write_review),
+                  ("code-writer", {"outcome": "question",
+                                   "summary": "which mount point?"})]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 4
+        assert writer_efforts(r) == [("1", 1, "high"), ("1", 2, "xhigh")]
+
+        script2 = [("code-writer", {"outcome": "done", "summary": "ruled"}),
+                   V["review_signoff"], *TAIL]
+        r2 = ScriptedLoop(slice_dir, script2, resume=True, repo_root=repo)
+        r2.fake_git.branches.add("phase/074-P1")
+        assert run_to_exit(r2) == 0
+        assert writer_efforts(r2) == [("1", 3, "xhigh")]
+
+
+def test_one_phase_needing_a_redo_does_not_stop_the_step_down():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(
+            tmp, phases=[("1", "First"), ("2", "Second")],
+            shape="pre-settled")
+        script = [V["exec_done"], V["exec_done"], V["review_signoff"],
+                  V["exec_done"], V["review_signoff"], *TAIL]
+        r = ScriptedLoop(slice_dir, script, gates=[False, True],
+                         repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert writer_efforts(r) == [("1", 1, "high"), ("1", 2, "xhigh"),
+                                     ("2", 1, "high")]
+        fuse = load_state(slice_dir)["effort_fuse"]
+        assert fuse == {"phases": ["1"], "tripped": False}
+
+
+def test_effort_fuse_trips_after_two_phases_needed_a_redo():
+    """A slice where the cheap tier keeps buying redos stops paying the tax
+    mid-run: the third phase starts at xhigh. A phase is counted once,
+    however many redo rounds it took."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(
+            tmp, phases=[("1", "First"), ("2", "Second"), ("3", "Third")],
+            shape="pre-settled")
+        script = [V["exec_done"], V["exec_done"], V["exec_done"],   # P1 r1-r3
+                  V["review_signoff"],
+                  V["exec_done"], V["exec_done"],                   # P2 r1-r2
+                  V["review_signoff"],
+                  V["exec_done"], V["review_signoff"],              # P3 r1
+                  *TAIL]
+        r = ScriptedLoop(slice_dir, script,
+                         gates=[False, False, True, False, True, True],
+                         repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert writer_efforts(r) == [
+            ("1", 1, "high"), ("1", 2, "xhigh"), ("1", 3, "xhigh"),
+            ("2", 1, "high"), ("2", 2, "xhigh"),
+            ("3", 1, "xhigh"),
+        ]
+        state = load_state(slice_dir)
+        assert state["effort_fuse"] == {"phases": ["1", "2"], "tripped": True}
+        assert "effort fuse tripped: P1, P2" in (slice_dir / "log.txt").read_text()
+
+
+def test_history_and_dispatch_carry_the_tier_of_every_role():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, shape="pre-settled")
+        script = [
+            ("code-writer", {"outcome": "done", "summary": "b"}),
+            ("code-reviewer", {"outcome": "signoff", "summary": "ok"}),
+            ("consult", {"outcome": "complete", "summary": "d"}),
+            ("test-agent", {"outcome": "clean", "summary": "ok"}),
+            ("doc-writer", {"outcome": "done", "summary": "ok"}),
+        ]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        by_role = {role: effort for role, _, _, effort in r.sessions}
+        assert by_role == {"code-writer": "high", "code-reviewer": "xhigh",
+                           "consult": "xhigh", "test-agent": None,
+                           "doc-writer": "xhigh"}
+        rows = {h["role"]: h for h in load_state(slice_dir)["history"]}
+        assert rows["code-writer"]["effort"] == "high"
+        assert rows["code-reviewer"]["effort"] == "xhigh"
+        assert rows["consult"]["effort"] == "xhigh"
+        assert rows["doc-writer"]["effort"] == "xhigh"
+        assert rows["test-agent"]["effort"] is None
+        # deterministic rows are not dispatches: no tier to carry
+        assert "effort" not in rows["gate"] and "effort" not in rows["sweep"]
+        assert "(opus high)" in (slice_dir / "log.txt").read_text()
+
+
+def test_in_flight_carries_the_tier_while_the_session_runs():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, shape="pre-settled")
+        seen = []
+
+        def peek(loop):
+            seen.append(dict(loop.state["in_flight"]))
+
+        script = [
+            ("code-writer", {"outcome": "done", "summary": "b"}, peek),
+            ("code-reviewer", {"outcome": "signoff", "summary": "ok"}, peek),
+            ("consult", {"outcome": "complete", "summary": "d"}),
+            ("test-agent", {"outcome": "clean", "summary": "ok"}),
+            ("doc-writer", {"outcome": "done", "summary": "ok"}),
+        ]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert [(f["role"], f["effort"]) for f in seen] == [
+            ("code-writer", "high"), ("code-reviewer", "xhigh")]
+
+
+def resume_before_first_phase(**extra):
+    """The state a run bailed out of before P1 started."""
+    return {
+        "slice": "074_test_slice", "created_at": "t", "orchestrator": None,
+        "run_phase": "phases", "bases": {}, "slice_base": {},
+        "known_phases": [], "phases": {}, "generation": 0, "test_rounds": 0,
+        "consult_seq": 0, "in_flight": None, "bailouts": [],
+        "appended_phases": [], "history": [], **extra,
+    }
+
+
+def test_resume_keeps_the_recorded_tier():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, shape="pre-settled")
+        (slice_dir / "state.json").write_text(json.dumps(
+            resume_before_first_phase(task_shape="pre-settled",
+                                      writer_effort="medium",
+                                      effort_fuse={"phases": [],
+                                                   "tripped": False})))
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], resume=True, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert writer_efforts(r) == [("1", 1, "medium")]
+        assert load_state(slice_dir)["writer_effort"] == "medium"
+
+
+def test_resume_with_the_flag_overrides_the_recorded_tier():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, shape="pre-settled")
+        (slice_dir / "state.json").write_text(json.dumps(
+            resume_before_first_phase(task_shape="pre-settled",
+                                      writer_effort="medium",
+                                      effort_fuse={"phases": [],
+                                                   "tripped": False})))
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], resume=True, repo_root=repo,
+                         writer_effort="xhigh")
+        assert run_to_exit(r) == 0
+        assert writer_efforts(r) == [("1", 1, "xhigh")]
+        assert load_state(slice_dir)["writer_effort"] == "xhigh"
+        assert "overrides the recorded medium" in \
+            (slice_dir / "log.txt").read_text()
+
+
+def test_resume_of_a_state_that_predates_the_step_down_fills_it_in():
+    """state.json written by an older plugin: the shape is read now, the
+    tier defaults, and the fuse starts empty."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, shape="localized")
+        old = resume_before_first_phase()
+        for key in ("task_shape", "writer_effort", "effort_fuse"):
+            assert key not in old
+        (slice_dir / "state.json").write_text(json.dumps(old))
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], resume=True, repo_root=repo)
+        assert run_to_exit(r) == 0
+        state = load_state(slice_dir)
+        assert state["task_shape"] == "localized"
+        assert state["writer_effort"] == run_loop.DEFAULT_WRITER_EFFORT
+        assert state["effort_fuse"] == {"phases": [], "tripped": False}
+        assert writer_efforts(r) == [("1", 1, "high")]
+
+
+def test_reattach_keeps_the_tier_its_session_was_created_with():
+    """Effort is fixed within a session: the resumed round is dispatched at
+    the tier the interrupted one started at, not the run's current one."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, shape="pre-settled")
+        state = resume_before_first_phase(
+            task_shape="pre-settled", writer_effort="high",
+            effort_fuse={"phases": [], "tripped": False},
+            known_phases=["1"],
+            phases={"1": {"status": "in_progress", "stage": "executor",
+                          "branch": "phase/074-P1", "target": PROJECT,
+                          "executor_rounds": 1, "gate_fix_rounds": 0,
+                          "review_rounds": 0, "gate_runs": 0,
+                          "gate_green_commit": None, "gate_green_log": None,
+                          "reviewed_head": None}},
+            in_flight={"phase": "1", "role": "code-writer", "round": 1,
+                       "verdict_path": "x", "session": "sess-crashed",
+                       "effort": "high"})
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        script = [
+            ("code-writer", {"outcome": "done", "summary": "b"}),
+            ("code-reviewer", {"outcome": "signoff", "summary": "ok"}),
+            ("consult", {"outcome": "complete", "summary": "d"}),
+            ("test-agent", {"outcome": "clean", "summary": "ok"}),
+            ("doc-writer", {"outcome": "done", "summary": "ok"}),
+        ]
+        r = SpawningLoop(slice_dir, script, resume=True, repo_root=repo,
+                         writer_effort="xhigh")
+        r.fake_git.branches.add("phase/074-P1")
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert r.sessions[0][0] == "code-writer"
+        assert r.sessions[0][3] == "high", "the reattached round kept its tier"
+        assert load_state(slice_dir)["writer_effort"] == "xhigh"
+
+
+def test_writer_effort_flag_parses_and_reaches_the_loop():
+    seen = []
+    for argv, want in ((["run", "slices/074"], None),
+                       (["run", "slices/074", "--writer-effort", "medium"],
+                        "medium")):
+        with patched(run_loop,
+                     cmd_run=lambda args: seen.append(args.writer_effort)), \
+                patched(sys, argv=["run_loop.py", *argv]):
+            run_loop.main()
+        assert seen[-1] == want
+    err = io.StringIO()
+    with patched(sys, argv=["run_loop.py", "run", "s",
+                            "--writer-effort", "low"]), \
+            contextlib.redirect_stderr(err):
+        try:
+            run_loop.main()
+        except SystemExit as e:
+            assert e.code == 2
+        else:
+            raise AssertionError("a tier outside the vocabulary must not parse")
+
+
+def test_cmd_run_hands_the_flag_to_the_loop_and_the_dry_run_states_the_tier():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _ = make_slice(tmp, repo=False, shape="pre-settled")
+        args = argparse.Namespace(slice_dir=str(slice_dir), resume=False,
+                                  verbose=False, dry_run=True,
+                                  writer_effort="medium")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            run_loop.cmd_run(args)
+        assert "task shape: pre-settled — code-writer round 1 at medium" \
+            in out.getvalue()
+
+
+def test_dry_run_states_no_step_down_for_an_undeclared_shape():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _ = make_slice(tmp, repo=False)
+        loop = RunLoop(slice_dir, resume=False)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            run_loop.cmd_dry_run(loop)
+        assert "task shape: undeclared — code-writer round 1 at xhigh" \
+            in out.getvalue()
+
+
+def test_status_prints_the_shape_the_tier_and_the_fuse():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _ = make_slice(tmp, repo=False)
+        state = {"slice": "074_test_slice", "run_phase": "phases",
+                 "generation": 0, "bailouts": [], "known_phases": [],
+                 "phases": {}, "history": []}
+        (slice_dir / "state.json").write_text(json.dumps(
+            {**state, "task_shape": "pre-settled", "writer_effort": "high",
+             "effort_fuse": {"phases": ["1", "3"], "tripped": True}}))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            run_loop.cmd_status(argparse.Namespace(slice_dir=str(slice_dir)))
+        assert "shape=pre-settled  writer_effort=high  " \
+               "fuse: tripped (P1, P3)" in out.getvalue()
+
+        # a state from before the step-down prints nothing extra
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            run_loop.cmd_status(argparse.Namespace(slice_dir=str(slice_dir)))
+        assert "shape=" not in out.getvalue()
 
 if __name__ == "__main__":
     _tests = [v for k, v in sorted(globals().items())

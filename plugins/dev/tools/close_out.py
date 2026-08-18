@@ -654,6 +654,15 @@ def run_header(state: dict) -> str:
             phrase += (f" ({len(known) - len(appended)} planned, "
                        + ", ".join(f"P{p}" for p in appended) + " appended)")
         bits.append(phrase)
+    shape = state.get("task_shape")
+    if isinstance(shape, str):
+        bits.append(f"shape {shape}")
+    writer = state.get("writer_effort")
+    if isinstance(writer, str):
+        fuse = state.get("effort_fuse")
+        bits.append(f"writer {writer}" + (
+            " (fuse tripped)"
+            if isinstance(fuse, dict) and fuse.get("tripped") else ""))
     if isinstance(state.get("bailouts"), list):
         bailouts = state["bailouts"]
         phrase = _plural(len(bailouts), "bail-out")

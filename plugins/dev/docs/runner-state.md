@@ -22,7 +22,13 @@ the exact `commits` it ran on — reused while every swept HEAD matches, re-run 
 `consult_seq`, `in_flight`, `bailouts` (every stop this run made — `reason`, `phase`,
 `question`, `ts` — kept here because `bailout.json` is unlinked on resume), `appended_phases`
 (the ids the plan gained after the run started — a consult's, the test phase's, or the
-operator's, as opposed to the phases it began with), `phases`, and `history`.
+operator's, as opposed to the phases it began with), the code-writer's tier record —
+`task_shape` (the plan's `## Task shape` as read at run start: `pre-settled` | `localized` |
+`cross-cutting`, or `null` when undeclared or unparseable), `writer_effort` (the round-1 tier the
+run was launched with — `--writer-effort`, default `high`; a resume keeps it unless the flag is
+passed again) and `effort_fuse` (`phases`: the ids that needed an executor round beyond round 1,
+`tripped`: true from the second such phase on, after which every later phase's round 1 runs
+`xhigh`) — `phases`, and `history`.
 
 Per phase: `status` (`pending` | `in_progress` | `merged`), `stage` (`executor` | `gate` |
 `review` | `merging` | `null`), `branch`, `target`, `executor_rounds`, `gate_fix_rounds`,
@@ -31,7 +37,10 @@ Per phase: `status` (`pending` | `in_progress` | `merged`), `stage` (`executor` 
 
 `history` is append-only, one entry per agent run plus one per gate run (role `gate`), one per
 loop-tail sweep (role `sweep`), one per doc gate (role `doc-gate`) and one per consult: `ts`,
-`phase`, `role`, `round`, `outcome`, `summary`, `session`, `transcript`, `duration_s`. A
+`phase`, `role`, `round`, `outcome`, `summary`, `session`, `transcript`, `duration_s`. Every
+session row also carries `effort` — the reasoning effort actually dispatched (`xhigh` for every
+role but a stepped-down code-writer round 1, `null` for the Sonnet roles, which pass none); gate,
+sweep and doc-gate rows carry no such key. A
 code-reviewer row additionally carries the verdict's `findings` list (id, severity, impact,
 category, anchor per finding — the review contract's telemetry) and a review-fix executor row
 its `refuted` list, exactly as the agent reported them. The
@@ -93,10 +102,12 @@ rather than replaying the consult→test ladder. Resume skips preflight entirely
 the state it resumes into.
 
 When a run dies mid-agent (host restart, quota stop, Ctrl-C), the `in_flight` record — phase,
-role, round, verdict path, session id, start time — lets `--resume` **reattach**: the worktree is
-left exactly as the crash left it, and the interrupted session is resumed with a recovery prompt
-instead of a fresh dispatch. A reattached round keeps the round number its interrupted dispatch
-ran under, so caps do not re-fire and counters do not double-advance.
+role, round, verdict path, session id, start time, effort — lets `--resume` **reattach**: the
+worktree is left exactly as the crash left it, and the interrupted session is resumed with a
+recovery prompt instead of a fresh dispatch. A reattached round keeps the round number its
+interrupted dispatch ran under, so caps do not re-fire and counters do not double-advance, and
+the effort it was created with, because effort is fixed within a session — even when the resume
+passes a different `--writer-effort`.
 
 Two things are deliberately never reattached: **consults**, which are cheap and whose action
 vocabulary may have changed, and **timed-out sessions**, whose `in_flight` record is cleared as

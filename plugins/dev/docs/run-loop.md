@@ -57,7 +57,14 @@ keeps the shared doc parseable:
 
 Fresh **code-writer** session per phase (prompt: *"Execute P\<n\> of \<plan path\>"* plus the
 standing contract — it reads the whole plan, works its phase against the live repo, runs the gate
-itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id>`). Then:
+itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id>`). Its
+**effort tier** is the one place the loop steps down from `xhigh`: round 1 runs at the run's
+`writer_effort` (default `high`) when the plan's `## Task shape` is `pre-settled` or `localized`,
+and at `xhigh` when the shape is `cross-cutting`, undeclared, or the **fuse** has tripped —
+two phases in this run having needed an executor round beyond round 1. Every executor round ≥ 2
+runs `xhigh` regardless: it exists only because a signal fired. The writer is not told its tier;
+the reviewer, the gate and every consult are unchanged, and the tier rides each history row as
+`effort` ([agent-dispatch.md](agent-dispatch.md) has the rule in full). Then:
 
 - **Fetch** — before the session, the driver fetches the target repo's `origin` (and every repo
   the run has touched before the test phase). Nothing else in a run fetches: the driver branches

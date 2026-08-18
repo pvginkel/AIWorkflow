@@ -63,7 +63,9 @@ The mechanical rules the parser holds every author to:
 - **`## Task shape` is the plan-writer's declaration** — `pre-settled`, `localized`, or
   `cross-cutting`, one line of justification anchored in slice.md facts. It binds the writer's
   investigation and the plan review checks it (semantics: [plan-loop.md](plan-loop.md)); the
-  run loop's parser ignores it like every other `##` section.
+  run loop reads the first word of the section body at run start to pick the code-writer's
+  round-1 effort tier ([agent-dispatch.md](agent-dispatch.md)) — an absent or unparseable
+  declaration means no step-down — and otherwise skips the section like every other `##`.
 - **`Target:` is the first line of every phase body** — a `kc project list` component name or
   a sibling repo path (`../SiblingRepo`). It roots the executor's cwd, the driver's git
   operations, and the gate. Markdown decoration is tolerated (`**Target:**` with a backticked

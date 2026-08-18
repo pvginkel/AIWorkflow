@@ -374,6 +374,58 @@ def test_run_subagents_ride_their_dispatchers_rework_bucket(tmp_path):
     assert d["research_share"] == 0.0     # run-loop sub-agents never are
 
 
+# -- the effort step-down's A/B row -----------------------------------------
+
+def test_tiers_block_reads_both_state_files(tmp_path):
+    t = tmp_path / "proj" / "s1.jsonl"
+    _write_transcript(t, [_message("m1", output_tokens=100)])
+    slice_dir = _slice(
+        tmp_path,
+        state={"orchestrator": None,
+               "task_shape": "pre-settled", "writer_effort": "high",
+               "effort_fuse": {"phases": ["1"], "tripped": False},
+               "history": [{**_history_entry("s1", t), "effort": "high"}]},
+        plan_state={"orchestrator": None, "history": []})
+    convs, warnings = collect(slice_dir)
+    report = build_report(slice_dir, convs, warnings)
+    assert report["tiers"] == {
+        "task_shape": "pre-settled", "writer_effort": "high",
+        "plan_writer_effort": None,
+        "effort_fuse": {"phases": ["1"], "tripped": False}}
+    row = report["sessions"][0]
+    assert (row["round"], row["effort"]) == (1, "high")
+
+
+def test_tiers_block_is_all_none_for_a_slice_run_before_the_step_down(tmp_path):
+    t = tmp_path / "proj" / "s1.jsonl"
+    _write_transcript(t, [_message("m1", output_tokens=100)])
+    slice_dir = _slice(tmp_path, state={
+        "orchestrator": None, "history": [_history_entry("s1", t)]})
+    report = build_report(slice_dir, *collect(slice_dir))
+    assert report["tiers"] == {"task_shape": None, "writer_effort": None,
+                               "plan_writer_effort": None, "effort_fuse": None}
+    assert report["sessions"][0]["effort"] is None
+
+
+def test_report_prints_the_tier_line_and_the_session_rounds(tmp_path, capsys):
+    t = tmp_path / "proj" / "s1.jsonl"
+    _write_transcript(t, [_message("m1", output_tokens=100)])
+    slice_dir = _slice(
+        tmp_path,
+        state={"orchestrator": None, "task_shape": "localized",
+               "writer_effort": "medium",
+               "effort_fuse": {"phases": ["1", "2"], "tripped": True},
+               "history": [{**_history_entry("s1", t), "effort": "medium"}]},
+        plan_state={"orchestrator": None, "writer_effort": "high",
+                    "history": []})
+    assert main([str(slice_dir)]) == 0
+    out = capsys.readouterr().out
+    assert ("shape localized  ·  code-writer effort medium  ·  "
+            "plan-writer effort high  ·  fuse tripped (P1, P2)") in out
+    assert "P1 code-writer r1" in out
+    assert "medium" in out
+
+
 def test_write_state_appends_cost_block(tmp_path, capsys):
     t = tmp_path / "proj" / "s1.jsonl"
     _write_transcript(t, [_message("m1", output_tokens=200_000)])

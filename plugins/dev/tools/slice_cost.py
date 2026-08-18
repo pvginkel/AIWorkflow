@@ -96,7 +96,7 @@ class Conv:
     def __init__(self, session: str, role: str, phase: str | None,
                  kind: str, transcript: Path, loop: str | None = None,
                  round_: int | None = None, parent: "Conv | None" = None,
-                 appended: bool = False):
+                 appended: bool = False, effort: str | None = None):
         self.session = session
         self.role = role          # code-writer / subagent:<type> / orchestrator:<loop>
         self.phase = phase        # phase id, or None for phaseless roles
@@ -106,6 +106,7 @@ class Conv:
         self.round = round_       # the history entry's round; None for orchestrators
         self.parent = parent      # the recorded session a sub-agent rides under
         self.appended = appended  # the phase was appended by the run (a consult / test round)
+        self.effort = effort      # the tier it was dispatched at; None before 0.7.0
         self.tok_by_model: dict[str, dict[str, int]] = defaultdict(
             lambda: dict.fromkeys(USAGE_KEYS, 0))
         self.turns = 0            # deduplicated billed assistant messages
@@ -203,13 +204,14 @@ def collect(slice_dir: Path) -> tuple[list[Conv], list[str]]:
 
     def add(session: str | None, role: str, phase: str | None,
             kind: str, transcript: str | None, loop: str,
-            round_: int | None = None, appended: bool = False) -> None:
+            round_: int | None = None, appended: bool = False,
+            effort: str | None = None) -> None:
         if not session or not transcript or session in seen_sessions:
             return
         seen_sessions.add(session)
         path = Path(transcript)
         conv = Conv(session, role, phase, kind, path, loop=loop,
-                    round_=round_, appended=appended)
+                    round_=round_, appended=appended, effort=effort)
         if not path.is_file():
             warnings.append(f"transcript missing for {role} "
                             f"session {session}: {path}")
@@ -239,7 +241,8 @@ def collect(slice_dir: Path) -> tuple[list[Conv], list[str]]:
             add(entry.get("session"), entry.get("role", "unknown"),
                 phase, "session", entry.get("transcript"),
                 loop, entry.get("round"),
-                appended=phase is not None and str(phase) in appended)
+                appended=phase is not None and str(phase) in appended,
+                effort=entry.get("effort"))
 
     if not found_state:
         raise FileNotFoundError(
@@ -282,6 +285,26 @@ def derive(convs: list[Conv], total_cost: float) -> dict:
         "research_share": share(research),
         "rework_cost_usd": round(rework, 2),
         "rework_share": share(rework),
+    }
+
+
+def tiers(slice_dir: Path) -> dict:
+    """What the two loops dispatched at: the run's declared task shape, both
+    writer tiers, and the run's fuse — the A/B row for the effort step-down
+    (0.7.0+; every value None for a slice run before it)."""
+    def state(name: str) -> dict:
+        try:
+            loaded = json.loads((slice_dir / name).read_text())
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return loaded if isinstance(loaded, dict) else {}
+
+    run, plan = state("state.json"), state("plan_state.json")
+    return {
+        "task_shape": run.get("task_shape"),
+        "writer_effort": run.get("writer_effort"),
+        "plan_writer_effort": plan.get("writer_effort"),
+        "effort_fuse": run.get("effort_fuse"),
     }
 
 
@@ -335,6 +358,7 @@ def build_report(slice_dir: Path, convs: list[Conv],
             "active_s": active_s,
         },
         "derived": derive(convs, cost),
+        "tiers": tiers(slice_dir),
         "roles": {r: {**v, "cost": round(v["cost"], 2)}
                   for r, v in sorted(roles.items(),
                                      key=lambda kv: -kv[1]["cost"])},
@@ -343,6 +367,7 @@ def build_report(slice_dir: Path, convs: list[Conv],
                                       key=lambda kv: -kv[1]["cost"])},
         "sessions": [
             {"session": c.session, "role": c.role, "phase": c.phase,
+             "round": c.round, "effort": c.effort,
              "kind": c.kind, "turns": c.turns, "tokens": c.total_tokens(),
              "cost_usd": round(c.cost(), 2),
              "duration_s": round(c.duration_s())}
@@ -367,6 +392,13 @@ def print_report(report: dict) -> None:
           f"research ${d['research_cost_usd']:,.2f} "
           f"({d['research_share']:.0%})  ·  "
           f"rework ${d['rework_cost_usd']:,.2f} ({d['rework_share']:.0%})")
+    ti = report.get("tiers") or {}
+    fuse = ti.get("effort_fuse") or {}
+    blown = ("tripped (" + ", ".join(f"P{p}" for p in fuse.get("phases") or [])
+             + ")" if fuse.get("tripped") else "—")
+    print(f"  shape {ti.get('task_shape') or '—'}  ·  code-writer effort "
+          f"{ti.get('writer_effort') or '—'}  ·  plan-writer effort "
+          f"{ti.get('plan_writer_effort') or '—'}  ·  fuse {blown}")
 
     print(f"\n{'role':26} {'n':>3} {'turns':>6} {'tokens':>13} {'cost':>9}")
     for role, v in report["roles"].items():
@@ -377,12 +409,13 @@ def print_report(report: dict) -> None:
     for phase, v in report["phases"].items():
         print(f"{phase:26} {v['n']:>3} {v['tokens']:>13,} ${v['cost']:>8,.2f}")
 
-    print(f"\n{'session (by cost)':44} {'turns':>6} {'tokens':>13} "
-          f"{'cost':>9} {'dur':>7}")
+    print(f"\n{'session (by cost)':32} {'session':>11} {'effort':>7} "
+          f"{'turns':>6} {'tokens':>13} {'cost':>9} {'dur':>7}")
     for s in report["sessions"]:
-        label = f"{('P' + s['phase'] + ' ') if s['phase'] else ''}{s['role']}"
-        print(f"{label:32} {s['session'][:10]:>11} {s['turns']:>6} "
-              f"{s['tokens']:>13,} ${s['cost_usd']:>8,.2f} "
+        label = (f"{('P' + s['phase'] + ' ') if s['phase'] else ''}{s['role']}"
+                 + (f" r{s['round']}" if s.get("round") else ""))
+        print(f"{label:32} {s['session'][:10]:>11} {s.get('effort') or '—':>7} "
+              f"{s['turns']:>6} {s['tokens']:>13,} ${s['cost_usd']:>8,.2f} "
               f"{s['duration_s'] / 60:>6.0f}m")
 
     if report["warnings"]:

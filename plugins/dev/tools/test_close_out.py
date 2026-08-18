@@ -404,6 +404,17 @@ def test_stamp_counts_operator_questions_among_bail_outs():
     assert "· 0 bail-outs ·" in close_out.run_header(dict(STATE, bailouts=[]))
 
 
+def test_stamp_names_the_task_shape_and_the_writer_tier():
+    """0.7.0+ states carry the effort step-down's two inputs; a state
+    without them reads exactly as before."""
+    state = dict(STATE, task_shape="pre-settled", writer_effort="high")
+    assert "· shape pre-settled · writer high ·" in close_out.run_header(state)
+    tripped = close_out.run_header(
+        dict(state, effort_fuse={"phases": ["1", "2"], "tripped": True}))
+    assert "· writer high (fuse tripped) ·" in tripped
+    assert "shape" not in close_out.run_header(STATE)
+
+
 def test_stamp_needs_a_state_file_and_a_run_line():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)

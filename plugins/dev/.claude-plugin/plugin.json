@@ -1,6 +1,6 @@
 {
   "name": "dev",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "The kc-native slice-development pipeline. Skills: /dev:onboard, /dev:triage, /dev:plan-slice, /dev:run-slice, /dev:close-out, /dev:slice-dag, /dev:arch-design, plus /dev:merge-repos (a finite backend+UI monorepo migration; delete it when the last repo lands). Ships 9 agents and the kc-native run loop and plan loop, which drive a slice's phased plan.md to done unattended and write everything out of their scope to one close-out report per slice; targets KubeCoder projects (each project describes itself in .kubecoder/project.yaml).",
   "author": {
     "name": "Pieter van Ginkel",

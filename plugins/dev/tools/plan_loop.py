@@ -216,12 +216,13 @@ class PlanLoop:
         os.replace(tmp, self.state_path)
 
     def _record(self, role: str, round_: int, outcome: str, summary: str,
-                session: str | None, duration_s: int) -> None:
+                session: str | None, duration_s: int,
+                effort: str | None = None) -> None:
         self.state["history"].append({
             "ts": _now_iso(), "role": role, "round": round_,
             "outcome": outcome, "summary": summary, "session": session,
             "transcript": _transcript_path(self.repo_root, session),
-            "duration_s": duration_s,
+            "duration_s": duration_s, "effort": effort,
         })
         self._save_state()
 
@@ -358,7 +359,7 @@ class PlanLoop:
         outcome = verdict["outcome"]
         self.log(f"{label} → {outcome}: {verdict.get('summary', '')[:160]}")
         self._record(role, round_, outcome, verdict.get("summary", ""),
-                     session_id, duration_s)
+                     session_id, duration_s, effort=effort)
         return verdict
 
     # -- passes --------------------------------------------------------------

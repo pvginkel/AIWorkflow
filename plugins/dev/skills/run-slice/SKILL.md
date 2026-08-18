@@ -37,7 +37,10 @@ nothing from you between launch and close-out.
    `state.json`, and `bailout.json`. The loop's stdout is a deliberately terse progress feed —
    one timestamped line per job start and phase merge; it is all the mid-run visibility you
    need. Grep the log only when diagnosing a specific bail.
-   (`--resume` continues after any bail; `--dry-run` validates the plan without running.)
+   (`--resume` continues after any bail; `--dry-run` validates the plan without running;
+   `--writer-effort xhigh` opts the run out of the code-writer's round-1 effort step-down — the
+   default is `high` on a `pre-settled`/`localized` plan; pass it only when the operator asks
+   for the full-effort arm.)
 
 ## Job 2 — errors (exit 3)
 

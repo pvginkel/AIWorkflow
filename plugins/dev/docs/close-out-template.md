@@ -154,6 +154,11 @@ from `state.json` — every piece present in the state, nothing guessed for the 
 not:
 
 ```markdown
-Run: 2026-08-14 19:49 → 23:53 · 11 phases (8 planned, P9–P11 appended) · 2 bail-outs ·
-1 test round · doc phase done · $118.41 (planner 18 %, research 4 %, rework 14 %)
+Run: 2026-08-14 19:49 → 23:53 · 11 phases (8 planned, P9–P11 appended) · shape pre-settled ·
+writer high (fuse tripped) · 2 bail-outs · 1 test round · doc phase done · $118.41 (planner 18
+%, research 4 %, rework 14 %)
 ```
+
+`shape` is the plan's declared task shape and `writer` the code-writer's round-1 effort tier
+the run was launched with (`(fuse tripped)` when two phases needed a redo and the rest ran at
+`xhigh`) — the arm of the effort trial this report belongs to; absent on runs before 0.7.0.
