@@ -61,8 +61,9 @@ itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id
 **effort tier** is the one place the loop steps down from `xhigh`: round 1 runs at the run's
 `writer_effort` (default `high`) when the plan's `## Task shape` is `pre-settled` or `localized`,
 and at `xhigh` when the shape is `cross-cutting`, undeclared, or the **fuse** has tripped —
-two phases in this run having needed an executor round beyond round 1. Every executor round ≥ 2
-runs `xhigh` regardless: it exists only because a signal fired. The writer is not told its tier;
+two phases in this run having needed a redo. Every redo round runs `xhigh` regardless — a redo
+being a round a signal asked for; a re-dispatch after a crash or bail-out is not one and stays at
+the round-1 tier. The writer is not told its tier;
 the reviewer, the gate and every consult are unchanged, and the tier rides each history row as
 `effort` ([agent-dispatch.md](agent-dispatch.md) has the rule in full). Then:
 

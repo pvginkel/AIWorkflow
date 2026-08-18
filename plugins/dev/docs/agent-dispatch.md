@@ -47,12 +47,14 @@ applied at the single site every executor round passes through: round 1 of a pha
 run's `writer_effort` (`--writer-effort {xhigh,high,medium}` on `run_loop.py run`, default
 `high`, persisted in `state.json`) **iff** the plan's `## Task shape` declaration is
 `pre-settled` or `localized`; a `cross-cutting` shape, an undeclared or unparseable one (every plan
-predating the declaration), or a tripped fuse keeps round 1 at `xhigh`. **Every executor round
-≥ 2 runs `xhigh`** — each exists only because a verified signal fired (a red gate, a blocking
-review finding, an operator ruling), so "round ≥ 2" *is* the escalation, with no bookkeeping.
-The **fuse**: once two phases in a run have needed an executor round beyond round 1, every later
-phase's round 1 runs `xhigh` too — a slice on which the reduced tier keeps triggering redos stops
-paying the redo tax mid-run. Effort is fixed within a session (it shapes the cached prompt), so
+predating the declaration), or a tripped fuse keeps round 1 at `xhigh`. **Every redo round runs
+`xhigh`** — a redo is a round a verified signal asked for (a red gate, a blocking review finding,
+an operator ruling), so the signal *is* the escalation, with no bookkeeping. A re-dispatch that
+exists only because the previous session crashed, returned `blocked`, or hit a protocol bail-out
+is a fresh attempt at the same work, not a redo: it runs at the round-1 tier and counts for
+nothing (the round number still climbs — it names the verdict file and the history row). The
+**fuse**: once two phases in a run have needed a redo, every later phase's round 1 runs `xhigh`
+too — a slice on which the reduced tier keeps triggering redos stops paying the redo tax mid-run. Effort is fixed within a session (it shapes the cached prompt), so
 tiering happens only at dispatch boundaries — free, since every round is a fresh session — and a
 crash-reattached session resumes at the tier it was created with. Every history row records the
 tier actually dispatched (`effort`), which is what the A/B read runs on. The rule's design record

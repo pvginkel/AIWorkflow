@@ -26,9 +26,10 @@ operator's, as opposed to the phases it began with), the code-writer's tier reco
 `task_shape` (the plan's `## Task shape` as read at run start: `pre-settled` | `localized` |
 `cross-cutting`, or `null` when undeclared or unparseable), `writer_effort` (the round-1 tier the
 run was launched with — `--writer-effort`, default `high`; a resume keeps it unless the flag is
-passed again) and `effort_fuse` (`phases`: the ids that needed an executor round beyond round 1,
-`tripped`: true from the second such phase on, after which every later phase's round 1 runs
-`xhigh`) — `phases`, and `history`.
+passed again) and `effort_fuse` (`phases`: the ids that needed a redo round — one a red gate, a
+blocking finding or an operator ruling asked for; a re-dispatch after a crash or bail-out is not
+counted — `tripped`: true from the second such phase on, after which every later phase's round 1
+runs `xhigh`) — `phases`, and `history`.
 
 Per phase: `status` (`pending` | `in_progress` | `merged`), `stage` (`executor` | `gate` |
 `review` | `merging` | `null`), `branch`, `target`, `executor_rounds`, `gate_fix_rounds`,

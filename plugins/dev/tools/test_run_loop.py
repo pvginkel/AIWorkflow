@@ -2633,6 +2633,84 @@ def test_operator_ruling_writer_round_runs_at_full_effort():
         assert writer_efforts(r2) == [("1", 3, "xhigh")]
 
 
+def test_crash_redispatch_runs_at_round_one_tier_and_does_not_count():
+    """A re-dispatch after a session that crashed or came back `blocked` is a
+    fresh attempt at the same work, not a redo: round-1 tier, and the fuse
+    never hears about it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(
+            tmp, phases=[("1", "First"), ("2", "Second")],
+            shape="pre-settled")
+        r = ScriptedLoop(slice_dir,
+                         [("code-writer", {"outcome": "blocked",
+                                           "summary": "harness broken"})],
+                         repo_root=repo)
+        assert run_to_exit(r) == 3
+        assert writer_efforts(r) == [("1", 1, "high")]
+
+        r2 = ScriptedLoop(slice_dir,
+                          [V["exec_done"], V["review_signoff"],
+                           V["exec_done"], V["review_signoff"], *TAIL],
+                          resume=True, repo_root=repo)
+        r2.fake_git.branches.add("phase/074-P1")
+        assert run_to_exit(r2) == 0
+        assert writer_efforts(r2) == [("1", 2, "high"), ("2", 1, "high")]
+        assert load_state(slice_dir)["effort_fuse"] == {"phases": [],
+                                                        "tripped": False}
+
+
+def test_operator_question_at_executor_stage_makes_the_resume_a_redo():
+    """An operator ruling IS a verified signal: the writer bailed with a
+    question, job 3 wrote the ruling into the plan, and the resume dispatches
+    against it — full effort, and the phase counts toward the fuse."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, shape="pre-settled")
+        r = ScriptedLoop(slice_dir,
+                         [("code-writer", {"outcome": "question",
+                                           "summary": "which mount point?"})],
+                         repo_root=repo)
+        assert run_to_exit(r) == 4
+        assert writer_efforts(r) == [("1", 1, "high")]
+
+        r2 = ScriptedLoop(slice_dir,
+                          [V["exec_done"], V["review_signoff"], *TAIL],
+                          resume=True, repo_root=repo)
+        r2.fake_git.branches.add("phase/074-P1")
+        assert run_to_exit(r2) == 0
+        assert writer_efforts(r2) == [("1", 2, "xhigh")]
+        assert load_state(slice_dir)["effort_fuse"] == {"phases": ["1"],
+                                                        "tripped": False}
+
+
+def test_a_crash_after_an_operator_ruling_keeps_the_resume_a_redo():
+    """The ruling still stands when the session answering it crashes: the
+    re-dispatch is the ruled redo, not a fresh attempt."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, shape="pre-settled")
+        r = ScriptedLoop(slice_dir,
+                         [("code-writer", {"outcome": "question",
+                                           "summary": "which mount point?"})],
+                         repo_root=repo)
+        assert run_to_exit(r) == 4
+
+        r2 = ScriptedLoop(slice_dir,
+                          [("code-writer", {"outcome": "blocked",
+                                            "summary": "harness broken"})],
+                          resume=True, repo_root=repo)
+        r2.fake_git.branches.add("phase/074-P1")
+        assert run_to_exit(r2) == 3
+        assert writer_efforts(r2) == [("1", 2, "xhigh")]
+
+        r3 = ScriptedLoop(slice_dir,
+                          [V["exec_done"], V["review_signoff"], *TAIL],
+                          resume=True, repo_root=repo)
+        r3.fake_git.branches.add("phase/074-P1")
+        assert run_to_exit(r3) == 0
+        assert writer_efforts(r3) == [("1", 3, "xhigh")]
+        assert load_state(slice_dir)["effort_fuse"] == {"phases": ["1"],
+                                                        "tripped": False}
+
+
 def test_one_phase_needing_a_redo_does_not_stop_the_step_down():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(

@@ -25,6 +25,14 @@ show the shape and the round-1 tier. Plan-loop history rows carry `effort` (§4)
 §2 is built — `plan_state.json` has no `writer_effort` or `escalated` — and stays unbuilt until
 the run trial reads out. The pre-0.7.0 line numbers below are where to look, not proof.
 
+**0.7.1 (2026-08-18):** a re-dispatch after a crashed or `blocked` session or a protocol bail-out is
+not a redo — it runs at the round-1 tier and does not count toward the fuse. Slice 158, the first
+read, had the fuse counting P4, whose r1 died `rc=1` with no verdict and whose r2 was only the
+re-dispatch after the operator resumed the loop; left as it was, a crash on the first two phases of
+a small-shape slice would trip the fuse on noise and silently move a `high` phase into the `xhigh`
+arm. `spawn_executor` now carries an explicit `redo` flag; the round number stays the attempt
+counter.
+
 ---
 
 ## 1. The design in one paragraph

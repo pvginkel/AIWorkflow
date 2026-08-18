@@ -4,6 +4,18 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-18 — a crash re-dispatch is not a redo: it neither escalates nor trips the fuse (v0.7.1)
+
+The first read of the step-down (slice 158) found the fuse counting P4, whose round 1 died `rc=1`
+with no verdict and whose round 2 was only the re-dispatch after the operator resumed the loop.
+`spawn_executor` now takes an explicit `redo` flag: gate-fix, review-fix and operator-ruled rounds
+are redos — they run `xhigh` and count toward the fuse — while a re-dispatch after a crashed or
+`blocked` session or a protocol bail-out is a fresh attempt at the same work: it runs at the
+round-1 tier and counts for nothing. The round number still climbs (it names the verdict file and
+the history row). Left as it was, a crash on the first two phases of a small-shape slice would trip
+the fuse on noise and silently move a `high` phase into the `xhigh` arm of the trial.
+`agent-dispatch.md`, `run-loop.md` and `runner-state.md` state the rule.
+
 ## 2026-08-18 — the code-writer's round 1 steps down to `high` on a small-shape plan (v0.7.0)
 
 A3, stage 1 (`docs/research/a3-plan.md` §3, §8a) — the trial the catalogue prices as the cheap

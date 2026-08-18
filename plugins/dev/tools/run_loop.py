@@ -1510,8 +1510,8 @@ class RunLoop:
         self.state.setdefault("effort_fuse", {"phases": [], "tripped": False})
         shape = self.state["task_shape"]
         self.log(f"task shape: {shape or 'undeclared'} — code-writer round 1 "
-                 f"at {self._executor_effort(1)}; later rounds and every "
-                 "other Opus role at xhigh")
+                 f"at {self._executor_effort(False)}; later rounds and "
+                 "every other Opus role at xhigh")
         self._save_state()
 
     def _load_plan(self) -> list[Phase]:
@@ -1629,21 +1629,37 @@ class RunLoop:
 
     # -- session spawning ----------------------------------------------------
 
-    def _executor_effort(self, round_: int) -> str:
-        """The code-writer's tier for one round. Round 1 of a phase runs at
-        the reduced tier only while the plan's declared shape permits it and
-        the fuse holds; every later round is a redo a verified signal asked
-        for, and those judge at full effort."""
+    def _executor_effort(self, redo: bool) -> str:
+        """The code-writer's tier for one round. The reduced tier holds only
+        while the plan's declared shape permits it and the fuse holds. A round
+        is a redo when a verified signal asked for it — a red gate, a blocking
+        review finding, an operator ruling — and judging that failure is what
+        full effort is for. A re-dispatch after a crashed or `blocked`
+        session, or after a protocol bailout, is not a redo: it is a fresh
+        attempt at the same work, dispatched at the round-1 tier."""
         fuse = self.state.get("effort_fuse") or {}
-        if (round_ >= 2 or fuse.get("tripped")
+        if (redo or fuse.get("tripped")
                 or self.state.get("task_shape") not in STEP_DOWN_SHAPES):
             return "xhigh"
         return self.state.get("writer_effort") or DEFAULT_WRITER_EFFORT
 
+    def _executor_stage_is_redo(self, phase_id: str) -> bool:
+        """Whether re-entering the executor stage is a redo. It is one only
+        under an operator ruling: a code-writer session of this phase bailed
+        with a question, job 3 wrote the ruling into the plan, and this
+        dispatch answers it — as does a re-dispatch after the answering
+        session crashed, since the ruling still stands. A first attempt, or
+        a re-dispatch after a crash, a `blocked` verdict or a bailout with no
+        ruling behind it, is not."""
+        return any(row.get("role") == "code-writer"
+                   and row.get("phase") == phase_id
+                   and row.get("outcome") == "question"
+                   for row in self.state.get("history") or [])
+
     def _note_redo_phase(self, phase_id: str) -> None:
-        """Count a phase that needed an executor round past r1 — whatever
-        tier its r1 ran at, so the count means the same in both arms — and
-        trip the fuse at FUSE_PHASES."""
+        """Count a phase whose executor was re-dispatched on a signal —
+        whatever tier its r1 ran at, so the count means the same in both
+        arms — and trip the fuse at FUSE_PHASES."""
         fuse = self.state.setdefault("effort_fuse",
                                      {"phases": [], "tripped": False})
         if phase_id in fuse["phases"]:
@@ -1653,8 +1669,8 @@ class RunLoop:
             fuse["tripped"] = True
             self.log("effort fuse tripped: "
                      + ", ".join(f"P{p}" for p in fuse["phases"])
-                     + " needed executor rounds beyond r1 — remaining phases "
-                       "start at xhigh")
+                     + " needed a redo round — remaining phases start at "
+                       "xhigh")
 
     def _nudge(self, prompt: str, cwd: Path, session_id: str,
                label: str) -> None:
@@ -2066,15 +2082,18 @@ class RunLoop:
         def executor_verdict_path(r: int) -> Path:
             return outputs / f"executor_result_r{r}.json"
 
-        def spawn_executor(build_prompt) -> dict:
+        def spawn_executor(build_prompt, *, redo: bool) -> dict:
             """build_prompt(verdict_path) → prompt. Every round is a fresh
             session — fix rounds read their inputs from the plan and the
-            durable outputs dir, never from the prior round's context."""
+            durable outputs dir, never from the prior round's context.
+            `redo` says a verified signal asked for this round; the round
+            counter counts attempts, so a plain re-dispatch advances it
+            without funding the fuse."""
             ps["executor_rounds"] += 1
             r = ps["executor_rounds"]
-            if r >= 2:
+            if redo:
                 self._note_redo_phase(phase_id)
-            effort = self._executor_effort(r)
+            effort = self._executor_effort(redo)
             self._save_state()
             verdict, session = self._spawn(
                 "code-writer", build_prompt(executor_verdict_path(r)),
@@ -2093,7 +2112,8 @@ class RunLoop:
                 slice_name=self.slice_name, target=phase.target,
                 branch=branch, where=where, gate_hint=gate_hint,
                 verdict_path=vp,
-                pointers=self._pointers(target)))
+                pointers=self._pointers(target)),
+                redo=self._executor_stage_is_redo(phase_id))
             self._after_session_plan_check()
             ps["stage"] = "gate"
             self._save_state()
@@ -2128,7 +2148,8 @@ class RunLoop:
                         merge_base=merge_base, where=where,
                         review_path=outputs / f"code_review_r{_r}.md",
                         gate_hint=gate_hint, verdict_path=vp,
-                        pointers=self._pointers(target)))
+                        pointers=self._pointers(target)),
+                    redo=True)
                 self._after_session_plan_check()
                 self._handle_refutations(outputs, phase_id, r, fix_verdict)
                 self._gate_until_green(phase, ps, outputs, target, branch,
@@ -2220,7 +2241,8 @@ class RunLoop:
                                gate_cmd=" ".join(target.gate_argv or []),
                                gate_log=_log, merge_base=merge_base,
                                where=where, verdict_path=vp,
-                               pointers=self._pointers(target)))
+                               pointers=self._pointers(target)),
+                           redo=True)
             self._after_session_plan_check()
 
     def _review_loop(self, phase: Phase, ps: dict, outputs: Path,
@@ -2297,7 +2319,8 @@ class RunLoop:
                     merge_base=merge_base, where=where,
                     review_path=outputs / f"code_review_r{_r}.md",
                     gate_hint=gate_hint, verdict_path=vp,
-                    pointers=self._pointers(target)))
+                    pointers=self._pointers(target)),
+                redo=True)
             self._after_session_plan_check()
             refuted = self._handle_refutations(outputs, phase_id, r,
                                                fix_verdict)
