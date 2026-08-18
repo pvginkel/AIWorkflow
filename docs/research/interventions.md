@@ -205,6 +205,14 @@ gate_red/appended-phase rate, planner cost per tier.
 **Cost:** S (`MODELS` dict) + M if an escalation re-run path is added to `plan_loop.py`.
 **Risks:** cheap-plan failures surface downstream where they're expensive — hence trial-gated,
 small shapes only.
+**Scope amendment (2026-08-14, decided; 2026-08-18, shipped in part):** the operator widened the
+entry to both loops as one cascade — the run side is the large majority of slice spend — and
+staged it run-loop-first ([a3-plan.md](a3-plan.md)). Stage 1 shipped as plugin 0.7.0: the
+**code-writer's executor round 1** runs at `high` (`--writer-effort`, default `high`) on a
+declared `pre-settled`/`localized` shape, every round ≥ 2 and every judgment role stay `xhigh`,
+and a fuse returns round 1 to `xhigh` once two phases have needed a redo. The plan-register half
+above — the `escalate` outcome and the sticky escalation in `plan_loop.py` — is stage 2,
+conditional on stage 1's read, and unbuilt.
 
 ### A4. Keep rejecting upfront complexity grading — **decision record, none**
 The reading explains *why* the graded lane failed, which is worth recording so it isn't retried:

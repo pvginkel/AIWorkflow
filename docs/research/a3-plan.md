@@ -8,6 +8,23 @@ operator widened it: the run side is the large majority of slice spend (I2: plan
 26.9% on 144/145 — the run loop is the rest) and the bigger gain, so this plan covers **both
 loops as one cascade**. The catalogue entry gets a scope amendment when this ships.
 
+**Stage 1 (§3, §4, §8a) implemented 2026-08-18 as plugin 0.7.0** (status.md A3 has the log line;
+the catalogue entry carries the scope amendment). §9 resolved as recommended: **default `high`**,
+`--writer-effort xhigh` the escape hatch. Where the build departed from the text below: the fuse
+counts *any* phase that needed an executor round beyond r1, whatever tier its r1 ran at —
+behaviourally identical (before the fuse trips every r1 in the reduced arm is reduced; in the
+`xhigh` arm the fuse changes nothing) and the count then means the same thing in both arms;
+`in_flight` records the dispatched `effort` so a crash reattach resumes at the tier the session
+was created with, even under a different `--writer-effort` on the resume; the shape/tier record
+was **not** duplicated into `slice_cost.py`'s `cost` block — it already sits at `state.json`'s
+top level (`task_shape`, `writer_effort`, `effort_fuse`), the close-out `Run:` header names it
+(`shape … · writer … (fuse tripped)`), and `slice_cost.py` prints a `tiers` line and each
+session's round and effort, which is the per-arm read §4 wants; the tier is settled after
+preflight so a precondition error strands no `state.json`; `run_loop.py status` and `--dry-run`
+show the shape and the round-1 tier. Plan-loop history rows carry `effort` (§4), but nothing of
+§2 is built — `plan_state.json` has no `writer_effort` or `escalated` — and stays unbuilt until
+the run trial reads out. The pre-0.7.0 line numbers below are where to look, not proof.
+
 ---
 
 ## 1. The design in one paragraph

@@ -230,7 +230,7 @@ visible in plan output.
 
 ## A3 — Effort step-down for the plan registers
 
-**Status:** new
+**Status:** validating
 **Cost:** S–M · **Rank:** 7 · **Depends on:** A1 (trial gate)
 
 **Summary.** Run the producer roles — plan-writer and code-writer — at `high` instead of `xhigh`
@@ -252,6 +252,20 @@ blocking-finding rate and downstream appended-phase rate hold while producer cos
 - 2026-08-14 — staged run-loop-first (a3-plan.md §8a): the simpler build for the larger effect,
   with failures contained in-loop by the gate and the `xhigh` reviewer; the plan half's
   `escalate` machinery is now conditional on the run trial's read.
+- 2026-08-18 — stage 1 implemented (plugin 0.7.0): the code-writer's executor round 1 runs at
+  `high` (`run_loop.py run --writer-effort`, default `high` — §9's recommendation taken: an
+  opt-in flag produces no trial data, and the mechanism self-gates) when plan.md's `## Task
+  shape` is `pre-settled`/`localized`; `cross-cutting`, undeclared, or a tripped fuse (two
+  phases needing a round beyond r1) keeps r1 at `xhigh`; every round ≥ 2, the reviewer, every
+  consult, the doc-writer and both plan roles stay `xhigh`. Telemetry: `effort` on every session
+  history row in both loops, `task_shape`/`writer_effort`/`effort_fuse` in state.json, the
+  close-out `Run:` header and `slice_cost.py`'s `tiers` line name the arm. Prerequisites checked:
+  A1 in place since 0.4.3 (three `pre-settled` declarations on file, all honest); B1+B4 have
+  their `xhigh` slices (146 onward). Reaches runs after push + marketplace update. → validating.
+  Read at the first `pre-settled`/`localized` slice under 0.7.0: r1 `duration_s`/cost per tier
+  first (the Cuadron counter-evidence — a longer or dearer `high` r1 self-refutes early), then
+  gate-red-on-r1, blocking-finding rate, executor-round-≥2 rate, fuse trips, and net slice cost
+  against 144/145/146. Kill: flag back to `xhigh` per a3-plan.md §5; stage 2 stays unbuilt.
 
 ## A4 — Upfront complexity grading
 
