@@ -101,6 +101,7 @@ from close_out import (  # noqa: E402
     init_report,
     render_report,
     report_path,
+    round1_writer_tier,
     stamp_header,
 )
 
@@ -162,7 +163,8 @@ GATE_FIX_CAP = 3       # executor fix rounds against a red gate, per phase
 # signal fired (red gate, blocking finding, operator ruling), and judging
 # a failure is what full effort is for.
 TASK_SHAPES = ("pre-settled", "localized", "cross-cutting")
-STEP_DOWN_SHAPES = ("pre-settled", "localized")
+# STEP_DOWN_SHAPES — the shapes that buy the step-down — and the round-1 tier
+# rule live in close_out.py, so the report's Run: line derives the same tier.
 WRITER_EFFORTS = ("xhigh", "high", "medium")
 DEFAULT_WRITER_EFFORT = "high"
 # The slice fuse: once this many phases have needed an executor round
@@ -1638,10 +1640,11 @@ class RunLoop:
         session, or after a protocol bailout, is not a redo: it is a fresh
         attempt at the same work, dispatched at the round-1 tier."""
         fuse = self.state.get("effort_fuse") or {}
-        if (redo or fuse.get("tripped")
-                or self.state.get("task_shape") not in STEP_DOWN_SHAPES):
+        if redo or fuse.get("tripped"):
             return "xhigh"
-        return self.state.get("writer_effort") or DEFAULT_WRITER_EFFORT
+        return (round1_writer_tier(self.state.get("task_shape"),
+                                   self.state.get("writer_effort"))
+                or DEFAULT_WRITER_EFFORT)
 
     def _executor_stage_is_redo(self, phase_id: str) -> bool:
         """Whether re-entering the executor stage is a redo. It is one only
@@ -3251,8 +3254,7 @@ def cmd_dry_run(loop: RunLoop) -> None:
             errors.append(f"phase P{phase.id}: {e}")
             print(f"{line}\n        target=INVALID")
     shape = parse_task_shape(plan_text)
-    tier = ((loop.writer_effort or DEFAULT_WRITER_EFFORT)
-            if shape in STEP_DOWN_SHAPES else "xhigh")
+    tier = round1_writer_tier(shape, loop.writer_effort or DEFAULT_WRITER_EFFORT)
     print(f"task shape: {shape or 'undeclared'} — code-writer round 1 "
           f"at {tier}")
     if errors:

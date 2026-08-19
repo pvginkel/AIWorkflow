@@ -316,6 +316,19 @@ blocking-finding rate and downstream appended-phase rate hold while producer cos
   the repo and skipped — P2's kind; counts). Operator's rule: **one more writer-derivable event
   and the step-down is killed** — `--writer-effort xhigh` or flip `DEFAULT_WRITER_EFFORT`, stage
   2 stays unbuilt. Compare against the 27 % same-era rate, and read the fuse only from 0.7.1.
+- 2026-08-19 — slice 159 read: **no signal for the trial — a control point only.** The plan
+  declared `cross-cutting` (three requirements across composer, Go worker and a HelmCharts chart
+  edit — an honest declaration), so the step-down never engaged: all six writer rounds ran
+  `xhigh` (log line 1 says so; history rows agree) and the fuse had nothing to guard. The
+  pre-registered read still waits for the next `pre-settled`/`localized` slice. As a baseline
+  point: five phases at `xhigh`, one blocking finding (P3, 20 % — on the 24–27 % baseline), and
+  its shape was plan-carried, P1-of-158's kind at full effort: the `xhigh` plan-writer settled
+  "two causes the worker cannot tell apart", the writer split the refusal on that model, the
+  reviewer found the third population (a pod composed before the manifest edit) — enumeration
+  blindness at planning altitude, A1's account, nothing writer-derivable. Side effect fixed in
+  0.7.2: the run header printed the launch flag (`writer high`) on a run whose shape made it
+  inert; it now prints the tier round 1 actually ran at (`writer xhigh`), and 159's header was
+  re-stamped in place.
 
 ## A4 — Upfront complexity grading
 

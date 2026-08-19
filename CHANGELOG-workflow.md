@@ -4,6 +4,17 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-19 — the run header names the tier round 1 ran at, not the flag it was launched with (v0.7.2)
+
+Slice 159's close-out read `shape cross-cutting · writer high` on a run whose every writer round
+was `xhigh` — the header printed the persisted `writer_effort` flag, which a `cross-cutting` shape
+makes inert. It now prints the tier the rule actually dispatched: the round-1 tier rule and
+`STEP_DOWN_SHAPES` moved to `close_out.py` (`round1_writer_tier`), where the loop's dispatch, its
+dry run and the report's `Run:` line all derive the same answer; a `null` task shape is said as
+`shape undeclared` (it is why the writer ran `xhigh`), and `(fuse tripped)` is dropped where no
+lower tier existed to leave. Behaviour of the dispatch is unchanged. `close-out-template.md`
+states the header rule.
+
 ## 2026-08-18 — a crash re-dispatch is not a redo: it neither escalates nor trips the fuse (v0.7.1)
 
 The first read of the step-down (slice 158) found the fuse counting P4, whose round 1 died `rc=1`

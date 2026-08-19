@@ -638,6 +638,25 @@ def _plural(n: int, noun: str, plural: str | None = None) -> str:
     return f"{n} {noun if n == 1 else (plural or noun + 's')}"
 
 
+# The one step-down in the pipeline: the code-writer's round 1 runs at the
+# run's writer_effort only while the plan's declared `## Task shape` is one
+# the plan review checked as small; every other shape, and an undeclared one,
+# keeps round 1 at xhigh. The loop's dispatch rule (run_loop._executor_effort
+# and its dry run) and the report's `Run:` line all derive the tier here, so
+# the header names the arm the run actually belonged to — never the flag it
+# was launched with when the shape made that flag inert.
+STEP_DOWN_SHAPES = ("pre-settled", "localized")
+
+
+def round1_writer_tier(task_shape, writer_effort) -> str | None:
+    """The tier the code-writer's round 1 dispatches at, before the fuse:
+    xhigh unless the shape buys the step-down, then the run's writer_effort
+    — None while that is not settled yet."""
+    if task_shape not in STEP_DOWN_SHAPES:
+        return "xhigh"
+    return writer_effort if isinstance(writer_effort, str) else None
+
+
 def run_header(state: dict) -> str:
     """The `Run:` line from a run loop state.json — each piece only when
     the state carries it."""
@@ -655,14 +674,16 @@ def run_header(state: dict) -> str:
                        + ", ".join(f"P{p}" for p in appended) + " appended)")
         bits.append(phrase)
     shape = state.get("task_shape")
-    if isinstance(shape, str):
-        bits.append(f"shape {shape}")
-    writer = state.get("writer_effort")
-    if isinstance(writer, str):
+    if "task_shape" in state:       # null is a fact too: the plan declared none
+        bits.append(f"shape {shape if isinstance(shape, str) else 'undeclared'}")
+    tier = round1_writer_tier(shape, state.get("writer_effort"))
+    if isinstance(state.get("writer_effort"), str) and tier:
         fuse = state.get("effort_fuse")
-        bits.append(f"writer {writer}" + (
+        # The fuse only says something when there was a lower tier to leave.
+        bits.append(f"writer {tier}" + (
             " (fuse tripped)"
-            if isinstance(fuse, dict) and fuse.get("tripped") else ""))
+            if tier != "xhigh" and isinstance(fuse, dict) and fuse.get("tripped")
+            else ""))
     if isinstance(state.get("bailouts"), list):
         bailouts = state["bailouts"]
         phrase = _plural(len(bailouts), "bail-out")

@@ -159,6 +159,9 @@ writer high (fuse tripped) · 2 bail-outs · 1 test round · doc phase done · $
 %, research 4 %, rework 14 %)
 ```
 
-`shape` is the plan's declared task shape and `writer` the code-writer's round-1 effort tier
-the run was launched with (`(fuse tripped)` when two phases needed a redo and the rest ran at
-`xhigh`) — the arm of the effort trial this report belongs to; absent on runs before 0.7.0.
+`shape` is the plan's declared task shape (`undeclared` when the plan carries none) and `writer`
+the tier the code-writer's round 1 actually ran at — the run's `--writer-effort` only when the
+shape buys the step-down, `xhigh` otherwise, so a `cross-cutting` run launched with `high` reads
+`writer xhigh` (`(fuse tripped)` when two phases needed a redo and the rest ran at `xhigh`; not
+said when there was no lower tier to leave) — the arm of the effort trial this report belongs to;
+absent on runs before 0.7.0.
