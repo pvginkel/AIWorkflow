@@ -245,7 +245,7 @@ visible in plan output.
 
 ## A3 — Effort step-down for the plan registers
 
-**Status:** validating
+**Status:** rejected (withdrawn 2026-08-19, plugin 0.7.3)
 **Cost:** S–M · **Rank:** 7 · **Depends on:** A1 (trial gate)
 
 **Summary.** Run the producer roles — plan-writer and code-writer — at `high` instead of `xhigh`
@@ -365,6 +365,24 @@ blocking-finding rate and downstream appended-phase rate hold while producer cos
   interventions.md addresses context volume per turn, and the A-lane's ceiling is set by that.
   Advisory texture did not differ by tier (0.7/phase at `high`, 0–3/phase on 155–159 `xhigh`
   signoffs, comment-prose in both).
+- 2026-08-19 — **withdrawn: plugin 0.7.3 reverts 0.7.0–0.7.2** (CHANGELOG-workflow.md has the
+  entry). The operator's decision on the read above, in their words: "My preference is we
+  revert, really … For me it's additional complexity, dead weight." Two alternatives were
+  weighed and set aside in the same ruling: `medium` instead of `high` — the lever is bounded by
+  output's ≈ 20 % share of a writer round whatever the tier, and the code-writer is itself
+  ≈ 24 % of spend, so a tier change would have to reach every role to matter and the judgment
+  roles are the instrument; and Sonnet as the writer — tried when the 5 family shipped, "it
+  really did not pan out". Stage 2 is not built and will not be. Removed: the round-1 rule,
+  `--writer-effort`, the fuse, the run loop's `## Task shape` reader, the `task_shape` /
+  `writer_effort` / `effort_fuse` state keys, `effort` on history rows in both loops, the
+  header's `shape … · writer …` segment with `round1_writer_tier`, the `redo` flag on
+  `spawn_executor`, `slice_cost`'s `tiers` line and effort column; kept: the session round in
+  `slice_cost`'s table. A1's `## Task shape` declaration is untouched — it binds the
+  plan-writer's investigation and the plan review checks it; only the run loop stopped reading
+  it. The record stands: `a3-plan.md`, the four reads above, and slices 158–161's state files
+  with their extra keys. What outlives the entry is the measurement it forced — per-turn context
+  volume, not effort, sets 67–84 % of every Opus role's cost — which has no catalogue entry and
+  is where the A-lane's ceiling actually sits.
 
 ## A4 — Upfront complexity grading
 

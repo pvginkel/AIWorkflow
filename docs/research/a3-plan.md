@@ -33,6 +33,10 @@ a small-shape slice would trip the fuse on noise and silently move a `high` phas
 arm. `spawn_executor` now carries an explicit `redo` flag; the round number stays the attempt
 counter.
 
+**Withdrawn 2026-08-19 — plugin 0.7.3 reverted 0.7.0–0.7.2.** This document is the record of what
+was built and why it was taken out; [status.md](status.md) A3 carries the four reads (158–161) and
+the operator's ruling. Nothing below is live in the plugin.
+
 ---
 
 ## 1. The design in one paragraph

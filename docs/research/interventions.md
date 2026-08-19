@@ -213,6 +213,11 @@ declared `pre-settled`/`localized` shape, every round ≥ 2 and every judgment r
 and a fuse returns round 1 to `xhigh` once two phases have needed a redo. The plan-register half
 above — the `escalate` outcome and the sticky escalation in `plan_loop.py` — is stage 2,
 conditional on stage 1's read, and unbuilt.
+**Withdrawn (2026-08-19, plugin 0.7.3 — 0.7.0–0.7.2 reverted)** after the 160/161 read: the shape
+gate confined the trial to phases where neither tier draws a blocking finding, and effort moves
+only the ≈ 20 % of a writer round that is output tokens, so the saving was ≤ 1 % of a slice
+against one witnessed ≈ 4 % rework strike; the operator ruled it dead weight. Stage 2 was never
+built. [status.md](status.md) A3 has the numbers and the words.
 
 ### A4. Keep rejecting upfront complexity grading — **decision record, none**
 The reading explains *why* the graded lane failed, which is worth recording so it isn't retried:
