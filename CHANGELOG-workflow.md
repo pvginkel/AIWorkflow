@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-19 — the writer-effort step-down is withdrawn: 0.7.0–0.7.2 reverted (v0.7.3)
+
+A3 stage 1 is out, by operator decision after four slices (`docs/research/status.md` A3,
+2026-08-19): the code-writer's round-1 step-down, `--writer-effort`, the fuse, the run loop's
+`## Task shape` reader, `task_shape` / `writer_effort` / `effort_fuse` in `state.json`, `effort`
+on history rows in both loops, the `shape … · writer …` segment of the close-out `Run:` header
+with `round1_writer_tier`, the crash-re-dispatch `redo` flag on `spawn_executor`, and
+`slice_cost.py`'s `tiers` line and effort column. Every Opus dispatch is `xhigh` again, as before
+0.7.0. The read that ended it: the seven `high` round-1s on slices 160 and 161 all signed off on
+round 1 — but every `high` round the trial ever ran sat in the small-phase band where `xhigh`
+draws a blocking finding only 5–10 % of the time, so the trial could not gain power; and effort
+moves output tokens, which are ≈ 20 % of a writer round's cost (context is the rest), so the
+saving was ≤ 1 % of a slice against one witnessed ≈ 4 % rework strike (158 P2). The operator's
+ruling: additional complexity, dead weight — whoever wants the knob in this loop can build it
+for themselves. Kept from the three versions: `slice_cost.py`'s session table still names each
+session's round (`P2 code-writer r2`). State files written under 0.7.0–0.7.2 keep their extra
+keys; nothing reads them. The research record (`docs/research/a3-plan.md`, `status.md`,
+`interventions.md`) stands as written.
+
 ## 2026-08-19 — the run header names the tier round 1 ran at, not the flag it was launched with (v0.7.2)
 
 Slice 159's close-out read `shape cross-cutting · writer high` on a run whose every writer round

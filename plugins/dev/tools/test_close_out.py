@@ -404,38 +404,6 @@ def test_stamp_counts_operator_questions_among_bail_outs():
     assert "· 0 bail-outs ·" in close_out.run_header(dict(STATE, bailouts=[]))
 
 
-def test_stamp_names_the_task_shape_and_the_writer_tier():
-    """0.7.0+ states carry the effort step-down's two inputs; a state
-    without them reads exactly as before."""
-    state = dict(STATE, task_shape="pre-settled", writer_effort="high")
-    assert "· shape pre-settled · writer high ·" in close_out.run_header(state)
-    tripped = close_out.run_header(
-        dict(state, effort_fuse={"phases": ["1", "2"], "tripped": True}))
-    assert "· writer high (fuse tripped) ·" in tripped
-    assert "shape" not in close_out.run_header(STATE)
-
-
-def test_stamp_names_the_tier_round_1_ran_at_not_the_flag():
-    """A shape outside the step-down keeps round 1 at xhigh whatever the
-    run was launched with — the header names that arm, not the inert
-    flag (slice 159 read `writer high` on a run whose every writer round
-    was xhigh). The fuse note is dropped where no lower tier existed to
-    leave, and an undeclared shape is said, since it is why."""
-    fuse = {"phases": ["1", "2"], "tripped": True}
-    cross = dict(STATE, task_shape="cross-cutting", writer_effort="high")
-    assert "· shape cross-cutting · writer xhigh ·" in close_out.run_header(cross)
-    assert "fuse" not in close_out.run_header(dict(cross, effort_fuse=fuse))
-    undeclared = dict(STATE, task_shape=None, writer_effort="high")
-    assert "· shape undeclared · writer xhigh ·" in close_out.run_header(undeclared)
-    raised = dict(STATE, task_shape="localized", writer_effort="xhigh", effort_fuse=fuse)
-    assert "· writer xhigh ·" in close_out.run_header(raised)
-    # The rule the loop dispatches by is this same function.
-    assert close_out.round1_writer_tier("cross-cutting", "high") == "xhigh"
-    assert close_out.round1_writer_tier(None, "medium") == "xhigh"
-    assert close_out.round1_writer_tier("pre-settled", "high") == "high"
-    assert close_out.round1_writer_tier("localized", None) is None
-
-
 def test_stamp_needs_a_state_file_and_a_run_line():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)

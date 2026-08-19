@@ -101,7 +101,6 @@ from close_out import (  # noqa: E402
     init_report,
     render_report,
     report_path,
-    round1_writer_tier,
     stamp_header,
 )
 
@@ -156,22 +155,6 @@ NUDGE_TIMEOUT = 900
 SWEEP_VERBS = ("lint", "build", "test")
 
 GATE_FIX_CAP = 3       # executor fix rounds against a red gate, per phase
-
-# The plan's declared `## Task shape` and the code-writer's round-1 tier.
-# Only a shape the plan review checked as small buys the step-down, and
-# only for round 1: every later executor round exists because a verified
-# signal fired (red gate, blocking finding, operator ruling), and judging
-# a failure is what full effort is for.
-TASK_SHAPES = ("pre-settled", "localized", "cross-cutting")
-# STEP_DOWN_SHAPES — the shapes that buy the step-down — and the round-1 tier
-# rule live in close_out.py, so the report's Run: line derives the same tier.
-WRITER_EFFORTS = ("xhigh", "high", "medium")
-DEFAULT_WRITER_EFFORT = "high"
-# The slice fuse: once this many phases have needed an executor round
-# beyond r1, the rest of the run starts at xhigh — a slice where the cheap
-# tier keeps buying redos stops paying the tax mid-run, not at the
-# retrospective.
-FUSE_PHASES = 2
 # Nudges at the test session over a repo it committed to but never pushed.
 # The driver checks rather than pushes: a slice touching several repos may
 # need an order only the agent running the verification knows.
@@ -432,46 +415,6 @@ def parse_plan(text: str) -> tuple[list[Phase], list[str]]:
         if not phase.done and not phase.target:
             errors.append(f"phase P{phase.id} has no `Target:` line")
     return phases, errors
-
-
-TASK_SHAPE_RE = re.compile(r"^##[ \t]+task shape[ \t]*$", re.IGNORECASE)
-
-
-def parse_task_shape(text: str) -> str | None:
-    """The plan's declared `## Task shape` — the first word of the section
-    body, past the template's HTML comment (plan-template.md fixes the
-    format). A missing section, or a word outside the vocabulary, reads as
-    undeclared: the driver steps nothing down on a plan that never
-    declared its shape."""
-    lines = text.splitlines()
-    start = next((i for i, line in enumerate(lines)
-                  if TASK_SHAPE_RE.match(line)), None)
-    if start is None:
-        return None
-    in_comment = False
-    for raw in lines[start + 1:]:
-        if raw.startswith("#"):
-            break
-        line = raw.strip()
-        while line:
-            if in_comment:
-                if "-->" not in line:
-                    line = ""
-                    break
-                in_comment = False
-                line = line.split("-->", 1)[1].strip()
-            elif line.startswith("<!--"):
-                in_comment = True
-                line = line[4:]
-            else:
-                break
-        if not line:
-            continue
-        # `**pre-settled** — …`, `` `localized` ``: the declaration is a
-        # prose line, so decoration and the trailing dash come off.
-        shape = line.split()[0].strip("*_`\u2014-:,.").lower()
-        return shape if shape in TASK_SHAPES else None
-    return None
 
 
 def stamp_phase(plan_path: Path, phase_id: str, date: str) -> bool:
@@ -1270,8 +1213,7 @@ class ResolvedTarget:
 # ---------------------------------------------------------------------------
 
 class RunLoop:
-    def __init__(self, slice_dir: Path, resume: bool, verbose: bool = False,
-                 writer_effort: str | None = None):
+    def __init__(self, slice_dir: Path, resume: bool, verbose: bool = False):
         self.slice_dir = slice_dir.resolve()
         self.slice_name = self.slice_dir.name
         self.slice_num = self.slice_name.split("_")[0]
@@ -1282,8 +1224,6 @@ class RunLoop:
         self.log_path = self.slice_dir / "log.txt"
         self.resume = resume
         self.verbose = verbose
-        # None = not given; the recorded tier (or the default) then stands.
-        self.writer_effort = writer_effort
         self.state: dict = {}
         self._log_file = None
         self._reattach: dict | None = None
@@ -1488,34 +1428,6 @@ class RunLoop:
 
     # -- plan ----------------------------------------------------------------
 
-    def _plan_text(self) -> str:
-        """plan.md as text, or "" when it is unreadable — the shape read is
-        advisory; a missing plan is preflight's error and the parser's."""
-        try:
-            return self.plan_path.read_text()
-        except OSError:
-            return ""
-
-    def _settle_effort(self) -> None:
-        """Settle the code-writer's round-1 tier for this run: the declared
-        shape (read once, then carried by state.json), and the flag over the
-        recorded value — a resume can raise a slice that is not going
-        well."""
-        if "task_shape" not in self.state:      # a state.json from before 0.7.0
-            self.state["task_shape"] = parse_task_shape(self._plan_text())
-        recorded = self.state.get("writer_effort")
-        if self.writer_effort and recorded and self.writer_effort != recorded:
-            self.log(f"--writer-effort {self.writer_effort} overrides the "
-                     f"recorded {recorded}")
-        self.state["writer_effort"] = (self.writer_effort or recorded
-                                       or DEFAULT_WRITER_EFFORT)
-        self.state.setdefault("effort_fuse", {"phases": [], "tripped": False})
-        shape = self.state["task_shape"]
-        self.log(f"task shape: {shape or 'undeclared'} — code-writer round 1 "
-                 f"at {self._executor_effort(False)}; later rounds and "
-                 "every other Opus role at xhigh")
-        self._save_state()
-
     def _load_plan(self) -> list[Phase]:
         """Parse the plan; on structure errors, nudge the session that
         produced them, then re-parse. A plan still broken after the nudge —
@@ -1631,50 +1543,6 @@ class RunLoop:
 
     # -- session spawning ----------------------------------------------------
 
-    def _executor_effort(self, redo: bool) -> str:
-        """The code-writer's tier for one round. The reduced tier holds only
-        while the plan's declared shape permits it and the fuse holds. A round
-        is a redo when a verified signal asked for it — a red gate, a blocking
-        review finding, an operator ruling — and judging that failure is what
-        full effort is for. A re-dispatch after a crashed or `blocked`
-        session, or after a protocol bailout, is not a redo: it is a fresh
-        attempt at the same work, dispatched at the round-1 tier."""
-        fuse = self.state.get("effort_fuse") or {}
-        if redo or fuse.get("tripped"):
-            return "xhigh"
-        return (round1_writer_tier(self.state.get("task_shape"),
-                                   self.state.get("writer_effort"))
-                or DEFAULT_WRITER_EFFORT)
-
-    def _executor_stage_is_redo(self, phase_id: str) -> bool:
-        """Whether re-entering the executor stage is a redo. It is one only
-        under an operator ruling: a code-writer session of this phase bailed
-        with a question, job 3 wrote the ruling into the plan, and this
-        dispatch answers it — as does a re-dispatch after the answering
-        session crashed, since the ruling still stands. A first attempt, or
-        a re-dispatch after a crash, a `blocked` verdict or a bailout with no
-        ruling behind it, is not."""
-        return any(row.get("role") == "code-writer"
-                   and row.get("phase") == phase_id
-                   and row.get("outcome") == "question"
-                   for row in self.state.get("history") or [])
-
-    def _note_redo_phase(self, phase_id: str) -> None:
-        """Count a phase whose executor was re-dispatched on a signal —
-        whatever tier its r1 ran at, so the count means the same in both
-        arms — and trip the fuse at FUSE_PHASES."""
-        fuse = self.state.setdefault("effort_fuse",
-                                     {"phases": [], "tripped": False})
-        if phase_id in fuse["phases"]:
-            return
-        fuse["phases"].append(phase_id)
-        if len(fuse["phases"]) >= FUSE_PHASES and not fuse["tripped"]:
-            fuse["tripped"] = True
-            self.log("effort fuse tripped: "
-                     + ", ".join(f"P{p}" for p in fuse["phases"])
-                     + " needed a redo round — remaining phases start at "
-                       "xhigh")
-
     def _nudge(self, prompt: str, cwd: Path, session_id: str,
                label: str) -> None:
         """One resume-shot at a session that missed part of its protocol.
@@ -1713,21 +1581,16 @@ class RunLoop:
     def _spawn(self, role: str, prompt: str, cwd: Path, verdict_path: Path,
                phase_id: str | None, round_: int,
                agent: str | None = None,
-               display: str | None = None,
-               effort: str | None = None) -> tuple[dict, str | None]:
+               display: str | None = None) -> tuple[dict, str | None]:
         """Run one session; return (verdict, session_id). Every spawn is a
         fresh session — the only resumed sessions are crash reattaches and
         protocol nudges. Model and effort come from the MODELS config,
-        passed explicitly on every dispatch; `effort` overrides the role's
-        default (the code-writer's stepped-down round 1)."""
+        passed explicitly on every dispatch."""
         shown = display or role
         label = f"[P{phase_id}] [{shown}]" if phase_id else f"[{shown}]"
-        prompt, resume_session, reattach_effort = self._resolve_reattach(
+        prompt, resume_session = self._resolve_reattach(
             role, phase_id, prompt, verdict_path, label)
-        model, default_effort = MODELS[role]
-        # Effort is fixed within a session, so a reattach keeps the tier its
-        # interrupted round was created with.
-        effort = reattach_effort or effort or default_effort
+        model, effort = MODELS[role]
 
         def _valid(v: dict | None) -> bool:
             return v is not None and (
@@ -1742,8 +1605,7 @@ class RunLoop:
                 self._save_state()
 
         while True:
-            self.log(f"{label} session starting "
-                     f"({model + ' ' + effort if effort else model})"
+            self.log(f"{label} session starting"
                      + (" (resume)" if resume_session else ""))
             self.announce((f"P{phase_id} " if phase_id else "") + shown
                           + (f" r{round_}" if round_ else "")
@@ -1753,7 +1615,7 @@ class RunLoop:
             self.state["in_flight"] = {
                 "phase": phase_id, "role": role, "round": round_,
                 "verdict_path": str(verdict_path), "session": resume_session,
-                "effort": effort, "started_at": _now_iso(),
+                "started_at": _now_iso(),
             }
             self._save_state()
 
@@ -1804,8 +1666,7 @@ class RunLoop:
             self._record(phase_id, role, round_, "session_limit",
                          notice.replace("\n", " ")[:200], session_id,
                          duration_s,
-                         transcript=_transcript_path(cwd, session_id),
-                         extra={"effort": effort})
+                         transcript=_transcript_path(cwd, session_id))
             self._wait_out_session_limit(notice, label)
 
         nudged = False
@@ -1837,7 +1698,7 @@ class RunLoop:
         self._record(phase_id, role, round_, outcome,
                      verdict.get("summary", ""), session_id, duration_s,
                      transcript=_transcript_path(cwd, session_id),
-                     extra={"effort": effort, **telemetry})
+                     extra=telemetry)
         if verdict.get("cards"):
             # A pre-0.5.0 register still on an installed clone: not a
             # protocol failure — the findings belong in close-out.md.
@@ -1847,20 +1708,19 @@ class RunLoop:
 
     def _resolve_reattach(self, role: str, phase_id: str | None, prompt: str,
                           verdict_path: Path,
-                          label: str) -> tuple[str, str | None, str | None]:
+                          label: str) -> tuple[str, str | None]:
         """If this spawn matches the session a crashed run left in flight,
         resume that session with a recovery prompt instead of dispatching
-        fresh, at the effort it was created with. Consults never reattach
-        (cheap, and their action vocabulary may have changed)."""
+        fresh. Consults never reattach (cheap, and their action vocabulary
+        may have changed)."""
         r = self._reattach
         if not (r and r.get("session") and role in VERDICTS
                 and r.get("role") == role and r.get("phase") == phase_id):
-            return prompt, None, None
+            return prompt, None
         self._reattach = None
         self.log(f"{label} reattaching to the interrupted session "
                  f"{r['session']}")
-        return (REATTACH_PROMPT.format(verdict_path=verdict_path),
-                r["session"], r.get("effort"))
+        return REATTACH_PROMPT.format(verdict_path=verdict_path), r["session"]
 
     def _wait_out_session_limit(self, notice: str, label: str) -> None:
         reset = parse_session_limit_reset(notice)
@@ -2085,23 +1945,17 @@ class RunLoop:
         def executor_verdict_path(r: int) -> Path:
             return outputs / f"executor_result_r{r}.json"
 
-        def spawn_executor(build_prompt, *, redo: bool) -> dict:
+        def spawn_executor(build_prompt) -> dict:
             """build_prompt(verdict_path) → prompt. Every round is a fresh
             session — fix rounds read their inputs from the plan and the
-            durable outputs dir, never from the prior round's context.
-            `redo` says a verified signal asked for this round; the round
-            counter counts attempts, so a plain re-dispatch advances it
-            without funding the fuse."""
+            durable outputs dir, never from the prior round's context."""
             ps["executor_rounds"] += 1
             r = ps["executor_rounds"]
-            if redo:
-                self._note_redo_phase(phase_id)
-            effort = self._executor_effort(redo)
             self._save_state()
             verdict, session = self._spawn(
                 "code-writer", build_prompt(executor_verdict_path(r)),
                 self.repo_root, executor_verdict_path(r),
-                phase_id, r, agent="code-writer", effort=effort,
+                phase_id, r, agent="code-writer",
             )
             self._ensure_committed(phase_id, "code-writer", session, root)
             self._save_state()
@@ -2115,8 +1969,7 @@ class RunLoop:
                 slice_name=self.slice_name, target=phase.target,
                 branch=branch, where=where, gate_hint=gate_hint,
                 verdict_path=vp,
-                pointers=self._pointers(target)),
-                redo=self._executor_stage_is_redo(phase_id))
+                pointers=self._pointers(target)))
             self._after_session_plan_check()
             ps["stage"] = "gate"
             self._save_state()
@@ -2151,8 +2004,7 @@ class RunLoop:
                         merge_base=merge_base, where=where,
                         review_path=outputs / f"code_review_r{_r}.md",
                         gate_hint=gate_hint, verdict_path=vp,
-                        pointers=self._pointers(target)),
-                    redo=True)
+                        pointers=self._pointers(target)))
                 self._after_session_plan_check()
                 self._handle_refutations(outputs, phase_id, r, fix_verdict)
                 self._gate_until_green(phase, ps, outputs, target, branch,
@@ -2244,8 +2096,7 @@ class RunLoop:
                                gate_cmd=" ".join(target.gate_argv or []),
                                gate_log=_log, merge_base=merge_base,
                                where=where, verdict_path=vp,
-                               pointers=self._pointers(target)),
-                           redo=True)
+                               pointers=self._pointers(target)))
             self._after_session_plan_check()
 
     def _review_loop(self, phase: Phase, ps: dict, outputs: Path,
@@ -2322,8 +2173,7 @@ class RunLoop:
                     merge_base=merge_base, where=where,
                     review_path=outputs / f"code_review_r{_r}.md",
                     gate_hint=gate_hint, verdict_path=vp,
-                    pointers=self._pointers(target)),
-                redo=True)
+                    pointers=self._pointers(target)))
             self._after_session_plan_check()
             refuted = self._handle_refutations(outputs, phase_id, r,
                                                fix_verdict)
@@ -3045,9 +2895,6 @@ class RunLoop:
                 "created_at": _now_iso(),
                 "orchestrator": _orchestrator_record(),
                 "run_phase": "phases",
-                "task_shape": parse_task_shape(self._plan_text()),
-                "writer_effort": None,
-                "effort_fuse": {"phases": [], "tripped": False},
                 "bases": {},
                 "slice_base": {},
                 "known_phases": [],
@@ -3075,9 +2922,6 @@ class RunLoop:
                 self.preflight()
                 self._base_branch(self.repo_root)
                 self._slice_base(self.repo_root)
-            # After preflight: a precondition error must leave no state.json
-            # behind, or the fixed re-run would need --resume.
-            self._settle_effort()
             self._ensure_report()
 
             if resume_at != "docs":
@@ -3216,8 +3060,7 @@ def cmd_run(args) -> None:
         print(f"Error: slice directory not found: {slice_dir}",
               file=sys.stderr)
         sys.exit(2)
-    loop = RunLoop(slice_dir, resume=args.resume, verbose=args.verbose,
-                   writer_effort=args.writer_effort)
+    loop = RunLoop(slice_dir, resume=args.resume, verbose=args.verbose)
     if args.dry_run:
         cmd_dry_run(loop)
         return
@@ -3231,8 +3074,7 @@ def cmd_dry_run(loop: RunLoop) -> None:
     if not loop.plan_path.is_file():
         print(f"Error: {loop.plan_path} does not exist.", file=sys.stderr)
         sys.exit(2)
-    plan_text = loop.plan_path.read_text()
-    phases, errors = parse_plan(plan_text)
+    phases, errors = parse_plan(loop.plan_path.read_text())
     try:
         loop.project_dirs = load_project_dirs(loop.repo_root)
     except Bailout as e:
@@ -3253,10 +3095,6 @@ def cmd_dry_run(loop: RunLoop) -> None:
         except ValueError as e:
             errors.append(f"phase P{phase.id}: {e}")
             print(f"{line}\n        target=INVALID")
-    shape = parse_task_shape(plan_text)
-    tier = round1_writer_tier(shape, loop.writer_effort or DEFAULT_WRITER_EFFORT)
-    print(f"task shape: {shape or 'undeclared'} — code-writer round 1 "
-          f"at {tier}")
     if errors:
         print("\nplan problems:", file=sys.stderr)
         for e in errors:
@@ -3273,14 +3111,6 @@ def cmd_status(args) -> None:
     print(f"slice {state['slice']}  run_phase={state['run_phase']}  "
           f"generation={state.get('generation', 0)}  "
           f"bail-outs={len(state.get('bailouts', []))}")
-    if "task_shape" in state or "writer_effort" in state:
-        fuse = state.get("effort_fuse") or {}
-        blown = ("tripped ("
-                 + ", ".join(f"P{p}" for p in fuse.get("phases") or []) + ")"
-                 if fuse.get("tripped") else "—")
-        print(f"  shape={state.get('task_shape') or 'undeclared'}  "
-              f"writer_effort={state.get('writer_effort') or '—'}  "
-              f"fuse: {blown}")
     for pid in state.get("known_phases", []):
         ps = state.get("phases", {}).get(pid)
         if not ps:
@@ -3308,12 +3138,6 @@ def main() -> None:
                        help="echo the log to stdout as well as log.txt")
     run_p.add_argument("--dry-run", action="store_true",
                        help="parse the plan, resolve targets, and exit")
-    run_p.add_argument("--writer-effort", choices=WRITER_EFFORTS,
-                       default=None,
-                       help="code-writer round-1 effort where the plan's "
-                            "task shape permits a step-down (default: "
-                            f"{DEFAULT_WRITER_EFFORT}); later rounds are "
-                            "always xhigh")
     run_p.set_defaults(func=cmd_run)
 
     status_p = sub.add_parser("status", help="print a slice's run state")

@@ -55,10 +55,7 @@ heading levels, the `Target:` line, done-record shape, the `verification.json` s
   `pre-settled` / `localized` / `cross-cutting`, with a one-line justification anchored in
   slice.md facts. The declaration binds the writer's investigation budget — its register
   carries the binding (`pre-settled` forbids research sub-agents and repo sweeps; research runs
-  only against a named open question) — and the run loop reads it: `pre-settled` and `localized`
-  let the code-writer's round 1 run at a reduced effort tier, `cross-cutting` or an undeclared
-  shape never does ([agent-dispatch.md](agent-dispatch.md)). A mis-declaration therefore costs
-  twice, which is why the review checks it both ways.
+  only against a named open question).
 - **Ordering constraints** and **not-in-scope**.
 - **Phases** — `### P<id> — <title>` sections (format details: [run-loop.md](run-loop.md)), each
   opening with its `Target:` line, **self-sufficient by reference**: outcome, the few constraints

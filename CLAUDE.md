@@ -64,10 +64,8 @@ Four ideas span the files and explain most design choices:
    gates, git, caps, stamping, parsing — stays in Python; judgment goes to a dispatched agent.
    Detecting a green suite needs no model, only fixing red does.
 3. **Every agent is a headless `kc session`,** spawned through `run_loop.run_kc_session` (the plan
-   loop calls it too). Opus at `xhigh` everywhere via explicit flags — the one step-down is the
-   code-writer's round 1 on a `pre-settled`/`localized` plan (`--writer-effort`, default `high`;
-   `plugins/dev/docs/agent-dispatch.md`) — except the always-Sonnet agents (`test-agent`,
-   `test-fixer`, `rebase-agent`) which pin `model:` in their own definitions.
+   loop calls it too). Opus at `xhigh` everywhere via explicit flags, except the always-Sonnet
+   agents (`test-agent`, `test-fixer`, `rebase-agent`) which pin `model:` in their own definitions.
 4. **The loops bail, they don't chat:** exit 3 = error, exit 4 = operator question. `state.json`,
    `bailout.json` and the exit code are the entire interface to the launching session — loop stdout
    never reaches it. What an agent noticed but the loop will not act on has one destination —

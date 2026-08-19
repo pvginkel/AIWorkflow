@@ -504,11 +504,6 @@ def test_dispatch_passes_model_and_effort_explicitly():
         assert code == 0
         assert calls == [("plan-writer", "opus", "xhigh"),
                          ("plan-reviewer", "opus", "xhigh")]
-        # the tier actually dispatched rides every history row
-        history = json.loads(
-            (slice_dir / "plan_state.json").read_text())["history"]
-        assert [(h["role"], h["effort"]) for h in history] == [
-            ("plan-writer", "xhigh"), ("plan-reviewer", "xhigh")]
 
 
 if __name__ == "__main__":
