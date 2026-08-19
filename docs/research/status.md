@@ -329,6 +329,42 @@ blocking-finding rate and downstream appended-phase rate hold while producer cos
   0.7.2: the run header printed the launch flag (`writer high`) on a run whose shape made it
   inert; it now prints the tier round 1 actually ran at (`writer xhigh`), and 159's header was
   re-stamped in place.
+- 2026-08-19 — slices 160 and 161 read (both `pre-settled`, 0.7.2; $63.53 and $37.92 by
+  `slice_cost`): **no kill event — and no power.** Seven round-1s ran `high` (160 P1, P1a, P2,
+  P3, P4; 161 P1, P2) and all seven went gate-green and `signoff` on round 1: 0 blocking
+  findings, 5 advisories (3 comment-prose, 2 Minor design notes — 160 S1, 161 S3), fuse
+  untouched, rework 3 % and 11 %. 161's one bail-out was two consecutive API 529s on P2's first
+  session (no verdict, $0), re-dispatched at `high` under 0.7.1 and clean — not a writer event;
+  it does show `slice_cost` still booking that re-dispatch as rework (round ≥ 2: $1.92 of 161's
+  $3.91), which is 0.7.1's principle not yet reaching the cost report. **The operator's worry
+  that the slices came out small is right, and it is the whole read.** 160 arrived with seven
+  requirements and refinement dropped four; the seven `high` phases changed 27–227 lines (median
+  79) in 17–47 writer turns (median 36), against a 140–157 population median of 139 lines / 46
+  turns. In that band the `xhigh` baseline almost never draws a blocking finding either: over
+  140–157, reviewer r1 `issues`/`blocked` is 2/42 (5 %) on phases ≤ 47 turns against 18/38
+  (47 %) above, and 4/39 (10 %) at ≤ 230 lines against 11/17 (65 %) above (146–157 alone: 2/30
+  and 1/27 in the small band). Expected blocking for these seven at full effort is ≈ 0.4–0.7,
+  so 0/7 is what `xhigh` would have produced too — the read distinguishes nothing. Pooled, all
+  nine `high` round-1s to date sit in the small band and drew 2 blocking (158 P1 plan-carried,
+  158 P2 writer-derivable) against 2/30–2/42 for small `xhigh` phases: the point estimate is
+  against `high`, one-sided Fisher p ≈ 0.14–0.22, n too small to call either way. **The lever
+  is also smaller than a3-plan.md assumed.** Effort moves output tokens, and output is ≈ 20 % of
+  a writer round's cost — context is the rest, 56 % cache reads and 25 % cache writes on the
+  `high` rounds (155–161: code-writer out-$ 21 % of the role; every Opus role 16–33 %). The
+  `high` r1s ran 457–466 output tokens/turn against 466 (159), 550 (158/159) and 567 (146–157
+  small band) at `xhigh`, so the saving on 160+161's $15.90 of `high` rounds is somewhere
+  between $0 and ≈ $1 — ≤ 1 % of slice cost — while 158 P2's one writer-derivable strike cost
+  ≈ $4 of rework. The same arithmetic bounds stage 2: the plan-writer's output is 25 % of a 9 %
+  role, ≈ 2 % of spend at most. **Recommendation put to the operator: drop** — not on the kill
+  rule, which has not fired, but because the shape gate confines the trial to phases where
+  neither tier fails, so it cannot gain power, and the upside it gambles for is ≤ 1 % against a
+  witnessed ≈ 4 % loss. Decision is the operator's; if dropped, `DEFAULT_WRITER_EFFORT` →
+  `xhigh`, the flag stays, stage 2 stays unbuilt. The cross-cutting lesson has no catalogue
+  entry yet: the spend is in what a role *reads* per turn (context — cache reads and writes —
+  is 67–84 % of every Opus role's cost), not in how hard it thinks; no intervention in
+  interventions.md addresses context volume per turn, and the A-lane's ceiling is set by that.
+  Advisory texture did not differ by tier (0.7/phase at `high`, 0–3/phase on 155–159 `xhigh`
+  signoffs, comment-prose in both).
 
 ## A4 — Upfront complexity grading
 
