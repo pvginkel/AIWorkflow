@@ -134,6 +134,15 @@ itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id
   slice may need an order only the agent running the verification knows. A reviewed-but-unpushed
   sibling commit otherwise never reaches the deploy it was meant for — one run's dev roll
   crash-looped exactly that way, its sibling's half of the change still local.
+- **A repo the plan holds is exempt from all of that.** `plan.md`'s `## Push holds` section
+  ([plan-template.md](plan-template.md)) names repos this slice must not push. The driver leaves
+  them out of the check, states them in the test phase's dispatch — whose procedure doc says
+  *push*, so a held repo has to be named as a deterministic fact or the agent is left choosing
+  between two instructions — and writes one Outstanding-actions entry per held repo instead of
+  nudging and bailing. Before this, a plan's hold was invisible to the driver and the run had two
+  exits: violate the ruling or bail. One slice held `../HelmCharts` (a push there deploys dev and
+  prd together and rolls both controllers); the test agent honoured the ruling, was nudged twice,
+  the driver bailed `unpushed` — and the run session pushed 38 seconds later, crash-looping prd.
 - **Doc phase** — after test-complete: one `doc-writer` session told to read the slice-doc-plan
   doc (`CLAUDE.md`'s `Slice doc plan:` pointer) and execute it — diff-based over the whole
   slice, single pass, manual + dev docs together, on its own branch, **never pushing**. The
@@ -141,7 +150,10 @@ itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id
   is nudged back to the writer's session) — checks local `<base>` against `origin/<base>` (the
   branch rebases onto origin but ff-merges into local, so a local-ahead base bails `blocked`
   before anything is mutated), rebase-merges the branch onto the base branch and pushes; the dev
-  roll that push triggers is left to land on its own, untracked.
+  roll that push triggers is left to land on its own, untracked. This is the only push the driver
+  makes itself, so it is where a hold on the *primary* repo lands: the branch rebases onto the
+  local base instead (a held repo's origin is behind by everything the slice did, which is what
+  the local-ahead check exists to catch) and the landing stops at the merge.
 
 **The generation bar** terminates the append loop: the first follow-up generation appends only
 work the plan *owes* and no phase delivered — a requirement, ruling or acceptance criterion left

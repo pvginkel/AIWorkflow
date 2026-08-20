@@ -69,8 +69,11 @@ input — a requirement that arrives pinned is absorbed as spec, not reopened.
 
 Write the plan's header yourself — this is the one artifact you author: the one-liner; a
 **requirements/rulings** section carrying every requirement and every ruling from §2 **in the
-operator's words**; any ordering constraints already known; not-in-scope. No phases — the
-plan-writer designs those. Commit (stage by name — shared working tree), then:
+operator's words**; any ordering constraints already known; not-in-scope. A ruling that forbids
+pushing a repo also gets its machine-readable half — a `## Push holds` bullet, shaped as the
+plan template above says; prose alone is invisible to the driver, which then nudges the test
+agent for that push and bails. No phases — the plan-writer designs those. Commit (stage by
+name — shared working tree), then:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/tools/plan_loop.py run <spec-repo>/slices/backlog/<SLICE_DIR>

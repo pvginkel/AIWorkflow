@@ -30,6 +30,7 @@ _spec.loader.exec_module(run_loop)
 RunLoop = run_loop.RunLoop
 Bailout = run_loop.Bailout
 parse_plan = run_loop.parse_plan
+parse_push_holds = run_loop.parse_push_holds
 stamp_phase = run_loop.stamp_phase
 
 # The driver reads the component set from `kc project list` in run(). The
@@ -366,6 +367,46 @@ def test_parse_plan_phases_ids_and_order():
     assert [p.id for p in phases] == ["1", "2", "2a", "fix1"]
     assert [p.done for p in phases] == [True, False, False, False]
     assert phases[2].target == "../Sibling"
+
+
+def test_parse_push_holds_reads_the_section_only():
+    text = (
+        "# Plan\n\n## Push holds\n\n"
+        "<!-- Optional; usually absent.\n"
+        "     `- ../Repo — why` — the driver reports it held. -->\n\n"
+        "- ../HelmCharts — a push deploys dev and prd together\n"
+        "- `../Other` — **bold and backticks are decoration**\n\n"
+        "## Not in scope\n\n- ../NotHeld — this bullet is another section\n"
+        "\n### P1 — First\n\nTarget: app\n"
+    )
+    holds, errors = parse_push_holds(text)
+    assert errors == []
+    assert holds == [
+        ("../HelmCharts", "a push deploys dev and prd together"),
+        ("../Other", "**bold and backticks are decoration**"),
+    ]
+
+
+def test_parse_push_holds_errors():
+    """A bullet the parser cannot read is an error, never a skip: a hold it
+    misses silently is a repo the driver pushes."""
+    text = ("## Push holds\n\n"
+            "prose about the holds is fine\n\n"
+            "- ../HelmCharts because prd rolls\n"
+            "- ../Chart —\n"
+            "- ../Twice — first\n"
+            "- ../Twice — again\n")
+    holds, errors = parse_push_holds(text)
+    assert [t for t, _ in holds] == ["../Twice"]
+    joined = "\n".join(errors)
+    assert "is not a push hold" in joined
+    assert "../HelmCharts because prd rolls" in joined
+    assert "`../Twice` is held twice" in joined
+
+
+def test_parse_push_holds_absent_section():
+    assert parse_push_holds("# Plan\n\n### P1 — X\n\nTarget: app\n") == (
+        [], [])
 
 
 def test_parse_plan_errors():
@@ -1913,6 +1954,136 @@ def test_clean_test_phase_checks_the_invoking_repo_too():
         assert run_to_exit(r) == 3
         bail = json.loads((slice_dir / "bailout.json").read_text())
         assert bail["reason"] == "unpushed" and str(repo) in bail["details"]
+
+
+# -- push holds: a repo the plan forbids this run to push ---------------------
+#
+# Slice 135's plan carried an operator ruling holding `../HelmCharts` (its
+# push deploys dev and prd together). The test agent honoured it, the driver
+# had no representation for it, and the run's only two exits were violate the
+# ruling or bail — it bailed, and the push happened anyway 38s later.
+
+def held_sibling_slice(tmp, why="a push deploys dev and prd together"):
+    slice_dir, repo, sib = sibling_phase_slice(tmp)
+    (slice_dir / "plan.md").write_text(
+        f"# plan\n\n## Push holds\n\n- ../Sibling — {why}\n\n"
+        + phase_section("1", "Chart change", "../Sibling"))
+    return slice_dir, repo, sib
+
+
+def _never_nudge(*a, **kw):
+    raise AssertionError("a held repo must never be nudged")
+
+
+def test_a_held_sibling_is_reported_not_nudged():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = held_sibling_slice(tmp)
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        r.fake_git.unpushed[str(sib)] = "2"
+        r._nudge = _never_nudge
+        assert run_to_exit(r) == 0
+        report = load_report(slice_dir)
+        assert "Push Sibling by hand when its hold lifts" in report
+        assert "a push deploys dev and prd together" in report
+        assert load_state(slice_dir)["holds_reported"] == [str(sib)]
+        # the invoking repo is not held, so the doc phase still pushes it
+        pushes = r.fake_git.mutations("push")
+        assert pushes and pushes[-1][0] == repo
+
+
+def test_a_held_repo_already_on_origin_owes_nothing():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = held_sibling_slice(tmp)
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        r._nudge = _never_nudge
+        assert run_to_exit(r) == 0
+        assert load_state(slice_dir).get("holds_reported", []) == []
+        assert "hold lifts" not in load_report(slice_dir)
+
+
+def test_an_unheld_repo_is_still_nudged_beside_a_held_one():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = held_sibling_slice(tmp)
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        r.fake_git.unpushed[str(sib)] = "2"
+        r.fake_git.unpushed[str(repo)] = "1"
+        nudges = []
+
+        def fake_nudge(prompt, cwd, session_id, label):
+            nudges.append(prompt)
+            r.fake_git.unpushed.pop(str(repo))
+
+        r._nudge = fake_nudge
+        assert run_to_exit(r) == 0
+        assert len(nudges) == 1
+        assert str(repo) in nudges[0]
+        assert str(sib) not in nudges[0], "the held repo is not asked for"
+
+
+def test_the_test_phase_dispatch_names_the_held_repos():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = held_sibling_slice(tmp)
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        r._nudge = _never_nudge
+        assert run_to_exit(r) == 0
+        prompt = next(p for role, p in r.prompts if role == "test-agent")
+        assert "The plan holds these repos" in prompt
+        assert "  - ../Sibling — a push deploys dev and prd together" in prompt
+
+
+def test_no_holds_leaves_the_test_dispatch_as_it_was():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        assert run_to_exit(r) == 0
+        prompt = next(p for role, p in r.prompts if role == "test-agent")
+        assert "The plan holds these repos" not in prompt
+        assert "\n\nDeterministic fact from the driver" in prompt
+
+
+def test_a_held_primary_repo_lands_the_docs_locally_and_never_pushes():
+    """The hold is repo-scoped, and the doc landing is the one place the
+    driver itself pushes — so it merges and stops."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        (slice_dir / "plan.md").write_text(
+            f"# plan\n\n## Push holds\n\n- {PROJECT} — prd rolls on this "
+            "push\n\n" + phase_section("1", "First phase"))
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        r.fake_git.unpushed[str(repo)] = "3"
+        r._nudge = _never_nudge
+        assert run_to_exit(r) == 0
+        assert not r.fake_git.mutations("push")
+        # rebased onto the LOCAL base: a held repo's origin is behind by
+        # everything the slice landed, so `origin/main` is the wrong target
+        rebases = r.fake_git.mutations("rebase")
+        assert rebases and rebases[-1][1] == ("rebase", "main")
+        assert "Push repo by hand when its hold lifts" in load_report(slice_dir)
+
+
+def test_an_unresolvable_hold_is_a_plan_structure_error():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        (slice_dir / "plan.md").write_text(
+            "# plan\n\n## Push holds\n\n- ../Nope — held\n\n"
+            + phase_section("1", "First phase"))
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        assert run_to_exit(r) == 4
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "plan_doc" and bail["question"] is True
+        assert "push hold `../Nope`" in bail["details"]
 
 
 def test_doc_phase_prompt_states_diff_range_and_doc():

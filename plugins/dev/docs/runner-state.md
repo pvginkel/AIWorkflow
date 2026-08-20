@@ -22,7 +22,9 @@ the exact `commits` it ran on — reused while every swept HEAD matches, re-run 
 `consult_seq`, `in_flight`, `bailouts` (every stop this run made — `reason`, `phase`,
 `question`, `ts` — kept here because `bailout.json` is unlinked on resume), `appended_phases`
 (the ids the plan gained after the run started — a consult's, the test phase's, or the
-operator's, as opposed to the phases it began with), `phases`, and `history`.
+operator's, as opposed to the phases it began with), `holds_reported` (the repos held by the
+plan's `## Push holds` section that the driver has already entered in the close-out report — one
+entry per repo per run), `phases`, and `history`.
 
 Per phase: `status` (`pending` | `in_progress` | `merged`), `stage` (`executor` | `gate` |
 `review` | `merging` | `null`), `branch`, `target`, `executor_rounds`, `gate_fix_rounds`,

@@ -54,7 +54,10 @@ an executor's `question` verdict, a contested plan edit, an exhausted follow-up 
 the operator, then **write the answer into plan.md's requirements/rulings section — in the
 operator's words — and commit it (stage by name) before resuming**: the next executor reads the
 plan, not this chat. A ruling that corrects an earlier one **replaces it in place** — no
-correction-chains; git holds the history. Then relaunch with `--resume`.
+correction-chains; git holds the history. A ruling that forbids pushing a repo needs its
+machine-readable half too — a `- <repo> — <why>` bullet under `## Push holds`
+(`${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md`) — or the driver nudges the test agent for that
+push and bails `unpushed` over the ruling it was told to honour. Then relaunch with `--resume`.
 
 ## Job 4 — close out (exit 0)
 

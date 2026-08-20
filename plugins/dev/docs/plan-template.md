@@ -35,6 +35,13 @@ pre-settled — slice.md's design section fixes the mechanism; planning is trans
 
 <!-- Only what is genuinely ordered beyond "producers before consumers". Often empty. -->
 
+## Push holds
+
+<!-- Optional; almost always absent — omit the heading unless a ruling holds a push. One
+     bullet per held repo, `- ../SiblingRepo — <why this run must not push it>`, target
+     written as a phase writes its `Target:`. The driver leaves it out of the push check
+     and reports it held instead. -->
+
 ### P1 — <title>
 
 Target: <component>
@@ -57,13 +64,20 @@ The mechanical rules the parser holds every author to:
 
 - **Every `###` heading is a phase heading** — `### P<id> — <title>` (em dash), id
   `[A-Za-z0-9]+`. Any other `###` line is a structure error the driver nudges back. All
-  non-phase sections use `##`; the driver ignores those entirely.
+  non-phase sections use `##`, and the driver reads exactly one of them — `## Push holds`;
+  the rest it ignores.
 - **Ids are free-form labels; document order is authoritative.** `P3a` inserted between `P3`
   and `P4` runs between them because of *where it sits*, not its name. Ids must be unique.
 - **`## Task shape` is the plan-writer's declaration** — `pre-settled`, `localized`, or
   `cross-cutting`, one line of justification anchored in slice.md facts. It binds the writer's
   investigation and the plan review checks it (semantics: [plan-loop.md](plan-loop.md)); the
-  run loop's parser ignores it like every other `##` section.
+  run loop's parser ignores it, as it does every `##` section but the next one.
+- **`## Push holds` names the repos this run must not push** — one `- <target> — <why>`
+  bullet each (em dash), target in the same vocabulary as `Target:`. The driver skips them in
+  its push check, names them in the test phase's dispatch, and writes one Outstanding-actions
+  entry per held repo; the doc landing merges locally and does not push a held primary repo. A
+  bullet in that section the parser cannot read is a structure error, not a skip — a hold
+  missed silently is a repo the driver pushes. The section is absent from almost every plan.
 - **`Target:` is the first line of every phase body** — a `kc project list` component name or
   a sibling repo path (`../SiblingRepo`). It roots the executor's cwd, the driver's git
   operations, and the gate. Markdown decoration is tolerated (`**Target:**` with a backticked

@@ -4,6 +4,35 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-20 — a plan can hold a repo's push, and the driver reports it instead of bailing (v0.8.0)
+
+Triage #445. `_assert_pushed` was blanket over every repo in `state.json`'s `bases`, so a plan
+ruling that forbids pushing one repo was invisible to the driver and the run had exactly two
+exits: violate the ruling, or nudge twice and bail `unpushed` — whose message ("Push it … then
+resume") reads as an instruction to push. Slice 135 held `../HelmCharts` by operator ruling (a
+push there deploys dev and prd together and rolls both controllers on the ConfigMap checksum);
+the test agent honoured it, was nudged twice, the driver bailed, and the run session pushed 38
+seconds later — `IaC/HelmCharts` #5668 deployed both stages and `kubecoder@prd` crash-looped.
+
+**`plan.md` gains `## Push holds`** — the one `##` section the run loop reads, one
+`- <target> — <why>` bullet per held repo, target in the same vocabulary as a phase's `Target:`.
+It is absent from almost every plan. The driver leaves held repos out of the push check, names
+them in the test phase's dispatch (whose procedure doc says *push*, so a hold has to arrive as a
+deterministic fact or the agent is left choosing between two instructions), and writes one
+Outstanding-actions entry per held repo — `Push <repo> by hand when its hold lifts`, with the
+plan's reason — instead of nudging and bailing. The hold is repo-scoped and holds everywhere the
+driver would push, which is one place: a held **primary** repo's doc landing rebases the doc
+branch onto the local base rather than `origin/<base>` (a held repo's origin is behind by
+everything the slice did, which is what the local-ahead check exists to catch) and stops at the
+merge. `state.json` gains `holds_reported`, so the entry is written once per repo per run.
+
+A bullet under that heading the parser cannot read is a plan structure error, nudged back like
+any other — a hold missed silently is a repo the driver pushes. For the same reason the clean
+test-phase path now re-parses the plan before the push check, exactly as the findings path
+already did: a malformed edit is nudged back while its author's session is still resumable,
+where before a clean pass carried a broken plan into the doc phase. `/dev:plan-slice` and
+`/dev:run-slice` both say that a ruling forbidding a push needs its machine-readable half.
+
 ## 2026-08-20 — the per-phase gate is test-only, on the record; the residue rider stops overclaiming (v0.7.5)
 
 Triage #399 asked which way the lint question falls: run `kc project lint` in the loop's gates, or

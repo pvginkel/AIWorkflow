@@ -56,7 +56,8 @@ heading levels, the `Target:` line, done-record shape, the `verification.json` s
   slice.md facts. The declaration binds the writer's investigation budget — its register
   carries the binding (`pre-settled` forbids research sub-agents and repo sweeps; research runs
   only against a named open question).
-- **Ordering constraints** and **not-in-scope**.
+- **Ordering constraints**, **push holds** — the repos this slice must not push, the only `##`
+  section the run loop reads and absent from almost every plan — and **not-in-scope**.
 - **Phases** — `### P<id> — <title>` sections (format details: [run-loop.md](run-loop.md)), each
   opening with its `Target:` line, **self-sufficient by reference**: outcome, the few constraints
   the executor can't figure out, pointers to attachments. Roughly PR-sized and independently

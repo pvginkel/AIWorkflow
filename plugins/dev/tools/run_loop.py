@@ -364,6 +364,8 @@ HEADING_RE = re.compile(r"^###\s+(.*)$")
 PHASE_RE = re.compile(r"^###\s+P([A-Za-z0-9]+)\s+—\s+(.+?)\s*$")
 DONE_STAMP_RE = re.compile(r"✅\s*DONE\b")
 TARGET_RE = re.compile(r"^\s*\**Target\**\s*:\**\s*`?([^`]+?)`?\s*$")
+PUSH_HOLDS_RE = re.compile(r"^##\s+Push holds\s*$", re.IGNORECASE)
+HOLD_RE = re.compile(r"^\s*[-*]\s+\**`?(\S+?)`?\**\s+—\s+(\S.*?)\s*$")
 
 
 class Phase:
@@ -415,6 +417,45 @@ def parse_plan(text: str) -> tuple[list[Phase], list[str]]:
         if not phase.done and not phase.target:
             errors.append(f"phase P{phase.id} has no `Target:` line")
     return phases, errors
+
+
+def parse_push_holds(text: str) -> tuple[list[tuple[str, str]], list[str]]:
+    """(held target → why, structure errors) from `## Push holds` — the one
+    `##` section the driver reads. A repo listed there is one this slice must
+    not push: the push check reports it held instead of nudging the test
+    session and bailing. Prose and comments in the section are ignored; a
+    bullet that is not a hold is a structure error, because a hold the driver
+    silently missed is a repo it would push."""
+    holds: list[tuple[str, str]] = []
+    errors: list[str] = []
+    in_section = in_comment = False
+    seen: set[str] = set()
+    for line_no, line in enumerate(text.splitlines()):
+        if in_comment:
+            in_comment = "-->" not in line
+            continue
+        if line.lstrip().startswith("<!--"):
+            in_comment = "-->" not in line
+            continue
+        if line.startswith("#"):
+            in_section = bool(PUSH_HOLDS_RE.match(line))
+            continue
+        if not in_section or not line.lstrip().startswith(("-", "*")):
+            continue
+        match = HOLD_RE.match(line)
+        if not match:
+            errors.append(
+                f"line {line_no + 1}: `{line.strip()}` is not a push hold "
+                "(`- <target> — <why>`, em dash, target written as a phase "
+                "writes its `Target:`)")
+            continue
+        target, why = match.group(1).strip(), match.group(2).strip()
+        if target in seen:
+            errors.append(f"line {line_no + 1}: `{target}` is held twice")
+            continue
+        seen.add(target)
+        holds.append((target, why))
+    return holds, errors
 
 
 def stamp_phase(plan_path: Path, phase_id: str, date: str) -> bool:
@@ -1084,7 +1125,7 @@ Deterministic facts from the driver:
 - The slice folder is {slice_dir}; the plan is {plan_path}. Check off
   {verification_path} as you verify (verdict + evidence per item).
 - {close_out_line}
-
+{hold_block}
 {sweep_block}
 
 Findings route through a generation bar, stated for this pass:
@@ -1125,6 +1166,14 @@ The driver's full gate sweep is red after your doc-phase commits (nudge
 statement — there may be more behind it. Fix what broke on branch {branch}
 without weakening any gate — mechanical suite breakage may go to the
 `dev:test-fixer` sub-agent — commit, and do not push. Do not start other work.
+"""
+
+HOLD_BLOCK = """\
+- The plan holds these repos — pushing them is NOT part of this phase, and
+  the driver's push check reports them held rather than asking you for them:
+{rows}
+  Everything else this slice committed is yours to push, per your procedure
+  doc.
 """
 
 PUSH_NUDGE_PROMPT = """\
@@ -1409,6 +1458,46 @@ class RunLoop:
                 for key, base in sorted(self.state["bases"].items())
                 if spec_root is None or Path(key).resolve() != spec_root]
 
+    def _push_holds(self, text: str) -> tuple[dict[str, str], list[str]]:
+        """(repo root → why the plan holds its push, structure errors).
+        Roots are keyed as `state["bases"]` keys them, so the push check and
+        the doc phase can look a repo up directly."""
+        holds, errors = parse_push_holds(text)
+        resolved: dict[str, str] = {}
+        for target, why in holds:
+            try:
+                root = self._resolve_target(target).git_root
+            except ValueError as e:
+                errors.append(f"push hold `{target}`: {e}")
+                continue
+            resolved[str(root)] = why
+        return resolved, errors
+
+    def _held_roots(self) -> dict[str, str]:
+        """The holds as the plan stands right now — re-read per call, so a
+        hold the operator adds while the run sits at a bail takes effect on
+        resume. Unresolvable entries drop out here and come back as plan
+        structure errors from `_load_plan`."""
+        try:
+            text = self.plan_path.read_text()
+        except OSError:
+            return {}
+        return self._push_holds(text)[0]
+
+    def _hold_block(self) -> str:
+        """The held repos as the test phase's dispatch carries them. The
+        plan says it too, but the procedure doc that dispatch executes says
+        `push`, and a deterministic fact outranks a section the agent has to
+        find."""
+        try:
+            holds, _ = parse_push_holds(self.plan_path.read_text())
+        except OSError:
+            return ""
+        if not holds:
+            return ""
+        return HOLD_BLOCK.format(
+            rows="\n".join(f"  - {t} — {why}" for t, why in holds))
+
     def _base_branch(self, root: Path) -> str:
         """The base branch of a target repo, recorded the first time the loop
         touches that repo (the invoking repo is recorded at init)."""
@@ -1443,6 +1532,7 @@ class RunLoop:
             phases, errors = parse_plan(text)
             errors.extend(self._vanished_phases(phases))
             errors.extend(self._target_errors(phases))
+            errors.extend(self._push_holds(text)[1])
             if not errors:
                 self._track_phases(phases)
                 return phases
@@ -2564,6 +2654,7 @@ class RunLoop:
                 plan_path=self.plan_path,
                 verification_path=self.verification_path,
                 close_out_line=dispatch_line(self.report_path),
+                hold_block=self._hold_block(),
                 sweep_block=self._sweep_block(self.state["gate_sweep"],
                                               SWEEP_STANCE_TEST_GREEN,
                                               SWEEP_STANCE_TEST_RED),
@@ -2575,6 +2666,10 @@ class RunLoop:
         if verdict["outcome"] == "blocked":
             raise Bailout("blocked", details=verdict.get("summary", ""))
         if verdict["outcome"] == "clean":
+            # the same re-parse the findings path gets: the push check reads
+            # the plan's holds, so a malformed edit is nudged back while the
+            # session that made it is still resumable
+            self._after_session_plan_check()
             self._assert_pushed(session)
             return False
         # findings → blocking phases were appended
@@ -2588,27 +2683,62 @@ class RunLoop:
         self._spend_generation("the test phase")
         return True
 
-    def _unpushed_roots(self) -> list[str]:
-        """Every repo this slice touched whose base branch holds commits
-        `origin` does not, one description each — the driver's check that the
-        test phase pushed what the slice committed."""
-        unpushed = []
+    def _push_check(self) -> tuple[list[str], list[tuple[Path, str]]]:
+        """What the push check sees: one description per repo this slice
+        touched whose base branch holds commits `origin` does not, and —
+        separately, never in that list — the repos the plan holds that are
+        ahead of their origin in exactly the same way, with its reason. A held repo's work
+        is meant to stay local, so it is reported, never nudged.
+
+        Re-fetched here rather than trusted from the test phase's dispatch:
+        that session has been pushing since. A stale ref would report pushed
+        work as missing."""
+        held_why = self._held_roots()
+        unpushed: list[str] = []
+        held: list[tuple[Path, str]] = []
         for root, base in self._touched_roots():
-            # Re-fetched here rather than trusted from the test phase's
-            # dispatch: that session has been pushing since. A stale ref
-            # would report pushed work as missing.
             self._fetch_origin(root)
             if not self.git("rev-parse", "--verify", "--quiet",
                             f"origin/{base}", root=root, check=False):
-                unpushed.append(f"{root}: no origin/{base} at all")
-                continue
-            count = self.git("rev-list", "--count", f"origin/{base}..{base}",
-                             root=root)
-            if count not in ("", "0"):
-                unpushed.append(
-                    f"{root}: {count} commit(s) on {base} that "
-                    f"origin/{base} does not have")
-        return unpushed
+                note = f"{root}: no origin/{base} at all"
+            else:
+                count = self.git("rev-list", "--count",
+                                 f"origin/{base}..{base}", root=root)
+                if count in ("", "0"):
+                    continue
+                note = (f"{root}: {count} commit(s) on {base} that "
+                        f"origin/{base} does not have")
+            why = held_why.get(str(root))
+            if why is None:
+                unpushed.append(note)
+            else:
+                held.append((root, why))
+        return unpushed, held
+
+    def _report_hold(self, root: Path, why: str) -> None:
+        """A held repo, entered in the close-out report once per run: the
+        slice's commits stay local, so the push is a keystroke only the
+        operator can make."""
+        key = str(root)
+        reported = self.state.setdefault("holds_reported", [])
+        if key in reported:
+            return
+        reported.append(key)
+        self._save_state()
+        self.log(f"[push-check] {root.name} is held by the plan ({why}) — "
+                 "reported, not nudged")
+        self._report(
+            "Outstanding actions",
+            f"Push {root.name} by hand when its hold lifts",
+            f"`plan.md`'s `## Push holds` section holds `{root}`: {why}\n\n"
+            f"The slice's commits sit on `{self._base_branch(root)}` in that "
+            "repo and nowhere else; every repo the plan does not hold was "
+            "pushed as usual.",
+            consequence="none in this run — the driver took the hold as the "
+                        "ruling it is; nothing this repo deploys carries the "
+                        "slice until you push it.",
+            provenance="witnessed — the driver's push check, against "
+                       "`plan.md`'s `## Push holds` section")
 
     def _assert_pushed(self, session: str | None) -> None:
         """Before the doc phase: every repo the slice touched is on its
@@ -2618,11 +2748,17 @@ class RunLoop:
         happened. An unpushed repo nudges that session, capped, then bails
         (the same shape as the doc gate): the driver never pushes another
         repo's work itself, because a multi-repo slice may need an order only
-        the agent running the verification knows."""
+        the agent running the verification knows. A repo the plan holds is
+        neither nudged nor bailed on — `_report_hold` puts it in the
+        close-out report and the run carries on."""
         nudges = 0
         while True:
-            unpushed = self._unpushed_roots()
+            unpushed, held = self._push_check()
             if not unpushed:
+                # reported only once the rest is pushed, so the entry's
+                # "every repo the plan does not hold was pushed" holds
+                for root, why in held:
+                    self._report_hold(root, why)
                 return
             self.log("[test-phase] unpushed work: " + "; ".join(unpushed))
             if nudges >= PUSH_NUDGE_CAP or not session:
@@ -2800,8 +2936,11 @@ class RunLoop:
     def _land_doc_branch(self, branch: str, base: str) -> None:
         """Rebase-merge the gated doc branch and push — no build tracking;
         the sweep proved the tree, and the resulting dev roll lands on its
-        own."""
+        own. A plan holding this repo lands the merge locally and stops
+        there: the same ruling the push check honours, at the one place the
+        driver pushes anything."""
         root = self.repo_root
+        held = self._held_roots().get(str(root))
         if self._worktree_dirty(root):
             raise Bailout(
                 "protocol_failure",
@@ -2809,36 +2948,47 @@ class RunLoop:
                         "changes outside its commit boundary")
         if self.git("branch", "--list", branch, root=root):
             self.git("fetch", "origin", root=root)
-            # Before any branch mutation: local `base` must not outrun origin.
-            # The rebase below targets `origin/{base}`, so a commit that only
-            # local `base` carries (an out-of-band fix landed while the run sat
-            # at a bail) leaves the two divergent and the `--ff-only` merge dies
-            # with a raw "Diverging branches can't be fast-forwarded". Origin
-            # moving ahead is the harmless direction — the rebase picks those
-            # commits up and local `base` is still an ancestor.
-            ahead = self.git("rev-list", "--count", f"origin/{base}..{base}",
-                             root=root)
-            if ahead not in ("", "0"):
-                raise Bailout(
-                    "blocked",
-                    details=f"local {base} has {ahead} commit(s) that "
-                            f"origin/{base} lacks, so the doc branch cannot "
-                            f"fast-forward onto it — push {base} (or resolve "
-                            "why it diverged), then resume")
+            # A held repo is ahead of its origin by everything the slice
+            # landed and stays that way, so it rebases onto its own local
+            # base and the check below has nothing left to protect.
+            onto = base if held else f"origin/{base}"
+            if not held:
+                # Before any branch mutation: local `base` must not outrun
+                # origin. The rebase below targets `origin/{base}`, so a
+                # commit that only local `base` carries (an out-of-band fix
+                # landed while the run sat at a bail) leaves the two divergent
+                # and the `--ff-only` merge dies with a raw "Diverging
+                # branches can't be fast-forwarded". Origin moving ahead is
+                # the harmless direction — the rebase picks those commits up
+                # and local `base` is still an ancestor.
+                ahead = self.git("rev-list", "--count",
+                                 f"origin/{base}..{base}", root=root)
+                if ahead not in ("", "0"):
+                    raise Bailout(
+                        "blocked",
+                        details=f"local {base} has {ahead} commit(s) that "
+                                f"origin/{base} lacks, so the doc branch "
+                                f"cannot fast-forward onto it — push {base} "
+                                "(or resolve why it diverged), then resume")
             self.git("checkout", branch, root=root)
             try:
-                self.git("rebase", f"origin/{base}", root=root)
+                self.git("rebase", onto, root=root)
             except Bailout:
                 self.git("rebase", "--abort", root=root, check=False)
                 raise Bailout(
                     "blocked",
                     details=f"the doc branch {branch} does not rebase "
-                            f"cleanly onto origin/{base} — resolve by hand, "
+                            f"cleanly onto {onto} — resolve by hand, "
                             "then resume",
                 ) from None
             self.git("checkout", base, root=root)
             self.git("merge", "--ff-only", branch, root=root)
             self.git("branch", "-D", branch, root=root)
+        if held:
+            self._report_hold(root, held)
+            self.log(f"[doc-phase] merged into {base} — {root.name} is held "
+                     "by the plan, so nothing was pushed")
+            return
         self.git("push", "origin", base, root=root)
         self.log(f"[doc-phase] merged into {base} and pushed — the dev roll "
                  "is not tracked")
@@ -3097,6 +3247,15 @@ def cmd_dry_run(loop: RunLoop) -> None:
         except ValueError as e:
             errors.append(f"phase P{phase.id}: {e}")
             print(f"{line}\n        target=INVALID")
+    holds, hold_errors = parse_push_holds(loop.plan_path.read_text())
+    errors.extend(hold_errors)
+    for target, why in holds:
+        try:
+            root = loop._resolve_target(target).git_root
+            print(f"  hold  {target}  root={root}  not pushed: {why}")
+        except ValueError as e:
+            errors.append(f"push hold `{target}`: {e}")
+            print(f"  hold  {target}  INVALID")
     if errors:
         print("\nplan problems:", file=sys.stderr)
         for e in errors:
