@@ -34,10 +34,6 @@ pre-authorize stays operator-gated.
 6. **Batch independent tool calls into one message; keep suite output quiet.** Run suites `-q`
    (the pass/fail tail is all you need), pair independent commands in one message, and read
    command output directly from the call that produced it.
-7. **Wait on work by handle, never by pattern.** A backgrounded command is waited on via the
-   harness's background-task notification, or `kill -0 <pid>` on a pid you captured when you
-   started it. Never poll `pgrep -f` with a pattern that appears in your own command line —
-   the guard matches the polling shell itself, can never go false, and spins forever.
 
 ## Hand-back
 

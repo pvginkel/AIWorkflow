@@ -32,11 +32,10 @@ nothing from you between launch and close-out.
    python3 ${CLAUDE_PLUGIN_ROOT}/tools/run_loop.py run <spec-repo>/slices/<SLICE_DIR>
    ```
 
-   All output goes to `<slice_dir>/log.txt` — do **not** read or tail it; the background-task
-   mechanism notifies you when the loop exits, and the outcome lives in the exit code,
-   `state.json`, and `bailout.json`. The loop's stdout is a deliberately terse progress feed —
-   one timestamped line per job start and phase merge; it is all the mid-run visibility you
-   need. Grep the log only when diagnosing a specific bail.
+   All output goes to `<slice_dir>/log.txt` — do **not** read or tail it; the outcome lives in
+   the exit code, `state.json`, and `bailout.json`. The loop's stdout is a deliberately terse
+   progress feed — one timestamped line per job start and phase merge; it is all the mid-run
+   visibility you need. Grep the log only when diagnosing a specific bail.
    (`--resume` continues after any bail; `--dry-run` validates the plan without running.)
 
 ## Job 2 — errors (exit 3)

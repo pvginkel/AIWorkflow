@@ -4,6 +4,21 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-20 — the anti-polling rule moves into the KubeCoder preamble; the plugin's three copies go (v0.7.4)
+
+"Wait by notification, never by polling" was restated in four near-identical places — the
+`run-slice` and `plan-slice` skills, `test-agent.md`'s rule 7, and KubeCoder's
+`slice-test-plan.md` — and not one of them covered a dispatched sub-agent, the other kind of work
+that reports back. It is now a single `## Waiting on work` section in the in-pod `CLAUDE.md`
+preamble (KubeCoder `worker/internal/claudemd/templates/CLAUDE.md.tmpl`, after `## Sub-agents`),
+which reaches every session in every KubeCoder pod — dispatching agent and sub-agent alike — and
+names the legitimate hand-waits (`track_build.py`, `kill -0` on a captured pid) beside the ban, so
+nobody improvises one. The three copies here are gone: the two skill sentences lose only the
+"notifies you on exit" clause (the `log.txt` / `state.json` / `bailout.json` pointers stay, and
+"do **not** read or tail" with them), and rule 7 goes entirely. The plugin now leans on a file in
+another repo for a rule its agents need; KubeCoder's `TestWaitingOnWork`, asserted over the render
+matrix, is what guards it — the goldens would let `-update` bless a deletion. Trello #656.
+
 ## 2026-08-19 — the writer-effort step-down is withdrawn: 0.7.0–0.7.2 reverted (v0.7.3)
 
 A3 stage 1 is out, by operator decision after four slices (`docs/research/status.md` A3,
