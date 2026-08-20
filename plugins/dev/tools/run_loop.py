@@ -989,7 +989,9 @@ Exception, at every generation: mechanical residue — comment or formatting
 fixes with no behaviour change, in files this slice's diff already touched —
 is neither reported nor appended. Fix it in this session: make the edit, keep
 gofmt honest where the change is Go, and commit to the checked-out branch.
-The driver's later full-sweep gate covers it.\
+The driver's lint+build+test sweep re-runs on any commit it has not seen, so
+the fix is gated before the loop closes — but never before a push your own
+procedure doc orders, so keep the tree green as you commit.\
 """
 
 COMPLETION_CONSULT_SITUATION = """\

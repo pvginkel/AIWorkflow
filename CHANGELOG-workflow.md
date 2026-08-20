@@ -4,6 +4,24 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-20 — the per-phase gate is test-only, on the record; the residue rider stops overclaiming (v0.7.5)
+
+Triage #399 asked which way the lint question falls: run `kc project lint` in the loop's gates, or
+accept the Build-Main red as the catch and fix the wording that promises otherwise. Both halves
+answered. **The per-phase gate stays `kc project test` and only test** — the code-writer runs the
+linter once itself before handing back, and the loop-tail sweep and the doc gate already run
+`lint` + `build` + `test` per component across every repo the slice touched, so a per-phase lint
+taxes every phase to save the one that fixes it. That decision now lives in `run-loop.md`'s Gate
+bullet instead of only in a comment beside `SWEEP_VERBS`. **The generation rider's last line was
+false in one direction**: it told the completion consult and the test agent that "the driver's
+later full-sweep gate covers" the mechanical residue they fix on the spot, but the test phase
+pushes — a residue fix it commits reaches origin before anything re-sweeps, and the doc gate only
+catches it afterwards. The rider now says what is true: the sweep re-runs on any commit it has not
+seen, so the fix is gated before the loop closes, **never before a push the agent's own procedure
+doc orders**. `run-loop.md`'s generation-bar paragraph carried the same claim and is corrected with
+it. Prompt and doc wording only — no behaviour change. 0.7.5, not 0.7.4: the anti-polling
+move took that version while this sat unpushed.
+
 ## 2026-08-20 — the anti-polling rule moves into the KubeCoder preamble; the plugin's three copies go (v0.7.4)
 
 "Wait by notification, never by polling" was restated in four near-identical places — the

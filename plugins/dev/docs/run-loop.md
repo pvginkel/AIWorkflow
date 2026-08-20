@@ -67,7 +67,10 @@ itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id
   day "absent from origin" and raised a Blocker over it. Refs only: no local branch moves, so a base
   sitting behind its origin stays the operator's call. Agents carry the other half of the rule —
   never conclude a commit is missing from a tree you have not fetched yourself.
-- **Gate** — the driver runs the target's deterministic gate itself; green is recorded
+- **Gate** — the driver runs the target's deterministic gate itself, and that gate is **test
+  only**: the executor runs the linter once itself before handing back, and lint or build
+  breakage is caught deterministically by the loop-tail sweep and the doc gate — so a per-phase
+  lint would tax every phase to save the one that fixes it. Green is recorded
   commit+log and stated in the reviewer's dispatch so the review never re-runs the suite. A red
   gate spawns a **fresh executor fix round** (cap 3, then `gate_red` bails); there is no
   separate fixer in the phase loop.
@@ -148,7 +151,8 @@ appends blocking work only, a third pending generation bails to the operator. Ad
 go in the close-out report as they are found. One rider holds at every generation: mechanical
 residue — comment or formatting fixes with no behaviour change, in files the slice's diff already
 touched — is neither reported nor appended; the finder fixes it in place and commits, and the
-driver's full-sweep gate covers it.
+driver's sweep re-runs on any commit it has not seen, which gates the fix before the loop closes
+but never before a push the test phase's own procedure doc orders.
 
 **Close-out.** Nothing from a run is carded per finding: everything an agent noticed but the
 loop did not act on is in the slice's `close-out.md` — who writes what there is

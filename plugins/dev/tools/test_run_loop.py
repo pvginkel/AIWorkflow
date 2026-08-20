@@ -1447,6 +1447,10 @@ def test_generation_bar_carries_trivia_rider():
                            if role == "test-agent")
         assert "mechanical residue" in consult_prompt
         assert "mechanical residue" in test_prompt
+        # the rider states the sweep's limit rather than promising cover the
+        # loop does not have: the test phase pushes before anything re-sweeps
+        assert "never before a push your own\nprocedure doc orders" \
+            in test_prompt
 
 
 def test_consults_get_the_report_path_and_a_cards_list_is_ignored():
