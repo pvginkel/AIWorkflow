@@ -4,6 +4,29 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-21 — the doc phase is auto docs; a doc task is a phase (v0.9.2)
+
+Triage #650: slice 015 (Ansible) planned R7 — close O3 in `decisions.md`, record the hook URL in
+`design.md`, correct A.4 in `phases.md` — as "the run loop's own doc phase … not a phase here",
+so V08, the criterion for it, reached the test phase before anything could have earned it, and no
+later role revisits a verdict. KubeCoderSpecs shows the same reading sanctioned by plan rulings
+since slice 114: fourteen `owed_to_doc_phase` verdicts (plus `pending — doc phase`, `deferred`,
+and one half-and-half) still sitting unverified in `slices/completed/`.
+
+The template made it legal: "no testing or doc phases — the loop owns those", and the only
+exception was a slice whose *whole* task is doc changes, so a mixed slice had nowhere to put a doc
+requirement but the doc phase. That was never the doc phase's charter. It is **auto docs** — the
+surfaces that already describe the changed behavior, brought up to date from the shipped diff —
+and it carries no slice task. A requirement that *is* a doc change is a phase with its own
+`Target:` (the spec repo resolves as a sibling, as 064/117/148/152/153 already did), reviewed and
+merged like any other, and every criterion in `verification.json` is earnable by a phase. Prose
+only — `plan-template.md` (the rule and the criterion corollary), `plan-writer`, `plan-reviewer`
+(items 1, 5, 7: a criterion only the doc phase could earn is a finding; a doc-task phase is not),
+`plan-loop.md`, `run-loop.md`, `project-contract.md`, `doc-writer`, `code-writer` rule 3 and
+`code-reviewer` (a doc change that is the phase's outcome is written and reviewed as such),
+`test-agent` rule 1 (an unearned criterion is `fail` and a finding, never deferred). No driver
+change.
+
 ## 2026-08-21 — one driver per slice, and a phase branch reconciled against its record (v0.9.1)
 
 Triage #610: slice 148's P2 gated green on commit `6373316`, and round 2 started from a tree with

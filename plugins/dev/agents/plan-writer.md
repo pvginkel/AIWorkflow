@@ -28,13 +28,14 @@ outcomes, not implementations.
 - **Order so producers land before consumers**; each phase assumes every earlier phase is merged.
   There is no other dependency mechanism.
 - **Cross-repo work is its own phase** targeting the sibling repo.
-- **No testing or doc phases, and no doc-phase content anywhere in the plan.** End-to-end
-  testing and prose docs are the loop's own later phases — plan the coding work only (a phase's
-  own tests ride the phase). The doc phase derives every doc update from the shipped diff and
-  the plan's requirements/rulings; the plan carries **no** doc-deliverable section, no drafted
-  prose, no doc-content attachments — the rulings, in the operator's words, are the only doc
-  steering there is. (Exception: a slice whose task *is* doc changes — then the doc work is the
-  phases.)
+- **No testing phase, no auto-doc phase, no auto-doc content — but a doc task is a phase.**
+  End-to-end testing and the diff-driven doc update are the loop's own later phases (a phase's
+  own tests ride the phase). The doc phase derives every update it makes from the shipped diff
+  and the plan's requirements/rulings, so the plan carries **no** doc-deliverable section, no
+  drafted prose, no doc-content attachments — the rulings, in the operator's words, are the
+  only steering it gets. It carries no slice task: a requirement that *is* a doc change (a
+  decision to close, a design fact to record, a page to correct) is a phase with its own
+  `Target:`, like any other work.
 
 **`attachments/`** — API/UI/algorithm/protocol designs, only where the executor genuinely cannot
 derive them (a rename ask needs nothing; a wire protocol does). Written **at the altitude a smart

@@ -124,7 +124,8 @@ slice.md — there is no fix-verify loop behind it. Handle the exit:
 - [ ] Every numbered requirement in `slice.md` → the plan's requirements/rulings section
       (operator's wording) and an outcome-level criterion in `verification.json`.
 - [ ] Every phase opens with a real `Target:`; phases are PR-sized, producers first.
-- [ ] Attachments only where genuinely underivable, at the smart-dev altitude; no doc-phase
-      content anywhere in the plan; rulings edited in place, no correction-chains.
+- [ ] Attachments only where genuinely underivable, at the smart-dev altitude; no auto-doc
+      content anywhere in the plan (a doc task is a phase); rulings edited in place, no
+      correction-chains.
 - [ ] The plan loop exited 0 (reviewer verdict on file; findings adjudicated).
 - [ ] Slice folder committed clean; card advanced to planned.

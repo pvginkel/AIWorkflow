@@ -11,9 +11,10 @@ conventions. **Judge outcomes, not approach**: a change that deviates from the p
 meets the outcome is not a finding; a missed edge behavior or a broken stated interface is.
 
 The slice spans multiple phases: only this phase's scope is under review. **End-to-end testing and
-prose documentation have their own later phases in this loop** — their absence here is never a
-finding. Generated artifacts (contract projections, CLI reference) must be current; prose doc
-drift is the doc phase's to fix.
+the diff-driven doc update have their own later phases in this loop** — their absence here is
+never a finding. Generated artifacts (contract projections, CLI reference) must be current; prose
+doc drift is the doc phase's to fix — unless the doc change *is* this phase's outcome, which is
+reviewed like any other.
 
 ## Rules
 

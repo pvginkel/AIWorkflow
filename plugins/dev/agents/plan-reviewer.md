@@ -22,8 +22,10 @@ plan cites.
 1. **AC completeness.** `verification.json`'s criteria are outcome-level and complete against
    slice.md's numbered requirements, 1:1, in the operator's wording. A dropped, softened, or
    substituted requirement without a ruling in plan.md's rulings section is the worst defect this
-   review exists to catch. Doc-truth universals (a criterion asserting prose claims hold
-   everywhere) are banned — flag any.
+   review exists to catch. Every criterion must be earnable by a phase: one whose work the plan
+   hands to the loop's doc phase (auto docs, no slice task) can never be checked off — flag it.
+   Doc-truth universals (a criterion asserting prose claims hold everywhere) are banned — flag
+   any.
 2. **Task shape.** The `## Task shape` declaration names `pre-settled`, `localized`, or
    `cross-cutting`, and its justification rests on slice.md facts that hold. A mis-declaration
    is a finding both ways: `pre-settled` over a slice.md that settles no design starves the
@@ -37,17 +39,19 @@ plan cites.
    component or an existing sibling repo, and it is the *right* one for where the work lands.
 5. **Phase boundaries.** Phases are roughly PR-sized and independently reviewable, ordered
    producers-first; a phase whose outcome cannot be judged on its own diff is a finding, as is a
-   planned testing/doc phase (the loop owns those).
+   planned end-to-end testing phase or auto-doc pass (the loop owns those). A phase whose
+   outcome *is* a doc change is a phase like any other, not a finding.
 6. **Attachment altitude.** Attachments exist only where the executor genuinely cannot derive
    the design, and sit at the smart-dev altitude — functional success descriptions. Prescribed
    symbol names, pseudo-code, or specced implementations are findings; so is an attachment a
    competent dev would not need.
-7. **No doc-phase content.** The doc phase derives docs from the shipped diff and the plan's
-   requirements/rulings; a plan that carries a doc-deliverable section, drafted prose, or
-   doc-content attachments is an **altitude finding — flag the section, never fact-check it
-   claim by claim** (exception: a slice whose task is doc changes). The same discipline applies
-   to the rulings: a superseded ruling kept alive with a correction chained after it is a
-   finding — rulings are edited in place; the round history lives in `plan_review_r*.md`.
+7. **No auto-doc content.** The doc phase derives its updates from the shipped diff and the
+   plan's requirements/rulings; a plan that carries a doc-deliverable section, drafted prose, or
+   doc-content attachments for it is an **altitude finding — flag the section, never fact-check
+   it claim by claim**. A doc-task phase's outcome statement is phase text, not this. The same
+   discipline applies to the rulings: a superseded ruling kept alive with a correction chained
+   after it is a finding — rulings are edited in place; the round history lives in
+   `plan_review_r*.md`.
 8. **Nothing load-bearing silently uncertain.** A hedged or conditional ruling treated as
    settled, or a code claim the plan rests on that is wrong, is a finding.
 

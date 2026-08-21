@@ -62,10 +62,10 @@ heading levels, the `Target:` line, done-record shape, the `verification.json` s
   opening with its `Target:` line, **self-sufficient by reference**: outcome, the few constraints
   the executor can't figure out, pointers to attachments. Roughly PR-sized and independently
   reviewable; a phase outgrowing that splits, a section outgrowing ~a page overflows into an
-  attachment. No testing or doc phases — the loop owns those — and **no doc-phase content
-  anywhere in the plan**: the doc phase derives docs from the shipped diff and the
-  requirements/rulings; the rulings are the only doc steering there is (exception: a slice
-  whose task is doc changes).
+  attachment. No testing phase and no auto-doc phase — the loop owns those — and **no auto-doc
+  content anywhere in the plan**: the doc phase derives its updates from the shipped diff and
+  the requirements/rulings; the rulings are the only steering it gets. A doc *task* a
+  requirement names is a phase like any other (the doc phase carries no slice task).
 - **Done-records** are appended under each phase's own heading (never a new `###`): what landed,
   what settled beyond the plan's text, what changes for later phases — hard cap ~25 lines,
   settlements not narration. Finds that affect later phases are edited into those phases, where
@@ -85,7 +85,8 @@ Checked off in the run loop's test phase.
 ACs outcome-level and complete against slice.md; the task shape declared and justified from
 slice.md facts that hold; detailed designs correct (load-bearing citations
 verified against the code); every phase's `Target:` present and real; phases independently
-reviewable and roughly PR-sized; attachments at the altitude above; no doc-phase content (an
-altitude finding — flagged, never fact-checked claim by claim); no correction-chained rulings;
-nothing load-bearing silently uncertain. Findings describe problems, never corrections. One
-round, ever — the findings go to the operator. Verdicts: `go` / `issues` / `questions`.
+reviewable and roughly PR-sized; attachments at the altitude above; no auto-doc content (an
+altitude finding — flagged, never fact-checked claim by claim) and no criterion only the doc
+phase could earn; no correction-chained rulings; nothing load-bearing silently uncertain.
+Findings describe problems, never corrections. One round, ever — the findings go to the
+operator. Verdicts: `go` / `issues` / `questions`.

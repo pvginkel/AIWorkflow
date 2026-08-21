@@ -27,9 +27,10 @@ author prose docs.
    hard cap ~25 lines, settlements not narration. Edit later phases your work changes, **in
    place**, where their reader will trip over the change. Attachments are read on demand — open
    the ones your phase points at, not all of them.
-3. **No prose docs.** Manual pages, design docs, reference prose — the doc phase writes them from
-   the whole slice's diff. Generated artifacts (contracts projections, CLI reference output) still
-   ride your phase; the gate enforces them.
+3. **No prose docs beyond your phase's outcome.** Manual pages, design docs, reference prose that
+   describe what you changed — the doc phase brings them up to date from the whole slice's diff.
+   A phase whose outcome *is* a doc change writes exactly that. Generated artifacts (contracts
+   projections, CLI reference output) still ride your phase; the gate enforces them.
 4. **Delete, don't tombstone.** Replaced code is removed completely — no commented-out blocks, no
    compatibility shims (follow the project's change-discipline doc).
 5. **No defensive caveats.** Don't swallow errors or add fallbacks for impossible cases.

@@ -160,9 +160,12 @@ itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id
   exits: violate the ruling or bail. One slice held `../HelmCharts` (a push there deploys dev and
   prd together and rolls both controllers); the test agent honoured the ruling, was nudged twice,
   the driver bailed `unpushed` — and the run session pushed 38 seconds later, crash-looping prd.
-- **Doc phase** — after test-complete: one `doc-writer` session told to read the slice-doc-plan
-  doc (`.aiworkflowrc`'s `doc_phase.plan`) and execute it — diff-based over the whole
-  slice, single pass, manual + dev docs together, on its own branch, **never pushing**. The
+- **Doc phase** — after test-complete: auto docs. One `doc-writer` session told to read the
+  slice-doc-plan doc (`.aiworkflowrc`'s `doc_phase.plan`) and execute it — the doc surfaces that
+  already describe the changed behavior, brought up to date from the whole slice's diff, single
+  pass, manual + dev docs together, on its own branch, **never pushing**. The phase carries no
+  slice task and owes no acceptance criterion: a doc change a requirement names is a phase of the
+  plan ([plan-template.md](plan-template.md)), merged before this point like any other. The
   driver then runs the full gate sweep — `kc project lint` + `build` + `test`, fail-fast (red
   is nudged back to the writer's session) — checks local `<base>` against `origin/<base>` (the
   branch rebases onto origin but ff-merges into local, so a local-ahead base bails `blocked`

@@ -93,13 +93,18 @@ The mechanical rules the parser holds every author to:
   over it, not left in the done-record.
 - **Phases are roughly PR-sized and independently reviewable** — one branch, one gate run, one
   reviewable diff. A phase outgrowing that splits; a phase *section* outgrowing ~a page
-  overflows into `attachments/` (referenced, never inlined). No testing or doc phases — the
-  loop owns those; a phase's own tests ride the phase.
-- **The plan carries no doc-phase content.** The doc phase writes docs from the shipped diff
-  and the requirements/rulings — the rulings, in the operator's words, are the only doc
-  steering there is. A doc-deliverable section, drafted prose, or a doc-content attachment is
-  a defect the plan review flags. (Exception: a slice whose task *is* doc changes — then the
-  doc work is the phases.)
+  overflows into `attachments/` (referenced, never inlined). No end-to-end testing phase and
+  no auto-doc phase — the loop owns those; a phase's own tests ride the phase.
+- **A doc task is a phase.** The loop's doc phase is auto docs only — the doc surfaces that
+  already describe the changed behavior, brought up to date from the shipped diff — and it
+  carries no slice task. So a requirement that *is* a doc change — a decision to close, a
+  design fact to record, a page to correct — is a phase like any other work, with its own
+  `Target:` (the spec repo resolves as a sibling, `../<SpecRepo>`), reviewed and merged by the
+  loop. A plan that hands such work to the doc phase is a defect the plan review flags.
+- **The plan carries no auto-doc content.** The doc phase writes from the shipped diff and the
+  requirements/rulings — the rulings, in the operator's words, are the only steering it gets.
+  A doc-deliverable section, drafted prose, or a doc-content attachment for it is a defect the
+  plan review flags.
 - **Rulings are living text.** A ruling that corrects an earlier one replaces it in place —
   never a correction appended after superseded wording. The same no-tombstone rule the code
   follows; git and `plan_review_r*.md` hold the history.
@@ -129,5 +134,8 @@ The mechanical rules the parser holds every author to:
 - **Coverage-preservation criteria are allowed** ("no coverage is lost; every deleted test has
   a named successor" — phrased as an outcome, never an inventory of paths). **Doc-truth
   universals are banned** (a criterion asserting prose claims hold everywhere).
+- **Every criterion is earned by the plan's phases.** One whose work no phase delivers — a doc
+  change assigned to the loop's doc phase, which carries no slice task — is a planning defect
+  the plan review flags, not a verdict the test phase can write.
 - `verdict`/`rationale`/`evidence` stay empty at planning time — the run loop's test phase
   checks items off (`pass`/`fail` with rationale and evidence).

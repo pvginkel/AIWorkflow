@@ -59,8 +59,8 @@ the project meant to switch off is the failure this file exists to prevent.
   procedure (what it pushes, what it checks, how findings route). The run loop's **test phase** is
   "read this doc and execute"; nothing else names the doc.
 - **`doc_phase.plan`** — the project-owned doc describing the slice-level documentation pass (which
-  doc surfaces, the gates, how it lands). The run loop's **doc phase** is "read this doc and
-  execute".
+  existing doc surfaces a shipped slice brings up to date from its diff, the gates, how it lands).
+  The run loop's **doc phase** is "read this doc and execute".
 
 ### The switches
 
