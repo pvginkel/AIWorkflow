@@ -55,6 +55,9 @@ class FakeGit:
         self.branch_files = ""   # what `log --name-only` reports
         self.unpushed = {}       # str(root) → `rev-list --count` answer
         self.no_origin = set()   # roots where `origin/<base>` does not exist
+        self.ahead = {}          # "<base>..<branch>" → commits it is ahead by
+        self.lost = set()        # shas no ref in this repo reaches any more
+        self.merged = set()      # shas the base branch carries
 
     def __call__(self, *args, root=None, check=True):
         self.calls.append((root, args))
@@ -63,7 +66,9 @@ class FakeGit:
         if args[0] == "diff" and "--name-only" in args:
             return self.diff_files
         if args[0] == "rev-list":
-            return self.unpushed.get(str(root), "0")
+            if args[-1].startswith("origin/"):
+                return self.unpushed.get(str(root), "0")
+            return self.ahead.get(args[-1], "0")
         if args[:2] == ("rev-parse", "--verify"):
             return "" if str(root) in self.no_origin else self.head
         if args[0] == "rev-parse":
@@ -96,6 +101,18 @@ class FakeGit:
             if not any(line[3:] == x or line[3:].startswith(x + "/")
                        for x in excluded))
 
+    def ok(self, *args, root=None):
+        """`git_ok` — the queries answered by an exit status. A recorded
+        commit is on its phase branch unless the test says it was lost, and
+        in the base branch only when the test says it merged."""
+        self.calls.append((root, args))
+        if args[:2] == ("merge-base", "--is-ancestor"):
+            sha, ref = args[2], args[3]
+            if ref.startswith("phase/"):
+                return sha not in self.lost
+            return sha in self.merged
+        return True
+
     def mutations(self, verb):
         return [(root, c) for root, c in self.calls if c[0] == verb]
 
@@ -126,6 +143,7 @@ class ScriptedLoop(RunLoop):
         self.sweep_calls = []                     # (root, component, verb)
         self.fake_git = FakeGit()
         self.git = self.fake_git
+        self.git_ok = self.fake_git.ok
         self.sleeps = []
 
     def _sleep(self, seconds):
@@ -1467,6 +1485,97 @@ def test_resume_reset_is_scoped_away_from_the_bookkeeping_tree():
         assert [c for _, c in r.fake_git.mutations("reset")] \
             == [("reset", "--hard", "HEAD")]
         assert not r.fake_git.mutations("restore")
+
+
+# -- the branch under the record ----------------------------------------------
+
+def test_a_second_driver_on_one_slice_is_refused():
+    """The run record sits on the spec repo's shared mount and the code repo
+    it branches does not, so two drivers on one slice folder rebuild each
+    other's phase branches. The second one never gets that far."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        first = ScriptedLoop(slice_dir, [], repo_root=repo)
+        assert first._slice_lock.acquire() is None
+        second = ScriptedLoop(slice_dir, [], repo_root=repo)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            assert run_to_exit(second) == 2
+        assert "another driver is running this slice" in err.getvalue()
+        assert f"pid: {os.getpid()}" in err.getvalue()
+        assert not (slice_dir / "state.json").exists()
+        # Released — by this driver's exit or by its death — the next one
+        # walks straight in.
+        first._slice_lock.release()
+        assert second._slice_lock.acquire() is None
+        second._slice_lock.release()
+
+
+def test_a_recorded_commit_off_the_branch_bails_rather_than_rebuilding():
+    """The branch is there but no longer carries the commit the driver saw
+    green on it: something rebuilt it under the run."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        state = resume_state(PROJECT)
+        state["phases"]["1"]["gate_green_commit"] = "abc123"
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        r = ScriptedLoop(slice_dir, [], resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        r.fake_git.lost.add("abc123")
+        assert run_to_exit(r) == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "lost_work" and bail["phase"] == "1"
+        assert "abc123" in bail["details"]
+        assert not r.spawned and not r.fake_git.mutations("checkout")
+
+
+def test_a_fix_round_that_rebuilt_the_branch_stops_before_the_next_gate():
+    """The same check after every executor round: the round hands back onto a
+    branch that no longer carries what the review read."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [V["exec_done"], V["review_issues"],
+                  ("code-writer", {"outcome": "done", "summary": "fixed"},
+                   lambda loop: loop.fake_git.lost.add(loop.fake_git.head))]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "lost_work"
+        assert r.gate_calls == [("1", True)]   # no gate over the reduced tree
+
+
+def test_a_branch_gone_with_its_work_merged_is_stamped_not_redone():
+    """The crash window between the ff-merge and the state write. The work is
+    in the base branch, so the resume finishes the bookkeeping instead of
+    rebuilding the branch and spending a round redoing the phase."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        state = resume_state(PROJECT, stage="merging")
+        state["phases"]["1"]["gate_green_commit"] = "abc123"
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        r = ScriptedLoop(slice_dir, list(TAIL), resume=True, repo_root=repo)
+        r.fake_git.merged.add("abc123")
+        assert run_to_exit(r) == 0
+        assert [s[0] for s in r.spawned] == ["consult", "test-agent",
+                                             "doc-writer"]
+        assert "✅ DONE" in (slice_dir / "plan.md").read_text()
+        assert load_state(slice_dir)["phases"]["1"]["status"] == "merged"
+
+
+def test_a_pending_phase_never_deletes_a_branch_the_run_cannot_account_for():
+    """`git branch -D` on a name the record knows nothing about, carrying
+    commits the base has not got, would drop them without a word."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        r.fake_git.ahead["main..phase/074-P1"] = "2"
+        assert run_to_exit(r) == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "lost_work"
+        assert "2 commit(s)" in bail["details"]
+        assert not [c for _, c in r.fake_git.mutations("branch")
+                    if c[1] == "-D"]
 
 
 # -- follow-up generations ----------------------------------------------------

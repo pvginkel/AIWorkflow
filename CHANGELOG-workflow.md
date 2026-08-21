@@ -4,6 +4,35 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-21 — one driver per slice, and a phase branch reconciled against its record (v0.9.1)
+
+Triage #610: slice 148's P2 gated green on commit `6373316`, and round 2 started from a tree with
+none of that work while `state.json` still pointed at the dead sha. The forensics say the loop
+never deleted anything — **two drivers were running slice 148 at once, in two environments.** The
+slice folder is on the spec repo, the mount every KubeCoder environment shares; `/work/KubeCoder`
+is not. So both drivers wrote one `log.txt`, one `state.json` and one `phases/**` while branching
+two different checkouts, and the second one, resuming a record that said P2 was mid-review, found
+no `phase/148-P2` in its own repo — the object does not exist there at all, not even dangling.
+Branch setup treated that as a fresh phase, cut the branch from `main` and reopened at the
+executor stage, in silence.
+
+Two guards, because the cause and the residue are different problems:
+
+- **`run.lock`** — a `flock` on the slice folder, held from start to exit, non-blocking. A second
+  driver exits 2 with the holder's host, pid and start time instead of joining in. In-process, so
+  a driver that dies releases it and `--resume` walks straight in.
+- **The branch is reconciled against its record** before the driver resets or recreates it, and
+  again after every executor round. Every commit the driver recorded on the branch — the head the
+  last review read, the gate's last green — must still be on it. Missing, the base branch
+  decides: carrying it means the ff-merge landed and the run died before the record caught up, so
+  the resume stamps the phase and moves on (previously it rebuilt the branch and redid the phase);
+  carrying it nowhere is the new `lost_work` bail. A `pending` phase whose branch exists with
+  commits the base has not got bails the same way, because the `git branch -D` that clears the
+  name would take them with it.
+
+Rounds spent before the first gate or review stay unguarded, deliberately: they leave no commit on
+the record to check, and a writer that bailed may have committed nothing at all.
+
 ## 2026-08-21 — the project contract moves to `.aiworkflowrc`; the test and doc phases become optional (v0.9.0)
 
 Triage #579: the dev lock, the test phase and the doc phase have to be optional, because none of

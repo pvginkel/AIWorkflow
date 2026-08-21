@@ -82,6 +82,7 @@ import os
 import re
 import select
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -739,6 +740,52 @@ class DevLock:
 
 
 # ---------------------------------------------------------------------------
+# The slice lock — one driver per slice folder. A slice's run record lives in
+# the spec repo, which is the mount every environment shares; the code repo it
+# branches is not. Two drivers on one folder therefore write one log.txt, one
+# state.json and one phases/** while branching two different repositories, and
+# the second finds no phase branch where the record says work is committed —
+# so it rebuilds the branch from base and the first driver's commit is gone
+# with no trace in the record. flock, so a driver that dies releases it by
+# construction and a --resume walks straight in; taken non-blocking, because a
+# second driver is a mistake to report, not a queue to join.
+# ---------------------------------------------------------------------------
+
+class SliceLock:
+    def __init__(self, lock_path: Path):
+        self.lock_path = lock_path
+        self._fd = None
+
+    def acquire(self) -> str | None:
+        """None when the lock is ours, the holder's note when it is not."""
+        if self._fd is not None:
+            return None
+        fd = os.open(self.lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            note = ""
+            try:
+                note = os.read(fd, 4096).decode(errors="replace").strip()
+            except OSError:
+                pass
+            os.close(fd)
+            return note or "(no holder note)"
+        os.ftruncate(fd, 0)
+        os.write(fd, (f"host: {socket.gethostname()}\npid: {os.getpid()}\n"
+                      f"started: {_now_iso()}\n").encode())
+        self._fd = fd
+        return None
+
+    def release(self) -> None:
+        if self._fd is None:
+            return
+        os.ftruncate(self._fd, 0)
+        os.close(self._fd)
+        self._fd = None
+
+
+# ---------------------------------------------------------------------------
 # Dispatch prompts. Role contracts live in the agent definitions; prompts
 # carry only instance data. Consults run bare, so their prompt is the
 # protocol.
@@ -1273,6 +1320,7 @@ class RunLoop:
         self.repo_root = _git_toplevel()
         self._cfg: project_config.ProjectConfig | None = None
         self._devlock: DevLock | None = None
+        self._slice_lock = SliceLock(self.slice_dir / "run.lock")
         # name → effective cwd, from `kc project list --output=json`; loaded
         # in run() (both fresh and resume need it before any dispatch).
         self.project_dirs: dict[str, Path] = {}
@@ -1370,6 +1418,15 @@ class RunLoop:
                 ),
             )
         return result.stdout.strip()
+
+    def git_ok(self, *args: str, root: Path | None = None) -> bool:
+        """A git query whose whole answer is its exit status — `merge-base
+        --is-ancestor`, which prints nothing and says no by exiting 1 (and
+        for an object this repo does not have at all, 128)."""
+        return subprocess.run(
+            ["git", *args], cwd=root or self.repo_root,
+            capture_output=True, text=True,
+        ).returncode == 0
 
     def specs_git(self, *args: str) -> str:
         """Git in the specs repo (the slice folder's repo) — used only for
@@ -2019,6 +2076,103 @@ class RunLoop:
         return (f" ({target.git_root} has no kc manifest — gate per that "
                 "repo's own conventions)")
 
+    @staticmethod
+    def _recorded_commits(ps: dict) -> list[str]:
+        """Every commit the driver itself vouched for on this phase's branch:
+        the head the last review read and the gate's last green. A target with
+        no deterministic gate records only the former, a phase with no review
+        yet only the latter, and a fix round that has re-gated but not yet
+        been re-reviewed carries both."""
+        out: list[str] = []
+        for sha in (ps.get("reviewed_head"), ps.get("gate_green_commit")):
+            if sha and sha not in out:
+                out.append(sha)
+        return out
+
+    def _work_is_in(self, ref: str, sha: str, root: Path) -> bool:
+        return self.git_ok("merge-base", "--is-ancestor", sha, ref, root=root)
+
+    def _lost_work(self, phase_id: str, sha: str, branch: str,
+                   root: Path) -> Bailout:
+        return Bailout(
+            "lost_work", phase=phase_id,
+            details=f"commit {sha[:12]} is on P{phase_id}'s record as work "
+                    f"the driver saw on the branch, and {branch} in {root} "
+                    "does not carry it. Something rebuilt the branch or "
+                    "replaced the checkout under the run; the loop will not "
+                    "carry on over the top of a commit it cannot account "
+                    "for. "
+                    "Check that no second driver is on this slice (each "
+                    "holds run.lock), then either restore the branch or "
+                    "clear the phase's record in state.json (status, stage, "
+                    "gate_green_commit, reviewed_head) to run it again from "
+                    "the executor.")
+
+    def _assert_record_still_on(self, phase_id: str, ps: dict, root: Path,
+                                branch: str) -> None:
+        """Every round hands back onto the branch its predecessors built. A
+        session that rebuilt that branch — or a second driver that did —
+        leaves the record pointing at a commit the tip no longer carries, and
+        the next round would gate and review a tree missing the earlier
+        rounds' work."""
+        for sha in self._recorded_commits(ps):
+            if not self._work_is_in(branch, sha, root):
+                raise self._lost_work(phase_id, sha, branch, root)
+
+    def _reconcile_branch(self, phase_id: str, ps: dict, root: Path,
+                          base: str, branch: str, existing: str) -> bool:
+        """Reality-check the phase's record against the repository before the
+        branch below is reset or recreated. Returns True when the phase turns
+        out to be finished already and the caller has nothing left to run.
+
+        Two ways a branch and its record can disagree, and one of them has a
+        benign explanation:
+
+        - The record vouches for a commit the branch does not carry (or there
+          is no branch left). If the base branch carries it the merge landed
+          and the run died before the record caught up — a resume finishes
+          the bookkeeping. If nothing carries it, the work is gone: bail
+          rather than silently rebuild the branch from base and spend a
+          round redoing it.
+        - The phase is `pending` — the loop knows of no work — but a branch
+          of its name exists with commits the base has not got. `git branch
+          -D` below would drop them without a word.
+        """
+        recorded = self._recorded_commits(ps)
+        if ps["status"] == "pending":
+            ahead = self.git("rev-list", "--count", f"{base}..{branch}",
+                             root=root) if existing else "0"
+            if ahead not in ("", "0"):
+                raise Bailout(
+                    "lost_work", phase=phase_id,
+                    details=f"{branch} exists in {root} with {ahead} "
+                            f"commit(s) {base} has not got, and P{phase_id} "
+                            "is `pending` — the run has no record of that "
+                            "work, so deleting the branch for a fresh one "
+                            "would drop it unseen. Inspect it, then delete "
+                            "the branch yourself or resume the run that "
+                            "made it.")
+            return False
+        if not recorded:
+            # Rounds spent before the first gate or review leave no commit on
+            # the record — nothing to check them against, and a writer that
+            # bailed may well have committed nothing at all.
+            return False
+        if existing and all(self._work_is_in(branch, sha, root)
+                            for sha in recorded):
+            return False
+        for sha in recorded:
+            if not self._work_is_in(base, sha, root):
+                raise self._lost_work(phase_id, sha, branch, root)
+        # The merge landed and the record did not: finish the bookkeeping.
+        if ps["status"] != "merged":
+            ps.update(status="merged", stage=None)
+            self._save_state()
+        self.log(f"[P{phase_id}] already merged into {base} "
+                 f"({recorded[0][:12]}) — stamping")
+        self._stamp_done(phase_id)
+        return True
+
     def _run_phase(self, phase: Phase) -> None:
         phase_id = phase.id
         ps = self._phase_state(phase_id)
@@ -2036,8 +2190,11 @@ class RunLoop:
                  f"branch={branch}, root={root})")
         self._fetch_origin(root)
 
-        # Branch setup (fresh or resume).
+        # Branch setup (fresh or resume) — over a branch reconciled against
+        # what the record says is committed on it.
         existing = self.git("branch", "--list", branch, root=root)
+        if self._reconcile_branch(phase_id, ps, root, base, branch, existing):
+            return
         if ps["status"] == "pending" or not existing:
             if existing:
                 self.git("checkout", base, root=root)
@@ -2074,6 +2231,7 @@ class RunLoop:
                 phase_id, r, agent="code-writer",
             )
             self._ensure_committed(phase_id, "code-writer", session, root)
+            self._assert_record_still_on(phase_id, ps, root, branch)
             self._save_state()
             self._handle_executor_terminals(verdict, phase_id)
             return verdict
@@ -3081,6 +3239,24 @@ class RunLoop:
             sys.exit(2)
 
     def run(self) -> None:
+        """The slice's run record takes one driver at a time; everything the
+        run does happens inside that hold."""
+        holder = self._slice_lock.acquire()
+        if holder is not None:
+            print(f"Error: {self._slice_lock.lock_path} is held — another "
+                  "driver is running this slice:\n"
+                  + "\n".join(f"  {line}" for line in holder.splitlines())
+                  + "\nThe run record is shared and the code repo is not, so "
+                    "a second driver rebuilds phase branches the first one is "
+                    "still working on. Stop that run, or wait for it.",
+                  file=sys.stderr)
+            sys.exit(2)
+        try:
+            self._run()
+        finally:
+            self._slice_lock.release()
+
+    def _run(self) -> None:
         if self.state_path.exists():
             if not self.resume:
                 print(f"Error: {self.state_path} exists. Pass --resume to "

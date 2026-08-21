@@ -59,6 +59,12 @@ Fresh **code-writer** session per phase (prompt: *"Execute P\<n\> of \<plan path
 standing contract — it reads the whole plan, works its phase against the live repo, runs the gate
 itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id>`). Then:
 
+- **Branch** — `phase/<slice>-P<id>`, cut from the target repo's base branch and reused for
+  every round of that phase. The driver reconciles it against the record before it resets or
+  recreates it and again after every executor round: a commit the record vouches for that the
+  branch no longer carries is a `lost_work` bail, not a branch to rebuild from base
+  ([runner-state.md](runner-state.md), which also carries the one-driver-per-slice lock the
+  first such loss came from).
 - **Fetch** — before the session, the driver fetches the target repo's `origin` (and every repo
   the run has touched before the test phase). Nothing else in a run fetches: the driver branches
   off the **local** base and ff-merges back into it, so a repo cloned days ago keeps the

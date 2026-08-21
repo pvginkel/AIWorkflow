@@ -80,11 +80,12 @@ error the orchestrator diagnoses).
 | `timeout` | – | a driver-run gate or sweep command exceeded its limit, or an agent session did with no usable verdict on disk |
 | `unpushed` | – | a repo the slice touched was still behind `origin/<base>` after the test phase and its push nudges |
 | `protocol_failure` | – | a git command failed, an agent left uncommitted changes, a consult chose an unoffered action, the worktree was dirty at merge, an agent committed the driver's run record onto the phase branch, or a `CLAUDE.md` procedure-doc pointer is missing |
+| `lost_work` | – | a commit the driver recorded on a phase branch is not on it any more, or a `pending` phase's branch carries commits the run has no record of |
 
 Exit codes: **0** slice complete · **3** error bail · **4** operator question · **2** usage or
-precondition — a `state.json` that exists without `--resume`, a missing/unparseable `plan.md` or
-missing `verification.json`, a dirty tree at preflight, or a missing agent definition · **130**
-interrupted · **1** unexpected error.
+precondition — a `state.json` that exists without `--resume`, a slice another driver is already
+running (`run.lock` held), a missing/unparseable `plan.md` or missing `verification.json`, a dirty
+tree at preflight, or a missing agent definition · **130** interrupted · **1** unexpected error.
 
 ## Resume and crash recovery
 
@@ -111,3 +112,22 @@ normally rather than discarding work already on disk — and because the verdict
 every role's protocol, a salvaged round is a complete one. The bail fires only when the verdict is
 missing or unparseable. The devlock is in-process (`flock`), so a crash releases it by
 construction.
+
+**One driver per slice folder.** The run holds a `flock` on `<slice>/run.lock` from start to exit,
+and a second driver on the same folder exits 2 with the holder's host, pid and start time rather
+than joining in. The folder is on the spec repo — the mount every environment shares — while the
+code repo each driver branches is its own: two drivers therefore write one `log.txt`, one
+`state.json` and one `phases/**` while working two different checkouts, and the second finds no
+phase branch where the record says work is committed. Held in-process, so a driver that dies
+releases it and a `--resume` walks straight in.
+
+**A phase's branch is reconciled against its record** before the driver resets or recreates it, and
+again after every executor round. Every commit the driver recorded on that branch — the head the
+last review read (`reviewed_head`), the gate's last green (`gate_green_commit`) — must still be on
+it. Where one is not, the base branch decides: carrying it means the ff-merge landed and the run
+died before the record caught up, so the resume stamps the phase and moves on; carrying it nowhere
+means the work is gone, and the run bails `lost_work` rather than rebuilding the branch from base
+and spending a round redoing a commit it cannot account for. A `pending` phase whose branch exists
+with commits the base has not got bails the same way — the `git branch -D` that would otherwise
+clear the name takes them with it. Rounds spent before the first gate or review are the one gap:
+they leave no commit on the record to check.
