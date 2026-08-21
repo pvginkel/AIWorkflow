@@ -199,6 +199,7 @@ VERDICTS = {
     "doc-writer": {"done", "question", "blocked"},
 }
 
+
 class Bailout(Exception):
     """A terminal stop. `question=True` marks an operator question (exit 4);
     everything else is an error (exit 3)."""
@@ -2004,8 +2005,8 @@ class RunLoop:
             dispatch_line=dispatch_line(self.report_path))
 
     def _philosophy_line(self) -> str:
-        """Empty for a project that names no change-discipline doc — the run
-        profile requires one, so this is the triage/plan-shaped repo only."""
+        """The run profile requires the doc, so the empty case is only a loop
+        driven past a preflight that never checked for it."""
         if not self.cfg.design_philosophy:
             return ""
         return PHILOSOPHY_LINE.format(philosophy=self.cfg.design_philosophy)
@@ -3211,11 +3212,11 @@ class RunLoop:
         second caller finds it already held."""
         if self.devlock.held:
             return
-        phases = "+".join(name for name, on in (("test", self.cfg.test_phase),
-                                                ("doc", self.cfg.doc_phase))
-                          if on)
-        self.announce(f"acquiring devlock ({phases} phase)")
-        self.devlock.acquire(f"slice {self.slice_num} {phases} phase",
+        names = [name for name, on in (("test", self.cfg.test_phase),
+                                       ("doc", self.cfg.doc_phase)) if on]
+        phases = "+".join(names) + (" phases" if len(names) > 1 else " phase")
+        self.announce(f"acquiring devlock ({phases})")
+        self.devlock.acquire(f"slice {self.slice_num} {phases}",
                              self.log, self._sleep)
 
     def _settle_push(self) -> None:
