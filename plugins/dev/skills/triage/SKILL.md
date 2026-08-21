@@ -32,8 +32,8 @@ judgment alone** — you recommend, the operator closes — and your product is 
 there is no planning without a `slice.md`.
 
 **Preflight (step 0):** run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage`; relay
-its message verbatim on a non-zero exit. `<spec-repo>` is the path in your `CLAUDE.md`'s
-`Spec repo:` line. Boards, lists, owner tags, and notification wiring come from your host
+its message verbatim on a non-zero exit. `<spec-repo>` is the path in your
+`.aiworkflowrc`'s `spec_repo`. Boards, lists, owner tags, and notification wiring come from your host
 convention (`~/.claude/CLAUDE.md`).
 
 Steps that don't apply are skipped silently: no questions and clean labels → present and move on;

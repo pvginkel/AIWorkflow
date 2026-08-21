@@ -1,6 +1,6 @@
 ---
 name: onboard
-description: Make a repo usable by the dev pipeline — retire any in-repo copy of the pre-plugin workflow, settle the manifest's curated automation, add the contract lines, and scaffold or migrate the spec repo. Finishes when preflight --for run is green.
+description: Make a repo usable by the dev pipeline — retire any in-repo copy of the pre-plugin workflow, settle the manifest's curated automation, write the .aiworkflowrc contract, and scaffold or migrate the spec repo. Finishes when preflight --for run is green.
 argument-hint: "[spec-repo-path]"
 ---
 
@@ -30,7 +30,7 @@ normal case, and the gap list drives the rest.
 ```bash
 kc project list --output=json                       # components + effective cwds (empty/error = no usable manifest)
 cat .kubecoder/project.yaml 2>/dev/null             # the manifest, if any
-grep -nE '^[[:space:]>*`-]*(Spec repo|Slice testing strategy|Slice doc plan|Design philosophy):' CLAUDE.md
+cat .aiworkflowrc 2>/dev/null                       # the project's own contract, if any
 find . -name .claude -type d -not -path './.git/*'  # recursive: older layouts put agents per-subproject
 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for run  # the gap list, in its own words
 ```
@@ -70,7 +70,7 @@ Delete (the plugin provides each):
   (`${CLAUDE_PLUGIN_ROOT}/docs/`); a project copy is a second source of truth that will drift and
   be believed.
 
-**What a project keeps owning** are the two docs the contract lines *point at* — its slice testing
+**What a project keeps owning** are the two docs the config *points at* — its slice testing
 strategy and its slice doc plan. Those describe this project's deploy verification and its
 documentation set; the plugin resolves them through `CLAUDE.md` and never ships them.
 
@@ -136,37 +136,50 @@ kc project build                   # the baseline preflight will demand
 kc project test --project <name>   # per component: does it do what the operator just described?
 ```
 
-### 4. The contract lines and the `CLAUDE.md` diet
+### 4. `.aiworkflowrc` and the `CLAUDE.md` diet
 
-Add the four lines to the **root** `CLAUDE.md`; preflight reads them by exact label prefix and
-bails without them. `${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md` is authoritative on their
-meaning; do not restate it here or in the repo.
+Write the repo's own contract to `.aiworkflowrc` at the **root**; preflight bails without it, and
+prints the whole schema when it is missing. `${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md` is
+authoritative on what each key means; do not restate it here or in the repo.
 
-```
-Spec repo: <path>
-Slice testing strategy: <path-to-doc>
-Slice doc plan: <path-to-doc>
-Design philosophy: <path-to-doc>
+```toml
+spec_repo = "<path>"
+design_philosophy = "<path-to-doc>"
+
+[test_phase]
+strategy = "<path-to-doc>"
+
+[doc_phase]
+plan = "<path-to-doc>"
 ```
 
 Three of those point at **project-owned docs that must exist** — preflight checks the files, and
 agents read them:
 
-- **Slice testing strategy** — how a *slice* is proven once its phases are merged: what gets
+- **`test_phase.strategy`** — how a *slice* is proven once its phases are merged: what gets
   deployed, which live checks run, where the operator gate sits, how findings resolve. The run
   loop's test phase is "read this doc and execute it"; nothing names the doc. If the repo has no
-  such procedure, this is the moment to write one with the operator; if it has no meaningful
-  deploy-verification at all, say that in the doc rather than leaving the line dangling.
-- **Slice doc plan** — the same shape for documentation: which doc surfaces a shipped slice must
+  such procedure, this is the moment to write one with the operator.
+- **`doc_phase.plan`** — the same shape for documentation: which doc surfaces a shipped slice must
   bring up to date, and the rules for each. The doc phase is "read this doc and execute it". A
   repo whose docs are one README says exactly that; the phase then has little to do, which is a
   cheap answer rather than a missing one.
-- **Design philosophy** — the change-discipline rules `code-writer` obeys (breaking changes,
+- **`design_philosophy`** — the change-discipline rules `code-writer` obeys (breaking changes,
   tombstones, defensive caveats, what "tested" means here).
 
+**Ask before switching a phase off.** `enabled = false` on either phase is the right answer for a
+repo with nothing to deploy-verify or nothing to document — an Ansible tree, a config repo — and
+the wrong answer for a repo that simply has not written the doc yet. The difference is the
+operator's to state, so put the question to them rather than inferring it from an empty `docs/`.
+Same for `[push] enabled` and `[devlock] lease`: ask what the repo deploys and whether anything
+contends over it.
+
 While in `CLAUDE.md`, apply the diet in `project-contract.md` ("Keeping `CLAUDE.md` disciplined") —
-one screen, every fact stated once, demote to a `docs/` topic doc rather than inline. Onboarding is
-when it is cheapest to cut. Propose the trim; let the operator approve it.
+one screen, every fact stated once, demote to a `docs/` topic doc rather than inline. A repo
+onboarded before `.aiworkflowrc` still carries the four `Spec repo:` / `Slice testing strategy:` /
+`Slice doc plan:` / `Design philosophy:` lines: move them into the config and **delete them from
+`CLAUDE.md`** — a fact in both files is a fact that will disagree with itself. Onboarding is when
+the cut is cheapest. Propose the trim; let the operator approve it.
 
 ### 5. The spec repo
 
@@ -191,7 +204,7 @@ keep the `.gitignore` entries.
 
 **No spec repo named?** Stop and ask the operator — its location and whether it is a fresh repo or
 an existing one is theirs to decide, not yours to guess. Then `git init` it, scaffold the tree, and
-add the `Spec repo:` line.
+set `spec_repo`.
 
 **A spec repo that predates the current format?** The bar is **shape, not contents** — a tree the
 pipeline can navigate, nothing more.

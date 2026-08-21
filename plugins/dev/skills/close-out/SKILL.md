@@ -10,7 +10,7 @@ Execute the operator's dispositions on one slice's `close-out.md` — the report
 run agent wrote its out-of-scope observations to (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` is
 what the report is; `${CLAUDE_PLUGIN_ROOT}/docs/close-out-template.md` its shape). The operator
 reads and decides; this session presents, records, files, and edits. `<spec-repo>` is the path
-in your `CLAUDE.md`'s `Spec repo:` line; boards, lists, owner tags, and notification wiring come
+in your `.aiworkflowrc`'s `spec_repo`; boards, lists, owner tags, and notification wiring come
 from your host convention (`~/.claude/CLAUDE.md`).
 
 ## Procedure

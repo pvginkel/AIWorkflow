@@ -1,7 +1,7 @@
 # Authoring guide — keeping the plugin's artifacts lean and drift-free
 
 Rules for writing and maintaining the plugin's artifacts: agent definitions, skills, the contract
-docs, and the `CLAUDE.md` entries each project provides. They exist to prevent duplication, keep
+docs, and the `.aiworkflowrc` each project provides. They exist to prevent duplication, keep
 context windows clean, and make drift easy to spot. The mechanics of adopting the plugin are in
 [`ADOPTING.md`](ADOPTING.md); the project contract is
 [`plugins/dev/docs/project-contract.md`](../plugins/dev/docs/project-contract.md).
@@ -16,7 +16,8 @@ reconcile the drift if the two say subtly different things.
 Duplication is a drift trap first, a token cost second: two copies diverge, and agents reading
 different copies behave differently. This is why the plugin references generic concerns (issue
 tracker, notifications, the spec repo, the testing strategy) rather than restating them — the
-concrete facts live once, in the project's `CLAUDE.md`/manifest or the host `~/.claude/CLAUDE.md`.
+concrete facts live once, in the project's `.aiworkflowrc`/manifest or the host
+`~/.claude/CLAUDE.md`.
 
 ## Agent definitions — thin: identity + output contract + bounds
 

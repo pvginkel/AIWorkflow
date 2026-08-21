@@ -12,7 +12,7 @@ number or path. This is the interactive planning session — the operator is pre
 downstream runs unattended, and **nobody downstream reads slice.md or this chat**: what reaches
 the executors is `plan.md`, nothing else.
 
-`<spec-repo>` is the path in your `CLAUDE.md`'s `Spec repo:` line. The plan-doc format and loop
+`<spec-repo>` is the path in your `.aiworkflowrc`'s `spec_repo`. The plan-doc format and loop
 mechanics are `${CLAUDE_PLUGIN_ROOT}/docs/plan-loop.md`; the concrete plan.md/verification.json template
 is `${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md`; the run loop that executes the result is
 `${CLAUDE_PLUGIN_ROOT}/docs/run-loop.md`; the project contract is

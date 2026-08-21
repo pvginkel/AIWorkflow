@@ -11,7 +11,7 @@ schedules every pending slice across the operator's parallel `/dev:run-slice` se
 dependency graph and the per-slice analysis behind it. Argument (optional): the number of lanes
 (default **3**).
 
-`<spec-repo>` is the path in your `CLAUDE.md`'s `Spec repo:` line; a slice's subprojects are the
+`<spec-repo>` is the path in your `.aiworkflowrc`'s `spec_repo`; a slice's subprojects are the
 components in the target repo's `.kubecoder/project.yaml` (`kc project list`).
 
 The operator works off **one thing**: a grid of checkboxes, one column per session, that says

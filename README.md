@@ -51,8 +51,8 @@ the workflow is safe to change here.
 /plugin install dev@aiworkflow
 ```
 
-Then make a repo adoptable — author a `.kubecoder/project.yaml` and add the three `CLAUDE.md` lines
-(`Spec repo:`, `Slice testing strategy:`, `Design philosophy:`). Preflight enforces the whole
+Then make a repo adoptable — author a `.kubecoder/project.yaml` and an `.aiworkflowrc` (where the
+spec repo, the procedure docs and the optional phases live). Preflight enforces the whole
 contract and tells a new repo exactly what is missing. See **[`docs/ADOPTING.md`](docs/ADOPTING.md)**.
 
 ## The workshop

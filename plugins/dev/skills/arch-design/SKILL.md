@@ -8,7 +8,7 @@ argument-hint: <architectural-question>
 
 Produce a grounded architecture design document for a specific question. Argument: a short description of the architectural question (e.g., "how should session decomposition work across the API service and the worker").
 
-`<spec-repo>` below is the path in your `CLAUDE.md`'s `Spec repo:` line.
+`<spec-repo>` below is the path in your `.aiworkflowrc`'s `spec_repo`.
 
 ## When to use
 

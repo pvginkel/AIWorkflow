@@ -42,28 +42,40 @@ returns the project set + each component's effective cwd, and `kc project build|
 never hardcodes it. See `kc`'s `project-manifest.md` for the schema. Each plan phase opens with a
 `Target:` line naming one of these components (or a sibling repo).
 
-### 2b. Four `CLAUDE.md` lines (root of the target repo)
+### 2b. `.aiworkflowrc` (root of the target repo)
 
-Add these machine-checkable lines (markdown decoration around them is tolerated; paths may be
-absolute or relative to the repo root):
+TOML, and the only file the pipeline reads the project's own contract from. Paths are absolute or
+relative to the repo root — except `devlock.lease`, which is relative to the spec repo:
 
+```toml
+spec_repo = "<path to the spec/planning repo>"
+design_philosophy = "<path to the project's change-discipline doc>"
+
+[test_phase]
+strategy = "<path to the project's slice-test-plan doc>"
+
+[doc_phase]
+plan = "<path to the project's slice-doc-plan doc>"
 ```
-Spec repo: <path to the spec/planning repo>
-Slice testing strategy: <path to the project's slice-test-plan doc>
-Slice doc plan: <path to the project's slice-doc-plan doc>
-Design philosophy: <path to the project's change-discipline doc>
-```
 
-- **`Spec repo:`** — where slices and each run's `state.json`/`log.txt` live (a separate
+- **`spec_repo`** — where slices and each run's `state.json`/`log.txt` live (a separate
   git repo). Required by all three profiles.
-- **`Slice testing strategy:`** — the project-owned deploy-verification procedure the run loop's
-  test phase resolves to (it never names the doc). Required by `run`.
-- **`Slice doc plan:`** — the project-owned doc procedure its doc phase resolves to, the same way.
-  Required by `run`.
-- **`Design philosophy:`** — the change-discipline doc `code-writer` reads. Required by `run`.
+- **`design_philosophy`** — the change-discipline doc `code-writer` and `code-reviewer` are
+  handed. Required by `run`.
+- **`test_phase.strategy`** — the project-owned deploy-verification procedure the run loop's
+  test phase resolves to (nothing else names the doc). Required by `run`, unless the phase is off.
+- **`doc_phase.plan`** — the project-owned doc procedure its doc phase resolves to, the same way.
 
-The rest of a good root `CLAUDE.md` (overview, repo structure, design summary, doc pointers) is
-described in [`project-contract.md`](../plugins/dev/docs/project-contract.md#what-a-good-root-claudemd-contains).
+**A project need not run every phase.** `[test_phase] enabled = false` and `[doc_phase] enabled =
+false` switch them off (both default true, so nobody loses a phase by omission), `[push] enabled =
+false` keeps a run's commits local, and `[devlock] lease = "..."` names the occupancy lease for a
+project that has one dev instance to contend over — off unless named. The full schema, and what
+each switch changes in the loop, is in
+[`project-contract.md`](../plugins/dev/docs/project-contract.md).
+
+A good root `CLAUDE.md` (overview, repo structure, design summary, doc pointers) is still worth
+writing — the pipeline just no longer reads it by machine. See
+[`project-contract.md`](../plugins/dev/docs/project-contract.md#what-a-good-root-claudemd-contains).
 
 ### 2c. Host conventions (`~/.claude/CLAUDE.md`)
 
@@ -85,7 +97,7 @@ shared working tree).
 
 `/dev:onboard` does all of section 2 as a guided pass — it inventories what a repo already has,
 retires any in-repo copy of the pre-plugin workflow, settles the manifest's curated automation, adds
-the contract lines, and scaffolds or migrates the spec repo. It finishes when
+the `.aiworkflowrc`, and scaffolds or migrates the spec repo. It finishes when
 `preflight.py --for run` exits 0.
 
 ## 3. Worked example
@@ -100,17 +112,25 @@ projects:
   worker: { cwd: worker, build: [...], test: [...], lint: [...] }
 ```
 
-**`Kestrel/CLAUDE.md`** (the four contract lines among the usual content):
+**`Kestrel/.aiworkflowrc`**:
+
+```toml
+spec_repo = "../KestrelSpecs"
+design_philosophy = "docs/conventions/change-discipline.md"
+
+[test_phase]
+strategy = "docs/operations/slice-test-plan.md"
+
+[doc_phase]
+plan = "docs/operations/slice-doc-plan.md"
+```
+
+**`Kestrel/CLAUDE.md`** (for the reader, not the driver):
 
 ```markdown
 # Kestrel — build-log aggregator for distributed CI runs
 
 Kestrel is a two-component service: an `api` and a `worker`.
-
-Spec repo: ../KestrelSpecs
-Slice testing strategy: docs/operations/slice-test-plan.md
-Slice doc plan: docs/operations/slice-doc-plan.md
-Design philosophy: docs/conventions/change-discipline.md
 
 ## Design philosophy
 - Clean breaking changes — fix callers, don't add shims.

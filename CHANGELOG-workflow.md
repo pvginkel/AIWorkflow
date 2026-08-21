@@ -4,6 +4,55 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-21 — the project contract moves to `.aiworkflowrc`; the test and doc phases become optional (v0.9.0)
+
+Triage #579: the dev lock, the test phase and the doc phase have to be optional, because none of
+them (or only part) apply to an Ansible repo. Two of the three switches already half-existed as
+`CLAUDE.md`'s `Slice testing strategy:` and `Slice doc plan:` lines, and the third — the devlock —
+was inferred from a `scripts/` directory happening to exist in the spec repo, a hardcoded
+convention in a plugin whose first constraint is portability.
+
+Adding three booleans beside the four machine-read lines would have made `CLAUDE.md` a config file
+for facts only the driver reads, in the one file every agent loads every turn; adding a second file
+beside them would have left two places a project says how its pipeline behaves, and the first bug
+is a repo whose two answers disagree. So **all of it moves to `.aiworkflowrc`** — TOML at the repo
+root, read by the new `project_config.py` (`tomllib`, stdlib), and the four `CLAUDE.md` lines are
+gone. `CLAUDE.md` keeps everything a *reader* needs and nothing a machine parses. Unknown keys are
+refused rather than ignored: `enable = false` silently running the phase the project meant to
+switch off is the exact failure the file exists to prevent.
+
+**Defaults are the pipeline's full behaviour**, so a repo that names only its pointers runs every
+phase and nobody loses one by omission. `[test_phase] enabled` and `[doc_phase] enabled` are
+opt-*outs*; a phase that is off may not also name its procedure doc (one of the two is wrong), and
+preflight checks a procedure doc only for a phase that runs, or an optional phase is mandatory
+again. `[devlock] lease` is the one that defaults **off** — one dev instance is a fact about a
+deployed project, not about every repo, and a lease that is not named cannot be taken. It is now a
+named path, held from whichever of the test and doc phases runs first.
+
+**Switching off the test phase leaves nobody pushing**, which the card did not ask about and the
+loop could not survive: nothing in the driver pushes a code phase — `_run_phase` ff-merges into the
+base locally, primary repo and siblings alike — and the test phase's procedure doc is what pushes
+when there is one. With the phase off, the driver pushes at the point the push check would have
+run, honouring the plan's `## Push holds` exactly as the test agent does. `[push] enabled = false`
+switches the concern off entirely: no push, no check, and the doc branch rebases onto the local
+base rather than an `origin/<base>` that is behind by everything the slice did. A hold is one
+slice's exception and is reported as an outstanding action; `push.enabled = false` is the project's
+standing mode and is logged, not reported.
+
+`Design philosophy:` was ambient — `code-writer`'s "delete, don't tombstone" defers to a doc no
+dispatch ever named, and the agents found it only because the line sat in a file they load anyway.
+It is now instance data in every `code-writer` and `code-reviewer` dispatch, like every other path
+the driver hands an agent.
+
+One thing the switches do not replace: `verification.json` is checked off by the test agent, so a
+project running no test phase leaves its acceptance criteria unverified. They are still what
+`code-reviewer` reviews each phase against — but nothing marks them met, and `run-loop.md` says so
+rather than leaving it to be discovered.
+
+**Migration** is one file per onboarded repo: move the four lines into `.aiworkflowrc` and delete
+them from `CLAUDE.md`. `/dev:onboard` does it, and preflight prints the whole schema at a repo that
+has no config yet. There is no fallback to the old lines — a repo with both would drift.
+
 ## 2026-08-20 — a plan can hold a repo's push, and the driver reports it instead of bailing (v0.8.0)
 
 Triage #445. `_assert_pushed` was blanket over every repo in `state.json`'s `bases`, so a plan

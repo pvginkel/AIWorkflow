@@ -25,17 +25,23 @@ re-run preflight, so `/dev:run-slice` is the gate.
 | `kc` on PATH | ✓ | ✓ | ✓ |
 | Control plane healthy: `kc status` (worker daemon + controller) | – | ✓ | ✓ |
 | Manifest valid: `kc project list --output=json` returns ≥1 component | – | ✓ | ✓ |
-| `Spec repo:` in `CLAUDE.md`, path exists (directory) | ✓ | ✓ | ✓ |
-| `Slice testing strategy:` in `CLAUDE.md`, target doc exists | – | – | ✓ |
-| `Slice doc plan:` in `CLAUDE.md`, target doc exists | – | – | ✓ |
-| `Design philosophy:` in `CLAUDE.md`, target doc exists | – | – | ✓ |
+| `.aiworkflowrc` present, parses, names no unknown key | ✓ | ✓ | ✓ |
+| `spec_repo` set, path exists (directory) | ✓ | ✓ | ✓ |
+| `design_philosophy` set, target doc exists | – | – | ✓ |
+| `test_phase.strategy` set + exists — only when the phase runs | – | – | ✓ |
+| `doc_phase.plan` set + exists — only when the phase runs | – | – | ✓ |
+| `devlock.lease` resolvable — only when one is named | – | – | ✓ |
 | Clean working tree | – | – | ✓ |
 | Baseline: `kc project build` (all components) | – | – | ✓ |
 
 Checks run in that order (cheapest first, the baseline build last). `kc` is checked before anything
 that shells out to it, and the two environment checks run before the repo is resolved — neither
-needs it. The repo root and `CLAUDE.md` are resolved from `git rev-parse --show-toplevel` at the
+needs it. The repo root and `.aiworkflowrc` are resolved from `git rev-parse --show-toplevel` at the
 invocation cwd — so run the command from the target code repo.
+
+A phase the project switched off is checked for nothing: its procedure doc is absent by contract
+(the config refuses a phase that is off *and* names one), and gating on it would make an optional
+phase mandatory again. See [`project-contract.md`](project-contract.md) for the schema.
 
 ## Notes on the control-plane check
 

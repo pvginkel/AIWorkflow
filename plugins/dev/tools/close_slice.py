@@ -13,8 +13,8 @@ Given `<spec-repo>/slices/NNN_slug` it:
      working tree shared by several parallel sessions.
 
 The spec repo is not configured here: it is the repo the slice folder sits in,
-so the path the caller passes (resolved from the target repo's `Spec repo:`
-CLAUDE.md line) is the only input.
+so the path the caller passes (resolved from the target repo's `.aiworkflowrc`
+`spec_repo`) is the only input.
 
 It does not commit: the calling session commits the README and the moved
 folder together with the run's state.json, log.txt and close-out.md — staged

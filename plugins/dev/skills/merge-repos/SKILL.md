@@ -235,7 +235,7 @@ git -C "$WORK/mono" add -A && git -C "$WORK/mono" commit -m "Add project scaffol
 /dev:onboard
 ```
 
-Onboard owns the rest of the contract — the three `CLAUDE.md` lines, the spec repo, sweeping the
+Onboard owns the rest of the contract — the `.aiworkflowrc`, the spec repo, sweeping the
 subrepos' `.claude/` copies, and the `preflight --for run` green light. Do not hand-build any of it
 here; if onboard reports something missing, fix it there.
 

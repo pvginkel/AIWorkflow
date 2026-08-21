@@ -119,21 +119,32 @@ itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id
   judged against both the plan and the repo. It appends phases (or answers `complete`) through
   the generation bar below.
 - **Test phase** — a fresh `test-agent` session told to read the project's slice-testing-strategy
-  doc (resolved through `CLAUDE.md`'s `Slice testing strategy:` pointer) and execute it. **The
-  driver holds the devlock** across the test and doc phases (a `flock` on the spec repo's lease
-  inode; it releases on crash); under that hold pushing and rolling dev for verification is
-  pre-authorized — the lock *is* the coordination. prd stays operator-gated. Blocking findings
-  come back as appended phases; sub-bar findings go in the close-out report;
-  `verification.json` is checked off.
+  doc (`.aiworkflowrc`'s `test_phase.strategy`) and execute it. **The driver holds the devlock**
+  from this phase to the end of the run (a `flock` on the inode `devlock.lease` names; it releases
+  on crash); under that hold pushing and rolling dev for verification is pre-authorized — the lock
+  *is* the coordination. prd stays operator-gated. Blocking findings come back as appended phases;
+  sub-bar findings go in the close-out report; `verification.json` is checked off.
+- **The phase is optional** (`test_phase.enabled = false`), as is the doc phase below and the
+  devlock — see [project-contract.md](project-contract.md). A project with nothing deployed to
+  verify runs neither, and the loop ends when the completion consult answers `complete`. What the
+  test phase alone does is checked off `verification.json`: with the phase off, the acceptance
+  criteria are still what `code-reviewer` reviews each phase against, but nothing marks them
+  verified.
 - **The push check** — nothing in the driver pushes a code phase (`_run_phase` ff-merges into the
   base branch locally, primary repo and siblings alike), so pushing what the slice committed is
-  the test phase's job. Before the doc phase the driver verifies it happened: for every repo in
-  `state.json`'s `bases` — the run's own record of what the slice touched, the spec repo excluded
-  — it fetches and compares `origin/<base>..<base>`. A repo left behind nudges the test agent's
-  session (cap 2), then bails `unpushed`. The driver **checks rather than pushes**: a multi-repo
-  slice may need an order only the agent running the verification knows. A reviewed-but-unpushed
-  sibling commit otherwise never reaches the deploy it was meant for — one run's dev roll
-  crash-looped exactly that way, its sibling's half of the change still local.
+  the test phase's job **when there is one**. Before the doc phase the driver verifies it
+  happened: for every repo in `state.json`'s `bases` — the run's own record of what the slice
+  touched, the spec repo excluded — it fetches and compares `origin/<base>..<base>`. A repo left
+  behind nudges the test agent's session (cap 2), then bails `unpushed`. The driver **checks
+  rather than pushes**: a multi-repo slice may need an order only the agent running the
+  verification knows. A reviewed-but-unpushed sibling commit otherwise never reaches the deploy it
+  was meant for — one run's dev roll crash-looped exactly that way, its sibling's half of the
+  change still local.
+- **With no test phase the driver pushes**, at the same point the check would have run — there is
+  no other pusher, and without it a slice's siblings never reach origin and a project running no
+  doc phase either ends with every commit in the pod. `push.enabled = false` switches the whole
+  concern off: no push, no check, and the doc branch lands against the local base. That is a
+  standing mode, not an outstanding action, so unlike a plan hold it is logged and not reported.
 - **A repo the plan holds is exempt from all of that.** `plan.md`'s `## Push holds` section
   ([plan-template.md](plan-template.md)) names repos this slice must not push. The driver leaves
   them out of the check, states them in the test phase's dispatch — whose procedure doc says
@@ -144,7 +155,7 @@ itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id
   prd together and rolls both controllers); the test agent honoured the ruling, was nudged twice,
   the driver bailed `unpushed` — and the run session pushed 38 seconds later, crash-looping prd.
 - **Doc phase** — after test-complete: one `doc-writer` session told to read the slice-doc-plan
-  doc (`CLAUDE.md`'s `Slice doc plan:` pointer) and execute it — diff-based over the whole
+  doc (`.aiworkflowrc`'s `doc_phase.plan`) and execute it — diff-based over the whole
   slice, single pass, manual + dev docs together, on its own branch, **never pushing**. The
   driver then runs the full gate sweep — `kc project lint` + `build` + `test`, fail-fast (red
   is nudged back to the writer's session) — checks local `<base>` against `origin/<base>` (the

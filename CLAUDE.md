@@ -73,10 +73,10 @@ Four ideas span the files and explain most design choices:
    finding.
 
 **Portability is the constraint on every change.** The pipeline is generic; each project describes
-itself through `.kubecoder/project.yaml` and four machine-read `CLAUDE.md` lines (`Spec repo:`,
-`Slice testing strategy:`, `Slice doc plan:`, `Design philosophy:`), all enforced by `preflight.py`.
-Never hardcode a project's names, paths, tracker or tooling into the plugin, and never parse the
-manifest directly — only `kc` reads it.
+itself through `.kubecoder/project.yaml` and an `.aiworkflowrc` (TOML at the repo root: the spec
+repo, the procedure docs, and which phases the project runs at all), both enforced by
+`preflight.py`. Never hardcode a project's names, paths, tracker or tooling into the plugin, and
+never parse the manifest directly — only `kc` reads it.
 
 ## Conventions
 

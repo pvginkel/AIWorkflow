@@ -10,7 +10,7 @@ Execute a planned slice. Argument: the slice number (e.g., `074`). Requires a sl
 `<spec-repo>/slices/` that `/dev:plan-slice` has filled with a `plan.md` phase queue and
 `verification.json` — if there is no plan, stop and tell the operator to run `/dev:plan-slice` first.
 
-`<spec-repo>` is the path in your `CLAUDE.md`'s `Spec repo:` line. Run this from the **target
+`<spec-repo>` is the path in your `.aiworkflowrc`'s `spec_repo`. Run this from the **target
 code repo**. The loop's mechanics are `${CLAUDE_PLUGIN_ROOT}/docs/run-loop.md`; what it records
 is `${CLAUDE_PLUGIN_ROOT}/docs/runner-state.md`.
 
