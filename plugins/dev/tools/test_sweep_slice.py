@@ -2,7 +2,7 @@
 
 A throwaway workspace is built per test: a spec repo (real `git init`, a
 README shaped like the real one, a slices/ tree) plus a code repo whose
-CLAUDE.md points at it, so allocation, README surgery and staging run against
+`.aiworkflowrc` points at it, so allocation, README surgery and staging run
 git itself. `dry_run` is stubbed where a test doesn't own it — the real thing
 shells out to run_loop.py and needs `kc`; the drivability property it guards
 is asserted directly instead, via run_loop's own parse_plan.
@@ -91,7 +91,7 @@ def _git(repo, *args):
 
 def make_workspace(ws, readme=README):
     """A spec repo (with one taken slice number, 116) and a code repo whose
-    CLAUDE.md points at it. Returns (spec, code_root)."""
+    `.aiworkflowrc` points at it. Returns (spec, code_root)."""
     spec = ws / "specs"
     (spec / "slices" / "backlog").mkdir(parents=True)
     (spec / "slices" / "116_toolchain_sweep").mkdir()
@@ -105,7 +105,7 @@ def make_workspace(ws, readme=README):
 
     code = ws / "code"
     code.mkdir()
-    (code / "CLAUDE.md").write_text(f"Spec repo: {spec}\n")
+    (code / ".aiworkflowrc").write_text(f'spec_repo = "{spec}"\n')
     return spec, code
 
 

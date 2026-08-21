@@ -137,9 +137,9 @@ def test_plan_and_run_gate_on_the_control_plane_and_triage_does_not():
 def test_run_gates_on_both_procedure_doc_pointers():
     """The run loop resolves its test and doc phases through these pointers;
     a missing one is caught here, before any session is spawned."""
-    assert "testing_strategy" in preflight.PROFILES["run"]
-    assert "doc_plan" in preflight.PROFILES["run"]
-    assert "Slice doc plan" in preflight.ENTRIES
+    assert "phase_pointers" in preflight.PROFILES["run"]
+    assert "test_phase.strategy" in preflight.POINTERS
+    assert "doc_phase.plan" in preflight.POINTERS
 
 
 def test_triage_never_shells_out_to_kc_status():
@@ -161,6 +161,62 @@ def test_the_control_plane_is_checked_before_the_repo_is_resolved():
         assert subproc.calls == [["kc", "status"]], (
             f"{profile}: nothing may run after the control plane fails")
         assert "control plane" in message
+
+
+# -- optional phases ---------------------------------------------------------
+
+def a_config(**over):
+    """A ProjectConfig with nothing on disk — these checks are about which
+    fields the profile consults, not about the files they name."""
+    fields = {"root": Path("/repo"), "path": Path("/repo/.aiworkflowrc"),
+              "spec_repo": None, "design_philosophy": None,
+              "test_phase": True, "test_strategy": None,
+              "doc_phase": True, "doc_plan": None,
+              "devlock_lease": None, "push": True}
+    fields.update(over)
+    return preflight.project_config.ProjectConfig(**fields)
+
+
+def refused(fn, *args):
+    """Run a check expected to bail; return (code, message)."""
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            fn(*args)
+    except SystemExit as e:
+        return e.code, err.getvalue()
+    raise AssertionError(f"{fn.__name__} passed where it should have bailed")
+
+
+def test_a_switched_off_phase_is_not_gated_on_a_procedure_doc():
+    """The point of the switch: a project that runs no doc phase must not be
+    made to name the doc it would have executed."""
+    preflight.check_phase_pointers(
+        a_config(test_phase=False, doc_phase=False))
+
+
+def test_a_phase_that_does_run_still_needs_its_doc():
+    """Switching the *other* phase off changes nothing for this one — the
+    forgotten-pointer signal survives the phases becoming optional."""
+    code, message = refused(preflight.check_phase_pointers,
+                            a_config(doc_phase=False))
+    assert code == 1 and "test_phase.strategy" in message
+    code, message = refused(preflight.check_phase_pointers,
+                            a_config(test_phase=False))
+    assert code == 1 and "doc_phase.plan" in message
+
+
+def test_an_unnamed_lease_is_checked_for_nothing():
+    preflight.check_devlock(a_config())
+
+
+def test_a_lease_with_nowhere_to_live_bails():
+    """A typo'd lease path would take a lock nothing else contends for —
+    coordinating nothing, and looking exactly like coordination."""
+    code, message = refused(
+        preflight.check_devlock,
+        a_config(devlock_lease=Path("/nonexistent/scripts/.devlock.lock")))
+    assert code == 1 and "devlock.lease" in message
 
 
 # -- one live call -----------------------------------------------------------

@@ -261,9 +261,26 @@ def phase_section(pid, title, target=PROJECT, done=False, body=""):
             f"Target: {target}\n\n{body}")
 
 
-def make_slice(tmp, phases=None, repo=True):
+def rc(test=True, doc=True, push=True, devlock=False):
+    """What a fake target repo says about itself: the `.aiworkflowrc` the
+    driver reads. The default is a project that runs everything and leases no
+    dev instance; `make_slice(rc=rc(...))` builds the rest."""
+    parts = ['spec_repo = "../specs"',
+             'design_philosophy = "philosophy.md"', "",
+             "[test_phase]",
+             'strategy = "test-plan.md"' if test else "enabled = false", "",
+             "[doc_phase]",
+             'plan = "doc-plan.md"' if doc else "enabled = false", ""]
+    if devlock:
+        parts += ["[devlock]", 'lease = "scripts/.devlock.lock"', ""]
+    if not push:
+        parts += ["[push]", "enabled = false", ""]
+    return "\n".join(parts)
+
+
+def make_slice(tmp, phases=None, repo=True, config=None):
     """A slice folder inside a specs-shaped tree, plus a fake target repo
-    whose CLAUDE.md carries the procedure-doc pointers."""
+    carrying the `.aiworkflowrc` the driver reads."""
     root = Path(tmp)
     slice_dir = root / "specs" / "slices" / "074_test_slice"
     slice_dir.mkdir(parents=True)
@@ -279,9 +296,9 @@ def make_slice(tmp, phases=None, repo=True):
         repo_root.mkdir()
         (repo_root / "test-plan.md").write_text("test procedure\n")
         (repo_root / "doc-plan.md").write_text("doc procedure\n")
-        (repo_root / "CLAUDE.md").write_text(
-            "Slice testing strategy: test-plan.md\n"
-            "Slice doc plan: doc-plan.md\n")
+        (repo_root / "philosophy.md").write_text("change discipline\n")
+        (repo_root / ".aiworkflowrc").write_text(
+            rc() if config is None else config)
         # The manifest makes the repo a loop-tail sweep target, as the real
         # invoking repo always is.
         (repo_root / ".kubecoder").mkdir()
@@ -2220,11 +2237,137 @@ def test_doc_landing_resume_with_merged_branch_only_pushes():
         assert not r.fake_git.mutations("rebase")
 
 
+# -- optional phases (.aiworkflowrc) -----------------------------------------
+
+def pushes(loop):
+    """Every `git push` the driver made, as (root, branch)."""
+    return [(str(root), args[2]) for root, args in loop.fake_git.calls
+            if args and args[0] == "push"]
+
+
+def test_a_project_with_no_test_phase_dispatches_none_and_pushes_itself():
+    """Nothing in the driver pushes a code phase, and the test phase's
+    procedure doc is what pushes when there is one — so with the phase off the
+    driver owes the push itself, or the slice never leaves the pod."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc(test=False))
+        script = [V["exec_done"], V["review_signoff"],
+                  V["consult_complete"], V["doc_done"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert not [role for role, *_ in r.spawned if role == "test-agent"]
+        assert (str(repo), "main") in pushes(r)
+
+
+def test_a_project_with_no_doc_phase_ends_when_the_test_phase_is_clean():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc(doc=False))
+        script = [V["exec_done"], V["review_signoff"],
+                  V["consult_complete"], V["test_clean"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert not [role for role, *_ in r.spawned if role == "doc-writer"]
+        assert load_state(slice_dir)["run_phase"] == "done"
+
+
+def test_a_project_that_runs_neither_phase_still_pushes_what_it_committed():
+    """The Ansible shape: phases merge, the driver pushes, the run ends."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc(test=False, doc=False))
+        script = [V["exec_done"], V["review_signoff"], V["consult_complete"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert [role for role, *_ in r.spawned] == ["code-writer",
+                                                    "code-reviewer", "consult"]
+        assert (str(repo), "main") in pushes(r)
+
+
+def test_the_drivers_own_push_honours_a_plan_hold():
+    """With no test phase the driver is the pusher, so the plan's holds bind
+    it exactly as they bind the test agent — reported, never pushed."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc(test=False, doc=False))
+        (slice_dir / "plan.md").write_text(
+            f"# plan\n\n## Push holds\n\n- {PROJECT} — prd rolls on this "
+            "push\n\n" + phase_section("1", "First phase"))
+        script = [V["exec_done"], V["review_signoff"], V["consult_complete"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert pushes(r) == []
+        assert "Push repo by hand when its hold lifts" in load_report(slice_dir)
+
+
+def test_a_project_that_never_pushes_reports_no_outstanding_keystroke():
+    """A standing mode is not an outstanding action: `push.enabled = false`
+    says every run stays local, so there is nothing for the operator to do
+    later — unlike a plan hold, which is one slice's exception."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(
+            tmp, config=rc(test=False, doc=False, push=False))
+        script = [V["exec_done"], V["review_signoff"], V["consult_complete"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert "hold lifts" not in load_report(slice_dir)
+
+
+def test_push_disabled_leaves_every_commit_local():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(
+            tmp, config=rc(test=False, doc=False, push=False))
+        script = [V["exec_done"], V["review_signoff"], V["consult_complete"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert pushes(r) == []
+
+
+def test_with_no_push_the_doc_branch_lands_on_the_local_base():
+    """Origin is not part of a no-push run at all: rebasing the doc branch onto
+    `origin/main` would sit the docs on a base missing every phase the slice
+    merged, and the ahead-check would bail on it first."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc(test=False, push=False))
+        script = [V["exec_done"], V["review_signoff"],
+                  V["consult_complete"], V["doc_done"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        r.fake_git.unpushed[str(repo)] = "3"   # would have bailed `blocked`
+        assert run_to_exit(r) == 0
+        assert ("rebase", "main") in [a for _, a in r.fake_git.calls
+                                      if a and a[0] == "rebase"]
+        assert pushes(r) == []
+
+
+def test_the_doc_phase_takes_the_devlock_when_there_is_no_test_phase():
+    """The lease is held by whichever phase runs first — the doc phase rolls
+    dev too."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc(test=False, devlock=True))
+        scripts_dir = slice_dir.parent.parent / "scripts"
+        scripts_dir.mkdir()
+        held = []
+        script = [
+            V["exec_done"], V["review_signoff"], V["consult_complete"],
+            ("doc-writer", {"outcome": "done", "summary": "ok"},
+             lambda loop: held.append((scripts_dir / "dev-holder").exists())),
+        ]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert held == [True]
+        assert not (scripts_dir / "dev-holder").exists(), "released at end"
+
+
+def test_a_repo_with_no_aiworkflowrc_cannot_be_driven():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        (repo / ".aiworkflowrc").unlink()
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        assert run_to_exit(r) == 2
+
+
 # -- the devlock --------------------------------------------------------------
 
 def test_devlock_held_across_test_and_doc_phases():
     with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
+        slice_dir, repo = make_slice(tmp, config=rc(devlock=True))
         scripts_dir = slice_dir.parent.parent / "scripts"
         scripts_dir.mkdir()
         events = []
@@ -2247,7 +2390,7 @@ def test_devlock_held_across_test_and_doc_phases():
 
 def test_devlock_released_on_bail():
     with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
+        slice_dir, repo = make_slice(tmp, config=rc(devlock=True))
         scripts_dir = slice_dir.parent.parent / "scripts"
         scripts_dir.mkdir()
         script = [
@@ -2261,7 +2404,7 @@ def test_devlock_released_on_bail():
 
 def test_devlock_unconfigured_is_a_noop():
     with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)   # no scripts/ dir in the specs tree
+        slice_dir, repo = make_slice(tmp)   # the default rc names no lease
         script = [V["exec_done"], V["review_signoff"], *TAIL]
         r = ScriptedLoop(slice_dir, script, repo_root=repo)
         assert run_to_exit(r) == 0

@@ -67,7 +67,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from run_loop import claude_md_entry, parse_plan  # noqa: E402
+import project_config  # noqa: E402
+from run_loop import parse_plan  # noqa: E402
 
 MIN_CARDS = 5
 MAX_PHASES = 10
@@ -270,13 +271,16 @@ def _git(spec: Path, *args: str) -> subprocess.CompletedProcess:
 
 
 def spec_repo_for(code_root: Path) -> Path:
-    value = claude_md_entry(code_root, "Spec repo")
-    if value is None:
-        raise Precondition(f"no `Spec repo:` line in {code_root / 'CLAUDE.md'}")
-    spec = Path(value)
-    if not (spec / "slices").is_dir():
-        raise Precondition(f"`Spec repo: {value}` has no slices/ tree")
-    return spec
+    try:
+        cfg = project_config.load(code_root)
+    except project_config.ConfigError as e:
+        raise Precondition(str(e)) from None
+    if cfg.spec_repo is None:
+        raise Precondition(f"no `spec_repo` in {cfg.path}")
+    if not (cfg.spec_repo / "slices").is_dir():
+        raise Precondition(f"`spec_repo` in {cfg.path} resolves to "
+                           f"{cfg.spec_repo}, which has no slices/ tree")
+    return cfg.spec_repo
 
 
 def assert_on_main(spec: Path) -> None:

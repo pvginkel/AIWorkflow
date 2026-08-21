@@ -92,6 +92,7 @@ from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import project_config  # noqa: E402
 from close_out import (  # noqa: E402
     ReportError,
     append_entry,
@@ -197,13 +198,6 @@ VERDICTS = {
     "test-agent": {"clean", "findings", "blocked"},
     "doc-writer": {"done", "question", "blocked"},
 }
-
-# The three machine-checkable CLAUDE.md pointers the loop resolves procedure
-# docs through (same mechanism as preflight.py; preflight has already
-# verified they exist before the loop starts).
-TEST_PLAN_LABEL = "Slice testing strategy"
-DOC_PLAN_LABEL = "Slice doc plan"
-
 
 class Bailout(Exception):
     """A terminal stop. `question=True` marks an operator question (exit 4);
@@ -326,23 +320,6 @@ def _orchestrator_record() -> dict | None:
     if not sid:
         return None
     return {"session": sid, "transcript": _transcript_path(Path.cwd(), sid)}
-
-
-def claude_md_entry(root: Path, label: str) -> str | None:
-    """Read a `Label: value` line from the repo's CLAUDE.md, tolerating
-    markdown decoration (list markers, bold, backticks) — the same parse as
-    preflight.py's."""
-    path = root / "CLAUDE.md"
-    if not path.is_file():
-        return None
-    pattern = re.compile(
-        r"(?m)^[\s>*`-]*" + re.escape(label) + r"[\s*`]*:[\s*`]*(.+?)[\s*`]*$")
-    match = pattern.search(path.read_text())
-    if not match:
-        return None
-    value = match.group(1).strip()
-    p = Path(value).expanduser()
-    return str(p if p.is_absolute() else (root / p))
 
 
 def spec_root_for(slice_dir: Path) -> Path | None:
@@ -683,26 +660,32 @@ def run_kc_session(
 
 
 # ---------------------------------------------------------------------------
-# The devlock — the cooperative occupancy lease over the single dev instance
-# (a flock on a fixed inode in the spec repo, the same one devlock.sh takes).
-# The driver holds it across the test and doc phases: under that hold pushing
-# and rolling dev for verification is pre-authorized — the lock IS the
-# coordination. Held in-process so a driver crash releases it via fd close.
+# The devlock — the cooperative occupancy lease over the single dev instance,
+# a flock on the inode `devlock.lease` names (the spec repo is the shared
+# mount every contending code repo can see, and devlock.sh flocks the same
+# file). The driver holds it from whichever of the test and doc phases runs
+# first to the end of the run: under that hold pushing and rolling dev for
+# verification is pre-authorized — the lock IS the coordination. Held
+# in-process so a driver crash releases it via fd close.
 # ---------------------------------------------------------------------------
 
 class DevLock:
-    def __init__(self, spec_root: Path | None):
-        self.lock_path = (spec_root / "scripts" / ".devlock.lock"
-                          if spec_root else None)
-        self.holder_path = (spec_root / "scripts" / "dev-holder"
-                            if spec_root else None)
+    def __init__(self, lease: Path | None):
+        self.lock_path = lease
+        # devlock.sh's own convention: a human-readable note beside the lock.
+        self.holder_path = lease.parent / "dev-holder" if lease else None
         self._fd = None
 
     @property
     def configured(self) -> bool:
-        """A project without the devlock convention has nothing to
-        coordinate; the lock degrades to a no-op."""
-        return bool(self.lock_path and self.lock_path.parent.is_dir())
+        """A project that names no lease has nothing to coordinate — one dev
+        instance is a fact about a deployed project, not about every repo the
+        pipeline drives. The lock degrades to a no-op."""
+        return self.lock_path is not None
+
+    @property
+    def held(self) -> bool:
+        return self._fd is not None
 
     def holder_note(self) -> str:
         try:
@@ -778,6 +761,14 @@ When done:
   staged by name (shared working tree).
 - Write your verdict to {verdict_path}.
 {pointers}"""
+
+# Carried by every dispatch that writes or reviews code. The project's
+# change-discipline doc lives at a path only the config knows, and
+# code-writer's "delete, don't tombstone" rule defers to it by name.
+PHILOSOPHY_LINE = """
+This project's change-discipline doc is {philosophy} — its rules bind this
+work.
+"""
 
 # Carried by every dispatch: where the slice's close-out report is and that
 # close_out.py is the only way to write to it (close_out.dispatch_line — one
@@ -886,7 +877,7 @@ phase's scope is under review; end-to-end testing and prose docs have their
 own later phases, so their absence here is not a finding.
 
 {gate_line}
-{close_out_line}
+{philosophy_line}{close_out_line}
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
 
@@ -912,7 +903,7 @@ touches it. The requirements are unchanged: the phase's section in
 {plan_path} and the acceptance criteria in {verification_path}.
 
 {gate_line}
-{close_out_line}
+{philosophy_line}{close_out_line}
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
 
@@ -1279,10 +1270,34 @@ class RunLoop:
         self._log_file = None
         self._reattach: dict | None = None
         self.repo_root = _git_toplevel()
-        self.devlock = DevLock(spec_root_for(self.slice_dir))
+        self._cfg: project_config.ProjectConfig | None = None
+        self._devlock: DevLock | None = None
         # name → effective cwd, from `kc project list --output=json`; loaded
         # in run() (both fresh and resume need it before any dispatch).
         self.project_dirs: dict[str, Path] = {}
+
+    @property
+    def cfg(self) -> project_config.ProjectConfig:
+        """The project's own contract — which phases it runs, which procedure
+        docs they execute, whether it has a dev instance to lease. Read from
+        the repo rather than __init__'s argument list, so it resolves against
+        whatever `repo_root` ends up being; `run()` forces it before any work.
+        Preflight has already validated it for a run, so a config broken
+        between then and now is an environment fault (exit 2), not a bail the
+        loop could resume from."""
+        if self._cfg is None:
+            try:
+                self._cfg = project_config.load(self.repo_root)
+            except project_config.ConfigError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(2)
+        return self._cfg
+
+    @property
+    def devlock(self) -> DevLock:
+        if self._devlock is None:
+            self._devlock = DevLock(self.cfg.devlock_lease)
+        return self._devlock
 
     # -- state ---------------------------------------------------------------
 
@@ -1979,13 +1994,21 @@ class RunLoop:
 
     def _pointers(self, target: ResolvedTarget) -> str:
         """What every executor dispatch carries at its tail: the close-out
-        report's path and tool, plus the bookkeeping fence where it
-        applies."""
-        return self._close_out_line() + self._bookkeeping_note(target)
+        report's path and tool, the project's change-discipline doc, plus the
+        bookkeeping fence where it applies."""
+        return (self._philosophy_line() + self._close_out_line()
+                + self._bookkeeping_note(target))
 
     def _close_out_line(self) -> str:
         return CLOSE_OUT_LINE.format(
             dispatch_line=dispatch_line(self.report_path))
+
+    def _philosophy_line(self) -> str:
+        """Empty for a project that names no change-discipline doc — the run
+        profile requires one, so this is the triage/plan-shaped repo only."""
+        if not self.cfg.design_philosophy:
+            return ""
+        return PHILOSOPHY_LINE.format(philosophy=self.cfg.design_philosophy)
 
     def _gate_hint(self, target: ResolvedTarget) -> str:
         if target.kind == "project":
@@ -2221,6 +2244,7 @@ class RunLoop:
                     verification_path=self.verification_path,
                     review_path=review_path, verdict_path=verdict_path,
                     gate_line=gate_line,
+                    philosophy_line=self._philosophy_line(),
                     close_out_line=self._close_out_line(),
                 )
             else:
@@ -2231,6 +2255,7 @@ class RunLoop:
                     verification_path=self.verification_path,
                     review_path=review_path, verdict_path=verdict_path,
                     gate_line=gate_line,
+                    philosophy_line=self._philosophy_line(),
                     close_out_line=self._close_out_line(),
                 )
             verdict, _ = self._spawn(
@@ -2633,12 +2658,13 @@ class RunLoop:
         self.state["test_rounds"] = self.state.get("test_rounds", 0) + 1
         self._save_state()
         r = self.state["test_rounds"]
-        test_plan_doc = claude_md_entry(self.repo_root, TEST_PLAN_LABEL)
+        test_plan_doc = self.cfg.test_strategy
         if not test_plan_doc:
             raise Bailout(
                 "protocol_failure",
-                details=f"CLAUDE.md has no `{TEST_PLAN_LABEL}:` pointer — "
-                        "the test phase has no procedure doc to execute")
+                details=f"{self.cfg.path} runs the test phase but names no "
+                        "`test_phase.strategy` — it has no procedure doc to "
+                        "execute")
         base = self._base_branch(self.repo_root)
         # The test session works across every repo the slice touched — it
         # pushes them and verifies what the push deployed — so all of them
@@ -2750,7 +2776,14 @@ class RunLoop:
         repo's work itself, because a multi-repo slice may need an order only
         the agent running the verification knows. A repo the plan holds is
         neither nudged nor bailed on — `_report_hold` puts it in the
-        close-out report and the run carries on."""
+        close-out report and the run carries on.
+
+        A hold is per-slice and exceptional; `push.enabled = false` is the
+        project saying its runs never reach origin at all. That one is its
+        standing mode, not an outstanding keystroke, so it returns here
+        without reporting anything."""
+        if not self.cfg.push:
+            return
         nudges = 0
         while True:
             unpushed, held = self._push_check()
@@ -2784,18 +2817,26 @@ class RunLoop:
         is nudged back to the writer's session), then rebase-merges the
         branch onto the base branch and pushes. The dev roll that push
         triggers is deliberately not tracked: the sweep already proved the
-        tree, and the roll lands on its own."""
+        tree, and the roll lands on its own.
+
+        A project that runs no doc phase skips all of it — the slice's code
+        is already merged and settled by the time this is reached."""
+        if not self.cfg.doc_phase:
+            self.log(f"doc phase disabled in {self.cfg.path.name} — skipped")
+            return
+        self._acquire_devlock()
         self.state["run_phase"] = "docs"
         ds = self.state.setdefault(
             "doc_phase", {"stage": "writer", "gate_runs": 0, "nudges": 0,
                           "session": None})
         self._save_state()
-        doc_plan_doc = claude_md_entry(self.repo_root, DOC_PLAN_LABEL)
+        doc_plan_doc = self.cfg.doc_plan
         if not doc_plan_doc:
             raise Bailout(
                 "protocol_failure",
-                details=f"CLAUDE.md has no `{DOC_PLAN_LABEL}:` pointer — "
-                        "the doc phase has no procedure doc to execute")
+                details=f"{self.cfg.path} runs the doc phase but names no "
+                        "`doc_phase.plan` — it has no procedure doc to "
+                        "execute")
         base = self._base_branch(self.repo_root)
         root = self.repo_root
         branch = f"phase/{self.slice_num}-docs"
@@ -2946,21 +2987,24 @@ class RunLoop:
                 "protocol_failure",
                 details="worktree dirty at doc landing — an agent left "
                         "changes outside its commit boundary")
+        # Two ways this repo's push is off — the plan holds it for this slice,
+        # or the project never pushes — and origin plays no part in either. A
+        # repo whose push is off is ahead of its origin by everything the slice
+        # landed and stays that way, so the branch rebases onto its own local
+        # base and the check below has nothing left to protect.
+        pushing = self.cfg.push and not held
+        onto = f"origin/{base}" if pushing else base
         if self.git("branch", "--list", branch, root=root):
-            self.git("fetch", "origin", root=root)
-            # A held repo is ahead of its origin by everything the slice
-            # landed and stays that way, so it rebases onto its own local
-            # base and the check below has nothing left to protect.
-            onto = base if held else f"origin/{base}"
-            if not held:
+            if pushing:
+                self.git("fetch", "origin", root=root)
                 # Before any branch mutation: local `base` must not outrun
-                # origin. The rebase below targets `origin/{base}`, so a
-                # commit that only local `base` carries (an out-of-band fix
-                # landed while the run sat at a bail) leaves the two divergent
-                # and the `--ff-only` merge dies with a raw "Diverging
-                # branches can't be fast-forwarded". Origin moving ahead is
-                # the harmless direction — the rebase picks those commits up
-                # and local `base` is still an ancestor.
+                # origin. The rebase below targets `origin/{base}`, so a commit
+                # that only local `base` carries (an out-of-band fix landed
+                # while the run sat at a bail) leaves the two divergent and the
+                # `--ff-only` merge dies with a raw "Diverging branches can't be
+                # fast-forwarded". Origin moving ahead is the harmless direction
+                # — the rebase picks those commits up and local `base` is still
+                # an ancestor.
                 ahead = self.git("rev-list", "--count",
                                  f"origin/{base}..{base}", root=root)
                 if ahead not in ("", "0"):
@@ -2984,10 +3028,14 @@ class RunLoop:
             self.git("checkout", base, root=root)
             self.git("merge", "--ff-only", branch, root=root)
             self.git("branch", "-D", branch, root=root)
-        if held:
-            self._report_hold(root, held)
-            self.log(f"[doc-phase] merged into {base} — {root.name} is held "
-                     "by the plan, so nothing was pushed")
+        if not pushing:
+            if held:
+                self._report_hold(root, held)
+                self.log(f"[doc-phase] merged into {base} — {root.name} is "
+                         "held by the plan, so nothing was pushed")
+            else:
+                self.log(f"[doc-phase] merged into {base}; the project does "
+                         "not push — nothing sent to origin")
             return
         self.git("push", "origin", base, root=root)
         self.log(f"[doc-phase] merged into {base} and pushed — the dev roll "
@@ -3068,6 +3116,9 @@ class RunLoop:
         resume_at = self.state.get("run_phase") if self.resume else None
 
         try:
+            # Forced here, inside the try: everything downstream reads it, and
+            # a bail handler must never be the first thing to touch it.
+            self.log(f"project config: {self.cfg.path}")
             self.project_dirs = load_project_dirs(self.repo_root)
             self._assert_agents()
             if not self.resume:
@@ -3086,6 +3137,7 @@ class RunLoop:
                     if self._test_phase_under_lock():
                         continue
                     break
+                self._settle_push()
             self._doc_phase()
             self.devlock.release(self.log)
         except Bailout as bail:
@@ -3140,19 +3192,58 @@ class RunLoop:
             self.log(f"close-out header not stamped: {e}")
 
     def _test_phase_under_lock(self) -> bool:
-        """The devlock is taken before the test phase and held through the
-        doc phase (both may roll dev); it is NOT released between a
-        findings-loop re-entry and the next test round — the slice keeps its
-        occupancy while it converges."""
+        """The test phase under the devlock, when the project runs one. The
+        lock is NOT released between a findings-loop re-entry and the next
+        test round — the slice keeps its occupancy while it converges."""
+        if not self.cfg.test_phase:
+            return False
         # Re-checked here, before the lock, so a consult's commits (the
         # mechanical-residue rider) never let the test phase read a report
         # about a tree that no longer exists — and the sweep's minute is
         # spent outside the hold.
         self._ensure_gate_sweep()
-        self.announce("acquiring devlock (test+doc phases)")
-        self.devlock.acquire(f"slice {self.slice_num} test+doc phases",
-                             self.log, self._sleep)
+        self._acquire_devlock()
         return self._test_phase()
+
+    def _acquire_devlock(self) -> None:
+        """Taken before whichever of the test and doc phases runs first and
+        held to the end of the run — both may roll dev. Idempotent: the
+        second caller finds it already held."""
+        if self.devlock.held:
+            return
+        phases = "+".join(name for name, on in (("test", self.cfg.test_phase),
+                                                ("doc", self.cfg.doc_phase))
+                          if on)
+        self.announce(f"acquiring devlock ({phases} phase)")
+        self.devlock.acquire(f"slice {self.slice_num} {phases} phase",
+                             self.log, self._sleep)
+
+    def _settle_push(self) -> None:
+        """The driver's push, for a project that runs no test phase.
+
+        Nothing in the driver pushes a code phase — `_run_phase` ff-merges
+        into the base locally, primary repo and siblings alike — so with a
+        test phase the push is that phase's, per its procedure doc, and
+        `_assert_pushed` is the check that it happened. A project with no
+        test phase has no other pusher: without this its siblings never reach
+        origin, and if it runs no doc phase either the slice ends with every
+        commit still in the pod. The plan's `## Push holds` bind the driver
+        exactly as they bind the test phase — a held repo is reported, not
+        pushed."""
+        if self.cfg.test_phase:
+            return
+        if not self.cfg.push:
+            self.log("the project does not push — the slice's commits stay "
+                     "local")
+            return
+        held_why = self._held_roots()
+        for root, base in self._touched_roots():
+            why = held_why.get(str(root))
+            if why is not None:
+                self._report_hold(root, why)
+                continue
+            self.git("push", "origin", base, root=root)
+            self.log(f"pushed {base} in {root}")
 
     def _bail(self, bail: Bailout) -> None:
         self.state["run_phase"] = "bailed"

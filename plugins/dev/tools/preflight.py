@@ -5,25 +5,26 @@ Profiles (``--for triage|plan|run``) check exactly what that command needs. The
 run profile is the full gate; the runner does NOT re-run preflight, so
 ``/dev:run-slice`` is where a broken project is caught.
 
-Contract, expressed over `kc` primitives + four machine-checkable `CLAUDE.md`
-lines (see ${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md):
+Contract, expressed over `kc` primitives plus the repo's `.aiworkflowrc` (see
+${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md and `project_config.py` for the
+schema):
 
-    Spec repo: <path>
-    Slice testing strategy: <path-to-doc>
-    Slice doc plan: <path-to-doc>
-    Design philosophy: <path-to-doc>
+| Check                                          | triage | plan | run |
+|------------------------------------------------|:------:|:----:|:---:|
+| kc on PATH                                      |   x    |  x   |  x  |
+| Control plane healthy (kc status)               |        |  x   |  x  |
+| Manifest valid (kc project list >=1 component)  |        |  x   |  x  |
+| `.aiworkflowrc` present and valid               |   x    |  x   |  x  |
+| `spec_repo` set, directory exists               |   x    |  x   |  x  |
+| `design_philosophy` set, file exists            |        |      |  x  |
+| `test_phase.strategy` set + exists, when on     |        |      |  x  |
+| `doc_phase.plan` set + exists, when on          |        |      |  x  |
+| `devlock.lease` resolvable, when set            |        |      |  x  |
+| Clean working tree                              |        |      |  x  |
+| Baseline `kc project build` (all components)    |        |      |  x  |
 
-| Check                                         | triage | plan | run |
-|-----------------------------------------------|:------:|:----:|:---:|
-| kc on PATH                                     |   x    |  x   |  x  |
-| Control plane healthy (kc status)              |        |  x   |  x  |
-| Manifest valid (kc project list ≥1 component)  |        |  x   |  x  |
-| `Spec repo:` in CLAUDE.md, path exists         |   x    |  x   |  x  |
-| `Slice testing strategy:` set, target exists   |        |      |  x  |
-| `Slice doc plan:` set, target exists           |        |      |  x  |
-| `Design philosophy:` set, target exists        |        |      |  x  |
-| Clean working tree                             |        |      |  x  |
-| Baseline `kc project build` (all components)   |        |      |  x  |
+A phase the project switched off is not checked: its pointer is absent by
+contract, and checking it would make an optional phase mandatory again.
 
 **Silent on success** (exit 0). On failure, prints ONE actionable message —
 what is missing, the exact line/fix, and a pointer to the project contract — so
@@ -40,22 +41,32 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import project_config  # noqa: E402
+
 # The project contract, for the pointer in every failure message. Resolved from
 # this script's location (<plugin>/tools/preflight.py), not the cwd.
 CONTRACT_DOC = Path(__file__).resolve().parents[1] / "docs" / "project-contract.md"
 
-# The four machine-checkable CLAUDE.md entries (label → what its value points at).
-ENTRIES = {
-    "Spec repo": "the spec/slices repo (a directory)",
-    "Slice testing strategy": "the project's slice-testing-strategy doc (a file)",
-    "Slice doc plan": "the project's slice-doc-plan doc (a file)",
-    "Design philosophy": "the project's design-philosophy / change-discipline doc (a file)",
+# Each pointer the config can carry: what it points at, whether that is a
+# directory, and the TOML that sets it. The `when` field names the switch that
+# makes it required — None meaning "always, for this profile".
+POINTERS = {
+    "spec_repo": ("the spec/slices repo (a directory)", True,
+                  'spec_repo = "<path>"'),
+    "design_philosophy": ("the project's design-philosophy / change-discipline "
+                          "doc (a file)", False,
+                          'design_philosophy = "<path>"'),
+    "test_phase.strategy": ("the project's slice-testing-strategy doc (a file)",
+                            False, '[test_phase]\n    strategy = "<path>"'),
+    "doc_phase.plan": ("the project's slice-doc-plan doc (a file)", False,
+                       '[doc_phase]\n    plan = "<path>"'),
 }
 
 
@@ -103,48 +114,60 @@ def check_kc_status() -> None:
              "report says which half is down).\n" + report)
 
 
-def _claude_md(root: Path) -> str:
-    path = root / "CLAUDE.md"
-    return path.read_text() if path.is_file() else ""
+def load_config(root: Path) -> project_config.ProjectConfig:
+    """The config itself is a contract check: absent, unparseable or naming an
+    unknown key all bail with the schema in the message."""
+    try:
+        return project_config.load(root)
+    except project_config.ConfigError as e:
+        fail(1, f"{e}\n\nSee {CONTRACT_DOC} for the full project contract.")
 
 
-def _entry(text: str, label: str) -> str | None:
-    """Read a `Label: value` line, tolerating markdown decoration (list markers,
-    bold, backticks). Returns the stripped value, or None if the line is absent."""
-    # Tolerate markdown decoration around the label and value: leading list
-    # markers / blockquote, `**bold**` or backticks wrapping the label, the
-    # colon, and the value (`- **Spec repo:** ` + backticked path all match).
-    pattern = re.compile(
-        r"(?m)^[\s>*`-]*" + re.escape(label) + r"[\s*`]*:[\s*`]*(.+?)[\s*`]*$"
-    )
-    match = pattern.search(text)
-    if not match:
-        return None
-    return match.group(1).strip()
-
-
-def _resolve(root: Path, value: str) -> Path:
-    p = Path(value).expanduser()
-    return p if p.is_absolute() else (root / p)
-
-
-def check_entry(root: Path, label: str, *, expect_dir: bool) -> None:
-    text = _claude_md(root)
-    value = _entry(text, label)
-    if value is None:
+def check_pointer(cfg: project_config.ProjectConfig, key: str) -> None:
+    """One `.aiworkflowrc` pointer: set, and its target on disk."""
+    what, expect_dir, snippet = POINTERS[key]
+    target = {
+        "spec_repo": cfg.spec_repo,
+        "design_philosophy": cfg.design_philosophy,
+        "test_phase.strategy": cfg.test_strategy,
+        "doc_phase.plan": cfg.doc_plan,
+    }[key]
+    if target is None:
         fail(1,
-             f"Missing required CLAUDE.md entry: `{label}:`.\n"
-             f"Add a line to {root / 'CLAUDE.md'} pointing at {ENTRIES[label]}:\n\n"
-             f"    {label}: <path>\n\n"
+             f"Missing required `{key}` in {cfg.path}.\n"
+             f"Add it, pointing at {what}:\n\n"
+             f"    {snippet}\n\n"
              f"See {CONTRACT_DOC} for the full project contract.")
-    target = _resolve(root, value)
     ok = target.is_dir() if expect_dir else target.is_file()
     if not ok:
         kind = "directory" if expect_dir else "file"
         fail(1,
-             f"CLAUDE.md `{label}: {value}` points to {target}, which is not an "
-             f"existing {kind}.\nFix the path in {root / 'CLAUDE.md'} "
-             f"(see {CONTRACT_DOC}).")
+             f"`{key}` in {cfg.path} points to {target}, which is not an "
+             f"existing {kind}.\nFix the path (see {CONTRACT_DOC}).")
+
+
+def check_phase_pointers(cfg: project_config.ProjectConfig) -> None:
+    """The two optional phases: checked only when the project runs them. A
+    phase switched off has no procedure doc to point at, by contract."""
+    if cfg.test_phase:
+        check_pointer(cfg, "test_phase.strategy")
+    if cfg.doc_phase:
+        check_pointer(cfg, "doc_phase.plan")
+
+
+def check_devlock(cfg: project_config.ProjectConfig) -> None:
+    """A named lease must be somewhere the driver can create it. The lock file
+    itself is created on demand (its content is irrelevant — the flock is on
+    the inode), so only its directory has to exist; a typo'd path would
+    otherwise take a lock nothing else contends for, coordinating nothing."""
+    if cfg.devlock_lease is None:
+        return
+    if not cfg.devlock_lease.parent.is_dir():
+        fail(1,
+             f"`devlock.lease` in {cfg.path} resolves to "
+             f"{cfg.devlock_lease}, whose directory does not exist. The lease "
+             f"is relative to the spec repo and must sit where every "
+             f"contending repo can see it (see {CONTRACT_DOC}).")
 
 
 def check_manifest(root: Path) -> None:
@@ -193,10 +216,11 @@ def check_baseline_build(root: Path) -> None:
 # kc surface — it is intake, doable without the repo. Gating it on live
 # controller reachability would fail work that needs none of it.
 PROFILES = {
-    "triage": ["kc", "spec_repo"],
-    "plan": ["kc", "kc_status", "manifest", "spec_repo"],
-    "run": ["kc", "kc_status", "manifest", "spec_repo", "testing_strategy",
-            "doc_plan", "design_philosophy", "clean_tree", "baseline_build"],
+    "triage": ["kc", "config", "spec_repo"],
+    "plan": ["kc", "kc_status", "manifest", "config", "spec_repo"],
+    "run": ["kc", "kc_status", "manifest", "config", "spec_repo",
+            "design_philosophy", "phase_pointers", "devlock", "clean_tree",
+            "baseline_build"],
 }
 
 
@@ -216,14 +240,15 @@ def main() -> None:
     root = repo_root()
     if "manifest" in checks:
         check_manifest(root)
+    cfg = load_config(root) if "config" in checks else None
     if "spec_repo" in checks:
-        check_entry(root, "Spec repo", expect_dir=True)
-    if "testing_strategy" in checks:
-        check_entry(root, "Slice testing strategy", expect_dir=False)
-    if "doc_plan" in checks:
-        check_entry(root, "Slice doc plan", expect_dir=False)
+        check_pointer(cfg, "spec_repo")
     if "design_philosophy" in checks:
-        check_entry(root, "Design philosophy", expect_dir=False)
+        check_pointer(cfg, "design_philosophy")
+    if "phase_pointers" in checks:
+        check_phase_pointers(cfg)
+    if "devlock" in checks:
+        check_devlock(cfg)
     if "clean_tree" in checks:
         check_clean_tree(root)
     if "baseline_build" in checks:
