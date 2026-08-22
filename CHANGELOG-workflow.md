@@ -4,6 +4,16 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-22 — the seeded plan header keeps `###` for phases (v0.9.4)
+
+`/dev:plan-slice` § 3 told the seeding session which sections to write and never which heading
+levels to use, and the "every `###` is a phase heading" rule lives one link away in
+`plan-template.md` — so slice 167's seed carried two `###` sub-headings inside its
+requirements section. Nothing shipped broken: the parser is strict, so the plan entered the
+loop at writing, the plan-writer demoted both to `####`, and `_verify_plan_parses` gates exit 0
+against exactly this. But it cost the writer a correction it should not have had to make. The
+seeding step now says `###` is the plan-writer's alone and sub-structure is `####`.
+
 ## 2026-08-22 — the report's head comment stops carrying the entry shape (v0.9.3)
 
 Since 0.6.0 every entry, note and strike is minted by `close_out.py`, but the template's head

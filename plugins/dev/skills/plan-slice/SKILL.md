@@ -72,8 +72,10 @@ Write the plan's header yourself — this is the one artifact you author: the on
 operator's words**; any ordering constraints already known; not-in-scope. A ruling that forbids
 pushing a repo also gets its machine-readable half — a `## Push holds` bullet, shaped as the
 plan template above says; prose alone is invisible to the driver, which then nudges the test
-agent for that push and bails. No phases — the plan-writer designs those. Commit (stage by
-name — shared working tree), then:
+agent for that push and bails. No phases — the plan-writer designs those, and **`###` is theirs
+alone**: sub-structure inside your sections is `####`, because every `###` the parser sees is a
+phase heading and a stray one is a structure error. Commit (stage by name — shared working
+tree), then:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/tools/plan_loop.py run <spec-repo>/slices/backlog/<SLICE_DIR>
