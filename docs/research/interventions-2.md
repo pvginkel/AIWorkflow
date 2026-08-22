@@ -4,6 +4,10 @@ Companion to [research-2.md](research-2.md) (the briefing) and the standing cata
 [interventions.md](interventions.md) (run 1). **A proposal for discussion, not a decision.** Nothing
 here is actioned.
 
+**Follow-through (2026-08-23):** the operator kept the dollar target and chose the turn-count
+reading of these numbers — [turns-plan.md](turns-plan.md) is the stepwise action plan (T1 turn
+taxonomy first); this memo stays the evidence.
+
 Produced 2026-08-22 from: the 809 sessions of 32 slices (KubeCoderSpecs 144–170, AnsibleSpecs
 006–015) replayed turn by turn with [tools/context_profile.py](tools/context_profile.py) — full
 tables in [context-profile-2026-08-22.md](context-profile-2026-08-22.md); 19 papers and 22 web
