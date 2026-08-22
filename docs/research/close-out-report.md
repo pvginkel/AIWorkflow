@@ -101,10 +101,10 @@ report* — and the operator routes.
 **The fixed shape removes the completion choice.** This is the nuance the routing rule alone
 does not carry. An open-ended instruction ("card things worth carding") has no closure criterion:
 is it worth it, how much to say, should I propose the fix, did I already say it, should I do it
-instead. Fan et al. 2025 (*Missing Premise Exacerbates Overthinking*, `extracts/2504.06514`) is
+instead. Fan et al. 2025 (*Missing Premise Exacerbates Overthinking*, `archive/run-1/extracts/2504.06514`) is
 the mechanism: on questions the model cannot close, it *suspects* early and then **keeps
 re-visiting instead of abstaining — "detection exists; the act is missing."** Wu et al. 2024
-(ProCo, `extracts/2405.14092`) is the shape of the remedy: verification against a **specific,
+(ProCo, `archive/run-1/extracts/2405.14092`) is the shape of the remedy: verification against a **specific,
 fill-in-the-blank condition** converges where open-ended "review and find mistakes" regresses —
 the extract's sharpening is that the mechanism is *narrower than "be specific"*: it is a masked
 slot with a reconstructable answer. A fixed entry shape — headline, where, what, why it matters,
@@ -112,7 +112,7 @@ provenance — turns "what do I do with this?" into a fill-in-the-blank whose co
 visible. Writing the entry *is* the licensed act; the thought is closed. The plan-loop analogue
 already validated on 144/145 is A1+A2: a forced-early checkable slot and research gated on a
 *named* open question, both chosen as structural rather than numeric limits because Han et al.'s
-TALE (`extracts/2412.18547`) shows numeric caps produce *more* output, not less.
+TALE (`archive/run-1/extracts/2412.18547`) shows numeric caps produce *more* output, not less.
 
 **Detection is never suppressed** — the catalogue's hard constraint (`interventions.md` §8) —
 and this design is that principle taken to its end. The operator's own read, 2026-08-15: *"I feel

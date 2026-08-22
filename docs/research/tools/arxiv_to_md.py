@@ -45,6 +45,7 @@ from slugify import slugify
 
 API_URL = "https://export.arxiv.org/api/query"
 EPRINT_URL = "https://export.arxiv.org/e-print/{arxiv_id}"
+HTML_URL = "https://arxiv.org/html/{arxiv_id}"
 USER_AGENT = "arxiv2md/0.1 (AIWorkflow research tooling; +https://arxiv.org/help/api)"
 
 ATOM = "{http://www.w3.org/2005/Atom}"
@@ -358,6 +359,37 @@ def to_markdown(tex: str, bibs: list[Path]) -> str:
     raise ConversionError("pandoc could not convert the source:\n  " + "\n  ".join(errors))
 
 
+ARTICLE_RE = re.compile(r"<article\b.*?</article>", re.DOTALL | re.IGNORECASE)
+
+
+def html_fallback(client: httpx.Client, arxiv_id: str) -> str:
+    """arXiv's own HTML rendering, for sources pandoc's LaTeX reader rejects.
+
+    Lossier than the LaTeX path (equations and citations come out as the
+    renderer drew them) but complete: it carries every section, figure
+    caption and reference, which is what a reading corpus needs. Only the
+    ``<article>`` element is converted, so the page chrome stays out.
+    """
+    response = client.get(HTML_URL.format(arxiv_id=arxiv_id))
+    response.raise_for_status()
+    page = response.text
+    match = ARTICLE_RE.search(page)
+    html = match.group(0) if match else page
+    result = subprocess.run(
+        ["pandoc", "--from=html", "--to=gfm+tex_math_dollars", f"--columns={COLUMNS}",
+         "--shift-heading-level-by=1"],
+        input=html.encode("utf-8"), capture_output=True, timeout=600, check=False,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        message = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ConversionError("HTML fallback failed too: " + " / ".join(message.splitlines()[-2:]))
+    markdown = result.stdout.decode("utf-8")
+    # The rendering repeats the title/abstract block heading() already prepends.
+    markdown = re.sub(r"\A.*?(?=\n#+ +1\b|\n#+ +1\.|\n## +Introduction)", "", markdown,
+                      count=1, flags=re.DOTALL)
+    return markdown
+
+
 def yaml_value(value) -> str:
     """JSON is a subset of YAML 1.2, so json.dumps is a safe scalar quoter."""
     if isinstance(value, list):
@@ -365,7 +397,7 @@ def yaml_value(value) -> str:
     return json.dumps(value)
 
 
-def front_matter(paper: Paper) -> str:
+def front_matter(paper: Paper, source: str) -> str:
     fields = {
         "title": paper.title,
         "authors": paper.authors,
@@ -379,7 +411,7 @@ def front_matter(paper: Paper) -> str:
         fields["doi"] = paper.doi
     if paper.journal_ref:
         fields["journal_ref"] = paper.journal_ref
-    fields["source"] = "arXiv LaTeX e-print, converted with latexpand + pandoc"
+    fields["source"] = source
 
     lines = ["---"]
     lines += [f"{key}: {yaml_value(value)}" for key, value in fields.items()]
@@ -443,29 +475,39 @@ def convert(
             time.sleep(delay)
         payload = download_source(client, arxiv_id)
 
-    with tempfile.TemporaryDirectory(prefix="arxiv2md-") as tmp:
-        source = Path(tmp) / "src"
-        source.mkdir()
-        unpack_source(payload, source)
+    provenance = "arXiv LaTeX e-print, converted with latexpand + pandoc"
+    try:
+        with tempfile.TemporaryDirectory(prefix="arxiv2md-") as tmp:
+            source = Path(tmp) / "src"
+            source.mkdir()
+            unpack_source(payload, source)
 
-        # Copied before the conversion runs: a failed conversion is exactly when
-        # the source is worth looking at.
-        if keep_source is not None:
-            target = keep_source / base_id(paper.id_slug)
-            shutil.rmtree(target, ignore_errors=True)
-            shutil.copytree(source, target)
+            # Copied before the conversion runs: a failed conversion is exactly
+            # when the source is worth looking at.
+            if keep_source is not None:
+                target = keep_source / base_id(paper.id_slug)
+                shutil.rmtree(target, ignore_errors=True)
+                shutil.copytree(source, target)
 
-        main = find_main_tex(source)
-        # A .bbl is the reference list the authors actually published, so it
-        # wins. Only when the submission omits one does the .bib get handed to
-        # citeproc, which resolves whatever the citations happen to name.
-        bbl = find_bbl(source, main)
-        bibs = [] if bbl else find_bibs(source)
-        tex = flatten(main, bbl)
-        markdown = to_markdown(prepare_tex(tex), bibs)
+            main = find_main_tex(source)
+            # A .bbl is the reference list the authors actually published, so it
+            # wins. Only when the submission omits one does the .bib get handed
+            # to citeproc, which resolves whatever the citations happen to name.
+            bbl = find_bbl(source, main)
+            bibs = [] if bbl else find_bibs(source)
+            tex = flatten(main, bbl)
+            markdown = to_markdown(prepare_tex(tex), bibs)
+    except ConversionError as error:
+        # PDF-only submissions and LaTeX pandoc cannot parse both land here;
+        # arXiv's HTML rendering covers most of them.
+        print(f"  LaTeX path failed ({str(error).splitlines()[0]}); "
+              "falling back to the arXiv HTML rendering", file=sys.stderr)
+        with httpx.Client(headers=headers, follow_redirects=True, timeout=120.0) as client:
+            markdown = html_fallback(client, arxiv_id)
+        provenance = "arXiv HTML rendering, converted with pandoc (LaTeX source not convertible)"
 
     destination = output_path(outdir, paper)
-    document = f"{front_matter(paper)}\n\n{heading(paper)}\n\n{tidy(markdown)}"
+    document = f"{front_matter(paper, provenance)}\n\n{heading(paper)}\n\n{tidy(markdown)}"
     destination.write_text(document, encoding="utf-8")
     print(f"  wrote {destination.name} ({destination.stat().st_size // 1024} KiB)")
     return destination

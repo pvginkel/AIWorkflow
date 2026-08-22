@@ -34,9 +34,12 @@ kc project lint        # cexec python uv run --with ruff ruff check .
 - **No `build:` or `setup:` target, deliberately.** The plugin's scripts are **stdlib-only** so they
   run inside a KubeCoder pod's toolchain sidecar; pytest and ruff come from `uv run --with`, and
   `pyproject.toml` has no `[project]` table because this repo owns no venv and ships no package.
-- Research corpus: `cexec python docs/research/tools/fetch_articles.sh` converts the arXiv papers
-  cited in `docs/research/research.md` into `docs/research/articles/` (already-fetched papers are
-  skipped).
+- Research corpus: `docs/research/tools/fetch_articles.sh` converts the arXiv papers cited in
+  `docs/research/research-2.md` into `docs/research/articles/` (already-fetched papers are
+  skipped; needs pandoc + latexpand on PATH and uv, see the script header) and `fetch_pages.sh`
+  mirrors the non-arXiv sources beside them. `docs/research/tools/context_profile.py <slice-dir>...`
+  replays a slice's session transcripts into per-turn context profiles (research tooling, not
+  plugin). Run 1's corpus is frozen under `docs/research/archive/run-1/`.
 
 ## Architecture
 

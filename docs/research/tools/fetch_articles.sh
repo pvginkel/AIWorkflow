@@ -1,54 +1,60 @@
 #!/usr/bin/env bash
 #
-# Converts every arXiv paper cited in ../research.md into Markdown under
+# Converts every arXiv paper cited in ../research-2.md into Markdown under
 # ../articles/. Already-converted papers are left alone, so re-running this
 # after adding a link to the list only fetches what is new; pass --force to
 # rebuild everything.
 #
-# Needs uv, pandoc and latexpand, which live in the python toolchain container:
+# Needs uv (in the python toolchain container) plus pandoc and latexpand, which
+# the container no longer ships: drop a static pandoc and the latexpand perl
+# script into any directory and put it on PATH for the run, e.g.
 #
-#     cexec python docs/research/tools/fetch_articles.sh
+#     cexec python sh -c 'PATH=/path/to/bin:$PATH docs/research/tools/fetch_articles.sh'
 #
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
-# Keyed by the section of research.md the paper is cited under.
+# Keyed by the section of research-2.md the paper is cited under. The first
+# briefing's corpus (research.md) is frozen under ../archive/run-1/ and is not
+# re-fetched; "cite only" entries are fetched only where the briefing asks for a
+# specific section to be read.
 PAPERS=(
-  # S1 — Overthinking in agentic settings
-  https://arxiv.org/abs/2502.08235  # Cuadron et al. 2025, The Danger of Overthinking
+  # S1 — Long-context degradation and irrelevant-context harm
+  https://arxiv.org/abs/2509.09677  # Sinha et al. 2025, The Illusion of Diminishing Returns
+  https://arxiv.org/abs/2606.29718  # Xia et al. 2026, Diagnosing and Mitigating Context Rot
+  https://arxiv.org/abs/2505.06120  # Laban et al. 2025, LLMs Get Lost in Multi-Turn Conversation
 
-  # S2 — Limits of test-time compute scaling
-  https://arxiv.org/abs/2507.14417  # Gema et al. 2025, Inverse Scaling in Test-Time Compute
-  https://arxiv.org/abs/2412.21187  # Chen et al. 2024, Do NOT Think That Much for 2+3=?
-  https://arxiv.org/abs/2502.18080  # Towards Thinking-Optimal Scaling of Test-Time Compute
-  https://arxiv.org/abs/2412.18547  # Han et al. 2024, Token-Budget-Aware LLM Reasoning
+  # S2 — Trajectory reduction, compression and compaction
+  https://arxiv.org/abs/2509.23586  # Xiao et al. 2025, AgentDiet (trajectory reduction)
+  https://arxiv.org/abs/2510.00615  # Kang et al. 2025, ACON
+  https://arxiv.org/abs/2512.24601  # Zhang, Kraska, Khattab 2025, Recursive Language Models
+  https://arxiv.org/abs/2510.11967  # Sun et al. 2025, Context-Folding (folding vs summarisation only)
 
-  # S3 — Underspecification as an overthinking trigger
-  https://arxiv.org/abs/2504.06514  # Fan et al. 2025, Missing Premise Exacerbates Overthinking
+  # S3 — Orientation, cross-session memory and the hand-off
+  https://arxiv.org/abs/2605.19932  # Gu et al. 2026, PEEK
+  https://arxiv.org/abs/2409.07429  # Wang et al. 2024, Agent Workflow Memory
+  https://arxiv.org/abs/2605.14563  # Bae et al. 2026, MemDocAgent
 
-  # S4 — Difficulty routing vs. escalation cascades
-  https://arxiv.org/abs/2305.05176  # Chen, Zaharia, Zou 2023, FrugalGPT
+  # S4 — Decomposition and sub-agents
+  https://arxiv.org/abs/2512.08296  # Kim et al. 2025, Towards a Science of Scaling Agent Systems
+  https://arxiv.org/abs/2503.13657  # Cemri et al. 2025, MAST
 
-  # S5 — Limits of intrinsic self-correction; grounded review
-  https://arxiv.org/abs/2310.01798  # Huang et al. 2024, LLMs Cannot Self-Correct Reasoning Yet
-  https://arxiv.org/abs/2405.14092  # Wu et al. 2024, Self-Correct with Key Condition Verification
-  https://arxiv.org/abs/2310.13548  # Sharma et al. 2023, Towards Understanding Sycophancy
+  # S5 — Agent–computer interface and tool-output hygiene
+  https://arxiv.org/abs/2601.16746  # Wang, Shi et al. 2026, SWE-Pruner
+  https://arxiv.org/abs/2511.00197  # Majgaonkar et al. 2025, Understanding Code Agent Behaviour
+  https://arxiv.org/abs/2405.15793  # Yang et al. 2024, SWE-agent (ACI ablation only)
 
-  # S6 — Evaluator biases
-  https://arxiv.org/abs/2404.13076  # Panickssery et al. 2024, LLM Evaluators Favor Own Generations
-  https://arxiv.org/abs/2410.21819  # Wataoka et al. 2024, Self-Preference Bias in LLM-as-a-Judge
-  https://arxiv.org/abs/2402.11436  # Xu et al. 2024, Pride and Prejudice
-  https://arxiv.org/abs/2310.10076  # Saito et al. 2023, Verbosity Bias in Preference Labeling
+  # S6 — Retrieval versus reading
+  https://arxiv.org/abs/2407.16833  # Li, Z. et al. 2024, RAG or Long-Context LLMs?
+  https://arxiv.org/abs/2501.01880  # Li, X. et al. 2024, Long Context vs. RAG
 
-  # S7 — Reviewer overcorrection and false-positive economics
-  https://arxiv.org/abs/2603.00539  # Are LLMs Reliable Code Reviewers?
-  https://arxiv.org/abs/2601.22952  # Xiong, Zhang et al., Sifting the Noise
-  https://arxiv.org/abs/2411.03079  # LLM4FPM
+  # S7 — Cost-controlled evaluation and token economics
+  https://arxiv.org/abs/2407.01502  # Kapoor et al. 2024, AI Agents That Matter
+  https://arxiv.org/abs/2509.09853  # Fan et al. 2025, SWE-Effi
 )
-# Two entries in research.md are deliberately absent: S8 is a vendor
-# documentation page rather than an arXiv paper, and the Shi et al. position-bias
-# paper is listed there as a title to search for, without a link.
+# S1's Chroma report, S7's vendor docs and S8's practitioner posts are web pages,
+# not arXiv papers: fetch_pages.sh mirrors those into ../articles/ as web-*.md.
 
 failed=()
 for url in "${PAPERS[@]}"; do
