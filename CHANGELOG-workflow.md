@@ -4,6 +4,22 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-22 — the report's head comment stops carrying the entry shape (v0.9.3)
+
+Since 0.6.0 every entry, note and strike is minted by `close_out.py`, but the template's head
+comment still spelled the whole shape out — a sample `### B2 — …` entry, the id rule, the note
+and strike forms, two struck headings — as if an author typed it, and it had drifted from what
+the tool mints (a `· <repo or component>` tail after the severity that `append` never wrote).
+Nothing reads it: the tool parses outside comments, `render` and `stamp` carry it along
+unchanged, and dispatches name the tool, not the file. The comment is now seven lines — which
+tool writes entries and what the three labels are for, for whoever reads the file raw; the shape
+is stated once, in `close-out-template.md` § The entry. The section charters and the `Focus:`
+placeholders stay: they are the only in-band brief the writers and the doc-writer get.
+`append --headline`, `--consequence` and `--provenance` help say what the comment no longer does,
+and `/dev:close-out` no longer has to explain that the head comment's `Disposition:` is not an
+entry. Existing reports keep their longer comment — still correct, and `init` never touches a
+file that exists. No driver change.
+
 ## 2026-08-21 — the doc phase is auto docs; a doc task is a phase (v0.9.2)
 
 Triage #650: slice 015 (Ansible) planned R7 — close O3 in `decisions.md`, record the hook URL in

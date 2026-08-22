@@ -17,8 +17,7 @@ from your host convention (`~/.claude/CLAUDE.md`).
 
 1. **Locate the report.** The argument names it (a slice number or a slice dir); without one,
    the newest `slices/**/close-out.md` under `<spec-repo>` that still has a **live** entry with a
-   blank `Disposition:` line (the file's head comment shows one as the shape — that is not an
-   entry; a struck entry needs none). Say which report you opened.
+   blank `Disposition:` line (a struck entry needs none). Say which report you opened.
 2. **Present it — ask nothing yet.** Show the `Run:` header, the Summary and every `Focus:` line
    from the file, then `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py list <slice_dir>` as it
    prints — every live entry as `id — headline` with its `Consequence:` line under it (that line

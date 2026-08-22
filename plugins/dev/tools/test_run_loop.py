@@ -641,8 +641,7 @@ def test_review_funding_consult_merges_and_reports():
         # The driver's stock consequence for a merge: the findings stand.
         assert ("**Consequence:** the findings listed above are in the merged "
                 "tree as the reviewer left them") in report
-        # One entry, one operator line (the head comment's example is
-        # indented and not one).
+        # One entry, one operator line (the head comment carries none).
         assert len(re.findall(r"^\*\*Disposition:\*\*\s*$", report, re.M)) == 1
         fund = next(p for role, p in r.prompts
                     if role == "consult" and "funding bar" in p)

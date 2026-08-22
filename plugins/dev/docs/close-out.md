@@ -26,8 +26,9 @@ everything an agent would otherwise have to decide what to do with — the desti
 
 The sections, in the template's order — Summary, Outstanding actions, Notable events, Bugs, Open
 questions and rulings, Suggestions — each carry their own charter as a comment in the file, and
-the file's head comment carries the entry shape; every section may be empty, and empty is the
-normal state of most. Two things the comments do not spell out: **Notable events** takes
+the file's head comment names the tool that writes entries and the three labels (the shape itself
+is [the template's](close-out-template.md#the-entry)); every section may be empty, and empty is
+the normal state of most. Two things the comments do not spell out: **Notable events** takes
 workflow deviations as much as product ones (its charter names both kinds — a bail-out, an
 appended phase, a blocked proof re-routed, a tool missing from the sidecar, a wait that hit a
 cap) so plugin defects surface there instead of living only in `log.txt`; and **Suggestions** is

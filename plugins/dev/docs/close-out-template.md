@@ -4,8 +4,9 @@ The concrete shape of a slice's `close-out.md`: the fixed sections, the one entr
 struck-entry form, the rendered order, and the run header. Both loops create the file from this
 template (`close_out.py init` lifts the first fenced block below, substituting the slice's
 number and slug into the title), and `${CLAUDE_PLUGIN_ROOT}/tools/close_out.py` writes every
-entry, note and strike in the shape shown — no author types it, and the file carries the shape
-in its own head comment for whoever reads the file raw. Semantics — what the report is for, who
+entry, note and strike in the shape shown under [The entry](#the-entry) — no author types it,
+so the file carries no copy of it: its head comment says, for whoever reads the file raw, which
+tool writes entries and what the three labels are for. Semantics — what the report is for, who
 writes what and when, the entry rules, the lifecycle — are [close-out.md](close-out.md); this
 doc is the shape.
 
@@ -17,40 +18,13 @@ doc is the shape.
 <!-- Run header: stamped by the driver at close-out from state.json. Agents never edit it. -->
 Run: <not yet stamped>
 
-<!-- Every entry, in every section, has exactly this shape — written by `close_out.py append`
-     (the tool named in your dispatch; by hand only if the tool is unavailable, in exactly this
-     shape). The id is the section's letter (A · N · B · Q · S) and the next number — struck
-     headings count. Severity (major | minor | nit | cosmetic) sits in the heading of Bugs only.
-     Three bold labels close every entry, in this order; `**Disposition:**` is the operator's
-     line: leave it blank.
-
-     ### B2 — <headline: one line, the claim itself> · minor · <repo or component>
-
-     <What: the thing itself, quoted where it is text or output — the sentence, the command and
-     what it printed, the file and lines. Lead with the symptom; a cause only where it was shown.
-     How it was found. As many paragraphs as it takes.>
-
-     **Consequence:** <what an operator or user actually experiences if this stays as it is —
-     unfixed, undone, unanswered — in the deployed shape and in plain words, with what has to
-     happen for it to be reached; or "none", said plainly. Not what changed relative to before,
-     not "none to behaviour" when a human would notice something. The operator triages on this
-     line.>
-
-     **Provenance:** <witnessed | read — witnessed: you ran, measured, reproduced or mutated it
-     and the evidence is in the body; read: inferred from reading code or text — then role, phase,
-     round; the artifact that holds the full record>
-     **Disposition:**
-
-     A later note about an entry — its premise moved, it was re-checked, a phase resolved it — is
-     `close_out.py note`: a dated paragraph `<who>, <date> — <text>` at the end of that entry's
-     body, above its **Consequence:** line, never a new entry. An entry is never deleted. Struck
-     (`close_out.py strike`), it keeps its heading, with the reason appended — and a strike is a
-     claim like any other: resolved, refuted or does-not-reproduce names the commit and what was
-     re-run, not just who decided:
-
-     ### ~~S3 — <headline>~~ — absorbed by P11 (97b5313); struck by consult 1
-     ### ~~B1 — <headline>~~ — resolved by P2 r2 (1d7bfe7): repro re-run, one chevron; struck by consult 2
--->
+<!-- Entries are written by `close_out.py append` (the tool named in your dispatch), never by
+     hand: the next id under the section's letter (A · N · B · Q · S), the body, then three bold
+     labels — `**Consequence:**`, what an operator or user actually experiences if the entry
+     stays as it is, in plain words, or "none" (the operator triages on this line);
+     `**Provenance:**`, `witnessed` or `read`, then role, phase, round and the artifact with the
+     full record; and a blank `**Disposition:**`, the operator's. A later observation about an
+     entry is `close_out.py note`, never a new entry; only the completion consult strikes. -->
 
 ## Summary
 
@@ -100,25 +74,27 @@ Focus: <!-- doc-writer: which change a decision or another slice, from the Conse
 
 ## The entry
 
-The head comment above is the whole shape — the same in every section, ids by section letter in
-order of arrival, and under every body the three bold labels in one order: `**Consequence:**` (a
-short paragraph of its own — the operator scans for it and triages on it), `**Provenance:**`
-(opening with the evidence class, `witnessed` or `read`), then a blank `**Disposition:**`. The
-labels are bold so the eye finds them in a long report. `close_out.py append` mints exactly that
-shape for every author, the driver included; `close_out.py note` adds the dated paragraph
-(`<who>, <date> — <text>`) above the Consequence line — on an entry from before the Consequence
-label existed, above its `Provenance:` line instead; `close_out.py strike` rewrites the heading
-to the struck form (`~~<id> — <headline>~~ — <reason>; struck by <who>`) and leaves the body
-where it is; and `close_out.py list` shows the sections' ids, headlines and Consequence lines
-without the bodies. No agent edits the file by hand. What the comment leaves to this doc:
-Outstanding actions read as imperatives ("Create the `IaC/ArgoCDTools` Jenkins job"); the
-severity grades' meanings and what a `Consequence:` is written for are in
-[close-out.md](close-out.md); the head comment and the section charters are the file's, never
-edited or removed. `close_out.py counts` reads entries off the `###` headings and says, next to
-the per-section counts, how many headings in the entry sections are not in the entry shape and
-how many live entries lack a `Consequence:` or a `Provenance:` line — the smoke checks, so an
-author that drifted from the shape shows in the run's completion line instead of as a report
-that counts zero.
+The shape, the same in every section: `### <id> — <headline>` — in Bugs with ` · <severity>`
+appended (`major | minor | nit | cosmetic`) — the id being the section's letter (A · N · B · Q · S)
+and the next number in order of arrival, struck headings counted; then the body (the thing itself,
+quoted where it is text or output — the symptom first, a cause only where it was shown, how it was
+found; as many paragraphs as it takes); and under every body the three bold labels in one order:
+`**Consequence:**` (a short paragraph of its own — the operator scans for it and triages on it),
+`**Provenance:**` (opening with the evidence class, `witnessed` or `read`), then a blank
+`**Disposition:**`. The labels are bold so the eye finds them in a long report.
+`close_out.py append` mints exactly that shape for every author, the driver included;
+`close_out.py note` adds the dated paragraph (`<who>, <date> — <text>`) above the Consequence line —
+on an entry from before the Consequence label existed, above its `Provenance:` line instead;
+`close_out.py strike` rewrites the heading to the struck form
+(`~~<id> — <headline>~~ — <reason>; struck by <who>`) and leaves the body where it is; and
+`close_out.py list` shows the sections' ids, headlines and Consequence lines without the bodies. No
+agent edits the file by hand. Outstanding actions read as imperatives ("Create the `IaC/ArgoCDTools`
+Jenkins job"); the severity grades' meanings and what a `Consequence:` is written for are in
+[close-out.md](close-out.md). The head comment and the section charters are the file's, never edited
+or removed. `close_out.py counts` reads entries off the `###` headings and says, next to the
+per-section counts, how many headings in the entry sections are not in the entry shape and how many
+live entries lack a `Consequence:` or a `Provenance:` line — the smoke checks, so an author that
+drifted from the shape shows in the run's completion line instead of as a report that counts zero.
 
 ## The rendered order
 

@@ -47,8 +47,8 @@ imports run_loop) and a CLI for the agents and the skills:
 Headings are read outside fenced code blocks and outside HTML comments
 only — an entry that quotes a document's `## Bugs` or a `### B3` inside a
 ``` fence (the entry rules ask for liberal quoting) neither moves a section
-boundary nor shifts an id, and the template's own head comment shows the
-entry shape with a `### B2 — …` line in it.
+boundary nor shifts an id, and a heading quoted inside an HTML comment
+(the template's section charters are comments) is text too.
 
 Deliberately not here: any validation beyond "the section heading exists"
 and those smoke counts, dedup, disposition parsing.
@@ -723,11 +723,15 @@ def main(argv=None) -> int:
     p = sub.add_parser("append", help="append one entry; prints its id")
     p.add_argument("slice_dir")
     p.add_argument("--section", required=True, choices=list(SECTIONS))
-    p.add_argument("--headline", required=True)
+    p.add_argument("--headline", required=True,
+                   help="one line, the claim itself; a Bug names its repo or component")
     p.add_argument("--body", required=True, help="entry body, or - for stdin")
     p.add_argument("--consequence", required=True,
-                   help="the line the operator triages on")
-    p.add_argument("--provenance")
+                   help="what an operator or user experiences if this stays as it is, "
+                        "or none — the line the operator triages on")
+    p.add_argument("--provenance",
+                   help="witnessed | read, then role, phase, round, and the artifact "
+                        "with the full record")
     p.add_argument("--severity", choices=SEVERITIES)
 
     p = sub.add_parser("note", help="add a dated paragraph to one entry's body")

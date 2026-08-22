@@ -74,20 +74,16 @@ def test_init_creates_from_template_with_the_slice_in_the_title():
         assert "\n## Summary\n" in text
         # The template's own placeholder title never leaks through.
         assert "NNN <slug>" not in text
-        # The entry shape is in the file — every author reads it there —
-        # ahead of the first section, as a comment: the id form, the three
-        # bold labels in order, and the struck form.
+        # Ahead of the first section the file says, as a comment, which
+        # tool writes entries and what the three labels are for — and no
+        # more: the shape is the tool's, so there is no sample entry to
+        # mistake for one and no operator line to grep up.
         head = text[:text.index("## Summary")]
-        assert "### B2 — <headline" in head
-        assert "**Consequence:** <" in head and "**Provenance:** <" in head
-        assert "**Disposition:**\n" in head
-        assert (head.index("**Consequence:** <") < head.index("**Provenance:** <")
-                < head.index("**Disposition:**\n"))
-        assert "### ~~S3 — <headline>~~ — absorbed by" in head
-        # The comment says who writes the shape: the tool, by hand only
-        # when it is unavailable.
         assert "close_out.py append" in head and "close_out.py note" in head
-        assert "close_out.py strike" in head
+        assert (head.index("**Consequence:**") < head.index("**Provenance:**")
+                < head.index("**Disposition:**"))
+        assert "### " not in head
+        assert not re.search(r"^\s*\*{0,2}Disposition:", head, re.M)
         # …and none of it counts as an entry, a stray heading, or a
         # label-less entry.
         counts = close_out.entry_counts(slice_dir)
@@ -147,9 +143,7 @@ def test_append_allocates_ids_per_section_in_the_entry_shape():
         # the section order is untouched.
         bugs = text.index("## Bugs")
         questions = text.index("## Open questions and rulings")
-        # (`### B2` also occurs in the head comment's example — search from
-        # the section.)
-        assert bugs < text.index("### B1") < text.index("### B2", bugs) < questions
+        assert bugs < text.index("### B1") < text.index("### B2") < questions
         assert text.index("## Notable events") < text.index("### N1") < bugs
         assert re.search(r"\*\*Disposition:\*\*\n\n## Open questions", text)
         counts = close_out.entry_counts(slice_dir)
@@ -193,9 +187,9 @@ def test_quoted_headings_inside_fences_are_not_headings():
 
 
 def test_headings_inside_html_comments_are_not_headings():
-    """The template's head comment shows the entry shape with a `### B2`
-    line in it, and section charters are comments too: nothing inside
-    `<!-- … -->` is a section boundary, an entry, or a stray heading —
+    """The template's section charters are comments, and an entry may
+    quote headings inside one: nothing inside `<!-- … -->` is a section
+    boundary, an entry, or a stray heading —
     whether the comment is one line or many. A `<!--` mid-line in prose
     opens nothing."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -360,8 +354,8 @@ def test_stamp_writes_the_run_shape_and_is_idempotent():
         assert "<not yet stamped>" not in text
         assert text.count("Run:") == 1
         # The block is the header wrapped, then the blank line, then the
-        # head comment that shows the entry shape (untouched by the stamp).
-        block = text[text.index("Run:"):text.index("<!-- Every entry")]
+        # head comment (untouched by the stamp).
+        block = text[text.index("Run:"):text.index("<!-- Entries are written")]
         assert " ".join(block.split()) == header
         assert block.endswith("\n\n")
         # Re-stamping with cost replaces the block rather than adding one.
@@ -372,8 +366,8 @@ def test_stamp_writes_the_run_shape_and_is_idempotent():
         assert header2.endswith("· $118.41 (planner 18 %, research 4 %, rework 14 %)")
         text2 = report(slice_dir)
         assert text2.count("Run:") == 1
-        assert " ".join(text2[text2.index("Run:"):text2.index("<!-- Every entry")].split()) \
-            == header2
+        block2 = text2[text2.index("Run:"):text2.index("<!-- Entries are written")]
+        assert " ".join(block2.split()) == header2
         assert close_out.stamp_header(slice_dir) == header2
         assert report(slice_dir) == text2
 
@@ -701,8 +695,7 @@ def test_render_orders_other_sections_by_id_and_keeps_empty_ones():
 def test_render_reads_headings_outside_fences_and_comments_only():
     """A `###` quoted in a fence or in a comment is text — it starts no
     block, so a fenced heading travels with its entry and a fenced `##`
-    moves no section; the head comment's `### B2` example is not an
-    entry to reorder."""
+    moves no section."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         close_out.init_report(slice_dir)
@@ -846,7 +839,7 @@ def test_cli_note_strike_list_render():
         code, out, _ = run_cli("render", str(slice_dir))
         assert code == 0 and "Bugs: 1 live, 1 struck" in out
         text = report(slice_dir)
-        bugs = _bugs(text)   # (the head comment shows a `### ~~B1` too)
+        bugs = _bugs(text)
         assert bugs.index("### B2 — second") < bugs.index("### ~~B1") \
             < bugs.index("<details><summary>struck")
         code, out2, _ = run_cli("render", str(slice_dir))
