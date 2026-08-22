@@ -549,3 +549,96 @@ the per-entry log). I2 is uncontroversial.
 - Measurement baseline: KubeCoderSpecs slices ≤153 are pre-0.4.2 (comment findings ≈49% there);
   slice 143 is the first run on 0.4.2 — 0.4.2's effect on problem B is read off slices 143+
   against that baseline, via I1 once it exists.
+
+---
+
+## 11. W — Workflow frictions (added 2026-08-22, from the 155–170 read)
+
+Not from the papers: from the run record. Each is a friction the loop's own artefacts showed on
+slice 170 (assessment in `tmp/slice-170-assessment.md`) and, where noted, earlier slices — small,
+mechanical, and outside the review-economics lanes above. Same entry fields; per-entry state in
+[status.md](status.md). None is built.
+
+### W1. Headless waiting — **new, S**
+A dispatched agent waits on external work in the foreground (`track_build.py` with a Bash timeout
+that outlasts a Jenkins build; the default 2 minutes is what killed 170's first attempt), never by
+backgrounding it and stopping; and the driver narrates "session idle, N background tasks pending"
+instead of `[result] Done`. The wait-by-notification rule lives in the in-pod preamble (KubeCoder
+repo, since 0.7.4) and is right for the operator's session — in a headless `kc session` the turn
+end is all the driver sees.
+**Evidence:** 170 test-phase r1 (`log.txt` L2133–2155): foreground waiter timed out, backgrounded,
+agent stopped to wait, was re-woken by the notification, stopped again; `Done` printed twice while
+waiting; the loop was restarted 3m45 later (cause unknown) and r1's ≈ $8.27 / 23 min left no
+history row, no price, no report entry. Resume worked and the durable work survived — the system
+coped; the defect is the invisibility (W4) and the ambiguity.
+**Effect:** a waiting session is distinguishable from a finished one; no silent rounds.
+**Measure:** rounds without a verdict row; `Done`-while-waiting lines. **Cost:** S (one preamble
+line in KubeCoder, guarded by `TestWaitingOnWork`; one `test-agent.md` line; driver narration).
+**Risks:** none of substance — the plugin's half is narration.
+
+### W2. `close_out.py` accepts the report path — **new, S**
+`dispatch_line()` names the report file; every subcommand takes the slice directory. Resolve a
+`.md` argument to its parent, or name the directory in the dispatch line.
+**Evidence:** 170 — every session's first `list` failed, read `--help`, retried: 20 sessions ×
+3 turns ≈ 50–57 turns per run (the assessor tripped on it too).
+**Effect:** minutes and a few dollars per run; one trap fewer. **Measure:** usage-help turns → 0.
+**Cost:** S (one `Path` resolve + a test). **Risks:** none.
+
+### W3. The consult fixes the report's residue entries under the rider — **new, S**
+The generation rider already says mechanical residue — comment or formatting fixes with no
+behaviour change, in files the diff touched — is fixed by the finder, never reported. Reviewers
+cannot commit, so their comment-nit advisories land in the report as Bugs; the completion consult
+is the one pass with the tree and the rider but reads "residue" as its own scan of the diff. One
+sentence in `COMPLETION_CONSULT_SITUATION`: walk the live nit entries; fix what the rider covers,
+commit, strike with the commit.
+**Evidence:** 170 — seven operator fix-nows (B2, B3, B5, B11, B12, B19, B22), all enumeration
+nits in touched files; the report's own Focus line said "one disposition could cover the set";
+the consult reported "no mechanical residue — no TODO/debug leftovers, gofmt clean". 154's
+consult fixed ten such entries in one commit; 163–168's struck none; other slices show 0–3
+operator fix-nows. Mechanism as C7: the rider licenses the act, the entry list names the targets.
+**Effect:** fix-now dispositions → 0–1 per report. **Measure:** fix-now count per report; consult
+strikes. **Cost:** S. **Risks:** the consult fixing beyond the bound — unchanged (no behaviour
+change, touched files), and the sweep re-runs on its commit.
+
+### W4. Bail-outs and vanished rounds become Notable events by construction — **new, S**
+The driver appends refuted findings and funding-consult merges to Notable events itself but not
+bail-outs; they reach only the header, stamped after the doc phase, and the doc-writer writes the
+Summary and Focus lines from the file. Append one N entry at bail time (reason, phase, the dirty
+paths) and one when a dispatched session ends without a verdict, before the nudge.
+**Evidence:** 161 and 170 both say "no bail-out" in the Summary/Focus under a non-zero header;
+170's bail #1 blamed "an agent" for slice 168's dirty `close-out.md` in the shared specs worktree
+(bail #2 named the path); 170's lost test round is nowhere in the record. C7's H4 (workflow
+defects surface in the report) then holds mechanically.
+**Effect:** the report cannot contradict its header; lost rounds exist. **Measure:** header bail
+count = N entries about bail-outs. **Cost:** S (one `append` in the bail path, one at the
+missing-verdict branch). **Risks:** an entry for a protocol bail that resumes in a minute — one
+line, struck by the consult when resolved, is the shape the report already has.
+
+### W5. Cross-slice trend readout — **new, S, optional**
+`slice_cost.py --trend <completed-dir>` (or a sibling): per slice, cost and the three shares,
+phases, rounds, r1 `issues`, findings by impact / category / anchor, refuted, bail-outs, appended
+phases, test rounds, doc stage, `close_out.py counts`. Measurement only; depends on I1, I2.
+**Evidence:** the 2026-08-22 sixteen-slice table was a one-off script over the fields I1/I2
+created — the fields exist, the read does not. **Effect:** the next read is one command.
+**Cost:** S. **Risks:** none.
+
+---
+
+## 12. Status (2026-08-22) — where the 155–170 read left it
+
+Sixteen slices (KubeCoderSpecs 155–170), all read from the I1/I2 fields: r1 `issues` 17 %
+(12/71) against 24 % baseline; 15 blocking findings, 0 refuted; comment-prose 38 % of findings,
+all advisory, $0 rework since 0.4.2; rework 2–19 % (median ≈ 7 %); planner $14–27; 0 appended
+phases. Slice 170 (12 phases, ≈ 5.6k lines, ≈ $221, rework 2.9 %, 1 blocking in 13 reviews,
+0/9 blocking on > 230-line phases against a 65 % baseline, prd-confirmed by the operator) is the
+reference run.
+
+**Problems A, B and C as briefed each have a measured answer** (planner floor holds and shapes
+declare honestly; prose churn costs nothing; within-run amplification is bounded and precise),
+and no remaining I/A/B/C/D entry has a live precondition — [status.md](status.md) records the
+closures (I1, I2, I3, A1, A2, B1, B2, B4, C1, C2, D2 accepted; A5, B3, C4, C5, C8, I5 rejected;
+I4, C6, D3 moot). What outlives the briefing: the standing measurement (keep reading slices; W5
+makes it one command), the W lane above, and one lesson without an entry here — per-turn context
+volume sets 80 %+ of every Opus role's cost (170: 82 %; the doc-writer at 290k tokens/turn and
+8–21 % of every slice is where it bites) — which is a different research question and, if taken
+up, deserves its own briefing rather than a chapter in this one.

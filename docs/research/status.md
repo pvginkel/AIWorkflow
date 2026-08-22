@@ -2,7 +2,8 @@
 
 Tracks the state of every entry in [interventions.md](interventions.md). That document stays
 authoritative for evidence, expected effect, cost and risks; this one records only **where each
-entry stands and what happened to it**. One chapter per entry, in catalogue order (I, A, B, C, D).
+entry stands and what happened to it**. One chapter per entry, in catalogue order (I, A, B, C, D,
+W).
 
 Started 2026-08-14, at plugin version 0.4.2.
 
@@ -39,7 +40,7 @@ caused it; `(pre-catalogue)` marks history that predates 2026-08-14.
 
 ## I1 — Findings telemetry in the review contract
 
-**Status:** validating
+**Status:** accepted
 **Cost:** S · **Rank:** 1 (with I2) · **Depends on:** — (shares a schema change with C1)
 
 **Summary.** Reviewer verdicts gain machine-readable per-finding fields — severity, impact tag,
@@ -67,10 +68,15 @@ hand archaeology; self-proving, so acceptance is essentially "it shipped and the
   fields in `review_result_r1.json` and `state.json` history; every number in the 146 assessment
   came from them plus `slice_cost.py`. Distribution: Minor · advisory · `anchor: none` ×4;
   category functional 2, comment-prose 1, other 1.
+- 2026-08-22 — sixteen slices (155–170) read from the fields alone: the cross-slice table — r1
+  `issues` 12/71, blocking 15 / refuted 0, comment-prose 43/114, anchor distribution, bail-outs,
+  appended phases, test rounds — was one script over `state.json`, no transcript archaeology
+  (assessment in `tmp/slice-170-assessment.md`, untracked). Limit stands: anchors are recorded only
+  where `blocking`, so an advisory's evidence is not in the field. → accepted.
 
 ## I2 — Standard cost readout per run
 
-**Status:** validating
+**Status:** accepted
 **Cost:** S · **Rank:** 1 (with I1) · **Depends on:** —
 
 **Summary.** `slice_cost.py` gains derived close-out ratios appended to `state.json`: planner share,
@@ -99,10 +105,16 @@ research-subagent share, rework share, cost per merged slice.
   before 0.5.0) are unaffected, so 144/145 stand; 146 re-priced under it is rework $6.75 =
   14.6 % — the high end of the 9.3–15.7 % band, not the low — the honest number for a run that
   spent 8.7 % of itself pinning a test assertion. 146's committed record was re-stamped.
+- 2026-08-22 — the `cost` block is on every run 155–170: rework 2–19 % (median ≈ 7 %; 170: 2.9 %),
+  planner $14–27 absolute, research 0.7–12.7 % (the > 10 % points are the interactive refinement
+  session's Explore agents, outside A2's gate). One gap found on 170: a round whose session returns
+  no verdict leaves no history row and is unpriced — test r1 was ≈ $8.27 by hand, so the true cost
+  was ≈ $221 against $212.78 priced (W4 records such rounds; W5 proposes the trend readout as a
+  command). → accepted.
 
 ## I3 — Sampled blocking-finding precision audit
 
-**Status:** new
+**Status:** accepted (answered by C2’s refute path; no sampled audit built)
 **Cost:** S–M · **Rank:** — (gate for the C entries) · **Depends on:** I1, C1 (anchor taxonomy)
 
 **Summary.** Periodically sample N blocking findings across recent slices and adjudicate them
@@ -115,10 +127,15 @@ low number is the only justification for building them.
 
 - 2026-08-14 — catalogued (interventions.md §3). Needs C1's anchor taxonomy to anchor adjudication,
   so it follows rather than leads.
+- 2026-08-22 — answered by the loop's own instrument rather than a sampled audit: 15 blocking
+  findings on 155–170, 0 refuted by C2's witness-first fix rounds, every one fixed and re-verified
+  by the r2 reviewer; 170's one (P2 F1, Major, `contradiction`) carried a file:line trail and was
+  confirmed. Blocking precision by the evidence gate 15/15 — the ≥ 80 % bar is met without building
+  the audit. → accepted; this reading is the sunset for C4 and C5.
 
 ## I4 — Cards ledger
 
-**Status:** new
+**Status:** rejected (moot — the report is the ledger)
 **Cost:** S · **Rank:** 8 (with C6) · **Depends on:** —
 
 **Summary.** Aggregate advisory-card flow from `state.json` — created vs closed per slice, net
@@ -148,10 +165,13 @@ C6 can stay unbuilt; a growing one says it is.
   C7). By hand: 3 Notable events, 3 Bugs, A/Q/S empty; dispositions so far: 1 card (#632). From
   0.5.1 `counts` also says how many `###` headings are not in the entry shape, so a void reading
   announces itself instead of reading zero.
+- 2026-08-22 — 155–170 reports carry 3–30 entries each; operator-filed cards 0–6 per slice (170: 30
+  entries → 6 cards, 7 fixed at close-out, 15 closed in one sitting); no run-made backlog accrues on
+  the board. Nothing left to aggregate. → rejected (moot).
 
 ## I5 — Witnessed-signoff field in the review verdict
 
-**Status:** new
+**Status:** rejected
 **Cost:** S · **Rank:** — · **Depends on:** I1 (same schema path); feeds I3
 
 **Summary.** The reviewer verdict gains `witnessed: mutation | targeted-run | none` — what the
@@ -165,12 +185,17 @@ without archaeology; and whether the field's presence moves review cost.
 - 2026-08-15 — catalogued (interventions.md §3) from the slice 146 assessment: 4/4 reviews
   mutation-verified, the evidence in prose only. Not implemented — a register field, so D2's
   batch-and-A/B discipline applies; the operator picks batches.
+- 2026-08-22 — 170: 11 of 13 reviews executed something unprompted — mutations (P1, P6, P9, P10), a
+  kaniko build (P1), contract regeneration + diff (P3), `sshd -t`/`-T` on a rendered config (P5), a
+  `helm template` re-render loaded through the controller's own parser plus the live cluster (P12);
+  only P7 read alone. The behaviour is present without a field, I3 no longer needs the measurement,
+  and a field is register prose (D2). → rejected.
 
 ---
 
 ## A1 — Task-shape declaration in the plan contract
 
-**Status:** validating
+**Status:** accepted
 **Cost:** M · **Rank:** 4 · **Depends on:** — (enables A3)
 
 **Summary.** The plan-writer declares a task shape (`pre-settled` / `localized` / `cross-cutting`)
@@ -215,10 +240,15 @@ no rise in downstream gate_red or appended phases.
   label was wrong as well as the count. Logged here because a `pre-settled` plan is where the
   executor trusts the constraints most; one instance, watch for a second. It is also why slice
   158's P1 bounce is not counted against A3 (see A3, same date).
+- 2026-08-22 — the discrimination test passed both ways: 159 and 170 declared `cross-cutting`
+  honestly (170's justification names the spec's three statements the repo overturned), the small
+  slices `pre-settled`; plan-writer research $6.76 on 170's cross-cutting plan (four named surveys),
+  0 on the pre-settled ones; planner absolute $14–27 across 155–170 with the interactive refinement
+  session the variable part (170: $12.7 of $27). → accepted.
 
 ## A2 — Question-gated research budget
 
-**Status:** validating
+**Status:** accepted
 **Cost:** S · **Rank:** 5 · **Depends on:** A1 (complement)
 
 **Summary.** Research subagents may only be dispatched against a named open question the plan must
@@ -242,6 +272,10 @@ visible in plan output.
   permits research.
 - 2026-08-15 — slice 146: research $0.33 (0.7 %), the lowest recorded — one two-minute Explore
   in the plan loop, nothing from the plan-writer.
+- 2026-08-22 — plan-writer research 0 on every pre-settled slice in 155–170 and four question-named
+  surveys on 170's cross-cutting plan (worker capability framework; controller side;
+  bot/MCP/contracts; what 165 landed); the 3–13 % research shares in I2 are the refinement session's
+  Explore agents, which the gate does not govern. → accepted.
 
 ## A3 — Effort step-down for the plan registers
 
@@ -404,7 +438,7 @@ rejected; A3 escalates on outcomes instead, which is strictly more information.
 
 ## A5 — Best-of-k cheap plans with bias-controlled selection
 
-**Status:** new
+**Status:** rejected
 **Cost:** M–L · **Rank:** 13 (last) · **Depends on:** D3 (judge controls); only if A1–A3 underdeliver
 
 **Summary.** Generate k=2 plans at low effort and have a bare comparative judge pick one, with order
@@ -416,12 +450,14 @@ the planner is 11–29% of slice cost and this doubles plan latency.
 **Log**
 
 - 2026-08-14 — catalogued (interventions.md §4) and ranked last by the catalogue's own proposal.
+- 2026-08-22 — planner absolute holds at $14–27 on 155–170 and the planner share is a floor effect
+  on small slices; doubling plan latency for a bounded saving has no case. → rejected.
 
 ---
 
 ## B1 — Coder comment policy: verifiable invariants only
 
-**Status:** validating
+**Status:** accepted (as-is)
 **Cost:** S · **Rank:** 6 (with B4) · **Depends on:** — (interacts with B3)
 
 **Summary.** Adds the missing criterion to the existing "invariants only" rule: a comment must state
@@ -448,10 +484,14 @@ load-bearing warnings.
   than hedge. B1 did not prevent it; B4 caught it at review; the consult fixed it in place as
   mechanical residue (`6de4795`). Comment findings 1 of 4 (25 %) against ≈49 % baseline — one
   finding, not a trend on its own.
+- 2026-08-22 — comment-prose findings 43/114 (38 %) on 155–170 against ≈ 49 % baseline; 170: 8/25.
+  The count moved a little, the cost went to zero (B2). What survives is one-line enumeration nits
+  ("the fifth open route" after a sixth landed) in files the diff touched — the consult's rider, not
+  the writer register, is the lever (W3). → accepted as-is.
 
 ## B2 — Reviewer comment scope
 
-**Status:** validating
+**Status:** accepted
 **Cost:** S · **Rank:** — · **Depends on:** I1 (to measure)
 
 **Summary.** Shipped in 0.4.2: comment/prose findings are advisory by default, get one plain
@@ -475,10 +515,13 @@ baseline. Churn gone ⇒ accepted as-is; churn persists ⇒ take the extension.
   design intent. The blocking carve-out extension stays held.
 - 2026-08-15 — 146: comment-prose findings 1 of 4 (25 %), advisory, one sentence, no fix
   round; prose rework $0 for the third consecutive run.
+- 2026-08-22 — $0 prose rework for 27 consecutive slices since 0.4.2 (143–170); every comment-prose
+  finding advisory, one sentence, no relitigation; the blocking carve-out extension is not needed. →
+  accepted.
 
 ## B3 — Explanatory prose lives in docs, not comments
 
-**Status:** new
+**Status:** rejected
 **Cost:** M · **Rank:** 12 · **Depends on:** B1; waits on B2's measurement
 
 **Summary.** Architectural narrative and rationale move to the docs the doc-writer already maintains
@@ -491,10 +534,13 @@ the explanation no longer sitting next to the code is a real onboarding cost.
 
 - 2026-08-14 — catalogued (interventions.md §5). Held explicitly for the 0.4.2 measurement; the
   grounding motive is slice 152's 16 live comments describing a subsystem that no longer existed.
+- 2026-08-22 — the doc phase is already 8–21 % of every slice on 155–170 (170: $33.28, the costliest
+  single session at 290k tokens/turn) and comment churn costs $0; moving prose there grows the
+  costliest role to save nothing and loses locality. → rejected.
 
 ## B4 — Semantic-equivalence bar for prose findings
 
-**Status:** validating
+**Status:** accepted
 **Cost:** S · **Rank:** 6 (with B1) · **Depends on:** — (subsumed by B2's extension if that lands)
 
 **Summary.** A prose finding must show the text is *wrong* — contradicted by code or spec — not that
@@ -513,12 +559,15 @@ case this folds into it.
 - 2026-08-15 — first data point (146): the one prose finding was a wrongness finding as B4
   asks — the comment claimed a post-condition the code cannot observe — not a wording
   preference. Held.
+- 2026-08-22 — held across 155–170: the prose findings seen are wrongness findings (170's
+  B2/B3/B5/B11/B12/B19/B22 are all "the text counts N, the code has N+1"), no wording-preference
+  findings. → accepted.
 
 ---
 
 ## C1 — Anchoring taxonomy for blocking findings
 
-**Status:** validating
+**Status:** accepted
 **Cost:** S · **Rank:** 2 · **Depends on:** — (schema shared with I1; C2 builds on it)
 
 **Summary.** Replaces "failing-input logic or a test sketch" with a closed anchor list — failing
@@ -554,10 +603,15 @@ failures; the anchor-type distribution (I1) shows what the old bar was letting t
   resolved (plugin 0.5.1): the `coverage-gap` anchor now names vacuous coverage explicitly, "a
   mutation you ran that the criterion's test survives". 145 P4 F1 stays `none` under it: no AC
   covers the guard it concerns.
+- 2026-08-22 — 155–170: every blocking finding anchored (contradiction, repro-trace, failing-test);
+  anchored ≠ blocking held in both directions on 170 — P3 F1 and P6 F1 are Major + repro-trace and
+  advisory with the reason stated (a sequencing window the plan closes; a fallback narrower than its
+  failure class, unreachable on today's image), and the operator agreed (B10 carded, P3's S3 closed
+  as historical). → accepted.
 
 ## C2 — Demonstrate-failure-first fix protocol
 
-**Status:** validating
+**Status:** accepted
 **Cost:** M · **Rank:** 3 · **Depends on:** C1
 
 **Summary.** A fix round for a blocking finding starts by witnessing the failure — write the failing
@@ -591,6 +645,9 @@ Success target for the C1+C2 pair: precision ≥80% with rework share stable or 
   against 13/29 on 149–153, keyword proxy), P4's re-witnessing the phase's own done-condition —
   the discipline C2 encodes has generalised into signoff. Catalogued as I5 (make it countable)
   and C8 (make it mandatory where cheapest, test-only phases); neither implemented.
+- 2026-08-22 — fired 15 times on 155–170, 0 refutations; every r2 reviewer re-verified the fix in
+  the tree; 170 P2's finding was inspection-anchored and handled as such. The refute path is
+  unexercised after 15 firings — it is the instrument I3 now rests on, so it stays. → accepted.
 
 ## C3 — Round caps, rising bar, one-report lifecycle
 
@@ -612,7 +669,7 @@ mood; reopening needs evidence that a cap is losing real defects.
 
 ## C4 — Evidence-gated contest channel for the coder
 
-**Status:** new
+**Status:** rejected
 **Cost:** S–M · **Rank:** 9 · **Depends on:** C2 (which subsumes the executable half)
 
 **Summary.** The executor may return "contested + evidence" instead of a fix; contested findings go
@@ -625,10 +682,13 @@ produces capitulation once C2 handles the executable claims.
 
 - 2026-08-14 — catalogued (interventions.md §6). Motive: models wrongly admit a mistake on 42–98%
   of answers they had right when challenged confidently.
+- 2026-08-22 — no capitulation event observable in 15 fix rounds (each fix verified by the r2
+  reviewer, none refuted, none contested) and precision reads 15/15 (I3); the channel has nothing to
+  carry. → rejected.
 
 ## C5 — Agentic false-positive validator before fix rounds
 
-**Status:** new
+**Status:** rejected
 **Cost:** M–L · **Rank:** 11 (conditional) · **Depends on:** I3, C1, C2
 
 **Summary.** A bare, evidence-seeking session with repo read access validates each blocking finding
@@ -642,10 +702,12 @@ C1+C2. Then judged on validator overturn rate and net cost per avoided fix round
 - 2026-08-14 — catalogued (interventions.md §6) with the strongest single measured effect in the
   reading (residual FP 98.3%→6.3%) and the strongest caveat: judgment/policy classes suffered
   50–85% true-positive suppression.
+- 2026-08-22 — conditional on low precision after C1+C2; precision reads 15/15 on 155–170 (I3). →
+  rejected.
 
 ## C6 — Advisory-card lifecycle governance
 
-**Status:** new
+**Status:** rejected (moot)
 **Cost:** S · **Rank:** 8 (with I4) · **Depends on:** I4 (measures the need)
 
 **Summary.** Cards get an explicit lifecycle: batch triage at `slice-dag` time, auto-expiry for
@@ -668,6 +730,8 @@ cards skipped by two consecutive triages.
 - 2026-08-15 — C7 shipped (plugin 0.5.0); the run loop mints no per-finding cards from this
   version on. What reaches the board is one close-out card per slice plus whatever the operator
   files at disposition — the queue C6 would govern is now operator-made.
+- 2026-08-22 — the queue it would govern is operator-made cards from close-out dispositions, 0–6 per
+  slice, filtered at triage intake; nothing to build. → rejected (moot).
 
 ---
 
@@ -779,10 +843,18 @@ Kill signal is reports that grow *and* stop being read — answered by shape, ne
   actually use the tool (installed-path `python3` from a kc session), `counts` shows no drift, the
   consult's strikes carry commit + re-run, and the read cost per dispatch drops now that authors
   `list` instead of reading the file.
+- 2026-08-22 — slice 170, the largest report yet (30 entries: A 2 · N 1 · B 22 · Q 0 · S 5;
+  initialised on 0.9.2, run on 0.9.3): dispositioned in one sitting in three buckets — 6 cards, 7
+  fix-now, 15 closed, A1/A2 done ("everything works as expected" on prd) — and B14 (an expired host
+  certificate reads as certified) was carded from the text alone. Shape held (one entry without
+  Provenance). Two defects: the Summary and the Notable-events Focus say "no bail-out" under a
+  2-bail header (as 161 did), and the test-phase round the loop lost is nowhere in the report; and
+  seven of the fix-nows were rider-grade comment nits the consult left for the operator, though the
+  Bugs Focus line itself said "one disposition could cover the set". → W3, W4.
 
 ## C8 — Mutation-witnessed signoff for test-only phases
 
-**Status:** new
+**Status:** rejected
 **Cost:** S · **Rank:** — · **Depends on:** C1's 0.5.1 coverage-gap clause; I3 to judge
 
 **Summary.** One reviewer-register sentence scoped to test-only phases: a signoff names one
@@ -797,6 +869,8 @@ rule dies if precision falls.
 - 2026-08-15 — catalogued (interventions.md §6) from 146 P1 F1 ($4.02 to fix a self-satisfying
   test one generation late) and 145 P4 F1. Not implemented — a reviewer-register rule, batched
   and A/B'd per D2.
+- 2026-08-22 — same evidence as I5: reviewers mutate unprompted (170: P1, P6, P9, P10); the
+  test-only remainder the rule would bind has not shown up. → rejected.
 
 ---
 
@@ -820,7 +894,7 @@ in-loop as consult or validator — the clean fix, and the one thing that would 
 
 ## D2 — Reviewer prompt and context hygiene
 
-**Status:** new
+**Status:** accepted (as standing rule)
 **Cost:** S · **Rank:** 10 · **Depends on:** I3 (for the A/B discipline)
 
 **Summary.** Two rules: the reviewer/consult sees the artifact and the acceptance criteria, not the
@@ -836,10 +910,13 @@ register prose.
 - 2026-08-14 — catalogued (interventions.md §7). Cuts directly against the other entries' prompt
   growth: elaborate review instructions shifted GPT-4o's false-negative rate 26%→73%. Batch and A/B
   register edits rather than accreting them.
+- 2026-08-22 — kept as discipline: no reviewer-register growth since 0.5.1's coverage-gap clause,
+  and the lean register reads precise (I3 15/15). The dispatch audit is moot while that holds. →
+  accepted as a rule.
 
 ## D3 — Comparative-judgment toolkit
 
-**Status:** new
+**Status:** rejected (dormant; no selection step will be built)
 **Cost:** — · **Rank:** — (dormant) · **Depends on:** a selection step existing at all (A5)
 
 **Summary.** A reference kit for any future candidate-selection step: order randomization with a
@@ -852,3 +929,113 @@ if A5 or a best-of-k fix step is built.
 **Log**
 
 - 2026-08-14 — catalogued (interventions.md §7) as reference material, nothing to implement.
+- 2026-08-22 — A5 rejected, so no selection step exists to apply this to. → rejected (dormant
+  reference).
+
+---
+
+## W1 — Headless waiting
+
+**Status:** new
+**Cost:** S · **Rank:** — (from the 2026-08-22 read) · **Depends on:** —
+
+**Summary.** A dispatched agent waits on external work in the foreground (`track_build.py` with a
+Bash timeout that outlasts a Jenkins build), never by backgrounding it and stopping — in a
+headless `kc session` the turn end is all the driver sees; and the driver's narration says a
+session is idle with N background tasks pending instead of printing `[result] Done`. The
+wait-by-notification rule itself lives in the in-pod preamble (KubeCoder repo, since 0.7.4); the
+plugin's half is the narration and one line in `test-agent.md`.
+
+**Decides it.** No further round returns without a verdict row; `Done`-while-waiting lines gone
+from `log.txt`.
+
+**Log**
+
+- 2026-08-22 — catalogued from slice 170's test-phase r1 (`log.txt` L2133–2155): the foreground
+  `track_build.py` was killed by Bash's 2-minute default timeout, the agent re-ran it
+  backgrounded and stopped to wait — as the preamble says — was re-woken by the notification,
+  pushed HelmCharts, stopped again; `Done` printed twice while the session was merely waiting,
+  and the loop was restarted 3m45 later (cause unknown — the operator was away; a shared-specs
+  environment and Kubernetes are both candidates). Resume worked and the round's durable work
+  (rebase, pushes) survived — the operator's point: the system coped. The defect is that the
+  round left no record (I2, W4) and that a waiting session is indistinguishable from a finished
+  one. Not built.
+
+## W2 — `close_out.py` accepts the report path
+
+**Status:** new
+**Cost:** S · **Rank:** — · **Depends on:** —
+
+**Summary.** `dispatch_line()` names the report *file*; `list`/`append`/`note`/`strike` take the
+slice *directory*. Resolve a `.md` argument to its parent (or name the directory in the dispatch
+line) so the first call works.
+
+**Decides it.** `Show close_out.py usage` turns per run → 0.
+
+**Log**
+
+- 2026-08-22 — catalogued from slice 170: every session's first `list` failed (`list --file …` or
+  `list <report.md>` → "unrecognized arguments" / "slice directory not found"), read `--help`,
+  retried — 20 sessions × 3 turns ≈ 50–57 turns, a few dollars and minutes per run, and the
+  same trap caught the assessor. Not built.
+
+## W3 — The consult fixes the report's residue entries under the rider
+
+**Status:** new
+**Cost:** S · **Rank:** — · **Depends on:** C7
+
+**Summary.** The generation rider already says mechanical residue — comment or formatting fixes
+with no behaviour change, in files the slice's diff touched — is fixed by the finder, never
+reported. Reviewers cannot commit to the branch, so their comment-nit advisories reach the report
+as Bugs entries; the completion consult is the one pass with the tree and the rider, but reads
+"residue" as its own scan of the diff. One sentence in `COMPLETION_CONSULT_SITUATION`: walk
+the live nit entries; fix those the rider covers, commit, strike with the commit.
+
+**Decides it.** Operator fix-now dispositions per report → 0–1 without the consult touching
+anything outside the rider's bound (the sweep re-runs on its commit).
+
+**Log**
+
+- 2026-08-22 — catalogued from slice 170: seven fix-nows (B2, B3, B5, B11, B12, B19, B22), all
+  enumeration nits in touched files; the report's own Bugs Focus line said "one disposition
+  could cover the set"; the consult reported "no mechanical residue — no TODO/debug leftovers,
+  gofmt clean" and noted B6/B7 only. 154's consult fixed ten such entries in one commit;
+  163–168's consults struck 0; other slices show 0–3 operator fix-nows. Not built.
+
+## W4 — Bail-outs and vanished rounds become Notable events by construction
+
+**Status:** new
+**Cost:** S · **Rank:** — · **Depends on:** C7
+
+**Summary.** The driver already appends refuted findings and funding-consult merges to Notable
+events itself; bail-outs reach only the header, which is stamped after the doc phase — and the
+doc-writer writes the Summary and Focus lines from the file. Append one N entry at bail time
+(reason, phase, the dirty paths) and one when a dispatched session ends without a verdict,
+before the nudge.
+
+**Decides it.** The header's bail-out count equals the N entries about bail-outs; a round with no
+verdict row has an entry; the Summary stops contradicting the header.
+
+**Log**
+
+- 2026-08-22 — catalogued from slices 161 and 170: both Summaries/Focus lines say "no bail-out"
+  under a non-zero header; 170's two bail-outs were not agent failures (slice 168's
+  `close-out.md` was dirty in the shared specs worktree — bail #1 blamed "an agent", bail #2
+  named the path) and its lost test round is nowhere in the record. Not built.
+
+## W5 — Cross-slice trend readout
+
+**Status:** new
+**Cost:** S · **Rank:** — (optional) · **Depends on:** I1, I2
+
+**Summary.** `slice_cost.py --trend <completed-dir>` (or a sibling script): per slice, cost and
+the three shares, phases, executor/review rounds, r1 `issues`, findings by impact / category /
+anchor, refuted, bail-outs, appended phases, test rounds, doc stage, `close_out.py counts` — from
+`state.json` and the report. Measurement only.
+
+**Decides it.** The next read is one command instead of a one-off script.
+
+**Log**
+
+- 2026-08-22 — catalogued: today's 16-slice table was a one-off script over the I1/I2 fields
+  (I1/I2 made the fields, not the read). Not built.
