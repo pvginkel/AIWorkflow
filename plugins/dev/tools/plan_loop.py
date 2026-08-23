@@ -82,6 +82,7 @@ from run_loop import (  # noqa: E402
     parse_plan,
     plugin_version,
     run_kc_session,
+    spawn_flags,
 )
 
 TIMEOUTS = {"plan-writer": 7200, "plan-reviewer": 3600}
@@ -282,12 +283,14 @@ class PlanLoop:
 
     # -- session spawning ----------------------------------------------------
 
-    def _nudge(self, prompt: str, session_id: str, label: str) -> None:
+    def _nudge(self, prompt: str, session_id: str, label: str,
+               role: str) -> None:
         self.log(f"{label} nudging the session (resume)")
         try:
             run_kc_session(
                 prompt=prompt, cwd=str(self.repo_root), timeout=NUDGE_TIMEOUT,
                 resume_session=session_id, extra_env=SPAWN_ENV,
+                flags=spawn_flags(role),
                 progress=lambda line: self._emit(f"    {label} {line}"),
             )
         except subprocess.TimeoutExpired:
@@ -312,6 +315,7 @@ class PlanLoop:
             returncode, result = run_kc_session(
                 prompt=prompt, cwd=str(self.repo_root), timeout=TIMEOUTS[role],
                 agent=role, model=model, effort=effort, extra_env=SPAWN_ENV,
+                flags=spawn_flags(role),
                 progress=lambda line: self._emit(f"    {label} {line}"),
                 on_session=_note_session,
             )
@@ -331,7 +335,7 @@ class PlanLoop:
                 VERDICT_NUDGE_PROMPT.format(
                     verdict_path=verdict_path,
                     outcomes=sorted(VERDICTS[role])),
-                session_id, label)
+                session_id, label, role)
             nudged = True
             verdict = _read_json(verdict_path)
             if _valid(verdict):
@@ -346,7 +350,7 @@ class PlanLoop:
 
         if self._slice_dirty():
             if session_id:
-                self._nudge(COMMIT_NUDGE_PROMPT, session_id, label)
+                self._nudge(COMMIT_NUDGE_PROMPT, session_id, label, role)
             dirty = self._slice_dirty_paths()
             if dirty:
                 raise Bailout(

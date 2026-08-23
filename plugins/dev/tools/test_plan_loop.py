@@ -480,8 +480,8 @@ def test_dispatch_passes_model_and_effort_explicitly():
 
         def fake_session(prompt, cwd, timeout, agent=None, model=None,
                          effort=None, resume_session=None, extra_env=None,
-                         progress=None, on_session=None):
-            calls.append((agent, model, effort))
+                         flags=None, progress=None, on_session=None):
+            calls.append((agent, model, effort, list(flags or ())))
             result = plan_loop.run_loop_result = type(
                 "R", (), {"session_id": "sess-1", "result_text": "",
                           "is_error": False})()
@@ -502,8 +502,9 @@ def test_dispatch_passes_model_and_effort_explicitly():
         finally:
             plan_loop.run_kc_session = original
         assert code == 0
-        assert calls == [("plan-writer", "opus", "xhigh"),
-                         ("plan-reviewer", "opus", "xhigh")]
+        trim = ["--disable-slash-commands", "--strict-mcp-config"]
+        assert calls == [("plan-writer", "opus", "xhigh", trim),
+                         ("plan-reviewer", "opus", "xhigh", trim)]
 
 
 if __name__ == "__main__":

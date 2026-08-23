@@ -87,6 +87,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -184,6 +185,25 @@ SPAWN_ENV = {
     "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
     "CLAUDE_CODE_DISABLE_BUNDLED_SKILLS": "1",
 }
+
+# The claude flags `create-headless` passes through to the spawned claude
+# (kc's own pass-through, under claude's flag names), finishing the prefix
+# trim SPAWN_ENV starts — agent-dispatch.md § Spawning has the why and the
+# numbers. `--disable-slash-commands` for every role (the plugin's agents
+# are not skills and still register); `--strict-mcp-config` for every role
+# but the test-agent, which keeps the operator's MCP servers because it
+# drives CI through Jenkins. Sub-agents inherit the parent's trim.
+SPAWN_FLAGS = ("--disable-slash-commands",)
+MCP_ROLES = frozenset({"test-agent"})
+
+
+def spawn_flags(role: str | None) -> list[str]:
+    """The pass-through flags for one dispatch — or for the nudge of one,
+    which resumes the same session and must carry the same prefix."""
+    flags = list(SPAWN_FLAGS)
+    if role not in MCP_ROLES:
+        flags.append("--strict-mcp-config")
+    return flags
 
 # The devlock wait: poll the flock nonblocking so the wait is loggable and
 # bounded (a session crash releases the lease via fd close, so a very long
@@ -765,6 +785,7 @@ def run_kc_session(
     effort: str | None = None,
     resume_session: str | None = None,
     extra_env: dict[str, str] | None = None,
+    flags: Sequence[str] | None = None,
     progress=None,
     on_session=None,
 ) -> tuple[int, SessionResult]:
@@ -772,16 +793,17 @@ def run_kc_session(
     result). Maps each seam onto a kc verb:
       create-headless [--resume ID] [--agent ROLE] [--model M]
                       [--reasoning-effort E] --cwd CWD [-e NAME=VALUE ...]
-                                                 → the assigned session name
+                      [FLAG ...]                 → the assigned session name
       send NAME --prompt-file P --response-file R -v   (synchronous; SSE)
       status NAME --output=json                  → the claude sessionId
       end NAME                                    (idempotent; always)
 
     `agent` is the bare role (e.g. "code-writer"); it is dispatched namespaced
     (`dev:code-writer`) and resolves to the plugin's own definition wherever
-    `cwd` sits. A falsy `agent` spawns with no
-    agent at all (consults). Raises subprocess.TimeoutExpired on timeout —
-    the turn is interrupted and the session torn down before it propagates."""
+    `cwd` sits. A falsy `agent` spawns with no agent at all (consults).
+    `flags` are claude flags kc passes through verbatim (`spawn_flags`).
+    Raises subprocess.TimeoutExpired on timeout — the turn is interrupted
+    and the session torn down before it propagates."""
     result = SessionResult()
 
     create_args = ["session", "create-headless", "--cwd", str(cwd)]
@@ -795,6 +817,7 @@ def run_kc_session(
         create_args += ["--reasoning-effort", effort]
     for name, value in (extra_env or {}).items():
         create_args += ["-e", f"{name}={value}"]
+    create_args += list(flags or ())
 
     created = subprocess.run(
         ["kc", *create_args], cwd=str(cwd), capture_output=True, text=True)
@@ -1781,7 +1804,7 @@ class RunLoop:
             if not errors:
                 self._track_phases(phases)
                 return phases
-            session = self._last_session()
+            session, role = self._last_session()
             if attempt == 1 and session:
                 self.log("plan doc unparseable — nudging the session that "
                          f"last edited it ({session}): " + "; ".join(errors))
@@ -1789,7 +1812,7 @@ class RunLoop:
                     PLAN_DOC_NUDGE_PROMPT.format(
                         plan_path=self.plan_path,
                         problems="\n".join(f"- {e}" for e in errors)),
-                    self.repo_root, session, "[plan-doc]")
+                    self.repo_root, session, "[plan-doc]", role)
                 continue
             raise Bailout(
                 "plan_doc", question=True,
@@ -1829,11 +1852,13 @@ class RunLoop:
             self.state["known_phases"] = known
             self._save_state()
 
-    def _last_session(self) -> str | None:
+    def _last_session(self) -> tuple[str | None, str | None]:
+        """The last recorded session and its role — the one that last
+        edited the plan, for the plan-doc nudge."""
         for entry in reversed(self.state.get("history", [])):
             if entry.get("session"):
-                return entry["session"]
-        return None
+                return entry["session"], entry.get("role")
+        return None, None
 
     def _resolve_target(self, target: str) -> ResolvedTarget:
         """A `kc project list` component, or a sibling repo path. Raises
@@ -1881,15 +1906,17 @@ class RunLoop:
     # -- session spawning ----------------------------------------------------
 
     def _nudge(self, prompt: str, cwd: Path, session_id: str,
-               label: str) -> None:
+               label: str, role: str | None) -> None:
         """One resume-shot at a session that missed part of its protocol.
         Failures fall through to the caller's re-check; a nudge never
-        raises."""
+        raises. `role` is the resumed session's, so the resume carries the
+        same spawn flags (a differing prefix would miss the cache)."""
         self.log(f"{label} nudging the session (resume)")
         try:
             run_kc_session(
                 prompt=prompt, cwd=str(cwd), timeout=NUDGE_TIMEOUT,
                 resume_session=session_id, extra_env=SPAWN_ENV,
+                flags=spawn_flags(role),
                 progress=lambda line: self._emit(f"    {label} {line}"),
             )
         except subprocess.TimeoutExpired:
@@ -1904,7 +1931,7 @@ class RunLoop:
             return
         label = f"[P{phase_id}] [{role}]" if phase_id else f"[{role}]"
         if session_id:
-            self._nudge(COMMIT_NUDGE_PROMPT, root, session_id, label)
+            self._nudge(COMMIT_NUDGE_PROMPT, root, session_id, label, role)
             if not self._worktree_dirty(root):
                 self.log(f"{label} committed its leftovers on the nudge")
                 return
@@ -1967,6 +1994,7 @@ class RunLoop:
                     effort=effort,
                     resume_session=resume_session,
                     extra_env=SPAWN_ENV,
+                    flags=spawn_flags(role),
                     progress=lambda line: self._emit(f"    {label} {line}"),
                     on_session=_note_session,
                 )
@@ -2013,7 +2041,7 @@ class RunLoop:
             self._nudge(
                 VERDICT_NUDGE_PROMPT.format(verdict_path=verdict_path,
                                             outcomes=outcomes),
-                cwd, session_id, label)
+                cwd, session_id, label, role)
             nudged = True
             verdict = _read_json(verdict_path)
             if _valid(verdict):
@@ -3175,7 +3203,7 @@ class RunLoop:
                 PUSH_NUDGE_PROMPT.format(
                     repos="\n".join(f"- {u}" for u in unpushed),
                     round=nudges, cap=PUSH_NUDGE_CAP),
-                self.repo_root, session, "[test-phase]")
+                self.repo_root, session, "[test-phase]", "test-agent")
 
     def _doc_phase(self) -> None:
         """The doc phase, after test-complete: one writer, diff-based over
@@ -3285,7 +3313,7 @@ class RunLoop:
                 DOC_GATE_NUDGE_PROMPT.format(
                     round=ds["nudges"], cap=GATE_FIX_CAP, gate_log=log_path,
                     branch=branch),
-                self.repo_root, session, "[doc-phase]")
+                self.repo_root, session, "[doc-phase]", "doc-writer")
             self._ensure_committed(None, "doc-writer", session,
                                    self.repo_root)
 

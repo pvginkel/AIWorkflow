@@ -222,6 +222,7 @@ class SpawningLoop(ScriptedLoop):
         super().__init__(slice_dir, script, **kw)
         self.sessions = []
         self.session_prompts = []
+        self.session_flags = []
         self._pending = None
 
     def _spawn(self, role, prompt, cwd, verdict_path, phase_id, round_,
@@ -237,7 +238,7 @@ class SpawningLoop(ScriptedLoop):
 
     def run_kc_session(self, prompt, cwd, timeout, agent=None, model=None,
                        effort=None, resume_session=None, extra_env=None,
-                       progress=None, on_session=None):
+                       flags=None, progress=None, on_session=None):
         role, verdict_path = self._pending
         assert self.script, f"unexpected extra session: {role}"
         step = self.script.pop(0)
@@ -246,6 +247,7 @@ class SpawningLoop(ScriptedLoop):
             f"expected a {want_role} session, driver ran {role}")
         self.sessions.append((role, payload, model, effort))
         self.session_prompts.append((role, prompt))
+        self.session_flags.append((role, list(flags or ())))
         result = run_loop.SessionResult()
         result.session_id = f"sess-{len(self.sessions)}"
         if on_session:
@@ -1300,7 +1302,7 @@ def test_malformed_plan_edit_is_nudged_back_to_its_author():
         r = ScriptedLoop(slice_dir, script, repo_root=repo)
         nudges = []
 
-        def fake_nudge(prompt, cwd, session_id, label):
+        def fake_nudge(prompt, cwd, session_id, label, role):
             nudges.append((session_id, prompt))
             # the nudged session repairs its edit
             text = r.plan_path.read_text().replace(
@@ -2104,7 +2106,7 @@ def test_unpushed_sibling_is_nudged_back_to_the_test_session():
         r.fake_git.unpushed[str(sib)] = "1"
         nudges = []
 
-        def fake_nudge(prompt, cwd, session_id, label):
+        def fake_nudge(prompt, cwd, session_id, label, role):
             nudges.append((session_id, prompt))
             r.fake_git.unpushed.clear()   # the nudged session pushes
 
@@ -2145,7 +2147,7 @@ def test_a_repo_with_no_origin_branch_at_all_counts_as_unpushed():
         r.fake_git.no_origin.add(str(sib))
         prompts = []
 
-        def fake_nudge(prompt, cwd, session_id, label):
+        def fake_nudge(prompt, cwd, session_id, label, role):
             prompts.append(prompt)
             r.fake_git.no_origin.clear()
 
@@ -2244,7 +2246,7 @@ def test_an_unheld_repo_is_still_nudged_beside_a_held_one():
         r.fake_git.unpushed[str(repo)] = "1"
         nudges = []
 
-        def fake_nudge(prompt, cwd, session_id, label):
+        def fake_nudge(prompt, cwd, session_id, label, role):
             nudges.append(prompt)
             r.fake_git.unpushed.pop(str(repo))
 
@@ -2356,7 +2358,7 @@ def test_red_doc_sweep_is_nudged_back_to_the_writer():
         r = ScriptedLoop(slice_dir, script, doc_gates=[False, True],
                          repo_root=repo)
         nudges = []
-        r._nudge = lambda prompt, cwd, sid, label: nudges.append(
+        r._nudge = lambda prompt, cwd, sid, label, role: nudges.append(
             (sid, prompt))
         assert run_to_exit(r) == 0
         assert r.doc_gate_calls == [False, True]
@@ -2655,7 +2657,7 @@ def test_missing_verdict_gets_one_nudge_then_counts_blocked():
         script = [("code-writer", "did some work, forgot the verdict")]
         r = SpawningLoop(slice_dir, script, repo_root=repo)
         nudges = []
-        r._nudge = lambda prompt, cwd, sid, label: nudges.append(prompt)
+        r._nudge = lambda prompt, cwd, sid, label, role: nudges.append(prompt)
         with patched(run_loop, run_kc_session=r.run_kc_session):
             assert run_to_exit(r) == 3
         assert len(nudges) == 1
@@ -2685,6 +2687,33 @@ def test_dispatch_passes_model_and_effort_explicitly():
         assert by_role["consult"] == ("opus", "xhigh")
         assert by_role["doc-writer"] == ("opus", "xhigh")
         assert by_role["test-agent"] == ("sonnet", None)
+
+
+def test_dispatch_trims_the_prefix_per_role():
+    """Every dispatch passes `--disable-slash-commands`; every role but the
+    test-agent — the one that drives CI through the operator's Jenkins MCP
+    server — also passes `--strict-mcp-config`. Nudges carry the resumed
+    role's flags: a prefix that differs from the original's misses the
+    cache."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            ("code-writer", {"outcome": "done", "summary": "b"}),
+            ("code-reviewer", {"outcome": "signoff", "summary": "ok"}),
+            ("consult", {"outcome": "complete", "summary": "d"}),
+            ("test-agent", {"outcome": "clean", "summary": "ok"}),
+            ("doc-writer", {"outcome": "done", "summary": "ok"}),
+        ]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        by_role = dict(r.session_flags)
+        for role in ("code-writer", "code-reviewer", "consult", "doc-writer"):
+            assert by_role[role] == ["--disable-slash-commands",
+                                     "--strict-mcp-config"], role
+        assert by_role["test-agent"] == ["--disable-slash-commands"]
+    assert run_loop.spawn_flags(None) == run_loop.spawn_flags("consult")
+    assert "--strict-mcp-config" not in run_loop.spawn_flags("test-agent")
 
 
 def test_announce_lines_mark_job_starts():
@@ -2745,7 +2774,7 @@ def test_timed_out_session_keeps_a_verdict_it_had_already_written():
         ]
         r = SpawningLoop(slice_dir, script, repo_root=repo)
         nudges = []
-        r._nudge = lambda prompt, cwd, sid, label: nudges.append(prompt)
+        r._nudge = lambda prompt, cwd, sid, label, role: nudges.append(prompt)
         with patched(run_loop, run_kc_session=r.run_kc_session):
             assert run_to_exit(r) == 0
         assert not r.script, "the salvaged round was re-dispatched"
@@ -2956,6 +2985,20 @@ def test_dispatch_namespaces_the_agent_name():
 def test_consults_dispatch_with_no_agent_at_all():
     """Consults are prompt-only: no definition, so no --agent to namespace."""
     assert "--agent" not in _create_args()
+
+
+def test_spawn_flags_reach_create_headless_verbatim():
+    """kc's pass-through options carry claude's own flag names, so the
+    dispatch appends them as given — after the env vars, nothing in
+    between."""
+    args = _create_args(extra_env={"A": "1"},
+                        flags=run_loop.spawn_flags("code-writer"))
+    i = args.index("-e")
+    assert args[i:] == ["-e", "A=1", "--disable-slash-commands",
+                        "--strict-mcp-config"]
+    assert "--strict-mcp-config" not in _create_args(
+        flags=run_loop.spawn_flags("test-agent"))
+    assert "--disable-slash-commands" not in _create_args()
 
 
 # -- dry run ------------------------------------------------------------------

@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-23 — the prefix trim finishes: no skills, and no MCP servers but the test-agent's (v0.9.8)
+
+v0.9.6 took the auto-memory and the bundled skills out of every dispatched session's prefix and
+left ≈ 3.6 k tokens it could not reach — the two plugins' skill descriptions and the operator's
+`~/.claude.json` MCP servers' tool names and instructions — on a KubeCoder ask: `kc session
+create-headless` passing claude flags through. It does now, so every dispatch adds
+`--disable-slash-commands`, and every one but the test-agent's `--strict-mcp-config` (with no
+`--mcp-config`: no MCP server at all). The split is the corpus's: the test-agent drives CI through
+Jenkins (118 calls in 21 of 64 sessions), which the plugin keeps whole rather than by name, because
+the server is the operator's and the plugin names no project's tooling; every other headless role
+reached an MCP server in a handful of its sessions out of ~1,100 — mostly an Explore sub-agent
+reading Jenkins or gitblit, plus the reviewer's pre-close-out-report Trello cards — and invoked a
+skill twice in 809. Nudges resume with the role's own flags, so the prefix the cache holds is the
+one the nudge sends. Measured on one trivial dispatch per role: `ctx1` 24,488 (code-writer),
+25,040 (reviewer), 25,553 (test-agent), 23,966 (doc-writer), 25,494 (consult) — another 2.8–4.4 k
+off v0.9.6, 7–8 k off the corpus's 31–34 k, on every turn; the `dev:` agents all still register,
+the strict roles list no MCP tool, the test-agent lists Jenkins. `SPAWN_FLAGS` / `spawn_flags()`
+in `run_loop.py`; agent-dispatch.md § Spawning carries the why.
+
 ## 2026-08-23 — the writer's dispatch carries the plan, digested for its phase (v0.9.7)
 
 Every code-writer session opened with "read the whole plan" — 15–74 KB of it, the top orientation
