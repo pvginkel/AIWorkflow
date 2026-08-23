@@ -54,17 +54,21 @@ Deliberately not here: any validation beyond "the section heading exists"
 and those smoke counts, dedup, disposition parsing.
 
 Usage:
-    close_out.py init <slice-dir>
-    close_out.py append <slice-dir> --section <name> --headline <text>
+    close_out.py init <slice>
+    close_out.py append <slice> --section <name> --headline <text>
                  --body <text | -> --consequence <text>
                  [--provenance <text>] [--severity <s>]
-    close_out.py note <slice-dir> <id> --by <who> --text <text | ->
+    close_out.py note <slice> <id> --by <who> --text <text | ->
                  [--date YYYY-MM-DD]
-    close_out.py strike <slice-dir> <id> --reason <text> [--by <who>]
-    close_out.py list <slice-dir>
-    close_out.py render <slice-dir>
-    close_out.py stamp <slice-dir>
-    close_out.py counts <slice-dir>
+    close_out.py strike <slice> <id> --reason <text> [--by <who>]
+    close_out.py list <slice>
+    close_out.py render <slice>
+    close_out.py stamp <slice>
+    close_out.py counts <slice>
+
+`<slice>` is the slice directory or its close-out.md — the dispatch names
+the report, so the report's path is what an agent has in hand; a `.md`
+argument resolves to its directory.
 
 Exit codes: 0 ok · 2 usage/precondition error.
 """
@@ -87,8 +91,9 @@ TOOL_PATH = Path(__file__).resolve()
 # that this tool is the only way to write to it. Both loops use it as-is.
 DISPATCH_LINE = """\
 The slice's close-out report is {report}. Write to it only through
-`python3 {tool} append|note|strike` (`list` shows what is there — ids,
-headlines, Consequence lines); never edit the file by hand.\
+`python3 {tool} append|note|strike {report} …` (`list` in place of the verb
+shows what is there — ids, headlines, Consequence lines);
+never edit the file by hand.\
 """
 
 FOLD_OPEN = "<details><summary>struck — body kept for the record</summary>"
@@ -134,6 +139,15 @@ class ReportError(Exception):
 
 def report_path(slice_dir: Path | str) -> Path:
     return Path(slice_dir) / REPORT_NAME
+
+
+def slice_dir_of(arg: Path | str) -> Path:
+    """The slice directory a CLI argument names: itself, or — for the
+    report's own path, which is what every dispatch hands an agent — its
+    parent. Any `.md` resolves to its directory, present or not, so the
+    first call works before `init` too."""
+    path = Path(arg)
+    return path.parent if path.suffix == ".md" else path
 
 
 def dispatch_line(report: Path | str) -> str:
@@ -717,11 +731,13 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
 
+    slice_help = "the slice directory, or its close-out.md"
+
     p = sub.add_parser("init", help="create close-out.md if absent")
-    p.add_argument("slice_dir")
+    p.add_argument("slice", help=slice_help)
 
     p = sub.add_parser("append", help="append one entry; prints its id")
-    p.add_argument("slice_dir")
+    p.add_argument("slice", help=slice_help)
     p.add_argument("--section", required=True, choices=list(SECTIONS))
     p.add_argument("--headline", required=True,
                    help="one line, the claim itself; a Bug names its repo or component")
@@ -735,33 +751,33 @@ def main(argv=None) -> int:
     p.add_argument("--severity", choices=SEVERITIES)
 
     p = sub.add_parser("note", help="add a dated paragraph to one entry's body")
-    p.add_argument("slice_dir")
+    p.add_argument("slice", help=slice_help)
     p.add_argument("id", help="the entry's id, like B3")
     p.add_argument("--by", required=True, help="who notes — role and round")
     p.add_argument("--text", required=True, help="the note, or - for stdin")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
     p = sub.add_parser("strike", help="strike one live entry; prints the heading")
-    p.add_argument("slice_dir")
+    p.add_argument("slice", help=slice_help)
     p.add_argument("id", help="the entry's id, like B3")
     p.add_argument("--reason", required=True,
                    help="why — resolved/refuted names the commit and the re-run")
     p.add_argument("--by", help="who strikes, e.g. `consult 1`")
 
     p = sub.add_parser("list", help="the triage view: ids, headlines, Consequence lines")
-    p.add_argument("slice_dir")
+    p.add_argument("slice", help=slice_help)
 
     p = sub.add_parser("render", help="put the entry sections in reading order, in place")
-    p.add_argument("slice_dir")
+    p.add_argument("slice", help=slice_help)
 
     p = sub.add_parser("stamp", help="stamp the Run: header from state.json")
-    p.add_argument("slice_dir")
+    p.add_argument("slice", help=slice_help)
 
     p = sub.add_parser("counts", help="non-struck entries per section")
-    p.add_argument("slice_dir")
+    p.add_argument("slice", help=slice_help)
 
     args = parser.parse_args(argv)
-    slice_dir = Path(args.slice_dir)
+    slice_dir = slice_dir_of(args.slice)
     if not slice_dir.is_dir():
         print(f"Error: slice directory not found: {slice_dir}", file=sys.stderr)
         return 2

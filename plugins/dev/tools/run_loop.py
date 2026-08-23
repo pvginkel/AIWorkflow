@@ -171,8 +171,19 @@ REVIEW_ROUND_CAP = 5
 # pending generation bails to the operator.
 GENERATION_CAP = 2
 
-# Ephemeral sessions must not pay the 1-hour cache-write premium.
-SPAWN_ENV = {"FORCE_PROMPT_CACHING_5M": "1"}
+# The spawn environment of every dispatched session (plan_loop imports it).
+# Ephemeral sessions must not pay the 1-hour cache-write premium; and the
+# prefix they carry on every turn is trimmed of what no headless role uses —
+# the operator's auto-memory (per-user, per-cwd, never read or written by a
+# dispatched role) and Claude Code's bundled skills (code-review, dataviz,
+# … — never invoked by one). Measured 2026-08-23 at ctx1 −3.3 k tokens per
+# session (≈ 10 % of the 32 k prefix), identical across roles. The plugin's
+# own agents and skills still register.
+SPAWN_ENV = {
+    "FORCE_PROMPT_CACHING_5M": "1",
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+    "CLAUDE_CODE_DISABLE_BUNDLED_SKILLS": "1",
+}
 
 # The devlock wait: poll the flock nonblocking so the wait is loggable and
 # bounded (a session crash releases the lease via fd close, so a very long
@@ -238,6 +249,20 @@ def _read_json(path: Path) -> dict | None:
             return json.load(f)
     except (OSError, json.JSONDecodeError):
         return None
+
+
+# The plugin manifest beside this tools/ directory — the installed clone has
+# the same layout as the repo.
+PLUGIN_MANIFEST = Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
+
+
+def plugin_version() -> str | None:
+    """The version of the plugin this loop runs from, for the state file —
+    so a slice's record says which plugin produced it and runs can be read
+    before/after a change. None when the manifest is unreadable (a loop is
+    never held up by its own bookkeeping)."""
+    manifest = _read_json(PLUGIN_MANIFEST) or {}
+    return manifest.get("version") or None
 
 
 def _protocol_failure_detail(role: str, returncode: int, verdict: dict | None,
@@ -3270,6 +3295,7 @@ class RunLoop:
             self.state = {
                 "slice": self.slice_name,
                 "created_at": _now_iso(),
+                "plugin_version": plugin_version(),
                 "orchestrator": _orchestrator_record(),
                 "run_phase": "phases",
                 "bases": {},

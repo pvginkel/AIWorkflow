@@ -964,9 +964,10 @@ def test_every_dispatch_carries_the_report_path():
         # …and the tool, once per dispatch — the installed close_out.py by
         # absolute path, the subcommands that write, and the ban on hand
         # edits — never restated within a prompt.
+        report = slice_dir / "close-out.md"
         for _, prompt in r.prompts:
             assert prompt.count(CLOSE_OUT_TOOL) == 1, prompt
-            assert f"`python3 {CLOSE_OUT_TOOL} append|note|strike`" in prompt
+            assert f"`python3 {CLOSE_OUT_TOOL} append|note|strike {report} …`" in prompt
             assert "never edit the file by hand" in prompt
         # and no prompt still speaks of cards
         assert not any("card" in p for _, p in r.prompts)

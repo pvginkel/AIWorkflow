@@ -15,7 +15,9 @@ context, retry/fumble and batchable turns, prefix breaks; slice-wide: cost per t
 avoidable share), so the committed run record both prices itself and says what its turns did.
 Slice level:
 
-`slice`, `created_at`, `updated_at`, `orchestrator` (the launching session's id and transcript
+`slice`, `created_at`, `updated_at`, `plugin_version` (the plugin the run was created under, from
+its manifest — what lets runs be read before/after a plugin change; a resume does not rewrite
+it), `orchestrator` (the launching session's id and transcript
 path, or `null` for a hand-run), `run_phase` (`phases` | `consult` | `test` | `docs` | `done` |
 `bailed`), `bases` (base branch per target repo), `slice_base` (the sha each repo stood at before
 the slice — the doc phase's diff base), `known_phases` (the plan's phase ids in document order,

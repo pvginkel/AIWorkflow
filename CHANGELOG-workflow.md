@@ -4,6 +4,34 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-23 — a lighter prefix, and the close-out tool takes the report's path (v0.9.6)
+
+Every dispatched session started at 31–34 k tokens of context, paid again on every turn it took,
+and part of that was listings no headless role has ever used: the operator's auto-memory (per-user,
+per-cwd — in 809 corpus sessions no dispatched role read or wrote a memory file) and Claude Code's
+bundled skills (`code-review`, `dataviz`, … — never invoked by one). Both are now switched off at
+the spawn, through the `SPAWN_ENV` every `create-headless` already carries
+(`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, `CLAUDE_CODE_DISABLE_BUNDLED_SKILLS=1`): measured on one
+trivial dispatch per role, `ctx1` drops by 3.3–4.0 k tokens for every role (code-writer 32,172 →
+28,825; reviewer, test-agent, doc-writer and consult the same), ≈ 10 % of the prefix on every turn.
+The plugin's own agents and skills still register; project knowledge still reaches a role through
+the project's `CLAUDE.md` and procedure docs, which is where the contract always put it. What the
+env vars cannot reach — the MCP tool-name listing and the plugin skills' descriptions, another
+≈ 3.6 k — needs `kc session create-headless` to pass `--strict-mcp-config` and
+`--disable-slash-commands` through, a KubeCoder change recorded in the research plan, not made here.
+
+`close_out.py` now takes the slice directory **or its `close-out.md`** as the positional — any `.md`
+resolves to its directory, before `init` too. Every dispatch names the report's *path*, so that is
+what an agent has in hand, and the corpus showed the result: an agent's first call was
+`list <report>` or `list --file …`, which failed, then `--help`, then the retry — 225 of the
+1,248 fumble-and-retry turns the turn taxonomy counted, on this one interface. The dispatch
+line now shows the invocation whole (`python3 …/close_out.py append|note|strike <report> …`), so the
+first call is the right one.
+
+`state.json` (and `plan_state.json`) record `plugin_version` at creation — the version the run was
+produced under, read from the manifest beside the tools — so runs can be read before/after a
+plugin change without guessing from dates.
+
 ## 2026-08-23 — every run says what its turns did (v0.9.5)
 
 The bill is charged per turn — one model invocation, and because every role sits at 50–145 k of

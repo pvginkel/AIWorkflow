@@ -762,9 +762,20 @@ def test_dispatch_line_names_the_report_and_this_tool_once():
     tool = str(Path(close_out.__file__).resolve())
     assert tool.endswith("/close_out.py")
     assert line.count(tool) == 1
-    assert f"`python3 {tool} append|note|strike`" in line
+    # The invocation is shown whole — verb, then the report's own path — so
+    # the first call an agent makes is the right one (W2: every session used
+    # to guess `list --file …` or `list <report>`, fail, and read --help).
+    assert f"`python3 {tool} append|note|strike /specs/slices/007_x/close-out.md …`" in line
     assert "`list`" in line and "never edit the file by hand" in line
     assert not line.endswith("\n")
+
+
+def test_slice_dir_of_accepts_the_directory_or_the_report():
+    assert close_out.slice_dir_of("/s/007_x") == Path("/s/007_x")
+    assert close_out.slice_dir_of("/s/007_x/close-out.md") == Path("/s/007_x")
+    # Any .md resolves to its directory — present or not, so `list <report>`
+    # works before `init` has created the file.
+    assert close_out.slice_dir_of(Path("/nowhere/008_y/close-out.md")) == Path("/nowhere/008_y")
 
 
 # -- CLI --------------------------------------------------------------------
@@ -782,7 +793,11 @@ def run_cli(*argv):
 def test_cli_init_append_counts_stamp():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
-        code, out, _ = run_cli("init", str(slice_dir))
+        # The report's path works wherever the directory does (W2) — here
+        # before the file exists, which is when an agent's first `list` lands.
+        code, _, err = run_cli("list", str(slice_dir / "close-out.md"))
+        assert code == 2 and "does not exist" in err and "init" in err
+        code, out, _ = run_cli("init", str(slice_dir / "close-out.md"))
         assert code == 0 and out.startswith("created ")
         code, out, _ = run_cli("init", str(slice_dir))
         assert code == 0 and out.startswith("exists ")

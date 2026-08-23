@@ -10,7 +10,8 @@ from a run is carded per finding — the loops' only tracker output is one card 
 at the report. `${CLAUDE_PLUGIN_ROOT}/tools/close_out.py` creates the file and is the one pen
 that writes to it — every author's entries (`append`), notes (`note`) and strikes (`strike`) —
 lists it for triage, renders it into reading order, stamps the run header, and counts entries;
-both loops import it, and every dispatch names it beside the report's path. The shape is
+both loops import it, and every dispatch names it beside the report's path — which the tool takes
+as its positional, the slice directory or the report itself, so the first call works. The shape is
 mechanical, the content is judgment: no agent edits the file by hand — the `Disposition:` line,
 the operator's, is the one thing written into it in words rather than through the tool.
 

@@ -24,7 +24,12 @@ validation.
   repo: the definitions resolve from the plugin regardless of cwd, and the dispatch prompt carries
   the sibling's path; the *driver's* git and gate operations root at the `Target:` repo.
 - **`-e FORCE_PROMPT_CACHING_5M=1`** on every `create-headless`: ephemeral sessions must not pay
-  the 1-hour cache-write premium.
+  the 1-hour cache-write premium. **`-e CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`** and
+  **`-e CLAUDE_CODE_DISABLE_BUNDLED_SKILLS=1`** beside it: a dispatched role never reads or writes
+  the operator's auto-memory and never invokes a bundled skill, so neither listing rides in its
+  prefix (≈ 3 k tokens of every turn). Project knowledge reaches a role through the project's
+  `CLAUDE.md` and procedure docs, never through the operator's memory. The set lives once, as
+  `SPAWN_ENV` in `run_loop.py`.
 - Session output goes to the loop's log file, never stdout (`-v` echoes it) — progress must not
   land in a calling session's context. The turn's response text is read back (`send`'s
   `--response-file`) solely to detect the account session-limit notice below; outcomes come only

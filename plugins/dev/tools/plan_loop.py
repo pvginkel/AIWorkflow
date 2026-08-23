@@ -80,6 +80,7 @@ from run_loop import (  # noqa: E402
     _read_json,
     _transcript_path,
     parse_plan,
+    plugin_version,
     run_kc_session,
 )
 
@@ -525,6 +526,7 @@ class PlanLoop:
             self.state = {
                 "slice": self.slice_name,
                 "created_at": _now_iso(),
+                "plugin_version": plugin_version(),
                 "orchestrator": _orchestrator_record(),
                 "phase": "reviewing" if self._has_phases() else "writing",
                 "writer_rounds": 0,
