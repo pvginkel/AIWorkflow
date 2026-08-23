@@ -69,7 +69,16 @@ Medians unless stated; "headless" = every role except the two interactive orches
 - **Turns.** Writers issue **1.07 tool calls per turn** (8 % of turns batch ≥ 2); reviewers 1.43,
   doc-writer 1.18, Explore 1.82. Median writer session: 37 turns, 38 calls. Orientation (turns
   before the first edit): median 14 (p25 8, p75 20, max 64) = **38 % of a writer session's cost**
-  (p25–p75 30–46 %); context at first edit 77 k. 136/184 writers run the gate before editing.
+  (p25–p75 30–46 %); context at first edit 77 k. **164 of 184** writers run the gate at some point
+  and **12 of 181** run one before their first edit (corrected 2026-08-23: the "136/184 … before
+  editing" this line first carried matches no cut of the corpus).
+- **Turns, by what they do** (added 2026-08-23 from T1's taxonomy, §13 of
+  [context-profile-2026-08-23.md](context-profile-2026-08-23.md)): `orient-read` is the largest
+  class of turn — 37 % of all headless turns and 33 % of their cost, 28 % of the writer's own
+  turns. `edit` is 16 %, `gate` 4 %, `commit` 3 %. The 1.07 tool calls per turn above understate
+  batching, because a writer chains reads inside one Bash command: counting those, a writer turn
+  that reads at all does **1.67** reads (reviewers 2.5, Explore 3.0) — real batching, but well
+  short of what the read-only runs would allow.
 - **Re-reads.** Within a session files are rarely read twice (ratio ≈ 1.0). Across sessions the
   same few files recur: plan.md is Read by 36 sessions (+49 `cat plan.md` in orientation),
   `environment_service.py` by 35 (75 reads), `store.py` by 32, slice.md by 31, the persisted

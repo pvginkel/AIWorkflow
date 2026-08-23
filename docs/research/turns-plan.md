@@ -35,12 +35,12 @@ clone) and are read on the next 2–3 slices through T2's readout before the nex
 
 ## Checklist
 
-- [ ] **T1** turn taxonomy — profiler extension, regenerated profile, the avoidable-turn number
+- [x] **T1** turn taxonomy — profiler extension, regenerated profile, the avoidable-turn number — **read 2026-08-23**, below
 - [ ] **T2** the context readout per run — `slice_cost.py --write-state` block + table (plugin)
 - [ ] **T3a** trim the fixed prefix — env vars now; `kc` flags if the env vars fall short
 - [ ] **T3b** frictions — W2 (`close_out.py` takes the report path), then T1's top fumbles
 - [ ] **T4** phase-scoped orientation digest in the writer dispatch — phase-level A/B
-- [ ] **T5** batched reads — why the existing rule is not followed; dispatch-line A/B
+- [ ] **T5** batched reads — why the existing rule is not followed; dispatch-line A/B (T1: below its bar — folds into T4)
 - [ ] **T6** bounded doc phase — per-repo units + consistency pass; two-slice A/B
 - [ ] **T7** Explore on Sonnet + the sub-agent return contract — operator call
 
@@ -86,6 +86,18 @@ carries weight; `orient-read` the largest class with plan reads inside it → T4
 T2 + T3 only and stop the line there. **Cost** S (half a day). **Files** `tools/context_profile.py`
 (`profile()` :389–420, trajectory :474–477, a new `_bd_turn_classes` printer beside `_bd_tool_volume`
 :891–930 and `_bd_orientation` :933–958), a new `context-profile-<date>.md`, interventions-2.md §1.
+
+**Read (2026-08-23).** Done: §13 of [context-profile-2026-08-23.md](context-profile-2026-08-23.md),
+same 32-slice corpus. `orient-read` is the largest class — 36.6 % of headless turns, 32.9 % of their
+cost (writers 28 %, reviewers 36 %, Explore 84 %; the doc-writer's largest is `edit` at 29 %, the
+test-agent's is `other` at 32 %) — against `edit` 16 %, `gate` 4 %, `commit` 3 %. Avoidable =
+`retry + fumble` 1,393 + `batchable(strict)` 2,162 = **3,555 turns, 12.6 %, $305** (median slice 95
+of 755 turns); the perfect-batching upper bound is 10,174 turns ($874). Against the bars: T3b
+**4.5 %** (below 5), T5 **8.1 %** (below 15), T4's bar met. So **T4 proceeds**; **T5 folds into T4**
+instead of its own A/B — hypothesis (a) holds, writers do chain reads inside one Bash command
+(1.67 per reading turn), so the 1.07 tools/turn overstated the gap; **T3b keeps its S for W2 alone**
+(188 of the 1,248 fumble-and-retry turns), the rest being wrong-path guesses no hook can fix. Full
+log in [status.md](status.md) § T1.
 
 ## T2 — The context readout per run (memo P4.1; plugin)
 

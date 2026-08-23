@@ -1039,3 +1039,52 @@ anchor, refuted, bail-outs, appended phases, test rounds, doc stage, `close_out.
 
 - 2026-08-22 — catalogued: today's 16-slice table was a one-off script over the I1/I2 fields
   (I1/I2 made the fields, not the read). Not built.
+
+---
+
+# Turn-economics steps
+
+Ids **T1–T7** come from [turns-plan.md](turns-plan.md) rather than interventions.md — the same
+template, one chapter per step of the turn-economics follow-through.
+
+## T1 — Turn taxonomy
+
+**Status:** accepted
+**Cost:** S · **Rank:** — · **Depends on:** —
+
+**Summary.** `context_profile.py` places every turn in exactly one of thirteen classes (`dispatch`,
+`edit`, `gate`, `commit`, `record`, `retry`, `fumble`, `wait`, `git-inspect`, `orient-read`,
+`work-read`, `think`, `other`), counts the read ops chained inside one Bash command, and marks the
+turns a perfect batcher would fold away — so the profile can say what a slice's ≈ 880 turns do,
+cost-weighted, and how many of them are avoidable. Research tooling; no plugin change.
+
+**Decides it.** The order and go/no-go of T3–T6, by the size of each class against the bars
+turns-plan.md set: `fumble + retry` ≥ 5 % of writer turns, `orient-read` the largest class,
+`batchable(strict)` ≥ 15 % of writer turns.
+
+**Log**
+
+- 2026-08-23 — built and read over the frozen 32-slice corpus (809 sessions, 28,176 turns, $2,420):
+  §13 of [context-profile-2026-08-23.md](context-profile-2026-08-23.md). **`orient-read` is the
+  largest class** — 36.6 % of headless turns and 32.9 % of their cost; 28 % of the writer's own
+  turns, 36 % of the reviewer's, 84 % of Explore's. The exceptions are the doc-writer, whose
+  largest class is `edit` (29 %), and the test-agent, whose largest is `other` (32 %: `cexec`,
+  `curl` and `kubectl` live checks). Work itself is small — `edit` 16 % of turns, `gate` 4 %,
+  `commit` 3 %.
+- 2026-08-23 — **avoidable = 3,555 turns, 12.6 %, $305** over the 32 slices (median slice: 95 of
+  755 turns, ≈ $8 of $60) = `retry + fumble` 1,393 + `batchable(strict)` 2,162. The perfect-batching
+  upper bound is 10,174 turns (36.1 %, $874), so the strict count keeps 21 % of it. Against the
+  plan's bars: `fumble + retry` **4.5 %** of writer turns (below 5), `batchable(strict)` **8.1 %**
+  (below 15), `orient-read` the largest class (bar met). Read: **T4 proceeds** and is where the
+  money is; **T5 folds in behind it** rather than earning its own A/B — writers already chain
+  reads inside one Bash command (1.67 reads per reading turn, reviewers 2.5, Explore 3.0), so the
+  memo's "1.07 tool calls per turn" overstated the serial-read gap; **T3b stays worth its S** on
+  one item, W2, which alone is 188 of the 1,248 fumble-and-retry turns — the rest are wrong-path
+  guesses (`grep` 87, `ls` 73, `sed` 29, `cat` 19, `Read` 20), which no hook can fix, plus
+  `cexec iac` 51 and `track_build.py` 32.
+- 2026-08-23 — two corrections to the memo's §1 fall out of the taxonomy. Bash edits were invisible
+  to the profiler (WRITE_TOOLS only), so orientation was being measured against a first `Edit` that
+  43 of 184 code-writers never make; counting heredoc rewrites, `sed -i` and redirections, 181 of
+  184 edit and the median writer's first edit is turn 13, not 15. And "136/184 writers run the gate
+  before editing" matches no cut of the corpus: 164 of 184 run a gate at all, 12 of 181 run one
+  before their first edit. Both fixed in interventions-2.md §1.
