@@ -40,8 +40,9 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   mirrors the non-arXiv sources beside them. `docs/research/tools/context_profile.py <slice-dir>...`
   replays a slice's session transcripts into per-turn context profiles (research tooling, not
   plugin — but the replay and the turn classes it reads are the plugin's `turn_profile.py`, which
-  it imports; the aggregate analyses are its own). Run 1's corpus is frozen under
-  `docs/research/archive/run-1/`.
+  it imports; the aggregate analyses are its own); `t4_readout.py {writers,slices,plan-reads,all}`
+  beside it reads slices run on a new plugin version against that corpus (the turns-plan T3/T4
+  before/after). Run 1's corpus is frozen under `docs/research/archive/run-1/`.
 
 ## Architecture
 
