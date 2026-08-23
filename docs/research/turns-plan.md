@@ -41,6 +41,11 @@ clone) and are read on the next 2–3 slices through T2's readout before the nex
 - [x] **T2** the context readout per run — `slice_cost.py --write-state` block + table (plugin) — **shipped 2026-08-23 (0.9.5)**
 - [x] **T3a** trim the fixed prefix — **shipped 2026-08-23 (0.9.6)**, the env-var half (−3.3–4.0 k
   tokens on every turn); the `kc`-flag half (≈ 3.6 k more) is a KubeCoder ask, recorded below
+- [ ] **T3a-kc** *(parked, 2026-08-23: KubeCoder is working the ask)* — when `kc session
+  create-headless` passes `--disable-slash-commands` / `--strict-mcp-config` / `--mcp-config`
+  through, `run_kc_session` sends them per role (every role the first; every role but the
+  test-agent the second), one trivial dispatch per role confirms `ctx1` ≈ 24 k against 0.9.6's
+  28.8 k, status.md § T3 logs it; its own plugin version
 - [x] **T3b** frictions — reduced by T1 to W2 alone, **shipped 2026-08-23 (0.9.6)**; the hook
   programme is dead (the other fumbles are wrong-path guesses)
 - [ ] **T4** phase-scoped orientation digest in the writer dispatch — before/after against the
