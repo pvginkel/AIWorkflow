@@ -1160,3 +1160,60 @@ probes.
   from dates. The unreached ≈ 3.6 k (`--disable-slash-commands` −3,233 less the bundled 1.2 k;
   `--strict-mcp-config` −1,612, measured on `claude -p` directly) needs `kc` to pass claude flags
   through — written up in turns-plan.md § T3a as a KubeCoder ask, the operator's to file.
+
+## T4 — The phase digest in the writer's dispatch
+
+**Status:** validating
+**Cost:** S–M · **Rank:** — · **Depends on:** T1, T2
+
+**Summary.** Every executor round's prompt — first round and fix rounds, each a fresh session —
+carries `build_phase_digest()`'s rendering of what the driver already holds, rebuilt per round:
+the slice's intent paragraph and the plan's title, `## Requirements / rulings` and `## Not in
+scope` verbatim, this phase's section whole, earlier phases' done-records (from their `**Done`
+opener — not their phase text), later phases' headings and targets, every acceptance criterion,
+and `git diff --stat` of what earlier phases changed per touched repo. "Read the whole plan" is
+gone from the prompt and the register; the plan stays the file the writer edits and opens for what
+the digest points at. The reviewer's dispatch is unchanged. Memo P3.1; the plan's one measured
+trial so far, before/after against the corpus rather than arms (turns-plan.md § T4 Read).
+
+**Decides it.** T2's readout on the next 2–3 slices against the corpus slices in their size band:
+writer orientation turns before the first edit (corpus median 14), plan.md reads per writer
+session (≈ 1 → 0 is the mechanism working), `ctx_first` (expected +≈ 8 k — the digest's size —
+not a regression), $/phase; and the quality instruments of § Protocol — r1 blocking-finding
+rate, refuted findings (baseline 0), gate-red, rework share (2–19 %, median ≈ 7 %), abstention
+verdicts (baseline below), appended phases. Kill on any instrument outside its baseline range on
+two consecutive slices, or cost not below baseline.
+
+**Log**
+
+- 2026-08-23 — the digest's content settled against the plans themselves. Done-records open
+  `**Done (P<id>).**` in 296 of 296 done phases across both spec repos (an unwritten convention,
+  now plan-template.md's rule), so "earlier done-records verbatim" needs no format change — the
+  digest reads from that opener. The `## Requirements / rulings` section goes in, which neither
+  the memo's list nor the plan's carried: it is the plan's intent and the mid-run rulings' home,
+  and a digest that pointed at it would send the writer back to the whole file — the trial would
+  then test a digest riding beside the plan read, not replacing it.
+- 2026-08-23 — size, over every phase of every corpus plan (296): **30 KB ≈ 7.7 k tokens at the
+  median phase**, p90 57 KB, max 110 KB (140's P12), against the plan's 3–5 k estimate and a 45 KB
+  median plan (the digest is 74 % of the plan by bytes). Composition: rulings + not-in-scope ≈ 40 %;
+  earlier done-records 2.5 KB each at the median and **31 lines against the ~25-line cap — 77 %
+  of records exceed it**, max 101 lines; the phase's own section 2.3 KB; acceptance criteria 5 KB
+  per slice (max 20 KB); the intent paragraph 260 bytes. Without the rulings: 18 KB ≈ 4.6 k — so
+  the estimate was the miss, not the rulings. The digest does not truncate a record; if the
+  readout shows records dominating it, the cap is the lever, a separate step.
+- 2026-08-23 — shipped (plugin 0.9.7): `build_phase_digest` + `plan_sections` / `slice_intent` /
+  `done_record` in run_loop.py, appended by `spawn_executor` to every executor round (the three
+  executor prompts name it; `EXECUTOR_PROMPT` opens on the phase instead of the file); three
+  tests; code-writer.md's opening and rule 11, run-loop.md § The per-phase round, plan-template.md's
+  done-record bullet. Files touched per repo from `state.json`'s `slice_base` — `..<merge base>`
+  for the target repo, `..<base branch>` for the others — elided past 40 rows.
+- 2026-08-23 — the pre-check, the abstention baseline (turns-plan.md § T4 Pre-check): over the
+  corpus's 179 `code_review_r*.md` files, the generous pattern set (cannot/could not/unable to
+  determine|verify|confirm|…, unverifiable, insufficient …, no way to tell) hits 10 times, and
+  read in context **none is an abstention** — nine are the reviewer's idiom "the gate / the test /
+  the reader cannot see X" used as evidence *inside* a confident finding, one is soft. A broader
+  sweep of every bare `cannot` / `could not` (182 occurrences, ≈ 44 epistemic-shaped ones read)
+  adds three soft cases: **0 hard, 4 soft abstentions, in 4 of 32 slices** — each a failed
+  concrete falsification stated plainly and still followed by a graded verdict. Baseline for the
+  T4 readout: a hard abstention on any T4 slice is a signal; the soft count is ≈ 0.1 per slice.
+  Evidence: [abstention-baseline-2026-08-23.md](abstention-baseline-2026-08-23.md).

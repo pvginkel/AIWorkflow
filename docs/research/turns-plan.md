@@ -48,8 +48,8 @@ clone) and are read on the next 2–3 slices through T2's readout before the nex
   28.8 k, status.md § T3 logs it; its own plugin version
 - [x] **T3b** frictions — reduced by T1 to W2 alone, **shipped 2026-08-23 (0.9.6)**; the hook
   programme is dead (the other fumbles are wrong-path guesses)
-- [ ] **T4** phase-scoped orientation digest in the writer dispatch — before/after against the
-  corpus (no A/B; decided 2026-08-23, § T4 Read)
+- [x] **T4** phase-scoped orientation digest in the writer dispatch — **shipped 2026-08-23
+  (0.9.7)**; read before/after against the corpus on the next 2–3 slices (§ T4 Shipped)
 - [ ] **T5** batched reads — why the existing rule is not followed; dispatch-line A/B (T1: below its bar — folds into T4)
 - [ ] **T6** bounded doc phase — per-repo units + consistency pass; two-slice A/B
 - [ ] **T7** Explore on a pinned model + the sub-agent return contract — **parked on size**; the knobs are recorded below
@@ -281,6 +281,45 @@ already in the baseline the T4 slices are read against if 0.9.6 runs a slice fir
 `spawn_executor` :2220–2233, `parse_plan`/`Phase` :350–397), `test_run_loop.py`, code-writer.md
 :6–8, `plugins/dev/docs/run-loop.md` § The per-phase round (:56–58), `agent-dispatch.md`.
 
+**Shipped (2026-08-23, plugin 0.9.7).** `build_phase_digest()` in run_loop.py, appended by
+`spawn_executor` to every executor round's prompt — the first round and the fix rounds alike, each
+a fresh session, rebuilt per round because rulings and done-records land mid-run; the reviewer's
+dispatch untouched. The prompt opens on the phase and says the plan is digested below, the file
+is for editing and for what the digest points at; code-writer.md, run-loop.md § The per-phase
+round and plan-template.md follow. Two departures from the list above, both worth naming:
+
+- **The rulings are in.** The digest carries `## Requirements / rulings` and `## Not in scope`
+  verbatim, which neither the memo's list nor this plan's had. The prompt says "the plan for
+  intent" and that section is where the operator's intent lives — the mid-run rulings the fix
+  round is told to read included — so a digest that pointed at it would send every careful writer
+  back to the whole file, and the trial would not test what it claims to (the digest *replacing*
+  the plan read, not riding beside it). Conditional inclusion by size was rejected as a behaviour
+  nobody could predict.
+- **Size, measured rather than estimated.** Over every phase of every plan in both spec repos
+  (296 phases): **30 KB ≈ 7.7 k tokens at the median phase**, p90 57 KB, max 110 KB (slice 140's
+  P12) — against the 3–5 k estimate and a 45 KB median plan (the digest is 74 % of the plan by
+  bytes at the median). The rulings are ≈ 40 % of it; most of the rest is earlier phases'
+  done-records, 2.5 KB and **31 lines each at the median — over the ~25-line cap in 77 % of
+  records** (max 101 lines); the phase's own section is 2.3 KB, the criteria 5 KB per slice,
+  the intent paragraph 260 bytes. Without the rulings the median would be 18 KB ≈ 4.6 k, still
+  over the estimate for late phases — the estimate was the miss, not the rulings. What the digest
+  replaces is the plan read (11 k tokens median, 18 k on 170) plus the `verification.json` and
+  `slice.md` reads and the git inspection; what it costs is ≈ 8 k on `ctx_first`, which § Read
+  already expected to rise. The done-record cap is not enforced and the digest does not truncate a
+  settlement — if the readout shows the digest dominated by records, the cap is the lever, a
+  separate step.
+
+The done-record opener `**Done (P<id>).**` is now in plan-template.md — universal before it was
+written down (296 of 296 done phases) and what the digest reads a record from; a record without
+one contributes its whole section. Files touched: per repo in `state.json`'s `slice_base`, `git
+diff --stat <slice base>..<merge base>` for the target repo (what this branch was cut from) and
+`..<base branch>` for the others, elided past 40 rows. **Read** on the next 2–3 slices, against
+the corpus slices in their size band: orientation turns before the first edit (median 14), plan.md
+reads per writer session (≈ 1 → 0 is the mechanism working), `ctx_first` (+≈ 8 k expected),
+$/phase, and the quality instruments in § Protocol. **Pre-check done:** 0 hard and 4 soft
+abstention verdicts over the corpus's 179 review files (4 of 32 slices) — the baseline is
+≈ 0; status.md § T4 has the method, [abstention-baseline-2026-08-23.md](abstention-baseline-2026-08-23.md) the evidence.
+
 ## T5 — Batched reads (memo P1.1): the rule exists and is not followed
 
 **What.** code-writer.md rule 11 (:56–59), doc-writer.md rule 7 (:34–35) and code-reviewer.md rule
@@ -454,6 +493,9 @@ Memo §6 has the reasons.
    the flags are a KubeCoder ask written up under T3a, the operator's to file.
 3. **T4 digest content.** Earlier done-records verbatim (bounded at ~25 lines each, no format
    change — recommended) or a machine-readable "settled" marker in `plan-template.md`.
+   **Resolved 2026-08-23:** verbatim, read from the `**Done (…)**` opener every record already
+   used — written into plan-template.md as the rule, so no plan changed shape. The bound did not
+   hold (31 lines median, 77 % over the cap); see § T4 Shipped.
 4. **T4 arm assignment.** Per-phase alternation within a slice (recommended; fastest to power) or a
    per-slice flag. **Resolved 2026-08-23:** neither — before/after against the corpus (§ T4 Read).
 5. **T6 unit.** Per repo (no project contract change — recommended) or per doc surface from a
