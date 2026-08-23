@@ -45,76 +45,45 @@ Stdlib-only like the rest of tools/, though nothing here ships in the plugin.
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import re
 import statistics
 import sys
 from collections import Counter, defaultdict
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
-_spec = importlib.util.spec_from_file_location(
-    "slice_cost", REPO / "plugins" / "dev" / "tools" / "slice_cost.py")
-slice_cost = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(slice_cost)  # type: ignore[union-attr]
+sys.path.insert(0, str(REPO / "plugins" / "dev" / "tools"))
 
+import slice_cost  # noqa: E402
+import turn_profile  # noqa: E402
+
+# The replay, the tool-call classes and the per-turn taxonomy live in the
+# plugin (turn_profile.py), because slice_cost.py reports them per run; the
+# prices live in slice_cost.py. This tool is what reads them across slices.
 PRICES = slice_cost.PRICES
 CACHE_WRITE_MULT = slice_cost.CACHE_WRITE_MULT
 CACHE_READ_MULT = slice_cost.CACHE_READ_MULT
-TTL_S = 300           # the loop forces the 5-minute cache TTL
-BREAK_SLACK = 2_000   # tokens of cache_read shortfall tolerated before we call a break
-WRITE_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+TTL_S = turn_profile.TTL_S
+BREAK_SLACK = turn_profile.BREAK_SLACK
+WRITE_TOOLS = turn_profile.WRITE_TOOLS
+TURN_CLASSES = turn_profile.TURN_CLASSES
+replay = turn_profile.replay
+tool_class = turn_profile.tool_class
+bash_read_paths = turn_profile.bash_read_paths
+bash_segments = turn_profile.bash_segments
+_seg_op = turn_profile._seg_op      # naming an unclassified op in §13 needs both
+_seg_prog = turn_profile._seg_prog
 GATE_MARKERS = ("kc project test", "kc project lint", "kc project build",
                 "uv run --with pytest", "pytest", "go test", "npm test",
                 "ruff check", "golangci-lint")
 
-
-# ---------------------------------------------------------------------------
-# Tool-call classification. Every field these add to a profile is new; nothing
-# the tool already printed or wrote is computed from them.
-# ---------------------------------------------------------------------------
-
-BASH_CLASSES: list[tuple[re.Pattern, str]] = [
-    (re.compile(r"git (diff|show|log|status|blame)"), "git-inspect"),
-    (re.compile(r"git (add|commit|rebase|merge|checkout|push|fetch|pull|stash|cherry)"),
-     "git-mutate"),
-    (re.compile(r"kc project (test|lint|build)|pytest|go test|ruff|golangci|npm test"
-                r"|uv run --with pytest"), "gate"),
-    (re.compile(r"\bkc (session|env|project)\b"), "kc-other"),
-    (re.compile(r"^(cat|sed -n|head|tail|less)\b|\bcat\b|\bsed -n\b"), "cat/sed(read)"),
-    (re.compile(r"\b(grep|rg|ag)\b"), "grep"),
-    (re.compile(r"\b(ls|find|tree|wc|stat)\b"), "ls/find"),
-    (re.compile(r"close_out\.py"), "close_out.py"),
-    (re.compile(r"python3? "), "python-other"),
-    (re.compile(r"\bcexec\b"), "cexec-other"),
-]
 SIZED_CLASSES = ("Read", "cat/sed(read)", "grep", "gate")   # classes whose per-call sizes we keep
-READ_SUFFIXES = ("py", "go", "md", "ts", "yaml", "json")
-BASH_READ_RE = re.compile(r"\bcat\b|\bsed -n\b")
-BASH_PATH_RE = re.compile(r"[\w./@~+-]+\.(?:" + "|".join(READ_SUFFIXES) + r")\b")
 SLICE_PATH_RE = re.compile(r"/slices/(?:completed/|backlog/)?(?=[^/]*[0-9])[^/]+/")
 PHASE_PATH_RE = re.compile(r"/phases/P[^/]*/")
 TOOL_RESULT_RE = re.compile(r"tool-results/.*$")
-
-
-def tool_class(name: str, cmd: str) -> str:
-    """One tool call's class: Bash by what it runs, every other tool by its name."""
-    if name != "Bash":
-        return name
-    for rx, cls in BASH_CLASSES:
-        if rx.search(cmd):
-            return cls
-    return "other"
-
-
-def bash_read_paths(cmd: str) -> list[str]:
-    """The source-ish paths a `cat` / `sed -n` command read."""
-    if not cmd or not BASH_READ_RE.search(cmd):
-        return []
-    return [m.group(0) for m in BASH_PATH_RE.finditer(cmd)]
 
 
 def generalise_path(path: str) -> str:
@@ -162,570 +131,33 @@ def _orient_key(rec: dict) -> str:
     return rec["name"]
 
 
-# ---------------------------------------------------------------------------
-# Per-turn classification (T1 of docs/research/turns-plan.md). The bill is
-# charged per turn — one model invocation, ≈ $0.086 whatever the role — so the
-# question this answers is what a slice's ≈ 880 turns actually *do*, and how
-# many of them a change to the loop could remove. Everything below reads the
-# turn dicts replay() already builds; the sections above are untouched.
-#
-# A turn is one op-set: every tool call it made, and — because a headless
-# session is told to work through Bash — every `;`/`&&`/`||`-separated step
-# inside each Bash command. Heredoc bodies are data, not shell, so they are
-# stripped before a command is split (a python script that rewrites a file is
-# one edit, not five steps).
-# ---------------------------------------------------------------------------
-
-HEREDOC_RE = re.compile(r"<<-?\s*[\"']?(\w+)[\"']?[^\n]*\n.*?^\s*\1\s*$", re.S | re.M)
-HEREDOC_OPEN_RE = re.compile(r"<<-?\s*[\"']?\w+[\"']?[^\n]*\n")
-ENV_PREFIX_RE = re.compile(r"^(?:\w+=\S*\s+)+")
-WRAPPER_RE = re.compile(r"^(?:sudo|time|nohup|command|exec|timeout\s+\S+)\s+")
-BLOCK_PREFIX_RE = re.compile(r"^(?:do|then|else|elif|fi|done|!)\s+|^[({})\\\s]+")
-
-# op labels, in the vocabulary the turn classes are built from
-READ_PROGS = {"cat", "head", "tail", "less", "more", "nl", "sed -n", "grep", "rg",
-              "ag", "find", "ls", "tree", "wc", "stat", "du", "jq", "diff", "column"}
-GIT_READ = {"git diff", "git show", "git log", "git status", "git blame",
-            "git branch", "git ls-files", "git rev-parse", "git remote", "git tag"}
-NOOP_PROGS = {"echo", "cd", "true", "false", "export", "set", "mkdir", "printf",
-              "source", "unset", "pwd", "which", "type", "date", "sort", "uniq",
-              "cut", "awk", "tr", "xargs", "seq", "test", "[",
-              "for", "while", "do", "done", "if", "then", "else", "elif", "fi",
-              "case", "esac", "read", "sleep"}
-GATE_SEG_RE = re.compile(r"kc project (test|lint|build)|\bpytest\b|\bgo test\b|\bruff\b"
-                         r"|golangci|npm (test|run (test|lint|build))|uv run --with pytest"
-                         r"|\bmypy\b|\btsc\b|ansible-lint|molecule")
-GIT_MUTATE_RE = re.compile(r"\bgit\s+(?:-C\s+\S+\s+)?"
-                           r"(add|commit|rebase|merge|checkout|switch|push|stash|cherry-pick|"
-                           r"reset|revert|restore|am)\b")
-WAIT_RE = re.compile(r"\bsleep\s+\d|kubectl\s+wait\b|\btrack_build(\.py)?\b|\bkill\s+-0\b"
-                     r"|kubectl\s+[^|;]*\bget\b[^|;]*\s-w\b|\bwatch\s+-n")
-HELP_RE = re.compile(r"--help\b|(?:\.py|\bkc|\bcexec|\bkaniko|\btrack_build)\S*\s+"
-                     r"(?:[a-z-]+\s+)*-h(?:\s|$)")
-FAIL_RE = re.compile(r"^usage:|^error:|^\s*usage:\s|\berror: (unrecognized|invalid|"
-                     r"argument|the following)|command not found|No such file or directory"
-                     r"|not recognized|invalid choice|unrecognized (option|arguments)"
-                     r"|Traceback \(most recent call last\)|Permission denied", re.M)
-CLOSE_OUT_WRITE_RE = re.compile(r"close_out\.py\s+(?:\S+\s+)*?(append|note|strike|init|stamp)\b")
-KC_READ_RE = re.compile(r"\bkc\s+(?:project|env|session|config)\s+"
-                        r"(info|list|describe|status|show|get|logs)\b")
-CLOSE_OUT_READ_RE = re.compile(r"close_out\.py\s+(?:\S+\s+)*?(list|render|counts)\b")
-DISPATCH_TOOLS = {"Agent", "Task"}
-READ_TOOLS = {"Read", "Grep", "Glob", "NotebookRead", "WebFetch", "WebSearch"}
-
-# an edit done through the shell — invisible to WRITE_TOOLS
-SHELL_EDIT_RES_BASE = [
-    re.compile(r"\bsed\s+-i\b"),
-    re.compile(r"\btee\b(?!\s+/dev/null)"),
-    re.compile(r"\bgit\s+apply\b"),
-    re.compile(r"\bpatch\s+-p\d"),
-]
-BODY_EDIT_RES = [                      # a heredoc'd python script that writes
-    re.compile(r"\.write_text\s*\(|\.write_bytes\s*\("),
-    re.compile(r"\bopen\s*\([^)]*['\"][wa]\+?['\"]"),
-    re.compile(r"\.writelines\s*\(|json\.dump\s*\(|yaml\.(safe_)?dump\s*\("),
-    re.compile(r"shutil\.(copy|move|copyfile)"),
-]
-REDIRECT_RE = re.compile(
-    r"(?<![0-9<>&-])>>?\s*(?!/dev/null|&)((?=[\w./~$-]*[./])[\w./~$-]+)")
-PY_PATH_RE = re.compile(r"(?:Path|open)\s*\(\s*[\"']([^\"']+)[\"']")
-RECORD_NAME_RE = re.compile(r"(^|/)plan\.md$|result(_r\d+)?\.json$|(^|/)close-out\.md$")
-RESULT_PATH_CAP = 400      # paths kept per tool result, for the batching test
-FAIL_HEAD = 600            # chars of a result inspected for a failure marker
-RESULT_SCAN_CHARS = 40_000  # chars of a result scanned for the paths it revealed
-
-
-SHELL_EDIT_RES = SHELL_EDIT_RES_BASE + [REDIRECT_RE]
-
-
-def _strip_heredocs(cmd: str) -> str:
-    """The shell part of a command: heredoc bodies replaced by a placeholder."""
-    out = HEREDOC_RE.sub(" <<BODY ", cmd)
-    m = HEREDOC_OPEN_RE.search(out)       # unterminated (truncated transcript)
-    return out[:m.start()] + " <<BODY " if m else out
-
-
-def bash_segments(cmd: str) -> list[str]:
-    """One Bash command -> its shell steps, split on `;` `&&` `||` and newlines
-    but not inside quotes (a close-out `--headline "…"` spans lines) and not
-    inside a heredoc. Pipes are not steps: `grep x | head` is one read,
-    `cat a; cat b` is two."""
-    s = _strip_heredocs(cmd)
-    segs: list[str] = []
-    buf: list[str] = []
-    quote = ""
-    i = 0
-    while i < len(s):
-        ch = s[i]
-        if quote:
-            buf.append(ch)
-            if ch == quote:
-                quote = ""
-            i += 1
-        elif ch in "'\"":
-            quote = ch
-            buf.append(ch)
-            i += 1
-        elif ch == "\\" and i + 1 < len(s):
-            buf.append(s[i:i + 2])
-            i += 2
-        elif s.startswith("&&", i) or s.startswith("||", i):
-            segs.append("".join(buf))
-            buf = []
-            i += 2
-        elif ch in ";\n":
-            segs.append("".join(buf))
-            buf = []
-            i += 1
-        else:
-            buf.append(ch)
-            i += 1
-    segs.append("".join(buf))
-    return [x.strip() for x in segs if x.strip()]
-
-
-def _seg_prog(seg: str) -> str:
-    """The program a shell step runs, normalised (`sed -n` and `git <sub>` are
-    their own programs — one reads, the other may not)."""
-    s = BLOCK_PREFIX_RE.sub("", seg.strip())
-    s = ENV_PREFIX_RE.sub("", s)
-    s = WRAPPER_RE.sub("", s)
-    m = re.match(r"(\$\w+|[\w./~-]+)", s)
-    if not m:
-        return ""
-    prog = m.group(1).rsplit("/", 1)[-1]
-    if prog == "sed":
-        return "sed -n" if re.search(r"\bsed\s+-n\b", s) else "sed"
-    if prog == "git":
-        m2 = re.match(r"git\s+(?:-C\s+\S+\s+)?([a-z-]+)", s)
-        return f"git {m2.group(1)}" if m2 else "git"
-    return prog
-
-
-def _seg_op(seg: str) -> str:
-    """One shell step -> its op class. Tested as text, not by program name, so
-    `cexec python sh -c 'uv run pytest'` is a gate and not a `cexec`."""
-    if GATE_SEG_RE.search(seg):
-        return "gate"
-    if WAIT_RE.search(seg):
-        return "wait"
-    if any(rx.search(seg) for rx in SHELL_EDIT_RES):
-        return "edit"
-    if GIT_MUTATE_RE.search(seg):
-        return "git-mutate"
-    if CLOSE_OUT_WRITE_RE.search(seg):
-        return "record"
-    if CLOSE_OUT_READ_RE.search(seg):
-        return "read"
-    if KC_READ_RE.search(seg):
-        return "read"
-    prog = _seg_prog(seg)
-    if prog in GIT_READ:
-        return "git-read"
-    if prog in READ_PROGS:
-        return "read"
-    if prog in NOOP_PROGS or not prog:
-        return "noop"      # a shell fragment: a closing brace, a stray quote
-    return "other"
-
-
-def bash_ops(cmd: str) -> list[str]:
-    """Every op one Bash call performed. The heredoc body is inspected once,
-    for the python-writes-a-file case the shell part cannot see."""
-    ops = [_seg_op(s) for s in bash_segments(cmd)]
-    if "edit" not in ops and any(rx.search(cmd) for rx in BODY_EDIT_RES):
-        ops.append("edit")
-    return ops
-
-
-def _bash_edit_targets(cmd: str) -> list[str]:
-    """What a shell edit wrote, as far as the command reveals it."""
-    shell = _strip_heredocs(cmd)
-    out = [m.group(1) for m in REDIRECT_RE.finditer(shell)]
-    m = re.search(r"\bsed\s+-i\b[^;&|]*?([\w./~-]+\.\w+)\s*$", shell)
-    if m:
-        out.append(m.group(1))
-    m = re.search(r"\btee\s+(?:-a\s+)?([\w./~-]+)", shell)
-    if m:
-        out.append(m.group(1))
-    if any(rx.search(cmd) for rx in BODY_EDIT_RES):
-        out += PY_PATH_RE.findall(cmd)
-    return out
-
-
-def _is_record_path(path: str) -> bool:
-    return bool(RECORD_NAME_RE.search(path.strip().rstrip("'\"")))
-
-
-def bash_read_count(cmd: str) -> int:
-    return sum(1 for op in bash_ops(cmd) if op in ("read", "git-read"))
-
-
-def turn_ops(t: dict) -> tuple[list[str], list[str], int]:
-    """(ops, write targets, read count) for one turn, over all its tool calls."""
-    ops: list[str] = []
-    targets: list[str] = []
-    reads = 0
-    for rec in t["tools"]:
-        name = rec["name"]
-        if name in DISPATCH_TOOLS:
-            ops.append("dispatch")
-        elif name in WRITE_TOOLS:
-            ops.append("edit")
-            targets.append(rec["key"])
-        elif name in READ_TOOLS:
-            ops.append("read")
-            reads += 1
-        elif name == "Bash":
-            cmd = rec.get("cmd") or ""
-            bops = bash_ops(cmd)
-            ops += bops
-            reads += sum(1 for op in bops if op in ("read", "git-read"))
-            if "edit" in bops:
-                targets += _bash_edit_targets(cmd)
-        else:
-            ops.append("other")
-    return ops, targets, reads
-
-
-def _read_targets(t: dict) -> tuple[list[str], bool]:
-    """The concrete files a read turn opened, and whether every read it did
-    resolved to one (a `grep -rn pat .` or an `ls` does not)."""
-    paths: list[str] = []
-    resolved = True
-    for rec in t["tools"]:
-        if rec["name"] == "Read":
-            paths.append(str(Path(rec["key"])))
-        elif rec["name"] in ("Grep", "Glob"):
-            resolved = False
-        elif rec["name"] == "Bash":
-            cmd = rec.get("cmd") or ""
-            got = bash_read_paths(cmd)
-            paths += [str(Path(p)) for p in got]
-            n_reads = bash_read_count(cmd)
-            if len(got) < n_reads:
-                resolved = False
-    return paths, (resolved and bool(paths))
-
-
-def _failed(rec: dict) -> bool:
-    return bool(rec.get("is_error")) or bool(FAIL_RE.search(rec.get("res_head", "")))
-
-
-def _sigs(rec: dict) -> set[str]:
-    """What a retry has to repeat. A compound command's programs are separate
-    signatures — `close_out.py … ; git status` is retried by re-running
-    close_out.py alone — and a python invocation signs as its script, since
-    `python3 <plugin>/close_out.py` is close_out.py and not python3."""
-    if rec["name"] != "Bash":
-        return {f"{rec['name']}:{rec['key']}"}
-    out = set()
-    for seg in bash_segments(rec.get("cmd") or ""):
-        prog = _seg_prog(seg)
-        if prog.startswith("python"):
-            m = re.search(r"([\w.-]+\.py)\b", seg)
-            prog = m.group(1) if m else prog
-        if prog and prog not in NOOP_PROGS:
-            out.add(prog)
-    return out
-
-
-def _fumble_key(rec: dict) -> str:
-    """A fumble, generalised to the interface that was fumbled."""
-    if rec["name"] != "Bash":
-        return rec["name"]
-    cmd = " ".join((rec.get("cmd") or "").split())
-    cmd = re.sub(r"\S*/([\w.-]+\.py)", r"\1", cmd)
-    segs = [x.strip() for x in re.split(r"[;&|]+", cmd) if x.strip()]
-    seg = (next((x for x in segs if HELP_RE.search(x)), None)
-           or next((x for x in segs if _seg_prog(x) and _seg_prog(x) not in NOOP_PROGS),
-                   segs[0] if segs else cmd))
-    seg = ENV_PREFIX_RE.sub("", WRAPPER_RE.sub("", seg))
-    m = re.match(r"(?:python3?\s+)?([\w.-]+)\s*([a-z][\w-]*)?", seg)
-    if not m:
-        return seg[:40]
-    return f"{m.group(1)} {m.group(2) or ''}".strip()
-
-
-def classify_turns(turns: list[dict], first_edit_turn: int | None) -> list[dict]:
-    """One class and one read count per turn.
-
-    Classes, first match in this order when a turn mixes calls: dispatch · edit ·
-    gate · commit · record · retry · fumble · wait · git-inspect · orient-read ·
-    work-read · think · other. `edit` and `record` are the same op split by what
-    it wrote (a done-record or verdict is a record; a turn that writes both is an
-    edit), and the order means retry/fumble are lower bounds — a retried edit or
-    a re-run gate is counted as the work it did.
-    """
-    out: list[dict] = []
-    known: set[str] = set()          # paths in context, lagged one turn
-    pending: list[set[str]] = []     # result paths not yet 'known'
-    for i, t in enumerate(turns):
-        ops, targets, reads = turn_ops(t)
-        opset = set(ops)
-        record_write = ("record" in opset
-                        or (targets and all(_is_record_path(p) for p in targets)))
-        sigs_before: set[str] = set()
-        for pt in turns[max(0, i - 2):i]:
-            for r in pt["tools"]:
-                if _failed(r):
-                    sigs_before |= _sigs(r)
-        is_retry = bool(sigs_before) and any(_sigs(r) & sigs_before for r in t["tools"])
-        is_fumble = any(HELP_RE.search(r.get("cmd") or "") for r in t["tools"]) or \
-            any(_failed(r) for r in t["tools"])
-
-        if not t["tools"]:
-            cls = "think"
-        elif "dispatch" in opset:
-            cls = "dispatch"
-        elif "edit" in opset and not record_write:
-            cls = "edit"
-        elif "gate" in opset:
-            cls = "gate"
-        elif "git-mutate" in opset:
-            cls = "commit"
-        elif record_write:
-            cls = "record"
-        elif is_retry:
-            cls = "retry"
-        elif is_fumble:
-            cls = "fumble"
-        elif "wait" in opset:
-            cls = "wait"
-        elif opset <= {"git-read", "noop"} and "git-read" in opset:
-            cls = "git-inspect"
-        elif opset <= {"read", "git-read", "noop"} and opset & {"read", "git-read"}:
-            cls = ("orient-read" if first_edit_turn is None or t["i"] < first_edit_turn
-                   else "work-read")
-        else:
-            cls = "other"
-
-        rec = {"i": t["i"], "cls": cls, "reads": reads}
-        if cls in ("retry", "fumble"):
-            bad = next((r for r in t["tools"]
-                        if HELP_RE.search(r.get("cmd") or "") or _failed(r)), None)
-            rec["fumble_key"] = _fumble_key(bad) if bad else ""
-        if cls in ("orient-read", "work-read", "git-inspect"):
-            paths, resolved = _read_targets(t)
-            rec["independent"] = bool(resolved and all(p in known for p in paths))
-        out.append(rec)
-
-        # context lags by one turn: what turn i's result revealed is only
-        # 'known' from turn i+2, so a read at i+1 that used it is not independent
-        known.update(str(Path(p)) for p in (targets or []))
-        for rr in t["tools"]:
-            known.update(str(Path(p)) for p in bash_read_paths(rr.get("cmd") or ""))
-            if rr["name"] in WRITE_TOOLS or rr["name"] == "Read":
-                known.add(str(Path(rr["key"])))
-        if pending:
-            known.update(pending.pop(0))
-        pending.append(t.get("res_paths") or set())
-
-    # batchable runs: consecutive read-only turns. Perfect batching would fold
-    # each run into its first turn.
-    read_only = {"orient-read", "work-read", "git-inspect"}
-    run: list[dict] = []
-    for rec in out + [{"cls": "-"}]:
-        if rec["cls"] in read_only:
-            run.append(rec)
-            continue
-        for k, r in enumerate(run):
-            r["batchable"] = k > 0
-            r["batchable_strict"] = k > 0 and r.get("independent", False)
-        run = []
-    return out
-
-def _ts(s):
-    try:
-        return datetime.fromisoformat(str(s).replace("Z", "+00:00")).astimezone(UTC)
-    except (ValueError, TypeError, AttributeError):
-        return None
-
-
-def _tier_cost(model: str, input_=0, cr=0, cw=0, out=0) -> dict[str, float]:
-    base = PRICES.get(model)
-    if not base:
-        return {"input": 0.0, "cache_read": 0.0, "cache_write": 0.0, "output": 0.0}
-    return {
-        "input": input_ / 1e6 * base["input"],
-        "cache_read": cr / 1e6 * base["input"] * CACHE_READ_MULT,
-        "cache_write": cw / 1e6 * base["input"] * CACHE_WRITE_MULT,
-        "output": out / 1e6 * base["output"],
-    }
-
-
-def _result_text(block) -> str:
-    c = block.get("content")
-    if isinstance(c, str):
-        return c
-    if isinstance(c, list):
-        return "".join(x.get("text", "") for x in c if isinstance(x, dict))
-    return ""
-
-
-def _result_chars(block) -> int:
-    return len(_result_text(block))
-
-
-def _tool_key(name: str, inp: dict) -> str:
-    """A short, comparable description of one tool call (what was read/run)."""
-    if name in ("Read", "Edit", "Write", "MultiEdit", "NotebookEdit"):
-        return inp.get("file_path") or inp.get("notebook_path") or "?"
-    if name == "Bash":
-        return (inp.get("command") or "")[:160]
-    if name in ("Grep", "Glob"):
-        return f"{inp.get('pattern', '')} in {inp.get('path', '.')}"
-    if name in ("Agent", "Task"):
-        return f"{inp.get('subagent_type', '?')}: {(inp.get('description') or '')[:80]}"
-    return ""
-
-
-def replay(path: Path) -> dict:
-    """One transcript -> ordered turns with usage, tool calls and their results."""
-    turns: list[dict] = []
-    by_id: dict[str, dict] = {}
-    pending: dict[str, dict] = {}   # tool_use_id -> turn (awaiting its result)
-    user_prompts = 0
-    injected_chars = 0               # text blocks in user messages that are not tool results
-    with path.open(errors="replace") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                o = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            t = o.get("type")
-            msg = o.get("message") or {}
-            if t == "assistant":
-                mid = msg.get("id")
-                usage = msg.get("usage") or {}
-                if mid not in by_id:
-                    if not usage:
-                        continue
-                    cc = usage.get("cache_creation") or {}
-                    turn = {
-                        "i": len(turns) + 1,
-                        "ts": _ts(o.get("timestamp")),
-                        "model": msg.get("model", "unknown"),
-                        "effort": o.get("effort"),
-                        "stop": msg.get("stop_reason"),
-                        "input": usage.get("input_tokens", 0) or 0,
-                        "cr": usage.get("cache_read_input_tokens", 0) or 0,
-                        "cw": usage.get("cache_creation_input_tokens", 0) or 0,
-                        "cw5m": cc.get("ephemeral_5m_input_tokens", 0) or 0,
-                        "cw1h": cc.get("ephemeral_1h_input_tokens", 0) or 0,
-                        "out": usage.get("output_tokens", 0) or 0,
-                        "think": ((usage.get("output_tokens_details") or {})
-                                  .get("thinking_tokens", 0) or 0),
-                        "tools": [],       # [{name, key, id, result_chars, is_error}]
-                        "text_chars": 0,
-                        "result_chars": 0,  # tool results that followed this turn
-                        "res_paths": set(),  # paths those results put into context
-                    }
-                    turn["ctx"] = turn["input"] + turn["cr"] + turn["cw"]
-                    by_id[mid] = turn
-                    turns.append(turn)
-                turn = by_id[mid]
-                for blk in msg.get("content") or []:
-                    if not isinstance(blk, dict):
-                        continue
-                    bt = blk.get("type")
-                    if bt == "tool_use":
-                        tid = blk.get("id")
-                        if any(x["id"] == tid for x in turn["tools"]):
-                            continue
-                        name = blk.get("name", "?")
-                        inp = blk.get("input") or {}
-                        rec = {"name": name, "key": _tool_key(name, inp), "id": tid,
-                               "cmd": (inp.get("command") or "") if name == "Bash" else "",
-                               "result_chars": 0, "is_error": False, "res_head": ""}
-                        turn["tools"].append(rec)
-                        if tid:
-                            pending[tid] = rec
-                    elif bt == "text":
-                        turn["text_chars"] += len(blk.get("text", ""))
-            elif t == "user":
-                c = msg.get("content")
-                if isinstance(c, str):
-                    user_prompts += 1
-                    continue
-                for blk in c or []:
-                    if not isinstance(blk, dict):
-                        continue
-                    if blk.get("type") == "tool_result":
-                        txt = _result_text(blk)
-                        n = len(txt)
-                        rec = pending.pop(blk.get("tool_use_id"), None)
-                        if rec is not None:
-                            rec["result_chars"] += n
-                            rec["is_error"] = bool(blk.get("is_error"))
-                            if not rec["res_head"]:
-                                rec["res_head"] = txt[:FAIL_HEAD]
-                        # attribute to the last turn (results follow their turn)
-                        if turns:
-                            turns[-1]["result_chars"] += n
-                            seen = turns[-1]["res_paths"]
-                            if len(seen) < RESULT_PATH_CAP:
-                                for m in BASH_PATH_RE.finditer(txt[:RESULT_SCAN_CHARS]):
-                                    seen.add(str(Path(m.group(0))))
-                                    if len(seen) >= RESULT_PATH_CAP:
-                                        break
-                    elif blk.get("type") == "text":
-                        txt = blk.get("text", "")
-                        if "<system-reminder>" in txt or "<attachment" in txt:
-                            injected_chars += len(txt)
-                        else:
-                            user_prompts += 1
-    return {"turns": turns, "user_prompts": user_prompts,
-            "injected_chars": injected_chars}
-
 
 def profile(conv, rep: dict) -> dict:
+    """One session's profile: turn_profile's per-session metrics (the block
+    slice_cost.py reports per run) plus the analyses only this tool reads —
+    what the accumulated context is made of, the thinking-retention probe, the
+    tool and read mix, the orientation calls, the full trajectory."""
     turns = rep["turns"]
     n = len(turns)
     if n == 0:
         return {}
-    model = Counter(t["model"] for t in turns).most_common(1)[0][0]
-    effort = next((t["effort"] for t in turns if t.get("effort")), None)
-
-    # --- cost by tier, by turn ---
-    tier = Counter()
-    per_turn_cost = []
-    for t in turns:
-        c = _tier_cost(t["model"], t["input"], t["cr"], t["cw"], t["out"])
-        tier.update(c)
-        per_turn_cost.append(sum(c.values()))
+    analysis = turn_profile.analyse(rep, slice_cost.cost_for)
+    m = analysis["metrics"]
+    tcls = analysis["classes"]
+    per_turn_cost = analysis["turn_cost"]
+    breaks = analysis["breaks"]
     total = sum(per_turn_cost)
+    model = m["model"]
+
+    # --- the last quartile of turns ---
     q = max(1, n // 4)
     last_q_cost = sum(per_turn_cost[-q:])
 
     # --- context trajectory ---
     ctx = [t["ctx"] for t in turns]
-    ctx_first = ctx[0]
     growth = [ctx[i] - ctx[i - 1] for i in range(1, n)]
     processed = sum(ctx)                    # tokens the model was shown, summed over turns
-    fixed_processed = ctx_first * n         # the fixed prefix, shown every turn
-
-    # --- prefix breaks and gaps ---
-    breaks = []
-    gaps_over_ttl = 0
-    for i in range(1, n):
-        prev, cur = turns[i - 1], turns[i]
-        expected = prev["cr"] + prev["cw"]
-        shortfall = expected - cur["cr"]
-        gap = (cur["ts"] - prev["ts"]).total_seconds() if cur["ts"] and prev["ts"] else 0.0
-        if gap > TTL_S:
-            gaps_over_ttl += 1
-        if shortfall > BREAK_SLACK:
-            base = PRICES.get(cur["model"], {}).get("input", 0.0)
-            breaks.append({
-                "turn": cur["i"], "shortfall": shortfall, "gap_s": round(gap),
-                "extra_cost": shortfall / 1e6 * base * (CACHE_WRITE_MULT - CACHE_READ_MULT),
-            })
-    break_extra = sum(b["extra_cost"] for b in breaks)
-    breaks_after_gap = sum(1 for b in breaks if b["gap_s"] > TTL_S)
+    fixed_processed = ctx[0] * n            # the fixed prefix, shown every turn
 
     # --- what accumulated context is made of ---
     # own output (text + tool_use json + thinking, if retained) vs tool results.
@@ -774,7 +206,7 @@ def profile(conv, rep: dict) -> dict:
     subagents = 0
     subagent_chars = 0
     persisted_reads = 0
-    first_write_turn = None
+    seen_write = False
     classes: dict[str, list[int]] = defaultdict(lambda: [0, 0])   # cls -> [calls, chars]
     class_sizes: dict[str, list[int]] = defaultdict(list)         # per-call result sizes
     orient_calls: list[str] = []      # every tool call before the first edit
@@ -791,14 +223,14 @@ def profile(conv, rep: dict) -> dict:
                 read_chars[rec["key"]] += rec["result_chars"]
                 if "/tool-results/" in rec["key"]:
                     persisted_reads += 1
-            if rec["name"] == "Bash" and any(m in rec["key"] for m in GATE_MARKERS):
+            if rec["name"] == "Bash" and any(m_ in rec["key"] for m_ in GATE_MARKERS):
                 gate_runs += 1
                 gate_chars += rec["result_chars"]
             if rec["name"] in ("Agent", "Task"):
                 subagents += 1
                 subagent_chars += rec["result_chars"]
-            if rec["name"] in WRITE_TOOLS and first_write_turn is None:
-                first_write_turn = t["i"]
+            if rec["name"] in WRITE_TOOLS:
+                seen_write = True
             cls = tool_class(rec["name"], rec.get("cmd", ""))
             classes[cls][0] += 1
             classes[cls][1] += rec["result_chars"]
@@ -809,7 +241,7 @@ def profile(conv, rep: dict) -> dict:
             read_paths.update(str(Path(p)) for p in paths)
             if seen_agent:
                 reads_after_dispatch.extend(paths)
-            if first_write_turn is None:
+            if not seen_write:
                 orient_calls.append(_orient_key(rec))
                 orient_gate = orient_gate or cls == "gate"
             if rec["name"] in ("Agent", "Task"):
@@ -817,24 +249,7 @@ def profile(conv, rep: dict) -> dict:
     unique_files = len(reads)
     total_reads = sum(reads.values())
 
-    # --- turn taxonomy (T1) --------------------------------------------------
-    # first_write_turn above sees only WRITE_TOOLS; first_edit_turn also sees
-    # the edits done through Bash (a heredoc'd python rewrite, `sed -i`, a
-    # redirection), which is most of them for some roles.
-    first_edit_turn = None
-    for t in turns:
-        ops, targets, _ = turn_ops(t)
-        if "edit" in ops and not (targets and all(_is_record_path(x) for x in targets)):
-            first_edit_turn = t["i"]
-            break
-    tcls = classify_turns(turns, first_edit_turn)
-    cls_turns: Counter = Counter(r["cls"] for r in tcls)
-    cls_cost: dict[str, float] = defaultdict(float)
-    for r, c in zip(tcls, per_turn_cost, strict=True):
-        cls_cost[r["cls"]] += c
-    reads_per_turn = [r["reads"] for r in tcls]
-    batchable = sum(1 for r in tcls if r.get("batchable"))
-    batchable_strict = sum(1 for r in tcls if r.get("batchable_strict"))
+    # --- turn taxonomy: what only this tool reads ---
     fumble_keys = Counter(r["fumble_key"] for r in tcls if r.get("fumble_key"))
     other_ops: Counter = Counter()
     for t, r in zip(turns, tcls, strict=True):
@@ -847,30 +262,16 @@ def profile(conv, rep: dict) -> dict:
                 for seg in bash_segments(rec.get("cmd") or ""):
                     if _seg_op(seg) == "other":
                         other_ops["$ " + (_seg_prog(seg) or "?")] += 1
-    avoidable = cls_turns["retry"] + cls_turns["fumble"] + batchable_strict
 
-    orient_turns = (first_write_turn - 1) if first_write_turn else n
-    orient_cost = sum(per_turn_cost[:orient_turns])
-    orient_ctx = ctx[orient_turns - 1] if orient_turns >= 1 else ctx_first
-
+    fw = m["first_write_turn"]
     dur = conv.duration_s()
     return {
         "slice": None,  # filled by caller
         "session": conv.session, "role": conv.role, "phase": conv.phase,
         "round": conv.round, "kind": conv.kind, "loop": conv.loop,
-        "model": model, "effort": effort, "turns": n,
-        "duration_s": round(dur), "user_prompts": rep["user_prompts"],
-        "tok": {"input": sum(t["input"] for t in turns),
-                "cache_read": sum(t["cr"] for t in turns),
-                "cache_write": sum(t["cw"] for t in turns),
-                "cache_write_1h": sum(t["cw1h"] for t in turns),
-                "output": sum(t["out"] for t in turns),
-                "thinking": sum(t["think"] for t in turns)},
-        "cost": round(total, 4),
-        "cost_tier": {k: round(v, 4) for k, v in tier.items()},
+        "duration_s": round(dur),
+        **m,
         "cost_last_quartile_share": round(last_q_cost / total, 3) if total else 0,
-        "ctx_first": ctx_first, "ctx_max": max(ctx), "ctx_last": ctx[-1],
-        "ctx_mean": round(statistics.fmean(ctx)),
         "growth_median": round(statistics.median(growth)) if growth else 0,
         "growth_mean": round(statistics.fmean(growth)) if growth else 0,
         "processed_tokens": processed,
@@ -880,12 +281,7 @@ def profile(conv, rep: dict) -> dict:
         "thinking_share_of_processed": round(think_processed / processed, 3) if processed else 0,
         "thinking_read_cost": round(think_read_cost, 4),
         "thinking_read_cost_share": round(think_read_cost / total, 3) if total else 0,
-        "breaks": len(breaks), "breaks_after_gap": breaks_after_gap,
-        "break_tokens": sum(b["shortfall"] for b in breaks),
-        "break_extra_cost": round(break_extra, 4),
-        "break_extra_share": round(break_extra / total, 3) if total else 0,
         "break_detail": breaks[:12],
-        "gaps_over_ttl": gaps_over_ttl,
         "retention_probe": probe[:20],
         "tools": dict(tool_counts),
         "tool_result_chars": dict(tool_chars),
@@ -896,9 +292,6 @@ def profile(conv, rep: dict) -> dict:
         "persisted_output_reads": persisted_reads,
         "gate_runs": gate_runs, "gate_result_chars": gate_chars,
         "subagents": subagents, "subagent_result_chars": subagent_chars,
-        "first_write_turn": first_write_turn, "orient_turns": orient_turns,
-        "orient_cost": round(orient_cost, 4), "orient_ctx": orient_ctx,
-        "orient_cost_share": round(orient_cost / total, 3) if total else 0,
         "injected_chars": rep["injected_chars"],
         "trajectory": [{"i": t["i"], "ctx": t["ctx"], "cr": t["cr"], "cw": t["cw"],
                         "out": t["out"], "think": t["think"],
@@ -906,36 +299,21 @@ def profile(conv, rep: dict) -> dict:
                         "cls": c["cls"], "reads": c["reads"],
                         "tools": [r["name"] for r in t["tools"]]}
                        for t, c in zip(turns, tcls, strict=True)],
-        # --- turn taxonomy (T1) ---
-        "first_edit_turn": first_edit_turn,
-        "orient_turns_edit": (first_edit_turn - 1) if first_edit_turn else n,
-        "turn_class_turns": dict(cls_turns),
-        "turn_class_cost": {k: round(v, 4) for k, v in cls_cost.items()},
-        "read_ops": sum(reads_per_turn),
-        "reads_per_turn": round(sum(reads_per_turn) / n, 2),
-        "reads_per_read_turn": (round(sum(r for r in reads_per_turn if r) /
-                                      sum(1 for r in reads_per_turn if r), 2)
-                                if any(reads_per_turn) else 0),
-        "tools_per_turn": round(sum(len(t["tools"]) for t in turns) / n, 2),
-        "retry_turns": cls_turns["retry"], "fumble_turns": cls_turns["fumble"],
-        "batchable_turns": batchable, "batchable_strict_turns": batchable_strict,
-        "avoidable_turns": avoidable,
         "fumble_keys": dict(fumble_keys),
         "other_ops": dict(other_ops),
         "files_read": dict(reads),
         # --- fields only --breakdown reads ---
         "parent_session": conv.parent.session if conv.parent else None,
-        "tok_by_model": {m: dict(v) for m, v in tok_by_model.items()},
+        "tok_by_model": {mm: dict(v) for mm, v in tok_by_model.items()},
         "tool_classes": {c: list(v) for c, v in classes.items()},
         "class_sizes": dict(class_sizes),
         "orient_calls": orient_calls,
         "orient_gate": orient_gate,
-        "ctx_at_first_write": ctx[first_write_turn - 1] if first_write_turn else None,
+        "ctx_at_first_write": ctx[fw - 1] if fw else None,
         "files_read_chars": dict(read_chars),
         "read_paths": sorted(read_paths),
         "reads_after_dispatch": reads_after_dispatch,
     }
-
 
 # ---------------------------------------------------------------------------
 # What-if models: computable from the trajectories alone, before any trial.

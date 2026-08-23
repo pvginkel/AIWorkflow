@@ -62,8 +62,8 @@ push and bails `unpushed` over the ruling it was told to honour. Then relaunch w
 ## Job 4 — close out (exit 0)
 
 1. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/slice_cost.py <slice_dir> --write-state` — it appends
-   the slice's derived cost ratios to `state.json` as `cost`, so the committed run record prices
-   itself. Report its warnings if any; never hand-edit the numbers.
+   the slice's derived cost ratios and its per-role turn profile to `state.json` as `cost`, so the
+   committed run record prices itself. Report its warnings if any; never hand-edit the numbers.
 2. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py stamp <slice_dir>` — it re-stamps the
    close-out report's `Run:` header from `state.json`, now with the cost line — and
    `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py counts <slice_dir>` for the entry counts

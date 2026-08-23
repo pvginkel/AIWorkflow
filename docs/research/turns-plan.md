@@ -36,7 +36,7 @@ clone) and are read on the next 2–3 slices through T2's readout before the nex
 ## Checklist
 
 - [x] **T1** turn taxonomy — profiler extension, regenerated profile, the avoidable-turn number — **read 2026-08-23**, below
-- [ ] **T2** the context readout per run — `slice_cost.py --write-state` block + table (plugin)
+- [x] **T2** the context readout per run — `slice_cost.py --write-state` block + table (plugin) — **shipped 2026-08-23 (0.9.5)**
 - [ ] **T3a** trim the fixed prefix — env vars now; `kc` flags if the env vars fall short
 - [ ] **T3b** frictions — W2 (`close_out.py` takes the report path), then T1's top fumbles
 - [ ] **T4** phase-scoped orientation digest in the writer dispatch — phase-level A/B
@@ -119,6 +119,17 @@ close_out.py :641–683) — operator's call, §Open decisions 1.
 is the instrument, not a trial. **Cost** S–M. **Files** `slice_cost.py`, new `turn_profile.py` +
 test, `close_out.py` + `plugins/dev/docs/close-out.md` if the header changes, `context_profile.py`
 (import), `plugin.json` bump, changelog.
+
+**Shipped (2026-08-23, plugin 0.9.5).** As planned, with the recommended answer to § Open decisions
+1: table + `state.json` block, the close-out `Run:` header untouched. `turn_profile.py` carries the
+replay, the tool-call classes and the per-turn taxonomy (21 tests, fake transcripts); `slice_cost.py`
+aggregates them per role into a `turns` table and `cost.turns`; `context_profile.py` imports the
+plugin module and regenerates the 32-slice profile byte-identical, so the lift moved no number. Not
+in the plan and worth naming: the per-role figures are medians of per-session values
+(`orient_turns`, `ctx_first`, `ctx_mean`) and sums of the rest, and `avoidable $` is priced at the
+slice's own cost per turn — the same definition §13.5 of the profile uses, so a run's block and the
+corpus table are comparable. What the plugin does **not** carry is the fumble-key histogram and the
+aggregate breakdowns; those stay in research. Log in [status.md](status.md) § T2.
 
 ## T3 — The free set (no quality exposure; ship together as one version)
 

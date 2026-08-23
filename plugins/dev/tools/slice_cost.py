@@ -22,6 +22,14 @@ Missing transcript files (cleaned ~/.claude, another machine) and unknown
 model ids are reported as warnings, never silently priced at zero without
 notice.
 
+The report also carries a `turns` block: every transcript is replayed a
+second time by turn_profile.py, which puts each turn in one class (what it
+did) and counts the read ops chained inside one Bash command, and the block
+aggregates that per role — sessions, turns, tools and reads per turn,
+orientation turns, context, the retry/fumble and batchable turns, prefix
+breaks. The bill is charged per turn, so this is the readout a change to the
+loop is measured on, run by run.
+
 The report carries a `derived` block — the close-out ratios read across
 slices as trend lines: planner share (the plan loop's own sessions),
 research share (the plan loop's sub-agents), rework share (run-loop spend
@@ -38,10 +46,15 @@ Exit codes: 0 report printed · 2 no state file found in the slice dir.
 
 import argparse
 import json
+import statistics
 import sys
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import turn_profile  # noqa: E402
 
 # USD per 1,000,000 tokens — public Anthropic sticker prices. The loop's
 # dispatches force the 5-minute cache TTL (SPAWN_ENV in run_loop.py), so the
@@ -285,6 +298,72 @@ def derive(convs: list[Conv], total_cost: float) -> dict:
     }
 
 
+def turn_stats(convs: list[Conv]) -> dict:
+    """The turn profile of the whole slice, per role.
+
+    Every conversation's transcript is replayed a second time (turn_profile.py)
+    and its turns classified by what they did. Per role: sessions, turns, tool
+    calls and read ops per turn (reads count the ones chained inside one Bash
+    command, which is where the batching actually happens), the median
+    orientation span — turns before the session's first edit — the median first
+    and mean context and the largest one reached, the retry-and-fumble turns,
+    the turns a batched read would have folded away, and the prefix breaks.
+
+    `avoidable` is `retry + fumble + batchable(strict)` priced at the slice's
+    own cost per turn: the turns a fix to the tooling or a batched read would
+    remove. It is a floor — it counts no orientation turn a better dispatch
+    would remove, and no session a split would bound.
+    """
+    per_role: dict[str, list[dict]] = defaultdict(list)
+    for c in convs:
+        try:
+            rep = turn_profile.replay(c.transcript)
+        except OSError:
+            continue
+        analysis = turn_profile.analyse(rep, cost_for)
+        if analysis:
+            per_role[c.role].append(analysis["metrics"])
+
+    def med(xs: list[int]) -> int:
+        return round(statistics.median(xs)) if xs else 0
+
+    roles: dict[str, dict] = {}
+    for role, ms in per_role.items():
+        turns = sum(m["turns"] for m in ms)
+        roles[role] = {
+            "n": len(ms),
+            "turns": turns,
+            "cost_usd": round(sum(m["cost"] for m in ms), 2),
+            "tools_per_turn": round(sum(m["tool_calls"] for m in ms) / turns, 2),
+            "reads_per_turn": round(sum(m["read_ops"] for m in ms) / turns, 2),
+            "orient_turns": med([m["orient_turns_edit"] for m in ms]),
+            "ctx_first": med([m["ctx_first"] for m in ms]),
+            "ctx_mean": med([m["ctx_mean"] for m in ms]),
+            "ctx_max": max(m["ctx_max"] for m in ms),
+            "retry_fumble_turns": sum(m["retry_turns"] + m["fumble_turns"] for m in ms),
+            "batchable_strict_turns": sum(m["batchable_strict_turns"] for m in ms),
+            "breaks": sum(m["breaks"] for m in ms),
+        }
+
+    turns = sum(r["turns"] for r in roles.values())
+    cost = sum(r["cost_usd"] for r in roles.values())
+    retry_fumble = sum(r["retry_fumble_turns"] for r in roles.values())
+    batchable = sum(r["batchable_strict_turns"] for r in roles.values())
+    avoidable = retry_fumble + batchable
+    per_turn = cost / turns if turns else 0.0
+    return {
+        "sessions": sum(r["n"] for r in roles.values()),
+        "turns": turns,
+        "cost_per_turn_usd": round(per_turn, 4),
+        "retry_fumble_turns": retry_fumble,
+        "batchable_strict_turns": batchable,
+        "avoidable_turns": avoidable,
+        "avoidable_share": round(avoidable / turns, 3) if turns else 0.0,
+        "avoidable_cost_usd": round(avoidable * per_turn, 2),
+        "by_role": dict(sorted(roles.items(), key=lambda kv: -kv[1]["cost_usd"])),
+    }
+
+
 def build_report(slice_dir: Path, convs: list[Conv],
                  warnings: list[str]) -> dict:
     totals = dict.fromkeys(USAGE_KEYS, 0)
@@ -335,6 +414,7 @@ def build_report(slice_dir: Path, convs: list[Conv],
             "active_s": active_s,
         },
         "derived": derive(convs, cost),
+        "turns": turn_stats(convs),
         "roles": {r: {**v, "cost": round(v["cost"], 2)}
                   for r, v in sorted(roles.items(),
                                      key=lambda kv: -kv[1]["cost"])},
@@ -374,6 +454,22 @@ def print_report(report: dict) -> None:
         print(f"{role:26} {v['n']:>3} {v['turns']:>6} {v['tokens']:>13,} "
               f"${v['cost']:>8,.2f}")
 
+    tp = report["turns"]
+    print(f"\n{tp['turns']:,} turns at ${tp['cost_per_turn_usd']:.3f}  ·  "
+          f"avoidable {tp['avoidable_turns']:,} "
+          f"({tp['avoidable_share']:.1%}, ${tp['avoidable_cost_usd']:,.2f}) = "
+          f"retry+fumble {tp['retry_fumble_turns']:,} + "
+          f"batchable {tp['batchable_strict_turns']:,}")
+    print(f"{'role':26} {'n':>3} {'turns':>6} {'tool/t':>7} {'read/t':>7} "
+          f"{'orient':>7} {'ctx1':>8} {'ctxmean':>8} {'ctxmax':>8} {'r+f':>5} "
+          f"{'batch':>6} {'brks':>5}")
+    for role, v in tp["by_role"].items():
+        print(f"{role:26} {v['n']:>3} {v['turns']:>6} {v['tools_per_turn']:>7.2f} "
+              f"{v['reads_per_turn']:>7.2f} {v['orient_turns']:>7} "
+              f"{v['ctx_first']:>8,} {v['ctx_mean']:>8,} {v['ctx_max']:>8,} "
+              f"{v['retry_fumble_turns']:>5} {v['batchable_strict_turns']:>6} "
+              f"{v['breaks']:>5}")
+
     print(f"\n{'phase':26} {'n':>3} {'tokens':>13} {'cost':>9}")
     for phase, v in report["phases"].items():
         print(f"{phase:26} {v['n']:>3} {v['tokens']:>13,} ${v['cost']:>8,.2f}")
@@ -394,7 +490,7 @@ def print_report(report: dict) -> None:
 
 
 def write_state(slice_dir: Path, report: dict) -> None:
-    """Append the derived block to the run loop's state.json as `cost` —
+    """Append the derived and turn blocks to state.json as `cost` —
     the one write anything but the driver makes there, at close-out, after
     the run is done. Warnings ride along: a share computed over missing
     transcripts must say so where the number is read."""
@@ -403,6 +499,7 @@ def write_state(slice_dir: Path, report: dict) -> None:
     state["cost"] = {
         "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
         **report["derived"],
+        "turns": report["turns"],
         "warnings": report["warnings"],
     }
     tmp = state_path.with_suffix(".json.tmp")

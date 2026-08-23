@@ -39,14 +39,17 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   skipped; needs pandoc + latexpand on PATH and uv, see the script header) and `fetch_pages.sh`
   mirrors the non-arXiv sources beside them. `docs/research/tools/context_profile.py <slice-dir>...`
   replays a slice's session transcripts into per-turn context profiles (research tooling, not
-  plugin). Run 1's corpus is frozen under `docs/research/archive/run-1/`.
+  plugin — but the replay and the turn classes it reads are the plugin's `turn_profile.py`, which
+  it imports; the aggregate analyses are its own). Run 1's corpus is frozen under
+  `docs/research/archive/run-1/`.
 
 ## Architecture
 
 - **`plugins/dev/tools/`** — the drivers, each with a `test_*.py` beside it. `run_loop.py` (~3k
   lines) and `plan_loop.py` carry most of the logic and most of the ~4.4k lines of suite; plus
   `close_out.py` (the close-out report's mechanics, imported by both loops), `preflight.py`,
-  `sweep_slice.py`, `close_slice.py`, `slice_cost.py`, `allocate-next-slice.sh`.
+  `sweep_slice.py`, `close_slice.py`, `slice_cost.py` (with `turn_profile.py`, the transcript
+  replay behind its turn table), `allocate-next-slice.sh`.
   Suites load their subject via `importlib.util.spec_from_file_location` (`tools/` is not a
   package) and fake sessions, git, `kc` and the gate — no agent is ever spawned by a test.
 - **`plugins/dev/agents/`** (9) and **`plugins/dev/skills/<name>/SKILL.md`** (8) — the dispatched

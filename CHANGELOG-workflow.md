@@ -4,6 +4,29 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-23 — every run says what its turns did (v0.9.5)
+
+The bill is charged per turn — one model invocation, and because every role sits at 50–145 k of
+context and re-reads it at the cache rate, at nearly the same price whatever the role. Until now a
+run recorded what it *cost* and not what those turns *did*, so the only way to ask was to replay
+the whole corpus by hand with the research profiler. New `turn_profile.py` is that replay, lifted
+into the plugin: it parses a session transcript into ordered turns, puts each in exactly one class
+by what its calls did (`dispatch` · `edit` · `gate` · `commit` · `record` · `retry` · `fumble` ·
+`wait` · `git-inspect` · `orient-read` · `work-read` · `think` · `other`), counts the read ops
+chained inside one Bash command — the batching `tools/turn` cannot see — and marks the read turns a
+perfect batcher would have folded away. Orientation ends at the first *edit*, counting the ones
+made through the shell (`sed -i`, a heredoc'd rewrite, a `>` redirection), which is how a session
+spawned with `--dangerously-skip-permissions` is told to work.
+
+`slice_cost.py` now prints a per-role turn table beside its cost tables — sessions, turns, tools
+and reads per turn, orientation turns, first/mean/max context, retry-and-fumble turns, batchable
+turns, prefix breaks — headed by the slice's cost per turn and its avoidable share
+(`retry + fumble + batchable(strict)`, priced at that rate; a floor, not a target). `--write-state`
+writes the same block into `state.json` as `cost.turns`, so every run carries its own readout and a
+change to the loop is measured on the slices it ran on. The close-out header is unchanged.
+Research's `context_profile.py` now imports the plugin module rather than carrying its own copy;
+the 32-slice profile regenerates byte-identical.
+
 ## 2026-08-22 — the seeded plan header keeps `###` for phases (v0.9.4)
 
 `/dev:plan-slice` § 3 told the seeding session which sections to write and never which heading

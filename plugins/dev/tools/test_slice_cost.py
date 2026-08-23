@@ -36,6 +36,22 @@ def _message(mid, model=OPUS, ts="2026-07-31T10:00:00Z", **usage):
             "message": {"id": mid, "model": model, "usage": base}}
 
 
+def _tool_message(mid, calls, ts="2026-07-31T10:00:00Z", **usage):
+    """An assistant message that made tool calls, plus the results that came
+    back — what the turn profile reads."""
+    msg = _message(mid, ts=ts, **usage)
+    msg["message"]["content"] = [
+        {"type": "tool_use", "id": f"{mid}-{i}", "name": name,
+         "input": {"command": arg} if name == "Bash" else {"file_path": arg}}
+        for i, (name, arg, *_res) in enumerate(calls)]
+    results = [{"type": "user", "timestamp": ts,
+                "message": {"content": [{"type": "tool_result",
+                                         "tool_use_id": f"{mid}-{i}",
+                                         "content": res[0] if res else "ok"}]}}
+               for i, (_name, _arg, *res) in enumerate(calls)]
+    return [msg, *results]
+
+
 def _write_transcript(path, records):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(json.dumps(r) for r in records) + "\n")
@@ -402,3 +418,78 @@ def test_write_state_appends_cost_block(tmp_path, capsys):
     assert cost["planner_share"] == 0.0 and cost["rework_share"] == 0.0
     assert cost["warnings"] == []
     assert "ts" in cost
+
+
+# -- the turn profile -------------------------------------------------------
+
+def test_turns_block_profiles_each_role(tmp_path):
+    """Three reads then an edit: orientation is three turns, two of them a
+    batched read would have folded away."""
+    t = tmp_path / "proj" / "w1.jsonl"
+    _write_transcript(t, [
+        *_tool_message("m1", [("Bash", "cat plan.md")], input_tokens=1_000),
+        *_tool_message("m2", [("Bash", "cat run_loop.py")],
+                       cache_read_input_tokens=40_000),
+        *_tool_message("m3", [("Bash", "cat plan.md")],
+                       cache_read_input_tokens=40_000),
+        *_tool_message("m4", [("Edit", "run_loop.py")],
+                       cache_read_input_tokens=40_000, output_tokens=500),
+    ])
+    slice_dir = _slice(tmp_path, state={
+        "orchestrator": None, "history": [_history_entry("w1", t)]})
+    report = build_report(slice_dir, *collect(slice_dir))
+    tp = report["turns"]
+    assert tp["sessions"] == 1 and tp["turns"] == 4
+    role = tp["by_role"]["code-writer"]
+    assert role["turns"] == 4 and role["tools_per_turn"] == 1.0
+    assert role["orient_turns"] == 3          # turns before the first edit
+    assert role["ctx_first"] == 1_000 and role["ctx_max"] == 40_000
+    assert role["batchable_strict_turns"] == 1   # the re-read of plan.md
+    assert tp["avoidable_turns"] == 1
+    assert tp["avoidable_cost_usd"] == pytest.approx(
+        tp["cost_per_turn_usd"], abs=0.01)
+
+
+def test_turns_block_prices_a_turn_at_the_slice_rate(tmp_path, capsys):
+    t = tmp_path / "proj" / "w1.jsonl"
+    _write_transcript(t, [
+        *_tool_message("m1", [("Bash", "close_out.py rep.md list",
+                               "usage: close_out.py [-h] slice_dir")],
+                       output_tokens=100_000),
+        *_tool_message("m2", [("Bash", "close_out.py /s/1 list")],
+                       output_tokens=100_000),
+    ])
+    slice_dir = _slice(tmp_path, state={
+        "orchestrator": None, "history": [_history_entry("w1", t)]})
+    assert main([str(slice_dir)]) == 0
+    report = build_report(slice_dir, *collect(slice_dir))
+    tp = report["turns"]
+    # 200k output tokens over two turns, at the Opus output price
+    assert tp["cost_per_turn_usd"] == pytest.approx(
+        0.1 * PRICES[OPUS]["output"], abs=0.01)
+    assert tp["by_role"]["code-writer"]["retry_fumble_turns"] == 2
+    out = capsys.readouterr().out
+    assert "2 turns at $" in out and "avoidable 2" in out
+
+
+def test_write_state_carries_the_turn_block(tmp_path, capsys):
+    t = tmp_path / "proj" / "s1.jsonl"
+    _write_transcript(t, [*_tool_message("m1", [("Edit", "run_loop.py")],
+                                         output_tokens=1_000)])
+    slice_dir = _slice(tmp_path, state={
+        "orchestrator": None, "history": [_history_entry("s1", t)]})
+    assert main([str(slice_dir), "--write-state"]) == 0
+    turns = json.loads((slice_dir / "state.json").read_text())["cost"]["turns"]
+    assert turns["turns"] == 1 and turns["avoidable_turns"] == 0
+    assert turns["by_role"]["code-writer"]["n"] == 1
+
+
+def test_a_missing_transcript_leaves_the_turn_block_empty(tmp_path):
+    """collect() already warns; the profile just has nothing to replay."""
+    slice_dir = _slice(tmp_path, state={
+        "orchestrator": None,
+        "history": [_history_entry("gone", tmp_path / "proj" / "gone.jsonl")]})
+    report = build_report(slice_dir, *collect(slice_dir))
+    assert report["turns"]["turns"] == 0
+    assert report["turns"]["by_role"] == {}
+    assert report["warnings"]

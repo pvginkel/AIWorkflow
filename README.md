@@ -35,7 +35,8 @@ carded per finding; the operator dispositions the report and `/dev:close-out` ex
 
 - **`plugins/dev/`** — the plugin: 8 skills, 9 agents, the tools (`run_loop.py`,
   `plan_loop.py`, `close_out.py`, `sweep_slice.py`, `close_slice.py`, `slice_cost.py`,
-  `preflight.py`, and `allocate-next-slice.sh`, with their suites), and the contract docs
+  `turn_profile.py`, `preflight.py`, and `allocate-next-slice.sh`, with their suites), and the
+  contract docs
   (`run-loop.md` / `runner-state.md` / `plan-loop.md` / `plan-template.md` /
   `agent-dispatch.md` / `close-out.md` / `close-out-template.md`, plus `residual-sweep.md`,
   `project-contract.md`, `preflight.md`).
@@ -58,8 +59,10 @@ contract and tells a new repo exactly what is missing. See **[`docs/ADOPTING.md`
 ## The workshop
 
 - **`plugins/dev/tools/slice_cost.py`** — what a slice cost, priced from the run's own
-  `state.json` / `plan_state.json` records and the transcripts they name. It ships with the plugin
-  rather than living here, because it reads a state format the plugin owns.
+  `state.json` / `plan_state.json` records and the transcripts they name, and — through
+  `turn_profile.py`, which replays each transcript turn by turn — what its turns *did*, per role.
+  Both ship with the plugin rather than living here, because they read a state format the plugin
+  owns and every run writes its own numbers.
 - **`workflow-improvements/`** — the R&D / evidence trail behind the workflow's design.
 - **`archive/quality/`** — the retired quality capability (`quality-improver`,
   `quality-issue-finder`, `refactor-audit`) and the `code_health` grader, one folder per source

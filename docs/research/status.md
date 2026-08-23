@@ -1088,3 +1088,33 @@ turns-plan.md set: `fumble + retry` ≥ 5 % of writer turns, `orient-read` the l
   184 edit and the median writer's first edit is turn 13, not 15. And "136/184 writers run the gate
   before editing" matches no cut of the corpus: 164 of 184 run a gate at all, 12 of 181 run one
   before their first edit. Both fixed in interventions-2.md §1.
+
+## T2 — The context readout per run
+
+**Status:** accepted
+**Cost:** S–M · **Rank:** — · **Depends on:** T1
+
+**Summary.** The per-session replay and the turn taxonomy T1 built move into the plugin as
+`turn_profile.py`; `slice_cost.py` prints a per-role turn table and `--write-state` writes it into
+`state.json` as `cost.turns`. Every run now records what its turns did — per role: sessions, turns,
+tools and reads per turn, orientation turns, `ctx_first` / `ctx_mean` / `ctx_max`, retry-and-fumble
+turns, batchable(strict) turns, prefix breaks; per slice: cost per turn and the avoidable share.
+The instrument every later step is read on, not a trial of anything.
+
+**Decides it.** Nothing on its own — done when a slice's `state.json` carries the block and
+`slice_cost.py` prints it. What it decides is whether T3–T6 can be judged on the slices they run
+on rather than by replaying the corpus by hand.
+
+**Log**
+
+- 2026-08-23 — shipped (plugin 0.9.5). `turn_profile.py` (+ 21 tests) carries the replay, the
+  tool-call classes and the per-turn taxonomy; `slice_cost.py` aggregates them per role and the
+  `cost` block gains a `turns` sub-block. `context_profile.py` imports the plugin module instead of
+  its own copy, and regenerates the 32-slice profile byte-identical — the lift changed no number.
+  The close-out `Run:` header is untouched (§ Open decisions 1: table + block only).
+- 2026-08-23 — the readout on slice 170 (the four-repo `ssh_transport`, the corpus's most expensive):
+  2,110 turns at $0.101, avoidable 386 (18.3 %, $39) — well above the corpus median of 12.6 %,
+  concentrated in the code-writer (921 turns, 31 orientation turns at the median, 122 batchable) and
+  the test-agent (20 retry-and-fumble turns in 95). Which is the T4 case restated on one slice: the
+  writer's orientation is where the money is.
+
