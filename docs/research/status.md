@@ -963,7 +963,7 @@ from `log.txt`.
 
 ## W2 — `close_out.py` accepts the report path
 
-**Status:** new
+**Status:** validating
 **Cost:** S · **Rank:** — · **Depends on:** —
 
 **Summary.** `dispatch_line()` names the report *file*; `list`/`append`/`note`/`strike` take the
@@ -978,6 +978,11 @@ line) so the first call works.
   `list <report.md>` → "unrecognized arguments" / "slice directory not found"), read `--help`,
   retried — 20 sessions × 3 turns ≈ 50–57 turns, a few dollars and minutes per run, and the
   same trap caught the assessor. Not built.
+- 2026-08-23 — shipped (plugin 0.9.6), as T3b's one surviving item. The positional takes the slice
+  directory or the report's own path (any `.md` resolves to its parent, before `init` too), and
+  the dispatch line shows the invocation whole with the report path, so the first call is the
+  right one. T1's fumble table sized it at 225 of the corpus's 1,248 fumble-and-retry turns
+  (`list` 188, bare 37). Validating: `fumble` turns on `close_out.py` → 0 in T2's readout.
 
 ## W3 — The consult fixes the report's residue entries under the rider
 
@@ -1118,3 +1123,40 @@ on rather than by replaying the corpus by hand.
   the test-agent (20 retry-and-fumble turns in 95). Which is the T4 case restated on one slice: the
   writer's orientation is where the money is.
 
+## T3 — The free set: a lighter prefix (T3a) and the close-out tool's path (T3b = W2)
+
+**Status:** validating
+**Cost:** S · **Rank:** — · **Depends on:** T1, T2
+
+**Summary.** Every dispatched session's prefix loses the operator's auto-memory and Claude Code's
+bundled skills — two env vars in `SPAWN_ENV`, the environment every `create-headless` already
+carries — and `close_out.py` takes the report's own path as well as the slice directory, with the
+dispatch line showing the whole invocation. No quality exposure by construction: nothing a
+dispatched role ever used is removed, and nothing it is told changes but one tool line.
+
+**Decides it.** T2's readout on the next two or three slices: `ctx_first` per role down by
+≈ 3.3 k against the corpus's 31–34 k, and `fumble` turns on `close_out.py` at zero. Both are
+mechanical; what the readout confirms is that the spawn path reaches real runs as it reached the
+probes.
+
+**Log**
+
+- 2026-08-23 — T1 reduced T3b: `fumble + retry` 4.5 % of writer turns (under the 5 % bar), and
+  of 1,248 such turns `close_out.py` is 225 while the rest are wrong-path guesses no hook fixes
+  (`grep` 87, `ls` 73, `sed` 29, `cat` 19, `Read` 20, `cexec iac` 51, `track_build.py` 32). The
+  hook programme is not built; W2 is.
+- 2026-08-23 — T3a measured before shipping, one trivial `run_kc_session` dispatch per role in
+  `/work/KubeCoder`: baseline `ctx1` 32,172 / 32,760 / 31,677 / 31,686 / 33,957 (writer, reviewer,
+  test-agent, doc-writer, consult). `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` −1,320;
+  `ENABLE_CLAUDEAI_MCP_SERVERS=false` through `-e` no effect (settings `env` beats the spawn env)
+  and moot — the claude.ai servers barely load headless (−316 via `--settings`) and no headless
+  role ever called one; `CLAUDE_CODE_DISABLE_BUNDLED_SKILLS=1` (found in the 2.1.241 binary, not
+  in the plan) −1,207. Through kc, the two together: **−3,347 for every role**, consult −4,029 —
+  ≈ 10 % of the prefix. Corpus check behind the safety claim: in 809 sessions no dispatched role
+  read or wrote a memory file, and headless roles invoked a skill twice (neither bundled).
+- 2026-08-23 — shipped (plugin 0.9.6): `SPAWN_ENV` + agent-dispatch.md § Spawning; `close_out.py`
+  positional + dispatch line + close-out.md contract; and `plugin_version` in `state.json` /
+  `plan_state.json` (runner-state.md) so runs read before/after a plugin change without guessing
+  from dates. The unreached ≈ 3.6 k (`--disable-slash-commands` −3,233 less the bundled 1.2 k;
+  `--strict-mcp-config` −1,612, measured on `claude -p` directly) needs `kc` to pass claude flags
+  through — written up in turns-plan.md § T3a as a KubeCoder ask, the operator's to file.

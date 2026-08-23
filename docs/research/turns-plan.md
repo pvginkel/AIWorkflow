@@ -28,8 +28,9 @@ pins are open (T7).
   589 `grep` orientation calls over 141 editing sessions, plan.md the most-read file. Sessions
   ≥ 80 turns are 7 % of sessions and 25 % of spend; the doc-writer alone 13 %.
 
-**Shape.** Measure (T1) → instrument (T2) → the free set (T3) → one A/B at a time in the order T1's
-numbers dictate (T4 digest, T5 batching, T6 doc phase); T7 is parked on size. Every step ends
+**Shape.** Measure (T1) → instrument (T2) → the free set (T3) → one trial at a time in the order
+T1's numbers dictate (T4 digest — before/after against the corpus, T5 batching, T6 doc phase); T7 is
+parked on size. Every step ends
 with *Decides*: the observation that opens the next step or stops the line. Plugin steps ship as
 their own version (bump + changelog + push + marketplace update — the installed copy is a GitHub
 clone) and are read on the next 2–3 slices through T2's readout before the next one ships.
@@ -38,9 +39,12 @@ clone) and are read on the next 2–3 slices through T2's readout before the nex
 
 - [x] **T1** turn taxonomy — profiler extension, regenerated profile, the avoidable-turn number — **read 2026-08-23**, below
 - [x] **T2** the context readout per run — `slice_cost.py --write-state` block + table (plugin) — **shipped 2026-08-23 (0.9.5)**
-- [ ] **T3a** trim the fixed prefix — env vars now; `kc` flags if the env vars fall short
-- [ ] **T3b** frictions — W2 (`close_out.py` takes the report path), then T1's top fumbles
-- [ ] **T4** phase-scoped orientation digest in the writer dispatch — phase-level A/B
+- [x] **T3a** trim the fixed prefix — **shipped 2026-08-23 (0.9.6)**, the env-var half (−3.3–4.0 k
+  tokens on every turn); the `kc`-flag half (≈ 3.6 k more) is a KubeCoder ask, recorded below
+- [x] **T3b** frictions — reduced by T1 to W2 alone, **shipped 2026-08-23 (0.9.6)**; the hook
+  programme is dead (the other fumbles are wrong-path guesses)
+- [ ] **T4** phase-scoped orientation digest in the writer dispatch — before/after against the
+  corpus (no A/B; decided 2026-08-23, § T4 Read)
 - [ ] **T5** batched reads — why the existing rule is not followed; dispatch-line A/B (T1: below its bar — folds into T4)
 - [ ] **T6** bounded doc phase — per-repo units + consistency pass; two-slice A/B
 - [ ] **T7** Explore on a pinned model + the sub-agent return contract — **parked on size**; the knobs are recorded below
@@ -165,6 +169,42 @@ exposure. Portability: env vars and flags are generic; nothing names a project. 
 KubeCoder for step 2). **Files** run_loop.py :175 and :614–625, `plugins/dev/docs/agent-dispatch.md`
 § Spawning (the flag list), KubeCoder `process.go` + `kc` CLI if step 2.
 
+**Shipped (2026-08-23, plugin 0.9.6) — the env-var half.** Measured first: one trivial dispatch per
+role through `run_kc_session` in `/work/KubeCoder`, `ctx1` read off the transcript's first turn.
+Baseline 32,172 (code-writer), 32,760 (reviewer), 31,677 (test-agent), 31,686 (doc-writer), 33,957
+(consult) — the corpus's 31–34 k. In the plan's order:
+
+- `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` via `-e`: **−1,320** (the memory index plus the memory
+  instructions). Safe for every role — in 809 corpus sessions no dispatched role read or wrote a
+  memory file (seven writes, all by the interactive plan orchestrator).
+- `ENABLE_CLAUDEAI_MCP_SERVERS=false` via `-e`: **no effect** — Claude Code's own settings `env`
+  block beats the spawn environment (kc's "pass-through wins" is over the process env, not over
+  settings). Moot anyway: via `--settings` the claude.ai servers came off for −316 tokens — they are
+  largely not loaded in a headless run (interactively authenticated) — and no headless role ever
+  called one (six calls in the corpus, all from a sub-agent of the interactive plan session). The
+  test-agent exemption the plan carried was moot for the same reason: Jenkins is a `~/.claude.json`
+  server, untouched by that variable.
+- Not in the plan, found in the binary (2.1.241): `CLAUDE_CODE_DISABLE_BUNDLED_SKILLS=1` drops
+  Claude Code's bundled skills (`code-review`, `dataviz`, `claude-api`, …) from the listing —
+  **−1,207** direct; in 809 sessions a headless role invoked a skill twice (one
+  `kubecoder:kubecoder-env`, a plugin skill and unaffected; one from the plan session's sub-agent).
+
+Through kc, both together: **−3,347 tokens for every role** (consult −4,029) — ≈ 10 % of the
+prefix on every turn, identical across roles; `SPAWN_ENV` in run_loop.py carries them,
+agent-dispatch.md § Spawning says why. Against the memo's 6 k: what the env vars cannot reach,
+measured with the flags on `claude -p` directly — `--disable-slash-commands` −3,233 (1.2 k of it is
+the bundled skills the env var now takes; the rest is the dev and kubecoder plugins' skill
+descriptions) and `--strict-mcp-config` −1,612 (the `~/.claude.json` servers' tool names and
+instructions) — ≈ 3.6 k more, ≈ 11 % of the prefix, which only `kc session create-headless` can
+deliver. **The KubeCoder ask, for a slice of its own** (contract field, CLI flag, `buildArgv` in
+`worker/internal/headless/process.go`, tests, deploy): a pass-through for claude flags on
+`create-headless` — per-flag options or a repeatable `--claude-arg` — so `run_kc_session` can send
+`--disable-slash-commands` for every role and `--strict-mcp-config` for every role but the
+test-agent (163 Jenkins calls in 34 sessions; `--mcp-config` naming Jenkins alone would keep
+them). The trade-off to weigh there: writers' and reviewers' Explore sub-agents made 30 gitblit and
+jenkins lookups across 148 sessions, which strict MCP removes. Not `--bare` (skips hooks and
+plugins). Not made here — another repo, its own pipeline, and the free half is shipped.
+
 ### T3b — Frictions at the point of use (memo P3.2 + W2)
 
 **What.** Turns spent re-learning the tooling. Known today: `close_out.py` is called 85 times in
@@ -185,7 +225,16 @@ discipline is satisfied by construction).
 `close_out.py` + `test_close_out.py`, `plugins/dev/docs/close-out.md`, new `plugins/dev/hooks/` if
 used, bump + changelog.
 
-## T4 — Phase-scoped orientation digest in the writer dispatch (memo P3.1; A/B at phase level)
+**Read by T1, shipped as W2 (2026-08-23, plugin 0.9.6).** T1 put `fumble + retry` at 4.5 % of
+writer turns, under the 5 % bar, and its fumble table settled the rest: of 1,248 such turns,
+`close_out.py` is 225 (`list` 188, bare 37) and the remainder are wrong-path guesses (`grep` 87,
+`ls` 73, `sed` 29, `cat` 19, `Read` 20) plus `cexec iac` 51 and `track_build.py` 32 — none of which
+a hook fixes. So the hook programme is not built; W2 is: `close_out.py` takes the slice directory
+or the report's own path (any `.md` resolves to its parent, before `init` too) and the dispatch line
+shows the invocation whole, with the report path. Reads as `fumble` turns on `close_out.py` → 0 in
+T2's readout on the next slices.
+
+## T4 — Phase-scoped orientation digest in the writer dispatch (memo P3.1; before/after)
 
 **What.** Today `EXECUTOR_PROMPT` (run_loop.py :794–811) opens "Read the whole plan" and
 code-writer.md :6–8 says "read the whole plan (it is small by design)" — plans are 15–74 KB, plan.md
@@ -203,18 +252,24 @@ at ~25 lines, so verbatim is bounded — no plan-format change, §Open decisions
 are below; the plan is at {plan_path} — edit it there (done-record, later phases)"; code-writer.md
 :6–8 follows. Size target 3–5 k tokens. Reviewer dispatch unchanged (its re-read is a feature).
 
-**Pre-checks (cheap, offline, before the A/B).** (a) The Claude-specific quality instrument: grep
-the 32 slices' review files for abstention verdicts ("cannot determine", "unable to verify",
-non-attempt) — the baseline count, one hour. (b) The failure-pair check (memo §6): re-dispatch two
-completed phases from their merge-base with the digest prompt on a scratch branch (≈ $4 each) and
-diff the outcome against the recorded one — verdict, gate, reviewer findings.
+**Pre-check (cheap, offline, before the slices).** The Claude-specific quality instrument: grep the
+32 slices' review files for abstention verdicts ("cannot determine", "unable to verify",
+non-attempt) — the baseline count, one hour. The failure-pair check the plan also carried
+(re-dispatching two completed phases with the digest prompt on a scratch branch) is dropped with
+the A/B: a two-sample trial that ships nothing, where the real slices give the same read.
 
-**A/B.** Phase-level: alternate arms within a slice by queue position (each phase is a fresh
-session, so arms do not contaminate), recorded per phase in `state.json` (as A3 recorded
-`writer_effort`) and printed by `slice_cost.py`; n ≥ 5 phases per arm, paired by size band; one
-variable. Cost side: orientation turns, plan reads per session, `ctx` at first edit, $/phase.
-Quality side: r1 blocking-finding rate, refuted findings (baseline 0), gate-red, rework share
-(baseline 2–19 %, median ≈ 7 %), abstention verdicts, appended phases. Kill: § Protocol.
+**Read (decided 2026-08-23): before/after, no arms.** The control arm exists already and is larger
+than any in-slice A/B would produce — the 32-slice corpus T1 measured, and T2's per-run readout of
+the same numbers under the same definitions. T4's direct instruments are mechanical and large
+(plan.md reads per writer session, today ≈ 1; orientation turns before the first edit, median 14;
+`orient-read` 28 % of writer turns), so the first 2–3 slices on the T4 version are read against the
+corpus slices in their size band, told apart by `plugin_version` in `state.json` (0.9.6+). Dropped
+with the arms: the per-phase alternation, the arm field and its `slice_cost.py` column. Kept: the
+quality instruments — r1 blocking-finding rate, refuted findings (baseline 0), gate-red, rework
+share (baseline 2–19 %, median ≈ 7 %), abstention verdicts, appended phases — and § Protocol's kill
+rule. Cost side as before: orientation turns, plan reads per session, `ctx` at first edit, $/phase;
+`ctx_first` will *rise* by the digest's 3–5 k — expected, not a regression, and T3a's −3.3 k is
+already in the baseline the T4 slices are read against if 0.9.6 runs a slice first.
 
 **Decides.** Expected ≈ 15–20 % of writer spend (≈ 5 % of total) — recheck against T1's
 `orient-read` share first. **Cost** S–M. **Files** run_loop.py (`EXECUTOR_PROMPT` :794–811,
@@ -360,8 +415,9 @@ bare name works; `agent-dispatch.md` § Nested delegation if the contract ships.
 
 ## Protocol (condensed from memo P4.2) and kill signals
 
-One variable per trial; pair by project and phase-size band; n ≥ 5 phases per arm (T4, T5) or two
-slices per arm (T6); fixed plugin version, model, effort and prices for the trial's duration; cost
+One variable per trial; pair by project and phase-size band; T4 reads 2–3 slices before/after
+against the corpus, matched by size band; n ≥ 5 phases per arm (T5, if it runs) or two slices per
+arm (T6); fixed plugin version, model, effort and prices for the trial's duration; cost
 by T2's cache-adjusted dollars. Quality instruments, all already recorded: r1 blocking-finding
 rate, refuted findings (baseline 0 over 155–170), gate-red, rework share (baseline 2–19 %, median
 ≈ 7 %), abstention verdicts (T4 pre-check a), operator fix-nows at close-out. **Kill:** any
@@ -389,11 +445,12 @@ Memo §6 has the reasons.
 1. **T2 surface.** `slice_cost.py` table + `state.json` block only, or also one piece in the
    close-out `Run:` header (recommended: table + block; the header stays as it is).
 2. **T3a reach.** Stop at env vars, or make the `kc` flag change (recommended: do both — the flags
-   are what reaches the listings).
+   are what reaches the listings). **Resolved 2026-08-23:** the env vars shipped (0.9.6, −3.3 k);
+   the flags are a KubeCoder ask written up under T3a, the operator's to file.
 3. **T4 digest content.** Earlier done-records verbatim (bounded at ~25 lines each, no format
    change — recommended) or a machine-readable "settled" marker in `plan-template.md`.
 4. **T4 arm assignment.** Per-phase alternation within a slice (recommended; fastest to power) or a
-   per-slice flag.
+   per-slice flag. **Resolved 2026-08-23:** neither — before/after against the corpus (§ T4 Read).
 5. **T6 unit.** Per repo (no project contract change — recommended) or per doc surface from a
    project-side list.
 6. **T7 placement.** Host-side `~/.claude/agents/Explore.md` (reaches every headless role, not
