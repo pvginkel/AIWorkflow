@@ -279,10 +279,25 @@ turns on the assumption that a cheaper locator needs no more of them. A Haiku pi
 Either way it sits below every other step here, and no instrument would catch a locator that
 started missing files. So: **not next; do it when something else opens those files.**
 
-**Two axes, not one.** Our roles spawn at Opus / `xhigh`, and **sub-agents inherit the parent's
-extended-thinking configuration — there is no per-sub-agent thinking setting**. An inherited
-Explore is therefore expensive twice over, and only a custom definition (knob 1, via `effort`)
-reaches both axes.
+**One axis, not two — the model (measured 2026-08-23).** The obvious first move, keep Opus and drop
+the effort, does not pay: **Explore does not think.** Over the corpus's 172 Explore sub-agents
+(3,426 turns) thinking is **5,015 tokens — 0.7 % of their output**, and output is only 9.2 % of
+their cost ($14 of $153), so the whole effort axis is worth under a dollar across 32 slices. The
+built-in is already a lean configuration: it skips CLAUDE.md, skips git status, and does **not**
+pick up the parent's `xhigh` the way other sub-agents do (`general-purpose` thinks 6.1 % of its
+output, `dev:rebase-agent` 15.2 %) — even though the documented rule is that sub-agents inherit the
+main conversation's extended-thinking configuration with no per-sub-agent setting. That **inverts
+the reason to write `effort: low`**: it is not a saving, it is insurance. A custom `Explore.md` is a
+regular sub-agent, so defining one risks acquiring the `xhigh` inheritance the built-in avoids, and
+`effort: low` is what keeps knob 1 from costing more than it saves.
+
+**Why the pin was dropped, and what follows.** Not quality: the built-in moved off Haiku because
+Haiku cannot take a full plugins-and-MCP-servers tool surface in its prompt. So the quality risk of
+a Haiku pin is smaller than it looks — no one found Haiku a worse locator — and **T3a is the
+enabler**. Our headless sessions carry five MCP servers, the claude.ai servers and two plugins'
+listings: exactly the surface that broke Haiku. Strip them (T3a) and the reason for unpinning stops
+applying to us. Order accordingly — **T3a, then the Haiku pin**; `sonnet` is the fallback if the
+surface is still too wide.
 
 **The knobs**, most precise first. All of this is on the current sub-agents doc page; the 2.1.198
 change shipped silently and no public source links a fix (the canonical issue #38928 is still
@@ -293,8 +308,8 @@ open), so **the docs are the only authoritative record** — do not go hunting t
    `~/.claude/agents/Explore.md` with `model: haiku` restores pre-2.1.198 economics without touching
    anything else. Writing the definition also buys fields the built-in does not expose — notably
    `effort`, which overrides the session effort while that sub-agent is active. Target shape:
-   `model: haiku` (`sonnet` if Haiku trips on the MCP tool surface — T3a's MCP strip makes that less
-   likely) plus `effort: low`.
+   `model: haiku` after T3a (`sonnet` before it, or if the surface is still too wide) plus
+   `effort: low` for the reason above.
    Two things to settle before relying on it. **Reach:** Explore is dispatched on the model's own
    initiative from nearly every role (§10 of the profile: code-writer, code-reviewer, doc-writer,
    plan-writer, plan-reviewer, test-agent and both orchestrators all dispatch sub-agents), so a
