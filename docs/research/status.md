@@ -1130,12 +1130,16 @@ on rather than by replaying the corpus by hand.
 
 **Summary.** Every dispatched session's prefix loses the operator's auto-memory and Claude Code's
 bundled skills — two env vars in `SPAWN_ENV`, the environment every `create-headless` already
-carries — and `close_out.py` takes the report's own path as well as the slice directory, with the
-dispatch line showing the whole invocation. No quality exposure by construction: nothing a
-dispatched role ever used is removed, and nothing it is told changes but one tool line.
+carries — and, since 0.9.8, the plugins' skill listings and (every role but the test-agent) the
+operator's MCP servers, through kc's claude-flag pass-through (`spawn_flags`); and `close_out.py`
+takes the report's own path as well as the slice directory, with the dispatch line showing the
+whole invocation. Quality exposure near zero by construction: the env-var half removes nothing a
+dispatched role ever used, the kc half a few dozen sub-agent Jenkins/gitblit lookups across a
+thousand sessions, and nothing a role is told changes but one tool line.
 
 **Decides it.** T2's readout on the next two or three slices: `ctx_first` per role down by
-≈ 3.3 k against the corpus's 31–34 k, and `fumble` turns on `close_out.py` at zero. Both are
+≈ 3.3 k against the corpus's 31–34 k (≈ 7–8 k once 0.9.8's kc half is in the runs), and `fumble`
+turns on `close_out.py` at zero. Both are
 mechanical; what the readout confirms is that the spawn path reaches real runs as it reached the
 probes.
 
@@ -1160,6 +1164,19 @@ probes.
   from dates. The unreached ≈ 3.6 k (`--disable-slash-commands` −3,233 less the bundled 1.2 k;
   `--strict-mcp-config` −1,612, measured on `claude -p` directly) needs `kc` to pass claude flags
   through — written up in turns-plan.md § T3a as a KubeCoder ask, the operator's to file.
+- 2026-08-23 — the kc half shipped (plugin 0.9.8): `kc session create-headless` gained
+  `--disable-slash-commands` / `--strict-mcp-config` / `--mcp-config`; `run_kc_session` takes
+  `flags`, `spawn_flags(role)` sends the first to every role and the second to every role but the
+  test-agent (Jenkins: 118 calls in 21 of 64 corpus sessions; kept whole, not by name — the server
+  is the operator's, not the project's), nudges resume with the role's flags. Corpus re-read first,
+  sub-agents attributed to their dispatcher: every other headless role reached an MCP server in
+  ≈ 10 of ~1,100 sessions (Jenkins 32 calls / 6 sessions, gitblit 10 sessions, `notification` 4,
+  the reviewer's Trello cards pre-C7), plan-writer in 0 of 98 — the trade-off as weighed. Measured
+  as the env-var half was, one trivial dispatch per role: `ctx1` **24,488 / 25,040 / 25,553 /
+  23,966 / 25,494** (writer, reviewer, test-agent, doc-writer, consult), −2.8 to −4.4 k against
+  0.9.6 and −6.1 to −8.5 k against the corpus's 31–34 k; all nine `dev:` agents still register in
+  every role, the strict roles hold no `mcp__` tool, the test-agent the full Jenkins set. Still
+  **validating**: T2's readout on the next two or three slices decides, now against 24–25.5 k.
 
 ## T4 — The phase digest in the writer's dispatch
 

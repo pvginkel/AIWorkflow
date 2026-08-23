@@ -41,11 +41,8 @@ clone) and are read on the next 2–3 slices through T2's readout before the nex
 - [x] **T2** the context readout per run — `slice_cost.py --write-state` block + table (plugin) — **shipped 2026-08-23 (0.9.5)**
 - [x] **T3a** trim the fixed prefix — **shipped 2026-08-23 (0.9.6)**, the env-var half (−3.3–4.0 k
   tokens on every turn); the `kc`-flag half (≈ 3.6 k more) is a KubeCoder ask, recorded below
-- [ ] **T3a-kc** *(parked, 2026-08-23: KubeCoder is working the ask)* — when `kc session
-  create-headless` passes `--disable-slash-commands` / `--strict-mcp-config` / `--mcp-config`
-  through, `run_kc_session` sends them per role (every role the first; every role but the
-  test-agent the second), one trivial dispatch per role confirms `ctx1` ≈ 24 k against 0.9.6's
-  28.8 k, status.md § T3 logs it; its own plugin version
+- [x] **T3a-kc** — **shipped 2026-08-23 (0.9.8)**: kc passes the flags through, `run_kc_session`
+  sends them per role, `ctx1` measured at 24.0–25.6 k per role (§ T3a Shipped — the kc half)
 - [x] **T3b** frictions — reduced by T1 to W2 alone, **shipped 2026-08-23 (0.9.6)**; the hook
   programme is dead (the other fumbles are wrong-path guesses)
 - [x] **T4** phase-scoped orientation digest in the writer dispatch — **shipped 2026-08-23
@@ -209,6 +206,35 @@ test-agent (163 Jenkins calls in 34 sessions; `--mcp-config` naming Jenkins alon
 them). The trade-off to weigh there: writers' and reviewers' Explore sub-agents made 30 gitblit and
 jenkins lookups across 148 sessions, which strict MCP removes. Not `--bare` (skips hooks and
 plugins). Not made here — another repo, its own pipeline, and the free half is shipped.
+
+**Shipped (2026-08-23, plugin 0.9.8) — the kc half.** KubeCoder delivered the pass-through as
+per-flag options on `create-headless` (`--disable-slash-commands`, `--strict-mcp-config`,
+`--mcp-config` repeatable). `run_kc_session` takes `flags`; `spawn_flags(role)` in run_loop.py
+gives every role `--disable-slash-commands` and every role but the test-agent
+`--strict-mcp-config` — no `--mcp-config`, so no MCP server at all: the Jenkins-only variant was
+not taken because the server is the operator's `~/.claude.json` entry, which the plugin cannot name
+(portability). Both loops' dispatches *and nudges* carry the role's flags (a resume whose prefix
+differs from the original's misses the cache); `MCP_ROLES = {"test-agent"}` is the one split.
+Before deciding, the corpus re-read per role over 92 completed slices / 1,631 session profiles,
+sub-agents attributed to their dispatcher: outside the test-agent (Jenkins 118 calls in 21 of 64
+sessions, gitblit 3 sessions, `notification` 5 sessions), headless roles reached an MCP server in
+≈ 10 sessions of ~1,100 — Jenkins 32 calls in 6 sessions (doc-writer 14 in one session, consult 3,
+code-writer 2, the reviewer's and plan-writer's sub-agents the rest), gitblit 5 direct and 5
+sub-agent sessions, `notification` 4 sessions (code-writer 2, consult 1), the reviewer's 21 Trello
+calls pre-C7 card filing the close-out report already retired; plan-writer 0 of 98. The trade-off
+is as the plan weighed it: a few dozen sub-agent lookups across a thousand sessions, for ≈ 1.6 k
+off every turn of every one. Measured the same way as the env-var half (one trivial dispatch per
+role through `run_kc_session` in `/work/KubeCoder`, `ctx1` off the transcript's first turn):
+**24,488 / 25,040 / 25,553 / 23,966 / 25,494** (writer, reviewer, test-agent, doc-writer, consult)
+— −4.3 / −4.4 / −2.8 / −4.4 / −4.4 k against 0.9.6's 28.8–29.9 k, and −7.7 / −7.7 / −6.1 / −7.7 /
+−8.5 k against the corpus baseline; the test-agent's smaller cut is the MCP listing it keeps. The
+same dispatch answered, without tools, which agents and MCP tools it has: every role lists all nine
+`dev:` agents (the plugin's agents are not skills — `--disable-slash-commands` leaves them); the
+strict roles list no `mcp__` tool, deferred included; the test-agent lists the full Jenkins set
+(deferred, via ToolSearch) and `notification`. The plan's ≈ 24 k lands at 24–25.5 k: the 3.6 k
+estimate was measured on `claude -p` against a prefix that since gained T4's per-dispatch phase
+digest on the writer side and the 2.1.x harness's own growth, so the per-role deltas (−2.8 to −4.4 k)
+are the cleaner number — the kc half delivered ≈ 11–13 % of the prefix, slightly over the ask.
 
 ### T3b — Frictions at the point of use (memo P3.2 + W2)
 
