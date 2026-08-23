@@ -50,6 +50,7 @@ class FakeGit:
         self.branches = set()
         self.head = "abc123"
         self.diff_files = ""     # what `diff --name-only` reports
+        self.stat = ""           # what `diff --stat` reports
         self.dirty = ""          # what `status --porcelain` reports
         self.dirty_roots = {}    # str(root) → porcelain, overriding `dirty`
         self.branch_files = ""   # what `log --name-only` reports
@@ -65,6 +66,8 @@ class FakeGit:
             return "main"
         if args[0] == "diff" and "--name-only" in args:
             return self.diff_files
+        if args[0] == "diff" and any(a.startswith("--stat") for a in args):
+            return self.stat
         if args[0] == "rev-list":
             if args[-1].startswith("origin/"):
                 return self.unpushed.get(str(root), "0")
@@ -531,7 +534,107 @@ def test_executor_prompt_carries_phase_and_plan():
         assert "plan.md" in prompt
         assert "phase/074-P1" in prompt
         assert "done-record" in prompt
+        assert "**Done (P1).**" in prompt
         assert f"kc project test --project {PROJECT}" in prompt
+        # the digest rides the dispatch: the phase's own section, whole
+        assert "# Orientation digest — phase P1" in prompt
+        assert "### P1 — First phase" in prompt
+        assert "Read the whole plan" not in prompt
+
+
+def test_executor_digest_carries_the_slice_and_every_round_gets_it():
+    """The digest is built per round from the files as they stand: the
+    slice's intent paragraph, the plan's rulings, verification.json's items,
+    earlier phases' done-records (not their text), later phases' headings,
+    and what earlier phases changed — in the target repo up to the phase
+    branch's merge base, in every other touched repo up to its base."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[
+            phase_section("1", "Groundwork", done=True,
+                          body="Lay the groundwork carefully.\n\n"
+                               "**Done (P1).** Laid; the seam is `x.py`.\n"),
+            ("2", "The feature"),
+            ("3", "The cleanup"),
+        ])
+        plan = slice_dir / "plan.md"
+        plan.write_text(plan.read_text().replace(
+            "## Phases\n",
+            "## Requirements / rulings\n\n- R1. Ship it.\n"
+            "- Ruling (2026-08-23): narrow.\n\n## Phases\n")
+            + "\n## Not in scope\n\n- The moon.\n")
+        (slice_dir / "slice.md").write_text(
+            "# Slice 074 — Test\n\n**Feature.** The slice's intent,\n"
+            "two lines of it.\n\nFiled by triage.\n")
+        (slice_dir / "verification.json").write_text(json.dumps({"items": [
+            {"id": "V01", "area": "core", "description": "It ships."}]}))
+        script = [V["exec_done"], V["exec_done"],   # P2: initial + gate fix
+                  V["review_signoff"],
+                  V["exec_done"], V["review_signoff"],   # P3
+                  *TAIL]
+        r = ScriptedLoop(slice_dir, script, gates=[False, True],
+                         repo_root=repo)
+        r.fake_git.stat = " x.py | 2 +-\n 1 file changed, 1 insertion(+)"
+        # an earlier phase touched a sibling repo too (state is created by
+        # run(), so the record is seeded at the first digest)
+        orig = r._phase_digest
+
+        def seeded(phase_id, root, merge_base):
+            r.state["slice_base"].setdefault("/elsewhere/Sibling", "s1b")
+            r.state["bases"].setdefault("/elsewhere/Sibling", "main")
+            return orig(phase_id, root, merge_base)
+        r._phase_digest = seeded
+        assert run_to_exit(r) == 0
+        first, fix = r.prompts[0][1], r.prompts[1][1]
+        for prompt in (first, fix):
+            assert "# Orientation digest — phase P2" in prompt
+            assert "**Feature.** The slice's intent,\ntwo lines of it." in prompt
+            assert "Filed by triage" not in prompt
+            assert "- Ruling (2026-08-23): narrow." in prompt
+            assert "- The moon." in prompt
+            assert "### P2 — The feature" in prompt
+            # P1 contributes its done-record, not its text
+            assert "**Done (P1).** Laid; the seam is `x.py`." in prompt
+            assert "Lay the groundwork carefully" not in prompt
+            assert f"- P3 — The cleanup (Target: {PROJECT})" in prompt
+            assert "- V01 (core) — It ships." in prompt
+            assert " x.py | 2 +-" in prompt
+        assert "digested below" in fix
+        stats = [c for root, c in r.fake_git.calls
+                 if c[0] == "diff" and c[1].startswith("--stat")]
+        assert ("s1b..main" in [c[2] for c in stats])
+        assert any(c[2].endswith("..base123") for c in stats)
+
+
+def test_phase_digest_shapes():
+    """build_phase_digest and its readers, on a plan in the template's
+    shape: sections run to the next `##` or the first phase heading; a done
+    phase without a `**Done` opener contributes its whole section; long
+    stats keep their head and their summary; slice_intent is the first
+    paragraph after the title."""
+    plan = "\n".join([
+        "# Slice 9 — The one-liner", "",
+        "## Requirements / rulings", "", "- R1. Yes.", "",
+        "## Task shape", "", "localized — because.", "",
+        phase_section("1", "Old", done=True, body="Did it.\n"),
+        phase_section("2", "Now", body="Do this.\n"),
+        "## Not in scope", "", "- Nope.", ""])
+    digest = run_loop.build_phase_digest(
+        plan, "2", "", [], [("/r", "\n".join(
+            [f" f{i} | 1 +" for i in range(60)] + [" 60 files changed"]))])
+    assert "**Slice.** Slice 9 — The one-liner" in digest
+    assert "- R1. Yes." in digest and "- Nope." in digest
+    assert "localized — because." not in digest
+    assert "### P1 — Old ✅ DONE" in digest and "Did it." in digest
+    assert "### P2 — Now" in digest and "Do this." in digest
+    assert "Later phases" not in digest
+    assert " f0 | 1 +" in digest and " f59 | 1 +" not in digest
+    assert " … 21 more files" in digest and " 60 files changed" in digest
+    assert run_loop.slice_intent(
+        "# T\n\n\nFirst para\ncontinues.\n\nSecond.\n") \
+        == "First para\ncontinues."
+    assert run_loop.slice_intent("") == ""
+    # a phase id the plan does not carry digests the slice parts only
+    assert "Your phase" not in run_loop.build_phase_digest(plan, "7", "", [], [])
 
 
 def test_reviewer_dispatch_states_the_green_gate():

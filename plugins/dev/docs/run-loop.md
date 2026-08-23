@@ -55,9 +55,19 @@ keeps the shared doc parseable:
 
 ## The per-phase round
 
-Fresh **code-writer** session per phase (prompt: *"Execute P\<n\> of \<plan path\>"* plus the
-standing contract — it reads the whole plan, works its phase against the live repo, runs the gate
-itself, appends the done-record, commits on the phase branch `phase/<slice>-P<id>`). Then:
+Fresh **code-writer** session per phase (prompt: *"Execute P\<n\> of slice \<name\>"* plus the
+standing contract and **the phase digest** — it works its phase against the live repo from the
+digest, runs the gate itself, appends the done-record, commits on the phase branch
+`phase/<slice>-P<id>`). The digest is the driver's rendering of what it already holds, appended to
+every executor round's prompt (first round and fix rounds alike, rebuilt per round because rulings
+and done-records land mid-run): the slice's intent paragraph (slice.md's first) and the plan's
+title, the `## Requirements / rulings` and `## Not in scope` sections verbatim, **this phase's
+section whole**, earlier phases' done-records (from their `**Done (…)**` opener — not their
+phase text, which is the distractor), later phases' headings and `Target:` lines, every
+acceptance criterion, and `git diff --stat` of what earlier phases changed in each touched repo.
+The writer reads that instead of the whole plan; the plan stays the file it edits and the file it
+opens for what the digest points at. The reviewer's dispatch is unchanged — its re-read of the
+whole plan is a feature of the review, not a cost. Then:
 
 - **Branch** — `phase/<slice>-P<id>`, cut from the target repo's base branch and reused for
   every round of that phase. The driver reconciles it against the record before it resets or

@@ -462,6 +462,148 @@ def parse_push_holds(text: str) -> tuple[list[tuple[str, str]], list[str]]:
     return holds, errors
 
 
+# ---------------------------------------------------------------------------
+# The phase digest — the writer's orientation, rendered into its dispatch
+# from what the driver already holds: the plan as it stands (rulings land
+# mid-run, so it is rebuilt per round), verification.json, the slice's
+# intent paragraph, and git. The plan stays the writer's to edit; the digest
+# is what it reads instead of the whole file.
+# ---------------------------------------------------------------------------
+
+# The done-record's opener — `**Done (P<id>).**` (`**Done (r1).**`, `**Done
+# (<date>).**`: the parenthesis is free). Universal before it was written
+# down (296 of 296 done phases across both spec repos, 2026-08-23); the digest
+# reads a done phase's record from that line to the end of its section. A
+# done phase without one contributes its whole section — bounded by the
+# ~a-page contract, never skipped.
+DONE_RECORD_RE = re.compile(r"^\s*\*\*Done\b")
+# The plan's prose sections the digest carries verbatim, by `##` heading
+# prefix (case-insensitive): the requirements/rulings (authoritative on
+# intent) and what the slice leaves out.
+DIGEST_SECTIONS = ("requirements", "not in scope")
+# `git diff --stat` rows kept per repo before the digest elides the middle.
+DIGEST_STAT_LINES = 40
+
+
+def plan_sections(text: str) -> tuple[str, dict[str, list[str]]]:
+    """(the plan's title line without its `# `, `##` section heading → its
+    lines including the heading). A section runs to the next `##` heading
+    or to the first phase heading (`###`) — the phases are not prose."""
+    title = ""
+    sections: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in text.splitlines():
+        if line.startswith("# ") and not title:
+            title = line[2:].strip()
+        elif line.startswith("## "):
+            current = line[3:].strip()
+            sections[current] = [line]
+        elif HEADING_RE.match(line):
+            current = None
+        elif current is not None:
+            sections[current].append(line)
+    return title, sections
+
+
+def slice_intent(slice_text: str) -> str:
+    """The first paragraph of slice.md after its title — the slice's intent
+    in the triage session's words. Empty when the file has none."""
+    lines = slice_text.splitlines()
+    start = 0
+    if lines and lines[0].startswith("# "):
+        start = 1
+    para: list[str] = []
+    for line in lines[start:]:
+        if line.strip():
+            para.append(line)
+        elif para:
+            break
+    return "\n".join(para)
+
+
+def done_record(phase: Phase) -> list[str]:
+    """A done phase's record: from its `**Done` opener to the end of the
+    section, or the whole section when no opener is there."""
+    body = phase.body
+    for i, line in enumerate(body):
+        if DONE_RECORD_RE.match(line):
+            body = body[i:]
+            break
+    return _strip_blank(body)
+
+
+def _strip_blank(lines: list[str]) -> list[str]:
+    start, end = 0, len(lines)
+    while start < end and not lines[start].strip():
+        start += 1
+    while end > start and not lines[end - 1].strip():
+        end -= 1
+    return lines[start:end]
+
+
+def _trim_stat(stat: str) -> str:
+    lines = stat.splitlines()
+    if len(lines) <= DIGEST_STAT_LINES:
+        return stat
+    kept = lines[:DIGEST_STAT_LINES - 1]
+    return "\n".join(kept + [f" … {len(lines) - DIGEST_STAT_LINES} more files",
+                             lines[-1]])
+
+
+def build_phase_digest(plan_text: str, phase_id: str, intent: str,
+                       criteria: list[dict], touched: list[tuple[str, str]],
+                       ) -> str:
+    """The digest for phase `phase_id`, rendered as Markdown for the
+    dispatch. `intent` is the slice's intent paragraph (`slice_intent`),
+    `criteria` verification.json's items, `touched` (repo, `git diff --stat`
+    text) per repo earlier phases changed. Empty parts are left out; a phase
+    the plan does not carry digests to the slice parts only (the driver has
+    already parsed the plan, so that is a race with an edit, not a
+    structure error)."""
+    title, sections = plan_sections(plan_text)
+    phases, _ = parse_plan(plan_text)
+    out: list[str] = ["---", "", f"# Orientation digest — phase P{phase_id}", ""]
+    if title:
+        out += [f"**Slice.** {title}", ""]
+    if intent:
+        out += [intent, ""]
+    for name, lines in sections.items():
+        if name.lower().startswith(DIGEST_SECTIONS):
+            out += _strip_blank(lines) + [""]
+
+    idx = next((i for i, p in enumerate(phases) if p.id == phase_id), None)
+    if idx is not None:
+        phase = phases[idx]
+        out += ["## Your phase", "", f"### P{phase.id} — {phase.title}", ""]
+        out += _strip_blank(phase.body) + [""]
+        earlier, later = phases[:idx], phases[idx + 1:]
+        if earlier:
+            out += ["## Settled by earlier phases (their done-records)", ""]
+            for p in earlier:
+                out += [f"### P{p.id} — {p.title}", ""]
+                out += (done_record(p) if p.done
+                        else [f"Target: {p.target}", "(not done yet)"]) + [""]
+        if later:
+            out += ["## Later phases (edit them in the plan if your work "
+                    "changes them)", ""]
+            out += [f"- P{p.id} — {p.title} (Target: {p.target})"
+                    for p in later] + [""]
+    if criteria:
+        out += ["## Acceptance criteria (verification.json — the test phase "
+                "checks them off, not you)", ""]
+        for item in criteria:
+            area = item.get("area")
+            tag = f" ({area})" if area else ""
+            out.append(f"- {item.get('id', '?')}{tag} — "
+                       f"{item.get('description', '')}")
+        out.append("")
+    if touched:
+        out += ["## Files earlier phases touched", ""]
+        for repo, stat in touched:
+            out += [f"{repo}:", "", "```", _trim_stat(stat), "```", ""]
+    return "\n".join(out).rstrip() + "\n"
+
+
 def stamp_phase(plan_path: Path, phase_id: str, date: str) -> bool:
     """Append `✅ DONE <date>` to the phase's heading line — the driver's
     mechanical stamp, applied after review passed and the merge landed.
@@ -817,19 +959,24 @@ class SliceLock:
 # ---------------------------------------------------------------------------
 
 EXECUTOR_PROMPT = """\
-Execute phase P{phase_id} of {plan_path} (slice {slice_name}).
+Execute phase P{phase_id} of slice {slice_name}: implement exactly that
+phase. Its Target is {target}; work on branch {branch}, which is checked
+out{where}. The repo is truth for current state, the plan for intent.
 
-Read the whole plan, then implement exactly that phase. Its Target is
-{target}; work on branch {branch}, which is checked out{where}. The repo is
-truth for current state, the plan for intent.
+The plan is digested below — your phase whole and everything settled
+around it, from the plan as it stands. The plan itself is {plan_path}: edit
+it there (your done-record, later phases your work changes) and open it for
+what the digest points at — an attachment, a later phase's text — rather
+than re-reading it whole.
 
 Run the phase's test gate yourself before handing back{gate_hint}.
 
 When done:
 - Append the phase's done-record in the plan, under the phase's own heading
-  (never a new `###` heading) — what landed, what settled beyond the plan's
-  text, what changes for later phases; hard cap ~25 lines, settlements not
-  narration. Edit later phases your work changes, in place.
+  (never a new `###` heading), opening `**Done (P{phase_id}).**` — what
+  landed, what settled beyond the plan's text, what changes for later
+  phases; hard cap ~25 lines, settlements not narration. Edit later phases
+  your work changes, in place.
 - Commit everything: code on the branch; the plan edit in the specs repo,
   staged by name (shared working tree).
 - Write your verdict to {verdict_path}.
@@ -866,7 +1013,7 @@ edit as always.
 
 EXECUTOR_GATE_FIX_PROMPT = """\
 The test gate for phase P{phase_id} of slice {slice_name} is red (branch
-{branch}, fix round {round}). The plan: {plan_path}
+{branch}, fix round {round}). The plan: {plan_path}, digested below.
 
 The gate command was `{gate_cmd}`; its output is in {gate_log}. The gate is
 fail-fast and terse, so the log ends at the FIRST failing statement — there
@@ -879,7 +1026,7 @@ phase's done-record if what landed changed, then write your verdict to
 
 EXECUTOR_REVIEW_FIX_PROMPT = """\
 You are resolving review findings for phase P{phase_id} of slice
-{slice_name}. The plan: {plan_path}
+{slice_name}. The plan: {plan_path}, digested below.
 
 The code-reviewer found issues with the phase's branch (the work under review
 is git diff {merge_base}..HEAD on {branch}{where}). Read {review_path} and
@@ -2086,6 +2233,39 @@ class RunLoop:
         return CLOSE_OUT_LINE.format(
             dispatch_line=dispatch_line(self.report_path))
 
+    def _phase_digest(self, phase_id: str, root: Path, merge_base: str) -> str:
+        """The writer's orientation for this round (build_phase_digest): the
+        plan and verification.json as they stand, slice.md's intent
+        paragraph, and what earlier phases changed in every repo the slice
+        has touched — the target repo up to the phase branch's merge base
+        (what this branch was cut from), every other repo up to its base
+        branch. A repo the slice has not changed contributes nothing."""
+        try:
+            plan_text = self.plan_path.read_text()
+        except OSError:
+            plan_text = ""
+        try:
+            intent = slice_intent((self.slice_dir / "slice.md").read_text())
+        except OSError:
+            intent = ""
+        try:
+            criteria = json.loads(
+                self.verification_path.read_text()).get("items", [])
+        except (OSError, ValueError, AttributeError):
+            criteria = []
+        touched: list[tuple[str, str]] = []
+        for repo, sha in self.state["slice_base"].items():
+            head = merge_base if repo == str(root) \
+                else self.state["bases"].get(repo)
+            if not head:
+                continue
+            stat = self.git("diff", "--stat=100", f"{sha}..{head}",
+                            root=Path(repo), check=False)
+            if stat:
+                touched.append((repo, stat))
+        return build_phase_digest(plan_text, phase_id, intent, criteria,
+                                  touched)
+
     def _philosophy_line(self) -> str:
         """The run profile requires the doc, so the empty case is only a loop
         driven past a preflight that never checked for it."""
@@ -2244,14 +2424,17 @@ class RunLoop:
             return outputs / f"executor_result_r{r}.json"
 
         def spawn_executor(build_prompt) -> dict:
-            """build_prompt(verdict_path) → prompt. Every round is a fresh
-            session — fix rounds read their inputs from the plan and the
-            durable outputs dir, never from the prior round's context."""
+            """build_prompt(verdict_path) → prompt, to which the phase digest
+            is appended. Every round is a fresh session — fix rounds read
+            their inputs from the digest, the plan and the durable outputs
+            dir, never from the prior round's context."""
             ps["executor_rounds"] += 1
             r = ps["executor_rounds"]
             self._save_state()
+            prompt = (build_prompt(executor_verdict_path(r)) + "\n"
+                      + self._phase_digest(phase_id, root, merge_base))
             verdict, session = self._spawn(
-                "code-writer", build_prompt(executor_verdict_path(r)),
+                "code-writer", prompt,
                 self.repo_root, executor_verdict_path(r),
                 phase_id, r, agent="code-writer",
             )

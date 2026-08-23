@@ -4,6 +4,36 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-23 — the writer's dispatch carries the plan, digested for its phase (v0.9.7)
+
+Every code-writer session opened with "read the whole plan" — 15–74 KB of it, the top orientation
+read in the corpus — and then spent a median 14 turns before its first edit re-deriving what the
+driver already holds: which phase is its own, what the earlier ones settled, which repos they
+touched, what the acceptance criteria say. The turn taxonomy (v0.9.5) put `orient-read` at 28 % of
+the writer's turns and the largest class in the loop. So the driver now renders a **phase digest**
+into every executor round's prompt — first round and fix rounds alike, rebuilt per round because
+rulings and done-records land mid-run: the slice's intent paragraph (slice.md's first) and the
+plan's title; the `## Requirements / rulings` and `## Not in scope` sections verbatim; **this
+phase's section whole**; earlier phases' done-records — not their phase text, which is the
+near-miss distractor — read from their `**Done (…)**` opener; later phases' headings and
+`Target:` lines; every acceptance criterion; and `git diff --stat` of what earlier phases changed
+in each repo the slice has touched. The prompt no longer says "read the whole plan": the plan is
+the file the writer edits (its done-record, later phases) and opens for what the digest points
+at — an attachment, a later phase's text. The reviewer's dispatch is unchanged; its re-read is a
+feature of the review.
+
+The done-record's opener is now written down: `**Done (P<id>).**` — universal in practice before
+it was a rule (296 of 296 done phases across both spec repos), and what the digest reads a done
+phase's record from; a record without one hands the writer the whole section rather than nothing.
+
+Measured over every phase of every plan in both spec repos (296 phases), the digest is 30 KB at
+the median phase (≈ 7.7 k tokens; p90 57 KB) against a 45 KB plan — about 40 % of it the rulings
+section, most of the rest earlier phases' done-records, which run 31 lines at the median against
+their ~25-line cap (77 % of records exceed it). Larger than the 3–5 k the research plan
+estimated, and still smaller than the read it replaces; the first slices on this version are read
+against the corpus for orientation turns, plan reads per session and context at first edit
+(`docs/research/turns-plan.md` § T4).
+
 ## 2026-08-23 — a lighter prefix, and the close-out tool takes the report's path (v0.9.6)
 
 Every dispatched session started at 31–34 k tokens of context, paid again on every turn it took,
