@@ -10,7 +10,8 @@ absorb time). The memo found no large *context* lever; what its data shows is th
 the number of model invocations** — so this plan is a more thorough attempt to cut turns per slice
 without cutting what a role reads or how hard it thinks. The settled decisions in
 [research-2.md](research-2.md) § Workflow context stay settled; nothing here re-opens model, effort,
-review depth or loop shape.
+review depth or loop shape — the model-and-effort settlement covers the *main* roles; sub-agent
+pins are open (T7).
 
 ---
 
@@ -28,7 +29,7 @@ review depth or loop shape.
   ≥ 80 turns are 7 % of sessions and 25 % of spend; the doc-writer alone 13 %.
 
 **Shape.** Measure (T1) → instrument (T2) → the free set (T3) → one A/B at a time in the order T1's
-numbers dictate (T4 digest, T5 batching, T6 doc phase) → T7 as an operator call. Every step ends
+numbers dictate (T4 digest, T5 batching, T6 doc phase); T7 is parked on size. Every step ends
 with *Decides*: the observation that opens the next step or stops the line. Plugin steps ship as
 their own version (bump + changelog + push + marketplace update — the installed copy is a GitHub
 clone) and are read on the next 2–3 slices through T2's readout before the next one ships.
@@ -42,7 +43,7 @@ clone) and are read on the next 2–3 slices through T2's readout before the nex
 - [ ] **T4** phase-scoped orientation digest in the writer dispatch — phase-level A/B
 - [ ] **T5** batched reads — why the existing rule is not followed; dispatch-line A/B (T1: below its bar — folds into T4)
 - [ ] **T6** bounded doc phase — per-repo units + consistency pass; two-slice A/B
-- [ ] **T7** Explore on Sonnet + the sub-agent return contract — operator call
+- [ ] **T7** Explore on a pinned model + the sub-agent return contract — **parked on size**; the knobs are recorded below
 
 ---
 
@@ -265,19 +266,80 @@ coordination tax (more fixed prefixes) is the cost to watch. **Cost** M. **Files
 (`DOC_PHASE_PROMPT`, the doc-phase spawn), doc-writer.md, `plugins/dev/docs/run-loop.md`,
 `close-out.md` contract (the consistency entries), tests, bump + changelog.
 
-## T7 — Explore on Sonnet + the sub-agent return contract (memo P3.3; operator call)
+## T7 — Explore on a pinned model + the sub-agent return contract (memo P3.3; parked on size)
 
-**What.** 148 Explore sessions, $153 (6 %), 116 of them on Opus by inheritance — the built-in
-Explore lost its Haiku pin at Claude Code 2.1.198 (we run 2.1.239); Sonnet-priced they are $102
-(−2 % of spend). Explore locates, it does not judge; whether the "no weaker model as writer or
-reviewer" settlement covers it is the operator's call.
+**Settled (operator, 2026-08-23).** The "no weaker model, no effort tiering" line is about the
+**main** roles — plan-writer/reviewer, code-writer/reviewer. **Sub-agents and sub-sub-agents are on
+the table**, so Explore's pin needs no further ruling. What parks T7 is size, not principle.
 
-**How.** A plugin agent `dev:explore` with `model: sonnet` in its frontmatter (as test-agent.md :4
-pins), dispatched by name from the three registers that use Explore (plan-writer, plan-reviewer,
-doc-writer) instead of the built-in; check first whether a newer Claude Code restored the pin. The
-return contract (MAST's hygiene): a four-line shape in those dispatch templates — answer,
-`file:line` evidence, verified vs asserted, what was not found. **Decides.** Explore cost from T2;
-the contract's value is unmeasured and small in tokens. **Cost** S.
+**What.** 148 Explore sessions, $153 (6.3 %), 116 of them Opus by inheritance — the built-in lost
+its Haiku pin at Claude Code 2.1.198 (we run 2.1.239). Sonnet-priced they are $102: **$51 over 32
+slices = $1.60 a slice, 2.1 % of spend** — and that is the gross figure, repricing the same 2,754
+turns on the assumption that a cheaper locator needs no more of them. A Haiku pin is worth more.
+Either way it sits below every other step here, and no instrument would catch a locator that
+started missing files. So: **not next; do it when something else opens those files.**
+
+**Two axes, not one.** Our roles spawn at Opus / `xhigh`, and **sub-agents inherit the parent's
+extended-thinking configuration — there is no per-sub-agent thinking setting**. An inherited
+Explore is therefore expensive twice over, and only a custom definition (knob 1, via `effort`)
+reaches both axes.
+
+**The knobs**, most precise first. All of this is on the current sub-agents doc page; the 2.1.198
+change shipped silently and no public source links a fix (the canonical issue #38928 is still
+open), so **the docs are the only authoritative record** — do not go hunting the issue tracker.
+
+1. **Override the built-in with your own definition — the surgical knob, and the right one for us.**
+   A user or project sub-agent *named* `Explore` overrides the built-in and keeps its own `model`:
+   `~/.claude/agents/Explore.md` with `model: haiku` restores pre-2.1.198 economics without touching
+   anything else. Writing the definition also buys fields the built-in does not expose — notably
+   `effort`, which overrides the session effort while that sub-agent is active. Target shape:
+   `model: haiku` (`sonnet` if Haiku trips on the MCP tool surface — T3a's MCP strip makes that less
+   likely) plus `effort: low`.
+   Two things to settle before relying on it. **Reach:** Explore is dispatched on the model's own
+   initiative from nearly every role (§10 of the profile: code-writer, code-reviewer, doc-writer,
+   plan-writer, plan-reviewer, test-agent and both orchestrators all dispatch sub-agents), so a
+   *name* override catches all 148 where this step's original "dispatch `dev:explore` from three
+   registers" would have caught a fraction — but a name override wants user- or project-level
+   placement, and whether a plugin-shipped agent can take the bare name `Explore` rather than
+   `dev:explore` is untested (§Open decisions 6). Host-side `~/.claude` reaches every kc-spawned
+   headless session — it is the same surface T3a is already trimming; per-project `.claude/agents/`
+   would be a portability cost.
+   **Footprint:** the built-in deliberately skips CLAUDE.md and git status for cost, and no
+   frontmatter field or per-agent setting changes which agents skip them — a custom `Explore` is a
+   regular sub-agent, so it **will** load CLAUDE.md. That is a few k on top of Explore's 12 k
+   `ctx1`, re-read every turn; priced at the pinned model it is small, but it is the offset to
+   measure if the override lands and the pin does not.
+2. **`CLAUDE_CODE_SUBAGENT_MODEL` — blunt in general, per-role here.** Resolution order is: this env
+   var → the per-invocation `model` parameter → the definition's `model` frontmatter → the main
+   conversation's model. It beats everything, including frontmatter, and it hits *every* sub-agent —
+   `Plan`, `general-purpose` (42 sessions in the corpus), our own. In our loop it is less blunt than
+   it sounds: `run_kc_session`'s `extra_env` (`SPAWN_ENV`, run_loop.py :175 — T3a's mechanism) is
+   per-session, so it can be set only on roles whose sub-agents are all Explore. **Trap:** because
+   it outranks frontmatter, setting it on the test-agent or doc-writer spawn would demote the
+   Sonnet-pinned `dev:test-fixer` and `dev:rebase-agent` (the doc phase dispatches test-fixer too).
+   Also `inherit` has meant the same as unset since 2.1.196; before that it forced the main model
+   and ignored both lower sources.
+3. **Per-invocation `model`.** Ranks above frontmatter; steerable from a CLAUDE.md rule in the
+   *dispatching* session ("pass `model: haiku` when spawning Explore") — the parent reads CLAUDE.md
+   even though the built-in Explore does not. Fragile next to knob 1.
+4. **Remove it entirely.** `CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1` (2.1.198+) drops the built-in
+   `Explore` and `Plan`, and the model reads files directly instead of delegating; or deny
+   `Agent(Explore)` via `permissions.deny` / `--disallowedTools`. Against what we want — delegation
+   is the point (`agent-dispatch.md` § Nested delegation) — but it is the knob if Explore misbehaves.
+
+**Provider caveat.** The Opus cap is API-only: on any other provider (Bedrock, Google Cloud Agent
+Platform, Microsoft Foundry, Claude Platform on AWS) the built-in Explore inherits the main
+conversation's model outright. Only bites if kc ever spawns through a non-API provider.
+
+**The return contract** is separable and is not a cost lever: a four-line shape in the dispatch
+templates — answer, `file:line` evidence, verified vs asserted, what was not found. Our own data
+says the telephone-game *cost* is small (parents re-read ≤ 25 % of what their sub-agents read) and
+the omission risk is unmeasured, so it rides along with a template edit some other step is already
+making — it does not earn its own version.
+
+**Decides.** Explore cost and `ctx1` from T2, before and after, over two slices. **Cost** S.
+**Files** `~/.claude/agents/Explore.md` (host-side, not the plugin) or `plugins/dev/agents/` if the
+bare name works; `agent-dispatch.md` § Nested delegation if the contract ships.
 
 ---
 
@@ -319,4 +381,6 @@ Memo §6 has the reasons.
    per-slice flag.
 5. **T6 unit.** Per repo (no project contract change — recommended) or per doc surface from a
    project-side list.
-6. **T7.** Whether the Sonnet pin for Explore falls under the settled "no weaker model" line.
+6. **T7 placement.** Host-side `~/.claude/agents/Explore.md` (reaches every headless role, not
+   shipped by the plugin) or `plugins/dev/agents/Explore.md` if a plugin agent can take the bare
+   name and override the built-in — untested. Whether the pin is allowed is no longer a question.
