@@ -54,7 +54,7 @@ clone) and are read on the next 2–3 slices through T2's readout before the nex
   plan read is gone (0/16 pre-edit), writer $/phase −40 % pooled but the median session −8 %,
   quality inside every baseline — more slices before the step is judged (§ T4 Read, preliminary)
 - [ ] **T5** batched reads — why the existing rule is not followed; dispatch-line A/B (T1: below its bar — folds into T4)
-- [ ] **T6** bounded doc phase — per-repo units + consistency pass; two-slice A/B
+- [ ] **T6** bounded doc phase — per-repo unit **falsified** (2026-08-27, three transcripts read); superseded by [doc-phase-plan.md](doc-phase-plan.md): coordinator + per-scope units, three S fixes first
 - [ ] **T7** Explore on a pinned model + the sub-agent return contract — **parked on size**; the knobs are recorded below
 
 ---
@@ -402,6 +402,11 @@ T4; keep whichever arm moves `batchable(strict)` without moving a quality instru
 new one), bump + changelog.
 
 ## T6 — Bounded doc phase (memo P2.1; M; two-slice A/B)
+
+**Superseded 2026-08-27** by [doc-phase-plan.md](doc-phase-plan.md), answering Triage #716. The per-repo unit
+below bounds almost nothing (170's other two repos produced 5 of its 192 turns); the binding axis is the doc
+scope, and the doc-writer's Explore sub-agents were found to be a pure loss (reports land after the first
+edit because the writer never yields). Kept as written for the record.
 
 **What.** The doc-writer is 32 sessions, $318 (13 %), 66 turns median and up to 192, 144 k mean
 context — the only role where cutting the session pays on the real trajectories (20 % of its spend,
