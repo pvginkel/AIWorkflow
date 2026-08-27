@@ -4,6 +4,38 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-27 — the doc-writer's dispatch carries the diff on disk, the plan digested whole and the close-out verbs; delegate, then yield (v0.9.9)
+
+Three doc-writer sessions read turn by turn (`docs/research/doc-phase-plan.md` § 1) are the same
+five stages — intake, diff walk, survey, read-page/edit-page alternation, tail — of which only the
+fourth grows with the slice, and three defects sat in the fixed ones. The survey sub-agents were a
+pure loss: every Explore report arrived 18–49 turns after dispatch, past the writer's first edit,
+because the writer never ended its turn to wait — it re-derived the survey by hand (46–66 % of the
+paths it read after dispatching were its sub-agent's) and then carried a report it no longer
+needed, 15–21 % of each session. The diff round-tripped through disk: a per-file `git diff` past
+the tool's output limit was persisted and read back in two turns, one 26 k-char diff sliced three
+times. And the tail's mechanics were discovered, not given — `close_out.py --help` fumbles, a
+previous slice's close-out read for the Summary's style, the plan read whole at intake (8–18 k
+tokens carried on every later turn and never referenced after the diff walk). This is phase 1 of
+that plan, the three fixes independent of the coordinator-and-units rework it goes on to propose.
+
+The doc-writer's contract now says **dispatch the survey, then stop — end the turn with nothing
+else in flight**; the harness resumes the session with the result, since `kc session send` keeps
+stdin open and resolves only on the terminal result. agent-dispatch.md § Nested delegation carries
+the general rule and the why. The dispatch carries the driver's deterministic facts in the phase
+digest's spirit: the slice's diff **on disk**, one `<slice>/doc_phase/<repo>.diff` per touched
+repo — `git diff --stat` on top, then the diff, over the repo's slice base to its base branch
+rather than HEAD (the doc branch, where a redispatched writer's own commits would read as
+shipped work) — read by path with `sed`/`grep` instead of re-running `git diff`; the plan
+**digested whole** (`build_slice_digest`: title, rulings sections, every phase's done-record from
+its `**Done (…)**` opener), with the plan opened only where a record points and slice.md named
+as not the writer's input; and the close-out verbs the phase uses — `list`, `append`, `note` —
+with their argument shapes rendered from `close_out.py`'s own parser (`verb_usage`, so the block
+cannot drift from the CLI), plus where the Summary and `Focus:` lines go. The plan's estimate is
+15–25 % off today's doc-writer; the read is `t4_readout.py writers --role doc-writer` on the
+first two slices this reaches — orientation turns down, `ctx_fe` down ≈ 10–20 k, no survey
+report arriving after the first edit.
+
 ## 2026-08-23 — the prefix trim finishes: no skills, and no MCP servers but the test-agent's (v0.9.8)
 
 v0.9.6 took the auto-memory and the bundled skills out of every dispatched session's prefix and

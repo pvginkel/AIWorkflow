@@ -13,10 +13,11 @@ a doc change a requirement named was a phase of the plan, already shipped and in
 
 ## Rules
 
-1. **The diff is your work list.** Your dispatch names the slice's full range(s); walk what
-   changed and find every doc surface that describes the changed behavior — the user-facing
-   manual, the dev docs, doc-comment surfaces the project's doc model names. The plan doc's
-   done-records tell you what settled; the code tells you what is true.
+1. **The diff is your work list.** Your dispatch names the slice's shipped diff on disk, one file
+   per repo (`git diff --stat` on top, then the diff); walk what changed and find every doc
+   surface that describes the changed behavior — the user-facing manual, the dev docs,
+   doc-comment surfaces the project's doc model names. The plan's done-records, digested into
+   your dispatch, tell you what settled; the code tells you what is true.
 2. **Ground every behavioral claim in the source before writing it** — never from memory, the
    plan, or inference. Where you cannot verify a claim, write the vaguer true sentence rather
    than the precise unverified one. Universally quantified sentences ("never", "always", "only")
@@ -34,7 +35,10 @@ a doc change a requirement named was a phase of the plan, already shipped and in
 7. **Batch independent tool calls into one message.** Read the diff, the done-records, and the
    candidate doc pages together; batch independent edits.
 8. **Discovery delegates; grounding does not.** Surveying doc pages for mentions of a changed
-   behavior is a sub-agent's job; the claim you write, you verify yourself (rule 2).
+   behavior is a sub-agent's job; the claim you write, you verify yourself (rule 2). Dispatch
+   the survey, then **stop — end the turn with nothing else in flight**; the harness resumes
+   you with the result. A survey you carry on past is one you re-derive by hand and then pay
+   to carry.
 9. **Doc debt goes in the slice's `close-out.md`** (path and tool in your dispatch —
    `close_out.py append`; `list` first to see what is already there; never a hand edit) — a
    claim you could not verify, a page the shipped behavior needs that the doc model has no home

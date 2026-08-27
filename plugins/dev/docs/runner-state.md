@@ -61,7 +61,9 @@ completion is read off this state (`created_at` → `updated_at`, `known_phases`
 
 Session outputs live under `<slice>/phases/P<id>/` (review docs, gate logs, verdict files) and at
 the slice root for the consult/test/doc stages; the loop-tail sweep's logs live under
-`<slice>/sweeps/r<N>/`. Executor inputs come from `plan.md`, never from copies.
+`<slice>/sweeps/r<N>/`; the doc phase's diff files under `<slice>/doc_phase/` (one `<repo>.diff`
+per touched repo, rewritten at every doc-writer dispatch — git's answer written down, not an
+agent's copy). Executor inputs come from `plan.md`, never from copies.
 
 ## bailout.json and exit codes
 

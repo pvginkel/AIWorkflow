@@ -94,3 +94,14 @@ Sub-agents hand back **receipts and conclusions, never evidence**: evidence hand
 the caller's context for the rest of its session, which is exactly the cost the delegation exists
 to avoid. `Explore` is the leaf — it cannot dispatch agents, so it is the terminal reader of
 every delegation tree.
+
+**Delegate, then yield.** The Agent tool is asynchronous: a sub-agent's report reaches the
+dispatching session when the harness re-invokes it, which for a headless session means after it
+ends its turn — `kc session send` keeps stdin open and resolves only on the terminal result, so
+ending a turn with a sub-agent in flight is a wait, not a hand-back. A session that dispatches
+and carries on does the delegated work itself meanwhile and then pays to carry a report it no
+longer needs: in the doc-writer sessions read for the doc-phase rework
+(`docs/research/doc-phase-plan.md` § 1), every survey report landed 18–49 turns after dispatch,
+past the writer's first edit, at 15–21 % of the session. So a role that delegates ends the turn
+with nothing else in flight; the doc-writer's contract says so in its own words, and the
+plan-writer/plan-reviewer overlap (17–18 %) is the same pattern, not yet addressed.

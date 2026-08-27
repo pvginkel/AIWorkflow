@@ -863,6 +863,24 @@ def test_cli_note_strike_list_render():
         assert out.strip() == "A 0 · N 0 · B 1 · Q 0 · S 0"
 
 
+def test_verb_usage_renders_the_named_verbs_from_the_parser():
+    """One usage line per verb (no `-h`, the prog fixed whatever imported
+    it), then each argument's help indented — and the `slice` positional
+    left out, since the dispatch line already names the report."""
+    block = close_out.verb_usage("list", "append", "note")
+    lines = block.splitlines()
+    assert lines[0] == "close_out.py list slice"
+    assert lines[1].startswith("close_out.py append --section {Outstanding actions,")
+    assert "[--severity {major,minor,nit,cosmetic}]" in lines[1]
+    assert "    --consequence: what an operator or user experiences" in block
+    assert "    --headline: one line, the claim itself" in block
+    assert "close_out.py note --by BY --text TEXT [--date DATE] slice id" in lines
+    assert "    id: the entry's id, like B3" in block
+    assert "[-h]" not in block and "slice:" not in block
+    assert "strike" not in block
+    assert "close_out.py strike" in close_out.verb_usage("strike")
+
+
 if __name__ == "__main__":
     _tests = [v for k, v in sorted(globals().items())
               if k.startswith("test_") and callable(v)]

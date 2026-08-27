@@ -175,7 +175,17 @@ whole plan is a feature of the review, not a cost. Then:
   already describe the changed behavior, brought up to date from the whole slice's diff, single
   pass, manual + dev docs together, on its own branch, **never pushing**. The phase carries no
   slice task and owes no acceptance criterion: a doc change a requirement names is a phase of the
-  plan ([plan-template.md](plan-template.md)), merged before this point like any other. The
+  plan ([plan-template.md](plan-template.md)), merged before this point like any other. Its
+  dispatch carries the driver's deterministic facts, in the phase digest's spirit: the slice's
+  diff **on disk**, one `<slice>/doc_phase/<repo>.diff` per touched repo (`git diff --stat` on
+  top, then the diff, over the repo's slice base to its base branch — never HEAD, which is the
+  doc branch, so a redispatched writer's own commits never read as shipped work), read by path
+  instead of re-running `git diff`, which past the tool's output limit round-trips through a
+  persisted file; the plan **digested whole** — title, rulings sections, every phase's
+  done-record — so the plan is opened only where a record points and slice.md not at all; and
+  the close-out verbs the phase uses (`list`, `append`, `note`) with their argument shapes,
+  rendered from `close_out.py`'s own parser, plus where the Summary and `Focus:` lines go —
+  the `--help` round trips and the previous-slice style reads go with them. The
   driver then runs the full gate sweep — `kc project lint` + `build` + `test`, fail-fast (red
   is nudged back to the writer's session) — checks local `<base>` against `origin/<base>` (the
   branch rebases onto origin but ff-merges into local, so a local-ahead base bails `blocked`

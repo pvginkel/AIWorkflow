@@ -86,6 +86,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 from collections.abc import Sequence
 from datetime import datetime, timedelta
@@ -105,6 +106,7 @@ from close_out import (  # noqa: E402
     render_report,
     report_path,
     stamp_header,
+    verb_usage,
 )
 
 # ---------------------------------------------------------------------------
@@ -587,9 +589,7 @@ def build_phase_digest(plan_text: str, phase_id: str, intent: str,
         out += [f"**Slice.** {title}", ""]
     if intent:
         out += [intent, ""]
-    for name, lines in sections.items():
-        if name.lower().startswith(DIGEST_SECTIONS):
-            out += _strip_blank(lines) + [""]
+    out += _digest_sections(sections)
 
     idx = next((i for i, p in enumerate(phases) if p.id == phase_id), None)
     if idx is not None:
@@ -599,10 +599,7 @@ def build_phase_digest(plan_text: str, phase_id: str, intent: str,
         earlier, later = phases[:idx], phases[idx + 1:]
         if earlier:
             out += ["## Settled by earlier phases (their done-records)", ""]
-            for p in earlier:
-                out += [f"### P{p.id} — {p.title}", ""]
-                out += (done_record(p) if p.done
-                        else [f"Target: {p.target}", "(not done yet)"]) + [""]
+            out += _done_records(earlier)
         if later:
             out += ["## Later phases (edit them in the plan if your work "
                     "changes them)", ""]
@@ -621,6 +618,45 @@ def build_phase_digest(plan_text: str, phase_id: str, intent: str,
         out += ["## Files earlier phases touched", ""]
         for repo, stat in touched:
             out += [f"{repo}:", "", "```", _trim_stat(stat), "```", ""]
+    return "\n".join(out).rstrip() + "\n"
+
+
+def _digest_sections(sections: dict[str, list[str]]) -> list[str]:
+    """The plan's prose sections a digest carries verbatim (DIGEST_SECTIONS)."""
+    out: list[str] = []
+    for name, lines in sections.items():
+        if name.lower().startswith(DIGEST_SECTIONS):
+            out += _strip_blank(lines) + [""]
+    return out
+
+
+def _done_records(phases: list[Phase]) -> list[str]:
+    """Each phase's heading and its done-record — never its phase text,
+    the near-miss distractor; a phase not done yet says so."""
+    out: list[str] = []
+    for p in phases:
+        out += [f"### P{p.id} — {p.title}", ""]
+        out += (done_record(p) if p.done
+                else [f"Target: {p.target}", "(not done yet)"]) + [""]
+    return out
+
+
+def build_slice_digest(plan_text: str) -> str:
+    """The doc phase's digest of the whole plan: its title, the rulings
+    sections, and every phase's done-record. That is all the doc steering
+    the plan holds — the diff is the work list — so the writer reads this
+    instead of the plan whole (8–18 k tokens read once and carried on every
+    later turn, never referenced after the diff walk in the sessions
+    read). The plan stays the file it opens for what a record points at."""
+    title, sections = plan_sections(plan_text)
+    phases, _ = parse_plan(plan_text)
+    out: list[str] = ["---", "", "# Orientation digest — the whole slice", ""]
+    if title:
+        out += [f"**Slice.** {title}", ""]
+    out += _digest_sections(sections)
+    if phases:
+        out += ["## What each phase settled (their done-records)", ""]
+        out += _done_records(phases)
     return "\n".join(out).rstrip() + "\n"
 
 
@@ -1379,10 +1415,28 @@ Run the slice's doc phase: read {doc_plan_doc} and execute it for this slice
 — the procedure lives in that doc, not in this prompt.
 
 Deterministic facts from the driver:
-- The slice's shipped work is {diff_ranges} — write docs from that diff with
-  the whole shipped behavior in view.
-- The slice folder is {slice_dir}; the plan is {plan_path}.
+- The slice's shipped work is on disk, one file per repo — `git diff --stat`
+  at the top, then the whole diff, from the slice's base to the base branch
+  (your own doc commits never appear in it). Write docs from that diff with
+  the whole shipped behavior in view; read its hunks by path from the file
+  (`grep -n`, `sed -n`) rather than re-running `git diff` — a diff past the
+  tool's output limit round-trips through a persisted-output file and back,
+  and this file already is that.
+{diff_rows}
+- The plan is {plan_path}, digested below: the rulings and every phase's
+  done-record, which is all the doc steering the plan holds. Open the plan
+  only for what the digest points at (an attachment a record names) — never
+  read it whole. slice.md is not your input: the diff and the rulings are
+  the steering.
+- The slice folder is {slice_dir}.
 - {close_out_line}
+  The verbs this phase uses, with their arguments:
+{close_out_verbs}
+  The report's Summary and `Focus:` lines are the one thing you write into
+  the file by hand: the Summary under `## Summary` in place of its
+  placeholder comment, and your one or two lines in place of each
+  `Focus: <!-- doc-writer: … -->` comment — the comment says what the line
+  is for. No other slice's report is a style reference.
 - Work on branch {branch}, which is checked out. Never push — any repo, any
   branch. After your hand-back the driver runs the full gate sweep —
   `kc project lint` + `build` + `test` (a red comes back to this session) —
@@ -3255,10 +3309,12 @@ class RunLoop:
         self._save_state()
 
         if ds["stage"] == "writer":
-            ranges = []
-            for repo, sha in self.state["slice_base"].items():
-                ranges.append(f"`git diff {sha[:12]}..HEAD` in {repo}")
+            diff_rows = self._write_doc_diffs()
             verdict_path = self.slice_dir / "doc_phase_result.json"
+            try:
+                plan_text = self.plan_path.read_text()
+            except OSError:
+                plan_text = ""
             # The writer ranks the Focus lines over the report as the
             # operator will read it: rendered — live entries first, Bugs
             # by severity, struck folded last.
@@ -3267,11 +3323,14 @@ class RunLoop:
                 "doc-writer",
                 DOC_PHASE_PROMPT.format(
                     slice_name=self.slice_name, doc_plan_doc=doc_plan_doc,
-                    diff_ranges="; ".join(ranges) or "(no recorded range)",
+                    diff_rows="\n".join(diff_rows) or "  (no repo recorded)",
                     slice_dir=self.slice_dir, plan_path=self.plan_path,
                     close_out_line=dispatch_line(self.report_path),
+                    close_out_verbs=textwrap.indent(
+                        verb_usage("list", "append", "note"), "  "),
                     branch=branch, base_branch=base,
-                    verdict_path=verdict_path),
+                    verdict_path=verdict_path)
+                + build_slice_digest(plan_text),
                 self.repo_root, verdict_path, None, 1, agent="doc-writer",
                 display="doc-phase",
             )
@@ -3289,6 +3348,42 @@ class RunLoop:
             self._land_doc_branch(branch, base)
             ds["stage"] = "done"
             self._save_state()
+
+    def _write_doc_diffs(self) -> list[str]:
+        """The slice's shipped diff, one file per touched repo under
+        `<slice>/doc_phase/` — `git diff --stat` at the top, then the diff,
+        from the repo's slice base to its base branch (not HEAD: the primary
+        repo's HEAD is the doc branch, and a redispatched writer's own
+        commits must not read as shipped work). Returns the dispatch rows —
+        file, range, the stat's summary line — one per repo; a repo whose
+        range is empty gets a row and no file. The writer reads hunks by
+        path from the file: in the sessions read, a per-file `git diff`
+        past the tool's output limit was persisted and read back in two
+        turns, and one 26 k-char diff was sliced three times."""
+        out_dir = self.slice_dir / "doc_phase"
+        out_dir.mkdir(exist_ok=True)
+        rows: list[str] = []
+        used: set[str] = set()
+        for repo, sha in self.state["slice_base"].items():
+            head = self.state["bases"].get(repo) or "HEAD"
+            rng = f"{sha[:12]}..{head}"
+            stat = self.git("diff", "--stat=100", rng, root=Path(repo),
+                            check=False)
+            if not stat:
+                rows.append(f"- {repo}: no changes (`git diff {rng}`)")
+                continue
+            name = Path(repo).name or "repo"
+            n = 1
+            while name in used:
+                n += 1
+                name = f"{Path(repo).name or 'repo'}-{n}"
+            used.add(name)
+            path = out_dir / f"{name}.diff"
+            diff = self.git("diff", rng, root=Path(repo), check=False)
+            path.write_text(f"{repo} — git diff {rng}\n\n{stat}\n\n{diff}\n")
+            rows.append(f"- {repo}: {path} (`git diff {rng}`: "
+                        f"{stat.splitlines()[-1].strip()})")
+        return rows
 
     def _doc_gate_until_green(self, ds: dict, branch: str) -> None:
         """The driver's own full-sweep gate on the doc branch. Red is

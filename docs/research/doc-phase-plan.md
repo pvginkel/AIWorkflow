@@ -25,6 +25,9 @@ costs ≈ $0.35–0.60 before it does any work, so it needs ≈ 3 pages of work 
   agent, no A/B needed (nothing in it exposes quality). Read on the first two slices it reaches
   with `t4_readout.py writers --role doc-writer` (§ 8) — the expected signature is orientation
   turns down, `ctx_fe` down ≈ 10–20 k, and no Explore report arriving after the first edit.
+  **Shipped as dev 0.9.9 (2026-08-27)**, with § 6 items 1–2; the dispatch's verb block carries
+  `list`, `append`, `note` — not `strike`, which close-out.md reserves for the completion
+  consult. KubeCoder's `slice-doc-plan.md` § 1 names the diff files in place of the ranges.
 - **Phase 2 = § 4 + § 6 items 1–3** (items 1–2 already land in phase 1), the new `doc-unit`
   agent and the `units.json` contract, A/B per § 8. Needs the § 7 rulings from the operator
   first — at least the unit definition in KubeCoder's `slice-doc-plan.md`.

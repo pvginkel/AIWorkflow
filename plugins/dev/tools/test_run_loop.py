@@ -51,6 +51,7 @@ class FakeGit:
         self.head = "abc123"
         self.diff_files = ""     # what `diff --name-only` reports
         self.stat = ""           # what `diff --stat` reports
+        self.diff = ""           # what a plain `diff <range>` reports
         self.dirty = ""          # what `status --porcelain` reports
         self.dirty_roots = {}    # str(root) → porcelain, overriding `dirty`
         self.branch_files = ""   # what `log --name-only` reports
@@ -68,6 +69,8 @@ class FakeGit:
             return self.diff_files
         if args[0] == "diff" and any(a.startswith("--stat") for a in args):
             return self.stat
+        if args[0] == "diff":
+            return self.diff
         if args[0] == "rev-list":
             if args[-1].startswith("origin/"):
                 return self.unpushed.get(str(root), "0")
@@ -637,6 +640,36 @@ def test_phase_digest_shapes():
     assert run_loop.slice_intent("") == ""
     # a phase id the plan does not carry digests the slice parts only
     assert "Your phase" not in run_loop.build_phase_digest(plan, "7", "", [], [])
+
+
+def test_slice_digest_carries_rulings_and_every_done_record():
+    """build_slice_digest, the doc phase's: the title, the rulings sections,
+    each phase's done-record from its opener (a phase without one gives its
+    whole section; one not done says so) — and no intent, no criteria, no
+    phase text."""
+    plan = "\n".join([
+        "# Slice 9 — The one-liner", "",
+        "## Requirements / rulings", "", "- R1. Yes.", "",
+        "## Task shape", "", "localized — because.", "",
+        phase_section("1", "Old", done=True,
+                      body="Plan text.\n\n**Done (P1).** Landed X.\n"),
+        phase_section("2", "Bare", done=True, body="Only text.\n"),
+        phase_section("3", "Open", body="Do this.\n"),
+        "## Not in scope", "", "- Nope.", ""])
+    digest = run_loop.build_slice_digest(plan)
+    assert digest.startswith("---\n\n# Orientation digest — the whole slice")
+    assert "**Slice.** Slice 9 — The one-liner" in digest
+    assert "- R1. Yes." in digest and "- Nope." in digest
+    assert "localized — because." not in digest
+    assert "## What each phase settled (their done-records)" in digest
+    assert "### P1 — Old ✅ DONE" in digest and "**Done (P1).** Landed X." in digest
+    assert "Plan text." not in digest
+    assert "### P2 — Bare ✅ DONE" in digest and "Only text." in digest
+    assert "### P3 — Open" in digest and "(not done yet)" in digest
+    assert "Do this." not in digest
+    assert "Acceptance criteria" not in digest
+    # an unreadable or empty plan digests to the heading alone
+    assert "settled" not in run_loop.build_slice_digest("")
 
 
 def test_reviewer_dispatch_states_the_green_gate():
@@ -2317,17 +2350,64 @@ def test_an_unresolvable_hold_is_a_plan_structure_error():
         assert "push hold `../Nope`" in bail["details"]
 
 
-def test_doc_phase_prompt_states_diff_range_and_doc():
+def test_doc_phase_prompt_states_diff_files_digest_verbs_and_doc():
+    """The doc-writer's dispatch carries the driver's deterministic facts:
+    the diff on disk per repo (stat, then the diff, over slice base..base
+    branch — never HEAD, which is the doc branch), the whole-plan digest
+    with every done-record, the close-out verbs' argument shapes, and the
+    branch it works on."""
+    def done_record(loop):
+        loop.plan_path.write_text(
+            loop.plan_path.read_text().rstrip("\n")
+            + "\n\n**Done (P1).** Shipped the thing; the flag is `--x`.\n")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        (slice_dir / "slice.md").write_text("# S\n\nnot the writer's\n")
+        script = [(*V["exec_done"], done_record), V["review_signoff"], *TAIL]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        r.fake_git.stat = (" a.py | 2 +-\n"
+                           " 1 file changed, 1 insertion(+), 1 deletion(-)")
+        r.fake_git.diff = ("diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n"
+                           "@@ -1 +1 @@\n-x\n+y")
+        assert run_to_exit(r) == 0
+        prompt = next(p for role, p in r.prompts if role == "doc-writer")
+        assert "doc-plan.md" in prompt
+        assert "phase/074-docs" in prompt
+        assert "Never push" in prompt
+        # the diff file: stat on top, then the diff, over slice base..base
+        diff_file = slice_dir / "doc_phase" / "repo.diff"
+        text = diff_file.read_text()
+        assert text.startswith(f"{repo} — git diff abc123..main\n")
+        assert text.index(" a.py | 2 +-") < text.index("diff --git a/a.py")
+        assert (f"- {repo}: {diff_file} (`git diff abc123..main`: "
+                "1 file changed, 1 insertion(+), 1 deletion(-))") in prompt
+        assert [c for _, c in r.fake_git.calls
+                if c[:2] == ("diff", "abc123..main")]
+        assert not [c for _, c in r.fake_git.calls
+                    if c[0] == "diff" and "HEAD" in c[-1]]
+        # the whole-plan digest, with the done-record and not the intent
+        assert "# Orientation digest — the whole slice" in prompt
+        assert "**Done (P1).** Shipped the thing" in prompt
+        assert "not the writer's" not in prompt
+        assert "slice.md is not your input" in prompt
+        # the close-out verbs' argument shapes, from the tool's own parser
+        assert "close_out.py append --section {" in prompt
+        assert "--consequence: what an operator or user experiences" in prompt
+        assert "close_out.py note --by BY" in prompt
+        assert "close_out.py strike" not in prompt
+        assert "Focus: <!-- doc-writer: … -->" in prompt
+
+
+def test_doc_phase_diff_rows_name_unchanged_repos_without_a_file():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         script = [V["exec_done"], V["review_signoff"], *TAIL]
         r = ScriptedLoop(slice_dir, script, repo_root=repo)
         assert run_to_exit(r) == 0
         prompt = next(p for role, p in r.prompts if role == "doc-writer")
-        assert "doc-plan.md" in prompt
-        assert "git diff abc123" in prompt  # the recorded slice base
-        assert "phase/074-docs" in prompt
-        assert "Never push" in prompt
+        assert f"- {repo}: no changes (`git diff abc123..main`)" in prompt
+        assert not list((slice_dir / "doc_phase").iterdir())
 
 
 def test_doc_phase_runs_on_branch_and_driver_lands_it():

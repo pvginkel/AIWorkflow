@@ -44,6 +44,10 @@ imports run_loop) and a CLI for the agents and the skills:
          live entries without a `Consequence:` or a `Provenance:` line
          (bold or not — the check is for the content, not the typography).
 
+`verb_usage(*verbs)` renders the named verbs' usage lines and argument help
+from this parser, for a dispatch that hands an agent the argument shapes
+(the doc-writer's) — one definition, so the block cannot drift from the CLI.
+
 Headings are read outside fenced code blocks and outside HTML comments
 only — an entry that quotes a document's `## Bugs` or a `### B3` inside a
 ``` fence (the entry rules ask for liberal quoting) neither moves a section
@@ -727,8 +731,14 @@ def stamp_header(slice_dir: Path | str) -> str:
 
 # -- CLI --------------------------------------------------------------------
 
-def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+def build_parser() -> tuple[argparse.ArgumentParser,
+                            dict[str, argparse.ArgumentParser]]:
+    """The CLI, plus its verbs by name — the second is what `verb_usage`
+    renders a dispatch's verb block from, so the block and the CLI are one
+    definition. `prog` is fixed: an importing script's argv[0] must not
+    leak into the usage lines."""
+    parser = argparse.ArgumentParser(prog="close_out.py",
+                                     description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
 
     slice_help = "the slice directory, or its close-out.md"
@@ -775,7 +785,32 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("counts", help="non-struck entries per section")
     p.add_argument("slice", help=slice_help)
+    return parser, sub.choices
 
+
+def verb_usage(*verbs: str) -> str:
+    """The named verbs as a dispatch carries them: each verb's usage line
+    (one line, `-h` dropped) followed by one indented line per argument
+    with its help. Rendered from the parser, so an agent handed this block
+    has the argument shapes without a `--help` round trip and the block
+    cannot say something the CLI does not."""
+    _, subs = build_parser()
+    out: list[str] = []
+    for verb in verbs:
+        sub = subs[verb]
+        usage = " ".join(sub.format_usage().removeprefix("usage:").split())
+        out.append(usage.replace(" [-h]", ""))
+        for action in sub._actions:
+            # `slice` is the report path the dispatch line already names
+            if action.dest in ("help", "slice") or not action.help:
+                continue
+            name = ", ".join(action.option_strings) or action.dest
+            out.append(f"    {name}: {action.help}")
+    return "\n".join(out)
+
+
+def main(argv=None) -> int:
+    parser, _ = build_parser()
     args = parser.parse_args(argv)
     slice_dir = slice_dir_of(args.slice)
     if not slice_dir.is_dir():
