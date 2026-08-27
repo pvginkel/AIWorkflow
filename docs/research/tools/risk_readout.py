@@ -116,9 +116,14 @@ def phase_files_by_author_window(repo: Path, window: tuple[datetime, datetime],
     cands = [sha for sha, t in _AUTHOR_LOG[repo] if window[0] <= t <= window[1]]
     per_commit = {}
     for sha in cands:
-        per_commit[sha] = [f.strip() for f in git(repo, "show", "--name-only", "--format=", sha).splitlines() if f.strip()]
+        per_commit[sha] = [
+            f.strip()
+            for f in git(repo, "show", "--name-only", "--format=", sha).splitlines()
+            if f.strip()
+        ]
     if cwd:
-        per_commit = {s: fs for s, fs in per_commit.items() if any(f.startswith(cwd + "/") for f in fs)} or per_commit
+        per_commit = {s: fs for s, fs in per_commit.items()
+                      if any(f.startswith(cwd + "/") for f in fs)} or per_commit
     bases = {os.path.basename(c) for c in cited}
     matched = {s: fs for s, fs in per_commit.items()
                if any(f in cited or os.path.basename(f) in bases for f in fs)}
@@ -159,16 +164,18 @@ SEV_RE = re.compile(r"\b(Blocker|Major|Minor)\b")
 IMP_RE = re.compile(r"\b(blocking|advisory)\b", re.I)
 ANCHOR_RE = re.compile(r"anchor[:\s`]+([a-z-]+)", re.I)
 PATH_RE = re.compile(r"(?<![\w/@])((?:[\w.-]+/)+[\w.-]+\.[A-Za-z]{1,5})(?::\d+)?")
-BARE_RE = re.compile(r"(?<![\w/.-])([\w-]+\.(?:py|go|ts|js|md|yaml|yml|json|toml|sh|tsx|lua|html|css))(?::\d+)?")
+BARE_RE = re.compile(
+    r"(?<![\w/.-])([\w-]+\.(?:py|go|ts|js|md|yaml|yml|json|toml|sh|tsx|lua|html|css))(?::\d+)?"
+)
 RANGE_RE = re.compile(r"diff\s+`?([0-9a-f]{7,40})\.\.")
 
 
 def parse_review_md(text: str) -> tuple[list[dict], str | None]:
     lines = text.splitlines()
-    heads = [(i, m) for i, m in ((i, HEAD_RE.match(l)) for i, l in enumerate(lines)) if m]
+    heads = [(i, m) for i, m in ((i, HEAD_RE.match(line)) for i, line in enumerate(lines)) if m]
     # only count headings under a "Findings"-like section, or F-prefixed ones
     findings = []
-    for k, (i, m) in enumerate(heads):
+    for i, m in heads:
         level = len(m.group(1))
         end = len(lines)
         for j in range(i + 1, len(lines)):
@@ -197,15 +204,22 @@ def parse_review_md(text: str) -> tuple[list[dict], str | None]:
 
 # ---------------------------------------------------------------- close-out markdown
 
-LIVE_RE = re.compile(r"^### (?P<id>[ANBQS]\d+) — (?P<head>.*?)(?: · (?P<sev>major|minor|nit|cosmetic))?\s*$")
-STRUCK_RE = re.compile(r"^### ~~(?P<id>[ANBQS]\d+) — (?P<head>.*?)(?: · (?P<sev>major|minor|nit|cosmetic))?~~\s*[—–-]\s*(?P<reason>.*)$")
+LIVE_RE = re.compile(
+    r"^### (?P<id>[ANBQS]\d+) — (?P<head>.*?)"
+    r"(?: · (?P<sev>major|minor|nit|cosmetic))?\s*$"
+)
+STRUCK_RE = re.compile(
+    r"^### ~~(?P<id>[ANBQS]\d+) — (?P<head>.*?)"
+    r"(?: · (?P<sev>major|minor|nit|cosmetic))?~~\s*[—–-]\s*(?P<reason>.*)$"
+)
 
 
 def role_of(prov: str) -> str:
     p = prov.lower()
     if "refut" in p or "driver" in p:
         return "driver"
-    if "code-review" in p or "code review" in p or "reviewer, p" in p or "reviewer" in p and "plan" not in p:
+    if ("code-review" in p or "code review" in p or "reviewer, p" in p
+            or "reviewer" in p and "plan" not in p):
         return "code-reviewer"
     if "test-agent" in p or "test phase" in p or "test agent" in p or "live_verification" in p:
         return "test-agent"
@@ -235,9 +249,11 @@ def disposition_class(text: str, struck_reason: str | None) -> str:
         return "struck-other"
     if not t:
         return "blank"
-    if re.search(r"\b(card|file|filed|triage)\b", t) and not re.search(r"\bclose\b.*\bcard\b|\bcard\b.*\bclose\b", t):
+    if re.search(r"\b(card|file|filed|triage)\b", t) \
+            and not re.search(r"\bclose\b.*\bcard\b|\bcard\b.*\bclose\b", t):
         return "actioned"
-    if re.search(r"\b(fix|apply|inline|make the change|complete|done|fold|progress it|do something)\b", t) \
+    if re.search(r"\b(fix|apply|inline|make the change|complete|done|fold|progress it"
+                 r"|do something)\b", t) \
             and not re.search(r"\b(won't|not|don't|isn't)\b.*\b(progress|fix)", t):
         return "actioned"
     if re.search(r"\b(close|closed|leave|won't progress|not progressing|don't want|ok\.?$)\b", t):
@@ -258,10 +274,10 @@ def parse_closeout(text: str) -> list[dict]:
         while j < len(lines) and not re.match(r"^##", lines[j]):
             j += 1
         body = lines[i + 1:j]
-        prov = next((l for l in body if "Provenance:" in l), "")
-        disp = next((l for l in body if "Disposition:" in l), "")
+        prov = next((line for line in body if "Provenance:" in line), "")
+        disp = next((line for line in body if "Disposition:" in line), "")
         disp_text = re.sub(r"^.*Disposition:\*?\*?\s*", "", disp).strip()
-        cons = next((l for l in body if "Consequence:" in l), "")
+        cons = next((line for line in body if "Consequence:" in line), "")
         cons_text = re.sub(r"^.*Consequence:\*?\*?\s*", "", cons).strip()
         pm = re.search(r"\bP(\d+)\b", prov)
         fm = re.search(r"\bF(\d+)\b|finding (\d+)", prov)
@@ -272,7 +288,8 @@ def parse_closeout(text: str) -> list[dict]:
             "provenance": prov.strip(), "role": role_of(prov),
             "phase": pm.group(1) if pm else None,
             "finding": (fm.group(1) or fm.group(2)) if fm else None,
-            "evidence": "witnessed" if "witnessed" in prov.lower() else ("read" if "read" in prov.lower() else None),
+            "evidence": ("witnessed" if "witnessed" in prov.lower()
+                         else ("read" if "read" in prov.lower() else None)),
             "disposition": disp_text, "consequence": cons_text,
             "class": disposition_class(disp_text, m.group("reason") if struck else None),
             "paths": sorted(set(PATH_RE.findall("\n".join(body)))),
@@ -326,7 +343,8 @@ def extract(since: str) -> dict:
             dur = max((h.get("duration_s") or 0) for h in rows) if rows else 0
             window = None
             if ts:
-                window = (min(ts) - timedelta(seconds=dur + 600), max(ts) + timedelta(seconds=dur + 600))
+                window = (min(ts) - timedelta(seconds=dur + 600),
+                          max(ts) + timedelta(seconds=dur + 600))
             pdir = sd / "phases" / f"P{pid}"
             md_reviews = {}
             rng_base = None
@@ -342,7 +360,8 @@ def extract(since: str) -> dict:
             method = "range"
             # ts is the row's END time (rows are appended when the agent returns), so a writer
             # session spans [ts - duration_s, ts] and its commit's author date lies inside it.
-            wrows = [(datetime.fromisoformat(h["ts"]), h.get("duration_s") or 0) for h in execs if h.get("ts")]
+            wrows = [(datetime.fromisoformat(h["ts"]), h.get("duration_s") or 0)
+                     for h in execs if h.get("ts")]
             wwindow = None
             if wrows:
                 wwindow = (min(t - timedelta(seconds=d) for t, d in wrows) - timedelta(seconds=120),
@@ -379,7 +398,8 @@ def extract(since: str) -> dict:
                                        "source": "telemetry"})
                 else:
                     for f in md.values():
-                        merged.append({"id": f["id"], "severity": f["severity"], "impact": f["impact"],
+                        merged.append({"id": f["id"], "severity": f["severity"],
+                                       "impact": f["impact"],
                                        "category": None, "anchor": f["anchor"],
                                        "summary": f["headline"], "paths": f["paths"],
                                        "bare": f["bare"], "source": "markdown"})
@@ -402,7 +422,8 @@ def extract(since: str) -> dict:
                     cited_in_phase = sorted(c for c in cited if c in files)
                     f["cited"] = sorted(cited)
                     f["cited_in_phase"] = cited_in_phase
-                    f["cited_levels"] = sorted({classify(rname, c) for c in (cited_in_phase or cited)})
+                    f["cited_levels"] = sorted(
+                        {classify(rname, c) for c in (cited_in_phase or cited)})
                     f["late_cite"] = bool(cited) and not cited_in_phase
                 refuted = []
                 for e in execs:
@@ -412,7 +433,8 @@ def extract(since: str) -> dict:
                                "refuted": refuted, "summary": h.get("summary", "")[:300]})
             rec["phases"].append({
                 "id": pid, "target": ps.get("target"), "repo": rname,
-                "review_rounds": ps.get("review_rounds"), "executor_rounds": ps.get("executor_rounds"),
+                "review_rounds": ps.get("review_rounds"),
+                "executor_rounds": ps.get("executor_rounds"),
                 "base": use_base, "head": ps["reviewed_head"], "commits": kept, "dropped": dropped,
                 "method": method,
                 "files": files, "buckets": dict(buckets),
@@ -466,13 +488,15 @@ def report(corpus: dict, tests: str) -> None:
                 tab[lv]["r1_critical"] += 1
             if (ph.get("review_rounds") or 1) >= 2:
                 tab[lv]["second_round"] += 1
-            blk = sum(1 for r in ph["rounds"] for f in r["findings"] if is_blocking(f, r["outcome"]))
+            blk = sum(1 for r in ph["rounds"] for f in r["findings"]
+                      if is_blocking(f, r["outcome"]))
             ref = sum(len(r["refuted"]) for r in ph["rounds"])
             tab[lv]["blocking_findings"] += blk
             tab[lv]["refuted"] += ref
             tab[lv]["files"] += len(ph["files"])
     print("## Phases by risk level (level = max over touched files)\n")
-    print("| level | phases | files | r1 issues | r1 critical | 2nd round | blocking findings | refuted |")
+    print("| level | phases | files | r1 issues | r1 critical | 2nd round "
+          "| blocking findings | refuted |")
     print("|---|---:|---:|---:|---:|---:|---:|---:|")
     for lv in ("low", "medium", "high", "empty"):
         c = tab[lv]
@@ -511,7 +535,8 @@ def report(corpus: dict, tests: str) -> None:
                     lv = f.get("cited_levels") or ["uncited"]
                     if tests == "low":
                         lv = [("low" if b == "test" else b) for b in lv]
-                    key = max(lv, key=lambda b: LEVELS.get(b, -1)) if lv != ["uncited"] else "uncited"
+                    key = (max(lv, key=lambda b: LEVELS.get(b, -1))
+                           if lv != ["uncited"] else "uncited")
                     cite[key] += 1
                     cat[key][f.get("category") or "?"] += 1
     for k, v in sorted(cite.items(), key=lambda kv: -kv[1]):
@@ -530,9 +555,11 @@ def report(corpus: dict, tests: str) -> None:
             print(f"### {s['slice']} P{ph['id']} — {ph['target']} · {len(ph['files'])} files "
                   f"{dict(ph['buckets'])} · rounds {ph['review_rounds']}")
             for rnd, f in blk:
-                refd = "REFUTED" if f["id"] in next((r["refuted"] for r in ph["rounds"] if r["round"] == rnd), []) else ""
+                refd = "REFUTED" if f["id"] in next(
+                    (r["refuted"] for r in ph["rounds"] if r["round"] == rnd), []) else ""
                 print(f"- r{rnd} {f['id']} {f.get('severity')} · {f.get('anchor')} {refd}: "
-                      f"{(f.get('summary') or '')[:160]}  cites={f.get('cited_in_phase') or f.get('cited')}")
+                      f"{(f.get('summary') or '')[:160]}  "
+                      f"cites={f.get('cited_in_phase') or f.get('cited')}")
             print()
     # 5. close-out: operator-actioned entries by role and by the level of the cited files
     print("\n## Close-out entries — what the operator did, by provenance role\n")
@@ -545,7 +572,8 @@ def report(corpus: dict, tests: str) -> None:
     print("|---|" + "---:|" * len(classes))
     for role, c in sorted(tab2.items(), key=lambda kv: -sum(kv[1].values())):
         print(f"| {role} | " + " | ".join(str(c[k]) for k in classes) + " |")
-    print("\n### Operator-actioned entries (card / fix / fold) with a code-reviewer or test-agent provenance\n")
+    print("\n### Operator-actioned entries (card / fix / fold) with a code-reviewer "
+          "or test-agent provenance\n")
     for s in slices:
         for e in s.get("closeout") or []:
             if e["class"] != "actioned" or e["role"] not in ("code-reviewer", "test-agent"):
@@ -554,11 +582,14 @@ def report(corpus: dict, tests: str) -> None:
             lv = phase_level(ph, tests) if ph else "?"
             repo = ph["repo"] if ph else "KubeCoder"
             cl = sorted({classify(repo, p) for p in e["paths"]}) or ["-"]
-            print(f"- {s['slice']} {e['id']} [{e['role']} P{e['phase']} F{e['finding']}] phase={lv} "
-                  f"cites={cl} · {e['severity']} · {e['headline'][:110]}\n    → {e['disposition'][:120]}"
-                  if not e['struck'] else
-                  f"- {s['slice']} {e['id']} [{e['role']} P{e['phase']} F{e['finding']}] phase={lv} "
-                  f"cites={cl} · {e['severity']} · {e['headline'][:110]}\n    → struck: {e['struck_reason'][:120]}")
+            print(
+                f"- {s['slice']} {e['id']} [{e['role']} P{e['phase']} F{e['finding']}] "
+                f"phase={lv} cites={cl} · {e['severity']} · {e['headline'][:110]}\n"
+                f"    → {e['disposition'][:120]}"
+                if not e['struck'] else
+                f"- {s['slice']} {e['id']} [{e['role']} P{e['phase']} F{e['finding']}] "
+                f"phase={lv} cites={cl} · {e['severity']} · {e['headline'][:110]}\n"
+                f"    → struck: {e['struck_reason'][:120]}")
     print("\n### Entries the classifier could not place (read by hand)\n")
     for s in slices:
         for e in s.get("closeout") or []:
@@ -566,7 +597,8 @@ def report(corpus: dict, tests: str) -> None:
                 print(f"- {s['slice']} {e['id']} [{e['role']}] {e['headline'][:90]}\n    → "
                       f"{(e['disposition'] or e['struck_reason'] or '')[:140]}")
     # 6. late findings
-    print("\n## Late findings — appended phases, test rounds, consult outcomes, cross-phase cites\n")
+    print("\n## Late findings — appended phases, test rounds, consult outcomes, "
+          "cross-phase cites\n")
     for s in slices:
         late = []
         if s["appended_phases"]:
@@ -580,7 +612,8 @@ def report(corpus: dict, tests: str) -> None:
             for r in ph["rounds"]:
                 for f in r["findings"]:
                     if is_blocking(f, r["outcome"]) and f.get("late_cite"):
-                        late.append(f"P{ph['id']} r{r['round']} {f['id']} cites outside the phase diff: {f['cited'][:3]}")
+                        late.append(f"P{ph['id']} r{r['round']} {f['id']} cites outside "
+                                    f"the phase diff: {f['cited'][:3]}")
         if late:
             print(f"- {s['slice']}: " + "; ".join(late))
 
