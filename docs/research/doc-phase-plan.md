@@ -19,6 +19,18 @@ per-phase Sonnet prep should do it. "More agents over fewer" holds for big slice
 costs ≈ $0.35–0.60 before it does any work, so it needs ≈ 3 pages of work to pay for itself —
 2–4 units on a typical KubeCoder slice, 6–8 on a 170-sized one, never one per page.
 
+## Phasing — what to ask for
+
+- **Phase 1 = § 3**, one plugin version, prose + dispatch + a small driver addition; no new
+  agent, no A/B needed (nothing in it exposes quality). Read on the first two slices it reaches
+  with `t4_readout.py writers --role doc-writer` (§ 8) — the expected signature is orientation
+  turns down, `ctx_fe` down ≈ 10–20 k, and no Explore report arriving after the first edit.
+- **Phase 2 = § 4 + § 6 items 1–3** (items 1–2 already land in phase 1), the new `doc-unit`
+  agent and the `units.json` contract, A/B per § 8. Needs the § 7 rulings from the operator
+  first — at least the unit definition in KubeCoder's `slice-doc-plan.md`.
+- § 5 lists what neither phase does; § 7's last three items are KubeCoder rulings, not plugin
+  work.
+
 ## 1. What the doc-writer actually does (the reverse-engineering the card asked for)
 
 Three sessions read turn by turn; the whole corpus (25 sessions, 144–170) plus the eight post-T3
@@ -131,15 +143,22 @@ reconcile pass buys in quality, which is the part the card is really after.
    −15–21 % on today's sessions, or the same if the delegation is simply dropped (the writer
    re-derives it anyway). Keep the delegation: a survey at 12 k prefix is cheaper than the same
    reads in the writer's 100 k context.
-2. **The dispatch carries the plan digested, not the plan.** The done-records (the
-   `**Done (P…)**` openers T4 already extracts, `build_phase_digest` in run_loop.py) and the
-   requirements/rulings section, inline; the writer is told not to read plan.md or slice.md
-   whole. Beside it, the driver writes each repo's diff to
-   `<slice_dir>/doc_phase/<repo>.diff` (`--stat` at the top) so the writer reads hunks by path
-   with `sed` and no result ever round-trips through the persisted-output file. −5–10 %.
+2. **The dispatch carries the plan digested, not the plan.** A whole-plan variant of
+   run_loop.py's `build_phase_digest`: every phase's done-record (the `**Done (P…)**` record
+   T4 already extracts, same ~25-line bound) plus the requirements/rulings sections, inline in
+   `DOC_PHASE_PROMPT`; the writer is told plan.md is there to open only where the digest points
+   and that slice.md is not its input (the doc plan's § 1 already says the diff and the rulings
+   are all the steering there is). Beside it, the driver writes each repo's diff to
+   `<slice_dir>/doc_phase/<repo-basename>.diff` (`git diff --stat` at the top, then the diff)
+   and names the files in the dispatch in place of the `git diff` ranges, so the writer reads
+   hunks by path with `sed` and no result ever round-trips through the persisted-output file.
+   −5–10 %.
 3. **The tail's mechanics in the dispatch:** the `close_out.py` verbs the phase uses (`list`,
-   `append`, `note`, `strike`, and the Summary/Focus write) with their argument shapes; the
-   gate commands by name (from `kc project info`, resolved by the driver). −5–8 turns.
+   `append`, `note`, `strike`, and how the Summary and `Focus:` lines are written) with their
+   argument shapes, from `close_out.dispatch_line`'s neighbourhood — the `--help` round trips
+   and the "read a previous slice's close-out for the style" turns go. −5–8 turns. (The gates
+   need nothing: the project's doc plan names them; 184's `kc project info` turn was a
+   component-name lookup, one turn.)
 
 These make the A/B of the rework cleaner, since the coordinator inherits all three.
 
