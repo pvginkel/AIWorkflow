@@ -68,9 +68,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # plan-shape authority, and the target repo's root comes from `git rev-parse
 # --show-toplevel` in the process cwd — not from `__file__`, which locates the
 # plugin these tools ship in, never the repo being planned.
+import project_config  # noqa: E402
 from close_out import ReportError, dispatch_line, init_report, report_path  # noqa: E402
 from run_loop import (  # noqa: E402
     AGENTS_DIR,
+    PHILOSOPHY_LINE,
     SPAWN_ENV,
     _git_toplevel,
     _now_hms,
@@ -133,7 +135,7 @@ your contract: the task-shape declaration (before you investigate), the
 phases (each opening with its `Target:` line), ordering constraints,
 not-in-scope, attachments/ only where an executor genuinely cannot derive
 the design, and verification.json's outcome-level acceptance criteria.
-{close_out_line}
+{philosophy_line}{close_out_line}
 Commit to the spec repo (stage by name), then write your verdict
 to {verdict_path}. Blocking questions go to {questions_path} with verdict
 `questions`.
@@ -148,7 +150,7 @@ the review where they speak. Apply every ruling the plan does not yet
 reflect and resolve every blocking finding the rulings do not overrule —
 the reviewer and the operator state problems; the fix design is yours. This
 is the only fix pass: no review follows it, the operator's read does.
-{close_out_line}
+{philosophy_line}{close_out_line}
 Commit (stage by name), then write your verdict to {verdict_path}. A
 finding the rulings leave genuinely unresolved goes to {questions_path}
 with verdict `questions`.
@@ -163,7 +165,7 @@ REVIEWER_PROMPT = """\
 Review the plan for slice {slice_name} — the full plan, in your one and
 only round: no fix-verify loop follows; your findings go to the operator.
 Slice folder: {slice_dir}
-{close_out_line}
+{philosophy_line}{close_out_line}
 
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
@@ -206,6 +208,7 @@ class PlanLoop:
         # Sessions spawn in the target repo, not the spec repo: the loop is
         # launched from it, and the agents read the code there.
         self.repo_root = _git_toplevel()
+        self._philosophy: str | None = None
 
     # -- state ---------------------------------------------------------------
 
@@ -296,6 +299,22 @@ class PlanLoop:
         except subprocess.TimeoutExpired:
             self.log(f"{label} nudge timed out")
 
+    def _philosophy_line(self) -> str:
+        """The project's change-discipline pointer, carried by every
+        dispatch the way the run loop's dispatches carry it (PHILOSOPHY_LINE)
+        — the planners bind phases and criteria to the same rules execution
+        is held to. The loop reads the config for nothing else, and
+        preflight owns validating it, so a missing or broken config degrades
+        to no line rather than a dead planning loop."""
+        if self._philosophy is None:
+            try:
+                doc = project_config.load(self.repo_root).design_philosophy
+            except project_config.ConfigError:
+                doc = None
+            self._philosophy = (
+                PHILOSOPHY_LINE.format(philosophy=doc) if doc else "")
+        return self._philosophy
+
     def _spawn(self, role: str, prompt: str, verdict_path: Path,
                round_: int) -> dict:
         """Run one fresh session; return its validated verdict. A session
@@ -380,6 +399,7 @@ class PlanLoop:
         if initial:
             prompt = WRITER_INITIAL_PROMPT.format(
                 slice_name=self.slice_name, slice_dir=self.slice_dir,
+                philosophy_line=self._philosophy_line(),
                 close_out_line=dispatch_line(self.report_path),
                 verdict_path=verdict_path, questions_path=questions_path)
         else:
@@ -387,6 +407,7 @@ class PlanLoop:
                            f"plan_review_r{self.state['pending_review']}.md")
             prompt = WRITER_FIX_PROMPT.format(
                 slice_name=self.slice_name, slice_dir=self.slice_dir,
+                philosophy_line=self._philosophy_line(),
                 close_out_line=dispatch_line(self.report_path),
                 review_path=review_path, verdict_path=verdict_path,
                 questions_path=questions_path)
@@ -418,6 +439,7 @@ class PlanLoop:
         verdict_path = self.slice_dir / f"plan_review_result_r{r}.json"
         prompt = REVIEWER_PROMPT.format(
             slice_name=self.slice_name, slice_dir=self.slice_dir,
+            philosophy_line=self._philosophy_line(),
             close_out_line=dispatch_line(self.report_path),
             review_path=review_path, verdict_path=verdict_path)
 

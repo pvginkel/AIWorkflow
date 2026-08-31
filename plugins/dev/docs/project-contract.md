@@ -53,8 +53,9 @@ the project meant to switch off is the failure this file exists to prevent.
   spec/planning repo). `triage` and `plan-slice` cannot allocate or plan a slice with nowhere to
   write it, so all three profiles require it and check the path is a directory.
 - **`design_philosophy`** — the project's change-discipline / design-philosophy doc
-  (delete-don't-tombstone, no defensive caveats, testability). The driver names it in every
-  `code-writer` and `code-reviewer` dispatch. Run profile checks the file exists.
+  (delete-don't-tombstone, no defensive caveats, testability). Named in every `code-writer`,
+  `code-reviewer`, `plan-writer` and `plan-reviewer` dispatch. Run profile checks the file
+  exists.
 - **`test_phase.strategy`** — the project-owned doc describing the slice-level deploy-verification
   procedure (what it pushes, what it checks, how findings route). The run loop's **test phase** is
   "read this doc and execute"; nothing else names the doc.

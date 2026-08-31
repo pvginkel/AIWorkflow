@@ -38,7 +38,10 @@ with phases (a reset re-plan) enters at review.
 The loop is the first thing to run on a slice, so it creates the slice's **close-out report**
 (`close-out.md`, from the plugin's template) and commits it before its first dispatch, and every
 dispatch names the report and `close_out.py`, the only way to write to it; what the planning
-agents write there is [close-out.md](close-out.md)'s.
+agents write there is [close-out.md](close-out.md)'s. Every dispatch also names the project's
+**change-discipline doc** (`.aiworkflowrc`'s `design_philosophy`) — the same pointer the run
+loop's dispatches carry, so the rules a plan's phases will be held to are in view while the plan
+is written and reviewed, not discovered at execution.
 
 ## The plan doc
 

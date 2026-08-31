@@ -4,6 +4,24 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-31 — planning dispatches carry the change-discipline pointer (v0.9.10)
+
+The `design_philosophy` pointer rode every run-loop dispatch but never a planning one — the
+plan-writer and plan-reviewer, the two roles that must catch what the discipline demands of a
+plan, were the only dispatches never told the doc exists. Triage #738 is the cost, measured three
+times in one lineage: KubeCoder's change-discipline doc lands a wire-contract (`api/*.md`)
+correction in the same change as the code, so a plan must carry it in the implementing phase with
+a criterion — and slices 142, 179 and 184 each had to rediscover that by hand (184's plan missed
+it; the plan reviewer caught it). All three plan-loop prompt templates now carry the same
+`PHILOSOPHY_LINE` the run loop formats, resolved from `.aiworkflowrc`; a config without
+`design_philosophy` — or no config at all — degrades to no line, since the plan loop reads the
+config for nothing else and preflight owns validating it. The project-side halves shipped with
+KubeCoder c9742140: the standing rule now sits in the doc the pointer names (change-discipline.md
+— the implementing phase owns the `api/*.md` correction, with a criterion), and the doc phase's
+procedure gained a verify-never-own bullet (slice-doc-plan.md §2.6): a contract claim the slice's
+diff falsified is a finding for the doc-writer's verdict, so a planning gap surfaces instead of
+shipping silently.
+
 ## 2026-08-27 — the doc-writer's dispatch carries the diff on disk, the plan digested whole and the close-out verbs; delegate, then yield (v0.9.9)
 
 Three doc-writer sessions read turn by turn (`docs/research/doc-phase-plan.md` § 1) are the same

@@ -507,6 +507,45 @@ def test_dispatch_passes_model_and_effort_explicitly():
                          ("plan-reviewer", "opus", "xhigh", trim)]
 
 
+def test_dispatches_carry_the_change_discipline_pointer():
+    """Every planning dispatch names the project's change-discipline doc
+    (.aiworkflowrc's design_philosophy) — the planners bind plans to the
+    same rules execution is held to (Triage #738: the plan roles were the
+    only dispatches never told the doc exists)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        root = Path(tmp) / "repo"
+        root.mkdir()
+        (root / ".aiworkflowrc").write_text(
+            'design_philosophy = "docs/conventions/change-discipline.md"\n')
+        loop = ScriptedLoop(slice_dir, [W_DONE, R_ISSUES])
+        loop.repo_root = root
+        assert run_to_exit(loop) == 4
+        # the rerun's fix pass carries it too — all three prompt templates
+        loop2 = ScriptedLoop(slice_dir, [W_DONE])
+        loop2.repo_root = root
+        assert run_to_exit(loop2) == 0
+        doc = str(root / "docs/conventions/change-discipline.md")
+        assert len(loop.prompts + loop2.prompts) == 3
+        for role, prompt in loop.prompts + loop2.prompts:
+            assert f"change-discipline doc is {doc}" in prompt, role
+
+
+def test_no_design_philosophy_means_no_pointer_line():
+    """No .aiworkflowrc (or none naming design_philosophy) degrades to no
+    line — the plan loop reads the config for nothing else, and preflight
+    owns validating it, so it must never die on it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        root = Path(tmp) / "repo"
+        root.mkdir()  # no .aiworkflowrc at all
+        loop = ScriptedLoop(slice_dir, [W_DONE, R_GO])
+        loop.repo_root = root
+        assert run_to_exit(loop) == 0
+        for role, prompt in loop.prompts:
+            assert "change-discipline" not in prompt, role
+
+
 if __name__ == "__main__":
     _tests = [v for k, v in sorted(globals().items())
               if k.startswith("test_") and callable(v)]
