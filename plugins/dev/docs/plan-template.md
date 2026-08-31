@@ -83,6 +83,13 @@ The mechanical rules the parser holds every author to:
   operations, and the gate. Markdown decoration is tolerated (`**Target:**` with a backticked
   value), but the
   line carries nothing else. A phase without a resolvable Target is a structure error.
+- **`Creates: <component>` declares that a phase registers a new component** — an optional
+  line under `Target:` for a phase that adds a `kc project list` entry to the manifest. The
+  driver re-reads the component set at every plan parse, so the component is a valid `Target:`
+  from the moment the creating phase merges; the declaration is what lets a *later* phase — or
+  the creating phase itself — target the name before that: validation and `--dry-run` accept it
+  on the declaration's word instead of failing against a manifest that does not hold it yet. A
+  declarer stamped done whose component never appeared in the manifest is a structure error.
 - **`✅ DONE <date>` on the heading is the driver's stamp.** Only the driver writes it, after
   review passes and the merge lands. No agent ever stamps, and a done phase is skipped on every
   re-parse.

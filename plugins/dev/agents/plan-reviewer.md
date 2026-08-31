@@ -36,7 +36,8 @@ plan cites.
    source and check it supports the sentence. Derive at least one load-bearing expectation
    independently (from the code or contract, not the plan) and diff it against the plan.
 4. **`Target:` correctness.** Every phase opens with a `Target:` naming a real `kc project list`
-   component or an existing sibling repo, and it is the *right* one for where the work lands.
+   component, an existing sibling repo, or a component that the phase itself or an earlier phase
+   declares with `Creates:` — and it is the *right* one for where the work lands.
 5. **Phase boundaries.** Phases are roughly PR-sized and independently reviewable, ordered
    producers-first; a phase whose outcome cannot be judged on its own diff is a finding, as is a
    planned end-to-end testing phase or auto-doc pass (the loop owns those). A phase whose

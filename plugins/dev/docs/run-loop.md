@@ -25,7 +25,10 @@ one-line **`Target:`** naming where it lands — a `kc project list` component, 
 path (`../SiblingRepo`) — from which the driver roots its git operations (branch, merge,
 dirty-checks in that repo) and picks the gate: `kc project test --project <name>` for a
 component; `kc project test` from the sibling's own root when it carries a manifest; no
-deterministic gate otherwise (the reviewer is told the state is unverified).
+deterministic gate otherwise (the reviewer is told the state is unverified). The component
+set is re-read at every plan parse, so a component a phase registers — declared by a `Creates:`
+line under its `Target:` ([plan-template.md](plan-template.md)) — is a valid target from the
+moment the creating phase merges, and may be named before that on the declaration's word.
 
 **The spec repo is a legal `Target:`** — a slice whose whole deliverable is the wire contracts
 names it, and the driver then branches and merges the tree that also holds its own run record.
@@ -118,7 +121,8 @@ whole plan is a feature of the review, not a cost. Then:
 ## After the last phase
 
 - **The loop-tail gate sweep** — before any loop-tail dispatch, the driver itself runs
-  `kc project lint` + `build` + `test`, per component so every red is visible, across every repo
+  `kc project lint` + `build` + `test`, per component so every red is visible (component sets
+  re-read at sweep time), across every repo
   in `state.json`'s `bases` that carries a kc manifest (spec repo excluded). Full logs land in
   `<slice>/sweeps/r<N>/`; the record is commit-stamped in `state.json` and reused only while
   every swept HEAD is exactly the swept commit — any movement (a consult committing mechanical

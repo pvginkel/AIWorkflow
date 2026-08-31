@@ -4,6 +4,21 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-31 — the component set follows the manifest; `Creates:` declares a new component (v0.9.12)
+
+KubeCoder slice 181 stood up a second Node project and could not target it (#746, that run's
+close-out S1): `run_loop.py` snapshotted `kc project list` once at run start, so a component a
+phase registers stayed invalid for the whole run — the plan had to fake every desktop phase onto
+an existing component with hand-run `kc project test --project vscode-desktop` Gate paragraphs,
+and the driver's own gate never ran the new suite. The driver now re-reads the component set at
+every plan load (i.e. after every merge), and the loop-tail sweep reads every root's manifest
+fresh, the invoking repo included. A phase that registers a component declares it with a
+`Creates: <component>` line under `Target:` (plan-template.md): the declaring phase targets its
+own creation optimistically — the gate runs after the executor lands the manifest change — later
+phases pass validation and `--dry-run` on the declaration's word while a declarer is still
+pending, and a declarer stamped DONE whose component never appeared is a precise structure error
+naming both phases. The plan reviewer's Target-correctness check admits declared components.
+
 ## 2026-08-31 — whole-number slice ids, and close_slice reads both README shapes (v0.9.11)
 
 Two production failures in `close_slice.py` and one ruling (Triage #584, #718, #763). Closing

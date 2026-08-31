@@ -390,6 +390,7 @@ HEADING_RE = re.compile(r"^###\s+(.*)$")
 PHASE_RE = re.compile(r"^###\s+P([A-Za-z0-9]+)\s+—\s+(.+?)\s*$")
 DONE_STAMP_RE = re.compile(r"✅\s*DONE\b")
 TARGET_RE = re.compile(r"^\s*\**Target\**\s*:\**\s*`?([^`]+?)`?\s*$")
+CREATES_RE = re.compile(r"^\s*\**Creates\**\s*:\**\s*`?([^`]+?)`?\s*$")
 PUSH_HOLDS_RE = re.compile(r"^##\s+Push holds\s*$", re.IGNORECASE)
 HOLD_RE = re.compile(r"^\s*[-*]\s+\**`?(\S+?)`?\**\s+—\s+(\S.*?)\s*$")
 
@@ -402,13 +403,24 @@ class Phase:
         self.body: list[str] = []
         self.done = bool(DONE_STAMP_RE.search(title))
         self.target: str | None = None
+        self.creates: str | None = None
 
     def resolve_target(self) -> None:
+        """`Target:` and the optional `Creates:` — first line of each kind
+        wins, in the same styles a plan writes them. `Creates:` declares that
+        this phase REGISTERS that component in the manifest: the name cannot
+        be in `kc project list` until the phase has run, so resolution and
+        validation are told to expect it rather than calling it a typo."""
         for line in self.body:
-            match = TARGET_RE.match(line)
-            if match:
-                self.target = match.group(1).strip()
-                return
+            if self.target is None:
+                match = TARGET_RE.match(line)
+                if match:
+                    self.target = match.group(1).strip()
+                    continue
+            if self.creates is None:
+                match = CREATES_RE.match(line)
+                if match:
+                    self.creates = match.group(1).strip()
 
 
 def parse_plan(text: str) -> tuple[list[Phase], list[str]]:
@@ -443,6 +455,34 @@ def parse_plan(text: str) -> tuple[list[Phase], list[str]]:
         if not phase.done and not phase.target:
             errors.append(f"phase P{phase.id} has no `Target:` line")
     return phases, errors
+
+
+def creation_claim(phases: list[Phase],
+                   index: int) -> tuple[Phase | None, str | None]:
+    """For a phase whose `Target:` did not resolve: (the phase that still
+    has to create it, an error). A phase creates its own target, or an
+    EARLIER one does — a later phase runs too late to help. While that
+    claimer is pending the unknown name is expected, not wrong; once it is
+    stamped DONE and `kc project list` still does not know the name, the
+    claim was false and both phases are named. (None, None) means nothing in
+    the plan claims the name — the caller's own error stands."""
+    target = phases[index].target
+    if not target or target.startswith(("../", "/")):
+        # `Creates:` only ever names a component; a sibling path either
+        # exists on disk or it doesn't, and no declaration changes that.
+        return None, None
+    claimers = [p for p in phases[:index + 1] if p.creates
+                and p.creates == target]
+    pending = [p for p in claimers if not p.done]
+    if pending:
+        return pending[0], None
+    if claimers:
+        return None, (
+            f"Target `{target}` is declared `Creates:` by phase "
+            f"P{claimers[-1].id}, which is stamped ✅ DONE — but `kc project "
+            "list` does not know that component (the component set was just "
+            "re-read). Register it in the manifest, or fix the name.")
+    return None, None
 
 
 def parse_push_holds(text: str) -> tuple[list[tuple[str, str]], list[str]]:
@@ -1845,7 +1885,18 @@ class RunLoop:
         """Parse the plan; on structure errors, nudge the session that
         produced them, then re-parse. A plan still broken after the nudge —
         or broken with no session to nudge (the operator's own edit) — is an
-        operator question, not a crash."""
+        operator question, not a crash.
+
+        The component set is re-read first, every load. A phase may register
+        a NEW component in the manifest, and the run's opening snapshot would
+        call that name invalid for the rest of the run — every re-parse
+        re-resolves every `Target:` against it. Slice 181 stood up a second
+        Node project and had to fake its phases onto an existing component
+        with hand-run gates (#746). This method runs at every `_run_phases`
+        iteration, i.e. after every phase merge, so resolution sees the
+        manifest as it stands. A failing load bails exactly as run()'s
+        opening one does."""
+        self.project_dirs = load_project_dirs(self.repo_root)
         for attempt in (1, 2):
             try:
                 text = self.plan_path.read_text()
@@ -1882,14 +1933,21 @@ class RunLoop:
                 if pid not in present]
 
     def _target_errors(self, phases: list[Phase]) -> list[str]:
+        """A pending phase whose Target does not resolve — unless the plan
+        says a phase creates it and that phase has not run yet."""
         errors = []
-        for phase in phases:
+        for index, phase in enumerate(phases):
             if phase.done or not phase.target:
                 continue
             try:
-                self._resolve_target(phase.target)
+                self._resolve_target(phase.target, creates=phase.creates)
+                continue
             except ValueError as e:
-                errors.append(f"phase P{phase.id}: {e}")
+                why = str(e)
+            creator, false_claim = creation_claim(phases, index)
+            if creator is not None:
+                continue
+            errors.append(f"phase P{phase.id}: {false_claim or why}")
         return errors
 
     def _track_phases(self, phases: list[Phase]) -> None:
@@ -1914,10 +1972,19 @@ class RunLoop:
                 return entry["session"], entry.get("role")
         return None, None
 
-    def _resolve_target(self, target: str) -> ResolvedTarget:
+    def _resolve_target(self, target: str,
+                        creates: str | None = None) -> ResolvedTarget:
         """A `kc project list` component, or a sibling repo path. Raises
-        ValueError with a fix-it message for anything else."""
-        if target in self.project_dirs:
+        ValueError with a fix-it message for anything else.
+
+        `creates` is the caller's phase's own `Creates:` declaration: a phase
+        that registers its own target resolves optimistically, because the
+        executor registers the component mid-phase and the gate runs after —
+        by then the argv below is right. Only `_run_phase` passes it; every
+        other caller (push holds, dry run, the plan check) stays strict."""
+        self_created = (creates is not None and creates == target
+                        and not target.startswith(("../", "/")))
+        if target in self.project_dirs or self_created:
             return ResolvedTarget(
                 target, "project", self.repo_root,
                 ["kc", "project", "test", "--project", target],
@@ -2463,7 +2530,7 @@ class RunLoop:
     def _run_phase(self, phase: Phase) -> None:
         phase_id = phase.id
         ps = self._phase_state(phase_id)
-        target = self._resolve_target(phase.target)
+        target = self._resolve_target(phase.target, creates=phase.creates)
         root = target.git_root
         outputs = self.slice_dir / "phases" / f"P{phase_id}"
         outputs.mkdir(parents=True, exist_ok=True)
@@ -2963,8 +3030,10 @@ class RunLoop:
         t0 = time.monotonic()
         results = []
         for root in targets:
-            components = (self.project_dirs if root == self.repo_root
-                          else load_project_dirs(root))
+            # Read every root's manifest here, the invoking repo included:
+            # a phase may have registered a component since the run started,
+            # and a sweep that skipped it would leave it untested (#746).
+            components = load_project_dirs(root)
             for component in components:
                 for verb in SWEEP_VERBS:
                     results.append(
@@ -3833,7 +3902,7 @@ def cmd_dry_run(loop: RunLoop) -> None:
         print(f"warning: {e.details} — component targets unvalidated",
               file=sys.stderr)
     print(f"slice {loop.slice_name}: {len(phases)} phase(s)")
-    for phase in phases:
+    for index, phase in enumerate(phases):
         line = f"  P{phase.id}  {'DONE ' if phase.done else ''}{phase.title}"
         if phase.done:
             print(line)
@@ -3845,7 +3914,16 @@ def cmd_dry_run(loop: RunLoop) -> None:
             print(f"{line}\n        target={target.name} [{target.kind}]  "
                   f"root={target.git_root}  gate: {gate}")
         except ValueError as e:
-            errors.append(f"phase P{phase.id}: {e}")
+            # A name the plan says a phase still has to create is not a bad
+            # Target — the dry run reads the plan before anything has run, so
+            # `kc project list` cannot know it yet. Resolution stays strict
+            # (no root, no gate to print); the note says who creates it.
+            creator, false_claim = creation_claim(phases, index)
+            if creator is not None:
+                print(f"{line}\n        target={phase.target} [project]  "
+                      f"(created by P{creator.id})")
+                continue
+            errors.append(f"phase P{phase.id}: {false_claim or e}")
             print(f"{line}\n        target=INVALID")
     holds, hold_errors = parse_push_holds(loop.plan_path.read_text())
     errors.extend(hold_errors)

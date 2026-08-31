@@ -412,6 +412,30 @@ def test_parse_plan_phases_ids_and_order():
     assert phases[2].target == "../Sibling"
 
 
+def test_parse_plan_reads_the_creates_declaration():
+    """`Creates:` names a component the phase registers in the manifest —
+    same style tolerance as `Target:`, first line of its kind wins, absent
+    means None."""
+    text = (
+        "# Plan\n\n"
+        "### P1 — Stand it up\n\nTarget: app\n\nCreates: newcomp\n\n"
+        "second thoughts\n\nCreates: ignored\n\n"
+        "### P2 — Decorated\n\nTarget: app\n\n**Creates:** `othercomp`\n\n"
+        "### P3 — Plain\n\nTarget: app\n"
+    )
+    phases, errors = parse_plan(text)
+    assert errors == []
+    assert [p.creates for p in phases] == ["newcomp", "othercomp", None]
+
+
+def test_creates_on_a_done_phase_parses_and_is_inert():
+    text = ("# Plan\n\n### P1 — Stood it up ✅ DONE 2026-08-30\n\n"
+            "Target: app\n\nCreates: newcomp\n")
+    phases, errors = parse_plan(text)
+    assert errors == []
+    assert phases[0].done and phases[0].creates == "newcomp"
+
+
 def test_parse_push_holds_reads_the_section_only():
     text = (
         "# Plan\n\n## Push holds\n\n"
@@ -1425,6 +1449,135 @@ def test_unknown_target_is_a_plan_error():
         assert run_to_exit(r) == 4
         bail = json.loads((slice_dir / "bailout.json").read_text())
         assert "neither a `kc project list` component" in bail["details"]
+
+
+# -- components a phase creates -----------------------------------------------
+#
+# A phase may register a NEW `kc project list` component (slice 181 stood up a
+# second Node project). The run's opening snapshot of the component set would
+# call that name invalid for the whole run, so the set is re-read at every plan
+# load and a `Creates:` declaration covers the window before the phase runs.
+
+def creating_plan(*sections):
+    return "# plan\n\n" + "\n".join(sections)
+
+
+def test_self_creating_phase_resolves_optimistically():
+    """The executor registers the component mid-phase and the gate runs
+    after, so the argv is right by the time it is used."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r.project_dirs = {PROJECT: Path(repo)}
+        target = r._resolve_target("newcomp", creates="newcomp")
+        assert target.kind == "project"
+        assert target.gate_argv == ["kc", "project", "test",
+                                    "--project", "newcomp"]
+        assert target.git_root == Path(repo) and target.gate_cwd == Path(repo)
+        for kwargs in ({}, {"creates": "othercomp"}):
+            try:
+                r._resolve_target("newcomp", **kwargs)
+            except ValueError as e:
+                assert "neither a `kc project list` component" in str(e)
+            else:
+                raise AssertionError(
+                    f"undeclared unknown target must raise ({kwargs})")
+
+
+def test_target_errors_wait_for_the_phase_that_creates_the_component():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r.project_dirs = {PROJECT: Path(repo)}
+
+        def errors_for(*sections):
+            phases, structure = parse_plan(creating_plan(*sections))
+            assert structure == []
+            return r._target_errors(phases)
+
+        # an earlier pending phase declares it — expected, not wrong
+        assert errors_for(
+            phase_section("1", "Stand it up", PROJECT,
+                          body="Creates: newcomp\n"),
+            phase_section("2", "Use it", "newcomp")) == []
+        # the phase creates its own target
+        assert errors_for(
+            phase_section("1", "Stand it up", "newcomp",
+                          body="Creates: newcomp\n")) == []
+        # the declarer has run and the component still is not there: the
+        # claim was false, and the error names both phases
+        done = errors_for(
+            phase_section("1", "Stood it up", PROJECT, done=True,
+                          body="Creates: newcomp\n"),
+            phase_section("2", "Use it", "newcomp"))
+        assert len(done) == 1
+        assert done[0].startswith("phase P2:")
+        assert "P1" in done[0] and "✅ DONE" in done[0]
+        # nobody claims the name
+        plain = errors_for(phase_section("1", "Use it", "newcomp"))
+        assert len(plain) == 1
+        assert "neither a `kc project list` component" in plain[0]
+        # a LATER phase's declaration is no help — this phase runs first
+        late = errors_for(
+            phase_section("1", "Use it", "newcomp"),
+            phase_section("2", "Stand it up", PROJECT,
+                          body="Creates: newcomp\n"))
+        assert len(late) == 1
+        assert "neither a `kc project list` component" in late[0]
+
+
+def test_plan_load_re_reads_the_component_set():
+    """Resolution sees the manifest as it stands, not the run's opening
+    snapshot — _load_plan runs after every phase merge."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(
+            tmp, phases=[("1", "Use the new one", "newcomp")])
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        components = {PROJECT: Path(repo)}
+        with patched(run_loop,
+                     load_project_dirs=lambda cwd: dict(components)):
+            try:
+                r._load_plan()
+            except Bailout as e:
+                assert e.reason == "plan_doc"
+            else:
+                raise AssertionError("an unknown component must not parse")
+            assert set(r.project_dirs) == {PROJECT}
+            components["newcomp"] = Path(repo)   # the phase registered it
+            phases = r._load_plan()
+        assert [p.id for p in phases] == ["1"]
+        assert set(r.project_dirs) == {PROJECT, "newcomp"}
+
+
+def test_a_phase_creates_the_component_the_next_phase_targets():
+    """End to end: P1 declares it and registers it, P2 targets it, and the
+    loop-tail sweep sweeps it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[
+            ("1", "Stand up the second project", PROJECT, False,
+             "Creates: newcomp\n"),
+            ("2", "Build it out", "newcomp"),
+        ])
+        components = {PROJECT: Path(repo)}
+
+        def register(loop):
+            components["newcomp"] = Path(repo)
+
+        script = [
+            ("code-writer", {"outcome": "done", "summary": "built"},
+             register),
+            V["review_signoff"], V["exec_done"], V["review_signoff"], *TAIL,
+        ]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop,
+                     load_project_dirs=lambda cwd: dict(components)):
+            assert run_to_exit(r) == 0
+        assert not r.script
+        state = load_state(slice_dir)
+        assert state["phases"]["2"]["status"] == "merged"
+        assert state["phases"]["2"]["target"] == "newcomp"
+        swept = {component for _, component, _ in r.sweep_calls}
+        assert swept == {PROJECT, "newcomp"}
 
 
 # -- sibling-repo targets -----------------------------------------------------
@@ -3134,6 +3287,58 @@ def test_dry_run_flags_bad_targets():
                 raise AssertionError("bad target must exit 2")
         assert "target=INVALID" in out.getvalue()
         assert "neither a `kc project list` component" in err.getvalue()
+
+
+def test_dry_run_accepts_a_target_a_phase_creates():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "repo"
+        root.mkdir()
+        slice_dir, _ = make_slice(tmp, repo=False)
+        (slice_dir / "plan.md").write_text(
+            "# plan\n\n"
+            + phase_section("1", "Stand it up", PROJECT,
+                            body="Creates: newcomp\n")
+            + "\n" + phase_section("2", "Use it", "newcomp")
+            + "\n" + phase_section("3", "Its own target", "othercomp",
+                                   body="Creates: othercomp\n"))
+        loop = RunLoop(slice_dir, resume=False)
+        loop.repo_root = root
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            try:
+                run_loop.cmd_dry_run(loop)
+            except SystemExit as e:
+                raise AssertionError(
+                    f"declared components must pass, exited {e.code}"
+                ) from None
+        text = out.getvalue()
+        assert "target=newcomp [project]  (created by P1)" in text
+        assert "target=othercomp [project]  (created by P3)" in text
+        assert "INVALID" not in text
+
+
+def test_dry_run_flags_a_component_a_done_phase_never_created():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "repo"
+        root.mkdir()
+        slice_dir, _ = make_slice(tmp, repo=False)
+        (slice_dir / "plan.md").write_text(
+            "# plan\n\n"
+            + phase_section("1", "Stood it up", PROJECT, done=True,
+                            body="Creates: newcomp\n")
+            + "\n" + phase_section("2", "Use it", "newcomp"))
+        loop = RunLoop(slice_dir, resume=False)
+        loop.repo_root = root
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                run_loop.cmd_dry_run(loop)
+            except SystemExit as e:
+                assert e.code == 2
+            else:
+                raise AssertionError("a false `Creates:` claim must exit 2")
+        assert "target=INVALID" in out.getvalue()
+        assert "declared `Creates:` by phase P1" in err.getvalue()
 
 
 if __name__ == "__main__":
