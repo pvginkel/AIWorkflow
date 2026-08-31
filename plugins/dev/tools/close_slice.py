@@ -5,9 +5,12 @@ moving it, and remembering not to `git add -A` a shared working tree).
 
 Given `<spec-repo>/slices/NNN_slug` it:
 
-  1. finds the slice's entry in the spec README's `## Pending` section
-     (the `- **NNN** — …` bullet and its wrapped continuation lines),
-  2. moves that entry verbatim to the end of the `## Completed` list,
+  1. finds the slice's entry in the spec README's `## Pending` section — the
+     `- **NNN** — …` bullet, plain or link-wrapped (`- **[NNN](path)** — …`),
+     plus its wrapped continuation lines,
+  2. adds it to `## Completed`, in that section's own shape: appended to a
+     bullet list with links to the slice's old path rewritten, or folded into
+     a synthesized row when the section is a Markdown table,
   3. `git mv`s the slice folder into `slices/completed/`,
   4. stages README.md **by name** — never `git add -A`: the spec repo is one
      working tree shared by several parallel sessions.
@@ -22,8 +25,8 @@ by name at their new path (`git mv` stages the rename with HEAD's content, so
 the driver's late edits to those files are still unstaged).
 
 Every precondition is checked before anything is mutated — a missing README
-entry, a missing folder, or a slice already under `slices/completed/` exits 2
-having changed nothing.
+entry, a missing folder, a folder whose id is not a whole number, or a slice
+already under `slices/completed/` exits 2 having changed nothing.
 
 Usage:
     close_slice.py <slice_dir>
@@ -37,10 +40,17 @@ import subprocess
 import sys
 from pathlib import Path
 
-BULLET_RE = re.compile(r"^-\s+\*\*(?P<num>\d+)\*\*")
+# The number must be terminated — by the closing `**` or by the `](` of a
+# link-wrapped id — or `- **063b** — …` would answer to a query for 063.
+BULLET_RE = re.compile(r"^-\s+\*\*\[?(?P<num>\d+)(?:\*\*|\]\()")
 CONTINUATION_RE = re.compile(r"^\s+\S")
 HEADING_RE = re.compile(r"^#{1,6}\s")
-SLICE_NUM_RE = re.compile(r"^(\d+)")
+# Same rule for the folder: digits, then `_` or the end of the name.
+SLICE_NUM_RE = re.compile(r"^(\d+)(?:_|$)")
+LEADING_DIGITS_RE = re.compile(r"^\d+")
+# A table's first cell reads `[013 slug](…)` or `[pam-credentials](…)`; digits
+# count only where they run out, so 013 is not the head of 0134.
+CELL_NUM_RE = re.compile(r"^\[?(?P<num>\d+)(?!\d)")
 
 PENDING_HEADING = "## Pending"
 COMPLETED_HEADING = "## Completed"
@@ -60,11 +70,20 @@ def spec_root_for(slice_dir: Path) -> Path:
 
 
 def slice_number(slice_dir: Path) -> str:
+    """The folder's id, and only when its digits run out at `_` or at the end
+    of the name. A bare `^(\\d+)` prefix once read `182b_…` as slice 182 and
+    moved the wrong README entry in production, so a letter suffix is now a
+    hard error rather than a near miss."""
     match = SLICE_NUM_RE.match(slice_dir.name)
-    if not match:
-        raise Precondition(f"{slice_dir.name} does not start with a slice "
-                           "number")
-    return match.group(1)
+    if match:
+        return match.group(1)
+    if LEADING_DIGITS_RE.match(slice_dir.name):
+        raise Precondition(
+            f"{slice_dir.name}: letter-suffixed slice ids are not supported — "
+            "slice ids are whole numbers, and every slice, follow-ups "
+            "included, takes a fresh one from allocate-next-slice.sh")
+    raise Precondition(f"{slice_dir.name} does not start with a slice "
+                       "number")
 
 
 def section_bounds(lines: list[str], heading: str) -> tuple[int, int]:
@@ -112,6 +131,95 @@ def last_entry_end(lines: list[str], start: int, end: int) -> int:
     return last
 
 
+def is_table_section(lines: list[str], start: int, end: int) -> bool:
+    """Whether a section is written as a Markdown table rather than a bullet
+    list — some spec repos keep `## Completed` as one. The first non-blank line
+    decides; a bullet moved verbatim into a table would corrupt it."""
+    for index in range(start, end):
+        if lines[index].strip():
+            return lines[index].strip().startswith("|")
+    return False
+
+
+def table_cells(line: str) -> list[str]:
+    """A `| a | b |` row's cells, outer pipes dropped. A naive split, which is
+    enough for what we read from it: the header's width and a row's first
+    cell, neither of which carries an escaped pipe."""
+    parts = line.strip().split("|")
+    if parts and not parts[0].strip():
+        parts = parts[1:]
+    if parts and not parts[-1].strip():
+        parts = parts[:-1]
+    return [part.strip() for part in parts]
+
+
+def table_rows(lines: list[str], start: int, end: int) -> list[int]:
+    """Line numbers of the table's rows in [start, end) — header and separator
+    included, since both are just rows to append after."""
+    return [index for index in range(start, end)
+            if lines[index].strip().startswith("|")]
+
+
+def table_lists(lines: list[str], start: int, end: int, number: str) -> bool:
+    """The table's answer to find_entry: is this slice already a row? Only the
+    first cell carries the id; cells with no leading digits (`[pam-…](…)`)
+    are simply not numbered and can never collide."""
+    for index in table_rows(lines, start, end):
+        cells = table_cells(lines[index])
+        if not cells:
+            continue
+        match = CELL_NUM_RE.match(cells[0])
+        if match and int(match.group("num")) == int(number):
+            return True
+    return False
+
+
+def rewrite_links(entry: list[str], dirname: str) -> list[str]:
+    """The entry moves as it reads, but its links must not: a reference to the
+    slice's old home (`slices/backlog/<dir>/`, or `slices/<dir>/` once planned)
+    now points at `slices/completed/<dir>/`. The two passes cannot collide:
+    neither pattern matches the other's output."""
+    moved = f"slices/completed/{dirname}/"
+    return [line.replace(f"slices/backlog/{dirname}/", moved)
+                .replace(f"slices/{dirname}/", moved)
+            for line in entry]
+
+
+def entry_description(entry: list[str]) -> str:
+    """The prose half of a Pending bullet — everything past the ` — ` that
+    follows the id — folded onto one line for a table cell, pipes escaped so
+    the cell survives. A bullet with no separator contributes all its text."""
+    head = entry[0]
+    match = BULLET_RE.match(head)
+    cut = head.find(" — ", match.end() if match else 0)
+    text = head[cut + 3:] if cut >= 0 else head.lstrip("- ")
+    parts = [text] + entry[1:]
+    return " ".join(part.strip() for part in parts
+                    if part.strip()).replace("|", r"\|")
+
+
+def slice_link(slice_dir: Path, number: str) -> str:
+    """The row's first cell: `[NNN slug-with-hyphens](slices/completed/…)`,
+    pointing at the slice's plan if it has one, else its brief, else the folder
+    — read before the `git mv`, while the folder is still where it was."""
+    slug = slice_dir.name[len(number):].lstrip("_").replace("_", "-")
+    target = f"slices/completed/{slice_dir.name}"
+    for candidate in ("plan.md", "slice.md"):
+        if (slice_dir / candidate).is_file():
+            target = f"{target}/{candidate}"
+            break
+    return f"[{f'{number} {slug}'.strip()}]({target})"
+
+
+def table_row(header: str, first_cell: str, description: str) -> str:
+    """A synthesized row, as wide as the header. Only the two cells we can
+    derive are filled; the middle ones get an em dash for the closing session
+    to refine by hand."""
+    columns = max(len(table_cells(header)), 2)
+    cells = [first_cell] + ["—"] * (columns - 2) + [description]
+    return "| " + " | ".join(cells) + " |"
+
+
 def git(spec_root: Path, *args: str) -> None:
     result = subprocess.run(["git", "-C", str(spec_root), *args],
                             capture_output=True, text=True)
@@ -143,13 +251,21 @@ def close_slice(slice_dir: Path) -> list[str]:
 
     pending_start, pending_end = section_bounds(lines, PENDING_HEADING)
     completed_start, completed_end = section_bounds(lines, COMPLETED_HEADING)
-    if find_entry(lines, completed_start, completed_end, number):
+    # Pending is a bullet list everywhere; only Completed varies in shape.
+    as_table = is_table_section(lines, completed_start, completed_end)
+    listed = (table_lists(lines, completed_start, completed_end, number)
+              if as_table
+              else bool(find_entry(lines, completed_start, completed_end,
+                                   number)))
+    if listed:
         raise Precondition(f"slice {number} is already listed under "
                            f"`{COMPLETED_HEADING}` in the spec README")
     span = find_entry(lines, pending_start, pending_end, number)
     if not span:
         raise Precondition(f"no `- **{number}** — …` entry under "
                            f"`{PENDING_HEADING}` in the spec README")
+    # Read off the folder before the mv relocates it.
+    first_cell = slice_link(slice_dir, number)
 
     # All preconditions hold; from here on we mutate.
     git(spec_root, "mv", str(slice_dir.relative_to(spec_root)),
@@ -158,19 +274,31 @@ def close_slice(slice_dir: Path) -> list[str]:
     entry = lines[span[0]:span[1]]
     remaining = lines[:span[0]] + lines[span[1]:]
     shift = span[1] - span[0]
-    insert_at = last_entry_end(
-        remaining,
-        completed_start - shift if completed_start > span[0] else completed_start,
-        completed_end - shift if completed_end > span[0] else completed_end)
-    updated = remaining[:insert_at] + entry + remaining[insert_at:]
+    start = completed_start - shift if completed_start > span[0] else completed_start
+    end = completed_end - shift if completed_end > span[0] else completed_end
+    if as_table:
+        rows = table_rows(remaining, start, end)
+        block = [table_row(remaining[rows[0]], first_cell,
+                           entry_description(entry))]
+        insert_at = rows[-1] + 1
+    else:
+        block = rewrite_links(entry, slice_dir.name)
+        insert_at = last_entry_end(remaining, start, end)
+    updated = remaining[:insert_at] + block + remaining[insert_at:]
     readme_path.write_text(
         "\n".join(updated) + ("\n" if text.endswith("\n") else ""))
     git(spec_root, "add", "README.md")
 
+    if as_table:
+        moved = (f"README.md: slice {number} entry moved Pending → Completed "
+                 "as a synthesized table row — the middle cells are `—`, "
+                 "refine them by hand if the table wants them")
+    else:
+        moved = (f"README.md: slice {number} entry moved Pending → Completed "
+                 f"({shift} line{'' if shift == 1 else 's'})")
     return [
         f"git mv slices/{slice_dir.name} → slices/completed/{slice_dir.name}",
-        f"README.md: slice {number} entry moved Pending → Completed "
-        f"({shift} line{'' if shift == 1 else 's'})",
+        moved,
         "staged README.md (not committed — commit it with state.json/log.txt/"
         "close-out.md, added by name at their new path)",
     ]

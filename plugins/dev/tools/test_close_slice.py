@@ -14,6 +14,7 @@ Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_close_slice.py` or via pytest.
 import contextlib
 import importlib.util
 import io
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -54,6 +55,50 @@ These live in `slices/backlog/` or, once planned, directly in `slices/`.
 - **002** — Worker port: the worker is a static binary (#28; D068).
 """
 
+# The other README shape in the field (AnsibleSpecs): Pending bullets carry the
+# id as a link, and Completed is a four-column table. Assembled from parts
+# because the real lines run well past this repo's 100-column limit — the text
+# is verbatim, the wrapping is ours.
+_PENDING_010 = (
+    "- **[010](slices/backlog/010_kubecoder_deploy_repo/slice.md)** — "
+    "KubeCoderDeploy repo and image pinning: the pilot's chart, rebuilt "
+    "Terraform and stage config, plus the seven `Build-Main` pins "
+    "(phases.md B.1+B.2; #124)."
+)
+_PENDING_014 = (
+    "- **[014](slices/backlog/014_pam_credentials/plan.md)** — PAM "
+    "credentials: the `pam | ansible` split (#131),\n"
+    "  with the vault rotation folded in."
+)
+_ROW_013 = (
+    "| [013 iac-pipeline-restructure]"
+    "(slices/completed/013_iac_pipeline_restructure/plan.md) "
+    "| `iac-pipeline-restructure.md` (P1 superseded by tf-provider-registry) "
+    "| tf-provider-registry "
+    "| gated the `iac-image` rebuild on its real image inputs and folded the "
+    "`IaCAgent` tree into `support/iac-agent/` with its 28 commits preserved "
+    "— shipped 2026-08-13 (#70) |"
+)
+
+README_TABLE = f"""\
+# AnsibleSpecs — specs
+
+Source of truth.
+
+## Pending
+
+These live in `slices/backlog/` or, once planned, directly in `slices/`.
+
+{_PENDING_010}
+{_PENDING_014}
+
+## Completed
+
+| Slice | Was | Depends on | Consumed by |
+|---|---|---|---|
+{_ROW_013}
+"""
+
 
 # ---------------------------------------------------------------------------
 # Fixtures + helpers
@@ -92,14 +137,15 @@ def run_cli(*argv):
 
 
 def make_spec_repo(ws, readme=README, slice_name="116_toolchain_sweep",
-                   location="slices"):
+                   location="slices", files=("slice.md", "state.json")):
     spec = ws / "specs"
     (spec / "slices" / "completed").mkdir(parents=True)
     (spec / "README.md").write_text(readme)
     slice_dir = spec / location / slice_name
     slice_dir.mkdir(parents=True, exist_ok=True)
-    (slice_dir / "slice.md").write_text("# slice\n")
-    (slice_dir / "state.json").write_text("{}\n")
+    for name in files:
+        (slice_dir / name).write_text("{}\n" if name.endswith(".json")
+                                      else f"# {name}\n")
     subprocess.run(["git", "init", "-q", "-b", "main", str(spec)], check=True)
     for key, value in (("user.email", "t@t"), ("user.name", "t")):
         subprocess.run(["git", "-C", str(spec), "config", key, value],
@@ -198,6 +244,92 @@ def test_backlog_slice_closes_out_too(ws):
 
 
 @with_workspace
+def test_link_wrapped_bullet_moves_with_rewritten_links(ws):
+    """The entry travels as it reads, minus its links to the old location."""
+    readme = README.replace(
+        "- **116** — Toolchain home-overlay sweep: single-line entry (#251).",
+        "- **[116](slices/backlog/116_toolchain_sweep/slice.md)** — Toolchain "
+        "home-overlay sweep:\n"
+        "  see `slices/116_toolchain_sweep/notes.md` (#251).")
+    spec, slice_dir = make_spec_repo(ws, readme=readme,
+                                     location="slices/backlog")
+    assert run_cli(str(slice_dir))[0] == 0
+    parts = sections((spec / "README.md").read_text())
+    assert parts["## Completed"][-2:] == [
+        "- **[116](slices/completed/116_toolchain_sweep/slice.md)** — "
+        "Toolchain home-overlay sweep:",
+        "  see `slices/completed/116_toolchain_sweep/notes.md` (#251).",
+    ]
+    assert not any("**[116]" in line for line in parts["## Pending"])
+    assert (spec / "slices" / "completed" / "116_toolchain_sweep").is_dir()
+
+
+# ---------------------------------------------------------------------------
+# A table-shaped `## Completed` (the AnsibleSpecs shape)
+# ---------------------------------------------------------------------------
+
+def table_rows(text):
+    """The rows of the README's Completed table, header and separator included."""
+    return [line for line in sections(text)["## Completed"]
+            if line.strip().startswith("|")]
+
+
+def row_cells(line):
+    """A row's cells — unlike the tool's own naive split, this one honours the
+    `\\|` a description may carry, which is exactly what the tests check."""
+    parts = re.split(r"(?<!\\)\|", line.strip())
+    return [part.strip() for part in parts[1:-1]]
+
+
+@with_workspace
+def test_table_completed_gets_a_synthesized_row(ws):
+    spec, slice_dir = make_spec_repo(ws, readme=README_TABLE,
+                                     slice_name="014_pam_credentials",
+                                     location="slices/backlog",
+                                     files=("plan.md", "slice.md"))
+    code, out, _ = run_cli(str(slice_dir))
+    assert code == 0
+
+    text = (spec / "README.md").read_text()
+    rows = table_rows(text)
+    assert len(rows) == 4  # header, separator, 013, the new one
+    cells = row_cells(rows[-1])
+    assert len(cells) == len(row_cells(rows[0])) == 4
+    # plan.md wins over slice.md; the slug is the folder minus its number
+    assert cells[0] == ("[014 pam-credentials]"
+                        "(slices/completed/014_pam_credentials/plan.md)")
+    assert cells[1:3] == ["—", "—"]
+    # continuation folded in, the description's own pipe escaped
+    assert cells[3] == (r"PAM credentials: the `pam \| ansible` split (#131), "
+                        "with the vault rotation folded in.")
+    # the existing row is untouched and still last-but-one
+    assert rows[2] == _ROW_013
+
+    parts = sections(text)
+    assert not any("**[014]" in line for line in parts["## Pending"])
+    assert _PENDING_010 in parts["## Pending"]
+    assert (spec / "slices" / "completed" / "014_pam_credentials"
+            / "plan.md").is_file()
+    assert not slice_dir.exists()
+    assert "README.md" in staged(spec)
+    assert "synthesized table row" in out
+
+
+@with_workspace
+def test_table_row_links_the_brief_when_there_is_no_plan(ws):
+    spec, slice_dir = make_spec_repo(ws, readme=README_TABLE,
+                                     slice_name="010_kubecoder_deploy_repo",
+                                     location="slices/backlog",
+                                     files=("slice.md",))
+    assert run_cli(str(slice_dir))[0] == 0
+    cells = row_cells(table_rows((spec / "README.md").read_text())[-1])
+    assert cells[0] == ("[010 kubecoder-deploy-repo]"
+                        "(slices/completed/010_kubecoder_deploy_repo/slice.md)")
+    assert cells[3].startswith("KubeCoderDeploy repo and image pinning:")
+    assert cells[3].endswith("(phases.md B.1+B.2; #124).")
+
+
+@with_workspace
 def test_spec_root_resolution_is_robust(ws):
     spec, slice_dir = make_spec_repo(ws, location="slices/backlog")
     assert close_slice.spec_root_for(slice_dir.resolve()) == spec.resolve()
@@ -258,6 +390,45 @@ def test_entry_already_in_completed_exits_two(ws):
     code, _, err = run_cli(str(slice_dir))
     assert code == 2
     assert "already listed under `## Completed`" in err
+    assert slice_dir.is_dir()
+    assert_untouched(spec, before, before_status)
+
+
+@with_workspace
+def test_entry_already_in_completed_table_exits_two(ws):
+    spec, slice_dir = make_spec_repo(
+        ws, readme=README_TABLE, slice_name="013_iac_pipeline_restructure")
+    before, before_status = (spec / "README.md").read_text(), status(spec)
+    code, _, err = run_cli(str(slice_dir))
+    assert code == 2
+    assert "already listed under `## Completed`" in err
+    assert slice_dir.is_dir()
+    assert_untouched(spec, before, before_status)
+
+
+@with_workspace
+def test_letter_suffixed_slice_folder_exits_two(ws):
+    """`182b_…` is not slice 182 — that prefix match moved the wrong entry."""
+    spec, slice_dir = make_spec_repo(ws, slice_name="182b_x")
+    before, before_status = (spec / "README.md").read_text(), status(spec)
+    code, _, err = run_cli(str(slice_dir))
+    assert code == 2
+    assert "letter-suffixed slice ids are not supported" in err
+    assert "whole numbers" in err
+    assert slice_dir.is_dir()
+    assert_untouched(spec, before, before_status)
+
+
+@with_workspace
+def test_suffixed_bullet_is_not_matched_for_the_plain_number(ws):
+    """`- **063b** — …` must not answer for slice 063, in either direction."""
+    readme = README.replace("- **063** —", "- **063b** —")
+    spec, slice_dir = make_spec_repo(ws, readme=readme,
+                                     slice_name="063_store_hardening")
+    before, before_status = (spec / "README.md").read_text(), status(spec)
+    code, _, err = run_cli(str(slice_dir))
+    assert code == 2
+    assert "no `- **063**" in err
     assert slice_dir.is_dir()
     assert_untouched(spec, before, before_status)
 

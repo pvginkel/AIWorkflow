@@ -4,6 +4,22 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-08-31 — whole-number slice ids, and close_slice reads both README shapes (v0.9.11)
+
+Two production failures in `close_slice.py` and one ruling (Triage #584, #718, #763). Closing
+`182b_per_client_operator_tokens` moved slice **182**'s Pending bullet — `^(\d+)` read the folder
+as slice 182 — and the operator ruled the id scheme rather than the regex: slice ids are whole
+numbers only; every slice, follow-ups and split-outs included, takes a fresh number from
+`allocate-next-slice.sh` (whose header and the triage skill prescribed the letter suffix; both now
+say this instead). `close_slice.py` enforces it: a letter-suffixed folder exits 2 having changed
+nothing, and a suffixed README bullet no longer answers for its numeric prefix. Separately,
+AnsibleSpecs' README was unparseable — Pending ids link-wrapped, Completed a four-column table —
+so slice 013 was closed by hand; the tool now reads both shapes: link-wrapped bullets match, a
+bullet moved to a bullet-shaped Completed gets its old-path links rewritten to
+`slices/completed/`, and a table-shaped Completed receives a synthesized row (first cell and
+description derived, middle cells `—` for the closing session to refine). KubeCoderSpecs got the
+Completed entry 182b never had (b0e3f60a there).
+
 ## 2026-08-31 — planning dispatches carry the change-discipline pointer (v0.9.10)
 
 The `design_philosophy` pointer rode every run-loop dispatch but never a planning one — the

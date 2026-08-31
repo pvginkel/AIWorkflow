@@ -26,8 +26,9 @@
 # deleting it is safe. A burned number (allocate, then abandon the slice) leaves a
 # harmless gap; that is the accepted cost of collision-safety.
 #
-# Follow-up work to an existing slice does NOT use this helper — pick a letter
-# suffix tied to that slice (e.g. 087b) instead.
+# EVERY slice takes a fresh whole number from this helper — follow-ups and
+# split-outs included. Letter-suffixed ids (087b) are not supported anywhere in
+# the pipeline; close_slice.py rejects such folders outright.
 set -euo pipefail
 
 spec_repo="${1:-}"

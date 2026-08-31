@@ -304,7 +304,8 @@ N=$(${CLAUDE_PLUGIN_ROOT}/tools/allocate-next-slice.sh <spec-repo>)   # flock-gu
 mkdir <spec-repo>/slices/backlog/${N}_<snake_case_slug>
 ```
 
-Follow-up work to an existing slice takes a letter suffix (`087b`), not a fresh number.
+Follow-up work to an existing slice also takes a fresh number from the same helper — letter-suffixed
+slice ids (`087b`) are not supported; `close_slice.py` rejects them.
 
 **`slice.md`** is the record. The planner works from it alone, in a fresh session that never saw
 this conversation. It holds:
