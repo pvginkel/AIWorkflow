@@ -1125,7 +1125,7 @@ on rather than by replaying the corpus by hand.
 
 ## T3 — The free set: a lighter prefix (T3a) and the close-out tool's path (T3b = W2)
 
-**Status:** validating
+**Status:** accepted
 **Cost:** S · **Rank:** — · **Depends on:** T1, T2
 
 **Summary.** Every dispatched session's prefix loses the operator's auto-memory and Claude Code's
@@ -1191,9 +1191,16 @@ probes.
   doc-writer (4 of 4 slices) and by the test-agent, reviewer, consult and plan-reviewer — 9 turns
   over four slices; only the writer's dispatch shows the invocation whole. Leftover, not acted on.
 
+- 2026-09-01 — **confirmed at scale** ([readout-2026-09-01.md](readout-2026-09-01.md) § 5; 15
+  slices 180–193 + Ansible 016, 118 reviewer / 15 doc-writer / 15 test-agent sessions): `ctx1`
+  reviewer 25.8 k, doc-writer 24.5 k, test-agent 28.3 k against the corpus's 32.4 / 31.1 /
+  32.3 k; reviewer $/turn 0.090–0.096 against 0.107; no headless role called an MCP tool.
+  What the trim bought the writer, the digest spends (§ T4) — the writer's cache-read dollars per
+  turn are flat against the ≥ 2.1.234 corpus. → accepted.
+
 ## T4 — The phase digest in the writer's dispatch
 
-**Status:** validating
+**Status:** accepted
 **Cost:** S–M · **Rank:** — · **Depends on:** T1, T2
 
 **Summary.** Every executor round's prompt — first round and fix rounds, each a fresh session —
@@ -1271,3 +1278,27 @@ two consecutive slices, or cost not below baseline.
   corpus tail; the band's early slices ran under other effort settings (writer thinking 2.7 k per
   session there, 11 k in the tail and now). Still **validating**; 2–3 more slices decide between
   "median −8 %" and "pooled −40 %".
+
+- 2026-09-01 — **judged** on 180–193 + Ansible 016 (119 writer sessions; 0.9.8 × 11 slices,
+  0.9.12/0.9.13 × 4; 181, the $294 desktop-extension slice, counted apart):
+  [readout-2026-09-01.md](readout-2026-09-01.md) § 3, `tools/writer_economics.py bands`.
+  **Mechanism:** the pre-edit plan read is gone on plans of ≤ 6 phases (0 in 16/18 sessions),
+  half-gone on 7–14-phase plans (0 in 32/63 — the rest re-open the heading map and their own
+  section, 1–2 turns); verification.json / slice.md reads 0 everywhere. **Cost, r1 sessions by
+  plan-size band (median $ / turns / orientation):** 2–4 phases 2.70 / 37 / 12 → 2.40 / 34 / 8
+  (0.9.8) and 2.05 / 26 / 7 (0.9.12+); 5–8 phases 2.73 / 39 / 13 → 2.96 / 37 / 12 and 2.92 / 39 /
+  11; 9+ phases 3.43 / 44 / 16 → 4.67 / 40 / 14. Pooled writer $/phase 4.65 → 4.69 (0.9.8
+  without 181) → 3.07 (0.9.12+, small slices). The first read's −40 % was the draw: it recurs only
+  in the 2–4 band; the digest saves 1–5 orientation turns and 7–16 k at the first edit on small
+  and mid plans, nothing on large ones, and costs ≈ 10 k on every dispatch — the writer's dollars
+  are unchanged, because its context per turn is flat (prefix −7 k, digest +10 k) and its output
+  per turn rose (§ 4 of the readout: +330 tokens/turn, +194 of them thinking, effort `xhigh`
+  throughout; ≈ $0.01/turn, $3–4/slice, not a lever). **Quality:** refuted 0, gate-red 1 (193 P6,
+  a real-clock timer test, green on the fix round), abstentions 0, appended 0, rework median
+  8.3 % (184 at 27.6 %: two witness-a-repro fix rounds), test rounds 1 (182: 2); r1 blocking
+  phases 21/78 = 27 % on 0.9.8 (13/63 = 21 % without 181; 1/18 today) against 11 % — moved by
+  the `coverage-gap` class alone (12 of 22 findings; 1 of 21 in the corpus), reviewer mutation
+  activity per session unchanged, fixes cheap, nothing escaped; #720's read has the fuller cut
+  and a coverage-gap-share watch. Not read as a kill. → **accepted: kept as the dispatch's
+  vehicle; not the turn cut.** T5 folded and dead, T6 superseded by the doc rework, T7 parked —
+  the turns plan has no further step.

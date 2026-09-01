@@ -50,9 +50,13 @@ clone) and are read on the next 2–3 slices through T2's readout before the nex
   `close_out.py` fumbles are 0/16; the doc-writer, test-agent, reviewer and consult still run
   `--help` once (9 turns over four slices) — their dispatches don't show the invocation
 - [x] **T4** phase-scoped orientation digest in the writer dispatch — **shipped 2026-08-23
-  (0.9.7)**; **first read 2026-08-23, preliminary** (173/174/175 on 0.9.8 + 179 on 0.9.7): the
-  plan read is gone (0/16 pre-edit), writer $/phase −40 % pooled but the median session −8 %,
-  quality inside every baseline — more slices before the step is judged (§ T4 Read, preliminary)
+  (0.9.7)**; first read 2026-08-23 preliminary (173/174/175 + 179: plan read gone, −40 % pooled,
+  median −8 %); **judged 2026-09-01** on 180–193 + 016 ([readout-2026-09-01.md](readout-2026-09-01.md)
+  § 3): the pre-edit plan read is gone on plans ≤ 6 phases, half-gone on larger ones; the −40 %
+  was the draw — writer $/phase 4.65 → 4.69 (0.9.8 without 181), the digest's ≈ 10 k per
+  dispatch spends what T3 trimmed, the price per turn rose on output tokens; quality inside
+  every baseline but the r1 blocking rate (the `coverage-gap` class, #720's watch). **Kept,
+  cost-neutral; not the turn cut** — the plan has no further step
 - [ ] **T5** batched reads — why the existing rule is not followed; dispatch-line A/B (T1: below its bar — folds into T4)
 - [ ] **T6** bounded doc phase — per-repo unit **falsified** (2026-08-27, three transcripts read); superseded by [doc-phase-plan.md](doc-phase-plan.md): coordinator + per-scope units, three S fixes first
 - [ ] **T7** Explore on a pinned model + the sub-agent return contract — **parked on size**; the knobs are recorded below
