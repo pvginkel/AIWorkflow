@@ -48,7 +48,9 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   `r1_blocking_readout.py` reads the round-1 blocking rate per phase before/after 0.9.6–0.9.8
   against phase size and the reviewer's and writer's transcripts (the #782 research);
   `writer_economics.py bands|eras|subs` (imports `t4_readout.py`) gives the size-band,
-  token-class and sub-agent-attribution views. Run 1's corpus is frozen under
+  token-class and sub-agent-attribution views; `plan_qa_readout.py table|stats|dump` reads the
+  operator interaction of every interactive `/dev:plan-slice` session — each dialog, its options
+  and what the operator answered (the plan-interview readout). Run 1's corpus is frozen under
   `docs/research/archive/run-1/`.
 - **Reading a run:** a slice's record is its folder in the project's spec repo
   (`slices/completed/NNN_slug/`): `log.txt` is the driver's narration, `state.json` is per
