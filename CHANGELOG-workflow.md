@@ -4,6 +4,16 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-01 — close-out finds its own card, and offers to finish the report (v0.9.18)
+
+The skill knew the run files a `[NNN] close-out: …` card but never went looking for it, so the
+operator had to name it before it could be archived; and it worked through the report one
+operator instruction at a time, leaving entries blank when the operator ran out of interest.
+Step 1 now locates the card beside the report — by title, in the intake queue, held for the
+archive at the end — and a new step 5 has the session raise the ending itself: once the
+operator's asks are settled, it offers to strike what is still blank and archive the card, once,
+in one line. A no leaves the rest for `/dev:triage`.
+
 ## 2026-09-01 — later phases receive the done-record's summary, not its story (v0.9.17)
 
 The writer's phase digest carried every earlier phase's done-record whole, and a record is the

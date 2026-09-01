@@ -149,8 +149,10 @@ dispose is the operator's.
    ad hoc session following it) executes them: `card` files a tracker card with the entry as its
    body, `fix now` does the small thing or bails to a slice, `fold into` appends the entry to
    that slice's `slice.md`, `close` strikes (`close_out.py strike`), `defer` leaves it — then
-   renders. Git in the spec repo holds the history of the operator's remarks; the close-out card
-   is archived when no live entry has a blank `Disposition:`.
+   renders. Once the operator's own asks are settled it proposes closing whatever is still blank,
+   so a report is finished in one sitting rather than left half-dispositioned. Git in the spec
+   repo holds the history of the operator's remarks; the close-out card is archived when no live
+   entry has a blank `Disposition:`.
 5. What remains — `defer`, or no disposition yet — is a `/dev:triage` source, one item per entry.
 
 Deliberately absent: any validation beyond "the section heading exists" and the smoke counts —

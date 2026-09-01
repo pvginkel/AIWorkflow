@@ -15,9 +15,13 @@ from your host convention (`~/.claude/CLAUDE.md`).
 
 ## Procedure
 
-1. **Locate the report.** The argument names it (a slice number or a slice dir); without one,
-   the newest `slices/**/close-out.md` under `<spec-repo>` that still has a **live** entry with a
-   blank `Disposition:` line (a struck entry needs none). Say which report you opened.
+1. **Locate the report — and its card.** The argument names the report (a slice number or a slice
+   dir); without one, the newest `slices/**/close-out.md` under `<spec-repo>` that still has a
+   **live** entry with a blank `Disposition:` line (a struck entry needs none). The run filed one
+   card for that report — `[NNN] close-out: <slice title>` in the intake queue, carrying the
+   project's owner tag per the host convention — so find it by that title now and keep its id for
+   step 6; the operator should never have to point you at it. Say which report you opened, and say
+   once if the card is not there, then carry on without it.
 2. **Present it — ask nothing yet.** Show the `Run:` header, the Summary and every `Focus:` line
    from the file, then `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py list <slice_dir>` as it
    prints — every live entry as `id — headline` with its `Consequence:` line under it (that line
@@ -43,11 +47,20 @@ from your host convention (`~/.claude/CLAUDE.md`).
      --reason "closed by the operator, <date>"` (the operator's reason, if given, stays on the
      `Disposition:` line, not in the heading).
    - `defer` — leave it; it is `/dev:triage`'s.
-5. **Render, commit and finish.** Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py render
+5. **Offer to finish it — don't wait to be asked.** The operator dispositions what they care
+   about and stops; the rest of the report is yours to close out, not theirs to work through.
+   When their last message is settled — the dispositions executed, the question answered, "fine",
+   a shrug — and nothing else is pending, ask in one line whether to strike what is still blank
+   (how many entries, by id) and archive the close-out card. You raise it, unprompted; once, and
+   again only after something has happened since. A yes is a `close` on each of those entries,
+   struck per step 4, the words being the ones the operator agreed to; an entry they pull back
+   out of the batch is a disposition like any other. A no leaves them for `/dev:triage` and ends
+   the asking.
+6. **Render, commit and finish.** Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py render
    <slice_dir>` (live entries first, the newly struck ones folded last), then commit the report
    (staged by name — the spec repo is a shared tree). When no live entry has a blank
-   `Disposition:`, archive the slice's close-out card (`[NNN] close-out: …`). Report short:
-   dispositions by kind, cards filed, anything owed.
+   `Disposition:`, archive the close-out card found in step 1. Report short: dispositions by
+   kind, cards filed, anything owed.
 
 ## Bounds
 
