@@ -24,7 +24,8 @@ nothing from you between launch and close-out.
 
 1. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for run`. On a non-zero exit, **relay
    its message verbatim** and stop — fix the root cause only if it is clearly environmental,
-   otherwise notify the operator. A dirty working tree is never yours to clean up.
+   otherwise notify the operator. A dirty working tree — or a repo preflight refused to pull — is
+   never yours to clean up.
 2. Advance the slice's tracker card (`[NNN] …`, planned) to **in progress**.
 3. Launch, in the background (`run_in_background: true`):
 

@@ -21,10 +21,15 @@ schema):
 | `doc_phase.plan` set + exists, when on          |        |      |  x  |
 | `devlock.lease` resolvable, when set            |        |      |  x  |
 | Clean working tree                              |        |      |  x  |
+| Synced with origin (ff / rebase; refuse dirty)  |        |  x   |  x  |
 | Baseline `kc project build` (all components)    |        |      |  x  |
 
 A phase the project switched off is not checked: its pointer is absent by
 contract, and checking it would make an optional phase mandatory again.
+
+The sync is the one step that *acts* rather than checks: pulling a clean base
+onto its own origin destroys nothing, while a repo with uncommitted work is
+refused, never pulled over (docs/preflight.md, "Notes on the sync").
 
 **Silent on success** (exit 0). On failure, prints ONE actionable message —
 what is missing, the exact line/fix, and a pointer to the project contract — so
@@ -200,6 +205,110 @@ def check_clean_tree(root: Path) -> None:
              + result.stdout.rstrip("\n"))
 
 
+def sync_roots(root: Path,
+               cfg: project_config.ProjectConfig | None) -> list[Path]:
+    """Every checkout the sync covers: the target repo, then the environment's
+    other repos, then the spec repo.
+
+    In a KubeCoder pod the environment's repos are all checked out beside the
+    target (`/work/<Repo>`), which is the layout `.aiworkflowrc` already encodes
+    (`spec_repo = "../Specs"`) — so the siblings *are* the environment. A `.git`
+    that is a file, not a directory, is a worktree and still a checkout.
+    Deduped by resolved path, so a spec repo that is also a sibling is synced
+    once.
+    """
+    roots = [root]
+    seen = {root.resolve()}
+    for d in sorted(root.parent.iterdir()):
+        if not d.is_dir() or not (d / ".git").exists():
+            continue
+        if d.resolve() in seen:
+            continue
+        seen.add(d.resolve())
+        roots.append(d)
+    if cfg is not None and cfg.spec_repo is not None:
+        if cfg.spec_repo.resolve() not in seen:
+            roots.append(cfg.spec_repo)
+    return roots
+
+
+def check_synced(root: Path, cfg: project_config.ProjectConfig | None) -> None:
+    """Bring every repo of the environment up to date with its origin.
+
+    The *checked-out* branch is what gets synced, in the target repo and in
+    every sibling: the run loop records whatever branch it finds the first time
+    it touches a repo (`_base_branch`), so the checked-out branch is the base
+    the slice will build on — no fixed `main` is assumed. A repo with a detached
+    HEAD or a branch with no upstream has nothing to pull onto and is skipped.
+
+    Behind and clean fast-forwards; behind with local commits rebases, and a
+    rebase that conflicts is aborted (leaving the repo as it was) and handed to
+    the operator. Ahead-only is left alone — unpushed commits are the
+    operator's, and the run loop pushes at its test phase. A repo with
+    uncommitted changes is refused rather than pulled over.
+    """
+    for repo in sync_roots(root, cfg):
+        name, path = repo.name, str(repo)
+        branch = _git(["-C", path, "symbolic-ref", "--quiet", "--short", "HEAD"])
+        if branch.returncode != 0:
+            continue  # detached HEAD — nothing to pull onto
+        tracking = _git(["-C", path, "rev-parse", "--abbrev-ref",
+                         "--symbolic-full-name", "@{u}"])
+        if tracking.returncode != 0:
+            continue  # no upstream — nothing to pull from
+        upstream = tracking.stdout.strip()
+        remote = upstream.split("/", 1)[0]
+
+        fetched = _git(["-C", path, "fetch", "--quiet", remote])
+        if fetched.returncode != 0:
+            fail(2,
+                 f"`git fetch {remote}` failed in `{name}` ({path}) "
+                 f"(rc={fetched.returncode}). Preflight syncs every repo of the "
+                 f"environment with its origin before a slice starts, and a "
+                 f"remote it cannot reach is the environment's fault, not the "
+                 f"project's — fix it (network, credentials) and retry.\n"
+                 + (fetched.stderr or fetched.stdout).rstrip("\n"))
+
+        counts = _git(["-C", path, "rev-list", "--left-right", "--count",
+                       "HEAD...@{u}"])
+        parts = counts.stdout.split()
+        if counts.returncode != 0 or len(parts) != 2 or not all(
+                p.isdigit() for p in parts):
+            continue  # nothing countable — nothing to act on
+        ahead, behind = int(parts[0]), int(parts[1])
+        if behind == 0:
+            continue  # up to date, or ahead only
+
+        status = _git(["-C", path, "status", "--porcelain"])
+        if status.stdout.strip():
+            fail(1,
+                 f"`{name}` ({path}) is {behind} behind {upstream} and has "
+                 f"uncommitted changes — preflight will not pull over them. "
+                 f"Commit or stash, or pull by hand, then retry.\n"
+                 + status.stdout.rstrip("\n"))
+
+        if ahead == 0:
+            merged = _git(["-C", path, "merge", "--ff-only", "--quiet", "@{u}"])
+            if merged.returncode != 0:
+                fail(1,
+                     f"`{name}` ({path}) is {behind} behind {upstream} but "
+                     f"`git merge --ff-only` refused it "
+                     f"(rc={merged.returncode}) — bring it up to date by hand, "
+                     f"then retry.\n"
+                     + (merged.stderr or merged.stdout).rstrip("\n"))
+            continue
+
+        rebased = _git(["-C", path, "rebase", "--quiet", "@{u}"])
+        if rebased.returncode != 0:
+            _git(["-C", path, "rebase", "--abort"])
+            tail = (rebased.stdout + rebased.stderr).strip().splitlines()[-20:]
+            fail(1,
+                 f"`{name}` ({path}) has {ahead} local commits that do not "
+                 f"rebase onto {upstream} ({behind} behind) — resolve by hand "
+                 f"(rebase or merge), then retry. The rebase was aborted, so "
+                 f"the repo stands where it did.\n" + "\n".join(tail))
+
+
 def check_baseline_build(root: Path) -> None:
     result = subprocess.run(
         ["kc", "project", "build"], cwd=str(root), capture_output=True, text=True)
@@ -217,10 +326,10 @@ def check_baseline_build(root: Path) -> None:
 # controller reachability would fail work that needs none of it.
 PROFILES = {
     "triage": ["kc", "config", "spec_repo"],
-    "plan": ["kc", "kc_status", "manifest", "config", "spec_repo"],
+    "plan": ["kc", "kc_status", "manifest", "config", "spec_repo", "synced"],
     "run": ["kc", "kc_status", "manifest", "config", "spec_repo",
             "design_philosophy", "phase_pointers", "devlock", "clean_tree",
-            "baseline_build"],
+            "synced", "baseline_build"],
 }
 
 
@@ -251,6 +360,8 @@ def main() -> None:
         check_devlock(cfg)
     if "clean_tree" in checks:
         check_clean_tree(root)
+    if "synced" in checks:
+        check_synced(root, cfg)
     if "baseline_build" in checks:
         check_baseline_build(root)
     # Silent on success.

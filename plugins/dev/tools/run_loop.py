@@ -1804,8 +1804,8 @@ class RunLoop:
         that ref reads the day of the clone. One run's executor called a
         sibling-repo commit that had been on `origin/main` for a day "absent
         from origin" and raised a Blocker over it. Refs only — no local branch
-        moves, so a base sitting behind its origin stays the operator's
-        call."""
+        moves: preflight pulled every base before the run, and a base that
+        moves on origin mid-run stays the operator's call."""
         self.git("fetch", "origin", root=root)
 
     def _touched_roots(self) -> list[tuple[Path, str]]:

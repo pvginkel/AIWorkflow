@@ -1,9 +1,12 @@
-"""Tests for preflight's control-plane check and how it is wired into main.
+"""Tests for preflight's control-plane and origin-sync checks, the optional
+pointers, and how all of them are wired into main.
 
-The subject is `check_kc_status` and its profile membership: a broken control
-plane is an *environment* fault (exit 2), it is checked before the repo is
-resolved, and triage — which dispatches nothing — is deliberately exempt. The
-rest of preflight's checks are not covered here.
+`check_kc_status`: a broken control plane is an *environment* fault (exit 2),
+it is checked before the repo is resolved, and triage — which dispatches
+nothing — is deliberately exempt. `check_synced` / `sync_roots`: which
+checkouts the environment syncs, and what fast-forward, rebase, ahead-only,
+dirty, detached and a dead remote each do. The phase pointers and the devlock
+follow. The kc/manifest/clean-tree/baseline checks are not covered here.
 
 Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_preflight.py` or via pytest.
 """
@@ -13,6 +16,7 @@ import importlib.util
 import io
 import shutil
 import subprocess
+import tempfile
 import types
 from pathlib import Path
 
@@ -55,6 +59,38 @@ class fake_subprocess:
         self.calls.append(list(argv))
         code, out, err = self.result
         return subprocess.CompletedProcess(argv, code, out, err)
+
+
+def argv_has(tokens, argv):
+    """Do these tokens appear in argv, in order (not necessarily adjacent)?"""
+    rest = iter(argv)
+    return all(any(token == seen for seen in rest) for token in tokens)
+
+
+class scripted_subprocess:
+    """Stands in for the `subprocess` module across a multi-command sequence:
+    records every argv in `.calls` and answers each call from `(matcher,
+    (rc, stdout, stderr))` rules, first match wins, `(0, "", "")` by default.
+
+    A matcher is a token or a tuple of tokens that must appear in the argv in
+    order — `"fetch"` answers every fetch, `("/work/Specs", "rebase")` only one
+    repo's."""
+
+    def __init__(self, rules=()):
+        self.rules = [((m,) if isinstance(m, str) else tuple(m), r)
+                      for m, r in rules]
+        self.calls = []
+
+    def run(self, argv, **kwargs):
+        argv = list(argv)
+        self.calls.append(argv)
+        for tokens, (code, out, err) in self.rules:
+            if argv_has(tokens, argv):
+                return subprocess.CompletedProcess(argv, code, out, err)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    def called(self, *tokens):
+        return any(argv_has(tokens, argv) for argv in self.calls)
 
 
 def run_main(profile, subproc):
@@ -217,6 +253,173 @@ def test_a_lease_with_nowhere_to_live_bails():
         preflight.check_devlock,
         a_config(devlock_lease=Path("/nonexistent/scripts/.devlock.lock")))
     assert code == 1 and "devlock.lease" in message
+
+
+# -- synced with origin ------------------------------------------------------
+
+APP = Path("/work/App")
+
+
+def repo_rules(counts, dirty="", first=()):
+    """What a healthy repo answers: its upstream, its ahead/behind counts and
+    its porcelain status (`symbolic-ref` and everything else take the stub's
+    default rc 0). `first` goes in front, for the one call a test breaks."""
+    return [*first,
+            (("rev-parse", "@{u}"), (0, "origin/main\n", "")),
+            ("rev-list", (0, counts, "")),
+            (("status", "--porcelain"), (0, dirty, ""))]
+
+
+def synced(subproc, roots=(APP,)):
+    """Patch preflight for a `check_synced` run over a fixed repo list — the
+    repo set is `sync_roots`' business, so no filesystem is touched here."""
+    return patched(preflight, subprocess=subproc,
+                   sync_roots=lambda root, cfg: list(roots))
+
+
+def test_a_repo_already_at_its_origin_is_left_alone():
+    """The common case: fetch to learn where origin stands, then nothing —
+    silent, and no working tree is inspected or moved."""
+    subproc = scripted_subprocess(repo_rules("0\t0"))
+    with synced(subproc):
+        preflight.check_synced(APP, None)
+    assert subproc.called("fetch", "origin")
+    assert not subproc.called("status")
+    assert not subproc.called("merge") and not subproc.called("rebase")
+
+
+def test_a_clean_repo_that_is_only_behind_fast_forwards():
+    """Nothing local to preserve, so the base moves up to origin without
+    writing a merge commit."""
+    subproc = scripted_subprocess(repo_rules("0\t3"))
+    with synced(subproc):
+        preflight.check_synced(APP, None)
+    assert subproc.called("merge", "--ff-only", "@{u}")
+    assert not subproc.called("rebase")
+
+
+def test_local_commits_are_rebased_onto_the_moved_base():
+    """Behind *and* ahead: the operator's commits are replayed on top rather
+    than merged, keeping the branch the linear base the run loop expects."""
+    subproc = scripted_subprocess(repo_rules("2\t3"))
+    with synced(subproc):
+        preflight.check_synced(APP, None)
+    assert subproc.called("rebase", "@{u}")
+    assert not subproc.called("merge")
+
+
+def test_a_rebase_that_conflicts_is_aborted_and_handed_back():
+    """Preflight resolves nothing: it puts the repo back where it stood and
+    names what the operator has to settle."""
+    subproc = scripted_subprocess(repo_rules(
+        "2\t3", first=[("rebase", (1, "", "CONFLICT (content): in app.py\n"))]))
+    with synced(subproc):
+        code, message = refused(preflight.check_synced, APP, None)
+    assert code == 1
+    assert subproc.called("rebase", "--abort")
+    assert "App" in message and "origin/main" in message
+
+
+def test_uncommitted_changes_are_never_pulled_over():
+    """The one thing a syncing preflight must not do — the operator's dirty
+    tree stays theirs, exit 1 for them to resolve."""
+    subproc = scripted_subprocess(repo_rules("0\t3", dirty=" M app.py\n"))
+    with synced(subproc):
+        code, message = refused(preflight.check_synced, APP, None)
+    assert code == 1 and "uncommitted" in message
+    assert not subproc.called("merge") and not subproc.called("rebase")
+
+
+def test_a_fetch_that_fails_is_an_environment_failure():
+    """Exit 2, not 1: an unreachable remote is network or credentials, nothing
+    the project's contract can fix."""
+    subproc = scripted_subprocess(repo_rules(
+        "0\t0", first=[("fetch", (128, "", "fatal: could not read Username\n"))]))
+    with synced(subproc):
+        code, message = refused(preflight.check_synced, APP, None)
+    assert code == 2 and "origin" in message
+    assert "could not read Username" in message
+
+
+def test_a_detached_head_is_skipped_and_the_next_repo_still_syncs():
+    """Nothing to pull onto — and one such checkout must not stop the
+    environment's other repos from being brought up to date."""
+    detached = Path("/work/Spike")
+    subproc = scripted_subprocess([
+        (("/work/Spike", "symbolic-ref"), (1, "", "")),
+        *repo_rules("0\t0"),
+    ])
+    with synced(subproc, roots=(detached, APP)):
+        preflight.check_synced(detached, None)
+    assert not subproc.called("/work/Spike", "fetch")
+    assert subproc.called("/work/App", "fetch")
+
+
+def test_a_branch_without_an_upstream_is_skipped():
+    """No upstream, nothing to pull from — not even a fetch is worth the
+    round trip."""
+    subproc = scripted_subprocess(repo_rules(
+        "0\t0", first=[(("rev-parse", "@{u}"), (128, "", "no upstream\n"))]))
+    with synced(subproc):
+        preflight.check_synced(APP, None)
+    assert not subproc.called("fetch")
+
+
+def test_unpushed_commits_alone_are_left_where_they_are():
+    """Ahead but not behind: those commits are the operator's, and the run loop
+    pushes at its test phase — preflight neither pushes nor rewrites them."""
+    subproc = scripted_subprocess(repo_rules("2\t0"))
+    with synced(subproc):
+        preflight.check_synced(APP, None)
+    assert not subproc.called("merge") and not subproc.called("rebase")
+
+
+def _checkout(path):
+    (path / ".git").mkdir(parents=True)
+    return path
+
+
+def test_sync_roots_is_the_target_then_the_environments_other_checkouts():
+    """In a KubeCoder pod every repo of the environment sits beside the target,
+    so the siblings are the set; a directory without a `.git` and a plain file
+    are not checkouts, and the target is not repeated among them."""
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp)
+        for name in ("App", "Zebra", "Beta"):
+            _checkout(work / name)
+        (work / "Worktree").mkdir()
+        (work / "Worktree" / ".git").write_text("gitdir: /work/App/.git/wt\n")
+        (work / "notes").mkdir()
+        (work / "pull-all.sh").write_text("")
+        roots = preflight.sync_roots(work / "App", None)
+    assert [p.name for p in roots] == ["App", "Beta", "Worktree", "Zebra"]
+
+
+def test_sync_roots_adds_a_spec_repo_only_when_it_is_not_already_a_sibling():
+    """`spec_repo` is usually `../Specs` — already a sibling, and syncing it
+    twice would be the second pull's error message. Elsewhere it is appended."""
+    with tempfile.TemporaryDirectory() as tmp:
+        work = _checkout(Path(tmp) / "work" / "App").parent
+        _checkout(work / "Specs")
+        outside = _checkout(Path(tmp) / "elsewhere" / "Specs")
+        beside = preflight.sync_roots(
+            work / "App", a_config(spec_repo=work / "Specs"))
+        elsewhere = preflight.sync_roots(
+            work / "App", a_config(spec_repo=outside))
+    assert [str(p) for p in beside] == [str(work / "App"), str(work / "Specs")]
+    assert [str(p) for p in elsewhere] == [
+        str(work / "App"), str(work / "Specs"), str(outside)]
+
+
+def test_plan_and_run_sync_the_environment_and_triage_does_not():
+    """Intake pulls nothing. In run the sync sits after the clean-tree refusal
+    (a dirty target hears that established message first) and before the
+    baseline build, which must build the freshly pulled base."""
+    assert "synced" in preflight.PROFILES["plan"]
+    assert "synced" not in preflight.PROFILES["triage"]
+    run = preflight.PROFILES["run"]
+    assert (run.index("clean_tree") < run.index("synced")
+            < run.index("baseline_build"))
 
 
 # -- one live call -----------------------------------------------------------

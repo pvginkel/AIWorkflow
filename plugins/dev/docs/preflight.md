@@ -2,8 +2,9 @@
 
 `${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage|plan|run` is one repo-shipped,
 **stdlib-only** script each pipeline skill runs as **step one**. The checks are `kc` primitives
-plus the four machine-checkable `CLAUDE.md` lines from
-[`project-contract.md`](project-contract.md).
+plus the repo's `.aiworkflowrc` contract from [`project-contract.md`](project-contract.md) — and
+one step that acts rather than checks: the sync that brings the environment's repos up to their
+origins (§ Notes on the sync).
 
 **Silent on success.** On failure it prints **one** actionable message — what is missing, the exact
 line/fix, and a pointer to `project-contract.md` — so a new repo self-onboards from the error text.
@@ -15,8 +16,8 @@ re-run preflight, so `/dev:run-slice` is the gate.
 | Code | Meaning | Who fixes it |
 |:---:|---|---|
 | `0` | pass (silent) | — |
-| `1` | contract violation | the project (add a line, author the manifest, clean the tree, fix the build) |
-| `2` | environment broken | the environment (`kc` not on PATH, the control plane down, not in a git repo) |
+| `1` | contract violation | the project (add a line, author the manifest, clean the tree, resolve a refused pull, fix the build) |
+| `2` | environment broken | the environment (`kc` not on PATH, the control plane down, not in a git repo, a fetch that fails) |
 
 ## Profiles
 
@@ -32,6 +33,7 @@ re-run preflight, so `/dev:run-slice` is the gate.
 | `doc_phase.plan` set + exists — only when the phase runs | – | – | ✓ |
 | `devlock.lease` resolvable — only when one is named | – | – | ✓ |
 | Clean working tree | – | – | ✓ |
+| Synced with origin: fetch, then fast-forward or rebase the checked-out branch — the target repo, every checkout beside it, the spec repo | – | ✓ | ✓ |
 | Baseline: `kc project build` (all components) | – | – | ✓ |
 
 Checks run in that order (cheapest first, the baseline build last). `kc` is checked before anything
@@ -56,6 +58,31 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   cost of the check there is a false gate, not the 20ms.
 - Both probes are bounded by the CLI itself (5s daemon, 10s controller), so preflight adds no
   timeout of its own.
+
+## Notes on the sync
+
+- **The one step that acts.** Every other check refuses and reports; this one pulls. What decides
+  is what a step could destroy: cleaning a dirty tree throws away the operator's work, so the
+  clean-tree check refuses; fast-forwarding a clean checkout onto its origin throws away nothing
+  (the reflog keeps the old tip), so the sync does it. It replaces the pull-every-repo the operator
+  otherwise ran by hand before each plan and run.
+- **Which repos.** The target repo, then every git checkout beside it — in a KubeCoder pod that is
+  the environment's repo set under `/work/`, the layout `.aiworkflowrc`'s `spec_repo = "../…"`
+  already assumes — then the spec repo if it lives elsewhere.
+- **Which branch.** The checked-out one, against its upstream, because that *is* the base: the run
+  loop records as a repo's base whatever branch is checked out the first time it touches that repo
+  ([`run-loop.md`](run-loop.md)). Detached HEAD or no upstream → skipped.
+- **The rules.** Fetch the upstream's remote. Not behind → nothing; ahead-only is left alone
+  (unpushed commits are the operator's, and the run pushes at its test phase). Behind and clean →
+  fast-forward, or rebase when local commits sit on top — a rebase that conflicts is aborted and
+  reported. Behind and dirty → refused: preflight never pulls over uncommitted changes, in any repo,
+  the shared spec repo included.
+- **Exit codes.** A fetch that fails is environment (exit 2). A refused dirty tree or a rebase that
+  does not apply is the operator's to resolve by hand (exit 1) — the relaying session does not
+  resolve it either.
+- **Mid-run, the loop moves no local branch.** Its own fetches are refs-only
+  ([`run-loop.md`](run-loop.md) § Fetch); the pull that brings a base up to its origin is the
+  operator's call, made once here.
 
 ## Notes on the run baseline
 

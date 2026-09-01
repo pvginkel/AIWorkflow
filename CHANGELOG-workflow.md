@@ -4,6 +4,21 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-01 — preflight pulls the environment's repos before a plan or run (v0.9.13)
+
+Before every `/dev:plan-slice` and `/dev:run-slice` the operator ran a pull-every-repo script by
+hand and resolved by hand whatever it turned up — the one standing pre-step the pipeline did not
+own. `preflight.py` now owns it as its one acting check, `synced`, in the plan and run profiles:
+for the target repo, every checkout beside it and the spec repo, it fetches the checked-out
+branch's upstream (the checked-out branch is the base the loop will record), fast-forwards a clean
+checkout that is behind, rebases one that is behind with local commits on top (aborting and
+reporting a conflict), leaves ahead-only alone, and refuses a dirty tree that is behind — the
+shared spec repo included. A fetch that fails is exit 2; a refused pull or a conflict is exit 1,
+the operator's to resolve, and the relaying skill session does not resolve it either
+(`preflight.md` § Notes on the sync). `run-loop.md` and `_fetch_origin` now say where the
+operator's call is made, and `preflight.md`'s header no longer speaks of the `CLAUDE.md` lines
+the contract moved to `.aiworkflowrc` in 0.9.0.
+
 ## 2026-08-31 — the component set follows the manifest; `Creates:` declares a new component (v0.9.12)
 
 KubeCoder slice 181 stood up a second Node project and could not target it (#746, that run's

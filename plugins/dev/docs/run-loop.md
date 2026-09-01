@@ -83,9 +83,11 @@ whole plan is a feature of the review, not a cost. Then:
   off the **local** base and ff-merges back into it, so a repo cloned days ago keeps the
   `origin/<base>` that came with the clone, and an agent reading that ref reads the day of the
   clone — one run's executor called a sibling-repo commit that had been on `origin/main` for a
-  day "absent from origin" and raised a Blocker over it. Refs only: no local branch moves, so a base
-  sitting behind its origin stays the operator's call. Agents carry the other half of the rule —
-  never conclude a commit is missing from a tree you have not fetched yourself.
+  day "absent from origin" and raised a Blocker over it. Refs only: no local branch moves — the
+  pull that brings a base up to its origin is preflight's, made once before the run
+  ([`preflight.md`](preflight.md) § Notes on the sync), and a base that moves on origin mid-run
+  stays the operator's call. Agents carry the other half of the rule — never conclude a commit is
+  missing from a tree you have not fetched yourself.
 - **Gate** — the driver runs the target's deterministic gate itself, and that gate is **test
   only**: the executor runs the linter once itself before handing back, and lint or build
   breakage is caught deterministically by the loop-tail sweep and the doc gate — so a per-phase
