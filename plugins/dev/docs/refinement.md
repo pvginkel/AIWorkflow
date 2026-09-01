@@ -24,13 +24,33 @@ gives something up the operator might weigh differently. **Agree-or-comment**, i
 the single decent choice that has impact — if the honest alternative would read "reject — leave
 the plan wrong", it is not a decision, it is a consequence to explain and confirm.
 
+Neither form carries what the slice does not leave open. A decision is what its numbered
+requirements — their own "open for the planner" items included — genuinely leave undecided. A
+matter the slice merely touches (the estate-wide sweep a change would make possible, which
+phase owns a rewrite) is decided by the session, stated in the material with its grounds under
+the decision it serves, and corrected by the operator if they disagree on reading it; three
+questions at once about surfaces the slice touches read as scope creep and cost the operator a
+discussion they never asked for ("I have no idea what we're discussing. I thought we were just
+removing duplication between images."). A call the operator delegated in so many words ("if you
+feel a few would be nice, do move them") is executed and shown — the list, the evidence behind
+it, the one item the session would argue about — never converted back into a question. A prose
+nit (a comment or doc sentence that restates or misstates) is grounded and, where the project
+classes the edit as ad hoc work, made now and reported; otherwise it rides as a requirement
+whose ruling reads **culled, not reworded**, so the writer deletes or narrows the clause instead
+of negotiating with it. Nine doc nits presented as a decision matrix is the shape the operator
+stopped: that slice went from nine requirements to no phases once five edits shipped in-session
+and three closed on the evidence.
+
 ## The material
 
 What the session hands the writer, in the dispatch prompt (files are pointed to, quoted lines
 are quoted — the writer has `Read` and will pull what it cites):
 
 - **The ask** — `slice.md`'s path; what is already settled and by what (a ruling, a decision
-  record, a prior slice); what this doc decides.
+  record, a prior slice); what this doc decides; and every requirement whose premise no longer
+  holds (the sentence it targets removed by an earlier slice, the file it names never existed),
+  each with the evidence — the doc opens with those as settled by the facts, for the operator
+  to confirm.
 - **Size** — the phases this comes to and the repos it touches. Slice 183 ran a clean
   interview and went back to triage on a number the interview never surfaced.
 - **Per decision** — where it comes from (the requirement, card or finding, so the writer can
@@ -59,8 +79,9 @@ record — the same role `plan_review_r*.md` plays for the review round. The rul
 # Slice NNN — refinement
 
 ## Where we are
-<the ask in the operator's words; what is already settled and by what; what this doc decides;
-the size in phases and the repos touched>
+<the ask in the operator's words; what is already settled and by what; the requirements whose
+premise no longer holds, each with its evidence; what this doc decides; the size in phases and
+the repos touched>
 
 ## D1 — <the decision, as one sentence a cold reader can parse>
 **Where this comes from.** <the requirement, card or finding — quoted or expanded; never a

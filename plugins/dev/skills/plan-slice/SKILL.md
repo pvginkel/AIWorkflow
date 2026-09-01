@@ -46,7 +46,14 @@ conversation and the operator's rulings. Your value:
 
 Read `slice.md` and every attachment in the slice folder. Its numbered requirements list is the
 authoritative statement of intent — and deliberately thin. Treat every claim or citation the
-slice carries as **unverified input**.
+slice carries as **unverified input** — a pinned requirement included. Triage read no code, and
+what a card cites rots between filing and planning: the sentence a requirement exists to fix was
+removed by an earlier slice, the file it names as a home never existed, the spawn path its steer
+targets never carries the variable. So before anything is absorbed as spec, one read-only
+sub-agent over the whole slice checks what each requirement rests on — does the thing it cites
+still exist, and say what the slice says it says — and reports per requirement. A premise that
+no longer holds is a finding the refinement doc opens with, not a phase; about a fifth of a
+backlog slice goes that way.
 
 ### 2. Pin the requirements with the operator
 
@@ -64,6 +71,16 @@ absorbed as spec, not reopened.
    the slice — then your recommendation and its trade-off, the alternatives you consider live,
    and the impact if you are wrong. What only the operator knows is an open fact. The size in
    phases goes in the material too.
+   Two premises are grounded like any other, because they are the ones a slice is most often
+   built on without evidence. A slice justified by a policy or a principle ("our testing doc
+   says…") rests on the premise that the thing has caused harm: one sub-agent over git history,
+   completed slices' reviews and the relevant docs, asking only whether it has caused a
+   concrete, dated defect — a null result is a finding, and closing the measured gap goes into
+   the doc as a live alternative beside the slice as filed. A real but rare bug rests on
+   exposure: how often it can fire and how long the damage survives (nothing automated reaches
+   the path; the row repairs itself at the next compaction), measured before the fix is sized —
+   one grep and one file read have turned a wire-change phase into a won't-fix. When the felt
+   complaint and the measured one differ, say so plainly; it is what closes the slice.
 2. **Dispatch `dev:refinement-writer`** with the material and end the turn — its receipt is the
    walkthrough; post it as it came back. The doc is `refinement.md` in the slice folder.
 3. **Take the rulings.** The operator comments in the file or in chat. A single decent choice
@@ -73,8 +90,9 @@ absorbed as spec, not reopened.
    stays open — verify the condition and re-surface it with the evidence.
 4. A slice whose shape is wrong is re-shaped here with the operator: split it, kick an item back
    to the backlog, or pull in an obviously-adjacent backlog slice (follow-up folders come from the
-   allocator, `/dev:triage`'s conventions). A design reframe worth a design document gets
-   `/dev:arch-design` before planning.
+   allocator, `/dev:triage`'s conventions). A slice that arrives for a finding against the
+   workflow itself is cancelled, not planned — `/dev:triage`'s routing owns that class. A design
+   reframe worth a design document gets `/dev:arch-design` before planning.
 
 ### 3. Seed plan.md and run the loop
 

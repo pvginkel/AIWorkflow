@@ -35,8 +35,8 @@ carded per finding; the operator dispositions the report and `/dev:close-out` ex
 
 - **`plugins/dev/`** — the plugin: 8 skills, 11 agents, the tools (`run_loop.py`,
   `plan_loop.py`, `close_out.py`, `sweep_slice.py`, `close_slice.py`, `slice_cost.py`,
-  `turn_profile.py`, `preflight.py`, `project_config.py`, and `allocate-next-slice.sh`, with their
-  suites), and the
+  `turn_profile.py`, `preflight.py`, `project_config.py`, `triage_verbatim.py`, and
+  `allocate-next-slice.sh`, with their suites), and the
   contract docs
   (`run-loop.md` / `runner-state.md` / `plan-loop.md` / `plan-template.md` / `refinement.md` /
   `agent-dispatch.md` / `close-out.md` / `close-out-template.md`, plus `residual-sweep.md`,

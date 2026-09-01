@@ -225,6 +225,15 @@ record your proposal as their decision. One machine pass per operator pass, and 
 item-local: action the rulings, don't re-polish the document — a re-format the operator asks for
 is not polishing.
 
+Before acting on a pass, `git diff` the document and run
+`python3 ${CLAUDE_PLUGIN_ROOT}/tools/triage_verbatim.py check <status.md> <raw.md>`. The
+operator's editor escapes markdown on save — `_is_stuck` becomes `\_is_stuck`, and
+`KUBECODER_CLIENT_TOKEN_<NAME>` becomes `KUBECODER*CLIENT_TOKEN*<NAME>`, paired underscores
+eaten as emphasis — and an inlined card text is the source a slice later quotes, so a corrupted
+identifier propagates into `slice.md` and then into code. `restore` rewrites the differing
+blocks from the dump and touches nothing else; the operator's own lines stay as written. An
+eyeball does not catch this; the check is cheap.
+
 ### 4. Research — only what's still open, until nothing is
 
 For each item that carries a `Research:` line after the rulings — flagged at labelling, added by
@@ -281,6 +290,12 @@ Separate what shouldn't become a slice, and confirm the separation with the oper
 - **Operator-owned work** — infrastructure or tooling outside the dev-agent slice workflow, an
   operator chore, or an action only the operator can take → move the card to the **operator's
   action queue**, with a one-line comment saying what is theirs to do.
+- **Findings against the workflow itself** — the driver, a skill, an agent definition, the
+  plugin's docs — never become a slice: a run-slice session editing the driver edits the process
+  executing it (the running loop holds the old code while the phase gate runs the new tests).
+  They go to the operator's action queue too, marked as the host convention marks work for the
+  orchestrating session, and are worked from there; a slice that reaches `/dev:plan-slice` for
+  one is cancelled.
 - **Solution Known** — a senior dev could deliver quality work from the card alone, and it
   passes the litmus in step 8 → write the acceptance criteria into the card, per step 8. These
   skip filing (step 7) and planning both: step 8 batches them straight into a run-ready slice.
@@ -360,11 +375,24 @@ When a card qualifies, append its criteria to the card description under an
 it persists, so a later session sweeps cards this one only qualified. The mark persists; so does
 the litmus's right to move: a card carrying the section from an earlier session is re-checked
 against the litmus as it stands before it is swept — an earlier revision's mark vouches for
-nothing — and one that fails loses the section, with a comment saying why, and takes the normal
-route. The Solution Known set is part of step 6's confirmation with the operator.
+nothing — and one that fails loses the section, with a comment saying why, and is filed as its
+own backlog slice now (step 7): its grounding is already written and would only rot, and the
+survivors keep their marks. The Solution Known set is part of step 6's confirmation with the
+operator. A criterion for a prose nit says the duplicate or false clause is gone — culled, not
+reworded — so the writer does not negotiate with it.
 
-When the intake queue holds **five or more** qualifying cards with this project's owner tag (fewer
-simply accumulate — say so in the close-out), assemble the payload — one item per card: a short
+The floor is **five or more** qualifying cards with this project's owner tag. Fewer accumulate —
+say so in the close-out: waiting cards cost nothing, and a sweep amortises the loop's fixed
+consult, test and doc overhead across the batch, so forcing it at three pays full overhead for
+three one-line fixes. `--force` is never the proposal. When the operator wants a short batch
+moved, the move is **widening**: re-run the litmus over every card on the labelled board — cards
+routed the normal route in an earlier pass are fair game; the usual qualifiers are renames,
+test-only fixes and other in-place corrections — and report the verdict for every card, the
+failures included, so the widened batch is auditable. Widening is owed to a batch the operator
+wants moved, not to one that merely shrank by a withdrawal; still short after it, the cards
+accumulate.
+
+At the floor, assemble the payload — one item per card: a short
 imperative title, `target` (a `kc project list` component name or a sibling-repo path, read off
 the paths the card itself cites — routing, not code reading), the card description verbatim as
 `body`, and the criteria; a multi-item card whose bullets need different targets becomes several

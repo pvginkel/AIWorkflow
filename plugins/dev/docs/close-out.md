@@ -5,7 +5,8 @@ will not act on: a bug it will not fix, a keystroke only the operator can make, 
 deviated from an uneventful run, a question the run did not need answered to proceed, an idea.
 One document, one fixed shape ([close-out-template.md](close-out-template.md)), written as it
 happens; the operator reads it when the slice is done and writes a disposition under each entry;
-the `close-out` skill executes the dispositions; what remains is `/dev:triage`'s input. Nothing
+the `close-out` skill executes the dispositions; what the operator defers is `/dev:triage`'s
+input, for as long as the report's card stays open. Nothing
 from a run is carded per finding — the loops' only tracker output is one card per slice pointing
 at the report. `${CLAUDE_PLUGIN_ROOT}/tools/close_out.py` creates the file and is the one pen
 that writes to it — every author's entries (`append`), notes (`note`) and strikes (`strike`) —
@@ -151,9 +152,14 @@ dispose is the operator's.
    that slice's `slice.md`, `close` strikes (`close_out.py strike`), `defer` leaves it — then
    renders. Once the operator's own asks are settled it proposes closing whatever is still blank,
    so a report is finished in one sitting rather than left half-dispositioned. Git in the spec
-   repo holds the history of the operator's remarks; the close-out card is archived when no live
-   entry has a blank `Disposition:`.
-5. What remains — `defer`, or no disposition yet — is a `/dev:triage` source, one item per entry.
+   repo holds the history of the operator's remarks. **The card's closure is the report's.** The
+   operator does not treat a blank `Disposition:` as pending work, and a report is never a queue
+   they work from: when they are done with it the close-out card is archived, and every entry
+   still blank is closed by that act — written up as `close` in the file's own style, so the
+   record reads the same as a ruled one. `defer` is the one word that keeps the card open.
+5. While the card is open, `/dev:triage` reads the report it names — the `defer` entries and
+   whatever is still blank — one item per entry. A finding that deserves a life of its own gets
+   there by a `card` disposition, never by the report sitting unread.
 
 Deliberately absent: any validation beyond "the section heading exists" and the smoke counts —
 `close_out.py counts` says how many `###` headings in the entry sections are not in the entry

@@ -41,12 +41,18 @@ nothing from you between launch and close-out.
 
 ## Job 2 — errors (exit 3)
 
-Read `bailout.json` and the referenced files **before deciding anything**. Diagnose the root
-cause. Fix it only when it is genuinely environmental or mechanical-at-the-workflow-level (a
-stale checkout, a dead service, a wrong path in the plan's `Target:`) — never by telling an agent
-to work around it, never by patching application code yourself, and never by re-running suites or
-re-deriving an agent's work in your own context. Then relaunch with `--resume`. If the cause is
-unclear or the fix isn't yours, summarize and notify the operator.
+Read `bailout.json` and the referenced files **before deciding anything** — `plan.md`'s
+requirements/rulings section among them, for whatever the bail is about. The driver's message is
+a diagnosis from a process that cannot see the plan, not an instruction: "push it, then resume"
+over a repo the plan holds is a ruling losing to a state check, and what the working tree says
+is never on its own evidence of the right move. **When the plan and the driver disagree, the
+plan wins and the operator decides**; a ruling overtaken by events is replaced in place and
+committed before `--resume`. Then diagnose the root cause. Fix it only when it is genuinely
+environmental or mechanical-at-the-workflow-level (a stale checkout, a dead service, a wrong
+path in the plan's `Target:`) — never by telling an agent to work around it, never by patching
+application code yourself, and never by re-running suites or re-deriving an agent's work in your
+own context. Then relaunch with `--resume`. If the cause is unclear or the fix isn't yours,
+summarize and notify the operator.
 
 ## Job 3 — operator questions (exit 4)
 
@@ -94,7 +100,12 @@ agents or fixing code, stop; that work belongs in a phase the loop executes.
   else.
 - **Shared spec tree:** commits from other sessions appearing in `<spec-repo>` for your slice
   usually mean a parallel session accidentally swept your files into its commit. Stage by name;
-  build on the latest state.
+  build on the latest state. A bail leaves every repo the run touched back on its base branch
+  (a tree still on a `phase/…` branch afterwards either had uncommitted work on it or is
+  another run's branch — the log says which), and the loop refuses to dispatch or commit while
+  the spec repo is off its base: a `blocked` naming another slice's `phase/…` branch is that
+  run's leftover, not yours — check the base branch out there and resume, and never commit onto
+  another run's branch.
 - **The suite is green before every slice.** A failure during the run is the slice's regression —
   never accept "flaky" or "pre-existing" from anyone.
 - **Production stays operator-gated.** The loop's devlock hold pre-authorizes the pushes the slice
