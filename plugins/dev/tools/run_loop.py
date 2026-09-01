@@ -539,6 +539,9 @@ def parse_push_holds(text: str) -> tuple[list[tuple[str, str]], list[str]]:
 # done phase without one contributes its whole section — bounded by the
 # ~a-page contract, never skipped.
 DONE_RECORD_RE = re.compile(r"^\s*\*\*Done\b")
+# The record's second marker: the `Later phases:` line that opens the list a
+# following phase's writer needs. Accepted plain or bold, colon optional.
+LATER_PHASES_RE = re.compile(r"^\s*\**Later phases\**:?\**\s*$", re.I)
 # The plan's prose sections the digest carries verbatim, by `##` heading
 # prefix (case-insensitive): the requirements/rulings (authoritative on
 # intent) and what the slice leaves out.
@@ -594,6 +597,50 @@ def done_record(phase: Phase) -> list[str]:
     return _strip_blank(body)
 
 
+def done_record_summary(phase: Phase) -> list[str] | None:
+    """A done phase's record reduced to its two summary parts: the opener
+    paragraph (what landed and the gate result) and the `Later phases:`
+    list right after it (what is settled, what a later phase may use or is
+    owed). None when the record has no opener, or no `Later phases:` block
+    behind the opener — there is nothing to reduce, so the caller carries
+    the record whole.
+
+    The record is the phase's own story: rounds, witnessed reds, the gate
+    line. A later phase's writer needs none of that, only the outcome and
+    what it inherits — so the summary is what its digest receives. The whole
+    record stays in the plan for the reviewer and the doc phase."""
+    record = done_record(phase)
+    if not record or not DONE_RECORD_RE.match(record[0]):
+        return None
+    i = 0
+    opener: list[str] = []
+    while i < len(record) and record[i].strip():
+        opener.append(record[i])
+        i += 1
+    while i < len(record) and not record[i].strip():
+        i += 1
+    if i >= len(record) or not LATER_PHASES_RE.match(record[i]):
+        return None
+    block: list[str] = []
+    while i < len(record) and record[i].strip():
+        block.append(record[i])
+        i += 1
+    return opener + [""] + _strip_blank(block)
+
+
+def records_without_summary(plan_text: str, phase_id: str) -> list[str]:
+    """The ids of the done phases before `phase_id` whose record has no
+    summary to carry — the digest gives their writer the whole thing. The
+    driver logs one line per id and acts no further: a record off-shape is a
+    finding for the readout, never a bail."""
+    phases, _ = parse_plan(plan_text)
+    idx = next((i for i, p in enumerate(phases) if p.id == phase_id), None)
+    if idx is None:
+        return []
+    return [p.id for p in phases[:idx]
+            if p.done and done_record_summary(p) is None]
+
+
 def _strip_blank(lines: list[str]) -> list[str]:
     start, end = 0, len(lines)
     while start < end and not lines[start].strip():
@@ -638,8 +685,9 @@ def build_phase_digest(plan_text: str, phase_id: str, intent: str,
         out += _strip_blank(phase.body) + [""]
         earlier, later = phases[:idx], phases[idx + 1:]
         if earlier:
-            out += ["## Settled by earlier phases (their done-records)", ""]
-            out += _done_records(earlier)
+            out += ["## Settled by earlier phases (their done-record "
+                    "summaries)", ""]
+            out += _done_records(earlier, summary=True)
         if later:
             out += ["## Later phases (edit them in the plan if your work "
                     "changes them)", ""]
@@ -670,14 +718,22 @@ def _digest_sections(sections: dict[str, list[str]]) -> list[str]:
     return out
 
 
-def _done_records(phases: list[Phase]) -> list[str]:
+def _done_records(phases: list[Phase], summary: bool = False) -> list[str]:
     """Each phase's heading and its done-record — never its phase text,
-    the near-miss distractor; a phase not done yet says so."""
+    the near-miss distractor; a phase not done yet says so. With `summary`,
+    a record that carries one gives its summary instead of the whole thing
+    (`done_record_summary`) — what the writer's per-phase digest takes; the
+    doc phase's whole-plan digest takes the records entire."""
     out: list[str] = []
     for p in phases:
         out += [f"### P{p.id} — {p.title}", ""]
-        out += (done_record(p) if p.done
-                else [f"Target: {p.target}", "(not done yet)"]) + [""]
+        if not p.done:
+            body = [f"Target: {p.target}", "(not done yet)"]
+        elif summary:
+            body = done_record_summary(p) or done_record(p)
+        else:
+            body = done_record(p)
+        out += body + [""]
     return out
 
 
@@ -2387,11 +2443,16 @@ class RunLoop:
         held out, so the driver's own run record and every other slice's
         folder stay out of it. A merged phase with no range on record
         contributes nothing here — those are reported in the doc phase's
-        rows, not the digest."""
+        rows, not the digest. An earlier record the digest could not
+        summarise gets a log line, so a run whose writers wrote records
+        off-shape says so (`records_without_summary`)."""
         try:
             plan_text = self.plan_path.read_text()
         except OSError:
             plan_text = ""
+        for pid in records_without_summary(plan_text, phase_id):
+            self.log(f"[P{phase_id}] digest: P{pid}'s done-record has no "
+                     "'Later phases:' block — carried whole")
         try:
             intent = slice_intent((self.slice_dir / "slice.md").read_text())
         except OSError:

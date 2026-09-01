@@ -65,8 +65,10 @@ digest, runs the gate itself, appends the done-record, commits on the phase bran
 every executor round's prompt (first round and fix rounds alike, rebuilt per round because rulings
 and done-records land mid-run): the slice's intent paragraph (slice.md's first) and the plan's
 title, the `## Requirements / rulings` and `## Not in scope` sections verbatim, **this phase's
-section whole**, earlier phases' done-records (from their `**Done (…)**` opener — not their
-phase text, which is the distractor), later phases' headings and `Target:` lines, every
+section whole**, earlier phases' done-record **summaries** — the `**Done (…)**` paragraph and
+the `Later phases:` list ([plan-template.md](plan-template.md)), never the record's narrative
+nor the phase text, which is the distractor; a record without the list rides whole and the
+driver's log says so — later phases' headings and `Target:` lines, every
 acceptance criterion, and `git diff --stat` of what each earlier phase changed, over the phase's
 own landed range in its repo (`landed` in `state.json`, recorded at its ff-merge) — never the
 base branch since the slice began, which in parallel lanes carries the other lanes' merges.

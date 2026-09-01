@@ -708,6 +708,100 @@ def test_slice_digest_carries_rulings_and_every_done_record():
     assert "settled" not in run_loop.build_slice_digest("")
 
 
+DONE_RECORD_TWO_PART = (
+    "Plan text for P1.\n\n"
+    "**Done (P1).** Landed the seam in `x.py`,\n"
+    "gate green on the second round.\n\n"
+    "Later phases:\n"
+    "- the seam is `x.py`, call it from your handler\n"
+    "- the fixture is owed: P4 writes it\n\n"
+    "- **Round 2 (F1):** the story.\n\n"
+    "Gate: kc project test OK, 240 tests\n")
+
+
+def test_phase_digest_carries_the_done_record_summary():
+    """The writer's per-phase digest takes each earlier record's summary —
+    its opener paragraph plus the `Later phases:` list — not the phase's own
+    story (rounds, witnessed reds, the gate line). A record with no such
+    block, and a done phase with no opener at all, are carried whole; the
+    doc phase's whole-plan digest still gets every record entire."""
+    plan = "\n".join([
+        "# Slice 9 — The summary", "",
+        "## Phases", "",
+        phase_section("1", "Groundwork", done=True, body=DONE_RECORD_TWO_PART),
+        phase_section("2", "Bare", done=True,
+                      body="**Done (P2).** Bare.\n\nGate: OK\n"),
+        phase_section("3", "No opener", done=True, body="Only plan text.\n"),
+        phase_section("4", "Mine", body="Do this.\n")])
+    digest = run_loop.build_phase_digest(plan, "4", "", [], [])
+    assert "## Settled by earlier phases (their done-record summaries)" in digest
+    # P1: the opener paragraph and the whole `Later phases:` list
+    assert "**Done (P1).** Landed the seam in `x.py`,\n" \
+           "gate green on the second round." in digest
+    assert "Later phases:" in digest
+    assert "- the seam is `x.py`, call it from your handler" in digest
+    assert "- the fixture is owed: P4 writes it" in digest
+    # …and none of the phase's own story behind it
+    assert "the story." not in digest
+    assert "240 tests" not in digest
+    assert "Plan text for P1." not in digest
+    # P2: an opener with no block — the record whole
+    assert "**Done (P2).** Bare." in digest and "Gate: OK" in digest
+    # P3: no opener at all — its whole section
+    assert "Only plan text." in digest
+    # the doc phase reads the records entire
+    assert "the story." in run_loop.build_slice_digest(plan)
+
+    phases, _ = run_loop.parse_plan(plan)
+    by_id = {p.id: p for p in phases}
+    assert run_loop.done_record_summary(by_id["1"]) == [
+        "**Done (P1).** Landed the seam in `x.py`,",
+        "gate green on the second round.",
+        "",
+        "Later phases:",
+        "- the seam is `x.py`, call it from your handler",
+        "- the fixture is owed: P4 writes it",
+    ]
+    assert run_loop.done_record_summary(by_id["2"]) is None
+    assert run_loop.done_record_summary(by_id["3"]) is None
+    assert run_loop.records_without_summary(plan, "4") == ["2", "3"]
+    assert run_loop.records_without_summary(plan, "2") == []
+
+
+def test_done_record_summary_takes_the_marker_bold_or_plain():
+    """`Later phases:` is recognised bolded, as the writers emit it."""
+    plan = "\n".join([
+        "# Slice 9 — Bold", "", "## Phases", "",
+        phase_section("1", "Groundwork", done=True,
+                      body="**Done (P1).** Landed.\n\n"
+                           "**Later phases:**\n- use the seam.\n\n"
+                           "Gate: OK\n"),
+        phase_section("2", "Mine", body="Do this.\n")])
+    phases, _ = run_loop.parse_plan(plan)
+    assert run_loop.done_record_summary(phases[0]) == [
+        "**Done (P1).** Landed.", "", "**Later phases:**", "- use the seam."]
+    assert run_loop.records_without_summary(plan, "2") == []
+
+
+def test_phase_digest_logs_a_record_it_could_not_summarise():
+    """The driver says in log.txt which earlier record rode the digest whole
+    — a run whose writers wrote records off-shape leaves a trail."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[
+            phase_section("1", "Groundwork", done=True,
+                          body="**Done (P1).** Laid; no block behind it.\n"),
+            ("2", "The feature"),
+        ])
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert ("[P2] digest: P1's done-record has no 'Later phases:' block "
+                "— carried whole") in (slice_dir / "log.txt").read_text()
+        prompt = next(p for role, p in r.prompts if role == "code-writer")
+        assert "**Done (P1).** Laid; no block behind it." in prompt
+
+
 def test_reviewer_dispatch_states_the_green_gate():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)

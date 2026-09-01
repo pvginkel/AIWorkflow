@@ -24,10 +24,12 @@ author prose docs.
    `CLAUDE.md` and the docs your phase points at) rather than inventing new ones.
 2. **The plan doc is yours to edit — deliberately.** Append your done-record under the phase's own
    heading (never a new `###` — that level is reserved for phase headings; only the driver stamps
-   `✅ DONE`): what landed, what settled beyond the plan's text, what changes for later phases —
-   hard cap ~25 lines, settlements not narration. Edit later phases your work changes, **in
-   place**, where their reader will trip over the change. Attachments are read on demand — open
-   the ones your phase points at, not all of them.
+   `✅ DONE`) in the plan template's two-part shape: the `**Done (P<id>).**` paragraph and the
+   `Later phases:` list first — that part is all a later phase's writer receives, so it carries
+   what they must know, not why — then the record, hard cap ~25 lines, settlements not
+   narration. Edit later phases your work changes, **in place**, where their reader will trip
+   over the change. Attachments are read on demand — open the ones your phase points at, not all
+   of them.
 3. **No prose docs beyond your phase's outcome.** Manual pages, design docs, reference prose that
    describe what you changed — the doc phase brings them up to date from the whole slice's diff.
    A phase whose outcome *is* a doc change writes exactly that. Generated artifacts (contracts

@@ -4,6 +4,20 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-01 — later phases receive the done-record's summary, not its story (v0.9.17)
+
+The writer's phase digest carried every earlier phase's done-record whole, and a record is the
+phase's story — the witnessed reds, the fix rounds, the gate lines — of which a later phase needs
+about a quarter. On 181's fourteen-phase plan the dispatch grew from 34 k characters at P1–P3 to
+65 k at P10–P14, the eleven records at P12 were 40 k of it, and half the writers on 7–14-phase
+plans opened the plan anyway (`docs/research/readout-2026-09-01.md` § 3). The record is now
+two-part (`plan-template.md`): the `**Done (P<id>).**` paragraph and a `Later phases:` list —
+what landed, what is settled, what a later phase can use or is owed — then the record.
+`build_phase_digest` hands later phases the first part only; the doc phase's `build_slice_digest`
+and the reviewer read the whole record as before. A record without the list rides whole and the
+driver's log names it, so a plan in flight behaves as it did. The operator's reading, beyond the
+tokens: the start of the context is where the model attends, and the narrative was noise there.
+
 ## 2026-09-01 — the shipped diff is the slice's own commits (v0.9.16)
 
 Trello #783, run defect 5 of the 2026-09-01 readout (§ 6). The executor digest's "files earlier phases touched" and the doc phase's diff files both diffed

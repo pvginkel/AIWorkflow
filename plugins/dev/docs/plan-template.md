@@ -94,11 +94,17 @@ The mechanical rules the parser holds every author to:
   review passes and the merge lands. No agent ever stamps, and a done phase is skipped on every
   re-parse.
 - **Done-records go under the phase's own heading** — appended below the phase text as plain
-  paragraphs or lists, **never a new `###`**, opening with a bold `**Done (P<id>).**` paragraph
-  (the run loop's phase digest reads a done phase's record from that opener to the end of its
-  section; a record without one hands the writer the whole section). Content: what landed, what
-  settled beyond the plan's text, what changes for later phases — hard cap ~25 lines,
-  settlements not narration.
+  paragraphs or lists, **never a new `###`** — in two parts, the summary first:
+  1. a bold `**Done (P<id>).**` paragraph — what landed (the files and names that now exist)
+     and the gate's result — then a `Later phases:` line and **one contiguous list** of what a
+     later phase must know: what is settled beyond the plan's text, the seams and harness it can
+     use, what is owed or unexercised. About ten lines together.
+  2. the record — the narrative, the witnessed reds, the fix rounds, the gate lines — hard cap
+     ~25 lines, settlements not narration.
+  The run loop's phase digest hands later phases part 1 only; the doc phase's digest and the
+  reviewer read the whole record. A record without the `Later phases:` list rides in later
+  dispatches whole (the driver's log names it), and a phase without the opener hands over its
+  whole section.
   A find that affects a later phase is edited *into that phase*, where its reader will trip
   over it, not left in the done-record.
 - **Phases are roughly PR-sized and independently reviewable** — one branch, one gate run, one

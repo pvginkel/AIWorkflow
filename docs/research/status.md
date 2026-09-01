@@ -1302,3 +1302,17 @@ two consecutive slices, or cost not below baseline.
   and a coverage-gap-share watch. Not read as a kill. → **accepted: kept as the dispatch's
   vehicle; not the turn cut.** T5 folded and dead, T6 superseded by the doc rework, T7 parked —
   the turns plan has no further step.
+- 2026-09-01 — **the record cap becomes a shape (plugin 0.9.17).** The readout's follow-up: what
+  the digest hands later phases is the size of what the writer used to read itself (28 k chars
+  on a 2–4-phase plan vs 29 k self-read; 44 k vs 59 k on 9+), and it grows with the phase index
+  because every earlier done-record rides whole — on 181 the dispatch went 34 k (P1–P3) → 65 k
+  (P10–P14) chars, eleven records ≈ 40 k of it, 31 lines each at the median against the 25-line
+  cap. Operator's call: hand later phases the summary, not the story — "we're polluting the
+  start of the context". Done-records are now two-part (plan-template.md): the `**Done (P<id>).**`
+  paragraph + a `Later phases:` list, then the record; `build_phase_digest` carries part 1 only
+  (`done_record_summary`), the doc phase's `build_slice_digest` still the whole; a record without
+  the list rides whole and `_phase_digest` logs it. Expected on a 14-phase plan: the eleven
+  records at P12 ≈ 12 k chars instead of 40 k, and the dispatch flat across the queue. Read it on
+  the next 7+-phase slice: dispatch size by phase index (`t4_readout.py plan-reads` prompt sizes),
+  pre-edit plan reads on large plans (32/63 had them), and the log's "carried whole" count.
+
