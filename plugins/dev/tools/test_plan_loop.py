@@ -63,6 +63,7 @@ class ScriptedLoop(PlanLoop):
         self.spawned = []   # (role, round, outcome)
         self.prompts = []   # (role, prompt)
         self.git_calls = []  # every git invocation, as its argv tuple
+        self.branch = "main"  # what the spec repo is checked out on
 
     def _assert_agents(self):
         pass
@@ -73,11 +74,16 @@ class ScriptedLoop(PlanLoop):
             return ""
         if args == ("rev-parse", "--show-toplevel"):
             return "/specs"
+        if args == ("rev-parse", "--abbrev-ref", "HEAD"):
+            return self.branch
         if args[0] == "rev-parse":
             return "sha123"
         return ""
 
     def _spawn(self, role, prompt, verdict_path, round_):
+        # The real _spawn's preamble, kept in step: the spec tree is shared,
+        # and a dispatch onto someone else's branch commits the plan there.
+        self._assert_on_base()
         assert self.script, f"unexpected extra spawn: {role} r{round_}"
         step = self.script.pop(0)
         want_role, verdict = step[0], step[1]
@@ -544,6 +550,55 @@ def test_no_design_philosophy_means_no_pointer_line():
         assert run_to_exit(loop) == 0
         for role, prompt in loop.prompts:
             assert "change-discipline" not in prompt, role
+
+
+# -- the shared spec tree ----------------------------------------------------
+#
+# The loop runs IN the spec repo, one working tree shared with every parallel
+# session — other plan loops, a run loop's spec-repo phase, the operator's
+# own. Everything this loop writes (plan.md, verification.json, close-out.md)
+# lands on whatever branch that tree is on.
+
+def test_the_loop_records_the_branch_it_started_on():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [W_DONE, R_GO])
+        loop.branch = "trunk"
+        assert run_to_exit(loop) == 0
+        assert load_state(slice_dir)["base"] == "trunk"
+
+
+def test_a_phase_branch_is_never_recorded_as_the_base():
+    """A run loop left it there when it bailed; planning onto it would
+    commit this slice's plan into another slice's work."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [])
+        loop.branch = "phase/191-P3"
+        assert run_to_exit(loop) == 3
+        bail = json.loads((slice_dir / "plan_bailout.json").read_text())
+        assert bail["reason"] == "blocked"
+        assert "phase/191-P3, a phase branch" in bail["details"]
+        assert not loop.spawned
+        assert load_state(slice_dir)["base"] is None
+
+
+def test_a_tree_moved_off_the_base_bails_before_the_next_dispatch():
+    def moves_the_tree(loop):
+        write_phases(loop)
+        loop.branch = "phase/191-P3"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(
+            slice_dir, [("plan-writer", {"outcome": "done",
+                                         "summary": "written"},
+                         moves_the_tree), R_GO])
+        assert run_to_exit(loop) == 3
+        bail = json.loads((slice_dir / "plan_bailout.json").read_text())
+        assert bail["reason"] == "blocked"
+        assert "is on phase/191-P3, not main" in bail["details"]
+        assert [s[0] for s in loop.spawned] == ["plan-writer"]
 
 
 if __name__ == "__main__":

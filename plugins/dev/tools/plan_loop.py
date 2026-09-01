@@ -284,6 +284,47 @@ class PlanLoop:
                 dirty.append(path)
         return dirty
 
+    def _spec_root(self) -> str:
+        """The spec repo's root — asked only by the bails that name it."""
+        return self.git("rev-parse", "--show-toplevel")
+
+    def _current_branch(self) -> str:
+        return self.git("rev-parse", "--abbrev-ref", "HEAD")
+
+    def _base_branch(self) -> str:
+        """The branch the spec repo was on when this loop first ran, recorded
+        in plan_state.json. A `phase/` branch is never it: that one is a run
+        loop's, left checked out where that run bailed, and planning onto it
+        would commit this slice's plan into another slice's work."""
+        if not self.state.get("base"):
+            cur = self._current_branch()
+            if cur.startswith("phase/"):
+                raise Bailout(
+                    "blocked",
+                    details=f"the spec repo {self._spec_root()} is on {cur}, "
+                            "a phase branch — a run loop's, left there when "
+                            "it bailed; check out its base branch there and "
+                            "rerun")
+            self.state["base"] = cur
+            self._save_state()
+        return self.state["base"]
+
+    def _assert_on_base(self) -> None:
+        """The spec repo must still be on that branch before every dispatch
+        and before the loop's own commit. The tree is shared with every
+        parallel session — another plan loop, a run loop's specs-repo phase,
+        the operator's own — so whichever branch it sits on is where this
+        slice's plan, verification.json and close-out entries land."""
+        base = self._base_branch()
+        cur = self._current_branch()
+        if cur != base:
+            raise Bailout(
+                "blocked",
+                details=f"the spec repo {self._spec_root()} is on {cur}, not "
+                        f"{base}; a parallel session left it there (a bail of "
+                        "another run, or its own branch) — check out "
+                        f"{base} there and rerun")
+
     # -- session spawning ----------------------------------------------------
 
     def _nudge(self, prompt: str, session_id: str, label: str,
@@ -319,7 +360,10 @@ class PlanLoop:
                round_: int) -> dict:
         """Run one fresh session; return its validated verdict. A session
         failure, invalid verdict (after one nudge), or dirty slice folder
-        (after one nudge) is a bail-out — the loop has no fallback driver."""
+        (after one nudge) is a bail-out — the loop has no fallback driver.
+        The shared spec tree is checked first: an agent dispatched onto
+        someone else's branch commits the plan there."""
+        self._assert_on_base()
         label = f"[{role} r{round_}]"
         self.log(f"{label} session starting")
         verdict_path.unlink(missing_ok=True)
@@ -555,6 +599,7 @@ class PlanLoop:
                 "plugin_version": plugin_version(),
                 "orchestrator": _orchestrator_record(),
                 "phase": "reviewing" if self._has_phases() else "writing",
+                "base": None,
                 "writer_rounds": 0,
                 "review_rounds": 0,
                 "pending_review": None,
@@ -568,7 +613,11 @@ class PlanLoop:
         created from the template and committed by the loop (by name; the
         spec repo is a shared tree). A rerun finds it and leaves it be. Runs
         under the bail handler: a git or template failure is a bail
-        (plan_bailout.json), never a traceback."""
+        (plan_bailout.json), never a traceback. This is where the loop
+        records its base branch — before the template is written, so a report
+        created onto the wrong branch and bailed on cannot be found (and
+        skipped) by the rerun."""
+        self._assert_on_base()
         try:
             created = init_report(self.slice_dir)
         except ReportError as e:

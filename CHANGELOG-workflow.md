@@ -4,6 +4,47 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-01 — the shared spec tree survives a bail, and the skills carry KubeCoder's findings (v0.9.20)
+
+Trello #785: thirteen findings KubeCoder's session memory had accumulated about the plugin's own
+behaviour, checked against the tree and upstreamed (the handover is
+`KubeCoderSpecs/handovers/ai-workflow-findings-from-kubecoder-memory-2026-09-01.md`); one was
+dropped as not plugin material. Three were driver defects with one root: the spec repo is a
+working tree shared by every parallel session, and the driver left it wherever it stood. A bail
+left the tree on the phase branch, so other slices' plan-loop commits and stamps landed there
+(seven of slice 195's planning commits went onto `phase/194-P9`), the doc-writer rewrote a
+`close-out.md` from the stale checkout and shipped a report two entries short, and — found
+while reading — `_base_branch` records whatever branch it finds at first touch, so a run
+starting on a foreign phase branch adopted it as its base. Now a bail checks every repo the run
+touched back out onto its base when the tree is clean and the branch is the run's own (a
+parallel session's branch is left alone — a checkout under it would be this same bug); a
+`phase/…` branch is refused as a base;
+and before every dispatch and every commit of its own into the spec repo, the driver asserts
+that repo is on its base (or the phase branch, when the phase targets it) and bails `blocked`
+otherwise — the plan loop records its `base` and asserts the same. The third: a spec-repo phase
+could not win the `--ff-only` race against a parallel session's commits to `main`, and a hand
+rebase then read as `lost_work` on resume. The merge now rebases the branch onto a base that
+moved, proves the diff unchanged, repoints `reviewed_head` and clears the gate's green so it
+re-runs, then fast-forwards — the pattern the doc landing already had.
+
+The rest is skill and contract text. `run-slice` reads `plan.md`'s rulings before acting on a
+bail — the driver's message is a diagnosis from a process that cannot see the plan, and the
+plan wins (slice 135's held push, fired 38 seconds after the `unpushed` bail). `plan-slice`
+grounds every requirement's premise before absorbing it — about a fifth of a backlog slice rests
+on a citation that rotted between triage and planning — and `refinement.md` says what is not a
+decision: an adjacent matter is decided and stated, a delegated call is executed and shown, a
+prose nit is culled, not reworded, and never a decision matrix; a policy-derived slice grounds
+the harm it claims and a rare bug its exposure before the fix is sized. `triage` routes a
+finding against the workflow itself to the operator's action queue rather than a slice, files a
+card the litmus disqualifies as its own slice at once, never proposes `sweep_slice.py --force`
+below the floor (widening the batch over the whole labelled board is the move; the refusal says
+so), and runs the new `triage_verbatim.py` after each operator pass — the operator's editor
+escapes markdown on save and has eaten paired underscores out of an identifier that a slice
+would have quoted into code; `restore` rewrites the inlined card texts from the raw dump and
+touches nothing else. And `close-out.md`'s contract now matches the operator's rule: the card's
+closure closes the report, a blank `Disposition:` is not pending work, `defer` is the one word
+that keeps the card open, and `/dev:triage` reads a report only while its card is.
+
 ## 2026-09-01 — the interview is a document, not a dialog (v0.9.19)
 
 `/dev:plan-slice` pinned requirements through multiple-choice dialogs. Read over every

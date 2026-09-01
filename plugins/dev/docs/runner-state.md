@@ -20,7 +20,9 @@ Slice level:
 its manifest — what lets runs be read before/after a plugin change; a resume does not rewrite
 it), `orchestrator` (the launching session's id and transcript
 path, or `null` for a hand-run), `run_phase` (`phases` | `consult` | `test` | `docs` | `done` |
-`bailed`), `bases` (base branch per target repo), `known_phases` (the plan's phase ids in document
+`bailed`), `bases` (base branch per target repo — the branch the run found there, never a
+`phase/…` one; a bail checks each back out from the run's own branch), `known_phases` (the
+plan's phase ids in document
 order, as last parsed), `generation` (follow-up generations spent), `test_rounds`, `sweep_runs`,
 `gate_sweep` (the loop-tail sweep's record: per-command `results` with log paths, `green`, and
 the exact `commits` it ran on — reused while every swept HEAD matches, re-run otherwise),
@@ -145,4 +147,8 @@ means the work is gone, and the run bails `lost_work` rather than rebuilding the
 and spending a round redoing a commit it cannot account for. A `pending` phase whose branch exists
 with commits the base has not got bails the same way — the `git branch -D` that would otherwise
 clear the name takes them with it. Rounds spent before the first gate or review are the one gap:
-they leave no commit on the record to check.
+they leave no commit on the record to check. A base that moved under the branch by merge time is
+the one case the driver rewrites the record itself: the branch is rebased onto it, the phase's
+diff proven identical before and after, `reviewed_head` repointed at the rebased commit and the
+gate's green cleared so it re-runs — a hand rebase would leave both recorded commits on neither
+branch nor base, which is exactly the `lost_work` shape.

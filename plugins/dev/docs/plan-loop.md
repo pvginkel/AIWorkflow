@@ -33,8 +33,12 @@ handle it, rerun — the loop resumes where it paused) · **3** bailed (`plan_ba
 Every pass is a fresh context reading its inputs from the slice folder; rulings reach agents
 through plan.md only — dispatch prompts carry pointers, never relayed content. Agents must leave
 the slice folder committed (stage by name — the spec repo is a shared working tree); the loop
-nudges once, then bails. Round counts persist in `plan_state.json`; a plan that already parses
-with phases (a reset re-plan) enters at review.
+nudges once, then bails. Round counts persist in `plan_state.json`, with `base` — the branch the
+loop found the spec repo on at its first run, never a `phase/…` branch; before every dispatch and
+every commit of its own the loop asserts the tree is still on it and bails `blocked` otherwise,
+since a parallel run's bail may have left the shared tree elsewhere
+([run-loop.md](run-loop.md)). A plan that already parses with phases (a reset re-plan) enters at
+review.
 
 The loop is the first thing to run on a slice, so it creates the slice's **close-out report**
 (`close-out.md`, from the plugin's template) and commits it before its first dispatch, and every
