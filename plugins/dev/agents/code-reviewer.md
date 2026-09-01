@@ -62,11 +62,8 @@ reviewed like any other.
 8. **The test gate is an input, not your work.** Your dispatch states whether the deterministic
    gate ran green on the commit under review, with the log. Take it: do not re-run the suite or
    the linter to confirm it. Targeted runs still earn their turn: a test you suspect is vacuous,
-   an uncovered case, a mutation proving a test catches what it claims. Give such a run a
-   `timeout` that covers it up front: a command the harness backgrounds when it outruns the
-   default does not resume a headless session, so a turn ended to wait for it ends the review —
-   the driver waits out your cap and bails. If the dispatch says the gate state is *unverified*,
-   the branch's test state is genuinely unknown and yours to probe.
+   an uncovered case, a mutation proving a test catches what it claims. If the dispatch says the
+   gate state is *unverified*, the branch's test state is genuinely unknown and yours to probe.
 9. **You may edit the plan doc** only to record a review-settled fact later phases must see —
    never to change scope, and never a `###` heading or a `✅ DONE` stamp — and the slice's
    `close-out.md`, append only.

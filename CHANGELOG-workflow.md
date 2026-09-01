@@ -4,10 +4,9 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
-## 2026-09-01 — the shipped diff is the slice's own commits; the yield rule stops at sub-agents (v0.9.16)
+## 2026-09-01 — the shipped diff is the slice's own commits (v0.9.16)
 
-Trello #783, two run defects from the 2026-09-01 readout (§ 6, items 1 and 5). **The diff.** The
-executor digest's "files earlier phases touched" and the doc phase's diff files both diffed
+Trello #783, run defect 5 of the 2026-09-01 readout (§ 6). The executor digest's "files earlier phases touched" and the doc phase's diff files both diffed
 `slice_base..<base branch>` — everything on the base branch since the slice began — which in
 parallel lanes is the other lanes' work too: slice 192's KubeCoder.diff (237 KB) carried slice
 190's controller tests, and 190's spec-repo diff (315 KB) was mostly its own run record under
@@ -18,14 +17,12 @@ changed, the doc files carry a section per merged phase — `git diff --stat` th
 that phase's own commits — with the spec repo's `slices/` tree held out by the same pathspec the
 dirty-check uses. `slice_base` is gone from the state; a phase merged under an earlier plugin,
 or in the crash window between the merge and its record, has no range and is named in the doc
-dispatch as missing from the files. **The yield.** 0.9.14's delegate-then-yield rule was read as
-covering a backgrounded command: 192 P3's reviewer ended its turn on a mutation run the harness
-had backgrounded past the 120 s default and was never resumed — only a sub-agent's completion
-re-invokes a headless session — so the driver waited out 3600 s and bailed, and the dead session
-($2.35, 32 turns) is invisible to `state.json` and `slice_cost.py`. `agent-dispatch.md` § Nested
-delegation states the boundary; the doc-writer's and code-reviewer's registers say it in their
-own words: a long command gets a `timeout` that covers it or is polled from its own turn, and a
-turn is ended to wait for sub-agents and nothing else.
+dispatch as missing from the files. The card's other half — § 6 item 1, 192 P3's reviewer ending
+its turn on a backgrounded mutation run and never being resumed — turned out not to be a plugin
+defect, nor the yield rule's: 71 background commands completed inside headless sessions across
+the corpus and every one re-invoked the model. The run in 192 never exited, so no notification
+ever came; the fix is KubeCoder's managed CLAUDE.md § Waiting on work, which now asks for an
+outer `timeout(1)` on anything that can hang. The readout's item 1 carries the correction.
 
 ## 2026-09-01 — the rework share stops counting the completion consult (v0.9.15)
 

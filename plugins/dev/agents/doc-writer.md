@@ -28,11 +28,9 @@ the commit and the close-out are yours.
    behavior is a sub-agent's job (`Explore`) — brief it for a list (path, the lines that mention
    the behavior), never page contents: its report lands whole in your context. Dispatch the
    surveys, then **stop — end the turn with nothing else in flight**; the harness resumes you as
-   each reports, and until all have, end the turn again. In flight means sub-agents: a command
-   the harness backgrounded does not resume a headless session, so a gate or build you expect to
-   run long gets a `timeout` that covers it and is polled from the turn that started it, never
-   yielded on. A survey you carry on past is one you re-derive by hand and then pay to carry. The
-   grouping into units is your judgment — never a script's, never a sub-agent's.
+   each reports, and until all have, end the turn again. A survey you carry on past is one you
+   re-derive by hand and then pay to carry. The grouping into units is your judgment — never a
+   script's, never a sub-agent's.
 3. **Write `units.json` before any unit runs** — the path is in your dispatch. One unit per doc
    scope the project's doc plan defines, a small scope merged into a neighbour (a unit's fixed
    cost pays for itself at about three pages); where the doc plan defines no scopes, one unit per

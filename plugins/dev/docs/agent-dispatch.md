@@ -110,14 +110,3 @@ past the writer's first edit, at 15–21 % of the session. So a role that delega
 with nothing else in flight; the doc-writer's contract says so in its own words (it yields
 twice — for its survey, then for its units), and the plan-writer/plan-reviewer overlap (17–18 %)
 is the same pattern, not yet addressed.
-
-**The yield's boundary is the sub-agent.** Only a sub-agent's completion re-invokes a headless
-session. A Bash command the harness backgrounded — one that outran the tool's timeout, or was
-launched `run_in_background` — never does: the "you will be notified when it completes" notice
-describes an interactive session, and under `kc session` a turn ended with only a command in
-flight is the session's last. 192 P3's reviewer ended its turn that way over a mutation run that
-had passed the 120 s default ("I'll stop here and pick up when it completes"); the driver waited
-out the reviewer's 3600 s, bailed `timeout`, and the re-run signed off at $3.55 on top of a $2.35
-dead session that reached neither `state.json` nor `slice_cost.py`'s table. So a command expected
-to run long gets a `timeout` that covers it up front (the tool takes up to ten minutes), or is
-polled from the turn that started it; a turn is ended to wait for sub-agents and for nothing else.
