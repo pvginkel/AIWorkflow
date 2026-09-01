@@ -63,7 +63,10 @@ Session outputs live under `<slice>/phases/P<id>/` (review docs, gate logs, verd
 the slice root for the consult/test/doc stages; the loop-tail sweep's logs live under
 `<slice>/sweeps/r<N>/`; the doc phase's diff files under `<slice>/doc_phase/` (one `<repo>.diff`
 per touched repo, rewritten at every doc-writer dispatch — git's answer written down, not an
-agent's copy). Executor inputs come from `plan.md`, never from copies.
+agent's copy) and the coordinator's `units.json` beside them (its work packages, one entry per
+`dev:doc-unit` it dispatches — the one file there an agent writes; the driver records each
+unit's id and page count as `doc_phase.units` at the hand-back, and unlinks a stale file when it
+recreates the doc branch). Executor inputs come from `plan.md`, never from copies.
 
 ## bailout.json and exit codes
 

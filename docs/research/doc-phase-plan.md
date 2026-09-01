@@ -28,9 +28,32 @@ costs ≈ $0.35–0.60 before it does any work, so it needs ≈ 3 pages of work 
   **Shipped as dev 0.9.9 (2026-08-27)**, with § 6 items 1–2; the dispatch's verb block carries
   `list`, `append`, `note` — not `strike`, which close-out.md reserves for the completion
   consult. KubeCoder's `slice-doc-plan.md` § 1 names the diff files in place of the ranges.
-- **Phase 2 = § 4 + § 6 items 1–3** (items 1–2 already land in phase 1), the new `doc-unit`
-  agent and the `units.json` contract, A/B per § 8. Needs the § 7 rulings from the operator
-  first — at least the unit definition in KubeCoder's `slice-doc-plan.md`.
+- **Phase 2 = § 4 + § 6 items 1–2**, the new `doc-unit` agent and the `units.json` contract,
+  A/B per § 8. **Shipped as dev 0.9.14 (2026-09-01)** under the § 7 defaults this proposal
+  states: the unit is a documentation-model scope (KubeCoder's `slice-doc-plan.md` § 2),
+  doc-comments in the diff's own files are named there as a surface, the `api/*.md` gap was
+  closed by #738, and the counts ruling is still the operator's. § 6 item 3 is **dropped**: the
+  doc plan's append-time rule (#572 — read `decisions.md` when you append, because the spec
+  repo is shared by parallel sessions) makes a dispatch-time high-water mark a stale-id trap,
+  and the phase-1 read prices the hunt at 1–3 turns per session.
+- **Phase 1 read** (2026-09-01; slices 190–193 on 0.9.12/0.9.13 — `t4_readout.py writers
+  --role doc-writer`, plus the four transcripts read for the yield). Median session 64 turns /
+  $6.19 / `ctx_fe` 96 k against the 16x–170 corpus's 78 / $8.09 / 127 k, and the whole corpus's
+  59 / $6.04 / 118 k — the post-T3 sessions were already at the corpus median on turns; what
+  moved is the context at first edit, −21 k. No writer opened plan.md or slice.md and none ran
+  `git diff` for the slice diff: the diff files and the digest hold. The yield holds for the
+  first report on all four — a pure dispatch turn, one no-op turn (`echo waiting`: the headless
+  session parks by burning a turn rather than ending bare), the report. It is not held for a
+  fan-out's later reports (190 dispatched 2 surveys, 193 3): those landed 3–21 turns after the
+  first edit — but no longer as waste; the writer edited only the scope whose report had landed
+  and opened each later scope after its report, a pipeline. Survey reports are 16–48 KB each,
+  delivered whole into the writer's context; sub-agents are 17–33 % of the phase ($1.24–4.42 on
+  $6.04–8.85 writers). (`turn_profile.replay` attributes a sub-agent's report to its launch
+  turn — the Agent tool's `tool_result` is only the launch ack, the report arrives as a later
+  task notification — so the yield cannot be read from its rows; the transcripts' notifications
+  were read directly.) Two contract consequences for phase 2: the coordinator yields again until
+  every unit has reported (the harness resumes on each completion), and briefs a survey for a
+  list, never page contents.
 - § 5 lists what neither phase does; § 7's last three items are KubeCoder rulings, not plugin
   work.
 

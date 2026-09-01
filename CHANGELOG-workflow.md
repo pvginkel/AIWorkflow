@@ -4,6 +4,32 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-01 — the doc phase is two-stage: a coordinator packages, `doc-unit` sub-agents author (v0.9.14)
+
+Triage #716's rework, phase 2 (`docs/research/doc-phase-plan.md` § 4; phase 1 was 0.9.9). The
+doc-writer is now the phase's **coordinator**: it walks the diff and surveys the doc tree as
+before, then writes `<slice>/doc_phase/units.json` — one work package per doc scope the project's
+doc plan defines (a small scope merged into a neighbour; a unit's fixed cost pays for itself at
+about three pages), each entry the unit's whole brief: the pages it owns, the changed behaviours
+with file:line pointers into the diff files, the settlements that bear on them, the counts to
+re-count, what is off limits — dispatches one `dev:doc-unit` sub-agent per entry in one message,
+yields until every unit has reported (the harness resumes a session on *each* completion, so the
+contract says to end the turn again), and reconciles as the one head with the whole picture: the
+index rows, the decision ids at append time, cross-scope consistency, the receipts' flags; then
+gates once, commits, writes the close-out Summary and Focus lines. The new `agents/doc-unit.md`
+(with a `description:`, so it registers) authors one package's pages under the writing rules that
+moved there from the doc-writer — grounded in source, in place, by the project's conventions —
+commits nothing, and hands back a receipt (edited, unverified, index rows, decision candidates,
+not mine), never evidence. Package identification stays in the doc phase — not the code-writers,
+not a per-phase Sonnet prep — and the grouping is the coordinator's judgment, never Python's (§ 4
+gives the reasons). The driver names the file in the dispatch, drops a stale one when it
+recreates the doc branch, and records each unit's id and page count as `doc_phase.units` at the
+hand-back — recorded, never enforced. `REQUIRED_AGENTS` gains `doc-unit`; `agent-dispatch.md`
+names the doc unit as the one delegated write; KubeCoder's `slice-doc-plan.md` § 2 defines the
+unit (its documentation model's scopes) and names doc-comments in the diff's own files as a
+surface. The phase-1 read (190–193) is in the proposal's phasing block; the § 6 high-water-mark
+line is dropped there. Read the rework on the next four doc phases (§ 8).
+
 ## 2026-09-01 — preflight pulls the environment's repos before a plan or run (v0.9.13)
 
 Before every `/dev:plan-slice` and `/dev:run-slice` the operator ran a pull-every-repo script by

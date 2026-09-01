@@ -88,7 +88,11 @@ Every agent — including one a script spawned — can dispatch sub-agents of it
 rule: **delegate the reading, keep the judgment.** Mechanical, independent, per-item work —
 hunting the evidence for one verification item, surveying one axis of a subsystem, a rebase, a
 red-suite repair — goes to a sub-agent that returns conclusions. Every verdict, severity call,
-and write-back stays with the dispatching agent.
+and write-back stays with the dispatching agent. The one delegated *write* is the doc phase's:
+the doc-writer coordinator packages a slice's doc work into `units.json` and a `dev:doc-unit`
+sub-agent authors each package's pages — the pages are independent per doc scope, and the writes
+that need the whole picture (indexes, decision ids, cross-scope consistency, the commit, the
+verdict) stay with the coordinator ([run-loop.md](run-loop.md) § Doc phase).
 
 Sub-agents hand back **receipts and conclusions, never evidence**: evidence handed upward sits in
 the caller's context for the rest of its session, which is exactly the cost the delegation exists
@@ -103,5 +107,6 @@ and carries on does the delegated work itself meanwhile and then pays to carry a
 longer needs: in the doc-writer sessions read for the doc-phase rework
 (`docs/research/doc-phase-plan.md` § 1), every survey report landed 18–49 turns after dispatch,
 past the writer's first edit, at 15–21 % of the session. So a role that delegates ends the turn
-with nothing else in flight; the doc-writer's contract says so in its own words, and the
-plan-writer/plan-reviewer overlap (17–18 %) is the same pattern, not yet addressed.
+with nothing else in flight; the doc-writer's contract says so in its own words (it yields
+twice — for its survey, then for its units), and the plan-writer/plan-reviewer overlap (17–18 %)
+is the same pattern, not yet addressed.
