@@ -48,7 +48,9 @@ costs ≈ $0.35–0.60 before it does any work, so it needs ≈ 3 pages of work 
   first edit — but no longer as waste; the writer edited only the scope whose report had landed
   and opened each later scope after its report, a pipeline. Survey reports are 16–48 KB each,
   delivered whole into the writer's context; sub-agents are 17–33 % of the phase ($1.24–4.42 on
-  $6.04–8.85 writers). (`turn_profile.replay` attributes a sub-agent's report to its launch
+  $6.04–8.85 writers — median $2.22 against the corpus's $1.04–1.56: the yielded survey is
+  briefed bigger, and `t4_readout.py writers` now carries the sub-agent and `units.json`
+  columns for the rework's read). (`turn_profile.replay` attributes a sub-agent's report to its launch
   turn — the Agent tool's `tool_result` is only the launch ack, the report arrives as a later
   task notification — so the yield cannot be read from its rows; the transcripts' notifications
   were read directly.) Two contract consequences for phase 2: the coordinator yields again until

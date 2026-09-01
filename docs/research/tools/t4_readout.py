@@ -7,7 +7,10 @@ context_profile.py imports it, so the numbers are the ones state.json carries):
   writers     per writer session: orientation turns before the first edit, plan.md /
               verification.json / slice.md reads (whole session and before the first
               edit), ctx at the first edit, first-prompt size, turn classes — medians
-              per group and quartiles, one line per new session, one line per corpus slice
+              per group and quartiles, one line per new session, one line per corpus slice;
+              with --role doc-writer the session and corpus-slice lines also carry the doc
+              phase's sub-agents (surveys vs dev:doc-unit units, their turns and $) and the
+              coordinator's units.json work packages, `units=<units>/<pages>` (`–` when none)
   slices      per slice: $ and turns per phase, writer / reviewer $ per phase, the quality
               instruments (r1 blocking phases, refuted, gate-fix, gate-red, rework share,
               abstention hits, appended phases), pooled per group
@@ -86,6 +89,28 @@ def _group(d: Path) -> str:
     return f"new-{v}" if v else "new"
 
 
+def _sub_kind(role: str) -> str:
+    """A sub-agent Conv's role (`subagent:<agentType>`) -> what it was for."""
+    t = role.split(":", 1)[1] if ":" in role else role
+    if "doc-unit" in t:
+        return "unit"
+    return "survey" if t == "Explore" else "other"
+
+
+def _units(d: Path) -> tuple[int, int] | None:
+    """The doc phase's work packages: (units, pages) from the coordinator's
+    doc_phase/units.json, else the driver's state.json `doc_phase.units`
+    record, else None -- the slice ran before 0.9.14 and has neither."""
+    u = None
+    try:
+        u = json.loads((d / "doc_phase" / "units.json").read_text()).get("units")
+    except (OSError, json.JSONDecodeError, AttributeError):
+        u = (_state(d).get("doc_phase") or {}).get("units")
+    if u is None:
+        return None
+    return len(u), sum(len(e.get("pages") or []) for e in u)
+
+
 def _first_prompt_chars(path: Path) -> int:
     with path.open(errors="replace") as fh:
         for line in fh:
@@ -151,7 +176,7 @@ def _quart(xs) -> str:
 
 # --------------------------------------------------------------------------- writers
 
-def session_row(conv, slice_name: str, group: str) -> dict | None:
+def session_row(conv, slice_name: str, group: str, subs: list, units) -> dict | None:
     rep = tp.replay(conv.transcript)
     an = tp.analyse(rep, sc.cost_for)
     if not an:
@@ -161,6 +186,13 @@ def session_row(conv, slice_name: str, group: str) -> dict | None:
     fw = tp.first_write_turn(turns)
     fe = tp.first_edit_turn(turns)
     cls = Counter(r["cls"] for r in an["classes"])
+    by_kind: dict[str, list] = defaultdict(list)
+    for sub_conv in subs:
+        by_kind[_sub_kind(sub_conv.role)].append(sub_conv)
+
+    def kind(k: str) -> tuple[int, float]:
+        return len(by_kind[k]), sum(c.cost() for c in by_kind[k])
+
     return {
         "group": group, "slice": slice_name, "phase": conv.phase, "round": conv.round,
         "turns": m["turns"], "cost": m["cost"],
@@ -179,6 +211,11 @@ def session_row(conv, slice_name: str, group: str) -> dict | None:
         "gate": cls["gate"], "think": cls["think"],
         "prompt_chars": _first_prompt_chars(conv.transcript),
         "out_tok": m["tok"]["output"], "think_tok": m["tok"]["thinking"],
+        "sub_n": len(subs), "sub_turns": sum(c.turns for c in subs),
+        "sub_cost": sum(c.cost() for c in subs),
+        "survey_n": kind("survey")[0], "survey_cost": kind("survey")[1],
+        "unit_n": kind("unit")[0], "unit_cost": kind("unit")[1],
+        "units_fmt": f"{units[0]}/{units[1]}" if units else "–",
     }
 
 
@@ -192,10 +229,12 @@ def collect_rows(role: str, new: list[Path]) -> list[dict]:
             except FileNotFoundError:
                 continue
             nph = len(_state(d).get("phases", {}))
+            units = _units(d)
             for c in convs:
                 if c.role != role:
                     continue
-                r = session_row(c, d.name, group or _group(d))
+                subs = [x for x in convs if x.parent is c]
+                r = session_row(c, d.name, group or _group(d), subs, units)
                 if r:
                     r["nphases"] = nph
                     rows.append(r)
@@ -245,8 +284,10 @@ def print_writers(role: str, new: list[Path]) -> None:
                       ("corpus 16x-170 r1", [r for r in tail if r["round"] == 1]),
                       ("new r1", [r for r in news if r["round"] == 1])):
         print(f"-- {label} n={len(rs)}")
-        for k in ("turns", "cost", "orient_e", "ctx_fe", "ctx_mean", "think_tok"):
-            print(f"   {k:9s} {_quart([round(r[k], 2) if k == 'cost' else r[k] for r in rs])}")
+        for k in ("turns", "cost", "orient_e", "ctx_fe", "ctx_mean", "think_tok", "sub_cost"):
+            money = k in ("cost", "sub_cost")
+            label = "subagent$" if k == "sub_cost" else k
+            print(f"   {label:9s} {_quart([round(r[k], 2) if money else r[k] for r in rs])}")
 
     print("\n== new sessions, one line each")
     for r in news:
@@ -256,7 +297,11 @@ def print_writers(role: str, new: list[Path]) -> None:
               f"plan={r['plan_reads']} (pre {r['plan_reads_pre']}) ver={r['ver_reads']} "
               f"slice={r['slice_reads']} rev={r['review_reads']} "
               f"or={r['orient_read']} wr={r['work_read']} ed={r['edit']} th={r['think']} "
-              f"rf={r['rf']} bs={r['batch_strict']} prompt={r['prompt_chars']}")
+              f"rf={r['rf']} bs={r['batch_strict']} prompt={r['prompt_chars']} "
+              f"subagents={r['sub_n']} ({r['sub_turns']}t ${r['sub_cost']:.2f}; "
+              f"surveys={r['survey_n']}(${r['survey_cost']:.2f}) "
+              f"unit_agents={r['unit_n']}(${r['unit_cost']:.2f})) "
+              f"units={r['units_fmt']}")
 
     print("\n== corpus by slice (median per session)")
     bys: dict[str, list[dict]] = defaultdict(list)
@@ -269,7 +314,9 @@ def print_writers(role: str, new: list[Path]) -> None:
               f"plan={_med([r['plan_reads'] for r in rs]):.0f} "
               f"ctx1={_med([r['ctx1'] for r in rs]):.0f} "
               f"ctx_fe={_med([r['ctx_fe'] for r in rs]) or 0:.0f} "
-              f"$={_med([r['cost'] for r in rs]):.2f} sum$={sum(r['cost'] for r in rs):.2f}")
+              f"$={_med([r['cost'] for r in rs]):.2f} sum$={sum(r['cost'] for r in rs):.2f} "
+              f"sub={sum(r['sub_n'] for r in rs)}(${sum(r['sub_cost'] for r in rs):.2f}) "
+              f"units={rs[0]['units_fmt']}")
 
 
 # --------------------------------------------------------------------------- slices
