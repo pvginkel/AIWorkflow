@@ -67,7 +67,9 @@ and done-records land mid-run): the slice's intent paragraph (slice.md's first) 
 title, the `## Requirements / rulings` and `## Not in scope` sections verbatim, **this phase's
 section whole**, earlier phases' done-records (from their `**Done (…)**` opener — not their
 phase text, which is the distractor), later phases' headings and `Target:` lines, every
-acceptance criterion, and `git diff --stat` of what earlier phases changed in each touched repo.
+acceptance criterion, and `git diff --stat` of what each earlier phase changed, over the phase's
+own landed range in its repo (`landed` in `state.json`, recorded at its ff-merge) — never the
+base branch since the slice began, which in parallel lanes carries the other lanes' merges.
 The writer reads that instead of the whole plan; the plan stays the file it edits and the file it
 opens for what the digest points at. The reviewer's dispatch is unchanged — its re-read of the
 whole plan is a feature of the review, not a cost. Then:
@@ -192,9 +194,13 @@ whole plan is a feature of the review, not a cost. Then:
   slice task and owes no acceptance criterion: a doc change a requirement names is a phase of the
   plan ([plan-template.md](plan-template.md)), merged before this point like any other. Its
   dispatch carries the driver's deterministic facts, in the phase digest's spirit: the slice's
-  diff **on disk**, one `<slice>/doc_phase/<repo>.diff` per touched repo (`git diff --stat` on
-  top, then the diff, over the repo's slice base to its base branch — never HEAD, which is the
-  doc branch, so a redispatched writer's own commits never read as shipped work), read by path
+  diff **on disk**, one `<slice>/doc_phase/<repo>.diff` per repo a phase merged into, a section
+  per merged phase (`git diff --stat` on top, then the diff, over the phase's landed range — the
+  sha its branch was cut from to the head that fast-forwarded the base — with the spec repo's
+  `slices/` tree held out; never the base branch since the slice began, which in parallel lanes
+  carried the other lanes' merges and the slice's own run record, and never HEAD, which is the
+  doc branch, so a redispatched writer's own commits never read as shipped work; a phase merged
+  with no range on record is named in the dispatch as missing from the files), read by path
   instead of re-running `git diff`, which past the tool's output limit round-trips through a
   persisted file; the plan **digested whole** — title, rulings sections, every phase's
   done-record — so the plan is opened only where a record points and slice.md not at all; and

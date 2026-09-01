@@ -336,7 +336,9 @@ def extract(since: str) -> dict:
             rows = [h for h in hist if h.get("phase") == pid]
             reviews = [h for h in rows if h["role"] == "code-reviewer"]
             execs = [h for h in rows if h["role"] == "code-writer"]
-            base = last_head.get(str(repo)) or (s.get("slice_base") or {}).get(str(repo))
+            base = ((ps.get("landed") or {}).get("base")
+                    or last_head.get(str(repo))
+                    or (s.get("slice_base") or {}).get(str(repo)))
             # window: from the first row's ts minus its duration, to the last row's ts plus its
             # duration, padded — ts semantics differ across versions, so be generous.
             ts = [datetime.fromisoformat(h["ts"]) for h in rows if h.get("ts")]

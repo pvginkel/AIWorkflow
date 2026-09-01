@@ -20,9 +20,8 @@ Slice level:
 its manifest — what lets runs be read before/after a plugin change; a resume does not rewrite
 it), `orchestrator` (the launching session's id and transcript
 path, or `null` for a hand-run), `run_phase` (`phases` | `consult` | `test` | `docs` | `done` |
-`bailed`), `bases` (base branch per target repo), `slice_base` (the sha each repo stood at before
-the slice — the doc phase's diff base), `known_phases` (the plan's phase ids in document order,
-as last parsed), `generation` (follow-up generations spent), `test_rounds`, `sweep_runs`,
+`bailed`), `bases` (base branch per target repo), `known_phases` (the plan's phase ids in document
+order, as last parsed), `generation` (follow-up generations spent), `test_rounds`, `sweep_runs`,
 `gate_sweep` (the loop-tail sweep's record: per-command `results` with log paths, `green`, and
 the exact `commits` it ran on — reused while every swept HEAD matches, re-run otherwise),
 `consult_seq`, `in_flight`, `bailouts` (every stop this run made — `reason`, `phase`,
@@ -34,8 +33,12 @@ entry per repo per run), `phases`, and `history`.
 
 Per phase: `status` (`pending` | `in_progress` | `merged`), `stage` (`executor` | `gate` |
 `review` | `merging` | `null`), `branch`, `target`, `executor_rounds`, `gate_fix_rounds`,
-`review_rounds`, `reviewed_head`, `gate_runs`, and the gate's evidence pair `gate_green_commit` /
-`gate_green_log`.
+`review_rounds`, `reviewed_head`, `gate_runs`, the gate's evidence pair `gate_green_commit` /
+`gate_green_log`, and `landed` — set at the ff-merge: the phase's `root`, the `base` sha its
+branch was cut from and the `head` that fast-forwarded the base branch. That range is the phase's
+own commits and nothing else, which is what the executor digest's touched list and the doc
+phase's diff files read; a phase whose merge landed before its record did (the reconcile path)
+has none, and the doc dispatch names it as missing from the files.
 
 `history` is append-only, one entry per agent run plus one per gate run (role `gate`), one per
 loop-tail sweep (role `sweep`), one per doc gate (role `doc-gate`) and one per consult: `ts`,
@@ -63,8 +66,9 @@ completion is read off this state (`created_at` → `updated_at`, `known_phases`
 Session outputs live under `<slice>/phases/P<id>/` (review docs, gate logs, verdict files) and at
 the slice root for the consult/test/doc stages; the loop-tail sweep's logs live under
 `<slice>/sweeps/r<N>/`; the doc phase's diff files under `<slice>/doc_phase/` (one `<repo>.diff`
-per touched repo, rewritten at every doc-writer dispatch — git's answer written down, not an
-agent's copy) and the coordinator's `units.json` beside them (its work packages, one entry per
+per repo a phase merged into, a section per merged phase over its `landed` range, rewritten at
+every doc-writer dispatch — git's answer written down, not an agent's copy) and the
+coordinator's `units.json` beside them (its work packages, one entry per
 `dev:doc-unit` it dispatches — the one file there an agent writes; the driver records each
 unit's id and page count as `doc_phase.units` at the hand-back, and unlinks a stale file when it
 recreates the doc branch). Executor inputs come from `plan.md`, never from copies.

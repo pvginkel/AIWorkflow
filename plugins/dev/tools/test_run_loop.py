@@ -575,8 +575,8 @@ def test_executor_digest_carries_the_slice_and_every_round_gets_it():
     """The digest is built per round from the files as they stand: the
     slice's intent paragraph, the plan's rulings, verification.json's items,
     earlier phases' done-records (not their text), later phases' headings,
-    and what earlier phases changed — in the target repo up to the phase
-    branch's merge base, in every other touched repo up to its base."""
+    and what earlier phases changed — one `--stat` per merged phase, over
+    that phase's own landed range in the repo it landed in."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp, phases=[
             phase_section("1", "Groundwork", done=True,
@@ -603,17 +603,22 @@ def test_executor_digest_carries_the_slice_and_every_round_gets_it():
         r = ScriptedLoop(slice_dir, script, gates=[False, True],
                          repo_root=repo)
         r.fake_git.stat = " x.py | 2 +-\n 1 file changed, 1 insertion(+)"
-        # an earlier phase touched a sibling repo too (state is created by
-        # run(), so the record is seeded at the first digest)
+        # an earlier phase landed in a sibling repo too — P1 is stamped done
+        # in the plan, so the loop never creates its record and the merged
+        # record is seeded at the first digest instead
         orig = r._phase_digest
 
-        def seeded(phase_id, root, merge_base):
-            r.state["slice_base"].setdefault("/elsewhere/Sibling", "s1b")
-            r.state["bases"].setdefault("/elsewhere/Sibling", "main")
-            return orig(phase_id, root, merge_base)
+        def seeded(phase_id):
+            if "1" not in r.state["phases"]:
+                r._phase_state("1").update(
+                    status="merged",
+                    landed={"root": "/elsewhere/Sibling", "base": "s1b",
+                            "head": "s1h"})
+            return orig(phase_id)
         r._phase_digest = seeded
         assert run_to_exit(r) == 0
-        first, fix = r.prompts[0][1], r.prompts[1][1]
+        writers = [p for role, p in r.prompts if role == "code-writer"]
+        first, fix, third = writers[0], writers[1], writers[2]
         for prompt in (first, fix):
             assert "# Orientation digest — phase P2" in prompt
             assert "**Feature.** The slice's intent,\ntwo lines of it." in prompt
@@ -627,11 +632,18 @@ def test_executor_digest_carries_the_slice_and_every_round_gets_it():
             assert f"- P3 — The cleanup (Target: {PROJECT})" in prompt
             assert "- V01 (core) — It ships." in prompt
             assert " x.py | 2 +-" in prompt
+            assert "P1 in /elsewhere/Sibling:" in prompt
         assert "digested below" in fix
-        stats = [c for root, c in r.fake_git.calls
+        # P3's writer sees P2's landed range, in the repo P2 landed in
+        assert f"P2 in {repo}:" in third
+        stats = [(root, c) for root, c in r.fake_git.calls
                  if c[0] == "diff" and c[1].startswith("--stat")]
-        assert ("s1b..main" in [c[2] for c in stats])
-        assert any(c[2].endswith("..base123") for c in stats)
+        assert (Path("/elsewhere/Sibling"),
+                ("diff", "--stat=100", "s1b..s1h")) in stats
+        assert (repo, ("diff", "--stat=100", "base123..abc123")) in stats
+        # never the base branch since the slice began
+        assert not [c for _, c in stats
+                    if c[2].endswith(("..main", "..base123"))]
 
 
 def test_phase_digest_shapes():
@@ -1412,7 +1424,7 @@ def test_operator_broken_plan_on_resume_is_an_operator_question():
         state = {
             "slice": "074_test_slice", "created_at": "t",
             "orchestrator": None, "run_phase": "phases",
-            "bases": {}, "slice_base": {}, "known_phases": [],
+            "bases": {}, "known_phases": [],
             "phases": {}, "generation": 0, "test_rounds": 0,
             "consult_seq": 0, "in_flight": None, "history": [],
         }
@@ -1735,8 +1747,7 @@ def test_committed_run_record_bails_before_the_merge_checkout():
 def resume_state(target, stage="review"):
     return {
         "slice": "074_test_slice", "created_at": "t", "orchestrator": None,
-        "run_phase": "phases", "bases": {}, "slice_base": {},
-        "known_phases": ["1"],
+        "run_phase": "phases", "bases": {}, "known_phases": ["1"],
         "phases": {"1": {"status": "in_progress", "stage": stage,
                          "branch": "phase/074-P1", "target": target,
                          "executor_rounds": 1, "gate_fix_rounds": 0,
@@ -2503,10 +2514,28 @@ def test_an_unresolvable_hold_is_a_plan_structure_error():
         assert "push hold `../Nope`" in bail["details"]
 
 
+def test_merge_records_the_phases_landed_range():
+    """The ff-merge is the one moment the phase's own commits are bounded:
+    the branch's merge base is the base branch's sha just before the merge,
+    the head is the branch tip. Both go on the phase's record — everything
+    downstream reads the slice's shipped diff from there, never from the base
+    branch since the slice began (which in parallel lanes carries the other
+    lanes' merges)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert load_state(slice_dir)["phases"]["1"]["landed"] == {
+            "root": str(repo), "base": "base123", "head": "abc123"}
+
+
 def test_doc_phase_prompt_states_diff_files_digest_verbs_and_doc():
     """The doc-writer's dispatch carries the driver's deterministic facts:
-    the diff on disk per repo (stat, then the diff, over slice base..base
-    branch — never HEAD, which is the doc branch), the whole-plan digest
+    the diff on disk per repo, a section per merged phase (stat, then that
+    phase's own diff, over the range the phase landed — never the base
+    branch, and never HEAD, which is the doc branch), the whole-plan digest
     with every done-record, the close-out verbs' argument shapes, and the
     branch it works on."""
     def done_record(loop):
@@ -2528,17 +2557,17 @@ def test_doc_phase_prompt_states_diff_files_digest_verbs_and_doc():
         assert "doc-plan.md" in prompt
         assert "phase/074-docs" in prompt
         assert "Never push" in prompt
-        # the diff file: stat on top, then the diff, over slice base..base
+        # the diff file: stat on top, then the diff, over P1's landed range
         diff_file = slice_dir / "doc_phase" / "repo.diff"
         text = diff_file.read_text()
-        assert text.startswith(f"{repo} — git diff abc123..main\n")
+        assert text.startswith(f"{repo} — P1: git diff base123..abc123\n")
         assert text.index(" a.py | 2 +-") < text.index("diff --git a/a.py")
-        assert (f"- {repo}: {diff_file} (`git diff abc123..main`: "
+        assert (f"- {repo}: {diff_file} (P1: "
                 "1 file changed, 1 insertion(+), 1 deletion(-))") in prompt
         assert [c for _, c in r.fake_git.calls
-                if c[:2] == ("diff", "abc123..main")]
-        assert not [c for _, c in r.fake_git.calls
-                    if c[0] == "diff" and "HEAD" in c[-1]]
+                if c[:2] == ("diff", "base123..abc123")]
+        assert not [c for _, c in r.fake_git.calls if c[0] == "diff"
+                    and any("main" in a or "HEAD" in a for a in c)]
         # the whole-plan digest, with the done-record and not the intent
         assert "# Orientation digest — the whole slice" in prompt
         assert "**Done (P1).** Shipped the thing" in prompt
@@ -2560,8 +2589,102 @@ def test_doc_phase_diff_rows_name_unchanged_repos_without_a_file():
         r = ScriptedLoop(slice_dir, script, repo_root=repo)
         assert run_to_exit(r) == 0
         prompt = next(p for role, p in r.prompts if role == "doc-writer")
-        assert f"- {repo}: no changes (`git diff abc123..main`)" in prompt
+        assert f"- {repo}: no changes (P1)" in prompt
         assert not list((slice_dir / "doc_phase").iterdir())
+
+
+def test_doc_diffs_are_per_repo_and_hold_the_specs_slices_tree_out():
+    """A slice landing in two repos gets a file per repo, each named after
+    the phase that landed there — and in the specs repo the `slices/` tree is
+    held out, so the driver's own run record and every parallel session's
+    stay out of the shipped diff."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        specs = (Path(tmp) / "specs").resolve()
+        (slice_dir / "plan.md").write_text(
+            "# plan\n\n" + phase_section("1", "Code")
+            + "\n" + phase_section("2", "Contract", specs_as_target(tmp)))
+        script = [V["exec_done"], V["review_signoff"],
+                  V["exec_done"], V["review_signoff"], *TAIL]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        r.fake_git.stat = (" a.py | 2 +-\n"
+                           " 1 file changed, 1 insertion(+), 1 deletion(-)")
+        r.fake_git.diff = "diff --git a/a.py b/a.py\n@@ -1 +1 @@\n-x\n+y"
+        assert run_to_exit(r) == 0
+        out_dir = slice_dir / "doc_phase"
+        assert sorted(f.name for f in out_dir.glob("*.diff")) == [
+            "repo.diff", "specs.diff"]
+        assert (out_dir / "repo.diff").read_text().startswith(
+            f"{repo} — P1: git diff base123..abc123\n")
+        assert (out_dir / "specs.diff").read_text().startswith(
+            f"{specs} — P2: git diff base123..abc123\n")
+        specs_diffs = [c for root, c in r.fake_git.calls
+                       if c[0] == "diff" and str(root) == str(specs)]
+        assert specs_diffs, "the specs repo's diff was never read"
+        assert all(":(exclude)slices" in c for c in specs_diffs)
+        # the exclusion is scoped to the repo that holds the slice folder
+        assert all("--" not in c for root, c in r.fake_git.calls
+                   if c[0] == "diff" and str(root) == str(repo))
+        prompt = next(p for role, p in r.prompts if role == "doc-writer")
+        assert f"- {repo}: {out_dir / 'repo.diff'} (P1: " in prompt
+        assert f"- {specs}: {out_dir / 'specs.diff'} (P2: " in prompt
+
+
+def test_doc_diff_file_carries_a_section_per_phase_in_merge_order():
+    """Two phases in one repo share a file — a section each, in the order
+    they merged, because the ranges are not contiguous once another lane's
+    merges sit between them. The row names both."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(
+            tmp, phases=[("1", "First"), ("2", "Second")])
+        script = [V["exec_done"], V["review_signoff"],
+                  V["exec_done"], V["review_signoff"], *TAIL]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        r.fake_git.stat = (" a.py | 2 +-\n"
+                           " 1 file changed, 1 insertion(+), 1 deletion(-)")
+        r.fake_git.diff = "diff --git a/a.py b/a.py\n@@ -1 +1 @@\n-x\n+y"
+        assert run_to_exit(r) == 0
+        out_dir = slice_dir / "doc_phase"
+        assert [f.name for f in out_dir.glob("*.diff")] == ["repo.diff"]
+        text = (out_dir / "repo.diff").read_text()
+        assert text.index("— P1: git diff") < text.index("— P2: git diff")
+        prompt = next(p for role, p in r.prompts if role == "doc-writer")
+        assert ("(P1: 1 file changed, 1 insertion(+), 1 deletion(-); "
+                "P2: 1 file changed, 1 insertion(+), 1 deletion(-))") in prompt
+
+
+def test_a_merged_phase_without_a_landed_range_is_named_in_the_rows():
+    """A phase merged under a plugin before 0.9.16, or in the crash window
+    between the ff-merge and the record, has no range to diff — after a
+    fast-forward the pre-merge base sha is unrecoverable. The driver says so
+    in the dispatch rather than inventing a range."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(
+            tmp, phases=[("1", "First", PROJECT, True)])
+        state = {
+            "slice": "074_test_slice", "created_at": "t",
+            "orchestrator": None, "run_phase": "docs",
+            "bases": {str(repo): "main"}, "known_phases": ["1"],
+            "phases": {"1": {"status": "merged", "stage": None,
+                             "branch": None, "target": PROJECT,
+                             "executor_rounds": 1, "gate_fix_rounds": 0,
+                             "review_rounds": 1, "gate_runs": 1,
+                             "gate_green_commit": "abc123",
+                             "gate_green_log": "x",
+                             "reviewed_head": "abc123"}},
+            "generation": 0, "test_rounds": 1, "consult_seq": 1,
+            "in_flight": None, "history": [],
+            "doc_phase": {"stage": "writer", "gate_runs": 0, "nudges": 0,
+                          "session": None},
+        }
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        r = ScriptedLoop(slice_dir, [V["doc_done"]], resume=True,
+                         repo_root=repo)
+        assert run_to_exit(r) == 0
+        prompt = next(p for role, p in r.prompts if role == "doc-writer")
+        assert "- P1: merged with no range on record" in prompt
+        assert not [c for _, c in r.fake_git.calls if c[0] == "diff"]
+        assert not list((slice_dir / "doc_phase").glob("*.diff"))
 
 
 def test_doc_phase_records_the_units_the_coordinator_packaged():
@@ -2725,7 +2848,7 @@ def test_doc_landing_resume_with_merged_branch_only_pushes():
         state = {
             "slice": "074_test_slice", "created_at": "t",
             "orchestrator": None, "run_phase": "docs",
-            "bases": {str(repo): "main"}, "slice_base": {str(repo): "abc123"},
+            "bases": {str(repo): "main"},
             "known_phases": ["1"],
             "phases": {"1": {"status": "merged", "stage": None,
                              "executor_rounds": 1, "review_rounds": 1,
@@ -3088,7 +3211,7 @@ def test_resume_reattaches_the_in_flight_session():
         state = {
             "slice": "074_test_slice", "created_at": "t",
             "orchestrator": None, "run_phase": "phases",
-            "bases": {}, "slice_base": {}, "known_phases": ["1"],
+            "bases": {}, "known_phases": ["1"],
             "phases": {"1": {"status": "in_progress", "stage": "executor",
                              "branch": "phase/074-P1", "target": PROJECT,
                              "executor_rounds": 1, "gate_fix_rounds": 0,
@@ -3119,7 +3242,7 @@ def test_resume_at_docs_skips_consult_and_test():
         state = {
             "slice": "074_test_slice", "created_at": "t",
             "orchestrator": None, "run_phase": "docs",
-            "bases": {str(repo): "main"}, "slice_base": {str(repo): "abc123"},
+            "bases": {str(repo): "main"},
             "known_phases": ["1"],
             "phases": {"1": {"status": "merged", "stage": None,
                              "branch": None, "target": PROJECT,

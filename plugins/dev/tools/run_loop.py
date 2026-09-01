@@ -617,11 +617,11 @@ def build_phase_digest(plan_text: str, phase_id: str, intent: str,
                        ) -> str:
     """The digest for phase `phase_id`, rendered as Markdown for the
     dispatch. `intent` is the slice's intent paragraph (`slice_intent`),
-    `criteria` verification.json's items, `touched` (repo, `git diff --stat`
-    text) per repo earlier phases changed. Empty parts are left out; a phase
-    the plan does not carry digests to the slice parts only (the driver has
-    already parsed the plan, so that is a race with an edit, not a
-    structure error)."""
+    `criteria` verification.json's items, `touched` one (label, `git diff
+    --stat` text) pair per merged phase, the label naming the phase and the
+    repo it landed in. Empty parts are left out; a phase the plan does not
+    carry digests to the slice parts only (the driver has already parsed the
+    plan, so that is a race with an edit, not a structure error)."""
     title, sections = plan_sections(plan_text)
     phases, _ = parse_plan(plan_text)
     out: list[str] = ["---", "", f"# Orientation digest — phase P{phase_id}", ""]
@@ -1455,13 +1455,15 @@ Run the slice's doc phase: read {doc_plan_doc} and execute it for this slice
 — the procedure lives in that doc, not in this prompt.
 
 Deterministic facts from the driver:
-- The slice's shipped work is on disk, one file per repo — `git diff --stat`
-  at the top, then the whole diff, from the slice's base to the base branch
-  (your own doc commits never appear in it). Write docs from that diff with
-  the whole shipped behavior in view; read its hunks by path from the file
-  (`grep -n`, `sed -n`) rather than re-running `git diff` — a diff past the
-  tool's output limit round-trips through a persisted-output file and back,
-  and this file already is that.
+- The slice's shipped work is on disk, one file per repo, a section per
+  merged phase — `git diff --stat` at the top of each, then that phase's
+  own diff. The files carry exactly what this slice's phases merged:
+  nothing another slice landed on the base branch meanwhile, nothing under
+  the spec repo's `slices/` tree, and never your own doc commits. Write
+  docs from that diff with the whole shipped behavior in view; read its
+  hunks by path from the file (`grep -n`, `sed -n`) rather than re-running
+  `git diff` — a diff past the tool's output limit round-trips through a
+  persisted-output file and back, and this file already is that.
 {diff_rows}
 - Your work packages go in {units_path}, written before any `dev:doc-unit`
   is dispatched — the shape is in your contract; the driver records the
@@ -1656,7 +1658,7 @@ class RunLoop:
             "target": None, "executor_rounds": 0, "gate_fix_rounds": 0,
             "review_rounds": 0, "gate_runs": 0,
             "gate_green_commit": None, "gate_green_log": None,
-            "reviewed_head": None,
+            "reviewed_head": None, "landed": None,
         }
         ps = self.state["phases"].setdefault(phase_id, dict(defaults))
         for key, value in defaults.items():
@@ -1871,16 +1873,6 @@ class RunLoop:
             self.state["bases"][key] = self._current_branch(root)
             self._save_state()
         return self.state["bases"][key]
-
-    def _slice_base(self, root: Path) -> str:
-        """The sha a repo stood at before this slice's first phase touched it
-        — the doc phase's diff base."""
-        key = str(root)
-        if key not in self.state["slice_base"]:
-            self.state["slice_base"][key] = self.git(
-                "rev-parse", "HEAD", root=root)
-            self._save_state()
-        return self.state["slice_base"][key]
 
     # -- plan ----------------------------------------------------------------
 
@@ -2385,13 +2377,17 @@ class RunLoop:
         return CLOSE_OUT_LINE.format(
             dispatch_line=dispatch_line(self.report_path))
 
-    def _phase_digest(self, phase_id: str, root: Path, merge_base: str) -> str:
+    def _phase_digest(self, phase_id: str) -> str:
         """The writer's orientation for this round (build_phase_digest): the
         plan and verification.json as they stand, slice.md's intent
-        paragraph, and what earlier phases changed in every repo the slice
-        has touched — the target repo up to the phase branch's merge base
-        (what this branch was cut from), every other repo up to its base
-        branch. A repo the slice has not changed contributes nothing."""
+        paragraph, and what earlier phases changed — one `--stat` per merged
+        phase over that phase's own landed range in its own repo, never the
+        base branch since the slice began (in parallel lanes that range
+        carries the other lanes' merges). The spec repo's `slices/` tree is
+        held out, so the driver's own run record and every other slice's
+        folder stay out of it. A merged phase with no range on record
+        contributes nothing here — those are reported in the doc phase's
+        rows, not the digest."""
         try:
             plan_text = self.plan_path.read_text()
         except OSError:
@@ -2406,15 +2402,15 @@ class RunLoop:
         except (OSError, ValueError, AttributeError):
             criteria = []
         touched: list[tuple[str, str]] = []
-        for repo, sha in self.state["slice_base"].items():
-            head = merge_base if repo == str(root) \
-                else self.state["bases"].get(repo)
-            if not head:
-                continue
-            stat = self.git("diff", "--stat=100", f"{sha}..{head}",
-                            root=Path(repo), check=False)
+        for pid, landed in self._landed()[0]:
+            root = Path(landed["root"])
+            pathspec = self._bookkeeping_pathspec(root)
+            stat = self.git("diff", "--stat=100",
+                            f"{landed['base']}..{landed['head']}",
+                            *(["--", *pathspec] if pathspec else []),
+                            root=root, check=False)
             if stat:
-                touched.append((repo, stat))
+                touched.append((f"P{pid} in {landed['root']}", stat))
         return build_phase_digest(plan_text, phase_id, intent, criteria,
                                   touched)
 
@@ -2445,6 +2441,25 @@ class RunLoop:
             if sha and sha not in out:
                 out.append(sha)
         return out
+
+    def _landed(self) -> tuple[list[tuple[str, dict]], list[str]]:
+        """Every merged phase's landed range — (id, {root, base, head}) in
+        the order the phases merged (state order is first-run order) — and,
+        apart, the ids of merged phases with no range on record: merged under
+        a plugin before 0.9.16, or landed in the crash window between the
+        ff-merge and the record (the reconcile path)."""
+        ranged: list[tuple[str, dict]] = []
+        unranged: list[str] = []
+        for pid, ps in self.state["phases"].items():
+            if ps.get("status") != "merged":
+                continue
+            landed = ps.get("landed")
+            if isinstance(landed, dict) and landed.get("root") \
+                    and landed.get("base") and landed.get("head"):
+                ranged.append((pid, landed))
+            else:
+                unranged.append(pid)
+        return ranged, unranged
 
     def _work_is_in(self, ref: str, sha: str, root: Path) -> bool:
         return self.git_ok("merge-base", "--is-ancestor", sha, ref, root=root)
@@ -2522,6 +2537,9 @@ class RunLoop:
             if not self._work_is_in(base, sha, root):
                 raise self._lost_work(phase_id, sha, branch, root)
         # The merge landed and the record did not: finish the bookkeeping.
+        # No landed range is recorded: after a fast-forward the base branch's
+        # pre-merge sha is unrecoverable, so this phase reads as merged with
+        # no range on record (_landed's second list).
         if ps["status"] != "merged":
             ps.update(status="merged", stage=None)
             self._save_state()
@@ -2539,7 +2557,6 @@ class RunLoop:
         outputs.mkdir(parents=True, exist_ok=True)
         branch = f"phase/{self.slice_num}-P{phase_id}"
         base = self._base_branch(root)
-        self._slice_base(root)
         where = self._executor_where(target)
         gate_hint = self._gate_hint(target)
 
@@ -2584,7 +2601,7 @@ class RunLoop:
             r = ps["executor_rounds"]
             self._save_state()
             prompt = (build_prompt(executor_verdict_path(r)) + "\n"
-                      + self._phase_digest(phase_id, root, merge_base))
+                      + self._phase_digest(phase_id))
             verdict, session = self._spawn(
                 "code-writer", prompt,
                 self.repo_root, executor_verdict_path(r),
@@ -2672,7 +2689,9 @@ class RunLoop:
             self.git("checkout", base, root=root)
             self.git("merge", "--ff-only", branch, root=root)
             self.git("branch", "-D", branch, root=root)
-            ps.update(status="merged", stage=None)
+            ps.update(status="merged", stage=None,
+                      landed={"root": str(root), "base": merge_base,
+                              "head": head})
             self._save_state()
             self.log(f"[P{phase_id}] merged into {base}")
             self.announce(f"P{phase_id} merged")
@@ -3400,7 +3419,7 @@ class RunLoop:
                 "doc-writer",
                 DOC_PHASE_PROMPT.format(
                     slice_name=self.slice_name, doc_plan_doc=doc_plan_doc,
-                    diff_rows="\n".join(diff_rows) or "  (no repo recorded)",
+                    diff_rows="\n".join(diff_rows) or "  (no merged phase on record)",
                     slice_dir=self.slice_dir, plan_path=self.plan_path,
                     units_path=self.slice_dir / "doc_phase" / "units.json",
                     close_out_line=dispatch_line(self.report_path),
@@ -3444,27 +3463,56 @@ class RunLoop:
             return None
 
     def _write_doc_diffs(self) -> list[str]:
-        """The slice's shipped diff, one file per touched repo under
-        `<slice>/doc_phase/` — `git diff --stat` at the top, then the diff,
-        from the repo's slice base to its base branch (not HEAD: the primary
-        repo's HEAD is the doc branch, and a redispatched writer's own
-        commits must not read as shipped work). Returns the dispatch rows —
-        file, range, the stat's summary line — one per repo; a repo whose
-        range is empty gets a row and no file. The writer reads hunks by
-        path from the file: in the sessions read, a per-file `git diff`
-        past the tool's output limit was persisted and read back in two
-        turns, and one 26 k-char diff was sliced three times."""
+        """The slice's shipped diff, one file per repo under
+        `<slice>/doc_phase/`, a section per merged phase — `git diff --stat`
+        at the top of each, then that phase's own diff.
+
+        The ranges are the phases' own landed ranges, never the base branch
+        since the slice began: in parallel lanes that range carries whatever
+        the other lanes merged meanwhile. The spec repo's `slices/` tree is
+        held out, so the driver's own run record and every other slice's
+        folder stay out of the diff — and no range reaches the doc branch, so
+        a redispatched writer's own commits never read as shipped work. A
+        section per phase rather than one range per repo: once another lane's
+        merges sit between this slice's commits, its phases' ranges are not
+        contiguous.
+
+        Returns the dispatch rows — the file and each phase's stat summary
+        line, one row per repo; a repo whose phases all came out empty gets a
+        row and no file, and a merged phase with no range on record gets a
+        row of its own. The writer reads hunks by path from the file: in the
+        sessions read, a per-file `git diff` past the tool's output limit was
+        persisted and read back in two turns, and one 26 k-char diff was
+        sliced three times."""
         out_dir = self.slice_dir / "doc_phase"
         out_dir.mkdir(exist_ok=True)
+        ranged, unranged = self._landed()
+        by_repo: dict[str, list[tuple[str, dict]]] = {}
+        for pid, landed in ranged:
+            by_repo.setdefault(landed["root"], []).append((pid, landed))
         rows: list[str] = []
         used: set[str] = set()
-        for repo, sha in self.state["slice_base"].items():
-            head = self.state["bases"].get(repo) or "HEAD"
-            rng = f"{sha[:12]}..{head}"
-            stat = self.git("diff", "--stat=100", rng, root=Path(repo),
-                            check=False)
-            if not stat:
-                rows.append(f"- {repo}: no changes (`git diff {rng}`)")
+        for repo, landings in by_repo.items():
+            pathspec = self._bookkeeping_pathspec(Path(repo))
+            spec = ["--", *pathspec] if pathspec else []
+            sections: list[str] = []
+            summaries: list[str] = []
+            for pid, landed in landings:
+                base, head = landed["base"], landed["head"]
+                rng = f"{base}..{head}"
+                stat = self.git("diff", "--stat=100", rng, *spec,
+                                root=Path(repo), check=False)
+                if not stat:
+                    continue
+                diff = self.git("diff", rng, *spec, root=Path(repo),
+                                check=False)
+                sections.append(
+                    f"{repo} — P{pid}: git diff {base[:12]}..{head[:12]}"
+                    f"\n\n{stat}\n\n{diff}\n")
+                summaries.append(f"P{pid}: {stat.splitlines()[-1].strip()}")
+            if not sections:
+                ids = ", ".join(f"P{pid}" for pid, _ in landings)
+                rows.append(f"- {repo}: no changes ({ids})")
                 continue
             name = Path(repo).name or "repo"
             n = 1
@@ -3473,10 +3521,15 @@ class RunLoop:
                 name = f"{Path(repo).name or 'repo'}-{n}"
             used.add(name)
             path = out_dir / f"{name}.diff"
-            diff = self.git("diff", rng, root=Path(repo), check=False)
-            path.write_text(f"{repo} — git diff {rng}\n\n{stat}\n\n{diff}\n")
-            rows.append(f"- {repo}: {path} (`git diff {rng}`: "
-                        f"{stat.splitlines()[-1].strip()})")
+            path.write_text("\n".join(sections))
+            rows.append(f"- {repo}: {path} ({'; '.join(summaries)})")
+        for pid in unranged:
+            rows.append(
+                f"- P{pid}: merged with no range on record (an earlier "
+                "plugin version, or a resume past a crash at its merge) — "
+                "its changes are not in the files above")
+            self.log(f"doc phase: P{pid} merged with no range on record — "
+                     "its changes are not in the diff files")
         return rows
 
     def _doc_gate_until_green(self, ds: dict, branch: str) -> None:
@@ -3699,7 +3752,6 @@ class RunLoop:
                 "orchestrator": _orchestrator_record(),
                 "run_phase": "phases",
                 "bases": {},
-                "slice_base": {},
                 "known_phases": [],
                 "phases": {},
                 "generation": 0,
@@ -3727,7 +3779,6 @@ class RunLoop:
             if not self.resume:
                 self.preflight()
                 self._base_branch(self.repo_root)
-                self._slice_base(self.repo_root)
             self._ensure_report()
 
             if resume_at != "docs":
