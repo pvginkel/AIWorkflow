@@ -46,8 +46,19 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   before/after); `risk_readout.py extract|report` scores every completed slice's review
   findings, phase diffs and close-out dispositions against a path-risk map (the #715 research);
   `r1_blocking_readout.py` reads the round-1 blocking rate per phase before/after 0.9.6–0.9.8
-  against phase size and the reviewer's and writer's transcripts (the #782 research).
-  Run 1's corpus is frozen under `docs/research/archive/run-1/`.
+  against phase size and the reviewer's and writer's transcripts (the #782 research);
+  `writer_economics.py bands|eras|subs` (imports `t4_readout.py`) gives the size-band,
+  token-class and sub-agent-attribution views. Run 1's corpus is frozen under
+  `docs/research/archive/run-1/`.
+- **Reading a run:** a slice's record is its folder in the project's spec repo
+  (`slices/completed/NNN_slug/`): `log.txt` is the driver's narration, `state.json` is per
+  `runner-state.md`, `phases/P*/` holds each round's review and result files, beside `plan.md`,
+  `slice.md`, `verification.json` and `close-out.md`. `plugins/dev/tools/slice_cost.py <slice_dir>`
+  prices it per role/phase/session; `close_out.py counts|list <slice_dir|close-out.md>` reads the
+  report; `state.json`'s `plugin_version` says which plugin ran it. A round whose session died
+  without a verdict leaves no history row — `log.txt` shows `[result] Done` with no `→ verdict`
+  line — so it is absent from the report and from `slice_cost.py`; price it from the transcript
+  with `turn_profile.replay`.
 
 ## Architecture
 
@@ -108,9 +119,53 @@ never parse the manifest directly — only `kc` reads it.
 - Bump `plugins/dev/.claude-plugin/plugin.json`'s `version` and add a newest-first entry to
   `CHANGELOG-workflow.md` for anything notable; commit subjects carry the version, e.g.
   `dev: fix rounds stop relitigating comments (0.4.2)`.
+- **Pick the version from `origin/main`, not the local tree** — `git fetch origin` first. Unpushed
+  local commits make the local number stale and two changes claim it (0.7.4 was taken twice). On
+  a collision, renumber the later change and add the one-line "X, not Y: <the other change> took
+  that version while this sat unpushed" note to its changelog entry and commit message.
+- **Check before stating push state.** The operator pushes from this pod between turns, so a stale
+  `origin/main` lies — `git fetch` (or `git ls-remote`) before saying what is or is not pushed.
+- **Who writes what.** Prose — agents, skills, contract docs, the changelog — is written by the
+  session's own model or a fork of it (prompt quality is where the plugin's value lives). Code and
+  mechanical work — `tools/*.py`, tests, version bumps — goes to an Opus sub-agent on disjoint
+  files, briefed with the exact files and verify commands; review its diff before committing.
 - Commit subjects are lowercase and scope-prefixed (`dev:`, `docs:`, `repo:`, `archive:`,
   `research:`), stating what changed rather than what was done.
 - **The installed copy is what actually runs.** The loops execute
   `~/.claude/plugins/marketplaces/aiworkflow/` — a GitHub clone — so an edit here reaches future
   runs only after push + marketplace update. `--plugin-dir` reaches your own session only, never
   the kc-spawned headless agents.
+
+## Settled rulings — don't re-propose
+
+Operator decisions the code cannot show. Each was proposed, weighed and closed; cite the record
+instead of reopening it.
+
+- **No effort tiering, weaker model or Sonnet writer for the main roles** (plan-writer,
+  plan-reviewer, code-writer, code-reviewer): the 0.7.0–0.7.2 step-down was withdrawn as "dead
+  weight" (`docs/research/status.md` § A3, reverted in 0.7.3). Sub-agents and sub-sub-agents stay
+  tunable (`docs/research/turns-plan.md` § T7).
+- **No context compression, auto-compact windows, turn or token caps, or history summarisation**
+  for writers and reviewers (`docs/research/turns-plan.md` § Deliberately not in this plan). The
+  turns plan itself is exhausted (`docs/research/readout-2026-09-01.md` § 7).
+- **Fix rounds resolve blocking findings only**; advisory and comment-wording findings never drive
+  a round (0.4.2 — "bickering on comments, beyond my patience"). The same taste applies to work in
+  this repo: don't relitigate wording.
+- **The doc phase is auto docs only** — existing surfaces updated from the shipped diff. A doc
+  requirement (close a decision, correct a page) is a plan phase targeting the spec repo (0.9.2).
+- **No lanes, literal-edit bundles or no-research plan variant** in the plugin: the 2026-08-14
+  lanes were a one-off board clear-out ("if I need this again, I'll ask for it directly").
+  `apply the suggested edit` survives only as a triage scope ceiling.
+- **No catch-rate or reviewer-recall work** — seeded defects, mutation-testing metrics, reviewer
+  reading order or lens, plan pre-mortem, docs drafted in the plan loop — examined and closed
+  (commit `dbd18a9`). The operator wants output quality, not defect-finding metrics.
+- **No rework lever on cost grounds, and no restoring the writer's whole-plan or
+  `verification.json` read**: rework is 9 % pooled with the consult priced apart (0.9.15, #720),
+  and the round-1 blocking rise is phase size (`docs/research/r1-blocking-2026-09-01.md`). Fewer
+  rounds come from phase sizing at plan time.
+- **No `kc` verb for repo sync** (`kc project <verb>`, `kc env sync`, `kc repos`): preflight's own
+  git sync (0.9.13) is the answer; the operator's editor entry point is a user-level task.
+- **Cross-session messaging in headless sessions is kc's switch**, off by default
+  (`crossSessionInbound: refuse` + deny `ListAgents` only; `SendMessage` kept for a session's own
+  sub-agents). The plugin passes nothing — no agent-frontmatter `disallowedTools`, no kc
+  `--settings` pass-through.
