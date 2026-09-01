@@ -44,7 +44,9 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   it imports; the aggregate analyses are its own); `t4_readout.py {writers,slices,plan-reads,all}`
   beside it reads slices run on a new plugin version against that corpus (the turns-plan T3/T4
   before/after); `risk_readout.py extract|report` scores every completed slice's review
-  findings, phase diffs and close-out dispositions against a path-risk map (the #715 research).
+  findings, phase diffs and close-out dispositions against a path-risk map (the #715 research);
+  `r1_blocking_readout.py` reads the round-1 blocking rate per phase before/after 0.9.6–0.9.8
+  against phase size and the reviewer's and writer's transcripts (the #782 research).
   Run 1's corpus is frozen under `docs/research/archive/run-1/`.
 
 ## Architecture
