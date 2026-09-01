@@ -33,12 +33,12 @@ one close-out report per slice**
 (`close-out.md`, created at planning, written by every agent as it goes): nothing from a run is
 carded per finding; the operator dispositions the report and `/dev:close-out` executes.
 
-- **`plugins/dev/`** — the plugin: 8 skills, 10 agents, the tools (`run_loop.py`,
+- **`plugins/dev/`** — the plugin: 8 skills, 11 agents, the tools (`run_loop.py`,
   `plan_loop.py`, `close_out.py`, `sweep_slice.py`, `close_slice.py`, `slice_cost.py`,
   `turn_profile.py`, `preflight.py`, `project_config.py`, and `allocate-next-slice.sh`, with their
   suites), and the
   contract docs
-  (`run-loop.md` / `runner-state.md` / `plan-loop.md` / `plan-template.md` /
+  (`run-loop.md` / `runner-state.md` / `plan-loop.md` / `plan-template.md` / `refinement.md` /
   `agent-dispatch.md` / `close-out.md` / `close-out-template.md`, plus `residual-sweep.md`,
   `project-contract.md`, `preflight.md`).
 - **`.claude-plugin/marketplace.json`** — makes this repo installable.

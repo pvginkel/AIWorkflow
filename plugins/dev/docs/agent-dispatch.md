@@ -58,7 +58,11 @@ inherit from the dispatching session — the intended mechanism; ambient inherit
 
 The only exceptions are the **always-Sonnet agents**, which additionally pin `model: sonnet` in
 their own definitions so they stay Sonnet even as sub-agents: **test-agent** (the test phase),
-**test-fixer** (mechanical suite repair), and the **rebase-agent**.
+**test-fixer** (mechanical suite repair), and the **rebase-agent** — and the one always-Fable
+agent, the **refinement-writer**, which pins `model: fable`: it writes the operator's decision
+document from the plan-slice session's material and nothing else
+([refinement.md](refinement.md)); the interactive session that dispatches it runs whatever the
+operator chose.
 
 There is no per-task grading and no model routing by difficulty — the graded lane measured out:
 the premium tier bought nothing on an inflated base, and "mechanical" routing produced Opus redos
@@ -88,11 +92,14 @@ Every agent — including one a script spawned — can dispatch sub-agents of it
 rule: **delegate the reading, keep the judgment.** Mechanical, independent, per-item work —
 hunting the evidence for one verification item, surveying one axis of a subsystem, a rebase, a
 red-suite repair — goes to a sub-agent that returns conclusions. Every verdict, severity call,
-and write-back stays with the dispatching agent. The one delegated *write* is the doc phase's:
+and write-back stays with the dispatching agent. Two *writes* are delegated. The doc phase's:
 the doc-writer coordinator packages a slice's doc work into `units.json` and a `dev:doc-unit`
 sub-agent authors each package's pages — the pages are independent per doc scope, and the writes
 that need the whole picture (indexes, decision ids, cross-scope consistency, the commit, the
-verdict) stay with the coordinator ([run-loop.md](run-loop.md) § Doc phase).
+verdict) stay with the coordinator ([run-loop.md](run-loop.md) § Doc phase). And the
+interview's: the plan-slice session hands its grounded material to the `dev:refinement-writer`,
+which writes `refinement.md` for the operator and returns a receipt; the grounding, the rulings
+and the plan stay with the session ([refinement.md](refinement.md)).
 
 Sub-agents hand back **receipts and conclusions, never evidence**: evidence handed upward sits in
 the caller's context for the rest of its session, which is exactly the cost the delegation exists

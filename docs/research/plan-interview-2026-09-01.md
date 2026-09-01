@@ -291,3 +291,15 @@ the operator's own words in the transcripts, are the ones this readout counted: 
 should be near zero because the doc pre-empts them), the time between the walkthrough and the
 rulings, and whether the refinement docs are readable a week later — the operator is the
 judge of that last one, and it is the point.
+
+## 5. Ruling and what shipped (2026-09-01)
+
+The operator took the direction with one alteration and one deferral. The refinement doc is
+written by a **Fable sub-agent** (`dev:refinement-writer`, `model: fable`) from the material
+the session grounds and collects — the session, at whatever model the operator runs the skill,
+does the grounding and the rulings, the writer does the document, so the document's quality
+does not depend on the session's model. The user-level deny of the dialog tool is noted, not
+applied: the skill's ban stands alone until the record says otherwise. Shipped as `dev` 0.9.19:
+`plugins/dev/docs/refinement.md` (the contract), `plugins/dev/agents/refinement-writer.md`,
+`/dev:plan-slice` §2–§3 rewritten, `plan-loop.md` and `agent-dispatch.md` picking up the form.
+§ 4.7 is the read to run on the next four slices.

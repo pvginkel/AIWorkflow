@@ -4,6 +4,26 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-01 — the interview is a document, not a dialog (v0.9.19)
+
+`/dev:plan-slice` pinned requirements through multiple-choice dialogs. Read over every
+interactive plan-slice session in KubeCoder and Ansible — 49 slices, 137 dialogs, 317
+questions (`docs/research/plan-interview-2026-09-01.md`, `plan_qa_readout.py`): the operator
+deviated from the recommendation 19 % of the time and typed their own answer more often than
+they took a listed alternative (27 : 18); 86 questions carried no recommendation at all; nine
+dialogs were dismissed and eight of ten "let's talk" moments were re-asked as dialogs; half
+the questions were not readable a week later; none of 13 accept/reject findings was
+rejected; and 17 recommendations would have shipped the wrong thing, 15 of them on a stale
+premise. The dialog tool is banned in the skill. The interview now produces `refinement.md`
+in the slice folder, written by a new always-Fable **refinement-writer** sub-agent from the
+material the session grounds and collects — premises as claims with their evidence or marked
+unverified, the recommendation and its trade-off, alternatives only where live, the impact if
+wrong, the open facts, the size — and the writer's receipt is the walkthrough the operator
+answers, in the file or in chat. A single decent choice with impact, a review's blocking
+findings and a premise correction reach the operator in chat as agree-or-comment; the loop's
+writer questions are rendered into the doc as a second round, not relayed. `docs/refinement.md`
+is the contract; the loop, the plan's shape and `--fixes-applied` are unchanged.
+
 ## 2026-09-01 — close-out finds its own card, and offers to finish the report (v0.9.18)
 
 The skill knew the run files a `[NNN] close-out: …` card but never went looking for it, so the

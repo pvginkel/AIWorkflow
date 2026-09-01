@@ -11,9 +11,10 @@ nobody downstream reads slice.md again. Session mechanics and models are
 
 **There is no review loop.** A `go` verdict completes the plan. Anything else — blocking
 findings or questions — pauses with the review on file: the interactive session adjudicates
-the findings with the operator and records the rulings in plan.md's rulings section, **edited
-in place** (a ruling that corrects an earlier one replaces it; the round history lives in
-`plan_review_r*.md`). The rerun then dispatches one writer fix pass that reads the review plus
+the findings with the operator — in the agree-or-comment form of [refinement.md](refinement.md)
+— and records the rulings in plan.md's rulings section, **edited in place** (a ruling that
+corrects an earlier one replaces it; the round history lives in `plan_review_r*.md`, the
+interview's in `refinement.md`). The rerun then dispatches one writer fix pass that reads the review plus
 the rulings — **unless the session applied the accepted fixes itself and says so with
 `--fixes-applied`**. That declaration is the only thing that suppresses the pass: the loop
 reads nothing off the plan to guess it. It cannot — recording the rulings is required either
