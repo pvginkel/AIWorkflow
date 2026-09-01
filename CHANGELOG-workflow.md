@@ -4,6 +4,27 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-01 — the rework share stops counting the completion consult (v0.9.15)
+
+Trello #720 asked where a slice's rework share comes from. Read over the 40 completed KubeCoder
+slices 144–193 ($3,214), 4.0 of the 9.0 pooled points were the completion consult — the one
+phaseless consult every run dispatches once its phases are merged, a fixed step `slice_cost.py`'s
+`derive()` had counted as spend past first delivery since the block existed — and another 0.5
+were writer rounds that resumed a `question` or `blocked` round after the operator's answer,
+which is the first delivery going on, not a second one. The derived block now prices the first
+phaseless consult apart as `consult_cost_usd` / `consult_share`, on the report line and in the
+`cost` block alike; a later completion consult (only ever the rising bar after appended work)
+and the fix-round consult stay rework; a round whose predecessor on its phase is its own role's
+`question`/`blocked` row is not rework; and the round-≥2 rule now reads any run-loop session —
+second test and doc rounds were past first delivery too and were never counted. The close-out
+`Run:` header keeps its three shares and reads the corrected rework; `cost` blocks written by
+earlier versions keep the number they were written with, which `plugin_version` tells apart.
+What that corpus's rework actually is, once the consult is out: review fix rounds 2.4 %,
+re-reviews 1.8 %, everything else under half a point — about $4 a slice, at ≈ $3.80 per blocking
+round. The one thing the read did turn up is a rate, not a cost: phases blocked at round 1 went
+from 11 % before 0.9.7 to 23 % after (18 % without 181), with `coverage-gap` anchors 1 of 15
+blocking findings before and 17 of 26 after — Trello #782 carries it for a read of its own.
+
 ## 2026-09-01 — the doc phase is two-stage: a coordinator packages, `doc-unit` sub-agents author (v0.9.14)
 
 Triage #716's rework, phase 2 (`docs/research/doc-phase-plan.md` § 4; phase 1 was 0.9.9). The

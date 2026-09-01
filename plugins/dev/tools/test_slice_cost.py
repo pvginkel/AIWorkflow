@@ -315,8 +315,8 @@ def test_derived_ratios_split_planner_research_rework(tmp_path):
             "history": [
                 _history_entry("w1", t("w1")),                    # round 1
                 {**_history_entry("w2", t("w2")), "round": 2},    # rework
-                _history_entry("consult", t("consult"),           # rework
-                               role="consult"),
+                _history_entry("consult", t("consult"),           # completion consult
+                               role="consult", phase=None),
             ],
         },
         plan_state={
@@ -337,8 +337,64 @@ def test_derived_ratios_split_planner_research_rework(tmp_path):
     assert d["planner_share"] == pytest.approx(out / total, abs=0.001)
     assert d["research_cost_usd"] == pytest.approx(out, abs=0.01)
     assert d["research_share"] == pytest.approx(out / total, abs=0.001)
-    assert d["rework_cost_usd"] == pytest.approx(2 * out, abs=0.01)
-    assert d["rework_share"] == pytest.approx(2 * out / total, abs=0.001)
+    assert d["consult_cost_usd"] == pytest.approx(out, abs=0.01)
+    assert d["consult_share"] == pytest.approx(out / total, abs=0.001)
+    assert d["rework_cost_usd"] == pytest.approx(out, abs=0.01)
+    assert d["rework_share"] == pytest.approx(out / total, abs=0.001)
+
+
+def test_only_the_first_completion_consult_is_priced_apart(tmp_path):
+    """The first phaseless consult is the completion step every run makes —
+    its own bucket, with its sub-agents. A phase-bound consult (the
+    fix-round judge), a second completion consult (the rising bar after
+    appended work) and a second test round are spend past first delivery."""
+    def t(name):
+        return tmp_path / "proj" / f"{name}.jsonl"
+
+    for name in ("w1", "cfix", "c1", "c2", "test1", "test2"):
+        _write_transcript(t(name), [_message(f"m-{name}", output_tokens=1_000_000)])
+    sub = tmp_path / "proj" / "c1" / "subagents" / "agent-x.jsonl"
+    _write_transcript(sub, [_message("s1", output_tokens=1_000_000)])
+    sub.with_suffix(".meta.json").write_text(json.dumps({"agentType": "Explore"}))
+    slice_dir = _slice(tmp_path, state={"orchestrator": None, "history": [
+        _history_entry("w1", t("w1")),
+        {**_history_entry("cfix", t("cfix"), role="consult"), "round": 1},
+        {**_history_entry("c1", t("c1"), role="consult", phase=None), "round": 2},
+        {**_history_entry("test1", t("test1"), role="test-agent", phase=None), "round": 1},
+        {**_history_entry("c2", t("c2"), role="consult", phase=None), "round": 3},
+        {**_history_entry("test2", t("test2"), role="test-agent", phase=None), "round": 2},
+    ]})
+    convs, warnings = collect(slice_dir)
+    d = build_report(slice_dir, convs, warnings)["derived"]
+    out = PRICES[OPUS]["output"]
+    assert d["consult_cost_usd"] == pytest.approx(2 * out, abs=0.01)    # c1 + its sub-agent
+    assert d["rework_cost_usd"] == pytest.approx(3 * out, abs=0.01)     # cfix + c2 + test2
+
+
+def test_a_round_resuming_a_question_or_blocked_round_is_not_rework(tmp_path):
+    """A writer round 2 after the writer's own `question` (or `blocked`)
+    round is the first delivery going on once the operator answered; the
+    round 3 that follows a review `issues` on the same phase is rework."""
+    def t(name):
+        return tmp_path / "proj" / f"{name}.jsonl"
+
+    for name in ("w1", "w2", "r1", "w3", "v1", "v2"):
+        _write_transcript(t(name), [_message(f"m-{name}", output_tokens=1_000_000)])
+    slice_dir = _slice(tmp_path, state={"orchestrator": None, "history": [
+        {**_history_entry("w1", t("w1")), "outcome": "question"},
+        {**_history_entry("w2", t("w2")), "round": 2},                   # continuation
+        {"phase": "1", "role": "gate", "round": 2, "outcome": "green",
+         "summary": "", "session": None, "transcript": None, "duration_s": 1},
+        {**_history_entry("r1", t("r1"), role="code-reviewer"), "outcome": "issues"},
+        {**_history_entry("w3", t("w3")), "round": 3},                   # rework
+        {**_history_entry("v1", t("v1"), role="code-reviewer", phase="2"),
+         "outcome": "blocked"},
+        {**_history_entry("v2", t("v2"), role="code-reviewer", phase="2"),
+         "round": 2},                                                     # continuation
+    ]})
+    convs, warnings = collect(slice_dir)
+    d = build_report(slice_dir, convs, warnings)["derived"]
+    assert d["rework_cost_usd"] == pytest.approx(PRICES[OPUS]["output"], abs=0.01)
 
 
 def test_appended_phases_are_rework_from_their_first_round(tmp_path):

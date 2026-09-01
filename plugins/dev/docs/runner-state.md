@@ -9,10 +9,11 @@ those files record is [run-loop.md](run-loop.md).
 
 Written atomically by the driver and by nothing else while the run lives; the one post-run
 exception is the `cost` block `slice_cost.py --write-state` appends at close-out — the derived
-spend ratios (planner, research-subagent and rework shares, with any pricing warnings) and a
-`turns` sub-block (per role: sessions, turns, tools and reads per turn, orientation turns,
-context, retry/fumble and batchable turns, prefix breaks; slice-wide: cost per turn and the
-avoidable share), so the committed run record both prices itself and says what its turns did.
+spend ratios (planner, research-subagent, completion-consult and rework shares, with any pricing
+warnings) and a `turns` sub-block (per role: sessions, turns, tools and reads per turn,
+orientation turns, context, retry/fumble and batchable turns, prefix breaks; slice-wide: cost per
+turn and the avoidable share), so the committed run record both prices itself and says what its
+turns did.
 Slice level:
 
 `slice`, `created_at`, `updated_at`, `plugin_version` (the plugin the run was created under, from
