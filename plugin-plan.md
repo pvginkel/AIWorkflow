@@ -1,5 +1,9 @@
 # Plan — rework AIWorkflow into the `dev` plugin (kc-native)
 
+> **Read as history.** This plan was executed on 2026-07-12 and the plugin has run every slice since;
+> the "not yet live-tested" below and the § 11 follow-ups describe that day, not the present. What
+> happened next is `CHANGELOG-workflow.md` and `docs/rationale/history.md`.
+
 **Status:** **EXECUTED 2026-07-12** — the plugin is built (`plugins/dev/`) and the repo is reworked
 into a marketplace. Phases 2 (scaffold), 3 (kc-native runner), 4 (preflight + contract), and 5 (repo
 shell) are done; phase 1's mechanics were pre-verified. The `kc` surface was re-verified against the

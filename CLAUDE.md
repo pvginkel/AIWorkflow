@@ -13,7 +13,8 @@ plugin is **kc-native**: it targets the KubeCoder environment and expects `kc` o
 non-`kc` fallback.
 
 `README.md` is the map; `docs/AUTHORING.md` is required reading before touching any agent, skill,
-or contract doc.
+or contract doc. `docs/rationale/` is the explanation layer — why each part is the way it is, with
+the evidence — and links to the contract docs rather than restating them.
 
 All workflow code is **stdlib-only**. That limitation does however not apply to that written
 purely for analysis and research. E.g. the scripts in the `docs/research/` folder use

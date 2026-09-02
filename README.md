@@ -5,7 +5,7 @@ installable plugin (`dev`), and it is the workshop where that workflow is measur
 
 The workflow used to be a template you copied into each project and filled in. It is now a **plugin
 you install once** into `~/.claude`; each project describes *itself* through its
-`.kubecoder/project.yaml` manifest (read by `kc`) and three lines in its `CLAUDE.md`. This version
+`.kubecoder/project.yaml` manifest (read by `kc`) and an `.aiworkflowrc` at its root. This version
 targets the **KubeCoder environment** — it is kc-native and expects `kc` on PATH (always true inside
 a KubeCoder pod).
 
@@ -35,7 +35,8 @@ carded per finding; the operator dispositions the report and `/dev:close-out` ex
 
 - **`plugins/dev/`** — the plugin: 8 skills, 9 agents, the tools (`run_loop.py`,
   `plan_loop.py`, `close_out.py`, `sweep_slice.py`, `close_slice.py`, `slice_cost.py`,
-  `turn_profile.py`, `preflight.py`, and `allocate-next-slice.sh`, with their suites), and the
+  `turn_profile.py`, `preflight.py`, `project_config.py`, and `allocate-next-slice.sh`, with their
+  suites), and the
   contract docs
   (`run-loop.md` / `runner-state.md` / `plan-loop.md` / `plan-template.md` /
   `agent-dispatch.md` / `close-out.md` / `close-out-template.md`, plus `residual-sweep.md`,
@@ -63,7 +64,10 @@ contract and tells a new repo exactly what is missing. See **[`docs/ADOPTING.md`
   `turn_profile.py`, which replays each transcript turn by turn — what its turns *did*, per role.
   Both ship with the plugin rather than living here, because they read a state format the plugin
   owns and every run writes its own numbers.
-- **`workflow-improvements/`** — the R&D / evidence trail behind the workflow's design.
+- **`workflow-improvements/`** — the R&D / evidence trail behind the workflow's design: the July
+  2026 cost investigation (#175) and the plan it produced, frozen as written. It describes the task
+  runner that preceded the plugin, not the loops that run today; the story since is
+  [`docs/rationale/history.md`](docs/rationale/history.md).
 - **`archive/quality/`** — the retired quality capability (`quality-improver`,
   `quality-issue-finder`, `refactor-audit`) and the `code_health` grader, one folder per source
   project because the copies drifted apart. Parked while the tool is rebuilt; `/dev:onboard` sweeps
@@ -77,6 +81,10 @@ its per-repo status lives on the issue tracker, where work state belongs.
   (manifest + `CLAUDE.md` entries), with a worked example.
 - **[`docs/AUTHORING.md`](docs/AUTHORING.md)** — the durable rules for writing/maintaining agents,
   skills, and docs so they stay lean and drift-free.
+- **[`docs/rationale/`](docs/rationale/README.md)** — the explanation layer: why the pipeline is
+  shaped the way it is, with the incidents and numbers behind each rule — the flow in one read, the
+  design principles, the history and reversals, the improvement catalogue, how runs are measured,
+  how the research literature was used, the close-out report's case, and the planning interview.
 - **[`plugins/dev/docs/`](plugins/dev/docs/)** — the plugin's own contract: `run-loop.md` (the
   phase queue and the consult/test/doc ladder) with `runner-state.md`, `plan-loop.md`,
   `plan-template.md`, `agent-dispatch.md`, and `close-out.md` / `close-out-template.md` (the
