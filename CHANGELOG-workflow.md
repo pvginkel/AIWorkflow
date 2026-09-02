@@ -728,8 +728,8 @@ Triage #564, both items; commit `ba49d3f`, the same day as 0.4.0 and until 2026-
 there. The skills, the sweep tooling and `residual-sweep.md` drop the tracker-tool vocabulary —
 Trello, board and list names — for the workflow's own roles and states: intake queue, operator's
 action queue, deferred/rejected, one slice card advancing triaged → planned → in progress → done;
-`project-contract.md` § 6 names that vocabulary plus the Solution Known mark as what the host
-convention maps onto its concrete tracker. KubeCoder incidents cited as rationale (slices 070/125/152,
+`project-contract.md`'s host-conventions section (then § 6, now § 3) names that vocabulary plus the
+Solution Known mark as what the host convention maps onto its concrete tracker. KubeCoder incidents cited as rationale (slices 070/125/152,
 card #469, `../HelmCharts`) become anonymous incidents with the same teeth, and slice-dag's worked
 example is rebuilt from a fictional project.
 
