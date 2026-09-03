@@ -5,69 +5,104 @@ operator reads a **document** and talks; the session never puts a multiple-choic
 front of them. Read on 49 slices (`docs/research/plan-interview-2026-09-01.md`): the dialogs
 were dismissed, answered "I don't know", and re-posed after "let's talk"; the listed
 alternatives were chosen 8 % of the time; and the recommendation itself was wrong or built on a
-stale premise in a fifth of the questions — the operator needs its grounds, not a menu.
+stale premise in a fifth of the questions — the operator needs its grounds checked, not a menu.
+
+The document is **the PO's page, not the planner's notebook.** The first five docs written to
+this contract (`docs/research/refinement-read-2026-09-03.md`) were 27–35 KB grounding logs —
+functions quoted whole, a `file:line` per claim, half of each doc a premise-by-premise
+verification — and the operator, reading them cold the next morning, could not follow them:
+three were agreed in one line, two were delegated ("I trust you get this right"), and the
+verdict was "a wall of text I can't make heads or tails of … I really don't believe it has
+value." The grounding is the session's work and the plan's input; the operator sees its
+conclusions, never its evidence.
 
 Three parties, one artifact:
 
 - **The interactive session** (whatever model the operator runs the skill at) grounds the
-  slice, forms its recommendations, and collects the **material** below. It talks with the
-  operator, records every ruling in `plan.md`'s requirements/rulings section in the operator's
-  words, and seeds the plan. It writes no decision prose of its own.
-- **The `refinement-writer`** (Fable, a sub-agent of the session) turns the material into
-  `refinement.md` — the one operator-facing document — and returns a receipt. It writes only
-  what the material supports; it does no research and repairs no gap.
-- **The operator** reads `refinement.md`, comments under each decision or replies in chat by
-  number, and rules.
+  slice, forms its recommendations, decides what is a decision and what it settles itself, and
+  collects the **material** below. It talks with the operator, records every ruling in
+  `plan.md`'s requirements/rulings section in the operator's words, and carries the grounding
+  that binds the plan into that same section for the plan-writer. It writes no decision prose
+  of its own.
+- **The `refinement-writer`** (Fable, a sub-agent of the session) writes `refinement.md` — the
+  one operator-facing document — **from** the material, selecting what the operator needs to
+  rule and leaving the evidence behind. It writes only what the material supports; it does no
+  research and repairs no gap.
+- **The operator** reads a page, comments under a decision or replies in chat by number, and
+  rules.
 
-Two forms, one test between them. **The doc** carries every decision where the recommendation
-gives something up the operator might weigh differently. **Agree-or-comment**, in chat, carries
-the single decent choice that has impact — if the honest alternative would read "reject — leave
-the plan wrong", it is not a decision, it is a consequence to explain and confirm.
+## What is a decision
+
+A decision is put to the operator only where they could plausibly rule the other way: the
+choice changes something a user sees (the line `/ls` prints, the message a Windows desktop
+shows), an outage window or a procedure the operator runs (which repo is pushed first, a
+controller down for minutes on each stage), a risk they carry (a homelab literal surviving one
+more release), or a preference the material cannot settle. The test is the alternative — if the
+writer's own alternative line would read "loses" or "not worth it", it is not a decision. The
+first five docs put twelve decisions and the operator engaged with four; the other eight were
+engineering choices the session could rank on its own grounds — strict versus lenient argument
+parsing in a test stub, a capture script versus attached fixtures, a request header versus a
+process lookup, a new boolean versus reusing an old one, a flat map versus a nested one, an
+environment variable versus a config key — and drew "I don't have the faintest about the other
+one. I assume you know what you're doing." Those are **settled by the session**: made, stated
+in one sentence with their grounds where the operator could care, and corrected by the operator
+if they disagree on reading. Most slices have one or two decisions; a slice with none gets a
+doc that says so.
 
 Neither form carries what the slice does not leave open. A decision is what its numbered
 requirements — their own "open for the planner" items included — genuinely leave undecided. A
 matter the slice merely touches (the estate-wide sweep a change would make possible, which
-phase owns a rewrite) is decided by the session, stated in the material with its grounds under
-the decision it serves, and corrected by the operator if they disagree on reading it; three
-questions at once about surfaces the slice touches read as scope creep and cost the operator a
-discussion they never asked for ("I have no idea what we're discussing. I thought we were just
-removing duplication between images."). A call the operator delegated in so many words ("if you
-feel a few would be nice, do move them") is executed and shown — the list, the evidence behind
-it, the one item the session would argue about — never converted back into a question. A prose
-nit (a comment or doc sentence that restates or misstates) is grounded and, where the project
-classes the edit as ad hoc work, made now and reported; otherwise it rides as a requirement
-whose ruling reads **culled, not reworded**, so the writer deletes or narrows the clause instead
-of negotiating with it. Nine doc nits presented as a decision matrix is the shape the operator
-stopped: that slice went from nine requirements to no phases once five edits shipped in-session
-and three closed on the evidence.
+phase owns a rewrite) is settled by the session; three questions at once about surfaces the
+slice touches read as scope creep and cost the operator a discussion they never asked for ("I
+have no idea what we're discussing. I thought we were just removing duplication between
+images."). A call the operator delegated in so many words ("if you feel a few would be nice, do
+move them") is executed and shown — the list, the one item the session would argue about —
+never converted back into a question. A prose nit (a comment or doc sentence that restates or
+misstates) is grounded and, where the project classes the edit as ad hoc work, made now and
+reported; otherwise it rides as a requirement whose ruling reads **culled, not reworded**, so
+the writer deletes or narrows the clause instead of negotiating with it. Nine doc nits
+presented as a decision matrix is the shape the operator stopped: that slice went from nine
+requirements to no phases once five edits shipped in-session and three closed on the evidence.
+
+**Agree-or-comment**, in chat, carries the single decent choice that has impact — if the
+honest alternative would read "reject — leave the plan wrong", it is not a decision, it is a
+consequence to explain and confirm (its form is below).
 
 ## The material
 
-What the session hands the writer, in the dispatch prompt (files are pointed to, quoted lines
-are quoted — the writer has `Read` and will pull what it cites):
+What the session hands the writer, in the dispatch prompt. The material is where the evidence
+lives — the writer reads it to select, and the doc carries none of it:
 
-- **The ask** — `slice.md`'s path; what is already settled and by what (a ruling, a decision
-  record, a prior slice); what this doc decides; and every requirement whose premise no longer
-  holds (the sentence it targets removed by an earlier slice, the file it names never existed),
-  each with the evidence — the doc opens with those as settled by the facts, for the operator
-  to confirm.
+- **The ask** — `slice.md`'s path; the slice in two or three sentences for someone who last saw
+  it a week ago; what is already settled and by what (a ruling, a decision record, a prior
+  slice); and every requirement whose premise no longer holds (the sentence it targets removed
+  by an earlier slice, the file it names never existed), each with what changes as a result —
+  the doc opens with those as settled by the facts, for the operator to confirm.
 - **Size** — the phases this comes to and the repos it touches. Slice 183 ran a clean
   interview and went back to triage on a number the interview never surfaced.
-- **Per decision** — where it comes from (the requirement, card or finding, so the writer can
-  quote it); **what the session found**: each premise as a claim with its evidence — a
-  `file:line`, a command and its output, a card's text — or marked unverified; the
-  recommendation and its trade-off (what it gives up, why that is acceptable); the alternatives
-  the session considers live, or none; the impact if the recommendation is wrong (data loss,
-  breakage, extra work, nothing).
+- **Per decision** — why it is the operator's (the test above); where it comes from (the
+  requirement, card or finding); what the session found, as claims — each verified, with its
+  evidence kept here, or marked unverified; the recommendation and its trade-off (what it gives
+  up, why that is acceptable); the one alternative the operator could plausibly pick, with the
+  trade-off that makes it lose; the impact if the recommendation is wrong (data loss, breakage,
+  extra work, nothing).
+- **Settled by the session** — each engineering call it made, one line with its grounds, and
+  whether the operator could care: it changes something a user sees, moves a file between
+  repos, changes a default the operator set, or changes a procedure the operator runs. The rest
+  is routine, and the operator learns it from the plan.
 - **Open facts** — what only the operator knows: a preference, a history, whether an archive
-  was deliberate (with the card's link).
+  was deliberate.
 - **On a second round** — the loop's questions file, `plan.md`, and what settled since the
   first doc.
 
-A claim the session did not verify goes into the material as unverified; the writer will say
-so in the doc. The session's targeted exploration ("who reads the session title" — one focused
-sub-agent per question, never a fan-out) is where verification happens, before the writer is
-dispatched, not after the operator has read a premise as fact.
+A claim the session did not verify goes into the material as unverified; if a recommendation
+rests on it, the writer says so in the doc, in words. The session's targeted exploration ("who
+reads the session title" — one focused sub-agent per question, never a fan-out) is where
+verification happens, before the writer is dispatched, not after the operator has read a
+premise as fact. The evidence that binds the plan — a premise correction with what it changes,
+a verified fact a ruling rests on — goes into `plan.md`'s rulings section when the session
+seeds it; that is the only place the plan-writer reads it. Nobody downstream reads
+`refinement.md`.
 
 ## The doc
 
@@ -78,50 +113,55 @@ record — the same role `plan_review_r*.md` plays for the review round. The rul
 ```markdown
 # Slice NNN — refinement
 
-## Where we are
-<the ask in the operator's words; what is already settled and by what; the requirements whose
-premise no longer holds, each with its evidence; what this doc decides; the size in phases and
-the repos touched>
+<one to three paragraphs: what the slice is and why, for a reader a week away; what is already
+settled and by what; a premise that no longer holds, one sentence each with what changes; what
+this doc asks, or that it asks nothing; the size in phases and the repos touched>
 
 ## D1 — <the decision, as one sentence a cold reader can parse>
-**Where this comes from.** <the requirement, card or finding — quoted or expanded; never a
-bare R2, #724, D191 or file:line>
-**What I found.** <the premises, each a checkable claim with its evidence; a claim the
-material left unverified says "Unverified:" in front of it>
+<why this is the operator's call and where it comes from — a sentence or two>
+<what the session found, as prose: the two or three facts the choice turns on, said in words>
 **Recommendation.** <the shape; then the trade-off — the sentence the operator disagrees with
 when they disagree>
-**Alternatives.** <only if one is live: one line each with the trade-off that makes it lose;
-otherwise "none worth the read">
+**The other way.** <the alternative the operator could plausibly pick, one line, with what it
+costs>
 **If this is wrong.** <one line>
 **Operator.** _agree, or comment here_
+
+## Settled by the session
+<one sentence per item, only those the operator could care about; the routine ones are absent>
 
 ## Open facts
 <plain questions, no options>
 ```
 
-Writing rules — the reader has not looked at the slice for a week:
+Writing rules — the reader is the PO, a week away from the slice, deciding from the page:
 
-- **Recommendation first; one page per decision at most.** Context, not volume: a dialog
-  already cost 2–4 KB per read. Alternatives that do not add value are omitted, not listed.
-- **Premises are claims.** They sit under *What I found* where they can be refuted, never
-  inside a recommendation as background.
-- **No bare handles.** Requirement numbers, card numbers, decision ids and `file:line` are
-  expanded or quoted at the point of use.
-- **Code in full**, in fenced blocks — nothing is cut to fit a label.
-- **Fact questions are plain questions.** No options on "do you ever kill an env pod by
-  hand?".
-- **Second round appends.** New decisions are new `D` entries after the existing ones,
-  opening with where the plan now stands; a settled entry is not rewritten. A reversed ruling
-  is recorded in `plan.md`, not by editing the doc.
+- **No code, no handles.** No fenced blocks, no `file:line`, no card numbers, decision ids or
+  requirement numbers: things are named in words ("the route that streams an environment's
+  state", "the card that reported the Windows share"). The one exception is text the operator
+  is ruling on verbatim — a message a user will read on screen, a config shape they will type.
+- **Short.** The introduction is one to three paragraphs; a decision is a few paragraphs, about
+  250 words; a settled item is one sentence; the whole doc reads in five minutes. Context, not
+  volume — what the operator needs to judge, not what the session did to get there.
+- **Recommendation first, one alternative at most.** The trade-off is the sentence the operator
+  disagrees with when they disagree — write it so it can be. An alternative that loses on the
+  material is not listed; a decision with no live alternative is a settled item.
+- **A claim a recommendation rests on that the session did not verify is said so** in the
+  decision's prose ("not verified: …") — never smoothed into a fact, never dropped.
+- **Fact questions are plain questions.** No options on "do you ever kill an env pod by hand?".
+- **Second round appends.** New decisions are new `D` entries after the existing ones, opening
+  with where the plan now stands; a settled entry is not rewritten. A reversed ruling is
+  recorded in `plan.md`, not by editing the doc.
 
 ## The walkthrough
 
 The writer's receipt is the walkthrough: the session posts it in chat as it came back — one
-line per decision (title, recommendation, impact), the open facts, the doc's path, and how to
-answer: comment in the file under each *Operator* line and say so, or reply here by number;
-"agree" takes every recommendation. The session then reads the comments back, records each
-ruling in `plan.md` (in place — a ruling that corrects an earlier one replaces it), and confirms
-a ruling that changed a decision in one line — "D3 is now …; agree?" — never as a new fork.
+line per decision (title, recommendation, impact), the settled items the doc carries, the open
+facts, the doc's path, and how to answer: comment in the file under each *Operator* line and
+say so, or reply here by number; "agree" takes every recommendation. The session then reads the
+comments back, records each ruling in `plan.md` (in place — a ruling that corrects an earlier
+one replaces it), and confirms a ruling that changed a decision in one line — "D3 is now …;
+agree?" — never as a new fork.
 
 ## Agree-or-comment
 

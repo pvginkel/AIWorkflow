@@ -4,6 +4,26 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-03 — the refinement doc is the PO's page, not the planner's notebook (v0.9.21)
+
+The first five slices planned on the refinement doc (KubeCoder 198–202,
+`docs/research/refinement-read-2026-09-03.md`) posed no dialog and drew the interaction the
+0.9.19 ruling wanted — one-line rulings, a comment in the file, a reframe answered in prose —
+but the docs themselves were 27–35 KB grounding logs: half of each a premise-by-premise
+verification at `file:line` altitude with functions quoted whole, and twelve decisions of which
+eight were engineering choices the session could have ranked itself. The operator, reading them
+cold: "a wall of text I can't make heads or tails of … I really don't believe it has value";
+three docs were agreed in one line and two delegated. Reworked on the operator's four rulings:
+the doc opens with an introduction of one to three paragraphs instead of "Where we are"; it
+carries no code, no `file:line` and no card or decision handles — the "code in full" rule is
+gone, the evidence stays in the session's material and, where it binds the plan, goes to
+`plan.md`'s rulings for the plan-writer; a decision is put to the operator only where they could
+plausibly rule the other way, the test being whether the alternative is one they could pick,
+and the rest is settled by the session in one sentence each, filtered to what touches a surface
+the operator owns; the writer selects from the material instead of rendering it and reports
+every decision it downgraded. `docs/refinement.md` § What is a decision and § The doc, the
+refinement-writer's bounds and receipt, and `plan-slice` § 2–3.
+
 ## 2026-09-01 — the shared spec tree survives a bail, and the skills carry KubeCoder's findings (v0.9.20)
 
 Trello #785: thirteen findings KubeCoder's session memory had accumulated about the plugin's own

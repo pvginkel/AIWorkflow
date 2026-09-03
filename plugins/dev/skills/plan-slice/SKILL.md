@@ -52,8 +52,9 @@ removed by an earlier slice, the file it names as a home never existed, the spaw
 targets never carries the variable. So before anything is absorbed as spec, one read-only
 sub-agent over the whole slice checks what each requirement rests on — does the thing it cites
 still exist, and say what the slice says it says — and reports per requirement. A premise that
-no longer holds is a finding the refinement doc opens with, not a phase; about a fifth of a
-backlog slice goes that way.
+no longer holds is a finding the refinement doc opens with — one sentence, with what changes;
+its evidence goes to `plan.md` in §3 — not a phase; about a fifth of a backlog slice goes that
+way.
 
 ### 2. Pin the requirements with the operator
 
@@ -64,13 +65,16 @@ requirements that leave the *how* open; bring open choices, contradictions, and 
 changes the shape. Don't relitigate settled input — a requirement that arrives pinned is
 absorbed as spec, not reopened.
 
-1. **Ground, then collect.** For each decision: the premises it rests on, verified —
-   **targeted exploration only, for load-bearing uncertainty** (e.g. "who reads the session
-   title"), one focused sub-agent per question, never a fan-out, and never pre-read code ranges
-   yourself that the planner will read again: what you read rides your context for the rest of
-   the slice — then your recommendation and its trade-off, the alternatives you consider live,
-   and the impact if you are wrong. What only the operator knows is an open fact. The size in
-   phases goes in the material too.
+1. **Ground, decide what is a decision, then collect.** For each open item: the premises it
+   rests on, verified — **targeted exploration only, for load-bearing uncertainty** (e.g. "who
+   reads the session title"), one focused sub-agent per question, never a fan-out, and never
+   pre-read code ranges yourself that the planner will read again: what you read rides your
+   context for the rest of the slice — then your recommendation and its trade-off, the one
+   alternative the operator could plausibly pick, and the impact if you are wrong. Only an item
+   the operator could plausibly rule the other way is a decision (the contract's test); the rest
+   you settle yourself and list one line each, marked routine or not. The evidence stays in the
+   material and, where it binds the plan, goes to `plan.md` in §3 — the doc carries none of it.
+   What only the operator knows is an open fact. The size in phases goes in the material too.
    Two premises are grounded like any other, because they are the ones a slice is most often
    built on without evidence. A slice justified by a policy or a principle ("our testing doc
    says…") rests on the premise that the thing has caused harm: one sub-agent over git history,
@@ -98,7 +102,10 @@ absorbed as spec, not reopened.
 
 Write the plan's header yourself — this is the one artifact you author: the one-liner; a
 **requirements/rulings** section carrying every requirement and every ruling from §2 **in the
-operator's words**; any ordering constraints already known; not-in-scope. A ruling that forbids
+operator's words**, and — as your own facts, with their evidence — the grounding that binds the
+plan: a premise correction with what it changes, a verified fact a ruling rests on. This section
+is the only place the plan-writer reads it; `refinement.md` carries none of it. Then any
+ordering constraints already known; not-in-scope. A ruling that forbids
 pushing a repo also gets its machine-readable half — a `## Push holds` bullet, shaped as the
 plan template above says; prose alone is invisible to the driver, which then nudges the test
 agent for that push and bails. No phases — the plan-writer designs those, and **`###` is theirs
@@ -159,7 +166,8 @@ slice.md — there is no fix-verify loop behind it. Handle the exit:
 - [ ] Every numbered requirement in `slice.md` → the plan's requirements/rulings section
       (operator's wording) and an outcome-level criterion in `verification.json`.
 - [ ] `refinement.md` written by the refinement-writer, no dialog posed; every ruling it drew
-      is in plan.md, in the operator's words.
+      is in plan.md, in the operator's words; the doc carries no code, no `file:line`, and no
+      decision you could have settled yourself.
 - [ ] Every phase opens with a real `Target:`; phases are PR-sized, producers first.
 - [ ] Attachments only where genuinely underivable, at the smart-dev altitude; no auto-doc
       content anywhere in the plan (a doc task is a phase); rulings edited in place, no
