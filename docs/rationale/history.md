@@ -310,10 +310,16 @@ attached to.
 `tasks/NN_slug/` folders, "3–6 ordered, project-local tasks" with ten the hard limit, a letter suffix to insert
 one mid-run, `/write-task` to author one — the unit of the whole #175 design. v0.4.0 replaced them
 with `plan.md` phases ("a plan phase is a heading, not a folder to author"). The changelog says the
-pilots ran "with the pathologies the redesign targeted staying dead all four times" and does not
-name the pathologies; `ANALYSIS.md`'s exhibit for the template era, slice 052's 6+6+9+8 rounds, is
-the closest the record comes to stating what unbounded per-task loops looked like. Treat the
-reason as not written down.
+pilots ran "with the pathologies the redesign targeted staying dead all four times" without naming
+them; the redesign's own execution plan named four, with per-pilot receipts
+(`KubeCoderSpecs/ai-workflow-redesign/execution-plan.md`, retired 2026-09-03 — in that repo's git
+history). **Orchestrator context growth**: slice 126's orchestrator cost $54–69 on its own, against
+$2.20 / $4.76 / $1.27 / $1.32 across the four pilots once the four-job charter bounded it. **The
+doc-truth cascade** ($52 on 126) and **the verifier fan-out** ($32) — the follow-up tail the
+generation bar replaced with $6.71 of absorbed touch-up phases plus cards. And **grading**, retired
+outright (the section below). What stays unwritten is the task-folder model's *own* failure mode:
+`ANALYSIS.md`'s exhibit for the template era, slice 052's 6+6+9+8 rounds, is the closest the record
+comes to what unbounded per-task loops looked like.
 
 ### The graded writer lane (v0.3.0 → v0.4.0) and the effort step-down (v0.7.0 → v0.7.3)
 
