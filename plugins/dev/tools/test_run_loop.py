@@ -3340,9 +3340,9 @@ def test_with_no_push_the_doc_branch_lands_on_the_local_base():
         assert pushes(r) == []
 
 
-def test_the_doc_phase_takes_the_devlock_when_there_is_no_test_phase():
-    """The lease is held by whichever phase runs first — the doc phase rolls
-    dev too."""
+def test_the_doc_landing_takes_the_devlock_when_there_is_no_test_phase():
+    """The lease is taken for the landing's push, not the writing — the doc
+    phase rolls dev only when it pushes."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp, config=rc(test=False, devlock=True))
         scripts_dir = slice_dir.parent.parent / "scripts"
@@ -3354,8 +3354,12 @@ def test_the_doc_phase_takes_the_devlock_when_there_is_no_test_phase():
              lambda loop: held.append((scripts_dir / "dev-holder").exists())),
         ]
         r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        at_push = watch_push_holder(r, scripts_dir / "dev-holder")
         assert run_to_exit(r) == 0
-        assert held == [True]
+        assert held == [False]
+        # The driver's own settle push is outside the lease; the landing's is
+        # under it.
+        assert at_push == [False, True]
         assert not (scripts_dir / "dev-holder").exists(), "released at end"
 
 
@@ -3369,7 +3373,25 @@ def test_a_repo_with_no_aiworkflowrc_cannot_be_driven():
 
 # -- the devlock --------------------------------------------------------------
 
-def test_devlock_held_across_test_and_doc_phases():
+def watch_push_holder(loop, holder):
+    """Wrap the loop's git so every `git push` records whether the devlock's
+    holder note was in place at the moment of the push."""
+    inner = loop.git
+    seen = []
+
+    def watching(*args, **kwargs):
+        if args and args[0] == "push":
+            seen.append(holder.exists())
+        return inner(*args, **kwargs)
+
+    loop.git = watching
+    return seen
+
+
+def test_devlock_held_for_the_test_phase_and_the_doc_landing_only():
+    """Two holds, not one hold spanning both phases: the test phase's
+    verification, then the landing's push. The doc phase's writing and
+    gating — the slow part — run with the lease let go."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp, config=rc(devlock=True))
         scripts_dir = slice_dir.parent.parent / "scripts"
@@ -3385,11 +3407,38 @@ def test_devlock_held_across_test_and_doc_phases():
                  ("doc", (scripts_dir / "dev-holder").exists()))),
         ]
         r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        at_push = watch_push_holder(r, scripts_dir / "dev-holder")
         assert run_to_exit(r) == 0
-        assert events == [("test", True), ("doc", True)]
+        assert events == [("test", True), ("doc", False)]
+        assert at_push == [True], "the landing pushes under the lease"
         assert not (scripts_dir / "dev-holder").exists(), "released at end"
-        note_free = not (scripts_dir / ".devlock.lock").exists() or True
-        assert note_free
+        log = (slice_dir / "log.txt").read_text()
+        assert [line.split("devlock ACQUIRED ")[1]
+                for line in log.splitlines()
+                if "devlock ACQUIRED" in line] == [
+                    "(slice 074 test phase)", "(slice 074 doc landing)"]
+        assert log.count("devlock released") == 2
+
+
+def test_a_doc_landing_that_does_not_push_never_takes_the_devlock():
+    """No push, no dev roll, nothing to coordinate — the merge is local and
+    the lease stays with whoever else wants it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc(push=False, devlock=True))
+        scripts_dir = slice_dir.parent.parent / "scripts"
+        scripts_dir.mkdir()
+        script = [
+            V["exec_done"], V["review_signoff"], V["consult_complete"],
+            V["test_clean"], V["doc_done"],
+        ]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        acquires = [line for line
+                    in (slice_dir / "log.txt").read_text().splitlines()
+                    if "devlock ACQUIRED" in line]
+        assert len(acquires) == 1
+        assert acquires[0].endswith("(slice 074 test phase)")
+        assert pushes(r) == []
 
 
 def test_devlock_released_on_bail():

@@ -163,10 +163,12 @@ whole plan is a feature of the review, not a cost. Then:
   the generation bar below.
 - **Test phase** — a fresh `test-agent` session told to read the project's slice-testing-strategy
   doc (`.aiworkflowrc`'s `test_phase.strategy`) and execute it. **The driver holds the devlock**
-  from this phase to the end of the run (a `flock` on the inode `devlock.lease` names; it releases
-  on crash); under that hold pushing and rolling dev for verification is pre-authorized — the lock
-  *is* the coordination. prd stays operator-gated. Blocking findings come back as appended phases;
-  sub-bar findings go in the close-out report; `verification.json` is checked off.
+  for this phase (a `flock` on the inode `devlock.lease` names; it releases on crash): taken
+  before the session, kept across a findings re-loop while the slice converges, released once the
+  phase is clean and the push check below has passed. Under that hold pushing and rolling dev for
+  verification is pre-authorized — the lock *is* the coordination. prd stays operator-gated.
+  Blocking findings come back as appended phases; sub-bar findings go in the close-out report;
+  `verification.json` is checked off.
 - **The phase is optional** (`test_phase.enabled = false`), as is the doc phase below and the
   devlock — see [project-contract.md](project-contract.md). A project with nothing deployed to
   verify runs neither, and the loop ends when the completion consult answers `complete`. What the
@@ -231,10 +233,15 @@ whole plan is a feature of the review, not a cost. Then:
   is nudged back to the writer's session) — checks local `<base>` against `origin/<base>` (the
   branch rebases onto origin but ff-merges into local, so a local-ahead base bails `blocked`
   before anything is mutated), rebase-merges the branch onto the base branch and pushes; the dev
-  roll that push triggers is left to land on its own, untracked. This is the only push the driver
-  makes itself, so it is where a hold on the *primary* repo lands: the branch rebases onto the
-  local base instead (a held repo's origin is behind by everything the slice did, which is what
-  the local-ahead check exists to catch) and the landing stops at the merge.
+  roll that push triggers is left to land on its own, untracked. **The devlock is taken again
+  here, for the landing alone** — before the fetch, so nothing another driver pushes lands between
+  the rebase target and the push, and let go once the push is out. The writer's session and the
+  gate sweep, the slow part of the phase, run outside it: after test-complete the slice's dev
+  occupancy is over, and another slice's verification proceeds while this one's docs are written.
+  This is the only push the driver makes itself, so it is where a hold on the *primary* repo
+  lands: the branch rebases onto the local base instead (a held repo's origin is behind by
+  everything the slice did, which is what the local-ahead check exists to catch) and the landing
+  stops at the merge, taking no lock.
 
 **The generation bar** terminates the append loop: the first follow-up generation appends only
 work the plan *owes* and no phase delivered — a requirement, ruling or acceptance criterion left

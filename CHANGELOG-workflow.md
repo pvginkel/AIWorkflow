@@ -4,6 +4,19 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-03 — the devlock lets go between the test phase and the doc landing (v0.9.22)
+
+The driver took the devlock before the test phase and held it to the end of the run, so a slice's
+doc phase — the coordinator session, its unit sub-agents and the gate sweep, the slow tail of a
+run — sat inside the hold and every other slice's verification waited on it. The lock now spans
+what rolls dev and nothing else: the test phase (taken before it, kept across a findings re-loop,
+released once the phase is clean and the push check has passed) and the doc landing's push (taken
+before the fetch so the rebase target cannot move under the push, let go once the push is out —
+the roll it triggers was never tracked). The writer and the gate run unlocked; a landing that
+does not push takes no lock. The holder note and the log name the purpose (`test phase` /
+`doc landing`). `run-loop.md` § Test phase and § Doc phase, `project-contract.md`
+§ `devlock.lease`.
+
 ## 2026-09-03 — the refinement doc is the PO's page, not the planner's notebook (v0.9.21)
 
 The first five slices planned on the refinement doc (KubeCoder 198–202,

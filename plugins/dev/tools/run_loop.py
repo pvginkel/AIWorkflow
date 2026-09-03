@@ -987,10 +987,12 @@ def run_kc_session(
 # The devlock — the cooperative occupancy lease over the single dev instance,
 # a flock on the inode `devlock.lease` names (the spec repo is the shared
 # mount every contending code repo can see, and devlock.sh flocks the same
-# file). The driver holds it from whichever of the test and doc phases runs
-# first to the end of the run: under that hold pushing and rolling dev for
-# verification is pre-authorized — the lock IS the coordination. Held
-# in-process so a driver crash releases it via fd close.
+# file). The driver holds it for the test phase — taken before it, released
+# once the phase is clean and the push check has passed — and again for the
+# doc landing's push; the doc phase's writing and gating, the slow part, run
+# without it. Under a hold pushing and rolling dev is pre-authorized — the
+# lock IS the coordination. Held in-process so a driver crash releases it via
+# fd close.
 # ---------------------------------------------------------------------------
 
 class DevLock:
@@ -3575,19 +3577,19 @@ class RunLoop:
         """The doc phase, after test-complete: one coordinator session,
         diff-based over the whole slice, on its own branch — it packages
         the writing into `doc-unit` sub-agents it spawns and yields for
-        itself, reconciles after them, and never pushes. The
-        driver gates the result with the full lint+build+test sweep (red
-        is nudged back to the writer's session), then rebase-merges the
-        branch onto the base branch and pushes. The dev roll that push
-        triggers is deliberately not tracked: the sweep already proved the
-        tree, and the roll lands on its own.
+        itself, reconciles after them, and never pushes. The writer and the
+        gate run outside the devlock; the landing takes it for the push and
+        lets it go after. The driver gates the result with the full
+        lint+build+test sweep (red is nudged back to the writer's session),
+        then rebase-merges the branch onto the base branch and pushes. The
+        dev roll that push triggers is deliberately not tracked: the sweep
+        already proved the tree, and the roll lands on its own.
 
         A project that runs no doc phase skips all of it — the slice's code
         is already merged and settled by the time this is reached."""
         if not self.cfg.doc_phase:
             self.log(f"doc phase disabled in {self.cfg.path.name} — skipped")
             return
-        self._acquire_devlock()
         self.state["run_phase"] = "docs"
         ds = self.state.setdefault(
             "doc_phase", {"stage": "writer", "gate_runs": 0, "nudges": 0,
@@ -3854,6 +3856,12 @@ class RunLoop:
         # base and the check below has nothing left to protect.
         pushing = self.cfg.push and not held
         onto = f"origin/{base}" if pushing else base
+        if pushing:
+            # Taken before the fetch, so nothing another driver pushes lands
+            # between the rebase target and the push; released once the push
+            # is out — the dev roll it triggers is untracked, so there is
+            # nothing to hold for.
+            self._acquire_devlock("doc landing")
         if self.git("branch", "--list", branch, root=root):
             if pushing:
                 self.git("fetch", "origin", root=root)
@@ -3900,6 +3908,7 @@ class RunLoop:
         self.git("push", "origin", base, root=root)
         self.log(f"[doc-phase] merged into {base} and pushed — the dev roll "
                  "is not tracked")
+        self.devlock.release(self.log)
 
     # -- top level -----------------------------------------------------------
 
@@ -4014,9 +4023,12 @@ class RunLoop:
                     if self._test_phase_under_lock():
                         continue
                     break
+                # Test-complete: the verification is over and so is the hold.
+                # The doc phase's writer and gate run without it; the landing
+                # takes it again for the push.
+                self.devlock.release(self.log)
                 self._settle_push()
             self._doc_phase()
-            self.devlock.release(self.log)
         except Bailout as bail:
             self.devlock.release(self.log)
             self._restore_bases()
@@ -4086,20 +4098,17 @@ class RunLoop:
         # about a tree that no longer exists — and the sweep's minute is
         # spent outside the hold.
         self._ensure_gate_sweep()
-        self._acquire_devlock()
+        self._acquire_devlock("test phase")
         return self._test_phase()
 
-    def _acquire_devlock(self) -> None:
-        """Taken before whichever of the test and doc phases runs first and
-        held to the end of the run — both may roll dev. Idempotent: the
-        second caller finds it already held."""
+    def _acquire_devlock(self, purpose: str) -> None:
+        """Idempotent — a caller that finds it held keeps it. The test phase
+        takes it for the verification (`_test_phase_under_lock`) and the doc
+        landing for its push (`_land_doc_branch`); each releases its own."""
         if self.devlock.held:
             return
-        names = [name for name, on in (("test", self.cfg.test_phase),
-                                       ("doc", self.cfg.doc_phase)) if on]
-        phases = "+".join(names) + (" phases" if len(names) > 1 else " phase")
-        self.announce(f"acquiring devlock ({phases})")
-        self.devlock.acquire(f"slice {self.slice_num} {phases}",
+        self.announce(f"acquiring devlock ({purpose})")
+        self.devlock.acquire(f"slice {self.slice_num} {purpose}",
                              self.log, self._sleep)
 
     def _settle_push(self) -> None:

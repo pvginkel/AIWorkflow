@@ -80,9 +80,10 @@ every phase and nobody loses one by omission. Each switch is an opt-*out*:
   a single slice holding a single repo is [`plan.md`'s `## Push holds`](run-loop.md) instead, which
   is reported as an outstanding action where this is not.
 - **`devlock.lease`** — the flock inode for the cooperative occupancy lease over a single dev
-  instance, held from whichever of the test and doc phases runs first to the end of the run. This
-  one defaults **off**: one dev instance is a fact about a deployed project, not about every repo,
-  and a lease that is not named cannot be taken. Run profile checks the directory it would live in
+  instance, held for the test phase and again for the doc landing's push — never for the doc
+  phase's writing ([run-loop.md](run-loop.md)). This one defaults **off**: one dev instance is a
+  fact about a deployed project, not about every repo, and a lease that is not named cannot be
+  taken. Run profile checks the directory it would live in
   exists — a typo'd path takes a lock nothing else contends for, which looks exactly like
   coordination and is none.
 
