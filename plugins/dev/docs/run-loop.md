@@ -266,8 +266,12 @@ landed and files **one** tracker card pointing at the report.
 ## Protocol invariants
 
 Every spawned agent ends by writing the verdict JSON named in its dispatch and leaves the
-worktree committed; one resume-nudge covers a miss, then a missing verdict counts `blocked` and
-an uncommitted tree bails. A session killed by the account's session-limit window is not an
+worktree committed. A miss gets one resume-nudge each — the verdict nudge for a missing verdict,
+the commit nudge for a dirty tree — and a verdict on disk after either counts: a session that
+ended without one routinely writes it while committing on the commit nudge (slice 198 P6
+committed its code, its done-record and a valid verdict there; the driver's earlier `blocked`
+ruling stood, bailed the run, and `--resume` spent a fresh executor round on finished work).
+Only after both nudges does a missing verdict count `blocked`, and a tree still dirty bails. A session killed by the account's session-limit window is not an
 agent outcome: the driver waits out the stated reset and redispatches the same round — nothing
 counted. The driver asserts its agent definitions resolve before dispatching anything
 (`kc session create-headless --agent` does not validate names).

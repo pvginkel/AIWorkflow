@@ -288,12 +288,16 @@ class SpawningLoop(ScriptedLoop):
             raise subprocess.TimeoutExpired("kc", timeout)
         if isinstance(payload, str):
             result.result_text = payload
-            return 1, result
-        verdict_path.write_text(json.dumps(payload))
-        result.result_text = payload.get("summary", "")
+            returncode = 1
+        else:
+            verdict_path.write_text(json.dumps(payload))
+            result.result_text = payload.get("summary", "")
+            returncode = 0
+        # The effect runs either way: what a session left on disk is as much
+        # a fact about one that wrote no verdict as about one that did.
         if len(step) > 2:
             step[2](self)
-        return 0, result
+        return returncode, result
 
 
 SESSION_LIMIT_TEXT = ("You've hit your session limit · resets 10:10pm "
@@ -305,6 +309,18 @@ def timed_out_after(verdict):
     """A script step whose session wrote its verdict and *then* wedged: the
     turn never returns, but the work and the verdict are already on disk."""
     return (TIMED_OUT, verdict)
+
+
+def dirties(porcelain=" M src/app.py"):
+    """A script step's effect: the session left uncommitted work behind."""
+    def effect(loop):
+        loop.fake_git.dirty = porcelain
+    return effect
+
+
+def commits(loop):
+    """A script step's effect: the session committed — the tree is clean."""
+    loop.fake_git.dirty = ""
 
 
 def phase_section(pid, title, target=PROJECT, done=False, body=""):
@@ -3504,6 +3520,95 @@ def test_missing_verdict_gets_one_nudge_then_counts_blocked():
         bail = json.loads((slice_dir / "bailout.json").read_text())
         assert bail["reason"] == "blocked"
         assert "missing/unparseable" in bail["details"]
+
+
+def test_verdict_written_on_the_commit_nudge_is_salvaged():
+    """#809: the writer ended rc!=0 with no verdict and a dirty tree. The
+    verdict nudge produced nothing, but the commit nudge got the session to
+    commit AND write a valid verdict — that verdict is the round's, so the
+    phase proceeds instead of bailing on a stale `blocked`."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            ("code-writer", "did the work, forgot the verdict", dirties()),
+            ("code-writer", "the verdict nudge produced nothing"),
+            ("code-writer", {"outcome": "done", "summary": "committed it"},
+             commits),
+            V["review_signoff"], *TAIL,
+        ]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert not r.script
+        assert not (slice_dir / "bailout.json").exists()
+        writer_prompts = [p for role, p in r.session_prompts
+                          if role == "code-writer"]
+        assert len(writer_prompts) == 3, "the round, then exactly two nudges"
+        assert writer_prompts[1].startswith("Your session ended without")
+        assert writer_prompts[2].startswith("Your session ended leaving")
+        assert r.gate_calls, "the phase went on to its gate"
+        state = load_state(slice_dir)
+        outcomes = [(h["role"], h["outcome"]) for h in state["history"]]
+        assert ("code-writer", "done") in outcomes
+        assert ("code-writer", "blocked") not in outcomes, (
+            "the history row carries the salvaged verdict, not the "
+            "driver's protocol-failure ruling")
+        assert state["phases"]["1"]["status"] == "merged"
+        assert "wrote its verdict on the commit nudge — salvaged" in (
+            slice_dir / "log.txt").read_text()
+
+
+def test_commit_nudge_that_writes_no_verdict_still_counts_blocked():
+    """The other half: a commit nudge that cleans the tree and leaves no
+    verdict changes nothing — the protocol failure stands."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            ("code-writer", "did the work, forgot the verdict", dirties()),
+            ("code-writer", "the verdict nudge produced nothing"),
+            ("code-writer", "committed, still no verdict", commits),
+        ]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 3
+        assert not r.script
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "blocked"
+        assert "missing/unparseable" in bail["details"]
+        state = load_state(slice_dir)
+        assert ("code-writer", "blocked") in [
+            (h["role"], h["outcome"]) for h in state["history"]]
+        assert "salvaged" not in (slice_dir / "log.txt").read_text()
+
+
+def test_doc_writer_verdict_on_the_commit_nudge_is_salvaged():
+    """The doc phase's writer takes the same salvage, on
+    doc_phase_result.json."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            V["exec_done"], V["review_signoff"], V["consult_complete"],
+            V["test_clean"],
+            ("doc-writer", "wrote the pages, forgot the verdict", dirties()),
+            ("doc-writer", "the verdict nudge produced nothing"),
+            ("doc-writer", {"outcome": "done", "summary": "docs committed"},
+             commits),
+        ]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert not r.script
+        assert not (slice_dir / "bailout.json").exists()
+        doc_prompts = [p for role, p in r.session_prompts
+                       if role == "doc-writer"]
+        assert len(doc_prompts) == 3, "the round, then exactly two nudges"
+        state = load_state(slice_dir)
+        assert state["doc_phase"]["stage"] == "done"
+        outcomes = [(h["role"], h["outcome"]) for h in state["history"]]
+        assert ("doc-writer", "done") in outcomes
+        assert ("doc-writer", "blocked") not in outcomes
+        assert "wrote its verdict on the commit nudge — salvaged" in (
+            slice_dir / "log.txt").read_text()
 
 
 def test_dispatch_passes_model_and_effort_explicitly():

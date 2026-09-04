@@ -309,6 +309,13 @@ def _protocol_failure_detail(role: str, returncode: int, verdict: dict | None,
     )
 
 
+def _verdict_valid(role: str, verdict: dict | None) -> bool:
+    """Whether a verdict file is one this role is allowed to have written.
+    A role with no vocabulary in VERDICTS is held to parseable JSON only."""
+    return verdict is not None and (
+        role not in VERDICTS or verdict.get("outcome") in VERDICTS[role])
+
+
 def session_limit_notice(result) -> str | None:
     """The API's session-limit notice in a session's final text, or None."""
     text = getattr(result, "result_text", "") or ""
@@ -2186,24 +2193,64 @@ class RunLoop:
             self.log(f"{label} nudge timed out")
 
     def _ensure_committed(self, phase_id: str | None, role: str,
-                          session_id: str | None, root: Path) -> None:
+                          session_id: str | None, root: Path,
+                          verdict: dict | None = None,
+                          verdict_path: Path | None = None
+                          ) -> dict | None:
         """An agent must leave the worktree clean. Dirty → one resume-nudge
         asking it to commit; still dirty → bail (the driver never commits an
-        agent's leftovers itself)."""
+        agent's leftovers itself).
+
+        The commit nudge is also the round's last word on its verdict: a
+        session that ended without one routinely writes it while committing.
+        Given the round's `verdict` and `verdict_path`, the (possibly
+        salvaged) verdict is returned — see `_salvage_nudged_verdict`. A
+        caller with no verdict to repair passes neither and ignores the
+        return."""
         if not self._worktree_dirty(root):
-            return
+            return verdict
         label = f"[P{phase_id}] [{role}]" if phase_id else f"[{role}]"
         if session_id:
             self._nudge(COMMIT_NUDGE_PROMPT, root, session_id, label, role)
             if not self._worktree_dirty(root):
                 self.log(f"{label} committed its leftovers on the nudge")
-                return
+                return self._salvage_nudged_verdict(
+                    phase_id, role, label, verdict, verdict_path)
         raise Bailout(
             "protocol_failure", phase=phase_id,
             details=f"{role} left uncommitted changes in {root}"
                     + (" after a commit nudge" if session_id
                        else "; no session to nudge"),
         )
+
+    def _salvage_nudged_verdict(self, phase_id: str | None, role: str,
+                                label: str, verdict: dict | None,
+                                verdict_path: Path | None) -> dict | None:
+        """A verdict written during the commit nudge counts. `_spawn` rules
+        a round with no valid verdict a protocol failure and calls it
+        `blocked`; when the commit nudge then leaves a verdict on disk that
+        is valid for the role, that verdict is the round's — here, in the
+        history row `_spawn` already wrote, and in what the caller acts on.
+        A nudge that leaves no valid verdict changes nothing: `blocked`
+        stands. This is the only place the ruling is revised."""
+        if not (verdict_path and verdict
+                and verdict.get("_protocol_failure")):
+            return verdict
+        fresh = _read_json(verdict_path)
+        if not _verdict_valid(role, fresh):
+            return verdict
+        outcome, summary = fresh.get("outcome"), fresh.get("summary", "")
+        self.log(f"{label} wrote its verdict on the commit nudge — salvaged")
+        self.log(f"{label} → {outcome}: {summary[:160]}")
+        row = (self.state.get("history") or [{}])[-1]
+        if (row.get("role"), row.get("phase"), row.get("outcome")) \
+                == (role, phase_id, "blocked"):
+            row["outcome"] = outcome
+            row["summary"] = summary
+            row.update({k: fresh[k] for k in ("findings", "refuted")
+                        if isinstance(fresh.get(k), list) and fresh[k]})
+            self._save_state()
+        return fresh
 
     def _spawn(self, role: str, prompt: str, cwd: Path, verdict_path: Path,
                phase_id: str | None, round_: int,
@@ -2229,8 +2276,7 @@ class RunLoop:
         model, effort = MODELS[role]
 
         def _valid(v: dict | None) -> bool:
-            return v is not None and (
-                role not in VERDICTS or v.get("outcome") in VERDICTS[role])
+            return _verdict_valid(role, v)
 
         def _note_session(sid: str) -> None:
             self.log(f"{label} session {sid} — transcript "
@@ -2769,7 +2815,9 @@ class RunLoop:
                 phase_id, r, agent="code-writer",
                 spec_branch=branch if self._is_spec_root(root) else None,
             )
-            self._ensure_committed(phase_id, "code-writer", session, root)
+            verdict = self._ensure_committed(
+                phase_id, "code-writer", session, root,
+                verdict, executor_verdict_path(r))
             self._assert_record_still_on(phase_id, ps, root, branch)
             self._save_state()
             self._handle_executor_terminals(verdict, phase_id)
@@ -3656,7 +3704,8 @@ class RunLoop:
                 spec_branch=(branch if self._is_spec_root(self.repo_root)
                              else None),
             )
-            self._ensure_committed(None, "doc-writer", session, root)
+            verdict = self._ensure_committed(None, "doc-writer", session,
+                                             root, verdict, verdict_path)
             self._handle_executor_terminals(verdict, None)
             ds.update(stage="gate", session=session,
                       units=self._read_doc_units())

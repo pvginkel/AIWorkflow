@@ -127,8 +127,10 @@ so one present when the timeout fires was written by this round: the agent finis
 committed it, and the turn wedged afterwards. The driver takes that verdict and counts the round
 normally rather than discarding work already on disk — and because the verdict is the last step of
 every role's protocol, a salvaged round is a complete one. The bail fires only when the verdict is
-missing or unparseable. The devlock is in-process (`flock`), so a crash releases it by
-construction.
+missing or unparseable. The commit nudge reads it the same way: a round the driver had ruled
+`blocked` for a missing verdict is repaired — the history row and the outcome the loop acts on —
+when the nudge that cleaned the tree also left a valid verdict behind. The devlock is in-process
+(`flock`), so a crash releases it by construction.
 
 **One driver per slice folder.** The run holds a `flock` on `<slice>/run.lock` from start to exit,
 and a second driver on the same folder exits 2 with the holder's host, pid and start time rather

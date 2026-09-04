@@ -4,6 +4,21 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-04 — a verdict written on the commit nudge counts (v0.9.25)
+
+Trello #809. Slice 198 P6's code-writer ended its turn without a verdict; the verdict nudge got
+"No response requested", the driver ruled the round `blocked`, and its commit nudge — sent next,
+because the tree was dirty — had the session commit its code, its done-record and a valid
+`executor_result_r1.json`. Nothing read that file after the commit nudge: the `blocked` ruling
+was made inside `_spawn` before the nudge ran, the caller acted on the stale dict, the run bailed
+exit 3, and `--resume` re-entered at the executor stage and spent a fresh round on finished
+work. The timeout path already salvaged a verdict on disk; the commit-nudge path did not. Now
+`_ensure_committed` returns the round's verdict, and when the nudge that cleaned the tree also
+left a verdict valid for the role, a protocol-failure `blocked` is replaced by it — in the
+history row `_spawn` wrote and in what the loop acts on — with a log line saying so; a nudge that
+leaves no valid verdict changes nothing. Same path for the doc-writer's `doc_phase_result.json`.
+`run-loop.md` § Protocol invariants, `runner-state.md` § Resume and crash recovery.
+
 ## 2026-09-04 — triage checks the standing decisions, and names the near misses (v0.9.24)
 
 Trello #801 and #835. Slice 193 was grouped on the axis "needs no design decision the card has
