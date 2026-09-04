@@ -656,9 +656,11 @@ def _plural(n: int, noun: str, plural: str | None = None) -> str:
     return f"{n} {noun if n == 1 else (plural or noun + 's')}"
 
 
-def run_header(state: dict) -> str:
+def run_header(state: dict, slice_dir: Path | str | None = None) -> str:
     """The `Run:` line from a run loop state.json — each piece only when
-    the state carries it."""
+    the state carries it. `slice_dir` is read for one fact state.json does
+    not carry: a bailout.json beside it (unlinked at the start of every run)
+    means the run stopped in the stage `run_phase` names."""
     bits: list[str] = []
     start = _fmt_ts(state.get("created_at"))
     if start:
@@ -689,7 +691,13 @@ def run_header(state: dict) -> str:
                     else f"doc phase at stage {stage}")
     run_phase = state.get("run_phase")
     if run_phase and run_phase != "done":
-        bits.append(f"run {run_phase}")
+        bailed = bool(slice_dir
+                      and (Path(slice_dir) / "bailout.json").exists())
+        # A pre-0.9.28 state literally carrying "bailed" says it already;
+        # a stage plus the file reads `run bailed in docs`.
+        bits.append(f"run bailed in {run_phase}"
+                    if bailed and run_phase != "bailed"
+                    else f"run {run_phase}")
     cost = state.get("cost")
     if isinstance(cost, dict) and isinstance(cost.get("cost_usd"), int | float):
         phrase = f"${cost['cost_usd']:,.2f}"
@@ -713,7 +721,7 @@ def stamp_header(slice_dir: Path | str) -> str:
     except (OSError, json.JSONDecodeError):
         raise ReportError(f"{state_path} is missing or unreadable — nothing "
                           "to stamp from") from None
-    header = run_header(state)
+    header = run_header(state, slice_dir)
     lines = text.split("\n")
     idx = next((i for i, line in enumerate(lines) if line.startswith("Run:")),
                None)

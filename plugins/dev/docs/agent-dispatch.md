@@ -123,8 +123,10 @@ is mid-turn is queued for its next turn, but the engine counts it delivered; a s
 ends that turn to wait for the very task that has already finished ends the send, and the queued
 report dies with the process — slice 198 P6's registry push, slice 201's fourth survey (its
 report finished 13 seconds before the coordinator's last turn ended). The first prompt into such
-a session is consumed by the harness's stopped-task bookkeeping and never reaches the model, so
-the driver sends a nudge answered with that synthetic no-op once more
-([run-loop.md](run-loop.md) § Protocol invariants); the engine-side fix is KubeCoder's (Triage
-#840). Nothing here changes what a role does: it ends the turn with nothing else in flight, and
-when a resume brings one report of several, it ends the turn again.
+a session is consumed by the harness's stopped-task bookkeeping and never reaches the model. The
+driver reads that no-op: a session that also owes its verdict is resumed with a recovery prompt
+in place of the nudge it lost — the report is gone but the sub-agent's transcript is saved, and
+the harness's notice says so — and recovers the report and finishes; the other nudges are sent
+once more ([run-loop.md](run-loop.md) § Protocol invariants). The engine-side fix is KubeCoder's
+(Triage #840). Nothing here changes what a role does: it ends the turn with nothing else in
+flight, and when a resume brings one report of several, it ends the turn again.

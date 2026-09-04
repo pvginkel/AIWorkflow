@@ -4,6 +4,32 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-04 — a session cut mid-wait is resumed to recover its report, and a bail resumes where it stopped (v0.9.28)
+
+Trello #843: slice 209's doc phase bailed `blocked` twice in the same shape. The coordinator had
+four survey sub-agents in flight; the fourth's completion landed while its turn was in flight and
+died with the process when the turn ended to wait for it (the engine race of KubeCoder #840,
+still open); the driver's verdict nudge was consumed by the harness's stopped-task bookkeeping in
+37 ms with no model turn, and the run bailed. Two driver defects behind the card's three parts.
+The nudge: 0.9.26's same-prompt retry would have reached the model, but with the wrong prompt —
+`VERDICT_NUDGE_PROMPT`'s "do not start new work" leaves a coordinator that has lost a survey no
+legal move but `blocked`, when the harness's own notice says the sub-agent's transcript is saved
+and can be resumed for its report. Now a verdict nudge the harness swallows is read for what it
+is — a session cut mid-wait, not one that forgot its verdict — and the driver resumes the session
+with a recovery prompt in its place: the report was lost, recover it (the sub-agent resumed with
+SendMessage for its report, a command's output file, the tree for what already landed),
+re-dispatch only what cannot be recovered, then finish and write the verdict — under the role's
+own timeout, as the same round, at most twice per round (the doc-writer yields twice). The
+commit, push and doc-gate nudges keep the same-prompt retry: there the work was done and only
+the nudge was lost. The bail: `_bail` overwrote `run_phase` with `bailed`, the very key
+`--resume` reads to re-enter the stage a bail left off in, so no bail has ever resumed at its
+stage — a doc-phase bail replayed the whole consult→test ladder (209 paid a third consult and a
+second full test phase for it) while the contract promised the re-entry. `run_phase` now stays
+at the stage; the stop is `bailouts` and `bailout.json`, which the status line and the close-out
+header read (`run bailed in docs`). The lost wake-up itself is the engine's (KubeCoder #840);
+the roles are unchanged. `run-loop.md` § Protocol invariants, `agent-dispatch.md` § Nested
+delegation, `runner-state.md` § state.json and § Resume and crash recovery.
+
 ## 2026-09-04 — every surviving card meets the litmus, and the confirmation says so (v0.9.27)
 
 Trello #835, on the operator's correction of 0.9.24's reading of it. The session was not

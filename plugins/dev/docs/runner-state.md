@@ -19,8 +19,10 @@ Slice level:
 `slice`, `created_at`, `updated_at`, `plugin_version` (the plugin the run was created under, from
 its manifest — what lets runs be read before/after a plugin change; a resume does not rewrite
 it), `orchestrator` (the launching session's id and transcript
-path, or `null` for a hand-run), `run_phase` (`phases` | `consult` | `test` | `docs` | `done` |
-`bailed`), `bases` (base branch per target repo — the branch the run found there, never a
+path, or `null` for a hand-run), `run_phase` (`phases` | `consult` | `test` | `docs` | `done` —
+the stage the run is in; a bail leaves it at the stage it stopped in, which is what `--resume`
+re-enters, and records the stop in `bailouts` and `bailout.json`), `bases` (base branch per
+target repo — the branch the run found there, never a
 `phase/…` one; a bail checks each back out from the run's own branch), `known_phases` (the
 plan's phase ids in document
 order, as last parsed), `generation` (follow-up generations spent), `test_rounds`, `sweep_runs`,
@@ -109,8 +111,9 @@ tree at preflight, or a missing agent definition · **130** interrupted · **1**
 `run_loop.py run <slice-dir> --resume` continues from `state.json`: stamped phases are skipped
 (the plan is re-parsed, so phases appended since the bail are picked up), the in-flight phase
 restarts from its last clean stage, and a bail from the test or doc stage re-enters that stage
-rather than replaying the consult→test ladder. Resume skips preflight entirely — the caller owns
-the state it resumes into.
+rather than replaying the consult→test ladder — read off `run_phase`, which the bail leaves
+where it was (before 0.9.28 it overwrote it, and slice 209 paid a second full test phase for
+that). Resume skips preflight entirely — the caller owns the state it resumes into.
 
 When a run dies mid-agent (host restart, quota stop, Ctrl-C), the `in_flight` record — phase,
 role, round, verdict path, session id, start time — lets `--resume` **reattach**: the worktree is

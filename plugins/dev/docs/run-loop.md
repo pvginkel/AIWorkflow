@@ -275,8 +275,19 @@ Only after both nudges does a missing verdict count `blocked`, and a tree still 
 nudge whose answer is the harness's synthetic no-op — no response, or "No response requested." —
 never reached the model: the session's last turn ended with a background task whose completion
 had landed mid-turn, and the first resume after that is the harness's stopped-task bookkeeping
-([agent-dispatch.md](agent-dispatch.md) § Nested delegation). That nudge is sent once more. A
-session killed by the account's session-limit window is not an agent outcome: the driver waits
-out the stated reset and redispatches the same round — nothing counted. The driver asserts its
-agent definitions resolve before dispatching anything (`kc session create-headless --agent` does
+([agent-dispatch.md](agent-dispatch.md) § Nested delegation). What the driver does with that
+no-op depends on which nudge got it. The commit, push and doc-gate nudges are sent once more:
+the session's work was done and only the nudge was lost. The verdict nudge is not — a session
+that ended without its verdict *and* answers with the no-op was cut mid-wait, and the report it
+was waiting on is gone, so "do not start new work" would leave it no legal move but `blocked`
+(slice 209's doc-writer lost the fourth of four surveys, twice). The driver resumes it with the
+recovery prompt instead: the report was lost, its transcript is saved, recover it — the
+sub-agent resumed for its report, a command's output file, the tree for what already landed —
+re-dispatch only what cannot be recovered, then finish and write the verdict. That resume runs
+under the role's own timeout, not the nudge's, and is the same round — its number kept, its
+duration added to the row — at most twice per round (the doc-writer yields twice); past that
+the verdict nudge falls back to the same-prompt retry. A session killed by the account's
+session-limit window is not an agent outcome: the driver waits out the stated reset and
+redispatches the same round — nothing counted. The driver asserts its agent definitions resolve
+before dispatching anything (`kc session create-headless --agent` does
 not validate names).

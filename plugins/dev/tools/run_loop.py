@@ -164,6 +164,9 @@ GATE_FIX_CAP = 3       # executor fix rounds against a red gate, per phase
 # The driver checks rather than pushes: a slice touching several repos may
 # need an order only the agent running the verification knows.
 PUSH_NUDGE_CAP = 2
+# A verdict nudge the harness swallows says the session was cut mid-wait,
+# and is answered by resuming it to recover what it was waiting on.
+LOST_WAIT_CAP = 2   # mid-wait recoveries per round: the doc-writer yields twice
 # The review loop's runaway backstop, not its working budget. Round 1's fix
 # is automatic; from round 2 on a funding consult judges every `issues`
 # verdict against a bar that rises each round (_review_bar) BEFORE an
@@ -289,23 +292,30 @@ def plugin_version() -> str | None:
 
 def _protocol_failure_detail(role: str, returncode: int, verdict: dict | None,
                              verdict_name: str, valid: bool,
-                             nudged: bool) -> str:
+                             nudged: bool, recoveries: int = 0) -> str:
     """Explain why a dispatch is treated as a protocol failure.
 
     The return code and the verdict's validity are independent axes: a session
     can be killed (rc != 0) *after* it committed and wrote a perfectly good
     verdict — e.g. a SIGTERM'd worker exits 143 — so the two are reported
-    separately."""
+    separately. `recoveries` is how often the round was resumed to recover a
+    report lost mid-wait before it came to this."""
     if verdict is None:
         vstate = "missing/unparseable"
     elif not valid:
         vstate = f"invalid outcome {verdict.get('outcome')!r}"
     else:
         vstate = f"valid outcome {verdict.get('outcome')!r}"
+    tail = ""
+    if nudged:
+        tail = " (after one nudge"
+        if recoveries:
+            tail += (f" and {recoveries} mid-wait "
+                     + ("recovery" if recoveries == 1 else "recoveries"))
+        tail += ")"
     return (
         f"{role} session ended rc={returncode}; verdict file "
-        f"{verdict_name}: {vstate}"
-        + (" (after one nudge)" if nudged else "")
+        f"{verdict_name}: {vstate}" + tail
     )
 
 
@@ -1639,6 +1649,18 @@ work: if any of your work is uncommitted, commit it, then write your verdict
 now to {verdict_path} as JSON ({{"outcome": "...", "summary": "..."}}{outcomes}).
 """
 
+LOST_WAIT_PROMPT = """\
+Your session ended while it was waiting on background work — a sub-agent or
+a backgrounded command — and that work's report was lost with the process:
+the harness reports the task stopped with no completion record. The task ran
+to its end or near it, and its transcript is saved. Recover its result rather
+than guessing at it: resume the sub-agent with SendMessage and ask for its
+report, read a command's output file, check the tree for what already landed;
+re-dispatch only what cannot be recovered. None of that is new work. Then
+finish from where you were — complete the phase, commit, and write your
+verdict to {verdict_path} as JSON ({{"outcome": "...", "summary": "..."}}{outcomes}).
+"""
+
 COMMIT_NUDGE_PROMPT = """\
 Your session ended leaving uncommitted changes in the working tree. Commit
 the work that belongs to this phase now (stage deliberately; drop anything
@@ -2187,18 +2209,24 @@ class RunLoop:
     # -- session spawning ----------------------------------------------------
 
     def _nudge(self, prompt: str, cwd: Path, session_id: str,
-               label: str, role: str | None) -> None:
-        """One resume-shot at a session that missed part of its protocol.
-        Failures fall through to the caller's re-check; a nudge never
-        raises. `role` is the resumed session's, so the resume carries the
-        same spawn flags (a differing prefix would miss the cache).
+               label: str, role: str | None, retry: bool = True) -> bool:
+        """One resume-shot at a session that missed part of its protocol;
+        returns whether the FIRST send was swallowed. Failures fall through
+        to the caller's re-check; a nudge never raises. `role` is the
+        resumed session's, so the resume carries the same spawn flags (a
+        differing prefix would miss the cache).
 
         A send the harness swallows for its stopped-task recovery
-        (`swallowed_nudge`) never reached the model, so the same prompt goes
-        in once more — exactly one retry, whatever that one comes back
-        with."""
+        (`swallowed_nudge`) never reached the model. Under `retry` the same
+        prompt goes in once more — exactly one retry, whatever that one
+        comes back with — which is what the commit, push and doc-gate nudges
+        want: their session's work was done, it just has to hear the ask.
+        The verdict nudge's caller reads the swallowed signal itself instead:
+        a session cut mid-wait is resumed with `LOST_WAIT_PROMPT` rather than
+        asked the same question twice."""
         self.log(f"{label} nudging the session (resume)")
-        for attempt in (1, 2):
+
+        def send():
             try:
                 _, result = run_kc_session(
                     prompt=prompt, cwd=str(cwd), timeout=NUDGE_TIMEOUT,
@@ -2208,11 +2236,18 @@ class RunLoop:
                 )
             except subprocess.TimeoutExpired:
                 self.log(f"{label} nudge timed out")
-                return
-            if attempt == 2 or not swallowed_nudge(result):
-                return
-            self.log(f"{label} nudge swallowed by the harness's stopped-task "
-                     "recovery — sending it once more")
+                return None
+            return result
+
+        result = send()
+        if result is None or not swallowed_nudge(result):
+            return False
+        if not retry:
+            return True
+        self.log(f"{label} nudge swallowed by the harness's stopped-task "
+                 "recovery — sending it once more")
+        send()
+        return True
 
     def _ensure_committed(self, phase_id: str | None, role: str,
                           session_id: str | None, root: Path,
@@ -2308,6 +2343,9 @@ class RunLoop:
                 in_flight["session"] = sid
                 self._save_state()
 
+        nudged = False
+        recoveries = 0
+        carried_s = 0        # the round's seconds before a recovery resume
         while True:
             self.log(f"{label} session starting"
                      + (" (resume)" if resume_session else ""))
@@ -2363,33 +2401,58 @@ class RunLoop:
             session_id = result.session_id
             verdict = _read_json(verdict_path)
             notice = None if _valid(verdict) else session_limit_notice(result)
-            if notice is None:
+            if notice is not None:
+                # The account's window, not this agent's failure: record it,
+                # wait it out, and dispatch the same round again.
+                self.state["in_flight"] = None
+                self._record(phase_id, role, round_, "session_limit",
+                             notice.replace("\n", " ")[:200], session_id,
+                             duration_s,
+                             transcript=_transcript_path(cwd, session_id))
+                self._wait_out_session_limit(notice, label)
+                continue
+            if _valid(verdict) or not session_id:
                 break
-            # The account's window, not this agent's failure: record it, wait
-            # it out, and dispatch the same round again.
-            self.state["in_flight"] = None
-            self._record(phase_id, role, round_, "session_limit",
-                         notice.replace("\n", " ")[:200], session_id,
-                         duration_s,
-                         transcript=_transcript_path(cwd, session_id))
-            self._wait_out_session_limit(notice, label)
 
-        nudged = False
-        if not _valid(verdict) and session_id:
+            # The session ended without a verdict. One nudge — but a nudge
+            # the harness swallows for its stopped-task bookkeeping is a
+            # session cut mid-wait (a sub-agent's or a backgrounded
+            # command's report died with the process), not one that forgot
+            # its verdict, and the verdict nudge's "do not start new work"
+            # leaves it no legal move. Such a session is resumed with the
+            # recovery prompt under the role's own timeout, so it can
+            # recover the lost report and finish; past LOST_WAIT_CAP the
+            # nudge falls back to its same-prompt retry.
             outcomes = (f"; outcome must be one of {sorted(VERDICTS[role])}"
                         if role in VERDICTS else "")
-            self._nudge(
+            swallowed = self._nudge(
                 VERDICT_NUDGE_PROMPT.format(verdict_path=verdict_path,
                                             outcomes=outcomes),
-                cwd, session_id, label, role)
+                cwd, session_id, label, role,
+                retry=recoveries >= LOST_WAIT_CAP)
+            if swallowed and recoveries < LOST_WAIT_CAP:
+                recoveries += 1
+                carried_s += duration_s
+                self.log(f"{label} nudge swallowed by the harness's "
+                         f"stopped-task recovery — the session was cut "
+                         f"mid-wait; resuming it to recover the lost report "
+                         f"and finish ({recoveries}/{LOST_WAIT_CAP})")
+                prompt = LOST_WAIT_PROMPT.format(verdict_path=verdict_path,
+                                                 outcomes=outcomes)
+                resume_session = session_id
+                continue
             nudged = True
             verdict = _read_json(verdict_path)
             if _valid(verdict):
                 returncode = 0  # the nudge completed the protocol
+            break
+
+        # The round's duration covers its recovery resumes too.
+        duration_s += carried_s
         if returncode != 0 or not _valid(verdict):
             detail = _protocol_failure_detail(
                 role, returncode, verdict, verdict_path.name,
-                _valid(verdict), nudged)
+                _valid(verdict), nudged, recoveries=recoveries)
             verdict = {"outcome": "blocked", "summary": detail,
                        "_protocol_failure": True}
         outcome = verdict.get("outcome", "blocked")
@@ -4210,7 +4273,10 @@ class RunLoop:
             self.log(f"pushed {base} in {root}")
 
     def _bail(self, bail: Bailout) -> None:
-        self.state["run_phase"] = "bailed"
+        # `run_phase` is left at the stage the run stopped in — that is what
+        # `--resume` re-enters in `_run`, instead of replaying the phases →
+        # consult → test ladder from the top. The stop itself is on record
+        # in `bailouts` and in bailout.json.
         # bailout.json is unlinked on resume; the count lives here so the
         # close-out header can say how often the run stopped.
         self.state.setdefault("bailouts", []).append(
@@ -4333,7 +4399,10 @@ def cmd_status(args) -> None:
     if not state:
         print("no state.json — the run loop has not started this slice")
         return
-    print(f"slice {state['slice']}  run_phase={state['run_phase']}  "
+    # bailout.json is unlinked at the start of every run, so one present
+    # means this run stopped in the stage run_phase names.
+    bailed = " (bailed)" if (slice_dir / "bailout.json").exists() else ""
+    print(f"slice {state['slice']}  run_phase={state['run_phase']}{bailed}  "
           f"generation={state.get('generation', 0)}  "
           f"bail-outs={len(state.get('bailouts', []))}")
     for pid in state.get("known_phases", []):

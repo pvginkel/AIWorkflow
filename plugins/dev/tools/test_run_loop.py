@@ -246,13 +246,15 @@ class SpawningLoop(ScriptedLoop):
     wait) is exercised. A script step is the usual (role, verdict dict), or
     (role, text) for a session that produced only that text and no verdict.
     A nudge consumes a step of its own; answer it with SWALLOWED (or "") for
-    a send the harness ate for its stopped-task recovery."""
+    a send the harness ate for its stopped-task recovery — which, for a
+    verdict nudge, buys a mid-wait recovery resume of the same session."""
 
     def __init__(self, slice_dir, script, **kw):
         super().__init__(slice_dir, script, **kw)
         self.sessions = []
         self.session_prompts = []
         self.session_flags = []
+        self.session_resumes = []   # (role, resume_session, timeout)
         self._pending = None
 
     def _spawn(self, role, prompt, cwd, verdict_path, phase_id, round_,
@@ -278,6 +280,7 @@ class SpawningLoop(ScriptedLoop):
         self.sessions.append((role, payload, model, effort))
         self.session_prompts.append((role, prompt))
         self.session_flags.append((role, list(flags or ())))
+        self.session_resumes.append((role, resume_session, timeout))
         result = run_loop.SessionResult()
         result.session_id = f"sess-{len(self.sessions)}"
         if on_session:
@@ -2437,11 +2440,9 @@ def test_gate_sweep_record_survives_a_resume_when_heads_match():
         r1 = ScriptedLoop(slice_dir, script, repo_root=repo)
         assert run_to_exit(r1) == 3
         assert len(r1.sweep_calls) == 3
-        # a bail replays the consult on resume; the sweep record is not
-        # replayed with it — same heads, same report
-        r2 = ScriptedLoop(slice_dir,
-                          [V["consult_complete"], V["test_clean"],
-                           V["doc_done"]],
+        # the bail stopped in the test stage, so the resume re-enters there;
+        # the sweep record is not replayed — same heads, same report
+        r2 = ScriptedLoop(slice_dir, [V["test_clean"], V["doc_done"]],
                           resume=True, repo_root=repo)
         assert run_to_exit(r2) == 0
         assert r2.sweep_calls == [], \
@@ -3517,7 +3518,9 @@ def test_missing_verdict_gets_one_nudge_then_counts_blocked():
         script = [("code-writer", "did some work, forgot the verdict")]
         r = SpawningLoop(slice_dir, script, repo_root=repo)
         nudges = []
-        r._nudge = lambda prompt, cwd, sid, label, role: nudges.append(prompt)
+        # Falsy: a nudge that was not swallowed asks for no recovery.
+        r._nudge = lambda prompt, cwd, sid, label, role, **kw: (
+            nudges.append(prompt))
         with patched(run_loop, run_kc_session=r.run_kc_session):
             assert run_to_exit(r) == 3
         assert len(nudges) == 1
@@ -3527,18 +3530,22 @@ def test_missing_verdict_gets_one_nudge_then_counts_blocked():
         assert "missing/unparseable" in bail["details"]
 
 
-def test_swallowed_verdict_nudge_is_sent_once_more():
-    """#816: a send that resumes a session whose background task or sub-agent
-    completed mid-turn is eaten by the CLI's stopped-task recovery — the
-    nudge never reaches the model, which answers "No response requested.".
-    The driver recognizes the no-op and sends the same prompt once more; that
-    one lands, and the round counts on the verdict it wrote."""
+def test_a_swallowed_verdict_nudge_resumes_the_session_to_recover_its_wait():
+    """#843 (slice 209): the doc-writer had four survey sub-agents out; the
+    fourth's completion landed mid-turn and died with the process, so the
+    session ended with no verdict and the first send back into it was eaten
+    by the CLI's stopped-task bookkeeping ("No response requested."). That
+    no-op is the tell: the session was cut mid-wait, and the verdict nudge's
+    "do not start new work" leaves it nothing legal to do. The driver resumes
+    it with the recovery prompt instead — under the role's own timeout, so it
+    can retrieve the lost report and finish the round."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         script = [
             ("code-writer", "did the work, forgot the verdict"),
             ("code-writer", SWALLOWED),
-            ("code-writer", {"outcome": "done", "summary": "verdict written"}),
+            ("code-writer", {"outcome": "done",
+                             "summary": "recovered the survey, then finished"}),
             V["review_signoff"], *TAIL,
         ]
         r = SpawningLoop(slice_dir, script, repo_root=repo)
@@ -3548,22 +3555,37 @@ def test_swallowed_verdict_nudge_is_sent_once_more():
         assert not (slice_dir / "bailout.json").exists()
         writer_prompts = [p for role, p in r.session_prompts
                           if role == "code-writer"]
-        assert len(writer_prompts) == 3, "the round, then the nudge twice"
+        assert len(writer_prompts) == 3, "the round, the nudge, the recovery"
         assert writer_prompts[1].startswith("Your session ended without")
-        assert writer_prompts[2] == writer_prompts[1], "the same prompt again"
+        assert writer_prompts[2].startswith(
+            "Your session ended while it was waiting")
+        # The recovery is a resume of the same session, dispatched with the
+        # role's own timeout rather than the nudge's short one.
+        resumes = [(sid, timeout) for role, sid, timeout in r.session_resumes
+                   if role == "code-writer"]
+        assert resumes[0] == (None, run_loop.TIMEOUTS["code-writer"])
+        assert resumes[1] == ("sess-1", run_loop.NUDGE_TIMEOUT)
+        assert resumes[2] == ("sess-1", run_loop.TIMEOUTS["code-writer"])
         state = load_state(slice_dir)
         outcomes = [(h["role"], h["outcome"]) for h in state["history"]]
         assert ("code-writer", "done") in outcomes
         assert ("code-writer", "blocked") not in outcomes
         assert state["phases"]["1"]["status"] == "merged"
-        assert "nudge swallowed by the harness's stopped-task recovery" in (
-            slice_dir / "log.txt").read_text()
+        row = next(h for h in state["history"]
+                   if (h["role"], h["outcome"]) == ("code-writer", "done"))
+        assert isinstance(row["duration_s"], int), (
+            "the round is priced with its recovery resume folded in")
+        log = (slice_dir / "log.txt").read_text()
+        assert "cut mid-wait" in log
+        assert "sending it once more" not in log, (
+            "the verdict nudge recovers instead of repeating itself")
 
 
-def test_a_nudge_answered_with_no_turn_at_all_is_sent_once_more():
-    """Slice 201's shape of the same defect: the swallowed resume produced no
+def test_a_verdict_nudge_answered_with_no_turn_at_all_recovers_the_same_way():
+    """Slice 201's shape of the same signal: the swallowed resume produced no
     assistant turn at all, so the response is empty rather than the recovery's
-    stock sentence. Empty is the same signal."""
+    stock sentence. Empty means the same thing — a session cut mid-wait — and
+    buys the same recovery resume."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         script = [
@@ -3577,22 +3599,62 @@ def test_a_nudge_answered_with_no_turn_at_all_is_sent_once_more():
             assert run_to_exit(r) == 0
         assert not r.script
         assert not (slice_dir / "bailout.json").exists()
-        assert len([p for role, p in r.session_prompts
-                    if role == "code-writer"]) == 3
+        writer_prompts = [p for role, p in r.session_prompts
+                          if role == "code-writer"]
+        assert len(writer_prompts) == 3
+        assert writer_prompts[2].startswith(
+            "Your session ended while it was waiting")
         assert ("code-writer", "done") in [
             (h["role"], h["outcome"])
             for h in load_state(slice_dir)["history"]]
+        assert "cut mid-wait" in (slice_dir / "log.txt").read_text()
 
 
-def test_a_nudge_swallowed_twice_is_not_sent_a_third_time():
-    """Exactly one retry: a second no-op is taken at face value and the round
-    is the protocol failure it was before the retry existed."""
+def test_a_recovered_session_that_still_writes_nothing_gets_the_nudge_again():
+    """A recovery resume owes a verdict like any other session. This one ends
+    without one, but its verdict nudge lands (no no-op) and writes it — so the
+    round counts on that verdict, one recovery in."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         script = [
             ("code-writer", "did the work, forgot the verdict"),
-            ("code-writer", SWALLOWED),
-            ("code-writer", SWALLOWED),
+            ("code-writer", SWALLOWED),                     # → recovery 1
+            ("code-writer", "recovered the report, forgot the verdict again"),
+            ("code-writer", {"outcome": "done", "summary": "verdict at last"}),
+            V["review_signoff"], *TAIL,
+        ]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert not r.script
+        assert not (slice_dir / "bailout.json").exists()
+        writer_prompts = [p for role, p in r.session_prompts
+                          if role == "code-writer"]
+        assert len(writer_prompts) == 4, (
+            "the round, the nudge, the recovery, the nudge again")
+        assert writer_prompts[3] == writer_prompts[1]
+        log = (slice_dir / "log.txt").read_text()
+        assert log.count("cut mid-wait") == 1
+        outcomes = [(h["role"], h["outcome"])
+                    for h in load_state(slice_dir)["history"]]
+        assert ("code-writer", "done") in outcomes
+        assert ("code-writer", "blocked") not in outcomes
+
+
+def test_mid_wait_recoveries_stop_at_the_cap():
+    """LOST_WAIT_CAP recoveries per round, then the nudge falls back to its
+    same-prompt retry and the round is the protocol failure it always was.
+    The bail says how many recoveries were spent getting there."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            ("code-writer", "did the work, forgot the verdict"),
+            ("code-writer", SWALLOWED),                  # → recovery 1
+            ("code-writer", "resumed, still no verdict"),
+            ("code-writer", SWALLOWED),                  # → recovery 2
+            ("code-writer", "resumed again, still no verdict"),
+            ("code-writer", SWALLOWED),                  # at the cap: retry
+            ("code-writer", SWALLOWED),                  # the same prompt
         ]
         r = SpawningLoop(slice_dir, script, repo_root=repo)
         with patched(run_loop, run_kc_session=r.run_kc_session):
@@ -3600,13 +3662,18 @@ def test_a_nudge_swallowed_twice_is_not_sent_a_third_time():
         assert not r.script
         writer_prompts = [p for role, p in r.session_prompts
                           if role == "code-writer"]
-        assert len(writer_prompts) == 3, "the round, then the nudge twice"
-        assert writer_prompts[2] == writer_prompts[1]
+        assert len(writer_prompts) == 7
+        assert len([p for p in writer_prompts
+                    if p.startswith("Your session ended while it was "
+                                    "waiting")]) == run_loop.LOST_WAIT_CAP
+        assert writer_prompts[6] == writer_prompts[5], "the same prompt again"
         bail = json.loads((slice_dir / "bailout.json").read_text())
         assert bail["reason"] == "blocked"
         assert "missing/unparseable" in bail["details"]
+        assert "2 mid-wait recoveries" in bail["details"]
         log = (slice_dir / "log.txt").read_text()
         assert log.count("sending it once more") == 1
+        assert log.count("cut mid-wait") == run_loop.LOST_WAIT_CAP
 
 
 def test_verdict_written_on_the_commit_nudge_is_salvaged():
@@ -3666,6 +3733,41 @@ def test_commit_nudge_that_writes_no_verdict_still_counts_blocked():
         assert ("code-writer", "blocked") in [
             (h["role"], h["outcome"]) for h in state["history"]]
         assert "salvaged" not in (slice_dir / "log.txt").read_text()
+
+
+def test_a_swallowed_commit_nudge_is_sent_once_more():
+    """The same-prompt retry survives where it belongs: the commit nudge's
+    session has already done its work, so a send the harness eats is just an
+    ask that never arrived — repeat it. Only the verdict nudge reads the
+    no-op as a session cut mid-wait."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            ("code-writer", "did the work, forgot the verdict", dirties()),
+            ("code-writer", "the verdict nudge produced nothing"),
+            ("code-writer", SWALLOWED),          # the commit nudge, eaten
+            ("code-writer", {"outcome": "done", "summary": "committed it"},
+             commits),
+            V["review_signoff"], *TAIL,
+        ]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert not r.script
+        assert not (slice_dir / "bailout.json").exists()
+        writer_prompts = [p for role, p in r.session_prompts
+                          if role == "code-writer"]
+        assert len(writer_prompts) == 4
+        assert writer_prompts[1].startswith("Your session ended without")
+        assert writer_prompts[2].startswith("Your session ended leaving")
+        assert writer_prompts[3] == writer_prompts[2], "the same prompt again"
+        log = (slice_dir / "log.txt").read_text()
+        assert log.count("sending it once more") == 1
+        assert "cut mid-wait" not in log
+        outcomes = [(h["role"], h["outcome"])
+                    for h in load_state(slice_dir)["history"]]
+        assert ("code-writer", "done") in outcomes
+        assert ("code-writer", "blocked") not in outcomes
 
 
 def test_doc_writer_verdict_on_the_commit_nudge_is_salvaged():
@@ -3874,6 +3976,86 @@ def test_resume_at_docs_skips_consult_and_test():
                          repo_root=repo)
         assert run_to_exit(r) == 0
         assert [role for role, *_ in r.spawned] == ["doc-writer"]
+
+
+def test_a_bail_leaves_run_phase_at_its_stage_and_resume_reenters_it():
+    """Slice 209's second cost: the doc phase bailed, and the resume replayed
+    the whole phases → consult → test ladder (a second full test phase) before
+    reaching the doc writer again. `run_phase` is left where the run stopped,
+    so `--resume` re-enters that stage — what the contract always promised."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            V["exec_done"], V["review_signoff"], V["consult_complete"],
+            V["test_clean"],
+            ("doc-writer", {"outcome": "blocked",
+                            "summary": "a survey never came back"}),
+        ]
+        r1 = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r1) == 3
+        assert not r1.script
+        state = load_state(slice_dir)
+        assert state["run_phase"] == "docs", (
+            "the stage the run stopped in, not `bailed`")
+        assert len(state["bailouts"]) == 1
+        assert json.loads((slice_dir / "bailout.json").read_text())["reason"] \
+            == "blocked"
+
+        r2 = ScriptedLoop(slice_dir, [V["doc_done"]], resume=True,
+                          repo_root=repo)
+        assert run_to_exit(r2) == 0
+        assert [role for role, *_ in r2.spawned] == ["doc-writer"], (
+            "no consult, no second test phase")
+        assert load_state(slice_dir)["run_phase"] == "done"
+
+
+def test_a_bail_in_the_test_stage_resumes_into_the_test_phase():
+    """The same re-entry one stage earlier: a test-phase bail resumes into the
+    test phase, skipping the completion consult it already answered."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            V["exec_done"], V["review_signoff"], V["consult_complete"],
+            ("test-agent", {"outcome": "blocked", "summary": "no cluster"}),
+        ]
+        r1 = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r1) == 3
+        assert load_state(slice_dir)["run_phase"] == "test"
+
+        r2 = ScriptedLoop(slice_dir, [V["test_clean"], V["doc_done"]],
+                          resume=True, repo_root=repo)
+        assert run_to_exit(r2) == 0
+        assert [role for role, *_ in r2.spawned] == ["test-agent",
+                                                     "doc-writer"]
+
+
+def test_status_says_a_run_bailed():
+    """bailout.json is unlinked at every run's start, so one present means
+    this run stopped in the stage run_phase names."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            V["exec_done"], V["review_signoff"], V["consult_complete"],
+            ("test-agent", {"outcome": "blocked", "summary": "no cluster"}),
+        ]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 3
+
+        class Args:
+            pass
+
+        args = Args()
+        args.slice_dir = str(slice_dir)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            run_loop.cmd_status(args)
+        assert "run_phase=test (bailed)" in out.getvalue()
+        (slice_dir / "bailout.json").unlink()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            run_loop.cmd_status(args)
+        assert "run_phase=test  " in out.getvalue()
+        assert "(bailed)" not in out.getvalue()
 
 
 # -- session-limit parsing ----------------------------------------------------

@@ -388,6 +388,23 @@ def test_stamp_omits_what_the_state_does_not_carry():
         assert "bail-out" not in header and "$" not in header
 
 
+def test_stamp_names_the_stage_a_bailed_run_stopped_in():
+    """The driver leaves `run_phase` at the stage the run stopped in, so the
+    header reads it together with bailout.json — present only while this run
+    is stopped."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        state = {"created_at": "2026-08-14T19:49:12+02:00",
+                 "run_phase": "docs", "known_phases": ["1"]}
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        (slice_dir / "bailout.json").write_text('{"reason": "blocked"}')
+        assert close_out.stamp_header(slice_dir).endswith("run bailed in docs")
+        # The same state without the file is simply a run in its doc stage.
+        (slice_dir / "bailout.json").unlink()
+        assert close_out.stamp_header(slice_dir).endswith("run docs")
+
+
 def test_stamp_counts_operator_questions_among_bail_outs():
     state = dict(STATE, bailouts=[{"reason": "operator_question", "question": True},
                                   {"reason": "gate_red", "question": False}])
