@@ -64,6 +64,16 @@ and 201's rows pool both rounds, the dead one included (§ 4).
    `turn_profile` scores as its first edit) *is* down: 105.0 k median against 122.5 k / 127.0 k —
    the § 3 digest and diff files still hold. What the split did not shrink is the tail: the
    coordinator ends the slice holding the diff, the survey reports **and** every unit receipt.
+6a. **Not faster — slower, absolutely and per phase.** Wall-clock of the doc-writer session
+   (`slice_cost.py`'s per-session duration; the units run inside the coordinator's session):
+   the corpus sample's single writer took 9–32 minutes, median 14.5, or 3.9 minutes per phase;
+   the reworked coordinator's finished rounds take 12–40 minutes, median 26, or 5.0 per phase
+   (+30 %). The pipeline is serial where the old pass was one stage — surveys, then
+   `units.json`, then units, then reconcile, then the gate — and a unit is a 23–60-turn session
+   of its own; the units' parallelism buys back less than the extra stages cost. The phase's
+   wall-clock from first log line to landing is the session plus about a minute in the corpus
+   and on 198, 199, 208 and 212; 200's ran 2 h 23 (the dead round, the bail and the relock) and
+   202's 1 h 27 against a 25-minute session — not broken down here.
 6. **The Explore carry is gone.** In every session that reached `units.json`, all survey reports
    landed before it: the surveys are dispatched at t4–t14, `units.json` follows 6–11 turns later,
    and no survey is dispatched after any edit (turn-by-turn trace of the nine coordinator
@@ -240,6 +250,7 @@ From each slice's `log.txt` and the two dead sessions' transcripts.
 
 | criterion | verdict |
 |---|---|
+| wall-clock (not a § 8 criterion, asked by the operator) | **Slower:** 26 minutes median against 14.5; 5.0 minutes per phase against 3.9 (finding 6a). |
 | doc-phase $ and share of slice | **Missed on the absolute.** $18.41 median against $8.89, 23.9 % of the slice against 16.1 %; per phase of shipped work +15–25 %, for 60 % more doc lines (finding 7). The plan's honest expectation was −25–35 %; the outturn is +110 % absolute. |
 | coordinator `ctx_max` < 150 k | **Missed, 1 of 7** (208 only). Median 207.7 k against the corpus's 196.0 k — unchanged. `ctx_fe` *is* down 18 k, so orientation is bounded; the tail is not. |
 | units' turns and $ vs the 8–10-turn break-even | **Met, and the test turns out not to bind.** Every unit runs 23–60 turns for 3–11 pages, three-to-six times the break-even — yet costs $1.15–3.43, not $0.35–0.60. A unit is a second writer, not a chunk. |
