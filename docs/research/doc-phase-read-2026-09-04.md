@@ -5,6 +5,12 @@ work into `units.json` and dispatches one `dev:doc-unit` sub-agent per doc scope
 ([doc-phase-plan.md](doc-phase-plan.md) § 4, § 8; Triage #716). The proposal asked for "the next
 four doc phases"; seven have run, so all seven are here.
 
+**Status: verdict held.** The operator, on this read (2026-09-04): "hold verification until
+we've run a few slices that are more representative" — six of the seven are 5–8-phase slices
+against the corpus's 3.5 median, and § 2's per-phase normalisation is what the decision turns
+on. Re-read on the next few representative slices, appending here: the tool run above plus the
+per-phase table of finding 7. Nothing in the doc phase changes meanwhile.
+
 **Corpus.** Seven KubeCoder slices completed on plugin 0.9.20/0.9.22 — 198, 199, 200, 201, 202,
 208, 212 — nine doc-writer sessions (200 and 201 each ran a first round that died; § 4). The
 marketplace never ran 0.9.14–0.9.19 alone, so all seven carry the whole rework plus § 3's three
