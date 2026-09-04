@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-04 — the refinement doc carries the rulings it drew (v0.9.23)
+
+Two reads of the reworked doc (Trello #837, #824). Slice 197's operator answered both decisions
+and neither open fact: the facts sat as plain bullets under a heading that did not say they were
+questions — "are those questions you want an answer to? … I'd expect a more clear question and
+an Operator line below it" — and the session re-asked them in chat. And slice 199's doc went to
+the record contradicting the plan it produced: one decision still read the *agree, or comment
+here* placeholder beside a plan that recorded the agreement, another still recommended what the
+plan's rulings had reversed — the rulings were taken in chat and written to `plan.md` alone, as
+the contract said ("recorded in `plan.md`, not by editing the doc"). Now each open fact is
+numbered and ends with its own *Operator* line, under a heading that says whose questions they
+are; and every ruling lands in the doc as well as the plan — a ruling given in chat is written
+under its *Operator* line by the session, in the operator's words, and one that moves later (a
+second-round answer, a review finding that reverses a decision) replaces it. The recommendation
+above stands as it was put, so that line is where a later reader learns the doc was overruled
+and by what; the writer only ever writes the placeholder. `docs/refinement.md` § The doc and
+§ The walkthrough, the refinement-writer's bounds, `plan-slice` § 2.3 and the exit-4
+adjudication.
+
 ## 2026-09-03 — the devlock lets go between the test phase and the doc landing (v0.9.22)
 
 The driver took the devlock before the test phase and held it to the end of the run, so a slice's

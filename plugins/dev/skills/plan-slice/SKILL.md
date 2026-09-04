@@ -87,9 +87,14 @@ absorbed as spec, not reopened.
    complaint and the measured one differ, say so plainly; it is what closes the slice.
 2. **Dispatch `dev:refinement-writer`** with the material and end the turn — its receipt is the
    walkthrough; post it as it came back. The doc is `refinement.md` in the slice folder.
-3. **Take the rulings.** The operator comments in the file or in chat. A single decent choice
-   with impact is put to them in chat as agree-or-comment; a reframe or "walk me through this"
-   is answered in prose, and the decision is not re-posed until they have said what they think.
+3. **Take the rulings.** The operator comments in the file or in chat. Every ruling lands in
+   two places: `plan.md`'s rulings section (§3), and — when it came in chat — under its
+   *Operator* line in `refinement.md`, in the operator's words; a ruling that moves later
+   replaces the line (the contract's walkthrough section). The doc is the page the operator
+   returns to: slice 199's went to the record with the placeholder still on an agreed decision
+   and a recommendation the plan had reversed. A single decent choice with impact is put to
+   them in chat as agree-or-comment; a reframe or "walk me through this" is answered in prose,
+   and the decision is not re-posed until they have said what they think.
    **A hedged answer is not a ruling**: an answer that rules conditionally ("if X, then fine")
    stays open — verify the condition and re-surface it with the evidence.
 4. A slice whose shape is wrong is re-shaped here with the operator: split it, kick an item back
@@ -135,7 +140,9 @@ slice.md — there is no fix-verify loop behind it. Handle the exit:
   to the operator in one agree-or-comment message — each with its default disposition and what
   it changes in the plan; a premise the review overturned is stated first — and record the
   rulings in plan.md's rulings section — **editing a superseded ruling in place, never
-  appending a correction-chain** (the round history lives in `plan_review_r*.md`). Commit,
+  appending a correction-chain** (the round history lives in `plan_review_r*.md`) — and, for a
+  finding that reverses a refinement decision, under that decision's *Operator* line (§2.3).
+  Commit,
   rerun: the rerun dispatches one writer fix pass, which applies
   the accepted fixes to the plan's phases and `verification.json`. Only if you applied those
   fixes yourself, rerun with `--fixes-applied` to skip that pass — **the flag is the loop's
@@ -166,8 +173,10 @@ slice.md — there is no fix-verify loop behind it. Handle the exit:
 - [ ] Every numbered requirement in `slice.md` → the plan's requirements/rulings section
       (operator's wording) and an outcome-level criterion in `verification.json`.
 - [ ] `refinement.md` written by the refinement-writer, no dialog posed; every ruling it drew
-      is in plan.md, in the operator's words; the doc carries no code, no `file:line`, and no
-      decision you could have settled yourself.
+      is in plan.md, in the operator's words, and under its *Operator* line in the doc — no
+      placeholder left on a ruled decision or an answered fact, no recommendation standing
+      unmarked against a ruling that reversed it; the doc carries no code, no `file:line`, and
+      no decision you could have settled yourself.
 - [ ] Every phase opens with a real `Target:`; phases are PR-sized, producers first.
 - [ ] Attachments only where genuinely underivable, at the smart-dev altitude; no auto-doc
       content anywhere in the plan (a doc task is a phase); rulings edited in place, no

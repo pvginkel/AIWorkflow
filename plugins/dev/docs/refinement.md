@@ -108,7 +108,12 @@ seeds it; that is the only place the plan-writer reads it. Nobody downstream rea
 
 `<slice>/refinement.md`, written by the writer, committed with the slice as the interview's
 record — the same role `plan_review_r*.md` plays for the review round. The rulings live in
-`plan.md`; the doc holds what was put to the operator and their comments on it. Shape:
+`plan.md` for the planner; the doc holds what was put to the operator and, under each
+*Operator* line, how they ruled — in their words, whether they wrote it there or said it in
+chat. Slice 199's doc went to the record with one decision still reading *agree, or comment
+here* beside a plan that recorded the agreement, and another still recommending what the plan's
+rulings had reversed; a reader checking a ruling against the refinement that produced it found
+the opposite advice and no sign it had been overruled. Shape:
 
 ```markdown
 # Slice NNN — refinement
@@ -130,8 +135,9 @@ costs>
 ## Settled by the session
 <one sentence per item, only those the operator could care about; the routine ones are absent>
 
-## Open facts
-<plain questions, no options>
+## Open facts — questions only you can answer
+**F1.** <the question, plain, no options; in a few words, what the answer settles>
+**Operator.** _answer here_
 ```
 
 Writing rules — the reader is the PO, a week away from the slice, deciding from the page:
@@ -148,10 +154,14 @@ Writing rules — the reader is the PO, a week away from the slice, deciding fro
   material is not listed; a decision with no live alternative is a settled item.
 - **A claim a recommendation rests on that the session did not verify is said so** in the
   decision's prose ("not verified: …") — never smoothed into a fact, never dropped.
-- **Fact questions are plain questions.** No options on "do you ever kill an env pod by hand?".
+- **Fact questions are plain questions, each with its own answer line.** No options on "do you
+  ever kill an env pod by hand?"; numbered like the decisions, an *Operator* line under each — a
+  fact that sits as a bullet reads as a remark: slice 197's operator answered both decisions and
+  neither fact, and asked whether the bullets were questions at all.
 - **Second round appends.** New decisions are new `D` entries after the existing ones, opening
-  with where the plan now stands; a settled entry is not rewritten. A reversed ruling is
-  recorded in `plan.md`, not by editing the doc.
+  with where the plan now stands; an earlier entry's body is not rewritten. The writer never
+  fills an *Operator* line — a ruling, and a ruling that moves, is written there by the session
+  (below).
 
 ## The walkthrough
 
@@ -161,7 +171,12 @@ facts, the doc's path, and how to answer: comment in the file under each *Operat
 say so, or reply here by number; "agree" takes every recommendation. The session then reads the
 comments back, records each ruling in `plan.md` (in place — a ruling that corrects an earlier
 one replaces it), and confirms a ruling that changed a decision in one line — "D3 is now …;
-agree?" — never as a new fork.
+agree?" — never as a new fork. A ruling given in chat is written under its *Operator* line in
+the doc as well, in the operator's words, so no placeholder outlives a ruled decision or an
+answered fact; the recommendation above it stands as it was put, and that line is where a later
+reader learns the doc was overruled and by what. A ruling that moves later — a second-round
+answer, a review adjudication that reverses a decision — replaces the line. "Agree" fills every
+decision's line; an open fact has no default and stays open until it is answered.
 
 ## Agree-or-comment
 

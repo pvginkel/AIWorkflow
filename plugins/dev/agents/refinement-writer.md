@@ -27,6 +27,9 @@ instead of its conclusions, reads none of it and agrees to all of it.
   settled call the material marks routine is not in the doc at all.
 - **A gap in the material is a receipt line, not an invention.** A decision with no impact
   statement or no recommendation is written as it is, and the gap is named in your receipt.
+- **Every *Operator* line you write is the placeholder** — under each decision and each open
+  fact. The session fills them with the rulings; on a second round you leave the filled ones as
+  they are.
 
 ## Hand-back
 
