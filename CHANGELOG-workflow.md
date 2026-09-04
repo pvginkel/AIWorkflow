@@ -4,6 +4,24 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-04 — triage checks the standing decisions, and names the near misses (v0.9.24)
+
+Trello #801 and #835. Slice 193 was grouped on the axis "needs no design decision the card has
+not already made", and one of its six items collided head-on with a standing decision the card
+never mentioned (Python hand-formatted, ruff lint-only): planning found it, the operator had to
+overrule, and had "created a card twice before and closed it because of this same D-record".
+Triage tested whether a card had decided its shape, never whether that shape survived the
+project's decision record. Now, before labelling, one read-only sub-agent per batch reads the
+spec repo's decision record against every item's ask and reports each current decision an ask
+contradicts — the record is the operator's own rulings, not the code the clerk is barred from.
+A hit is a `Collides:` line on the item and a question the operator answers from memory —
+overrule the record, or close the card on it; unresolved, it keeps the item off every route
+that takes a card as decided (Solution Known, a no-decision grouping), and an overrule rides
+into the slice as a ruling with the record's id. And the Solution Known confirmation now names
+the near misses, on the operator's ask: a card that fails the litmus on one point they can
+settle from memory is put to them with the point named — rule it and it passes; the answer goes
+on the card and it takes the mark. `triage` § 2, § 6, § 7 and § 8.
+
 ## 2026-09-04 — the refinement doc carries the rulings it drew (v0.9.23)
 
 Two reads of the reworked doc (Trello #837, #824). Slice 197's operator answered both decisions

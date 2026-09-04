@@ -92,6 +92,7 @@ passages — so an item that changes group keeps its handle. Open the **status d
 - Ask: "<the ask, quoted verbatim — the stated symptom and the stated consequence>"
 - Question: <only when one exists — see below>
 - Category: <label> — "<justifying quote>"
+- Collides: <only when one exists — the standing decision the ask contradicts, id and ruling>
 - Note: <only when the label hides stakes the operator should see — rule 2>
 - Research: <only when flagged — the one named question that settles the label>
 - Ruling: —
@@ -119,6 +120,23 @@ alter a verdict line**, and the check is mechanical, not an eyeball: every `Ask:
 `Question:` / `Note:` / `Research:` / `Ruling:` line in the assembled document is extracted and
 diffed against the labelled source before the document is presented. That check is all that
 stands between a sub-agent and a silently rewritten judgement.
+
+**Check every ask against the standing decisions before labelling.** A project's decision
+record lives in its spec repo, where it keeps one — an index of `DNNN` rows, a log, a set of
+design docs; the spec repo's own `README` or `CLAUDE.md` says where, and a project without one
+skips the check. One read-only sub-agent per batch reads it with every item's `Ask:` and
+reports, per item, each current decision the ask's stated shape contradicts — the id and the
+ruling quoted, nothing on whether the ask is a good idea. This is not the code reading the
+clerk is barred from: the record is the operator's own rulings, and an ask that contradicts one
+is not decided, however settled its card reads. A hit goes on the item's block as
+`Collides: <id> — "<the ruling, quoted>"` and puts a question the operator answers from memory
+on the `Question:` line — overrule the record, or close the card on it. The label is unaffected
+(the consequence still decides it), and the collision travels: unresolved, it bars the item from
+every route that takes a card as decided (steps 6 and 8); an overrule rides into the slice as a
+ruling, with the record's id (step 7). Slice 193 was grouped on the axis "needs no design
+decision the card has not already made"; one of its six items collided head-on with a standing
+decision the card never mentioned, planning found it, the operator had to overrule — and had, in
+their words, "created a card twice before and closed it because of this same D-record".
 
 **Label each item independently** — one item, one verdict against the rubric, blind to the rest
 of the batch. The justification is **a verbatim quote from the source and nothing else** — no
@@ -301,7 +319,14 @@ Separate what shouldn't become a slice, and confirm the separation with the oper
   skip filing (step 7) and planning both: step 8 batches them straight into a run-ready slice.
   A surviving **user-visible nit pick** is the archetypal candidate — decided change, plain
   impact — check those against the litmus first; a card that arrives already marked from an
-  earlier session is re-checked there too.
+  earlier session is re-checked there too. **Suggest the near misses as well:** a card that
+  fails the litmus on one open point the operator can settle from memory — which of two names,
+  whether the old flag stays, the exact message — is put to them in this same confirmation with
+  the point named: rule it and the card passes. The answer goes on the card as a ruling (a
+  comment, and into the criteria) and the card takes the mark; unanswered, it goes the normal
+  route. A point only the code can settle is not a near miss. An item with an unresolved
+  `Collides:` line (step 2) is on no decided route — not this one, not a "needs no decision"
+  grouping — until the operator has ruled on the record.
 
 Group the rest **by subject, on the asks as written**. Favor larger groups — a slice plans into
 3–6 (max 10) project-local, independently testable, PR-sized tasks, and a group that would
@@ -339,7 +364,9 @@ this conversation. It holds:
   high-level intent; the definition itself is the record. If the conversation evolved it, carry
   the final agreed version and let the Q&A show the evolution.
 - The **Q&A and operator rulings** from the passes — a ceiling (`apply the suggested edit`)
-  verbatim, it bounds the planner too — and the ids of the cards this slice subsumes.
+  verbatim, it bounds the planner too; an overrule of a standing decision with the record's id,
+  so the plan moves the record as the project's decision discipline says — and the ids of the
+  cards this slice subsumes.
 
 Requirements, not solutions: no fixes, no task shapes, no acceptance criteria, no feasibility
 verdicts. **Attachments** that arrive with the work (a debugging write-up, a prior design or
@@ -361,12 +388,13 @@ acceptance criteria — outcome-level, one or a few — from its text alone. You
 here, so if the criteria would need grounding, the card goes the normal route.
 
 Never label: concurrency or timing behaviour; storage-layout or wire-contract changes; a card
-that leaves anything open ("investigate", "decide", "confirm"); or a fix that **adds
-behaviour** — a new code path, process, or piece of state — rather than correcting what exists
-in place. Added behaviour carries design surface (failure policy, bounds, collisions with
-documented rulings) that a card cannot prove is settled, however completely it argues its
-diagnosis — a root-caused bug with an empirically verified fix mechanism still leaves the
-*change* undecided. Mechanism-verified is not change-decided. When in doubt, the normal route:
+that leaves anything open ("investigate", "decide", "confirm"); an ask that collides with a
+standing decision (step 2's `Collides:` line) until the operator's overrule is on the card; or
+a fix that **adds behaviour** — a new code path, process, or piece of state — rather than
+correcting what exists in place. Added behaviour carries design surface (failure policy,
+bounds, collisions with documented rulings) that a card cannot prove is settled, however
+completely it argues its diagnosis — a root-caused bug with an empirically verified fix
+mechanism still leaves the *change* undecided. Mechanism-verified is not change-decided. When in doubt, the normal route:
 an over-careful card merely costs a planning session; a mislabelled one ships unadjudicated
 design.
 
