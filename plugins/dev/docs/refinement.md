@@ -175,8 +175,10 @@ agree?" — never as a new fork. A ruling given in chat is written under its *Op
 the doc as well, in the operator's words, so no placeholder outlives a ruled decision or an
 answered fact; the recommendation above it stands as it was put, and that line is where a later
 reader learns the doc was overruled and by what. A ruling that moves later — a second-round
-answer, a review adjudication that reverses a decision — replaces the line. "Agree" fills every
-decision's line; an open fact has no default and stays open until it is answered.
+answer, a review adjudication that reverses a decision — replaces the line. A blanket "agree"
+or "agree to everything" in chat is a ruling on every decision, and the session writes it under
+each *Operator* line itself — the operator never edits the file to make the record match what
+they said in chat; an open fact has no default and stays open until it is answered.
 
 ## Agree-or-comment
 
