@@ -30,6 +30,7 @@ parked:
 | `IoTSupport/` | differs, 20 lines | differs, 32 lines | differs, 18 lines | 15 source files; 1 differs |
 | `DesignAssistant/` | differs, 44 lines | differs, 42 lines | differs, 47 lines | 15 source files; 2 differ |
 | `Ansible/` | — | — | — | — (has `update-docs` only, which stays put) |
+| `Architecture/` | differs, 20 lines | differs, 18 lines | differs, 16 lines | 15 source files; **identical to aiworkflow's** |
 
 - **`aiworkflow/`** — this repo's own resident copy: `code_health` in its fullest form (15 source
   files, incl. the `cognitive/` TypeScript sidecar). The closest thing to an original, and the
@@ -38,6 +39,13 @@ parked:
   10-file variant. Swept in full 2026-07-30 (the P9 onboarding): `quality-issue-finder` and
   `refactor-audit` were refreshed past the 07-16 measurement (KubeCoder's `6347fb3`, 07-25);
   `quality-improver` was still byte-identical.
+- **`Architecture/`** — the three commands, `code_health`, and the one `.codehealthignore` in the
+  archive. Swept 2026-09-04. Its `code_health` is **byte-identical to `aiworkflow/`'s**, which is
+  the first confirmation that the 15-file form is a real baseline and not just this repo's own
+  variant; the divergence is entirely in the three commands, and their row is measured against
+  `KubeCoder/`'s copies rather than the 07-16 baseline. The `.codehealthignore` is kept because it
+  is the only record of how a project actually *scoped* the grader — which trees counted as
+  application code and which were tooling — and that scoping question outlived the tool.
 - **`<project>/`** — added by `/dev:onboard` as each project is swept.
 
 `refactor-audit` travels with the tool: it is the **only** consumer of `code_health` (`uv run python
