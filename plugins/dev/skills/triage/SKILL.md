@@ -317,16 +317,23 @@ Separate what shouldn't become a slice, and confirm the separation with the oper
 - **Solution Known** — a senior dev could deliver quality work from the card alone, and it
   passes the litmus in step 8 → write the acceptance criteria into the card, per step 8. These
   skip filing (step 7) and planning both: step 8 batches them straight into a run-ready slice.
-  A surviving **user-visible nit pick** is the archetypal candidate — decided change, plain
-  impact — check those against the litmus first; a card that arrives already marked from an
-  earlier session is re-checked there too. **Suggest the near misses as well:** a card that
-  fails the litmus on one open point the operator can settle from memory — which of two names,
-  whether the old flag stays, the exact message — is put to them in this same confirmation with
-  the point named: rule it and the card passes. The answer goes on the card as a ruling (a
-  comment, and into the criteria) and the card takes the mark; unanswered, it goes the normal
-  route. A point only the code can settle is not a near miss. An item with an unresolved
-  `Collides:` line (step 2) is on no decided route — not this one, not a "needs no decision"
-  grouping — until the operator has ruled on the record.
+  **Every surviving card is run through the litmus here, and the confirmation reports each
+  verdict** — qualifies; a near miss on one named point; the normal route, with the one thing
+  the card leaves open — so the operator sees what was considered and overrules a verdict in
+  the same message. The verdict turns on the card's text alone: a card without an
+  `## Acceptance criteria` section is not thereby disqualified — the criteria are what this
+  step writes, and a card that is already fully specified qualifies without them. A session
+  that routed fully specified cards the normal route because they carried no criteria, and
+  proposed the mark for none, is the miss this rule exists for. A surviving **user-visible nit
+  pick** is the archetypal candidate — decided change, plain impact; a card that arrives already
+  marked from an earlier session is re-checked there too. A **near miss** — a card that fails
+  on one open point the operator can settle from memory: which of two names, whether the old
+  flag stays, the exact message — is put to them with the point named: rule it and the card
+  passes. The answer goes on the card as a ruling (a comment, and into the criteria) and the
+  card takes the mark; unanswered, it goes the normal route. A point only the code can settle
+  is not a near miss. An item with an unresolved `Collides:` line (step 2) is on no decided
+  route — not this one, not a "needs no decision" grouping — until the operator has ruled on
+  the record.
 
 Group the rest **by subject, on the asks as written**. Favor larger groups — a slice plans into
 3–6 (max 10) project-local, independently testable, PR-sized tasks, and a group that would
@@ -384,8 +391,9 @@ written, and deliver quality work with no preparation*. That takes two things, b
 the card text: **what to change** is fully decided — no choice with consequences left to the
 implementer — and **the impact** is plain — what the change touches and what breaks if it goes
 wrong. Moderate size is fine; an open decision is not. Operationally: you can write the card's
-acceptance criteria — outcome-level, one or a few — from its text alone. You never open code
-here, so if the criteria would need grounding, the card goes the normal route.
+acceptance criteria — outcome-level, one or a few — from its text alone; that the card does not
+yet carry them is the normal state of a qualifying card, never a failure of the litmus. You
+never open code here, so if the criteria would need grounding, the card goes the normal route.
 
 Never label: concurrency or timing behaviour; storage-layout or wire-contract changes; a card
 that leaves anything open ("investigate", "decide", "confirm"); an ask that collides with a

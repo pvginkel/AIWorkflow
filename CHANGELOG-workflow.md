@@ -4,6 +4,18 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-04 — every surviving card meets the litmus, and the confirmation says so (v0.9.27)
+
+Trello #835, on the operator's correction of 0.9.24's reading of it. The session was not
+proposing Solution Known for cards that were already fully specified: they carried no
+`## Acceptance criteria` section, and that absence read as a failure of the litmus when the
+criteria are what triage writes. Now every card that survives adjudication is run through the
+litmus in step 6 and the confirmation reports each verdict — qualifies, a near miss on one named
+point the operator can settle from memory, or the normal route with the one thing the card
+leaves open — so the operator sees what was considered and overrules in the same message. A card
+without criteria is not thereby disqualified; a fully specified one qualifies and gets its
+criteria written. `triage` § 6 and § 8.
+
 ## 2026-09-04 — a nudge the harness swallows is sent once more (v0.9.26)
 
 Trello #816 and #809's second point, read against the transcripts of slice 198 P6 and slice
