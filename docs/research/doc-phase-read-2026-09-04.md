@@ -79,10 +79,27 @@ $9.32, matches the full 26's $8.89, so they are a fair output sample.
 | new, second rounds only | — | — | — | median 18.41 | **0.69** |
 | corpus (8) | 3 · 7 · 10 · 10 · **11** · 14 · 22 · 55 | median 167 | 14.0 | median 9.32 | **0.85** |
 
-7. **This is 2.8x the pages at 2.1x the cost, not the same pages at 2x.** 29 files against 10.5,
-   524 changed lines against 167. Per file committed the doc phase is *cheaper* than it was —
-   $0.80, or $0.69 counting only the rounds that finished, against $0.85. The reworked phase is
-   not a more expensive way to do the old job; it is a bigger job.
+7. **This is 2.8x the pages at 2.1x the cost — and most of the 2.8x is slice size.** 29 files
+   against 10.5, 524 changed lines against 167 — but the seven new slices are bigger: 6 phases
+   median against the sample's 3.5 (`state.json`'s phase count). Normalised per phase of shipped
+   work, the doc phase touches the *same* number of files — 4.9 against 4.7 — and writes 60 %
+   more lines, 107 against 67, which is finding 8's 20-against-14 lines per file. Per file the
+   phase is cheaper than it was ($0.63–0.80 against $0.85); per phase of shipped work it costs
+   15–25 % more — $3.4 counting only the rounds that finished, $3.8 with the two dead rounds,
+   against ≈ $3.0 for the old writer with its surveys — and delivers 60 % more doc lines. The
+   reworked phase is not a more expensive way to do the old job, and not a much bigger job
+   either: it is the same pages, edited deeper, on bigger slices.
+
+   | per phase of shipped work | corpus sample (8) | new (7) |
+   |---|--:|--:|
+   | phases per slice (median) | 3.5 | 6 |
+   | files touched | 4.7 | 4.9 |
+   | lines changed | 67 | 107 |
+   | doc-phase $ | ≈ 3.0 | 3.4 finished rounds / 3.8 all |
+   | doc scopes touched, per slice | 4.5 | 6 |
+
+   The non-doc-tree files in both eras are a handful of doc-comments in source (212: five; 202,
+   200, 168: one or two) — no generated artifacts inflate the counts.
 8. **The extra volume is not churn.** Lines changed per file is 20.1 against 14.0 — the new
    commits touch more pages *and* change more of each. The scopes are real: 199's 29 files span
    six subprojects' `docs/` trees, 201's 39 span five plus the manual.
@@ -217,7 +234,7 @@ From each slice's `log.txt` and the two dead sessions' transcripts.
 
 | criterion | verdict |
 |---|---|
-| doc-phase $ and share of slice | **Missed on the absolute.** $18.41 median against $8.89, 23.9 % of the slice against 16.1 %. The plan's honest expectation was −25–35 %; the outturn is +110 %. |
+| doc-phase $ and share of slice | **Missed on the absolute.** $18.41 median against $8.89, 23.9 % of the slice against 16.1 %; per phase of shipped work +15–25 %, for 60 % more doc lines (finding 7). The plan's honest expectation was −25–35 %; the outturn is +110 % absolute. |
 | coordinator `ctx_max` < 150 k | **Missed, 1 of 7** (208 only). Median 207.7 k against the corpus's 196.0 k — unchanged. `ctx_fe` *is* down 18 k, so orientation is bounded; the tail is not. |
 | units' turns and $ vs the 8–10-turn break-even | **Met, and the test turns out not to bind.** Every unit runs 23–60 turns for 3–11 pages, three-to-six times the break-even — yet costs $1.15–3.43, not $0.35–0.60. A unit is a second writer, not a chunk. |
 | the Explore carry gone (overlap ≈ 0) | **Met.** Every survey report lands before the coordinator's first edit, in all seven sessions that reached `units.json`. Nothing re-derived, nothing carried. |
@@ -231,8 +248,9 @@ From each slice's `log.txt` and the two dead sessions' transcripts.
 
 **Keep the rework, with one named change: bound the survey stage.** The headline number is a
 doubling, but the denominator moved further — 2.8x the pages committed at 2.1x the cost, so the
-doc phase is now *cheaper per page* than the one it replaced ($0.69–0.80 against $0.85) while
-buying the cross-scope reconcile that no single session was doing, with no loss of grounding on
+doc phase is now *cheaper per page* than the one it replaced ($0.69–0.80 against $0.85) and
+about 20 % dearer per phase of shipped work, for 60 % more doc lines, while buying the
+cross-scope reconcile that no single session was doing, with no loss of grounding on
 any of § 8's four quality probes; roll-back would give up the reconcile and the recovered Explore
 spend to save a phase that is not, per page, more expensive. The one place the evidence points at
 waste inside the phase is the survey fan-out: it grew from the corpus's 1–2 Explore agents at
