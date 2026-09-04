@@ -117,3 +117,14 @@ past the writer's first edit, at 15–21 % of the session. So a role that delega
 with nothing else in flight; the doc-writer's contract says so in its own words (it yields
 twice — for its survey, then for its units), and the plan-writer/plan-reviewer overlap (17–18 %)
 is the same pattern, not yet addressed.
+
+The wait has one race, the harness's, not the role's. A completion that lands while the session
+is mid-turn is queued for its next turn, but the engine counts it delivered; a session that then
+ends that turn to wait for the very task that has already finished ends the send, and the queued
+report dies with the process — slice 198 P6's registry push, slice 201's fourth survey (its
+report finished 13 seconds before the coordinator's last turn ended). The first prompt into such
+a session is consumed by the harness's stopped-task bookkeeping and never reaches the model, so
+the driver sends a nudge answered with that synthetic no-op once more
+([run-loop.md](run-loop.md) § Protocol invariants); the engine-side fix is KubeCoder's (Triage
+#840). Nothing here changes what a role does: it ends the turn with nothing else in flight, and
+when a resume brings one report of several, it ends the turn again.

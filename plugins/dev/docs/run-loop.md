@@ -271,7 +271,12 @@ the commit nudge for a dirty tree — and a verdict on disk after either counts:
 ended without one routinely writes it while committing on the commit nudge (slice 198 P6
 committed its code, its done-record and a valid verdict there; the driver's earlier `blocked`
 ruling stood, bailed the run, and `--resume` spent a fresh executor round on finished work).
-Only after both nudges does a missing verdict count `blocked`, and a tree still dirty bails. A session killed by the account's session-limit window is not an
-agent outcome: the driver waits out the stated reset and redispatches the same round — nothing
-counted. The driver asserts its agent definitions resolve before dispatching anything
-(`kc session create-headless --agent` does not validate names).
+Only after both nudges does a missing verdict count `blocked`, and a tree still dirty bails. A
+nudge whose answer is the harness's synthetic no-op — no response, or "No response requested." —
+never reached the model: the session's last turn ended with a background task whose completion
+had landed mid-turn, and the first resume after that is the harness's stopped-task bookkeeping
+([agent-dispatch.md](agent-dispatch.md) § Nested delegation). That nudge is sent once more. A
+session killed by the account's session-limit window is not an agent outcome: the driver waits
+out the stated reset and redispatches the same round — nothing counted. The driver asserts its
+agent definitions resolve before dispatching anything (`kc session create-headless --agent` does
+not validate names).

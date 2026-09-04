@@ -322,6 +322,17 @@ def session_limit_notice(result) -> str | None:
     return text.strip() if SESSION_LIMIT_RE.search(text) else None
 
 
+def swallowed_nudge(result) -> bool:
+    """Whether a resume send came back as the CLI's stopped-task bookkeeping
+    instead of a model turn. A background task or sub-agent whose completion
+    landed mid-turn dies with the session's process, and the first send that
+    resumes the session is spent clearing it ("Continue from where you left
+    off." → "No response requested.", or no assistant turn at all) — so the
+    prompt never reached the model and has to be sent again."""
+    text = (getattr(result, "result_text", "") or "").strip()
+    return text in ("", "No response requested.")
+
+
 def parse_session_limit_reset(text: str,
                               now: datetime | None = None) -> datetime | None:
     """The moment the limit window reopens, from the notice's stated reset
@@ -2180,17 +2191,28 @@ class RunLoop:
         """One resume-shot at a session that missed part of its protocol.
         Failures fall through to the caller's re-check; a nudge never
         raises. `role` is the resumed session's, so the resume carries the
-        same spawn flags (a differing prefix would miss the cache)."""
+        same spawn flags (a differing prefix would miss the cache).
+
+        A send the harness swallows for its stopped-task recovery
+        (`swallowed_nudge`) never reached the model, so the same prompt goes
+        in once more — exactly one retry, whatever that one comes back
+        with."""
         self.log(f"{label} nudging the session (resume)")
-        try:
-            run_kc_session(
-                prompt=prompt, cwd=str(cwd), timeout=NUDGE_TIMEOUT,
-                resume_session=session_id, extra_env=SPAWN_ENV,
-                flags=spawn_flags(role),
-                progress=lambda line: self._emit(f"    {label} {line}"),
-            )
-        except subprocess.TimeoutExpired:
-            self.log(f"{label} nudge timed out")
+        for attempt in (1, 2):
+            try:
+                _, result = run_kc_session(
+                    prompt=prompt, cwd=str(cwd), timeout=NUDGE_TIMEOUT,
+                    resume_session=session_id, extra_env=SPAWN_ENV,
+                    flags=spawn_flags(role),
+                    progress=lambda line: self._emit(f"    {label} {line}"),
+                )
+            except subprocess.TimeoutExpired:
+                self.log(f"{label} nudge timed out")
+                return
+            if attempt == 2 or not swallowed_nudge(result):
+                return
+            self.log(f"{label} nudge swallowed by the harness's stopped-task "
+                     "recovery — sending it once more")
 
     def _ensure_committed(self, phase_id: str | None, role: str,
                           session_id: str | None, root: Path,

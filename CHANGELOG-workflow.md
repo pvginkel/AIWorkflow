@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-04 — a nudge the harness swallows is sent once more (v0.9.26)
+
+Trello #816 and #809's second point, read against the transcripts of slice 198 P6 and slice
+201's doc-writer r1. Ending a headless turn with background work in flight is a wait, as the
+env preamble says — the root gate's completion re-invoked 198 P6 with content, three of 201's
+four surveys re-invoked the coordinator — but KubeCoder's headless engine counts a completion
+delivered when its notification arrives, and one that arrives while the model is mid-turn is
+only queued for the next turn. A session that then ends that turn to wait for the task that has
+already finished (198's registry push; 201's fourth survey, done 13 seconds earlier) ends the
+send, and the queued report dies with the process. The first prompt into such a session — the
+driver's nudge — is consumed by the CLI's stopped-task bookkeeping ("Continue from where you
+left off." → "No response requested.", or no assistant turn at all) and never reaches the
+model; a second send does, which is why 198's commit nudge worked and 201's lone verdict nudge
+bailed the phase `blocked`. The driver now reads a nudge's answer and, when it is that synthetic
+no-op, sends the same prompt once more; one retry, then the usual re-check. The engine defect is
+KubeCoder #840; the roles' contracts are unchanged — the race is not theirs to see. (201's P3
+was an API `529 Overloaded` before its first tool call, not a dispatch defect.)
+`agent-dispatch.md` § Nested delegation, `run-loop.md` § Protocol invariants.
+
 ## 2026-09-04 — a verdict written on the commit nudge counts (v0.9.25)
 
 Trello #809. Slice 198 P6's code-writer ended its turn without a verdict; the verdict nudge got

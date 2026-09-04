@@ -244,8 +244,9 @@ class SpawningLoop(ScriptedLoop):
     """ScriptedLoop with the REAL _spawn — `run_kc_session` is faked instead,
     so everything inside _spawn (verdict reading, nudges, the session-limit
     wait) is exercised. A script step is the usual (role, verdict dict), or
-    (role, text) for a session that produced only that text and no
-    verdict."""
+    (role, text) for a session that produced only that text and no verdict.
+    A nudge consumes a step of its own; answer it with SWALLOWED (or "") for
+    a send the harness ate for its stopped-task recovery."""
 
     def __init__(self, slice_dir, script, **kw):
         super().__init__(slice_dir, script, **kw)
@@ -291,7 +292,9 @@ class SpawningLoop(ScriptedLoop):
             returncode = 1
         else:
             verdict_path.write_text(json.dumps(payload))
-            result.result_text = payload.get("summary", "")
+            # A real turn always answers with something; an empty response is
+            # the harness's no-op, so the default here is never empty.
+            result.result_text = payload.get("summary") or "verdict written"
             returncode = 0
         # The effect runs either way: what a session left on disk is as much
         # a fact about one that wrote no verdict as about one that did.
@@ -303,6 +306,8 @@ class SpawningLoop(ScriptedLoop):
 SESSION_LIMIT_TEXT = ("You've hit your session limit · resets 10:10pm "
                       "(Europe/Amsterdam)")
 TIMED_OUT = object()   # a script step whose session never returns
+# The CLI's stopped-task recovery answering a resume in the model's place.
+SWALLOWED = "No response requested."
 
 
 def timed_out_after(verdict):
@@ -3520,6 +3525,88 @@ def test_missing_verdict_gets_one_nudge_then_counts_blocked():
         bail = json.loads((slice_dir / "bailout.json").read_text())
         assert bail["reason"] == "blocked"
         assert "missing/unparseable" in bail["details"]
+
+
+def test_swallowed_verdict_nudge_is_sent_once_more():
+    """#816: a send that resumes a session whose background task or sub-agent
+    completed mid-turn is eaten by the CLI's stopped-task recovery — the
+    nudge never reaches the model, which answers "No response requested.".
+    The driver recognizes the no-op and sends the same prompt once more; that
+    one lands, and the round counts on the verdict it wrote."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            ("code-writer", "did the work, forgot the verdict"),
+            ("code-writer", SWALLOWED),
+            ("code-writer", {"outcome": "done", "summary": "verdict written"}),
+            V["review_signoff"], *TAIL,
+        ]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert not r.script
+        assert not (slice_dir / "bailout.json").exists()
+        writer_prompts = [p for role, p in r.session_prompts
+                          if role == "code-writer"]
+        assert len(writer_prompts) == 3, "the round, then the nudge twice"
+        assert writer_prompts[1].startswith("Your session ended without")
+        assert writer_prompts[2] == writer_prompts[1], "the same prompt again"
+        state = load_state(slice_dir)
+        outcomes = [(h["role"], h["outcome"]) for h in state["history"]]
+        assert ("code-writer", "done") in outcomes
+        assert ("code-writer", "blocked") not in outcomes
+        assert state["phases"]["1"]["status"] == "merged"
+        assert "nudge swallowed by the harness's stopped-task recovery" in (
+            slice_dir / "log.txt").read_text()
+
+
+def test_a_nudge_answered_with_no_turn_at_all_is_sent_once_more():
+    """Slice 201's shape of the same defect: the swallowed resume produced no
+    assistant turn at all, so the response is empty rather than the recovery's
+    stock sentence. Empty is the same signal."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            ("code-writer", "did the work, forgot the verdict"),
+            ("code-writer", ""),
+            ("code-writer", {"outcome": "done", "summary": "verdict written"}),
+            V["review_signoff"], *TAIL,
+        ]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert not r.script
+        assert not (slice_dir / "bailout.json").exists()
+        assert len([p for role, p in r.session_prompts
+                    if role == "code-writer"]) == 3
+        assert ("code-writer", "done") in [
+            (h["role"], h["outcome"])
+            for h in load_state(slice_dir)["history"]]
+
+
+def test_a_nudge_swallowed_twice_is_not_sent_a_third_time():
+    """Exactly one retry: a second no-op is taken at face value and the round
+    is the protocol failure it was before the retry existed."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            ("code-writer", "did the work, forgot the verdict"),
+            ("code-writer", SWALLOWED),
+            ("code-writer", SWALLOWED),
+        ]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 3
+        assert not r.script
+        writer_prompts = [p for role, p in r.session_prompts
+                          if role == "code-writer"]
+        assert len(writer_prompts) == 3, "the round, then the nudge twice"
+        assert writer_prompts[2] == writer_prompts[1]
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "blocked"
+        assert "missing/unparseable" in bail["details"]
+        log = (slice_dir / "log.txt").read_text()
+        assert log.count("sending it once more") == 1
 
 
 def test_verdict_written_on_the_commit_nudge_is_salvaged():
