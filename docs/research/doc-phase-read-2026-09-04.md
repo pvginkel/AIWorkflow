@@ -9,7 +9,10 @@ four doc phases"; seven have run, so all seven are here.
 we've run a few slices that are more representative" — six of the seven are 5–8-phase slices
 against the corpus's 3.5 median, and § 2's per-phase normalisation is what the decision turns
 on. Re-read on the next few representative slices, appending here: the tool run above plus the
-per-phase table of finding 7. Nothing in the doc phase changes meanwhile.
+per-phase table of finding 7. Nothing in the doc phase changes meanwhile. **§ 5 (2026-09-05) re-reads the
+seven plus 197 and 209 on the operator's measure — the doc phase as a share of the round-1
+writer — and corrects finding 7: at matched size the phase costs about twice what it did, not
+15–25 % more.**
 
 **Corpus.** Seven KubeCoder slices completed on plugin 0.9.20/0.9.22 — 198, 199, 200, 201, 202,
 208, 212 — nine doc-writer sessions (200 and 201 each ran a first round that died; § 4). The
@@ -18,7 +21,8 @@ fixes. Before-side: the tool's built-in corpus, the 26 single-stage doc phases o
 
 Every number regenerates from `t4_readout.py writers --role doc-writer --new <the seven dirs>`,
 `slice_cost.py <slice_dir>` (all seven and all 26 corpus slices), `close_out.py list`, and
-`git show --stat` in `/work/KubeCoder` on each doc-phase commit.
+`git show --stat` in `/work/KubeCoder` on each doc-phase commit. § 5's ratios regenerate from
+`docs/research/tools/doc_ratio_readout.py`.
 
 ## 1. Cost
 
@@ -291,3 +295,130 @@ seven-promoted reconciliation across both scopes, 202's five-to-seven validator 
 re-derived 55/44/11, 212's D240 gate enumeration. Counted inventories were whole-slice work
 before; under the split they are the coordinator's residue, and they are named in five of seven
 verdicts.
+
+## 5. Re-read against the round-1 writer (2026-09-05)
+
+The operator's measure, after § 1–2 left both the pages and the dollars rising with slice size:
+**the doc phase as a percentage of the slice's round-1 code-writer spend** — every phase's first
+writer session with its sub-agents, no gate-fix or review-fix rounds, no reviewer, no consult. A
+slice whose two phases cost 100 k and 200 k tokens and whose doc phase cost 150 k reads 50 %. The
+base scales with the shipped work in the same currency as the numerator, so the ratio is free of
+phase count and of phase size, and — as long as the writer itself has not moved — of era. The
+tool is `docs/research/tools/doc_ratio_readout.py`; it prices both sides with `slice_cost.py`, and
+its `--first-delivery` flag widens the base to a round ≥2 that resumed its own question/blocked
+round (198's P6).
+
+**Corpus.** Three groups, KubeCoderSpecs only. *corpus* — the 26 slices of § 1, 144–170. *late* —
+171–196, twenty-two single-stage doc phases on 0.9.7–0.9.13: the T3/T4 writer and the § 3 digest,
+so the closest before-side to today's writer. *new* — the two-stage phase on 0.9.20/0.9.22: § 1's
+seven plus **197 and 209**, which completed after that read (209's doc phase died twice to the
+engine race, § 4, before its third round landed).
+
+| group | n | phases | base $ / phase | doc $ / phase | **doc / base, $** | tokens | surviving round only | quartiles, $ |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| corpus (144–170) | 26 | 5 | 3.74 | 3.03 | **68 %** | 72 % | 68 % | 52 / 68 / 92 |
+| — 2–4 phases | 9 | 3 | 4.82 | 3.34 | 75 % | 75 % | 75 % | 59 / 75 / 106 |
+| — 5+ phases | 14 | 6 | 2.86 | 1.76 | **66 %** | 66 % | 66 % | 51 / 66 / 76 |
+| late (171–196) | 22 | 6 | 3.15 | 2.39 | **73 %** | 89 % | 73 % | 59 / 73 / 120 |
+| — 2–4 phases | 9 | 3 | 2.76 | 2.48 | 120 % | 148 % | 120 % | 80 / 120 / 152 |
+| — 5+ phases | 12 | 7 | 3.57 | 2.19 | **64 %** | 77 % | 64 % | 46 / 64 / 75 |
+| new (0.9.20+) | 9 | 6 | 2.89 | 3.92 | **128 %** | 130 % | 117 % | 108 / 128 / 186 |
+| — 5+ phases | 7 | 6 | 2.89 | 3.92 | **128 %** | 130 % | 117 % | 111 / 128 / 148 |
+| pooled, Σ doc / Σ base | | | | | corpus 63 % · late 56 % · **new 134 %** (118 % surviving rounds) | | | |
+
+The nine new slices, strict round-1 base:
+
+| slice | phases | base $ | doc $ | dead rounds | **doc / base** | tokens | surviving round |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| 197 | 4 | 9.40 | 32.17 | 0 | **342 %** | 553 % | 342 % (finding 19: 114 % without the spin) |
+| 198 | 6 | 28.01 | 17.82 | 0 | **64 %** | 72 % | 64 % |
+| 199 | 6 | 11.97 | 17.68 | 0 | **148 %** | 167 % | 148 % |
+| 200 | 6 | 28.14 | 31.29 | 1 | **111 %** | 117 % | 75 % |
+| 201 | 8 | 23.13 | 31.33 | 1 | **135 %** | 130 % | 117 % |
+| 202 | 5 | 20.82 | 23.94 | 0 | **115 %** | 112 % | 115 % |
+| 208 | 1 | 3.61 | 3.76 | 0 | **104 %** | 102 % | 104 % |
+| 209 | 6 | 11.06 | 24.75 | 2 | **224 %** | 217 % | 147 % |
+| 212 | 7 | 14.41 | 18.42 | 0 | **128 %** | 154 % | 128 % |
+
+16. **The ratio doubles, and it separates the eras where § 2's per-phase line could not.** Median
+    68 % (corpus) and 73 % (late) against 128 % new; on the 5+-phase band the operator asked to
+    wait for, 66 % and 64 % against 128 % (117 % counting only the round that landed). The
+    before-era interquartile range on that band is 46–76 %; the new era's is 111–148 %. Two of
+    the 26 before-era 5+-phase slices sit above 100 % (158 at 110 %, 185 at 105 %); six of the
+    seven new ones do, 198 the exception at 64 %. Tokens tell the same story (66–77 % → 130 %);
+    the token ratio runs a little above the dollar ratio in the late and new groups because
+    cache reads — the coordinator's long tail — weigh more in tokens than in money.
+17. **The base did not move at matched size, so the rise is the doc phase's.** Round-1 writer
+    spend per phase on 5+-phase slices is $2.86 (corpus), $3.57 (late), $2.89 (new). Over *all*
+    sizes the writer did get cheaper (3.74 → 2.89 per phase, the T3/T4 work on small phases), which
+    is why the all-size ratios (68 → 128 %) should be read only beside the band split; on the
+    band the ratio and the raw per-phase figure agree — the doc phase went from $1.76–2.19 per
+    phase of shipped work to $3.92, about **2x**. `--first-delivery` moves the new band to 116 %
+    and leaves the before-era bands where they were.
+18. **Finding 7 was wrong about the size of the rise, and this is why.** Its before-figure, "≈ $3.0
+    per phase for the old writer", came from the 8-slice output sample at 3.5 phases median. The
+    doc phase has a floor — one-phase slices cost $2.65–9.65 (156, 163, 166, 196, and 208 on the
+    new phase) — so a small-slice sample carries a high per-phase cost, and the 2–4-phase bands
+    above show it (75 % and 120 % against 66 % and 64 %). Compared at matched size the old phase
+    is $1.76–2.19 per phase and the new one $3.92: not the +15–25 % finding 7 reported and the
+    recommendation repeated as "about 20 % dearer per phase of shipped work", but about twice.
+    The per-file figure ($0.80 against $0.85) came from the same sample; finding 21 re-reads it.
+19. **197 is a fourth waiting failure, and it costs more than the three engine-race deaths
+    together.** Its coordinator ran 388 turns in 21 minutes; 354 of them are a no-op `Bash`
+    call — `echo waiting` once, then `true` 353 times, every two to four seconds from 18:01:39 to
+    18:16:02 — each with a line of text like *"Ending the turn until they report"*, *"I'll stop
+    and wait for the survey agents to report"*, *"Waiting."*. The model wrote that it was ending
+    the turn and paired the sentence with a tool call every time; a tool call always brings the
+    model back, so the turn never ended. Each return re-read a 64–207 k context at cache-read
+    price: **$21.49 and 40.7 M tokens** of 197's $32.17 doc phase. Without the spin 197 reads
+    $10.68 — 114 %, in line with its band. The trait is 197's alone: over the 256 recorded
+    sessions of slices 190–212, the only other sessions with three or more such turns are
+    test-agents (4–34 turns, Sonnet, ≤ $1.46) and 200's dead round (3). The doc-writer's contract
+    is the only one whose core step is "stop with sub-agents in flight", and the model has now
+    failed that step both ways: killed while waiting correctly (§ 4, and 209 twice more) and
+    unable to wait at all.
+20. **Waiting gone wrong is 22 % of the new era's doc spend.** The dead rounds — 200 $10.25, 201
+    $4.36, 209 $8.50 (two rounds, four surveys each, nothing packaged) — are $23.11, and 197's
+    spin another $21.49: **$44.60 of $201.16**. Take all of it out and the pooled ratio is still
+    **104 %** against 63 % (corpus) and 56 % (late): the design costs 1.7–1.9x the old phase per
+    unit of shipped work *before* anything goes wrong, and the wait step is where a further
+    quarter is lost when it does.
+21. **Per file and per line, at matched size, the new phase is dearer too.** Every doc-phase
+    landing commit of the 26 before-era 5+-phase slices and the nine new ones, resolved from the
+    doc-writer transcripts' own `git commit` output and stat'd in `/work/KubeCoder` (a rebased
+    branch's sha matched by subject; 164, 173, 181, 189 and 200 landed two or three commits,
+    summed). Medians per band:
+
+    | 5+-phase slices | n | files | lines ± | files / phase | lines / phase | doc $ / phase | **$ / file** | **$ / 100 lines** |
+    |---|--:|--:|--:|--:|--:|--:|--:|--:|
+    | corpus (144–170) | 14 | 13.5 | 136 | 2.4 | 24 | 1.76 | 0.65 | 6.90 |
+    | late (171–196) | 12 | 29 | 342 | 4.1 | 51 | 2.19 | **0.52** | **3.37** |
+    | new (0.9.20+) | 7 | 29 | 524 | 4.8 | 66 | 3.92 | **0.80** | **4.87** |
+    | pooled, before 5+ → new (all nine) | | | | 3.9 → 4.4 | 70 → 76 | | 0.58 → 0.93 (0.72 without finding 20's $44.60) | 3.28 → 5.39 (4.20) |
+
+    Against the late group — the same writer, the § 3 digest, the nearest doc-writer prompt — the
+    new phase touches 17 % more files and writes 29 % more lines per phase for 79 % more money:
+    **+54 % per file, +45 % per 100 lines**. Against the corpus it is +23 % per file and −29 %
+    per line, because the corpus-era phase wrote half the lines per phase the late one did (24
+    against 51) at nearly the same cost; the late group is the comparison that isolates the
+    rework. § 2's "cheaper per page" ($0.80 against $0.85) compared the new phase with the
+    8-slice small-slice sample, where the floor of finding 18 inflates the per-file price; on
+    matched sizes no before-era band is above $0.65 a file. 197 ($2.30 a file, the spin) and 209
+    ($1.38, 18 files after two dead rounds) are the new era's outliers; 199 ($0.61) and 198
+    ($0.69) its best, both inside the before-era range.
+
+**Recommendation, revised.** The 09-04 recommendation rested on three legs: cheaper per page,
+about 20 % dearer per phase of shipped work, and the reconcile pass. The first two were the
+8-slice sample's artefact. On the operator's measure the doc phase went from **two-thirds of the
+round-1 writer to about 1.3x** (finding 16); per phase of shipped work it costs **about twice**
+(17, 18); per file and per line **about 1.5x** the phase it replaced (21); and a further **22 %
+of its spend went to waiting gone wrong** (19, 20) — 104 % of the writer even with all of that
+removed. The reconcile pass (finding 10, 7 of 7) and the grounding probes (11, 12) stand: the
+extra money bought a cross-scope pass and 30 % more lines, and no loss of precision. What it did
+not buy is a cheaper or faster phase, and the design's one new step — a coordinator that stops
+with sub-agents in flight — is the step that has failed on four of nine slices. If the reconcile
+is worth a doc phase at 1.3x the writer, keep it and close the wait: one dispatch turn for the
+whole fan-out, the survey cap, and a line in `doc-writer.md` that ending the turn means a reply
+with no tool call — a no-op command is a spin, not a wait (197's $21.49). If it is not, the
+single-stage phase of 0.9.13 — 64 % of the writer at $0.52 a file — is the cheapest doc phase
+the pipeline has run. The verdict stays the operator's; nothing changes here meanwhile.
