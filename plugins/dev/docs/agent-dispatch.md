@@ -92,14 +92,14 @@ Every agent — including one a script spawned — can dispatch sub-agents of it
 rule: **delegate the reading, keep the judgment.** Mechanical, independent, per-item work —
 hunting the evidence for one verification item, surveying one axis of a subsystem, a rebase, a
 red-suite repair — goes to a sub-agent that returns conclusions. Every verdict, severity call,
-and write-back stays with the dispatching agent. Two *writes* are delegated. The doc phase's:
-the doc-writer coordinator packages a slice's doc work into `units.json` and a `dev:doc-unit`
-sub-agent authors each package's pages — the pages are independent per doc scope, and the writes
-that need the whole picture (indexes, decision ids, cross-scope consistency, the commit, the
-verdict) stay with the coordinator ([run-loop.md](run-loop.md) § Doc phase). And the
-interview's: the plan-slice session hands its grounded material to the `dev:refinement-writer`,
-which writes `refinement.md` for the operator and returns a receipt; the grounding, the rulings
-and the plan stay with the session ([refinement.md](refinement.md)).
+and write-back stays with the dispatching agent. The one delegated *write* is the interview's:
+the plan-slice session hands its grounded material to the `dev:refinement-writer`, which writes
+`refinement.md` for the operator and returns a receipt; the grounding, the rulings and the plan
+stay with the session ([refinement.md](refinement.md)). The doc phase's pages are not delegated:
+a per-scope authoring sub-agent was built (0.9.14) and read on nine slices — about twice the cost
+per phase of shipped work, a fresh session re-orienting on every hand-over brief — and reverted
+(`docs/research/doc-phase-read-2026-09-04.md` § 5–6); the doc-writer surveys through sub-agents
+and writes every page itself.
 
 Sub-agents hand back **receipts and conclusions, never evidence**: evidence handed upward sits in
 the caller's context for the rest of its session, which is exactly the cost the delegation exists
@@ -114,15 +114,21 @@ and carries on does the delegated work itself meanwhile and then pays to carry a
 longer needs: in the doc-writer sessions read for the doc-phase rework
 (`docs/research/doc-phase-plan.md` § 1), every survey report landed 18–49 turns after dispatch,
 past the writer's first edit, at 15–21 % of the session. So a role that delegates ends the turn
-with nothing else in flight; the doc-writer's contract says so in its own words (it yields
-twice — for its survey, then for its units), and the plan-writer/plan-reviewer overlap (17–18 %)
-is the same pattern, not yet addressed.
+with nothing else in flight; the doc-writer's contract says so in its own words, and the
+plan-writer/plan-reviewer overlap (17–18 %) is the same pattern, not yet addressed.
+
+**Ending the turn is a reply with no tool call.** A no-op command — `true`, `echo waiting` — is
+a spin, not a wait: every tool call re-invokes the model, and each return re-reads the whole
+context at cache-read price. Slice 197's doc-writer wrote "ending the turn until they report"
+354 times, each beside a `true`, and never ended it — $21.49 of a $32.17 phase
+(`docs/research/doc-phase-read-2026-09-04.md` § 5, finding 19). A role that has dispatched and
+has nothing else to do replies in prose and stops.
 
 The wait has one race, the harness's, not the role's. A completion that lands while the session
 is mid-turn is queued for its next turn, but the engine counts it delivered; a session that then
 ends that turn to wait for the very task that has already finished ends the send, and the queued
 report dies with the process — slice 198 P6's registry push, slice 201's fourth survey (its
-report finished 13 seconds before the coordinator's last turn ended). The first prompt into such
+report finished 13 seconds before the doc-writer's last turn ended). The first prompt into such
 a session is consumed by the harness's stopped-task bookkeeping and never reaches the model. The
 driver reads that no-op: a session that also owes its verdict is resumed with a recovery prompt
 in place of the nudge it lost — the report is gone but the sub-agent's transcript is saved, and

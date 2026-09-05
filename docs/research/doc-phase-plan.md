@@ -62,6 +62,11 @@ costs ≈ $0.35–0.60 before it does any work, so it needs ≈ 3 pages of work 
   were read directly.) Two contract consequences for phase 2: the coordinator yields again until
   every unit has reported (the harness resumes on each completion), and briefs a survey for a
   list, never page contents.
+- **Phase 2 reverted as dev 0.9.29 (2026-09-05).** Read on nine slices against the round-1
+  code-writer's spend (`doc-phase-read-2026-09-04.md` § 5–6): about 2x per phase of shipped work
+  at matched size, ≈ 1.5x per file, 22 % of its spend lost to waiting — the wait step failed on
+  four of nine. The single writer keeps the reconcile as a named step, the unverified-claims
+  self-report and a two-agent survey cap; `doc-unit` and `units.json` are gone.
 - § 5 lists what neither phase does; § 7's last three items are KubeCoder rulings, not plugin
   work.
 

@@ -2969,7 +2969,6 @@ def test_doc_phase_prompt_states_diff_files_digest_verbs_and_doc():
         assert "**Done (P1).** Shipped the thing" in prompt
         assert "not the writer's" not in prompt
         assert "slice.md is not your input" in prompt
-        assert str(slice_dir / "doc_phase" / "units.json") in prompt
         # the close-out verbs' argument shapes, from the tool's own parser
         assert "close_out.py append --section {" in prompt
         assert "--consequence: what an operator or user experiences" in prompt
@@ -3081,65 +3080,6 @@ def test_a_merged_phase_without_a_landed_range_is_named_in_the_rows():
         assert "- P1: merged with no range on record" in prompt
         assert not [c for _, c in r.fake_git.calls if c[0] == "diff"]
         assert not list((slice_dir / "doc_phase").glob("*.diff"))
-
-
-def test_doc_phase_records_the_units_the_coordinator_packaged():
-    """`units.json` is the coordinator's durable work-package list; the
-    driver reduces it to the counts the readout wants (one row per unit:
-    id, pages) in state.json's doc_phase block — recorded, never enforced."""
-    def packages(loop):
-        (loop.slice_dir / "doc_phase" / "units.json").write_text(json.dumps({
-            "units": [
-                {"id": "controller-docs", "scope": "controller/docs/",
-                 "pages": ["controller/docs/a.md", "controller/docs/b.md (new)"],
-                 "changes": [], "recount": [], "off_limits": []},
-                {"id": "manual", "scope": "manual/", "pages": ["manual/x.md"]},
-            ]}))
-
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        script = [V["exec_done"], V["review_signoff"], V["consult_complete"],
-                  V["test_clean"], (*V["doc_done"], packages)]
-        r = ScriptedLoop(slice_dir, script, repo_root=repo)
-        assert run_to_exit(r) == 0
-        state = json.loads((slice_dir / "state.json").read_text())
-        assert state["doc_phase"]["units"] == [
-            {"id": "controller-docs", "pages": 2}, {"id": "manual", "pages": 1}]
-
-
-def test_doc_phase_without_units_json_records_none_and_runs_on():
-    """A coordinator that packaged nothing, or wrote a file that is not the
-    contract's shape, is a readout finding — the phase lands regardless."""
-    def malformed(loop):
-        (loop.slice_dir / "doc_phase" / "units.json").write_text("[1, 2]")
-
-    for effect in (None, malformed):
-        with tempfile.TemporaryDirectory() as tmp:
-            slice_dir, repo = make_slice(tmp)
-            doc_step = V["doc_done"] if effect is None else (*V["doc_done"], effect)
-            script = [V["exec_done"], V["review_signoff"], V["consult_complete"],
-                      V["test_clean"], doc_step]
-            r = ScriptedLoop(slice_dir, script, repo_root=repo)
-            assert run_to_exit(r) == 0
-            state = json.loads((slice_dir / "state.json").read_text())
-            assert state["doc_phase"]["units"] is None
-            assert state["doc_phase"]["stage"] == "done"
-
-
-def test_a_fresh_doc_branch_drops_a_stale_units_json():
-    """A units.json left by an earlier run reads as a resume to the
-    coordinator — and a fresh branch has none of that session's edits."""
-    def check_gone(loop):
-        assert not (loop.slice_dir / "doc_phase" / "units.json").exists()
-
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        (slice_dir / "doc_phase").mkdir()
-        (slice_dir / "doc_phase" / "units.json").write_text('{"units": []}')
-        script = [V["exec_done"], V["review_signoff"], V["consult_complete"],
-                  V["test_clean"], (*V["doc_done"], check_gone)]
-        r = ScriptedLoop(slice_dir, script, repo_root=repo)
-        assert run_to_exit(r) == 0
 
 
 def test_doc_phase_runs_on_branch_and_driver_lands_it():

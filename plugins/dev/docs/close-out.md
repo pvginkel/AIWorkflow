@@ -74,10 +74,9 @@ other slice-folder artifact).
   later phase resolved (the reason names the commit and what was re-run); anything else it has
   to say about an entry is a `note`. It edits nobody's text.
 - **test-agent** — below-bar findings; live-check events.
-- **doc-writer** — doc debt, its own and its `doc-unit` sub-agents' (a unit writes no entry;
-  what it could not verify reaches the report through its receipt to the coordinator); and,
-  **as its last act before a `done` verdict, the Summary and
-  every `Focus:` line** — it has the whole shipped diff in view. A Focus line ranks on the
+- **doc-writer** — doc debt, every claim it could not verify among it; and, **as its last act
+  before a `done` verdict, the Summary and every `Focus:` line** — it has the whole shipped diff
+  in view. A Focus line ranks on the
   entries' Consequence lines and evidence class (witnessed before read), never on their length,
   and says how many are witnessed. If the run ends before the doc
   phase, or the doc phase reports `blocked`/`question`, the operator reads the report raw.

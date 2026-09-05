@@ -4,6 +4,37 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-05 — the doc phase is one writer again; the reconcile, the unverified-claims report and the no-tool-call wait stay (v0.9.29)
+
+Triage #716, ruled on the re-read of nine slices (`docs/research/doc-phase-read-2026-09-04.md`
+§ 5–6). 0.9.14's two-stage phase — a coordinator packaging `units.json`, a `dev:doc-unit`
+sub-agent per doc scope, a reconcile after them — was measured against the round-1 code-writer
+spend of the same slices, the base that scales with the shipped work: on 5+-phase slices the
+single-stage phase of 0.9.13 ran at 64 % of the writer, the two-stage one at 128 % — about twice
+per phase of shipped work, $0.80 against $0.52 a file, 30 % more lines and no loss of precision —
+and 22 % of its spend went to waiting gone wrong: three rounds killed by the engine race
+(KubeCoder #840) with four surveys in flight, and slice 197's coordinator pairing "ending the turn
+until they report" with a no-op `true` 354 times — a tool call always brings the model back, so
+the turn never ended, $21.49 of a $32.17 phase. A unit is a fresh session working from a
+hand-over brief, and it re-orients on its own account whatever the brief says (≈ 4 turns a page
+against the single writer's 2.5). The operator: "we should revert the changes". The doc phase is
+the 0.9.13 single writer again — surveys delegated and yielded for, every page grounded and
+written by the one head with the whole diff in view — carrying three things the split taught: the
+reconcile is a named step before the gate (a count that spans scopes, a fact stated on several
+pages, the index rows — 7 of 7 two-stage phases used it); a claim left unverified is named in the
+verdict's summary as well as filed as doc debt; and the survey fan-out is capped at two `Explore`
+agents in one dispatch turn. And, once, in `agent-dispatch.md` § Delegate, then yield, where every
+dispatching role's rule lives: ending the turn is a reply with no tool call — a no-op command is a
+spin, not a wait. `agents/doc-unit.md` is deleted and `REQUIRED_AGENTS` loses it; the driver drops
+the `units.json` path from the dispatch, the stale-file unlink on a fresh doc branch and
+`doc_phase.units` from `state.json`; `run-loop.md`, `runner-state.md`, `agent-dispatch.md` and
+`close-out.md` lose the two-stage lines. 0.9.9's dispatch, 0.9.16's landed ranges and
+0.9.26/0.9.28's wait recovery stay as they are. Not levers, on the same read: a prose sub-agent in
+the doc phase (it never ran in one; ≈ $0 net against a $0.12 edit turn) and sequential hand-over
+stages (the unit was that measurement). The one open A/B is batched page reads — 264 of 278
+read-only turns read one thing — the operator's option. KubeCoder's `slice-doc-plan.md` § 2 loses
+the unit definition and keeps the doc-comment surface.
+
 ## 2026-09-04 — a session cut mid-wait is resumed to recover its report, and a bail resumes where it stopped (v0.9.28)
 
 Trello #843: slice 209's doc phase bailed `blocked` twice in the same shape. The coordinator had

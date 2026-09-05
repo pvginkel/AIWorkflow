@@ -73,7 +73,7 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   replay behind its turn table), `allocate-next-slice.sh`.
   Suites load their subject via `importlib.util.spec_from_file_location` (`tools/` is not a
   package) and fake sessions, git, `kc` and the gate — no agent is ever spawned by a test.
-- **`plugins/dev/agents/`** (11) and **`plugins/dev/skills/<name>/SKILL.md`** (8) — the dispatched
+- **`plugins/dev/agents/`** (10) and **`plugins/dev/skills/<name>/SKILL.md`** (8) — the dispatched
   roles and the operator-triggered workflows.
 - **`plugins/dev/docs/`** — the **canonical contract** for all of the above: `run-loop.md`,
   `plan-loop.md`, `runner-state.md`, `plan-template.md`, `refinement.md`, `agent-dispatch.md`, `close-out.md`,

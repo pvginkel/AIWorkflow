@@ -135,7 +135,7 @@ AGENT_NAMESPACE = "dev"
 # docs route to. `kc session create-headless --agent` does not validate the
 # name — an unknown agent spawns a plain SDK session that answers anyway — so
 # the driver asserts these definitions exist before any dispatch.
-REQUIRED_AGENTS = ("code-writer", "code-reviewer", "doc-writer", "doc-unit",
+REQUIRED_AGENTS = ("code-writer", "code-reviewer", "doc-writer",
                    "test-agent", "test-fixer", "rebase-agent")
 
 # Where those definitions live: this script is <plugin>/tools/run_loop.py, so
@@ -1551,9 +1551,6 @@ Deterministic facts from the driver:
   `git diff` — a diff past the tool's output limit round-trips through a
   persisted-output file and back, and this file already is that.
 {diff_rows}
-- Your work packages go in {units_path}, written before any `dev:doc-unit`
-  is dispatched — the shape is in your contract; the driver records the
-  unit and page counts from it at your hand-back.
 - The plan is {plan_path}, digested below: the rulings and every phase's
   done-record, which is all the doc steering the plan holds. Open the plan
   only for what the digest points at (an attachment a record names) — never
@@ -3707,16 +3704,14 @@ class RunLoop:
                 self.repo_root, session, "[test-phase]", "test-agent")
 
     def _doc_phase(self) -> None:
-        """The doc phase, after test-complete: one coordinator session,
-        diff-based over the whole slice, on its own branch — it packages
-        the writing into `doc-unit` sub-agents it spawns and yields for
-        itself, reconciles after them, and never pushes. The writer and the
-        gate run outside the devlock; the landing takes it for the push and
-        lets it go after. The driver gates the result with the full
-        lint+build+test sweep (red is nudged back to the writer's session),
-        then rebase-merges the branch onto the base branch and pushes. The
-        dev roll that push triggers is deliberately not tracked: the sweep
-        already proved the tree, and the roll lands on its own.
+        """The doc phase, after test-complete: one writer, diff-based over
+        the whole slice, on its own branch — the writer never pushes. The
+        writer and the gate run outside the devlock; the landing takes it
+        for the push and lets it go after. The driver gates the result with
+        the full lint+build+test sweep (red is nudged back to the writer's
+        session), then rebase-merges the branch onto the base branch and
+        pushes. The dev roll that push triggers is deliberately not tracked:
+        the sweep already proved the tree, and the roll lands on its own.
 
         A project that runs no doc phase skips all of it — the slice's code
         is already merged and settled by the time this is reached."""
@@ -3750,9 +3745,6 @@ class RunLoop:
                 self.git("checkout", base, root=root)
                 self.git("branch", "-D", branch, root=root)
             self.git("checkout", "-b", branch, base, root=root)
-            # A fresh branch carries none of an earlier session's page
-            # edits, so its packages must not survive to read as a resume.
-            (self.slice_dir / "doc_phase" / "units.json").unlink(missing_ok=True)
         elif existing:
             self.git("checkout", branch, root=root)
         elif ds["stage"] != "landing":
@@ -3777,7 +3769,6 @@ class RunLoop:
                     slice_name=self.slice_name, doc_plan_doc=doc_plan_doc,
                     diff_rows="\n".join(diff_rows) or "  (no merged phase on record)",
                     slice_dir=self.slice_dir, plan_path=self.plan_path,
-                    units_path=self.slice_dir / "doc_phase" / "units.json",
                     close_out_line=dispatch_line(self.report_path),
                     close_out_verbs=textwrap.indent(
                         verb_usage("list", "append", "note"), "  "),
@@ -3792,8 +3783,7 @@ class RunLoop:
             verdict = self._ensure_committed(None, "doc-writer", session,
                                              root, verdict, verdict_path)
             self._handle_executor_terminals(verdict, None)
-            ds.update(stage="gate", session=session,
-                      units=self._read_doc_units())
+            ds.update(stage="gate", session=session)
             self._save_state()
 
         if ds["stage"] == "gate":
@@ -3805,21 +3795,6 @@ class RunLoop:
             self._land_doc_branch(branch, base)
             ds["stage"] = "done"
             self._save_state()
-
-    def _read_doc_units(self) -> list[dict] | None:
-        """The coordinator's `units.json`, reduced to what the readout
-        counts — one row per unit, its id and how many pages it owned — or
-        None when the file is absent or not the shape the contract states.
-        Recorded, never enforced: a doc phase that packaged nothing is a
-        finding for the readout, not a bail."""
-        path = self.slice_dir / "doc_phase" / "units.json"
-        try:
-            units = json.loads(path.read_text())["units"]
-            return [{"id": str(u["id"]), "pages": len(u.get("pages") or [])}
-                    for u in units]
-        except (OSError, ValueError, KeyError, TypeError, AttributeError):
-            self.log(f"doc phase: no readable units.json at {path}")
-            return None
 
     def _write_doc_diffs(self) -> list[str]:
         """The slice's shipped diff, one file per repo under

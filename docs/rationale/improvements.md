@@ -472,8 +472,11 @@ whole from every phase's done-record; and the close-out verbs with argument shap
 
 **Readout.** The plan estimated 15–25 % off the doc-writer; the read is `t4_readout.py writers
 --role doc-writer` on the first two slices this reaches — not yet read in this checkout. Phase 2 of
-the plan, a coordinator with per-scope units, is designed and unbuilt, gated on operator rulings on
-the unit definition (`doc-phase-plan.md` § 4).
+the plan, a coordinator with per-scope units, shipped as 0.9.14 and was read on nine slices against
+the round-1 code-writer's spend: about 2x per phase of shipped work at matched size, ≈ 1.5x per
+file, 22 % of its spend lost to waiting gone wrong. Reverted as 0.9.29; the reconcile pass, the
+unverified-claims self-report and a two-agent survey cap survive in the single writer
+(`doc-phase-read-2026-09-04.md` § 5–6) — **measured**.
 
 ### Two-part done-records (0.9.17 — not in this checkout)
 

@@ -259,7 +259,7 @@ This pod's checkout, `origin/main` and the installed marketplace are all at 0.9.
 below exist as local commits in another environment, known here only from session notes; verify
 each against the changelog once they are pushed.
 
-- **0.9.14** — the doc phase in two stages. **0.9.15** — the completion consult priced apart in
+- **0.9.14** — the doc phase in two stages (reverted in 0.9.29, § Reversals). **0.9.15** — the completion consult priced apart in
   the cost readout. **0.9.16** — the shipped diff the doc-writer reads is the slice's own landed
   ranges; a second half ("yield boundary") was reversed the same evening (§ Reversals).
 - **0.9.17** — done-records in two parts: a `**Done (P<id>).**` summary paragraph plus a `Later
@@ -367,6 +367,25 @@ backgrounded command has no deadline. The rule was reversed the same evening; th
 `timeout(1)` on anything that can hang) lives in KubeCoder's managed `CLAUDE.md`, not in the plugin.
 A one-slice read producing a wrong rule is the failure mode
 [`left-field.md`](../research/left-field.md) § 8 proposes process-behaviour charts against.
+
+### The two-stage doc phase (v0.9.14 → v0.9.29, 2026-09-01 → 09-05)
+
+0.9.14 split the doc phase: the doc-writer became a coordinator that surveyed the doc tree, wrote
+`units.json` — one work package per documentation scope — dispatched a `doc-unit` sub-agent per
+package, yielded until all had reported, and reconciled across scopes. The proposal's case was
+MemDocAgent's per-unit work plus an external consistency check
+([`literature.md`](literature.md)). Nine slices later the operator's measure — the doc phase as a
+share of the slice's round-1 code-writer spend, a base that scales with the shipped work — put the
+single-stage phase at 64 % of the writer on 5+-phase slices and the two-stage one at 128 %: about
+twice per phase of shipped work, ≈ 1.5x per file, with 22 % of its spend lost to waiting gone wrong
+(three rounds killed by the engine race with surveys in flight; one coordinator spinning 354 no-op
+`true` calls while writing "ending the turn", $21.49 of a $32.17 phase). The unit *was* the
+hand-over-document design measured: a fresh session re-orients on its own account whatever the
+brief says, ≈ 4 turns a page against the single writer's 2.5. Reverted 2026-09-05 as 0.9.29 —
+"we should revert the changes" — keeping what the split taught: the reconcile as a named step, a
+claim left unverified named in the verdict, a two-agent survey cap, and one line in
+`agent-dispatch.md` that ending the turn is a reply with no tool call
+([`doc-phase-read-2026-09-04.md`](../research/doc-phase-read-2026-09-04.md) § 5–6) — **measured**.
 
 ### The MCP-schema-bloat claim (July 2026, research-side)
 

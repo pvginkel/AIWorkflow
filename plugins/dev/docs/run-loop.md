@@ -14,7 +14,7 @@ while phase := next_unfinished_phase(plan.md):   # re-parsed every iteration, do
 loop-tail gate sweep → driver runs lint+build+test per component; report rides the dispatches
 completion consult  → outstanding work? phases appended (rising bar), loop again
 test phase          → "read the slice-testing-strategy doc and execute"; findings gated the same
-doc phase           → "read the slice-doc-plan doc and execute"; diff-based; a coordinator packages, doc-unit sub-agents author
+doc phase           → "read the slice-doc-plan doc and execute"; diff-based, single writer
 ```
 
 ## The plan is the queue
@@ -199,40 +199,32 @@ whole plan is a feature of the review, not a cost. Then:
   exits: violate the ruling or bail. One slice held `../HelmCharts` (a push there deploys dev and
   prd together and rolls both controllers); the test agent honoured the ruling, was nudged twice,
   the driver bailed `unpushed` — and the run session pushed 38 seconds later, crash-looping prd.
-- **Doc phase** — after test-complete: auto docs. One `doc-writer` session — the phase's
-  **coordinator** — told to read the slice-doc-plan doc (`.aiworkflowrc`'s `doc_phase.plan`) and
-  execute it: the doc surfaces that already describe the changed behavior, brought up to date
-  from the whole slice's diff, manual + dev docs together, on its own branch, **never pushing**.
-  The coordinator walks the diff and surveys the doc tree, writes `<slice>/doc_phase/units.json`
-  — one work package per doc scope the project's doc plan defines, each entry a unit's whole
-  brief (`agents/doc-writer.md` holds the shape) — dispatches one `dev:doc-unit` sub-agent per
-  entry in one message and yields until every unit has reported, then reconciles across scopes
-  as the single writer of indexes and decision ids, gates once and commits; a unit authors its
-  pages under `agents/doc-unit.md`, commits nothing, and hands back a receipt. The driver reads
-  `units.json` back at the hand-back and records each unit's id and page count as
-  `doc_phase.units` in `state.json` — recorded, never enforced — and drops a stale file when it
-  recreates the doc branch. The phase carries no
-  slice task and owes no acceptance criterion: a doc change a requirement names is a phase of the
-  plan ([plan-template.md](plan-template.md)), merged before this point like any other. Its
-  dispatch carries the driver's deterministic facts, in the phase digest's spirit: the slice's
-  diff **on disk**, one `<slice>/doc_phase/<repo>.diff` per repo a phase merged into, a section
-  per merged phase (`git diff --stat` on top, then the diff, over the phase's landed range — the
-  sha its branch was cut from to the head that fast-forwarded the base — with the spec repo's
-  `slices/` tree held out; never the base branch since the slice began, which in parallel lanes
-  carried the other lanes' merges and the slice's own run record, and never HEAD, which is the
-  doc branch, so a redispatched writer's own commits never read as shipped work; a phase merged
-  with no range on record is named in the dispatch as missing from the files), read by path
-  instead of re-running `git diff`, which past the tool's output limit round-trips through a
+- **Doc phase** — after test-complete: auto docs. One `doc-writer` session told to read the
+  slice-doc-plan doc (`.aiworkflowrc`'s `doc_phase.plan`) and execute it — the doc surfaces that
+  already describe the changed behavior, brought up to date from the whole slice's diff, single
+  pass, manual + dev docs together, on its own branch, **never pushing**. The writer surveys the
+  doc tree through sub-agents it yields for, grounds and writes every page itself, reconciles
+  across scopes as a named last step, gates once and commits (`agents/doc-writer.md`). The phase
+  carries no slice task and owes no acceptance criterion: a doc change a requirement names is a
+  phase of the plan ([plan-template.md](plan-template.md)), merged before this point like any
+  other. Its dispatch carries the driver's deterministic facts, in the phase digest's spirit: the
+  slice's diff **on disk**, one `<slice>/doc_phase/<repo>.diff` per repo a phase merged into, a
+  section per merged phase (`git diff --stat` on top, then the diff, over the phase's landed range
+  — the sha its branch was cut from to the head that fast-forwarded the base — with the spec
+  repo's `slices/` tree held out; never the base branch since the slice began, which in parallel
+  lanes carried the other lanes' merges and the slice's own run record, and never HEAD, which is
+  the doc branch, so a redispatched writer's own commits never read as shipped work; a phase
+  merged with no range on record is named in the dispatch as missing from the files), read by
+  path instead of re-running `git diff`, which past the tool's output limit round-trips through a
   persisted file; the plan **digested whole** — title, rulings sections, every phase's
   done-record — so the plan is opened only where a record points and slice.md not at all; and
   the close-out verbs the phase uses (`list`, `append`, `note`) with their argument shapes,
-  rendered from `close_out.py`'s own parser, plus where the Summary and `Focus:` lines go and
-  the `units.json` path — the `--help` round trips and the previous-slice style reads go with
-  them. The
-  driver then runs the full gate sweep — `kc project lint` + `build` + `test`, fail-fast (red
-  is nudged back to the writer's session) — checks local `<base>` against `origin/<base>` (the
-  branch rebases onto origin but ff-merges into local, so a local-ahead base bails `blocked`
-  before anything is mutated), rebase-merges the branch onto the base branch and pushes; the dev
+  rendered from `close_out.py`'s own parser, plus where the Summary and `Focus:` lines go — the
+  `--help` round trips and the previous-slice style reads go with them. The driver then runs the
+  full gate sweep — `kc project lint` + `build` + `test`, fail-fast (red is nudged back to the
+  writer's session) — checks local `<base>` against `origin/<base>` (the branch rebases onto
+  origin but ff-merges into local, so a local-ahead base bails `blocked` before anything is
+  mutated), rebase-merges the branch onto the base branch and pushes; the dev
   roll that push triggers is left to land on its own, untracked. **The devlock is taken again
   here, for the landing alone** — before the fetch, so nothing another driver pushes lands between
   the rebase target and the push, and let go once the push is out. The writer's session and the
