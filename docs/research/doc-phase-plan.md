@@ -1,5 +1,11 @@
 # The doc phase, two-stage — proposal for Triage #716
 
+**Outcome (2026-09-05): shipped as 0.9.14, read on nine slices, reverted.** The § 3 fixes stayed
+(0.9.9); the § 4 split cost about twice per phase of shipped work at matched size and ≈ 1.5x per
+file, and its wait step failed on four of nine slices — [doc-phase-read-2026-09-04.md](doc-phase-read-2026-09-04.md)
+§ 5–6, with the operator's ruling and the revert brief. The § 2 unit cost model ($0.35–0.60 a
+unit) was the mistake: a unit is a second writer, not a bounded chunk (finding 4 there).
+
 Answers the card "Rework the documentation phase" (Operator Actions, 2026-08-26): the doc phase
 becomes a coordinator that identifies work packages plus authoring sub-agents, and the card's
 three open questions — who spawns the units, whether an earlier phase should identify the

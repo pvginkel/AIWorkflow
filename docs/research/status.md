@@ -1300,7 +1300,7 @@ two consecutive slices, or cost not below baseline.
   the `coverage-gap` class alone (12 of 22 findings; 1 of 21 in the corpus), reviewer mutation
   activity per session unchanged, fixes cheap, nothing escaped; #720's read has the fuller cut
   and a coverage-gap-share watch. Not read as a kill. → **accepted: kept as the dispatch's
-  vehicle; not the turn cut.** T5 folded and dead, T6 superseded by the doc rework, T7 parked —
+  vehicle; not the turn cut.** T5 folded and dead, T6 superseded by the doc rework (shipped 0.9.14, reverted 2026-09-05 — [doc-phase-read-2026-09-04.md](doc-phase-read-2026-09-04.md) § 6), T7 parked —
   the turns plan has no further step.
 - 2026-09-01 — **the record cap becomes a shape (plugin 0.9.17).** The readout's follow-up: what
   the digest hands later phases is the size of what the writer used to read itself (28 k chars

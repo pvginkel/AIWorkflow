@@ -5,7 +5,12 @@ work into `units.json` and dispatches one `dev:doc-unit` sub-agent per doc scope
 ([doc-phase-plan.md](doc-phase-plan.md) § 4, § 8; Triage #716). The proposal asked for "the next
 four doc phases"; seven have run, so all seven are here.
 
-**Status: verdict held.** The operator, on this read (2026-09-04): "hold verification until
+**Status: ruled — revert (2026-09-05).** The operator, on § 5 and § 6: revert the two-stage phase
+to the 0.9.13 single writer, carry three learnings, leave the doc phase otherwise alone; the
+revert ships as a forward change in its own session (§ 6 has the brief). The paragraph below is
+the 09-04 state, kept for the record.
+
+**Status on 2026-09-04: verdict held.** The operator, on this read (2026-09-04): "hold verification until
 we've run a few slices that are more representative" — six of the seven are 5–8-phase slices
 against the corpus's 3.5 median, and § 2's per-phase normalisation is what the decision turns
 on. Re-read on the next few representative slices, appending here: the tool run above plus the
@@ -422,3 +427,88 @@ whole fan-out, the survey cap, and a line in `doc-writer.md` that ending the tur
 with no tool call — a no-op command is a spin, not a wait (197's $21.49). If it is not, the
 single-stage phase of 0.9.13 — 64 % of the writer at $0.52 a file — is the cheapest doc phase
 the pipeline has run. The verdict stays the operator's; nothing changes here meanwhile.
+*(Ruled the same day — § 6.)*
+
+## 6. The ruling, and the three questions it settled (2026-09-05)
+
+**Ruling.** *"We should revert the changes."* The two-stage phase goes; the doc phase is the
+0.9.13 single writer again, carrying three things the split taught (below), with one optional
+experiment and nothing else — *"output quality, not metrics"* holds, and the doc phase is a $7–10
+line on a $55–95 slice. The operator asked three questions on the way to it; each was answered
+from the corpus rather than guessed, and the answers are the record for the next time the doc
+phase comes up.
+
+22. **Why did the doc edits "almost triple"? Mostly the comparison; the rest is ownership, not
+    invention.** The operator's hypothesis was padding — *"a model inventing (padding out) work,
+    as it tends to do."* Against the late group the split's own step is small: pooled per phase
+    of shipped work, files 3.7 → 4.2 → 4.5 and lines 55 → 84 → 77 across corpus, late, new; the
+    2.8x headline was the 8-slice small-slice sample. The doc tree itself grew 16 % over the
+    period (245 → 274 → 285 pages, 8 → 9 `docs/` trees), part of the corpus-to-late step. Every
+    signature invented work would leave is flat or better, late against new: new pages 5 % → 4 %
+    of files touched, insertions per deletion 2.5 → 2.6, files touched with ≤ 5 lines 31 % →
+    27 %, median lines per file 9 → 9, files with ≥ 50 lines 10 % → 7 %, hedge words 0.19 % →
+    0.12 % of added lines. What the split did change is *which* pages: the manual's share of
+    changed lines 8.6 % → 15.2 % (7.2 → 11.7 lines per phase — the manual had its own unit), and
+    the like-for-like residual sweep, 212 at 26 files against 154 / 162 / 185 at 15 / 5 / 2. The
+    mechanism is ownership: the survey lists every page that mentions a behaviour, the
+    coordinator turns the list into owned pages, and a unit handed five pages works five pages,
+    because a receipt that edited none reads as failure; the single writer judged a mention
+    still true and moved on. A prompt-design effect, modest, and its edits as grounded as the
+    rest — and fixing it would not rescue the split, whose premium is per file (finding 21), not
+    per page count.
+23. **Is the prose sub-agent (`kubecoder:file-editor`, Sonnet at low effort, Read/Edit/Write,
+    "use only what your dispatch gives you") a doc-phase lever? No — and it has never run in
+    one.** Zero dispatches in the 57 recorded doc-writer sessions and zero in any recorded
+    pipeline session; the twelve on this pod (every sub-agent `meta.json` under the KubeCoder
+    transcript root) are interactive sessions editing spec-repo prose — handovers, `slice.md`,
+    READMEs, one batch of manual pages on 08-09 — at 3–19 turns and $0.06–0.50 on briefs of
+    2.6–19 k chars. There it pays: a large-context session hands off edits it has already
+    decided. In the doc phase the edit is decided by reading the page one turn earlier; the edit
+    turn costs ≈ $0.12 (stage-4 turns run $0.10–0.17 on 184–196), the brief carries the same
+    old-and-new text, a Sonnet run is $0.15–0.50, and every bundle is one more sub-agent wait —
+    the step that failed on four of nine slices. Net ≈ 0 per bundle.
+24. **Would a sequential split with hand-over documents do better? It was measured: the unit
+    *is* a fresh session working from a hand-over document** (pages owned, changes at file:line,
+    counts to recount, off-limits), and it ran ≈ 4 turns a page, $1.89 median for seven pages,
+    against the single writer's page loop at 2.5 turns a page and ≈ $1.25 for the same seven. A
+    fresh session re-orients on its own account whatever the brief says (`ctx_mean` 54–113 k,
+    finding 4); sequential stages would pay that at every hand-over and give up the parallelism
+    the units at least had.
+25. **Where the single writer's money goes, and the one lever left.** On 190–196 (the 0.9.13
+    phase): ≈ 75 turns at 145 k mean context; read turns 43 % of the dollars, edit turns 27 %,
+    the tail (gates, commit, close-out, verdict) ≈ 15 %. The reads are already targeted (213
+    ranged `sed -n`/Read-with-range and 132 greps against 21 whole-file reads), so "read less of
+    each page" is not it. What stands out is batching: **264 of 278 read-only turns read exactly
+    one thing**, against rule 7's "batch independent tool calls" — the question T5 asked of the
+    code-writer and closed below its bar ([turns-plan.md](turns-plan.md) § T5). For the doc
+    writer the read share is higher, so one A/B is on the table, the operator's option and not a
+    commitment: the survey names the candidate pages; read them three or four to a turn before
+    the first edit. If the model complies it is ≈ a quarter of the session; the tail's smaller
+    one is that the writer runs the doc gates itself at ≈ 200 k context and the driver's
+    `doc-gate` runs them again after the commit. Together 10–25 % of a $7–10 line.
+
+**The revert, as briefed for its own session** (a forward change as dev 0.9.29 — twelve versions
+have moved the files, so not `git revert b5b3d69`; pick the number from `origin/main` first):
+
+- `agents/doc-writer.md` rewritten from the 0.9.13 text (`git show cbe2866:plugins/dev/agents/
+  doc-writer.md`; rules 1–3 of `doc-unit.md` are its writing rules, moved out in 0.9.14) plus the
+  three learnings: (1) **the reconcile as a named last step** before the gate — a count that
+  spans scopes, a fact stated in several places, a decision id cited from every surface, the
+  index rows (finding 10's class); (2) **unverified claims self-reported** in the verdict's
+  summary for the close-out to carry (finding 11's receipt discipline, without the sub-agent);
+  and, once in the shared contract rather than per agent, (3) **ending the turn means a reply
+  with no tool call — a no-op command is a spin, not a wait** (finding 19; `agent-dispatch.md`
+  is where every dispatching role reads it). Surveys stay delegated with the yield, capped at two
+  `Explore` agents dispatched in one turn (finding 6 kept it; 190–196 yielded on one or two agents
+  with no dead round).
+- `agents/doc-unit.md` deleted; `REQUIRED_AGENTS` loses `doc-unit`; `run_loop.py` loses the
+  `units.json` path in the dispatch, the stale-file unlink on a fresh doc branch and
+  `_read_doc_units` / `doc_phase.units`, with their tests; `run-loop.md`, `runner-state.md`,
+  `agent-dispatch.md` ("the one delegated write") and `close-out.md` lose the two-stage lines —
+  b5b3d69's thirteen files are the checklist. 0.9.9's dispatch (diff files on disk, plan digest,
+  close-out verbs), 0.9.16's landed ranges, and 0.9.26/0.9.28's wait recovery all stay.
+- KubeCoder's `docs/operations/slice-doc-plan.md` § 2 (22cee576) loses the unit definition and
+  keeps the doc-comment surface. `t4_readout.py`'s `units=` column reads a `state.json` that
+  carries none — research tooling, left as is.
+- Changelog entry citing § 5–6; a settled-rulings line in `CLAUDE.md` so neither the split, the
+  hand-over stages nor the prose sub-agent is re-proposed for the doc phase.

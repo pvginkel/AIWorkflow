@@ -58,7 +58,7 @@ clone) and are read on the next 2–3 slices through T2's readout before the nex
   every baseline but the r1 blocking rate (the `coverage-gap` class, #720's watch). **Kept,
   cost-neutral; not the turn cut** — the plan has no further step
 - [ ] **T5** batched reads — why the existing rule is not followed; dispatch-line A/B (T1: below its bar — folds into T4)
-- [ ] **T6** bounded doc phase — per-repo unit **falsified** (2026-08-27, three transcripts read); superseded by [doc-phase-plan.md](doc-phase-plan.md): coordinator + per-scope units, three S fixes first
+- [ ] **T6** bounded doc phase — per-repo unit **falsified** (2026-08-27, three transcripts read); superseded by [doc-phase-plan.md](doc-phase-plan.md): coordinator + per-scope units, three S fixes first — the three fixes shipped (0.9.9); the split shipped (0.9.14) and was **reverted** 2026-09-05 ([doc-phase-read-2026-09-04.md](doc-phase-read-2026-09-04.md) § 6)
 - [ ] **T7** Explore on a pinned model + the sub-agent return contract — **parked on size**; the knobs are recorded below
 
 ---

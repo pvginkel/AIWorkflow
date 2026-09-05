@@ -169,6 +169,14 @@ instead of reopening it.
   rounds come from phase sizing at plan time.
 - **No `kc` verb for repo sync** (`kc project <verb>`, `kc env sync`, `kc repos`): preflight's own
   git sync (0.9.13) is the answer; the operator's editor entry point is a user-level task.
+- **No two-stage doc phase, no hand-over stages, no prose sub-agent in the doc phase**: 0.9.14's
+  coordinator + `doc-unit` split was read on nine slices and reverted (2026-09-05,
+  `docs/research/doc-phase-read-2026-09-04.md` § 5–6) — about 2x per phase of shipped work at
+  matched size, ≈ 1.5x per file, 22 % of its spend lost to waiting; a fresh session working from
+  a hand-over brief re-orients regardless (the unit was that measurement), and
+  `kubecoder:file-editor` nets ≈ 0 against a $0.12 edit turn. The doc phase is the 0.9.13 single
+  writer plus the reconcile step, the no-tool-call wait line and the unverified-claims
+  self-report; batched page reads are the one open A/B, the operator's option.
 - **Cross-session messaging in headless sessions is kc's switch**, off by default
   (`crossSessionInbound: refuse` + deny `ListAgents` only; `SendMessage` kept for a session's own
   sub-agents). The plugin passes nothing — no agent-frontmatter `disallowedTools`, no kc
