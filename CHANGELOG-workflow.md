@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-06 — `/dev:merge-repos` is deleted; the last split repo is merged (v0.9.30)
+
+The skill was finite from the day it was written, and said so in the plugin's own description: "a
+finite backend+UI monorepo migration; delete it when the last repo lands". The operator merged the
+last one. With no remaining input the procedure is dead weight in every session's skill list, so it
+goes — `plugins/dev/skills/merge-repos/SKILL.md`, last carried in `4c095b3`, recoverable from
+history if a split backend+UI pair ever surfaces again (Phase 4, three Jenkinsfiles into one and two
+architecture producers into one, is the half that would be worth reading; the `git filter-repo`
+phases were always one-shot).
+
+The references that named it go with it: the plugin description's skill list, `README.md`'s pipeline
+sentence and its stranded "the monorepo-merge runbook that used to live in `runbooks/`" paragraph,
+`CLAUDE.md`'s repo blurb, and the skill counts in all three (8 → 7). The 2026-07-16 entry below,
+`docs/rationale/history.md` and `plugin-plan.md` keep their mentions — they describe what happened,
+not what ships. Drive-by while counting: `docs/rationale/overview.md` had the agents at 9, and there
+are 10.
+
 ## 2026-09-05 — the doc phase is one writer again; the reconcile, the unverified-claims report and the no-tool-call wait stay (v0.9.29)
 
 Triage #716, ruled on the re-read of nine slices (`docs/research/doc-phase-read-2026-09-04.md`

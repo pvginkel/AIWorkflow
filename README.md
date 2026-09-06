@@ -13,8 +13,7 @@ a KubeCoder pod).
 
 The validated slice pipeline: **`/dev:triage` → `/dev:plan-slice` → `/dev:run-slice` →
 `/dev:close-out`**, plus `/dev:slice-dag`, `/dev:arch-design`, plus `/dev:onboard` to bring a
-repo onto the pipeline in the first place and `/dev:merge-repos` to fold a split backend+UI pair
-into one repo that can be onboarded. `plan-slice` settles the design with the operator, then
+repo onto the pipeline in the first place. `plan-slice` settles the design with the operator, then
 drives a plan-writer/plan-reviewer round (`plan_loop.py`) to a reviewed **phase queue**;
 `run-slice` launches a kc-native run loop (`run_loop.py`) that takes each phase through a bounded
 loop — fetch → branch → code-writer → test gate + test-fixer → consult-funded review rounds
@@ -33,7 +32,7 @@ one close-out report per slice**
 (`close-out.md`, created at planning, written by every agent as it goes): nothing from a run is
 carded per finding; the operator dispositions the report and `/dev:close-out` executes.
 
-- **`plugins/dev/`** — the plugin: 8 skills, 10 agents, the tools (`run_loop.py`,
+- **`plugins/dev/`** — the plugin: 7 skills, 10 agents, the tools (`run_loop.py`,
   `plan_loop.py`, `close_out.py`, `sweep_slice.py`, `close_slice.py`, `slice_cost.py`,
   `turn_profile.py`, `preflight.py`, `project_config.py`, `triage_verbatim.py`, and
   `allocate-next-slice.sh`, with their suites), and the
@@ -72,8 +71,6 @@ contract and tells a new repo exactly what is missing. See **[`docs/ADOPTING.md`
   `quality-issue-finder`, `refactor-audit`) and the `code_health` grader, one folder per source
   project because the copies drifted apart. Parked while the tool is rebuilt; `/dev:onboard` sweeps
   each project's copies in here. See [`archive/quality/README.md`](archive/quality/README.md).
-The monorepo-merge runbook that used to live in `runbooks/` is now the `/dev:merge-repos` skill;
-its per-repo status lives on the issue tracker, where work state belongs.
 
 ## Docs
 

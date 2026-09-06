@@ -216,6 +216,6 @@ doc-writer 13 %; the interactive sessions the operator sits in are 7 %.
 | How sessions are spawned, models, timeouts, nested delegation | [`agent-dispatch.md`](../../plugins/dev/docs/agent-dispatch.md) |
 | The close-out report's contract and entry shape | [`close-out.md`](../../plugins/dev/docs/close-out.md), [`close-out-template.md`](../../plugins/dev/docs/close-out-template.md) |
 | What a repo must provide; preflight | [`project-contract.md`](../../plugins/dev/docs/project-contract.md), [`preflight.md`](../../plugins/dev/docs/preflight.md), [`docs/ADOPTING.md`](../ADOPTING.md) |
-| Each role's bounds and verdict shape | `plugins/dev/agents/*.md` (9 agents) |
-| Each operator workflow's procedure | `plugins/dev/skills/*/SKILL.md` (8 skills) |
+| Each role's bounds and verdict shape | `plugins/dev/agents/*.md` (10 agents) |
+| Each operator workflow's procedure | `plugins/dev/skills/*/SKILL.md` (7 skills) |
 | Every change, newest first, with the incident behind it | [`CHANGELOG-workflow.md`](../../CHANGELOG-workflow.md) |
