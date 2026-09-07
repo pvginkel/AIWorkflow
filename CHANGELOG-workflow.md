@@ -4,6 +4,66 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-07 — `/dev:onboard` folds the lessons of four pre-ruled headless runs (v0.9.31)
+
+Four repos — IoTSupport, ElectronicsInventory, DHCPApp, ZigbeeControl — ran the skill in one
+afternoon as headless sessions whose dispatching prompt had already answered every "stop and ask"
+in it, and each left a lessons note for this fold. The shape is now named up front: where the
+prompt has ruled, apply the ruling and record it as an assumption; where it has not, apply the
+skill's stated default and record that too; reserve stopping for what would be unsafe to guess. The
+decision points are still *visited* — a ruling can be stale or name a file that no longer exists —
+but a visit that agrees is silent and only a disagreement becomes a question. Beside it, the rule
+two runs worked out for themselves: a ruling is about a **class**, so a prompt naming
+`backend/.claude/agents/` has ruled on the frontend's byte-identical copy too — the list was
+written from memory, the inventory was not.
+
+**Step 1 gains the remote.** One run inventoried behind its origin, wrote three documents asserting
+a gate an operator commit had reversed the evening before, and `git push`'s auto-rebase carried the
+false prose onto `main`: `git fetch origin` and `HEAD..@{u}` before writing durable prose about the
+repo's gates, and re-verify every gate in the tree you actually commit after a rebase — a gate's
+colour is a property of a tree, not of a run. `git rev-parse --abbrev-ref @{u}` joins it, because
+`preflight.py`'s sync `continue`s past a branch with no tracking ref and reports green having
+synced nothing (that defect is the operator's; the skill only says to check). So does `git status
+--porcelain` — the operator's untracked drafts sit in exactly the `docs/` directory step 4 fills,
+and meeting them at the clean-tree check is meeting them too late. And the state notes:
+`/kubecoder:onboard` and `/dev:onboard` write the same `ONBOARDING-STATE.md` at the repo root, so
+the second run reads what it finds (a diagnosed test race, a lint breakdown — the input the
+testing-strategy doc needs), moves it aside under a distinct name, carries its open items forward,
+and excludes both through `.git/info/exclude` **before** the first preflight, since that check
+counts untracked files and `.gitignore` is committed.
+
+**Step 2 leads with the reference graph, not the lists.** "Can you name the replacement?" is
+promoted above them — `plan_feature.md` → `/dev:plan-slice`, `code_review.md` → the
+`dev:code-reviewer` agent, a `create_brief.md` → nothing the plugin ships, so it stays — because a
+repo can carry its whole pre-plugin workflow as ordinary docs `@`-imported into `CLAUDE.md` and
+never have had a `.claude` tree. The agent filenames are stable across every era where the
+slash-command vocabulary is the slice era's, which returned zero hits in a repo carrying a complete
+pre-plugin workflow: grep those, then grep whatever the files they find *read*. Three hazards land
+beside it — the deletions orphan the docs they read, so sweep the paths and not only the names; a
+`docs/` tree can be a published site that fails on a dead link and that `kc project build` never
+runs, so prove the deletions against its build; and a stale reference is not repaired by writing a
+`/dev:` name into it when the plugin does not do that thing (delete the sentence or leave the
+file). Plus `git commit -- <paths>`, every commit: `git rm` stages immediately, so step 2's own
+commit silently swallows whatever else is in the tree.
+
+**Steps 3–7.** Step 3 states its two modes — a `kc project list` that already resolves makes this
+step *verify*, where a red gate is a finding rather than work. Step 4 stops under-weighting the
+three project-owned docs (they are the work; `.aiworkflowrc` is ten lines) and says how they get
+written: from a model doc of a repo in the same situation, and from executing the live check, stop
+recipe included, because that is the half written from imagination — killing the `cexec` client
+leaves the sidecar's process manager and its services up, and `pgrep -f` self-matches in the pod's
+one PID namespace. The CI-following recipe is checked for reachability before it is written (the
+unauthenticated Jenkins JSON API answers 403 in these pods; the MCP tools or "report the build
+number" are the working shapes), `EXIT=$?` after a pipe is the pipe's and not the gate's, and where
+nothing is known red the doc says so plainly. Step 5 records `.gitkeep` in an empty-repo scaffold's
+lifecycle folders as this pass's practice — an assumption, pending the operator's ruling — and
+resets `slices/.next-slice` after the allocator is smoke-tested. Step 7 names preflight's
+environment-wide sync: a failure can belong to a sibling checkout the project does not own, usually
+a stale credential embedded in its remote URL.
+
+Not folded, being the operator's to rule: whether `*/docs/commands/` goes or stays (the two
+full-tier runs answered it differently) and whether `AGENTS.md` files are doc-plan surfaces.
+
 ## 2026-09-06 — `/dev:merge-repos` is deleted; the last split repo is merged (v0.9.30)
 
 The skill was finite from the day it was written, and said so in the plugin's own description: "a

@@ -17,8 +17,22 @@ below exists to get there, except the spec-repo work, which preflight cannot see
 that the path is a directory — `/dev:triage` needs much more).
 
 **This skill changes the operator's repos and rewrites their spec history.** Inventory first, act
-second, and stop at every decision point below. Never delete something you cannot name a
-replacement for.
+second, and visit every decision point below.
+
+**The pre-ruled headless run is a supported shape.** Much of what follows stops and asks; a
+dispatching prompt that has already answered those questions does not turn them into traps. Where
+the prompt has ruled, apply the ruling and record it as an assumption; where it has not, apply the
+default this skill states, and record that too; reserve stopping for what would be unsafe to guess.
+The decision points are still *visited* — a ruling can be stale, or name a file that no longer
+exists — but a visit that agrees with the ruling is silent, and only a disagreement becomes a
+question. Report the assumptions and whatever the prompt genuinely did not cover, together, at the
+end.
+
+**A ruling is about a class, not the list that illustrates it.** A prompt naming
+`backend/.claude/agents/` in a repo whose frontend holds byte-identical copies has ruled on both:
+apply it to every member step 1's inventory found, and report the extension. Deleting only what was
+listed leaves exactly the shadowing the step exists to remove — the list was written from memory,
+the inventory was not.
 
 ## Procedure
 
@@ -28,12 +42,42 @@ Establish what is already true. Do not fix anything yet; a repo part-way onto th
 normal case, and the gap list drives the rest.
 
 ```bash
+git fetch origin && git log --oneline HEAD..@{u}    # what the remote knows and your checkout does not
+git rev-parse --abbrev-ref @{u}                     # fails = no upstream, and preflight will not say so
+git status --porcelain                              # the operator's untracked files, before step 4 lands beside them
 kc project list --output=json                       # components + effective cwds (empty/error = no usable manifest)
 cat .kubecoder/project.yaml 2>/dev/null             # the manifest, if any
 cat .aiworkflowrc 2>/dev/null                       # the project's own contract, if any
 find . -name .claude -type d -not -path './.git/*'  # recursive: older layouts put agents per-subproject
 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for run  # the gap list, in its own words
 ```
+
+**Inventory at the tip, not at your checkout.** Onboarding writes durable prose about this repo's
+gates, and another session may have changed one yesterday: a run that inventoried behind its remote
+wrote three documents asserting a gate that a pushed commit had already reversed, and `git push`'s
+auto-rebase carried the false prose onto `main`. Read `HEAD..@{u}` before writing any of it — and
+after any rebase, re-verify every gate in the tree you will actually commit. A gate's colour is a
+property of a tree, not of a run.
+
+**No upstream is not "in sync".** Preflight's sync `continue`s past a branch with no tracking ref
+and reports green having synced nothing, which is indistinguishable from success; a repo that
+reaches `/dev:run-slice` that way never syncs and checks its push against no tracking ref.
+`git branch --set-upstream-to=origin/main main` is the whole fix — git config, host-local, nothing
+to commit.
+
+**Untracked files are the operator's, and preflight's clean-tree check meets them at the end.**
+Drafts sitting in exactly the `docs/` directory step 4 fills turn into a bad choice under time
+pressure — commit someone else's work, or exclude it. Find them now and ask in the same breath as
+everything else.
+
+**A state note at the repo root is not yours to overwrite.** `/kubecoder:onboard` writes
+`ONBOARDING-STATE.md` there, and on a full-tier repo this run is usually asked for one under the
+same name. Read what you find — a diagnosed test race, a lint breakdown, an unanswered question
+list is precisely the input step 4's testing-strategy doc needs — move it aside under a distinct
+name (`ONBOARDING-STATE.kubecoder-env.md`), and carry its open items forward rather than dropping
+them. Add both to `.git/info/exclude` **before** the first preflight run: its clean-tree check
+counts untracked files, so the note fails the very check it documents, and `.gitignore` is the
+wrong file because that one is committed.
 
 Preflight fails on the **first** violation, so re-run it as you go — it is a worklist, not a report.
 Summarize for the operator: which contract pieces exist, what the components are, whether a spec
@@ -43,7 +87,27 @@ repo is named and what state it is in, and what pre-plugin workflow remains. The
 
 A repo that ran the pre-plugin workflow carries its own skills, agents, and driver. They now shadow
 the plugin: a stale in-repo `code-writer` or `run-loop.md` outranks nothing, it just gets read
-instead. Delete **only** what `dev` supersedes, by name.
+instead. Delete **only** what `dev` supersedes.
+
+**The test that settles a file is "can you name the replacement?"** — the lists below are how it
+usually resolves, not the rule itself. `plan_feature.md` → `/dev:plan-slice`; `code_review.md` →
+the `dev:code-reviewer` agent; a `create_brief.md` → nothing the plugin ships, so it stays. That
+test reaches what a list of `.claude` names cannot: a repo may keep its whole pre-plugin workflow
+as ordinary docs — `docs/workflow.md` and `docs/commands/*.md`, imported into `CLAUDE.md` with `@`
+— and never have had a `.claude` tree at all.
+
+So find the workflow before matching it against a list:
+
+```bash
+grep -rl 'code-writer\|plan-writer\|code-reviewer\|plan-reviewer' --exclude-dir=.git .
+grep -rn '@docs/\|@\.claude/' CLAUDE.md */CLAUDE.md AGENTS.md */AGENTS.md 2>/dev/null
+```
+
+The **agent filenames are stable across every era** of this workflow, so they hit where the
+slash-command vocabulary does not — that vocabulary is the slice era's, and it returns zero hits in
+a repo whose commands were `@`-referenced templates and whose driver was prose. Then take the
+second hop: grep for whatever the files you just found *read*. That is what maps the real reference
+graph.
 
 The lists below carry **retired names too** — a repo may have stopped at any older version of the
 workflow, and those copies shadow just as effectively as current ones.
@@ -86,9 +150,26 @@ Rewrite those references to their `/dev:` names, and report what you rewrote:
 ```bash
 grep -rn '/triage\|/plan-slice\|/run-slice\|/slice-dag\|/arch-design' \
   <each .claude found in step 1>
+grep -rn 'ai_workflow\|docs/commands/\|scripts/preflight' --exclude-dir=.git .
 ```
 
-Commit this as its own change, so the deletion is reviewable apart from the additions.
+Sweep the **paths** of what you deleted as well as the command names: a retired command's doc
+templates were reached from somewhere, and that somewhere is often a file you kept.
+
+**Do not repoint a reference when the new name would be false.** A `scripts/build-all.py` whose
+docstring says "the `/run-slice` pre-flight invokes this script" is not repaired by writing
+`/dev:run-slice` into it — the plugin's run loop does not call it. Delete the sentence, or leave
+the file and report it; a rewrite that reads plausibly and is untrue costs the next session more
+than the stale one did.
+
+**After deleting docs, ask what builds them.** A `docs/` tree can be a published site — a static
+build CI ships as an image, failing on a dead link — that `kc project build` never runs and
+preflight never sees. Run that build after the deletions, fix the links it names, and gitignore
+whatever `dist/` it emits, or it fails the clean-tree check much later and much more confusingly.
+
+Commit this as its own change, so the deletion is reviewable apart from the additions — and stage
+by path. **`git commit -- <paths>`, every commit in this skill:** `git rm` stages immediately, so a
+bare `git commit -m` here swallows whatever else is already written in the tree.
 
 ### 2b. Sweep out the quality capability
 
@@ -119,7 +200,10 @@ A repo may already have one for its envs while declaring no automation — which
 matters here, because **the manifest's `test:` statements are the gate**: `/dev:run-slice`'s run loop
 executes `kc project test --project <name>` itself and merges nothing that comes back red.
 
-Work through it with the operator, per component:
+**Two modes, and `kc project list` says which.** Where it already resolves against a current
+manifest, this step is *verify*: run the gates, and report a red one as a finding rather than
+taking it on here. Where it does not, the automation is being decided now — work through it with
+the operator, per component:
 
 - **`test:`** — what proves this component works? This is a decision, not a discovery. A component
   that declares no test statements is **green by definition**, and for a docs-only or config-only
@@ -167,6 +251,32 @@ agents read them:
 - **`design_philosophy`** — the change-discipline rules `code-writer` obeys (breaking changes,
   tombstones, defensive caveats, what "tested" means here).
 
+**Those three docs are the work; `.aiworkflowrc` is ten lines.** On a first-time onboarding they
+run to a few hundred, and two things make them specific rather than generic: a **model** — the same
+doc from a repo in the same situation, since one production deployment and no dev instance is a
+different procedure from a repo with both — so find one and name it; and **executing the live check
+before writing it down**.
+
+- **Write the live check by running it, stop recipe included.** A test agent executes the doc
+  verbatim, and the half written from imagination is always the stop. Killing the `cexec` client
+  does not reach the process manager it started in the sidecar — the services stay up on their
+  ports for the next phase to trip over — and a launcher that ignores SIGTERM by design needs the
+  interrupt it does honour. Signal the manager itself, by a pid it wrote to a shared path: the pod
+  is one PID namespace, so `pgrep -f` matches the `cexec … pgrep` client's own argv and hands back
+  the wrong process. Booting once also corrects the expected responses — a `readyz` 503 a test
+  agent would otherwise report as a failure.
+- **Check the CI-following recipe is reachable from the pod before writing it.** One `curl` settles
+  it: a Jenkins that answers `403` to the unauthenticated JSON API, in an environment holding no
+  token, makes "poll the job's JSON API" an instruction that cannot be carried out. What works is
+  the MCP tools, or — for a session without them — reporting the pushed commit and the build number
+  it expects, and leaving the result to the operator.
+- **`EXIT=$?` after a pipe is the pipe's status, not the gate's.** `kc project` verbs buffer their
+  output and print it only on failure, so a recipe that pipes one and reads `$?` reports green
+  forever. `${PIPESTATUS[0]}`, or do not pipe.
+- **Name the known-red gates, and say plainly when there are none.** "No gate is known red, so a
+  failure is this slice's" is the more useful sentence where everything is green — it stops a test
+  agent hunting for a pre-existing card. Ask for the statement either way.
+
 **Ask before switching a phase off.** `enabled = false` on either phase is the right answer for a
 repo with nothing to deploy-verify or nothing to document — an Ansible tree, a config repo — and
 the wrong answer for a repo that simply has not written the doc yet. The difference is the
@@ -197,10 +307,20 @@ Preflight only checks the path is a directory, but the pipeline needs a shape:
     completed/  deferred/  cancelled/  archive/
 ```
 
+**A tree scaffolded from zero commits needs a placeholder in each empty folder.** Git carries no
+empty directory, so without one the shape exists locally and vanishes on clone — silently, which is
+the worst way to lose it. Every spec repo this fleet scaffolded from nothing wrote a `.gitkeep`
+into `slices/backlog/` and the four lifecycle folders; take that as the pass's practice, record it
+as an assumption, and leave it to the operator to settle as a rule. A spec repo whose folders are
+already populated needs nothing.
+
 Slice numbers come from `${CLAUDE_PLUGIN_ROOT}/tools/allocate-next-slice.sh <spec-repo>`, which the
 plugin ships and `/dev:triage` calls. A spec repo carries **no copy** — if you find one
 (`<spec-repo>/scripts/allocate-next-slice.sh`), delete it once triage resolves to the plugin's, and
-keep the `.gitignore` entries.
+keep the `.gitignore` entries. Smoke-test the allocator against a fresh scaffold, then put the
+reservation back: it persists what it hands out, so the test burns `001` and the project's first
+real slice would come out `002`. `printf '001\n' > <spec-repo>/slices/.next-slice` — or delete the
+file, which self-seeds from the highest `NNN_` on disk.
 
 **No spec repo named?** Stop and ask the operator — its location and whether it is a fresh repo or
 an existing one is theirs to decide, not yours to guess. Then `git init` it, scaffold the tree, and
@@ -256,6 +376,12 @@ close, do not bulk-write cards.
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for run    # must exit 0
 ```
+
+**A failure here can belong to a repo this project does not own.** Preflight's sync covers every
+checkout beside the target, including hand-clones no manifest lists, so one of them fails the whole
+profile with an error naming the environment rather than the project. Check
+`git remote get-url origin` on the repo it fell over before assuming a network fault — a stale
+embedded credential is the usual cause — and redact it when you report.
 
 A green run profile means the contract holds, the tree is clean, and the baseline builds. Report to
 the operator: what was deleted, what was left behind and why, which references you rewrote, what was
