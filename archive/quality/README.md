@@ -46,6 +46,12 @@ parked:
   `KubeCoder/`'s copies rather than the 07-16 baseline. The `.codehealthignore` is kept because it
   is the only record of how a project actually *scoped* the grader — which trees counted as
   application code and which were tooling — and that scoping question outlived the tool.
+- **`IoTSupport/`** — the three commands, `code_health` and its `.codehealthignore`. Swept
+  2026-09-07 as wave-4 prep for the fleet onboarding pass (the `/dev:onboard` run that deletes
+  them from the repo follows). All four artifacts are **byte-identical to `aiworkflow/`'s** —
+  the 07-16 measurement above predates a refresh of this repo's copy, so IoTSupport is the second
+  project confirming the 15-file form as the baseline. Its `.codehealthignore` scopes the grader
+  to application code (`scripts/`, `docs/`, `tools/` and the Alembic migrations excluded).
 - **`<project>/`** — added by `/dev:onboard` as each project is swept.
 
 `refactor-audit` travels with the tool: it is the **only** consumer of `code_health` (`uv run python

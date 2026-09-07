@@ -1,0 +1,13 @@
+# Code health grader exclusions
+# Uses gitignore syntax. Loaded alongside .gitignore files.
+
+# Non-application code (orchestration scripts, docs, internal tools)
+scripts/
+docs/
+tools/
+
+# Generated Alembic migrations
+backend/alembic/
+
+# Per-file exclusions can also be added inline with `# health: ignore` comments
+# in the source files themselves.
