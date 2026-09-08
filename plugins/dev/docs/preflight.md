@@ -71,15 +71,17 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   already assumes — then the spec repo if it lives elsewhere.
 - **Which branch.** The checked-out one, against its upstream, because that *is* the base: the run
   loop records as a repo's base whatever branch is checked out the first time it touches that repo
-  ([`run-loop.md`](run-loop.md)). Detached HEAD or no upstream → skipped.
+  ([`run-loop.md`](run-loop.md)). Detached HEAD → skipped. No upstream → refused (exit 1), naming
+  the repo and the branch: a checkout preflight cannot fetch for would otherwise report green having
+  synced nothing, and reach the run with its push checked against no tracking ref.
 - **The rules.** Fetch the upstream's remote. Not behind → nothing; ahead-only is left alone
   (unpushed commits are the operator's, and the run pushes at its test phase). Behind and clean →
   fast-forward, or rebase when local commits sit on top — a rebase that conflicts is aborted and
   reported. Behind and dirty → refused: preflight never pulls over uncommitted changes, in any repo,
   the shared spec repo included.
-- **Exit codes.** A fetch that fails is environment (exit 2). A refused dirty tree or a rebase that
-  does not apply is the operator's to resolve by hand (exit 1) — the relaying session does not
-  resolve it either.
+- **Exit codes.** A fetch that fails is environment (exit 2). A refused dirty tree, a branch with no
+  upstream or a rebase that does not apply is the operator's to resolve by hand (exit 1) — the
+  relaying session does not resolve it either.
 - **Mid-run, the loop moves no local branch.** Its own fetches are refs-only
   ([`run-loop.md`](run-loop.md) § Fetch); the pull that brings a base up to its origin is the
   operator's call, made once here.

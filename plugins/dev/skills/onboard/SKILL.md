@@ -43,7 +43,7 @@ normal case, and the gap list drives the rest.
 
 ```bash
 git fetch origin && git log --oneline HEAD..@{u}    # what the remote knows and your checkout does not
-git rev-parse --abbrev-ref @{u}                     # fails = no upstream, and preflight will not say so
+git rev-parse --abbrev-ref @{u}                     # fails = no upstream — preflight refuses to sync it
 git status --porcelain                              # the operator's untracked files, before step 4 lands beside them
 kc project list --output=json                       # components + effective cwds (empty/error = no usable manifest)
 cat .kubecoder/project.yaml 2>/dev/null             # the manifest, if any
@@ -59,9 +59,9 @@ auto-rebase carried the false prose onto `main`. Read `HEAD..@{u}` before writin
 after any rebase, re-verify every gate in the tree you will actually commit. A gate's colour is a
 property of a tree, not of a run.
 
-**No upstream is not "in sync".** Preflight's sync `continue`s past a branch with no tracking ref
-and reports green having synced nothing, which is indistinguishable from success; a repo that
-reaches `/dev:run-slice` that way never syncs and checks its push against no tracking ref.
+**No upstream is not "in sync".** Preflight refuses a branch with no tracking ref rather than
+syncing nothing and reporting green, so the inventory's preflight line names it too; a repo that
+reached `/dev:run-slice` with one would check its push against no tracking ref.
 `git branch --set-upstream-to=origin/main main` is the whole fix — git config, host-local, nothing
 to commit.
 

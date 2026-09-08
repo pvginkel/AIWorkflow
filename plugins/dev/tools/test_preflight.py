@@ -5,7 +5,7 @@ pointers, and how all of them are wired into main.
 it is checked before the repo is resolved, and triage — which dispatches
 nothing — is deliberately exempt. `check_synced` / `sync_roots`: which
 checkouts the environment syncs, and what fast-forward, rebase, ahead-only,
-dirty, detached and a dead remote each do. The phase pointers and the devlock
+dirty, detached, no upstream and a dead remote each do. The phase pointers and the devlock
 follow. The kc/manifest/clean-tree/baseline checks are not covered here.
 
 Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_preflight.py` or via pytest.
@@ -355,13 +355,17 @@ def test_a_detached_head_is_skipped_and_the_next_repo_still_syncs():
     assert subproc.called("/work/App", "fetch")
 
 
-def test_a_branch_without_an_upstream_is_skipped():
-    """No upstream, nothing to pull from — not even a fetch is worth the
-    round trip."""
+def test_a_branch_without_an_upstream_is_refused():
+    """No upstream is not "in sync": skipped, the repo would report green
+    having synced nothing, so it is refused (exit 1) naming the repo and the
+    branch — and nothing is fetched, there is no remote to fetch from."""
     subproc = scripted_subprocess(repo_rules(
-        "0\t0", first=[(("rev-parse", "@{u}"), (128, "", "no upstream\n"))]))
+        "0\t0", first=[(("symbolic-ref",), (0, "feature/x\n", "")),
+                       (("rev-parse", "@{u}"), (128, "", "no upstream\n"))]))
     with synced(subproc):
-        preflight.check_synced(APP, None)
+        code, message = refused(preflight.check_synced, APP, None)
+    assert code == 1
+    assert "App" in message and "feature/x" in message and "upstream" in message
     assert not subproc.called("fetch")
 
 

@@ -4,6 +4,19 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-08 — preflight refuses a branch with no upstream instead of skipping it (v0.9.32)
+
+Trello #900, from the fleet onboarding pass. `check_synced` `continue`d past a branch with no
+tracking ref — "nothing to pull from" — and reported green having synced nothing, which is
+indistinguishable from success: a repo that reached `/dev:run-slice` that way never synced, and the
+run checked its push against no tracking ref. The `/dev:onboard` skill's step 1 had grown a
+`git rev-parse --abbrev-ref @{u}` line to catch it by hand, with a note that the defect was the
+driver's. It is now the driver's refusal: exit 1 naming the repo, its path and the branch, with the
+`git branch --set-upstream-to=…` line that fixes it — the operator's to resolve, like a dirty tree
+or a rebase that does not apply. The detached-HEAD skip stays: a checkout on no branch has nothing
+to pull onto, and stopping the environment's other repos from syncing over it would be wrong.
+`preflight.md` § Notes on the sync and the onboard skill's inventory step follow.
+
 ## 2026-09-07 — `/dev:onboard` folds the lessons of four pre-ruled headless runs (v0.9.31)
 
 Four repos — IoTSupport, ElectronicsInventory, DHCPApp, ZigbeeControl — ran the skill in one

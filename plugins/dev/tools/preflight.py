@@ -239,7 +239,9 @@ def check_synced(root: Path, cfg: project_config.ProjectConfig | None) -> None:
     every sibling: the run loop records whatever branch it finds the first time
     it touches a repo (`_base_branch`), so the checked-out branch is the base
     the slice will build on — no fixed `main` is assumed. A repo with a detached
-    HEAD or a branch with no upstream has nothing to pull onto and is skipped.
+    HEAD has nothing to pull onto and is skipped; a branch with no upstream is
+    refused, naming the repo and the branch — skipped, it would report green
+    having synced nothing.
 
     Behind and clean fast-forwards; behind with local commits rebases, and a
     rebase that conflicts is aborted (leaving the repo as it was) and handed to
@@ -252,10 +254,17 @@ def check_synced(root: Path, cfg: project_config.ProjectConfig | None) -> None:
         branch = _git(["-C", path, "symbolic-ref", "--quiet", "--short", "HEAD"])
         if branch.returncode != 0:
             continue  # detached HEAD — nothing to pull onto
+        branch_name = branch.stdout.strip()
         tracking = _git(["-C", path, "rev-parse", "--abbrev-ref",
                          "--symbolic-full-name", "@{u}"])
         if tracking.returncode != 0:
-            continue  # no upstream — nothing to pull from
+            fail(1,
+                 f"`{name}` ({path}) is on `{branch_name}`, a branch with no "
+                 f"upstream — preflight syncs every repo of the environment "
+                 f"with its origin before a slice starts, and a repo it skipped "
+                 f"would report green having synced nothing. Set the tracking "
+                 f"ref (`git -C {path} branch --set-upstream-to=origin/"
+                 f"{branch_name}`) or push the branch with `-u`, then retry.")
         upstream = tracking.stdout.strip()
         remote = upstream.split("/", 1)[0]
 
