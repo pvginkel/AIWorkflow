@@ -52,8 +52,7 @@ author prose docs.
 9. **Never call a commit missing from a tree you have not fetched.** The driver fetches your
    phase's target repo before dispatching you; any *other* repo you read holds remote-tracking
    refs as old as its clone — `git fetch` there before concluding anything about what is or is
-   not on `origin`. One writer raised a Blocker over a sibling-repo commit that had been on
-   `origin/main` for a day.
+   not on `origin`.
 10. **If scope is genuinely unclear, return `question` — never resolve uncertainty by inventing.**
     The operator's answer lands in the plan's rulings section and a fresh session continues.
 11. **Batch independent tool calls into one message.** Every extra turn replays your whole context

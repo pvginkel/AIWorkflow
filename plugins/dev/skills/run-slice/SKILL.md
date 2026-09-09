@@ -106,8 +106,8 @@ agents or fixing code, stop; that work belongs in a phase the loop executes.
   the spec repo is off its base: a `blocked` naming another slice's `phase/…` branch is that
   run's leftover, not yours — check the base branch out there and resume, and never commit onto
   another run's branch.
-- **The suite is green before every slice.** A failure during the run is the slice's regression —
-  never accept "flaky" or "pre-existing" from anyone.
+- **Treat the suite as green before every slice** — preflight does not run it. A failure during
+  the run is the slice's regression — never accept "flaky" or "pre-existing" from anyone.
 - **Production stays operator-gated.** The loop's devlock hold pre-authorizes the pushes the slice
   needs for dev verification — even one whose GitOps effects reach past dev (a shared chart
   reconciles every environment it deploys); promoting anything into production is the operator's

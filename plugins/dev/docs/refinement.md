@@ -2,19 +2,12 @@
 
 `/dev:plan-slice` pins a slice's requirements with the operator before the plan loop runs. The
 operator reads a **document** and talks; the session never puts a multiple-choice dialog in
-front of them. Read on 49 slices (`docs/research/plan-interview-2026-09-01.md`): the dialogs
-were dismissed, answered "I don't know", and re-posed after "let's talk"; the listed
-alternatives were chosen 8 % of the time; and the recommendation itself was wrong or built on a
-stale premise in a fifth of the questions — the operator needs its grounds checked, not a menu.
+front of them — the operator needs a recommendation's grounds checked, not a menu. What the
+dialogs did instead, and what the first documents got wrong, is the record in
+`docs/rationale/plan-refinement.md`; this doc is the contract that came out of it.
 
-The document is **the PO's page, not the planner's notebook.** The first five docs written to
-this contract (`docs/research/refinement-read-2026-09-03.md`) were 27–35 KB grounding logs —
-functions quoted whole, a `file:line` per claim, half of each doc a premise-by-premise
-verification — and the operator, reading them cold the next morning, could not follow them:
-three were agreed in one line, two were delegated ("I trust you get this right"), and the
-verdict was "a wall of text I can't make heads or tails of … I really don't believe it has
-value." The grounding is the session's work and the plan's input; the operator sees its
-conclusions, never its evidence.
+The document is **the PO's page, not the planner's notebook.** The grounding is the session's
+work and the plan's input; the operator sees its conclusions, never its evidence.
 
 Three parties, one artifact:
 
@@ -38,31 +31,27 @@ choice changes something a user sees (the line `/ls` prints, the message a Windo
 shows), an outage window or a procedure the operator runs (which repo is pushed first, a
 controller down for minutes on each stage), a risk they carry (a homelab literal surviving one
 more release), or a preference the material cannot settle. The test is the alternative — if the
-writer's own alternative line would read "loses" or "not worth it", it is not a decision. The
-first five docs put twelve decisions and the operator engaged with four; the other eight were
-engineering choices the session could rank on its own grounds — strict versus lenient argument
+writer's own alternative line would read "loses" or "not worth it", it is not a decision.
+Engineering choices the session can rank on its own grounds — strict versus lenient argument
 parsing in a test stub, a capture script versus attached fixtures, a request header versus a
 process lookup, a new boolean versus reusing an old one, a flat map versus a nested one, an
-environment variable versus a config key — and drew "I don't have the faintest about the other
-one. I assume you know what you're doing." Those are **settled by the session**: made, stated
-in one sentence with their grounds where the operator could care, and corrected by the operator
-if they disagree on reading. Most slices have one or two decisions; a slice with none gets a
-doc that says so.
+environment variable versus a config key — are **settled by the session**: made, stated in one
+sentence with their grounds where the operator could care, and corrected by the operator if
+they disagree on reading. Most slices have one or two decisions; a slice with none gets a doc
+that says so.
 
 Neither form carries what the slice does not leave open. A decision is what its numbered
 requirements — their own "open for the planner" items included — genuinely leave undecided. A
 matter the slice merely touches (the estate-wide sweep a change would make possible, which
 phase owns a rewrite) is settled by the session; three questions at once about surfaces the
-slice touches read as scope creep and cost the operator a discussion they never asked for ("I
-have no idea what we're discussing. I thought we were just removing duplication between
-images."). A call the operator delegated in so many words ("if you feel a few would be nice, do
-move them") is executed and shown — the list, the one item the session would argue about —
-never converted back into a question. A prose nit (a comment or doc sentence that restates or
-misstates) is grounded and, where the project classes the edit as ad hoc work, made now and
-reported; otherwise it rides as a requirement whose ruling reads **culled, not reworded**, so
-the writer deletes or narrows the clause instead of negotiating with it. Nine doc nits
-presented as a decision matrix is the shape the operator stopped: that slice went from nine
-requirements to no phases once five edits shipped in-session and three closed on the evidence.
+slice touches read as scope creep and cost the operator a discussion they never asked for. A
+call the operator delegated in so many words ("if you feel a few would be nice, do move them")
+is executed and shown — the list, the one item the session would argue about — never converted
+back into a question. A prose nit (a comment or doc sentence that restates or misstates) is
+grounded and, where the project classes the edit as ad hoc work, made now and reported;
+otherwise it rides as a requirement whose ruling reads **culled, not reworded**, so the writer
+deletes or narrows the clause instead of negotiating with it — never a decision matrix of doc
+nits.
 
 **Agree-or-comment**, in chat, carries the single decent choice that has impact — if the
 honest alternative would read "reject — leave the plan wrong", it is not a decision, it is a
@@ -78,8 +67,8 @@ lives — the writer reads it to select, and the doc carries none of it:
   slice); and every requirement whose premise no longer holds (the sentence it targets removed
   by an earlier slice, the file it names never existed), each with what changes as a result —
   the doc opens with those as settled by the facts, for the operator to confirm.
-- **Size** — the phases this comes to and the repos it touches. Slice 183 ran a clean
-  interview and went back to triage on a number the interview never surfaced.
+- **Size** — the phases this comes to and the repos it touches. A size the interview never
+  surfaces sends a cleanly interviewed slice back to triage.
 - **Per decision** — why it is the operator's (the test above); where it comes from (the
   requirement, card or finding); what the session found, as claims — each verified, with its
   evidence kept here, or marked unverified; the recommendation and its trade-off (what it gives
@@ -110,10 +99,10 @@ seeds it; that is the only place the plan-writer reads it. Nobody downstream rea
 record — the same role `plan_review_r*.md` plays for the review round. The rulings live in
 `plan.md` for the planner; the doc holds what was put to the operator and, under each
 *Operator* line, how they ruled — in their words, whether they wrote it there or said it in
-chat. Slice 199's doc went to the record with one decision still reading *agree, or comment
-here* beside a plan that recorded the agreement, and another still recommending what the plan's
-rulings had reversed; a reader checking a ruling against the refinement that produced it found
-the opposite advice and no sign it had been overruled. Shape:
+chat. No placeholder outlives a ruled decision, and a recommendation the plan's rulings
+reversed shows the reversal on its *Operator* line: a reader checking a ruling against the
+refinement that produced it must find the ruling there, not the opposite advice with no sign
+it was overruled. Shape:
 
 ```markdown
 # Slice NNN — refinement
@@ -156,8 +145,7 @@ Writing rules — the reader is the PO, a week away from the slice, deciding fro
   decision's prose ("not verified: …") — never smoothed into a fact, never dropped.
 - **Fact questions are plain questions, each with its own answer line.** No options on "do you
   ever kill an env pod by hand?"; numbered like the decisions, an *Operator* line under each — a
-  fact that sits as a bullet reads as a remark: slice 197's operator answered both decisions and
-  neither fact, and asked whether the bullets were questions at all.
+  fact that sits as a bullet reads as a remark and goes unanswered.
 - **Second round appends.** New decisions are new `D` entries after the existing ones, opening
   with where the plan now stands; an earlier entry's body is not rewritten. The writer never
   fills an *Operator* line — a ruling, and a ruling that moves, is written there by the session
@@ -189,9 +177,9 @@ carries:
 
 - **Review adjudication.** Every blocking finding of a review round in one message, each with
   its default disposition and what it changes in the plan; the operator's "agree", or a comment
-  on the ones they object to, is the ruling. The findings are shown with their grounds — of 13
-  accept/reject findings none was rejected, but eleven adjudication answers were typed — never
-  applied unseen. The `--fixes-applied` mechanics ([plan-loop.md](plan-loop.md)) are unchanged.
+  on the ones they object to, is the ruling. The findings are shown with their grounds — never
+  applied unseen, and never as an accept/reject pair: the operator writes when they disagree.
+  The `--fixes-applied` mechanics ([plan-loop.md](plan-loop.md)) are unchanged.
 - **A premise correction.** When grounding or the review overturns something the operator was
   told — stated first, with what it changes, before anything is re-asked.
 

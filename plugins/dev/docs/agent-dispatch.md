@@ -35,8 +35,9 @@ validation.
   env vars start. The first drops both plugins' skill listings from the prefix (a headless role
   invokes no skill; the plugin's *agents* are not skills and still register — `--agent dev:<role>`
   and the Agent tool's sub-agents are untouched). The second, with no `--mcp-config` beside it,
-  spawns with no MCP server at all: the operator's `~/.claude.json` servers' tool schemas and
-  instructions leave the prefix, and with them a reach no role's contract ever gave it — a finding
+  spawns with no MCP server at all: the operator's `~/.claude.json` servers' instructions leave
+  the prefix (their tool schemas were never in it — Claude Code defers them since 2.1.212), and
+  with them a reach no role's contract ever gave it — a finding
   goes to the close-out report, never to a tracker; CI is the test-agent's. The test-agent keeps
   the operator's servers whole because it drives CI through Jenkins, a server the operator's config
   names and the plugin cannot. Sub-agents inherit the dispatching session's trim; a nudge resumes

@@ -114,8 +114,9 @@ dispose is the operator's.
   cause only where it was shown: symptom claims hold up, cause attributions are the half that does
   not, and a reader deciding what to trust needs the class before the body. The same holds for
   a strike — resolved, refuted, does-not-reproduce names the commit and what was re-run.
-- **No limit on prose, no limit on count.** Long sections are fine; a cap produces more, not
-  less.
+- **No limit on prose, no limit on count — and no filler.** Long sections are fine; a cap produces
+  more, not less. Length is what the entry needs: the operator reads the report cold, and a
+  restated symptom, a boilerplate section or a summary of the entries costs them the entries.
 - **One entry per thing, not per turn.** A later observation about an entry that already exists —
   its premise moved, its symptom was re-tested, a phase resolved it, a reviewer refuted it — is
   `close_out.py note <id>`: a dated paragraph at the end of that entry's body, never a new entry.

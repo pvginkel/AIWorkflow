@@ -133,10 +133,7 @@ is not decided, however settled its card reads. A hit goes on the item's block a
 on the `Question:` line — overrule the record, or close the card on it. The label is unaffected
 (the consequence still decides it), and the collision travels: unresolved, it bars the item from
 every route that takes a card as decided (steps 6 and 8); an overrule rides into the slice as a
-ruling, with the record's id (step 7). Slice 193 was grouped on the axis "needs no design
-decision the card has not already made"; one of its six items collided head-on with a standing
-decision the card never mentioned, planning found it, the operator had to overrule — and had, in
-their words, "created a card twice before and closed it because of this same D-record".
+ruling, with the record's id (step 7).
 
 **Label each item independently** — one item, one verdict against the rubric, blind to the rest
 of the batch. The justification is **a verbatim quote from the source and nothing else** — no
@@ -322,10 +319,9 @@ Separate what shouldn't become a slice, and confirm the separation with the oper
   the card leaves open — so the operator sees what was considered and overrules a verdict in
   the same message. The verdict turns on the card's text alone: a card without an
   `## Acceptance criteria` section is not thereby disqualified — the criteria are what this
-  step writes, and a card that is already fully specified qualifies without them. A session
-  that routed fully specified cards the normal route because they carried no criteria, and
-  proposed the mark for none, is the miss this rule exists for. A surviving **user-visible nit
-  pick** is the archetypal candidate — decided change, plain impact; a card that arrives already
+  step writes, and a card that is already fully specified qualifies without them. A surviving
+  **user-visible nit pick** is the archetypal candidate — decided change, plain impact; a card
+  that arrives already
   marked from an earlier session is re-checked there too. A **near miss** — a card that fails
   on one open point the operator can settle from memory: which of two names, whether the old
   flag stays, the exact message — is put to them with the point named: rule it and the card

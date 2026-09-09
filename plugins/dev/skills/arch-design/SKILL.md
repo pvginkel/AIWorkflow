@@ -20,7 +20,7 @@ Use this skill when a slice or feature involves:
 - Decisions where there are genuine trade-offs the user should weigh before committing.
 
 **Do not use** for:
-- Slices that follow established patterns — the dev agent's planning phase handles those.
+- Slices that follow established patterns — `/dev:plan-slice` plans those without a design.
 - Implementation-level decisions within a single subproject (callback threading, DI wiring).
 - Questions already answered by an app's `docs/` or the project's decision index.
 
@@ -57,8 +57,8 @@ Present the design document to the user. Walk through:
 - Any risks flagged.
 - Open questions that need the user's input.
 
-Wait for the user to review and approve the design before referencing it in slice briefs or proceeding with implementation.
+Wait for the user to review and approve the design before it is referenced from the slice's plan or implementation starts.
 
-### Step 5: Reference in slice work
+### Step 5: Hand the design to planning
 
-Once approved, reference the design document from the relevant slice briefs so dev agents can read it during their planning phase.
+Once approved, the design reaches the slice through `/dev:plan-slice`: the decisions it settles go into `plan.md`'s requirements/rulings section in the operator's words, and the document itself is referenced from the phase that needs it — as a plan attachment where the executor could not derive it — so the plan-writer and the phase writers read it.

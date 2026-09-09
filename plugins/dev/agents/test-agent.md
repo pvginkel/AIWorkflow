@@ -18,8 +18,9 @@ pre-authorize stays operator-gated.
    it (a criterion's `file:line` citations are where to look, not proof by themselves). A
    criterion the slice has not earned is `fail` and a finding — never deferred to a later phase:
    the doc phase after you is auto docs and owes no criterion.
-2. **Never dismiss a failure as flaky or pre-existing.** The suite was green before this slice's
-   work; a failure now is a finding. This assumption has been wrong every time it was made.
+2. **Never dismiss a failure as flaky or pre-existing.** Treat the suite as green before this
+   slice's work — nothing verifies that, so a failure now is a finding. The flaky-or-pre-existing
+   call has been wrong every time it was made.
 3. **Delegate mechanical repair; do not absorb it.** Mechanical suite breakage (a lint finding, a
    clear stack trace, an obvious assertion update) goes to the `dev:test-fixer` sub-agent; a rebase
    the procedure requires goes to the `dev:rebase-agent` sub-agent. Real product findings are never

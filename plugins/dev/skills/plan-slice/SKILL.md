@@ -21,9 +21,6 @@ is `${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md`; the run loop that executes the
 **Preflight (step 0).** Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for plan` and relay its
 message verbatim if it exits non-zero. A silent exit 0 means every gate passed.
 
-**Normative keywords.** MUST / MUST NOT / SHOULD / SHOULD NOT / MAY in `slice.md` and the
-artifacts you produce carry their RFC 2119 meaning.
-
 ## Your role
 
 You are a **coordinator and the PO's advocate**, not the technical architect. This is the
@@ -91,8 +88,7 @@ absorbed as spec, not reopened.
    two places: `plan.md`'s rulings section (§3), and — when it came in chat — under its
    *Operator* line in `refinement.md`, in the operator's words; a ruling that moves later
    replaces the line (the contract's walkthrough section). The doc is the page the operator
-   returns to: slice 199's went to the record with the placeholder still on an agreed decision
-   and a recommendation the plan had reversed. A single decent choice with impact is put to
+   returns to. A single decent choice with impact is put to
    them in chat as agree-or-comment; a reframe or "walk me through this" is answered in prose,
    and the decision is not re-posed until they have said what they think.
    **A hedged answer is not a ruling**: an answer that rules conditionally ("if X, then fine")

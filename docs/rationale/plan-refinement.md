@@ -185,3 +185,34 @@ the other way, and lists what the session settled in one sentence each, filtered
 surface the operator owns; the evidence stays in the session's material and reaches the plan-writer
 through the `plan.md` header. The next read is the first four slices on 0.9.21: doc length, decisions
 per slice, whether the delegating replies stop, and whether a settled item ever draws a correction.
+
+## What the contract's rules rest on (moved here 2026-09-09)
+
+Until 0.9.33 the contract ([`refinement.md`](../../plugins/dev/docs/refinement.md)) carried its
+evidence inline — the incidents below, read by the Fable writer on every dispatch. The 2026-09-09
+prompt audit ([`platform-cost-read-2026-09-09.md`](../research/platform-cost-read-2026-09-09.md)
+§ 3.2) moved them here; the rules stand in the contract without them. Slices are KubeCoder, all on
+0.9.19–0.9.21.
+
+- **"Settled by the session", and what a decision is.** The first five docs put twelve decisions
+  and the operator engaged with four; the other eight were engineering choices the session could
+  rank on its own grounds — strict versus lenient argument parsing in a test stub, a capture
+  script versus attached fixtures, a request header versus a process lookup, a new boolean versus
+  reusing an old one, a flat map versus a nested one, an environment variable versus a config key
+  — and drew "I don't have the faintest about the other one. I assume you know what you're doing."
+- **A doc asks nothing the slice does not leave open.** Three questions at once about surfaces a
+  slice merely touched drew "I have no idea what we're discussing. I thought we were just removing
+  duplication between images." Nine doc nits presented as a decision matrix is the shape the
+  operator stopped: that slice went from nine requirements to no phases once five edits shipped
+  in-session and three closed on the evidence.
+- **Size is material.** Slice 183 ran a clean interview and went back to triage on a phase count
+  the interview never surfaced.
+- **No placeholder outlives a ruling.** Slice 199's doc went to the record with one decision still
+  reading *agree, or comment here* beside a plan that recorded the agreement, and another still
+  recommending what the plan's rulings had reversed; a reader checking a ruling against the
+  refinement that produced it found the opposite advice and no sign it had been overruled.
+- **Fact questions get their own answer line.** Slice 197's operator answered both decisions and
+  neither fact — the facts sat as bullets — and asked whether the bullets were questions at all.
+- **Review adjudication is agree-or-comment, not accept/reject.** Of 13 accept/reject findings
+  put through dialogs, none was rejected, but eleven adjudication answers were typed: the pair
+  carried no information and the typing did.

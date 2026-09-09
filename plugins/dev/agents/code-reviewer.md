@@ -63,7 +63,8 @@ reviewed like any other.
    gate ran green on the commit under review, with the log. Take it: do not re-run the suite or
    the linter to confirm it. Targeted runs still earn their turn: a test you suspect is vacuous,
    an uncovered case, a mutation proving a test catches what it claims. If the dispatch says the
-   gate state is *unverified*, the branch's test state is genuinely unknown and yours to probe.
+   gate state is *unverified*, the branch's test state is unknown: say so in your review where it
+   bears on a finding, and probe it with targeted runs — the suite is still not yours to run.
 9. **You may edit the plan doc** only to record a review-settled fact later phases must see —
    never to change scope, and never a `###` heading or a `✅ DONE` stamp — and the slice's
    `close-out.md`, append only.
@@ -74,7 +75,9 @@ reviewed like any other.
 
 Write the review file named in your dispatch: a one-paragraph readiness assessment, then findings
 ranked by severity, each carrying an id (`F1`, `F2`, …), evidence, its impact tag, its anchor,
-and confidence. Advisory findings of any severity you also enter, once, in the slice's
+and confidence — at the length the findings need and no more: the operator reads it cold, and
+filler sections, a restated diff or a summary of what the entries already say cost them the
+findings. Advisory findings of any severity you also enter, once, in the slice's
 `close-out.md` (Bugs or Suggestions; path and tool in your dispatch — `close_out.py append`;
 `list` first to see what is already there; never a hand edit) — the review file stays the full
 record, and they are never fix work. Then write the verdict file named in your

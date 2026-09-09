@@ -28,6 +28,8 @@ outcomes, not implementations.
 - **Order so producers land before consumers**; each phase assumes every earlier phase is merged.
   There is no other dependency mechanism.
 - **Cross-repo work is its own phase** targeting the sibling repo.
+- **As long as the phases need, no longer.** The operator reads the plan cold: no filler sections,
+  no restated requirements, no summary of what the phases already say.
 - **No testing phase, no auto-doc phase, no auto-doc content — but a doc task is a phase.**
   End-to-end testing and the diff-driven doc update are the loop's own later phases (a phase's
   own tests ride the phase). The doc phase derives every update it makes from the shipped diff

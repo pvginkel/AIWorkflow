@@ -90,6 +90,24 @@ def test_unknown_model_prices_zero():
     assert cost_for("claude-nonexistent", {"input": 1_000_000}) == 0.0
 
 
+def test_cache_read_multiplier_is_per_model():
+    """A cache hit is 0.1× base input everywhere except the Fable/Mythos 5.1
+    tier, which reads cache at 0.025× ($0.25/MTok)."""
+    mtok = {"cache_read": 1_000_000}
+    assert cost_for("claude-fable-5-1", mtok) == pytest.approx(0.25)
+    assert cost_for("claude-mythos-5-1", mtok) == pytest.approx(0.25)
+    assert cost_for("claude-fable-5", mtok) == pytest.approx(1.00)
+    assert cost_for(OPUS, mtok) == pytest.approx(0.50)
+    assert cost_for(SONNET, mtok) == pytest.approx(0.20)
+
+
+def test_fable_5_1_is_priced():
+    """The refinement-writer sub-agent runs on it — a missing entry priced a
+    whole role at zero."""
+    assert cost_for("claude-fable-5-1",
+                    {"input": 1_000_000, "output": 1_000_000}) == pytest.approx(60.0)
+
+
 # -- transcript scanning ----------------------------------------------------
 
 def test_duplicate_message_ids_counted_once(tmp_path):

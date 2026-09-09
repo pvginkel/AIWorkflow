@@ -1328,9 +1328,10 @@ they are adequate.\
 """
 
 GATE_UNVERIFIED_LINE = """\
-No deterministic test gate is recorded green against this commit — treat the
-branch's test and lint state as unverified, and say so in your review if it
-bears on a finding.\
+No deterministic test gate is recorded green against this commit — the
+branch's test and lint state is unverified: say so in your review where it
+bears on a finding, and probe it with targeted runs; the suite is still not
+yours to run.\
 """
 
 # The review-funding bar: stated by the driver (which knows the round number
@@ -1576,10 +1577,10 @@ your verdict to {verdict_path}.
 """
 
 DOC_GATE_NUDGE_PROMPT = """\
-The driver's full gate sweep is red after your doc-phase commits (nudge
-{round} of {cap}): `kc project lint` + `build` + `test`, output in
-{gate_log}. The sweep is fail-fast, so the log ends at the FIRST failing
-statement — there may be more behind it. Fix what broke on branch {branch}
+The driver's full gate sweep is red after your doc-phase commits:
+`kc project lint` + `build` + `test`, output in {gate_log}. The sweep is
+fail-fast, so the log ends at the FIRST failing statement — there may be more
+behind it. Fix what broke on branch {branch}
 without weakening any gate — mechanical suite breakage may go to the
 `dev:test-fixer` sub-agent — commit, and do not push. Do not start other work.
 """
@@ -1593,14 +1594,12 @@ HOLD_BLOCK = """\
 """
 
 PUSH_NUDGE_PROMPT = """\
-The test phase is not done: work this slice committed is not on origin
-(nudge {round} of {cap}) —
+The test phase is not done: work this slice committed is not on origin —
 
 {repos}
 
-A reviewed-but-unpushed commit never reaches the deploy it was meant for
-(one run's dev roll crash-looped exactly that way, its sibling's half of the
-change still local). Push what is owed, in whatever order these repos need,
+A reviewed-but-unpushed commit never reaches the deploy it was meant for.
+Push what is owed, in whatever order these repos need,
 per your procedure doc's push step — wait for the CI build it names, and redo
 any live check the push invalidates. Do not start other work.
 """
@@ -1614,7 +1613,9 @@ Situation: {situation}
 {close_out_line} Out-of-scope findings and sub-bar leftovers go there as
 entries; `list` before you write, add if in doubt.
 
-Investigate as needed — read the material below, the plan, git log/diff.
+Investigate as needed — read the material below, the plan, git log/diff —
+yourself: a sub-agent only for a survey wider than this slice, never for a
+few reads or to check a conclusion you already hold.
 {material}
 
 Choose exactly one action:

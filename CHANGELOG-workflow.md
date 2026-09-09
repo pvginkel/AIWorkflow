@@ -4,6 +4,46 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-09 — the platform-cost read applied: arch-design for the pipeline that exists, refinement.md without its evidence, a delegation bound for the consult, length lines, a current price table (v0.9.33)
+
+`docs/research/platform-cost-read-2026-09-09.md` read Anthropic's 2026-09-08 post on cost and
+performance against the plugin and ran its `/claude-api prompt-audit` over the 28 prose files; the
+operator ruled on its nine suggestions in the doc's § 4 and this version is the accepted ones.
+**The audit (S1).** `agents/arch-design.md` and its skill were the one pre-rebuild body — April
+text ported unchanged on 2026-08-11 — with a `Step 1`–`Step 5` choreography, "Do NOT skim" three
+times, a take-notes scaffold, a don't-list repeating the body, and vocabulary naming a pipeline
+that no longer exists ("the dev agent's planning phase", "slice briefs"): the agent is now identity
++ input + seven bounds + the unchanged output template, and the skill hands an approved design to
+`/dev:plan-slice` — rulings into `plan.md`, the document as a plan attachment. `docs/refinement.md`
+was about 40 % research narrative read by the Fable writer on every dispatch — the 49-slice read,
+the 27–35 KB walls, slices 183/197/199 — and is now the contract alone; the incidents moved to
+`docs/rationale/plan-refinement.md` § What the contract's rules rest on. Anecdotes left the
+code-writer's rule 9, the push nudge, the plan-slice skill and the triage skill; the plan-slice
+skill's RFC 2119 line and the two nudges' "(nudge N of M)" countdowns went. Two contradictions the
+audit found across files are resolved in instruction form: the test-agent and the run-slice skill
+said the suite *was* green before the slice while `preflight.md` says preflight never runs it —
+both now say *treat* it as green; the reviewer was told an unverified gate was "yours to probe"
+while the driver's line said "say so" — both now say say so, probe with targeted runs, never the
+suite. **A delegation bound (S2).** Sub-agent spend per slice doubled like for like between the
+August corpus and slices 200–218, and the Opus 5 migration notes say the model delegates freely and
+wants an explicit rule. The general "delegate what your context doesn't need" instruction that
+reaches every session lives in KubeCoder's managed `CLAUDE.md` (its own commit); the plugin's
+consult prompt, the bare session that showed the rise, gets one clause — investigate yourself, a
+sub-agent only for a survey wider than the slice. **Length lines (S6)**, on the operator's word
+that the reports are hard to get through: the review file, `plan.md` and the close-out contract
+now say the length the content needs and no more — no filler sections, no restated diff or
+requirements, no summary of what the entries already say; the close-out's "no limit on prose"
+stands beside it. **Doc corrections (S7):** `agent-dispatch.md` no longer claims
+`--strict-mcp-config` takes MCP tool schemas out of the prefix (Claude Code defers them since
+2.1.212; the instructions and the reach argument stand). **The price table (S5):**
+`slice_cost.py` priced Sonnet 5 at the $3/$15 rise that did not happen and had no
+`claude-fable-5-1` entry, so every Fable turn priced at $0; now Sonnet 5 is $2/$10, Fable 5.1 and
+Mythos 5.1 are in at $10/$50 with their 0.025× cache-read rate (a per-model `cache_read` field;
+0.1× stays the default), and every Sonnet figure in the earlier readouts is 1.5× overstated.
+Rejected, recorded in `CLAUDE.md` § Settled rulings so they are not re-proposed: Explore on
+Sonnet (S3), a lower effort for the test-agent (S4), Fable 5.1 for the writer while Fable has its
+own quota (S8).
+
 ## 2026-09-08 — preflight refuses a branch with no upstream instead of skipping it (v0.9.32)
 
 Trello #900, from the fleet onboarding pass. `check_synced` `continue`d past a branch with no
