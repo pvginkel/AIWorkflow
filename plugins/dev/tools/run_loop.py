@@ -1613,9 +1613,7 @@ Situation: {situation}
 {close_out_line} Out-of-scope findings and sub-bar leftovers go there as
 entries; `list` before you write, add if in doubt.
 
-Investigate as needed — read the material below, the plan, git log/diff —
-yourself: a sub-agent only for a survey wider than this slice, never for a
-few reads or to check a conclusion you already hold.
+Investigate as needed — read the material below, the plan, git log/diff.
 {material}
 
 Choose exactly one action:

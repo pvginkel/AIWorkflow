@@ -4,7 +4,7 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
-## 2026-09-09 — the platform-cost read applied: arch-design for the pipeline that exists, refinement.md without its evidence, a delegation bound for the consult, length lines, a current price table (v0.9.33)
+## 2026-09-09 — the platform-cost read applied: arch-design for the pipeline that exists, refinement.md without its evidence, length lines, a current price table (v0.9.33)
 
 `docs/research/platform-cost-read-2026-09-09.md` read Anthropic's 2026-09-08 post on cost and
 performance against the plugin and ran its `/claude-api prompt-audit` over the 28 prose files; the
@@ -26,10 +26,10 @@ both now say *treat* it as green; the reviewer was told an unverified gate was "
 while the driver's line said "say so" — both now say say so, probe with targeted runs, never the
 suite. **A delegation bound (S2).** Sub-agent spend per slice doubled like for like between the
 August corpus and slices 200–218, and the Opus 5 migration notes say the model delegates freely and
-wants an explicit rule. The general "delegate what your context doesn't need" instruction that
-reaches every session lives in KubeCoder's managed `CLAUDE.md` (its own commit); the plugin's
-consult prompt, the bare session that showed the rise, gets one clause — investigate yourself, a
-sub-agent only for a survey wider than the slice. **Length lines (S6)**, on the operator's word
+wants an explicit rule. That rule is not the plugin's: the "delegate what your context doesn't
+need" instruction that reaches every session lives in KubeCoder's managed `CLAUDE.md` template,
+and it is rewritten there (KubeCoder `89e77da7`, goldens regenerated) — no plugin prompt restates
+it. **Length lines (S6)**, on the operator's word
 that the reports are hard to get through: the review file, `plan.md` and the close-out contract
 now say the length the content needs and no more — no filler sections, no restated diff or
 requirements, no summary of what the entries already say; the close-out's "no limit on prose"
