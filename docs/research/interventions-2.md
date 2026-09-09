@@ -115,6 +115,10 @@ Medians unless stated; "headless" = every role except the two interactive orches
    times in 704 sessions. "Cut the session" has to be evaluated on growth alone — done (§1 what-if).
    Note `FORCE_PROMPT_CACHING_5M=1` is documented as a debugging switch; the production knob is
    `ENABLE_PROMPT_CACHING_1H`, which at 2× writes would cost us more, not less.
+   *(2026-09-09: the Claude Code docs now list `FORCE_PROMPT_CACHING_5M=1` first in the TTL
+   precedence order, above `CLAUDE_CODE_PROMPT_CACHE_TTL` / `promptCacheTtl` and
+   `ENABLE_PROMPT_CACHING_1H`; the default it overrides is the 1-hour TTL a subscription's main
+   conversation gets, headless included — `platform-cost-read-2026-09-09.md` § 3.1.)*
 3. **Caveat 3 — "read less → know less" is not monotone, and the evidence cuts both ways.** For:
    Chroma's focused-vs-full LongMemEval gap is largest for Claude, driven by abstention
    ([extracts/web-chroma-context-rot.md](extracts/web-chroma-context-rot.md)); Xia et al. raised accuracy

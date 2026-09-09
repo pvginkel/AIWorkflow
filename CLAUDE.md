@@ -146,8 +146,13 @@ instead of reopening it.
 
 - **No effort tiering, weaker model or Sonnet writer for the main roles** (plan-writer,
   plan-reviewer, code-writer, code-reviewer): the 0.7.0–0.7.2 step-down was withdrawn as "dead
-  weight" (`docs/research/status.md` § A3, reverted in 0.7.3). Sub-agents and sub-sub-agents stay
-  tunable (`docs/research/turns-plan.md` § T7).
+  weight" (`docs/research/status.md` § A3, reverted in 0.7.3). A lower effort for the test-agent
+  was rejected too (2026-09-09). Sub-agents and sub-sub-agents stay tunable
+  (`docs/research/turns-plan.md` § T7) — except Explore: **no Sonnet or Haiku pin for Explore and
+  no plugin-owned Explore agent**; the ≈ 2–3 % saving does not weigh against the quality risk
+  (rejected 2026-09-09, `docs/research/platform-cost-read-2026-09-09.md` § 4).
+- **No Fable for any role beyond the refinement-writer** while Fable has its own quota: "once
+  that goes away, I will start to consider it" (2026-09-09, the same read's S8).
 - **No context compression, auto-compact windows, turn or token caps, or history summarisation**
   for writers and reviewers (`docs/research/turns-plan.md` § Deliberately not in this plan). The
   turns plan itself is exhausted (`docs/research/readout-2026-09-01.md` § 7).
