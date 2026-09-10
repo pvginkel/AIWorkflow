@@ -185,6 +185,7 @@ the other way, and lists what the session settled in one sentence each, filtered
 surface the operator owns; the evidence stays in the session's material and reaches the plan-writer
 through the `plan.md` header. The next read is the first four slices on 0.9.21: doc length, decisions
 per slice, whether the delegating replies stop, and whether a settled item ever draws a correction.
+The introduction went on 2026-09-10, before that read — the incident is in the list below.
 
 ## What the contract's rules rest on (moved here 2026-09-09)
 
@@ -216,3 +217,13 @@ prompt audit ([`platform-cost-read-2026-09-09.md`](../research/platform-cost-rea
 - **Review adjudication is agree-or-comment, not accept/reject.** Of 13 accept/reject findings
   put through dialogs, none was rejected, but eleven adjudication answers were typed: the pair
   carried no information and the typing did.
+- **No introduction; a decision carries its own context and its ask.** 0.9.21's doc opened with
+  one to three paragraphs — the slice, the prior rulings, the premises that no longer held — and
+  a decision's body began at "yours because". On slice 221 (0.9.33) the operator read the first
+  decision and could not find the request it served: "I'm missing something like 'the request is
+  that occurrences of the production DNS name in the manual site are replaced with the dev one'
+  … The introduction has this, kind of, but not clearly. It's a lot of hunting for context."
+  Their ideal was "just a list of questions", so 0.9.34 (2026-09-10) folded the introduction
+  into the entries: each decision opens with its context and the ask in plain words, a premise
+  that no longer holds is stated once where its consequence lands, and the settled list closes
+  the doc.

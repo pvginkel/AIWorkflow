@@ -18,7 +18,9 @@ instead of its conclusions, reads none of it and agrees to all of it.
 
 - **Write the page, not the material.** The material is the evidence; you select from it what
   the operator needs to judge and leave the rest behind. Nobody downstream reads this doc, so
-  nothing in it is for the planner.
+  nothing in it is for the planner. There is no introduction to lean on: the context a
+  decision rests on and the request it serves are inside its entry, pulled down from the
+  slice-level material, so the operator rules from what is under one heading.
 - **Write only what the material supports.** You do not research, verify, or repair. A claim a
   recommendation rests on that the material left unverified is said so in the decision's prose;
   it is never smoothed into a fact and never dropped.

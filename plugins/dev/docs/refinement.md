@@ -66,12 +66,15 @@ lives — the writer reads it to select, and the doc carries none of it:
   it a week ago; what is already settled and by what (a ruling, a decision record, a prior
   slice); and every requirement whose premise no longer holds (the sentence it targets removed
   by an earlier slice, the file it names never existed), each with what changes as a result —
-  the doc opens with those as settled by the facts, for the operator to confirm.
+  the doc carries those as settled by the facts, for the operator to confirm; the slice summary
+  and the prior rulings reach the operator only inside the decision that rests on them.
 - **Size** — the phases this comes to and the repos it touches. A size the interview never
   surfaces sends a cleanly interviewed slice back to triage.
 - **Per decision** — why it is the operator's (the test above); where it comes from (the
-  requirement, card or finding); what the session found, as claims — each verified, with its
-  evidence kept here, or marked unverified; the recommendation and its trade-off (what it gives
+  requirement, card, finding or ruling) and what that asks for, concretely — the thing that
+  changes, where, for whom; what is true today and already ruled that the decision rests on;
+  what the session found, as claims — each verified, with its evidence kept here, or marked
+  unverified; the recommendation and its trade-off (what it gives
   up, why that is acceptable); the one alternative the operator could plausibly pick, with the
   trade-off that makes it lose; the impact if the recommendation is wrong (data loss, breakage,
   extra work, nothing).
@@ -107,13 +110,14 @@ it was overruled. Shape:
 ```markdown
 # Slice NNN — refinement
 
-<one to three paragraphs: what the slice is and why, for a reader a week away; what is already
-settled and by what; a premise that no longer holds, one sentence each with what changes; what
-this doc asks, or that it asks nothing; the size in phases and the repos touched>
-
-## D1 — <the decision, as one sentence a cold reader can parse>
-<why this is the operator's call and where it comes from — a sentence or two>
-<what the session found, as prose: the two or three facts the choice turns on, said in words>
+## D1 — <the choice, as one sentence a cold reader can parse>
+**Context.** <what is true today and what is already ruled, as far as this decision rests on
+it — the situation the request lands in, for a reader a week away; a few sentences>
+**The ask.** <the request this decision serves, in plain words: what changes, where, for whom
+— the sentence the reader needs before the choice makes sense>
+**Background.** <what the session found: the two or three facts the choice turns on, said in
+words>
+**Why yours.** <one sentence: what the operator could rule the other way on>
 **Recommendation.** <the shape; then the trade-off — the sentence the operator disagrees with
 when they disagree>
 **The other way.** <the alternative the operator could plausibly pick, one line, with what it
@@ -121,23 +125,34 @@ costs>
 **If this is wrong.** <one line>
 **Operator.** _agree, or comment here_
 
-## Settled by the session
-<one sentence per item, only those the operator could care about; the routine ones are absent>
-
 ## Open facts — questions only you can answer
 **F1.** <the question, plain, no options; in a few words, what the answer settles>
 **Operator.** _answer here_
+
+## Settled
+<one sentence per item, only those the operator could care about; the routine ones are absent;
+a premise that no longer holds first — what was believed, what is true, what changes; the size
+last — the phases this comes to and the repos it touches>
 ```
 
 Writing rules — the reader is the PO, a week away from the slice, deciding from the page:
 
+- **No introduction; each entry stands alone.** The doc is the list of what is asked. What an
+  introduction would carry — what the slice is, what was already ruled, what no longer holds —
+  sits inside the entry that needs it, so the operator reads one heading and rules from what
+  is under it, never hunting above it for the request the decision serves. A prior ruling
+  appears only in the *Context* of the decision that rests on it; the plan carries the rest. A
+  premise that no longer holds is stated once, where its consequence lands: in the entry it
+  produces — a decision's *Context*, a fact question — otherwise as a settled item. A slice
+  with no decision says so in one line under the title, where the first decision would be.
 - **No code, no handles.** No fenced blocks, no `file:line`, no card numbers, decision ids or
   requirement numbers: things are named in words ("the route that streams an environment's
   state", "the card that reported the Windows share"). The one exception is text the operator
   is ruling on verbatim — a message a user will read on screen, a config shape they will type.
-- **Short.** The introduction is one to three paragraphs; a decision is a few paragraphs, about
-  250 words; a settled item is one sentence; the whole doc reads in five minutes. Context, not
-  volume — what the operator needs to judge, not what the session did to get there.
+- **Short.** A decision is about 300 words — its *Context* and its ask a few sentences each,
+  not the slice retold; a settled item is one sentence; the whole doc reads in five minutes.
+  Context, not volume — what the operator needs to judge, not what the session did to get
+  there.
 - **Recommendation first, one alternative at most.** The trade-off is the sentence the operator
   disagrees with when they disagree — write it so it can be. An alternative that loses on the
   material is not listed; a decision with no live alternative is a settled item.
@@ -146,10 +161,10 @@ Writing rules — the reader is the PO, a week away from the slice, deciding fro
 - **Fact questions are plain questions, each with its own answer line.** No options on "do you
   ever kill an env pod by hand?"; numbered like the decisions, an *Operator* line under each — a
   fact that sits as a bullet reads as a remark and goes unanswered.
-- **Second round appends.** New decisions are new `D` entries after the existing ones, opening
-  with where the plan now stands; an earlier entry's body is not rewritten. The writer never
-  fills an *Operator* line — a ruling, and a ruling that moves, is written there by the session
-  (below).
+- **Second round appends.** New decisions are new `D` entries after the existing ones, their
+  *Context* saying where the plan now stands; an earlier entry's body is not rewritten. The
+  writer never fills an *Operator* line — a ruling, and a ruling that moves, is written there
+  by the session (below).
 
 ## The walkthrough
 

@@ -4,6 +4,24 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-10 — refinement.md loses its introduction: each decision carries its context and its ask (v0.9.34)
+
+The operator, reading slice 221's page, could not tell from a decision what request it served —
+"the introduction has this, kind of, but not clearly. It's a lot of hunting for context" — and
+asked for a document that is "just a list of questions". `docs/refinement.md`'s shape is now that:
+no introduction; each decision opens with **Context** (what is true today and already ruled, as
+far as the decision rests on it), **The ask** (the request it serves in plain words — what
+changes, where, for whom), **Background** (what the session found), **Why yours** (one sentence),
+then the recommendation, the other way, the impact and the *Operator* line, so the operator reads
+one heading and rules from what is under it. The open facts follow the decisions; the settled
+list closes the doc as `## Settled`, with a premise that no longer holds stated once where its
+consequence lands — inside the decision or fact question it produces, otherwise as the first
+settled items — and the size as its last line. A prior ruling appears only inside the decision
+that rests on it; the plan carries the rest. The material asks the session for each decision's
+origin and what it asks for, concretely; the writer's first bound says an entry stands alone; the
+plan-slice skill's "opens with" line follows. `docs/rationale/plan-refinement.md` records the
+incident.
+
 ## 2026-09-09 — the platform-cost read applied: arch-design for the pipeline that exists, refinement.md without its evidence, length lines, a current price table (v0.9.33)
 
 `docs/research/platform-cost-read-2026-09-09.md` read Anthropic's 2026-09-08 post on cost and

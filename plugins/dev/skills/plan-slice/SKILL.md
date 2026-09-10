@@ -49,9 +49,9 @@ removed by an earlier slice, the file it names as a home never existed, the spaw
 targets never carries the variable. So before anything is absorbed as spec, one read-only
 sub-agent over the whole slice checks what each requirement rests on — does the thing it cites
 still exist, and say what the slice says it says — and reports per requirement. A premise that
-no longer holds is a finding the refinement doc opens with — one sentence, with what changes;
-its evidence goes to `plan.md` in §3 — not a phase; about a fifth of a backlog slice goes that
-way.
+no longer holds is a finding the refinement doc carries as settled — one sentence, with what
+changes, inside the decision it produces or in the settled list; its evidence goes to `plan.md`
+in §3 — not a phase; about a fifth of a backlog slice goes that way.
 
 ### 2. Pin the requirements with the operator
 
