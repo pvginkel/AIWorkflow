@@ -129,10 +129,17 @@ def raises(exc):
 
 
 def run_cli(*argv):
-    """main() with its streams captured — (exit code, stdout, stderr)."""
+    """main() with its streams captured — (exit code, stdout, stderr).
+
+    argparse leaves through SystemExit on a usage error; that is a CLI result
+    like any other here, so it comes back as a code too.
+    """
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        code = close_slice.main(list(argv))
+        try:
+            code = close_slice.main(list(argv))
+        except SystemExit as exc:
+            code = exc.code
     return code, out.getvalue(), err.getvalue()
 
 
@@ -480,6 +487,91 @@ def test_slice_outside_a_slices_tree_exits_two(ws):
     code, _, err = run_cli(str(stray))
     assert code == 2
     assert "not inside a slices/ tree" in err
+
+
+# ---------------------------------------------------------------------------
+# --check — the same preconditions, nothing mutated
+# ---------------------------------------------------------------------------
+
+def readme_line_of(readme, prefix):
+    """The 1-based line the bullet starts on, as --check reports it."""
+    return 1 + next(index for index, line in enumerate(readme.splitlines())
+                    if line.startswith(prefix))
+
+
+@with_workspace
+def test_check_passes_a_correctly_filed_slice_and_mutates_nothing(ws):
+    spec, slice_dir = make_spec_repo(ws, location="slices/backlog")
+    before, before_status = (spec / "README.md").read_text(), status(spec)
+    code, out, err = run_cli("--check", str(slice_dir))
+    assert code == 0
+    assert out.strip() == (
+        f"slice 116: README entry under ## Pending "
+        f"(line {readme_line_of(README, '- **116**')}); "
+        "folder slices/backlog/116_toolchain_sweep — close-out would succeed")
+    assert err == ""
+    assert (slice_dir / "slice.md").is_file()
+    assert not (spec / "slices" / "completed" / "116_toolchain_sweep").exists()
+    assert staged(spec) == []
+    assert_untouched(spec, before, before_status)
+
+
+@with_workspace
+def test_check_catches_a_bullet_appended_at_the_end_of_the_readme(ws):
+    """The defect --check exists for: triage appends the entry, the file ends
+    in `## Completed`, and the close-out refuses the slice weeks later."""
+    bullet = "- **116** — Toolchain home-overlay sweep: single-line entry (#251).\n"
+    readme = README.replace(bullet, "") + bullet
+    spec, slice_dir = make_spec_repo(ws, readme=readme,
+                                     location="slices/backlog")
+    before, before_status = (spec / "README.md").read_text(), status(spec)
+    code, out, err = run_cli("--check", str(slice_dir))
+    assert code == 2
+    assert err.strip() == ("Error: slice 116 is already listed under "
+                           "`## Completed` in the spec README")
+    assert out == ""
+    assert (slice_dir / "slice.md").is_file()
+    assert_untouched(spec, before, before_status)
+
+
+@with_workspace
+def test_check_reports_a_slice_with_no_readme_entry(ws):
+    spec, slice_dir = make_spec_repo(ws, slice_name="999_unlisted",
+                                     location="slices/backlog")
+    before, before_status = (spec / "README.md").read_text(), status(spec)
+    code, out, err = run_cli("--check", str(slice_dir))
+    assert code == 2
+    assert "no `- **999** — …` entry under `## Pending`" in err
+    assert out == ""
+    assert_untouched(spec, before, before_status)
+
+
+@with_workspace
+def test_check_reports_every_slice_dir_in_the_batch(ws):
+    spec, good = make_spec_repo(ws, location="slices/backlog")
+    bad = spec / "slices" / "backlog" / "999_unlisted"
+    bad.mkdir()
+    (bad / "slice.md").write_text("# slice.md\n")
+    before, before_status = (spec / "README.md").read_text(), status(spec)
+
+    code, out, err = run_cli("--check", str(good), str(bad))
+    assert code == 2
+    assert out.strip().startswith("slice 116: README entry under ## Pending")
+    assert "folder slices/backlog/116_toolchain_sweep" in out
+    assert "no `- **999**" in err
+    assert good.is_dir() and bad.is_dir()
+    assert_untouched(spec, before, before_status)
+
+
+@with_workspace
+def test_two_slice_dirs_without_check_is_a_usage_error(ws):
+    spec, slice_dir = make_spec_repo(ws)
+    before, before_status = (spec / "README.md").read_text(), status(spec)
+    code, _, err = run_cli(str(slice_dir), str(slice_dir))
+    assert code == 2
+    assert "--check" in err
+    assert slice_dir.is_dir()
+    assert_untouched(spec, before, before_status)
 
 
 if __name__ == "__main__":

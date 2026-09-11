@@ -4,6 +4,19 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-11 — `close_slice.py --check`: a filed slice's README entry is verified where the close-out will look for it (v0.9.35)
+
+Trello #867. Two triage batches — 214 and 215 on 2026-09-06, 216–221 on 2026-09-08 — appended
+their README bullets at the end of the spec README, which is the `## Completed` section: its
+bullets have the same shape as Pending's, and a session that appends to the file lands there. The
+close-out found it weeks later — `close_slice.py` refused each slice as "already listed under
+`## Completed`" and the folder was moved by hand; the 2026-09-08 batch was moved back into Pending
+by the operator on the 9th. `close_slice.py --check <slice-dir>...` now runs the close-out's
+preconditions — the folder where it should be, the bullet absent from Completed and present under
+Pending — over each folder given, with the close-out's own messages, and moves nothing; the triage
+skill's step 7 names the section's end rather than the file's and runs the check before it commits.
+The close-out itself is unchanged.
+
 ## 2026-09-10 — refinement.md loses its introduction: each decision carries its context and its ask (v0.9.34)
 
 The operator, reading slice 221's page, could not tell from a decision what request it served —

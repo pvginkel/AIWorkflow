@@ -377,8 +377,12 @@ proposal — including anything already in `handovers/`) move into the slice fol
 unvalidated; you author none of your own.
 
 Add each slice to the **Pending** section of `<spec-repo>/README.md` — one line matching the
-existing entries, `- **NNN** — <short title>: <one-clause summary> (<headline category>; #refs)` —
-and commit the slice folders to the specs repo, staging files by name.
+existing entries, `- **NNN** — <short title>: <one-clause summary> (<headline category>; #refs)`,
+placed inside that section, above the heading that ends it. The file's end is `## Completed`, whose
+bullets have the same shape, and an entry landed there is one the close-out refuses. Verify before
+you commit: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_slice.py --check <slice-dir>...` runs the
+close-out's preconditions over each new folder and moves nothing. Then commit the slice folders to
+the specs repo, staging files by name.
 
 ### 8. Sweep the Solution Known cards
 

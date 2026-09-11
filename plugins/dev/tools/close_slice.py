@@ -28,16 +28,26 @@ Every precondition is checked before anything is mutated — a missing README
 entry, a missing folder, a folder whose id is not a whole number, or a slice
 already under `slices/completed/` exits 2 having changed nothing.
 
+`--check` runs those same preconditions over one or more slice folders and
+stops there, reporting what the close-out would find. /dev:triage runs it over
+the slices it has just filed, before it commits: a bullet appended at the end
+of the README lands under `## Completed`, whose bullets have the same shape,
+and the close-out then refuses the slice weeks later. The check turns that into
+a one-line fix at filing time.
+
 Usage:
     close_slice.py <slice_dir>
+    close_slice.py --check <slice_dir> [<slice_dir> ...]
 
-Exit codes: 0 closed out · 2 usage/precondition error · 1 unexpected error.
+Exit codes: 0 closed out (or every --check clean) · 2 usage/precondition
+error · 1 unexpected error.
 """
 
 import argparse
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 # The number must be terminated — by the closing `**` or by the `](` of a
@@ -228,8 +238,36 @@ def git(spec_root: Path, *args: str) -> None:
                            f"{result.stderr.strip() or result.stdout.strip()}")
 
 
-def close_slice(slice_dir: Path) -> list[str]:
-    """Run the close-out. Returns the action lines to print."""
+@dataclass(frozen=True)
+class Checked:
+    """What the preconditions established — the close-out's working set, and
+    all --check needs to report. Nothing here has touched the tree."""
+
+    slice_dir: Path
+    spec_root: Path
+    number: str
+    destination: Path
+    readme_path: Path
+    text: str
+    lines: list[str]
+    completed_start: int
+    completed_end: int
+    as_table: bool
+    span: tuple[int, int]
+    first_cell: str
+
+    def summary(self) -> str:
+        """The --check line: where the entry is and what would move."""
+        return (f"slice {self.number}: README entry under {PENDING_HEADING} "
+                f"(line {self.span[0] + 1}); folder "
+                f"{self.slice_dir.relative_to(self.spec_root)} — "
+                "close-out would succeed")
+
+
+def check_slice(slice_dir: Path) -> Checked:
+    """Every precondition, in order, mutating nothing — the half of the
+    close-out that decides whether it can run at all, so --check is the same
+    code and not a second reading of the same README."""
     slice_dir = slice_dir.resolve()
     spec_root = spec_root_for(slice_dir)
     number = slice_number(slice_dir)
@@ -267,26 +305,41 @@ def close_slice(slice_dir: Path) -> list[str]:
     # Read off the folder before the mv relocates it.
     first_cell = slice_link(slice_dir, number)
 
+    return Checked(slice_dir=slice_dir, spec_root=spec_root, number=number,
+                   destination=destination, readme_path=readme_path,
+                   text=text, lines=lines, completed_start=completed_start,
+                   completed_end=completed_end, as_table=as_table, span=span,
+                   first_cell=first_cell)
+
+
+def close_slice(slice_dir: Path) -> list[str]:
+    """Run the close-out. Returns the action lines to print."""
+    checked = check_slice(slice_dir)
+    slice_dir, spec_root = checked.slice_dir, checked.spec_root
+    number, lines, span, as_table = (checked.number, checked.lines,
+                                     checked.span, checked.as_table)
+
     # All preconditions hold; from here on we mutate.
     git(spec_root, "mv", str(slice_dir.relative_to(spec_root)),
-        str(destination.relative_to(spec_root)))
+        str(checked.destination.relative_to(spec_root)))
 
     entry = lines[span[0]:span[1]]
     remaining = lines[:span[0]] + lines[span[1]:]
     shift = span[1] - span[0]
+    completed_start, completed_end = checked.completed_start, checked.completed_end
     start = completed_start - shift if completed_start > span[0] else completed_start
     end = completed_end - shift if completed_end > span[0] else completed_end
     if as_table:
         rows = table_rows(remaining, start, end)
-        block = [table_row(remaining[rows[0]], first_cell,
+        block = [table_row(remaining[rows[0]], checked.first_cell,
                            entry_description(entry))]
         insert_at = rows[-1] + 1
     else:
         block = rewrite_links(entry, slice_dir.name)
         insert_at = last_entry_end(remaining, start, end)
     updated = remaining[:insert_at] + block + remaining[insert_at:]
-    readme_path.write_text(
-        "\n".join(updated) + ("\n" if text.endswith("\n") else ""))
+    checked.readme_path.write_text(
+        "\n".join(updated) + ("\n" if checked.text.endswith("\n") else ""))
     git(spec_root, "add", "README.md")
 
     if as_table:
@@ -304,14 +357,38 @@ def close_slice(slice_dir: Path) -> list[str]:
     ]
 
 
+def check_only(slice_dirs: list[str]) -> int:
+    """--check over a batch. Every folder is reported before the exit code is
+    decided: a triage session wants all of its misfiled entries at once, not
+    the first one."""
+    failed = False
+    for raw in slice_dirs:
+        try:
+            print(check_slice(Path(raw)).summary())
+        except Precondition as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            failed = True
+    return 2 if failed else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("slice_dir",
+    parser.add_argument("slice_dir", nargs="+",
                         help="path to <spec-repo>/slices/NNN_slug")
+    parser.add_argument("--check", action="store_true",
+                        help="report the close-out's preconditions for each "
+                             "slice dir and mutate nothing — /dev:triage's "
+                             "pre-commit check that a new slice's README "
+                             "entry sits under `## Pending`, where the "
+                             "close-out will look for it")
     args = parser.parse_args(argv)
+    if not args.check and len(args.slice_dir) > 1:
+        parser.error("one slice dir at a time — several are only for --check")
 
     try:
-        actions = close_slice(Path(args.slice_dir))
+        if args.check:
+            return check_only(args.slice_dir)
+        actions = close_slice(Path(args.slice_dir[0]))
     except Precondition as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
