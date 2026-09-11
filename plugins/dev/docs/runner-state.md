@@ -93,6 +93,7 @@ error the orchestrator diagnoses).
 | `gate_red` | – | the gate stayed red through the executor fix cap, or at merge |
 | `consult_bail` | – | any consult chose `bail` |
 | `devlock_timeout` | – | the dev occupancy lease stayed held past the wait cap |
+| `spec_tree_timeout` | – | the shared spec tree's lease stayed held past the wait cap — a parallel run's spec-repo phase, or the sessions in flight such a phase waits for ([run-loop.md](run-loop.md) § The plan is the queue) |
 | `timeout` | – | a driver-run gate or sweep command exceeded its limit, or an agent session did with no usable verdict on disk |
 | `unpushed` | – | a repo the slice touched was still behind `origin/<base>` after the test phase and its push nudges |
 | `protocol_failure` | – | a git command failed, an agent left uncommitted changes, a consult chose an unoffered action, the worktree was dirty at merge, an agent committed the driver's run record onto the phase branch, or a `CLAUDE.md` procedure-doc pointer is missing |
@@ -115,8 +116,17 @@ that). Resume skips preflight entirely — the caller owns the state it resumes 
 When a run dies mid-agent (host restart, quota stop, Ctrl-C), the `in_flight` record — phase,
 role, round, verdict path, session id, start time — lets `--resume` **reattach**: the worktree is
 left exactly as the crash left it, and the interrupted session is resumed with a recovery prompt
-instead of a fresh dispatch. A reattached round keeps the round number its interrupted dispatch
-ran under, so caps do not re-fire and counters do not double-advance.
+instead of a fresh dispatch. The session id is in the record from the turn's first seconds: the
+driver polls `kc session status` while the send runs rather than reading it after, because a
+send that hangs once the turn has ended never returns (slice 222's test agent, Triage #957) —
+the same read logs the id and the transcript path. A reattached round keeps the round number its
+interrupted dispatch ran under — executor, gate-fix, review and test rounds alike — so caps do
+not re-fire, counters do not double-advance, and the verdict path the resume computes is the one
+the record names. The resume reads that file before it dispatches anything: a valid verdict
+there was written by the interrupted round (every dispatch unlinks the file first), so the round
+is complete — counted from the file under the record's session id, with no duration on its row
+and no session resumed or spawned. Slice 222 spent a second full test phase on a `clean` verdict
+already on disk.
 
 Two things are deliberately never reattached: **consults**, which are cheap and whose action
 vocabulary may have changed, and **timed-out sessions**, whose `in_flight` record is cleared as
@@ -127,10 +137,12 @@ so one present when the timeout fires was written by this round: the agent finis
 committed it, and the turn wedged afterwards. The driver takes that verdict and counts the round
 normally rather than discarding work already on disk — and because the verdict is the last step of
 every role's protocol, a salvaged round is a complete one. The bail fires only when the verdict is
-missing or unparseable. The commit nudge reads it the same way: a round the driver had ruled
-`blocked` for a missing verdict is repaired — the history row and the outcome the loop acts on —
-when the nudge that cleaned the tree also left a valid verdict behind. The devlock is in-process
-(`flock`), so a crash releases it by construction.
+missing or unparseable. A session that ends with a non-zero exit — its send killed, the worker
+interrupted — is read the same way: a valid verdict on disk counts whatever the exit code, and
+only an invalid or missing one is the protocol failure. The commit nudge reads it the same way:
+a round the driver had ruled `blocked` for a missing verdict is repaired — the history row and
+the outcome the loop acts on — when the nudge that cleaned the tree also left a valid verdict
+behind. The devlock is in-process (`flock`), so a crash releases it by construction.
 
 **One driver per slice folder.** The run holds a `flock` on `<slice>/run.lock` from start to exit,
 and a second driver on the same folder exits 2 with the holder's host, pid and start time rather

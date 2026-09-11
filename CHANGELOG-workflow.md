@@ -4,6 +4,44 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-11 — the shared spec tree is leased, and a resume counts the verdict a hung round left on disk (v0.9.36)
+
+Trello #954 and #957, both from 2026-09-11's parallel runs on dev 0.9.34.
+
+**#954.** Two runs started seconds apart over the one shared KubeCoderSpecs tree. Slice 223's P1
+targeted that repo, so its driver checked `phase/223-P1` out there; slice 224's P1 executor — a
+code target — then committed its spec-side done-record and close-out entry onto that branch. The
+0.9.20 assertion found it after the round and bailed 224 `blocked`; it healed only because 223's
+reviewer signed off and the ff-merge carried the foreign commit into main. The assertion is a
+check, not a guard: nothing kept a spec-repo phase from moving the tree's HEAD while other runs'
+sessions were committing into it. The tree's HEAD is now leased — `SpecTreeLock`, a `flock`
+reader/writer lease in the spec repo's git dir, writers preferred: every dispatch and nudge of
+either loop, and every commit of the driver's own, holds it shared for the session's or the
+commit's duration with the assertion inside the hold; a phase whose `Target:` is the spec repo
+holds it exclusive from its branch checkout to its stamp, and a bail lets it go once the base is
+checked back out. A wait is logged once with the holder and announced once; past four hours
+(the devlock's cap) it bails `spec_tree_timeout` (the plan loop: `blocked`). The doc phase is not
+leased: its one spec-tree case, a project that is its own spec repo, would order the devlock and
+the lease inconsistently, and its `spec_branch` assertion stands.
+
+**#957.** Slice 222's test agent wrote a valid `clean` `test_phase_result_r1.json`, then its
+`kc session send` hung after the turn ended (KubeCoder Inbox: "kc session send never returns
+after a headless session's turn ends"). Stopped and resumed, the loop dispatched a fresh round-2
+test agent: `in_flight.session` was null for the whole turn (filled only after the send
+returned), so `--resume` had nothing to reattach; `_test_phase` had bumped `test_rounds` to 2,
+so the r1 verdict was never read; and killing the send instead would have ruled the round
+`blocked` — rc≠0 with a valid verdict. P4's reviewer session of the same slice was never logged
+for the same reason. Four changes: the session id is polled from `kc session status` while the
+send runs (KubeCoder's engine has it from the turn's first stream event), so the record, the log
+line and the transcript path land within seconds; a reattached round keeps its number in every
+counter — executor, gate-fix and test rounds now, as review rounds already did and as
+`runner-state.md` had claimed all along — so the resume computes the verdict path the record
+names; a resume reads that file before dispatching and, finding a valid verdict, counts the
+round from it under the record's session id with no session resumed or spawned; and a valid
+verdict counts whatever the session's exit code — the rule the timeout path already applied: the
+file was unlinked at dispatch, so a valid one is this round's, and the verdict is the last step
+of every role's protocol.
+
 ## 2026-09-11 — `close_slice.py --check`: a filed slice's README entry is verified where the close-out will look for it (v0.9.35)
 
 Trello #867. Two triage batches — 214 and 215 on 2026-09-06, 216–221 on 2026-09-08 — appended

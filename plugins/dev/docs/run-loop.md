@@ -43,18 +43,33 @@ record found *committed* onto the phase branch bails before the merge's `git che
 would unlink the file the live log handle is writing to.
 
 The tree is shared with parallel sessions — other runs, plan loops, the operator's own — so
-where it sits matters past this run. A bail (either exit) checks every repo the run touched back
-out onto its base branch when the tree is clean and the branch is this run's own — a branch it
-did not create is a parallel session's business, and a checkout under it would be the very bug
-this guards against (a resume checks the run's branch out again itself) — so no parallel
-session commits onto this run's branch by accident, and the run never adopts a foreign one: the
-base a run records for a repo is the branch it finds there the first time it touches it, and a
-`phase/…` branch is refused at the record. Before every dispatch and every
-commit of its own into the spec repo, the driver asserts that repo is on its base — or on the
-phase branch, for a phase that targets it — and bails `blocked` otherwise; the plan loop keeps
-the same assertion ([plan-loop.md](plan-loop.md)). What that guards: another slice's plan-loop
-commits and stamps landing on a phase branch and surfacing as out-of-scope changes in its
-review, and the doc-writer rewriting `close-out.md` from a stale checkout.
+where it sits matters past this run. **Its HEAD is leased.** Every session either loop runs
+commits into that tree during its turn — a done-record, a close-out entry, the plan — and a
+phase that targets the spec repo moves the tree's HEAD onto its branch; the two are held apart by a
+reader/writer lease on the tree (`dev-spec-tree.lock` in the spec repo's git dir, a `flock` like
+the devlock's). Every dispatch and every nudge, and every commit of the driver's own, holds it
+shared for exactly the session's or the commit's duration; a phase whose `Target:` is the spec
+repo holds it exclusive from its branch checkout to its stamp, and a bail lets it go once the
+base is checked back out. A writer waits for the sessions in flight to end and its intent holds
+new ones off — writers are preferred, so a stream of dispatches cannot starve one; a reader
+waits for the phase to merge. A wait is logged once with the holder and announced once, and one
+past `SPEC_TREE_MAX_WAIT` (four hours, the devlock's cap) bails `spec_tree_timeout`. Slice 224's
+P1 executor committed its done-record onto `phase/223-P1` seconds after slice 223's driver
+checked that branch out, and the assertion below caught it only after the round (Triage #954):
+the assertion is the check, the lease is what makes it hold.
+
+A bail (either exit) checks every repo the run touched back out onto its base branch when the
+tree is clean and the branch is this run's own — a branch it did not create is a parallel
+session's business, and a checkout under it would be the very bug this guards against (a resume
+checks the run's branch out again itself) — so no parallel session commits onto this run's
+branch by accident, and the run never adopts a foreign one: the base a run records for a repo is
+the branch it finds there the first time it touches it, and a `phase/…` branch is refused at the
+record. Before every dispatch and every commit of its own into the spec repo, inside the same
+hold, the driver asserts that repo is on its base — or on the phase branch, for a phase that
+targets it — and bails `blocked` otherwise; the plan loop keeps the same hold and the same
+assertion ([plan-loop.md](plan-loop.md)). What that guards: another slice's plan-loop commits
+and stamps landing on a phase branch and surfacing as out-of-scope changes in its review, and
+the doc-writer rewriting `close-out.md` from a stale checkout.
 
 **The plan doc is writable by every agent in the loop — deliberately; this is load-bearing.**
 Executors append their done-record and edit later phases their work changes; consult and test

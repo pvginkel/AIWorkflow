@@ -495,6 +495,38 @@ phase index, pre-edit plan reads on large plans, and the log's "carried whole" c
 
 ## 6. Git and safety incidents
 
+### The shared spec tree is leased (v0.9.36)
+
+**Incident.** Slice 224's P1 executor committed its spec-side done-record and close-out entry onto
+`phase/223-P1` — the branch slice 223's driver had checked out in the shared spec tree seconds
+earlier for a phase targeting that repo (Triage #954). 224's driver bailed `blocked` at its next
+dispatch; the commit reached main only because 223's reviewer signed off and the ff-merge carried
+it along.
+
+**Evidence.** The 0.9.20 assertion — the spec repo on its base before every dispatch and driver
+commit — reads the tree after the fact; nothing held its HEAD still while other runs' sessions
+committed into it, and every session of both loops commits there during its turn.
+
+**Change.** A reader/writer lease on the tree: sessions and driver commits hold it shared, a
+spec-repo phase holds it exclusive from checkout to stamp, writers are preferred, and a wait past
+the devlock's cap bails ([`run-loop.md`](../../plugins/dev/docs/run-loop.md) § The plan is the
+queue).
+
+### A hung send's round is counted from its file (v0.9.36)
+
+**Incident.** Slice 222's test agent wrote a valid `clean` verdict, then `kc session send` hung
+after the turn; the resume dispatched a fresh round-2 test phase (Triage #957).
+
+**Evidence.** `in_flight.session` was filled only after the send returned, so the resume had
+nothing to reattach; the test round counter was bumped before the record was consulted, so the
+r1 file was never read; and rc≠0 with a valid verdict was ruled `blocked`, so killing the send was
+no way out either.
+
+**Change.** The session id is polled during the send; a reattached round keeps its number in
+every counter; a resume reads the record's verdict file before dispatching; a valid verdict
+counts whatever the exit code ([`runner-state.md`](../../plugins/dev/docs/runner-state.md) §
+Resume and crash recovery).
+
 ### One driver per slice, and a branch reconciled against its record (v0.9.1)
 
 **Incident.** Slice 148's P2 gated green on commit `6373316`, and round 2 started from a tree with

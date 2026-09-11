@@ -76,6 +76,7 @@ Exit codes: 0 slice complete · 3 bailed on an error (bailout.json written) ·
 """
 
 import argparse
+import contextlib
 import fcntl
 import json
 import os
@@ -153,6 +154,12 @@ TIMEOUTS = {
 
 GATE_TIMEOUT = 3600
 NUDGE_TIMEOUT = 900
+
+# How often a running send is asked for its session id. The engine reports it
+# from the turn's first stream event, so the id is knowable seconds in — and a
+# round whose send hangs after the turn is reattachable only if the driver
+# heard it (#957).
+SESSION_ID_POLL = 5
 
 # The loop-tail sweep and the doc gate run all three verbs; the per-phase
 # gate stays test-only (lint/build breakage there surfaces at loop tail,
@@ -859,7 +866,10 @@ class SessionResult:
 
 def _kc_session_id(name: str, cwd: Path) -> str | None:
     """The claude sessionId from the headless status snapshot. `sessionId` is
-    empty until the first turn has run, so this is read *after* send."""
+    empty until the turn's first stream event (the engine captures it from
+    `system/init`), so it is polled *during* the send as well as read after
+    it — a send that hangs once the turn is over still leaves a resumable
+    conversation behind."""
     try:
         result = subprocess.run(
             ["kc", "session", "status", name, "--output=json"],
@@ -877,11 +887,14 @@ def _kc_session_id(name: str, cwd: Path) -> str | None:
 
 
 def _kc_send(name: str, prompt: str, cwd: Path, timeout: int,
-             progress) -> tuple[int, str]:
+             progress, tick=None) -> tuple[int, str]:
     """POST one turn to a headless session and consume its response to the
     terminal result (`kc session send` owns SSE reconnect). The condensed log
     (send's stderr under -v) streams to `progress`; the response text is
     returned so the caller can recognize the account's session-limit notice.
+    `tick` is called once per loop iteration — at most a second apart — for
+    whatever the caller wants to do while the turn runs; it never delays the
+    deadline, which is re-checked immediately after it.
 
     Enforces `timeout`: on expiry it SIGINTs `kc session send`, which POSTs a
     worker interrupt so the turn is never stranded, then raises
@@ -914,6 +927,8 @@ def _kc_send(name: str, prompt: str, cwd: Path, timeout: int,
                         progress(line.rstrip("\n"))
                 elif proc.poll() is not None:
                     break
+                if tick:
+                    tick()
             proc.wait(timeout=30)
             try:
                 response_text = Path(resp_path).read_text()
@@ -991,12 +1006,36 @@ def run_kc_session(
         result.is_error = True
         return 1, result
 
+    # The session id is learned while the turn runs, not after it: a send
+    # that hangs once the model is done still has to leave a resumable
+    # conversation on record, and `on_session` is what records it.
+    reported: list[str] = []
+    next_poll = [0.0]
+
+    def poll_session_id() -> None:
+        if reported or time.monotonic() < next_poll[0]:
+            return
+        next_poll[0] = time.monotonic() + SESSION_ID_POLL
+        sid = _kc_session_id(session_name, Path(cwd))
+        if not sid:
+            return
+        reported.append(sid)
+        result.session_id = sid
+        if on_session:
+            on_session(sid)
+
     try:
         returncode, response_text = _kc_send(
-            session_name, prompt, Path(cwd), timeout, progress)
+            session_name, prompt, Path(cwd), timeout, progress,
+            tick=poll_session_id)
         result.result_text = response_text
-        result.session_id = _kc_session_id(session_name, Path(cwd))
-        if on_session and result.session_id:
+        # The post-send read is the final word — an engine that re-minted the
+        # conversation mid-turn ends on an id nobody has been told about yet.
+        final = _kc_session_id(session_name, Path(cwd))
+        if final:
+            result.session_id = final
+        if on_session and result.session_id \
+                and result.session_id not in reported:
             on_session(result.session_id)
         result.is_error = returncode != 0
         return returncode, result
@@ -1089,6 +1128,194 @@ class DevLock:
         os.close(self._fd)
         self._fd = None
         log("devlock released")
+
+
+# ---------------------------------------------------------------------------
+# The spec-tree lease — a reader/writer lock over the ONE working tree the
+# spec repo is, held over the whole of what moves its HEAD.
+#
+# Every parallel run loop, plan loop and the operator share that mount. Agents
+# commit their done-records and close-out entries into it during their turn,
+# the driver commits stamps and the report there, and a phase whose `Target:`
+# IS that repo checks its own `phase/…` branch out in it. So one run moving
+# the tree's HEAD is every other run's commits landing on that branch — read
+# as out-of-scope changes in that slice's next review, or simply lost. That is
+# how a parallel run's executor committed onto another slice's phase branch;
+# `_assert_spec_on_base` only ever notices afterwards, and this lease is what
+# keeps the branch still while other sessions are committing.
+#
+# Readers — every dispatched session and every driver commit — take it shared;
+# the one phase that branches the tree takes it exclusively, from the checkout
+# to the stamp. The intent file gives writers preference: it is held
+# exclusively for as long as a writer waits, so new readers queue behind it
+# instead of starving it, while readers already out drain. flock throughout,
+# so a driver that dies releases by fd close.
+# ---------------------------------------------------------------------------
+
+SPEC_TREE_POLL = 15
+SPEC_TREE_MAX_WAIT = 4 * 3600
+
+
+def git_dir_for(root: Path) -> Path | None:
+    """A repo's git dir — `<root>/.git`, or what its `gitdir:` line points at
+    when that is a file (a linked worktree, a submodule). None when there is
+    none to be found, which degrades the lease to a no-op: nothing here ever
+    creates the directory."""
+    dot = Path(root) / ".git"
+    if dot.is_dir():
+        return dot
+    try:
+        text = dot.read_text()
+    except OSError:
+        return None
+    for line in text.splitlines():
+        if line.startswith("gitdir:"):
+            path = Path(line.split(":", 1)[1].strip())
+            if not path.is_absolute():
+                path = Path(root) / path
+            return path if path.is_dir() else None
+    return None
+
+
+def _silent(_msg: str) -> None:
+    """The default log/announce sink — a lock built without one says
+    nothing."""
+
+
+class SpecTreeLock:
+    """The lease over the shared spec working tree: `shared()` for anything
+    that commits into it, `acquire_exclusive()` for the phase that branches
+    it. Three files beside each other in the repo's git dir — the lease, the
+    writer-intent file, and the exclusive holder's human-readable note."""
+
+    def __init__(self, spec_root: Path | None, log=None, sleep=None,
+                 announce=None):
+        git_dir = git_dir_for(spec_root) if spec_root else None
+        self.git_dir = git_dir
+        self.lease_path = git_dir / "dev-spec-tree.lock" if git_dir else None
+        self.intent_path = (git_dir / "dev-spec-tree.intent" if git_dir
+                            else None)
+        self.holder_path = (git_dir / "dev-spec-tree.holder" if git_dir
+                            else None)
+        self._log = log or _silent
+        self._sleep = sleep or time.sleep
+        self._announce = announce or _silent
+        self._ex_fd = None
+        self._sh_depth = 0
+
+    @property
+    def configured(self) -> bool:
+        """A slice folder whose repo has no git dir has no tree to
+        coordinate — the lease degrades to a no-op rather than inventing a
+        file to flock."""
+        return self.lease_path is not None
+
+    @property
+    def held_exclusive(self) -> bool:
+        return self._ex_fd is not None
+
+    def holder_note(self) -> str:
+        """Who holds the tree. Readers leave no note — with the lease busy
+        and no note beside it, parallel sessions are simply working in it."""
+        try:
+            note = self.holder_path.read_text().strip()
+        except (OSError, AttributeError):
+            note = ""
+        return note or "held shared by parallel sessions"
+
+    def _hold(self, path: Path, mode: int, purpose: str) -> tuple[int, int]:
+        """Take `mode` on `path` and return (fd, seconds waited). Polled
+        non-blocking so the wait is loggable and bounded; the poll and the
+        cap are read per call, so a test can shrink them. A wait may last an
+        hour, so the first one is announced as well as logged."""
+        fd = os.open(path, os.O_RDONLY | os.O_CREAT, 0o644)
+        deadline = time.monotonic() + SPEC_TREE_MAX_WAIT
+        waited = 0
+        logged = False
+        while True:
+            try:
+                fcntl.flock(fd, mode | fcntl.LOCK_NB)
+                return fd, waited
+            except OSError:
+                note = self.holder_note()
+                if not logged:
+                    self._log(f"spec tree held — waiting ({purpose}); "
+                              "holder:\n" + note)
+                    self._announce("waiting for the spec tree "
+                                   f"({note.splitlines()[0]})")
+                    logged = True
+                if time.monotonic() >= deadline:
+                    os.close(fd)
+                    raise Bailout(
+                        "spec_tree_timeout",
+                        details="the spec tree's lease stayed held for "
+                                f"{SPEC_TREE_MAX_WAIT}s; holder:\n" + note,
+                    ) from None
+                self._sleep(SPEC_TREE_POLL)
+                waited += SPEC_TREE_POLL
+
+    @contextlib.contextmanager
+    def shared(self, purpose: str = ""):
+        """The reader hold: taken around every session dispatched into the
+        tree and every commit the driver makes there. Re-entrant, and a
+        no-op while this object holds the tree exclusively — a second fd on
+        one file is a separate flock owner, so taking the lease again would
+        deadlock the driver against itself."""
+        if not self.configured or self._ex_fd is not None:
+            yield
+            return
+        if self._sh_depth:
+            self._sh_depth += 1
+            try:
+                yield
+            finally:
+                self._sh_depth -= 1
+            return
+        intent_fd, waited = self._hold(self.intent_path, fcntl.LOCK_SH,
+                                       purpose)
+        try:
+            fd, more = self._hold(self.lease_path, fcntl.LOCK_SH, purpose)
+        finally:
+            # The intent is held only long enough to queue behind a waiting
+            # writer; the lease is what the reader keeps.
+            os.close(intent_fd)
+        if waited + more:
+            self._log(f"spec tree free after {waited + more}s")
+        self._sh_depth = 1
+        try:
+            yield
+        finally:
+            self._sh_depth = 0
+            os.close(fd)
+
+    def acquire_exclusive(self, purpose: str) -> None:
+        """The writer hold: the intent first (which blocks other writers and
+        every new reader), then the lease once the readers already out have
+        drained. Idempotent."""
+        if not self.configured or self._ex_fd is not None:
+            return
+        intent_fd, _ = self._hold(self.intent_path, fcntl.LOCK_EX, purpose)
+        try:
+            fd, _ = self._hold(self.lease_path, fcntl.LOCK_EX, purpose)
+        finally:
+            os.close(intent_fd)
+        self._ex_fd = fd
+        self.holder_path.write_text(
+            f"{purpose}\npid: {os.getpid()}\n"
+            f"host: {socket.gethostname()}\nsince: {_now_iso()}\n")
+        self._log(f"spec tree ACQUIRED ({purpose})")
+
+    def release_exclusive(self) -> None:
+        """Idempotent — every stop path calls it, held or not."""
+        if self._ex_fd is None:
+            return
+        try:
+            self.holder_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        os.close(self._ex_fd)
+        self._ex_fd = None
+        self._log("spec tree released")
 
 
 # ---------------------------------------------------------------------------
@@ -1709,6 +1936,7 @@ class RunLoop:
         self._spec_root: Path | None = None
         self._cfg: project_config.ProjectConfig | None = None
         self._devlock: DevLock | None = None
+        self._spec_lock: SpecTreeLock | None = None
         self._slice_lock = SliceLock(self.slice_dir / "run.lock")
         # name → effective cwd, from `kc project list --output=json`; loaded
         # in run() (both fresh and resume need it before any dispatch).
@@ -1736,6 +1964,25 @@ class RunLoop:
         if self._devlock is None:
             self._devlock = DevLock(self.cfg.devlock_lease)
         return self._devlock
+
+    @property
+    def spec_lock(self) -> SpecTreeLock:
+        """The lease over the shared spec tree. Built on first use, because
+        locating it asks git where the slice folder's repo is."""
+        if self._spec_lock is None:
+            self._spec_lock = SpecTreeLock(
+                self.spec_root,
+                log=lambda msg: self.log(msg),
+                sleep=lambda seconds: self._sleep(seconds),
+                announce=lambda msg: self.announce(msg))
+        return self._spec_lock
+
+    def _release_spec_tree(self) -> None:
+        """Give the tree back at a stop. Asked of the attribute rather than
+        the property: a bail handler must never be the first thing to run
+        git."""
+        if self._spec_lock is not None:
+            self._spec_lock.release_exclusive()
 
     # -- state ---------------------------------------------------------------
 
@@ -2196,10 +2443,11 @@ class RunLoop:
                 "plan_doc", question=True,
                 details=f"phase P{phase_id} merged but its heading is gone "
                         "from the plan — restore it so the stamp can land")
-        self._assert_spec_on_base(phase_id=phase_id)
-        self.specs_git("add", str(self.plan_path))
-        self.specs_git("commit", "-m",
-                       f"slice {self.slice_num}: stamp P{phase_id} done")
+        with self.spec_lock.shared(f"stamp P{phase_id}"):
+            self._assert_spec_on_base(phase_id=phase_id)
+            self.specs_git("add", str(self.plan_path))
+            self.specs_git("commit", "-m",
+                           f"slice {self.slice_num}: stamp P{phase_id} done")
         self.log(f"[P{phase_id}] stamped ✅ DONE")
 
     # -- session spawning ----------------------------------------------------
@@ -2224,12 +2472,16 @@ class RunLoop:
 
         def send():
             try:
-                _, result = run_kc_session(
-                    prompt=prompt, cwd=str(cwd), timeout=NUDGE_TIMEOUT,
-                    resume_session=session_id, extra_env=SPAWN_ENV,
-                    flags=spawn_flags(role),
-                    progress=lambda line: self._emit(f"    {label} {line}"),
-                )
+                # A nudge is a session committing into the shared spec tree
+                # like any other, so it waits for the tree like any other.
+                with self.spec_lock.shared(label):
+                    _, result = run_kc_session(
+                        prompt=prompt, cwd=str(cwd), timeout=NUDGE_TIMEOUT,
+                        resume_session=session_id, extra_env=SPAWN_ENV,
+                        flags=spawn_flags(role),
+                        progress=lambda line: self._emit(
+                            f"    {label} {line}"),
+                    )
             except subprocess.TimeoutExpired:
                 self.log(f"{label} nudge timed out")
                 return None
@@ -2310,20 +2562,47 @@ class RunLoop:
                agent: str | None = None,
                display: str | None = None,
                spec_branch: str | None = None) -> tuple[dict, str | None]:
-        """Run one session; return (verdict, session_id). Every spawn is a
-        fresh session — the only resumed sessions are crash reattaches and
-        protocol nudges. Model and effort come from the MODELS config,
-        passed explicitly on every dispatch.
+        """Run one round; return (verdict, session_id). `_dispatch_rounds`
+        does the running — this is the ruling on what came back, and the
+        round's one history row.
 
-        The shared specs tree is checked first: an agent dispatched while it
-        sits on someone else's branch commits its close-out entries, and its
-        deliverable when that repo is the phase's target, onto that branch.
-        `spec_branch` is the branch this dispatch expects there — the phase
-        or doc branch when it is this repo being branched, otherwise None for
-        the base branch."""
-        self._assert_spec_on_base(spec_branch, phase_id)
+        A round interrupted after it wrote its verdict is never re-run: the
+        file on disk is that round's (every dispatch unlinks it first), so
+        `_salvage_reattach` takes it and no session is dispatched at all.
+        `spec_branch` is the branch this dispatch expects the shared specs
+        tree on — the phase or doc branch when it is that repo being
+        branched, otherwise None for the base branch."""
         shown = display or role
         label = f"[P{phase_id}] [{shown}]" if phase_id else f"[{shown}]"
+        salvaged = self._salvage_reattach(role, phase_id, verdict_path, label)
+        if salvaged is not None:
+            verdict, session_id = salvaged
+            returncode, duration_s, nudged, recoveries = 0, 0, False, 0
+        else:
+            (returncode, verdict, session_id, duration_s, nudged,
+             recoveries) = self._dispatch_rounds(
+                role, prompt, cwd, verdict_path, phase_id, round_, agent,
+                shown, label, spec_branch)
+        return self._rule_on_round(
+            role, verdict, verdict_path, cwd, phase_id, round_, label,
+            returncode, session_id, duration_s, nudged, recoveries)
+
+    def _dispatch_rounds(self, role: str, prompt: str, cwd: Path,
+                         verdict_path: Path, phase_id: str | None,
+                         round_: int, agent: str | None, shown: str,
+                         label: str, spec_branch: str | None) -> tuple:
+        """Drive one round to something to rule on; return (returncode,
+        verdict, session_id, duration_s, nudged, recoveries).
+
+        Every spawn is a fresh session — the only resumed sessions are crash
+        reattaches and protocol nudges. Model and effort come from the MODELS
+        config, passed explicitly on every dispatch. Each dispatch runs under
+        the spec tree's reader lease, with the branch assertion it guards
+        inside the same hold: an agent dispatched while the tree sits on
+        someone else's branch commits its close-out entries — and its
+        deliverable when that repo is the phase's target — onto that branch.
+        The lease is taken per iteration, so neither a session-limit window
+        nor a nudge decision is made holding it."""
         prompt, resume_session = self._resolve_reattach(
             role, phase_id, prompt, verdict_path, label)
         model, effort = MODELS[role]
@@ -2335,7 +2614,7 @@ class RunLoop:
             self.log(f"{label} session {sid} — transcript "
                      f"{_transcript_path(cwd, sid)}")
             in_flight = self.state.get("in_flight")
-            if in_flight and not in_flight.get("session"):
+            if in_flight and in_flight.get("session") != sid:
                 in_flight["session"] = sid
                 self._save_state()
 
@@ -2359,21 +2638,27 @@ class RunLoop:
 
             t0 = time.monotonic()
             try:
-                returncode, result = run_kc_session(
-                    prompt=prompt,
-                    cwd=str(cwd),
-                    timeout=TIMEOUTS[role],
-                    agent=agent,
-                    model=model,
-                    effort=effort,
-                    resume_session=resume_session,
-                    extra_env=SPAWN_ENV,
-                    flags=spawn_flags(role),
-                    progress=lambda line: self._emit(f"    {label} {line}"),
-                    on_session=_note_session,
-                )
+                with self.spec_lock.shared(label):
+                    self._assert_spec_on_base(spec_branch, phase_id)
+                    returncode, result = run_kc_session(
+                        prompt=prompt,
+                        cwd=str(cwd),
+                        timeout=TIMEOUTS[role],
+                        agent=agent,
+                        model=model,
+                        effort=effort,
+                        resume_session=resume_session,
+                        extra_env=SPAWN_ENV,
+                        flags=spawn_flags(role),
+                        progress=lambda line: self._emit(
+                            f"    {label} {line}"),
+                        on_session=_note_session,
+                    )
             except subprocess.TimeoutExpired:
                 # A timed-out session is stuck, not crashed — never reattach.
+                # Its id was learned during the turn, so the salvaged round
+                # still names the conversation its transcript is under.
+                stuck = (self.state.get("in_flight") or {}).get("session")
                 self.state["in_flight"] = None
                 self._save_state()
                 # The verdict file is unlinked at every dispatch, so one
@@ -2389,7 +2674,7 @@ class RunLoop:
                 self.log(f"{label} timed out after {TIMEOUTS[role]}s, but had "
                          f"already written {verdict_path.name} — salvaged")
                 duration_s = TIMEOUTS[role]
-                session_id = resume_session
+                session_id = stuck or resume_session
                 returncode = 0
                 break
             duration_s = int(time.monotonic() - t0)
@@ -2444,13 +2729,31 @@ class RunLoop:
             break
 
         # The round's duration covers its recovery resumes too.
-        duration_s += carried_s
-        if returncode != 0 or not _valid(verdict):
+        return (returncode, verdict, session_id, duration_s + carried_s,
+                nudged, recoveries)
+
+    def _rule_on_round(self, role: str, verdict: dict | None,
+                       verdict_path: Path, cwd: Path, phase_id: str | None,
+                       round_: int, label: str, returncode: int,
+                       session_id: str | None, duration_s: int,
+                       nudged: bool, recoveries: int) -> tuple[dict, str | None]:
+        """The round's outcome and its one history row.
+
+        Only an invalid verdict is a protocol failure. A session killed after
+        it wrote a valid one (rc != 0 — a SIGTERM'd worker, a send the
+        harness lost after the turn) counts for exactly the reason the
+        timeout salvage counts: the file was unlinked at dispatch, so a valid
+        one on disk is this round's, and writing it is the last step of every
+        role's protocol."""
+        if not _verdict_valid(role, verdict):
             detail = _protocol_failure_detail(
                 role, returncode, verdict, verdict_path.name,
-                _valid(verdict), nudged, recoveries=recoveries)
+                False, nudged, recoveries=recoveries)
             verdict = {"outcome": "blocked", "summary": detail,
                        "_protocol_failure": True}
+        elif returncode != 0:
+            self.log(f"{label} session ended rc={returncode} but had written "
+                     f"{verdict_path.name} — salvaged")
         outcome = verdict.get("outcome", "blocked")
         self.state["in_flight"] = None
         self.log(f"{label} → {outcome}: {verdict.get('summary', '')[:160]}")
@@ -2470,18 +2773,70 @@ class RunLoop:
                      f"out-of-scope findings go in {self.report_path.name}")
         return verdict, session_id
 
+    def _pending_reattach(self, role: str, phase_id: str | None) -> dict | None:
+        """The in-flight record a crashed run left for this role and phase,
+        or None."""
+        r = self._reattach
+        if r and role in VERDICTS and r.get("role") == role \
+                and r.get("phase") == phase_id:
+            return r
+        return None
+
+    def _reattach_round(self, role: str, phase_id: str | None) -> int | None:
+        """The round number the interrupted round already banked, or None
+        when this dispatch is a fresh round. A resume must not advance a
+        counter the crashed round advanced: a second number means the round's
+        verdict file is looked for under a name nothing wrote, so finished
+        work is re-run (#957)."""
+        r = self._pending_reattach(role, phase_id)
+        return r.get("round") if r else None
+
+    def _salvage_reattach(self, role: str, phase_id: str | None,
+                          verdict_path: Path,
+                          label: str) -> tuple[dict, str | None] | None:
+        """The verdict the interrupted round had already written, with the
+        session that wrote it — or None, leaving the reattach to
+        `_resolve_reattach`.
+
+        A send that hangs after the turn is over leaves a finished round
+        behind: the work is committed and the verdict is on disk. Dispatching
+        anything there is paying twice for one round. The file is only this
+        round's when the record names the same path — an interrupted round
+        whose dispatch now computes a different name proves nothing about
+        what is lying there."""
+        r = self._pending_reattach(role, phase_id)
+        if r is None:
+            return None
+        recorded = r.get("verdict_path")
+        if not recorded \
+                or Path(recorded).resolve() != Path(verdict_path).resolve():
+            if recorded:
+                self.log(f"{label} the interrupted round wrote {recorded}, "
+                         f"not {verdict_path} — nothing to salvage")
+            return None
+        verdict = _read_json(verdict_path)
+        if not _verdict_valid(role, verdict):
+            return None
+        self._reattach = None
+        self.log(f"{label} the interrupted round had already written "
+                 f"{verdict_path.name} — salvaged, no session dispatched")
+        return verdict, r.get("session")
+
     def _resolve_reattach(self, role: str, phase_id: str | None, prompt: str,
                           verdict_path: Path,
                           label: str) -> tuple[str, str | None]:
         """If this spawn matches the session a crashed run left in flight,
         resume that session with a recovery prompt instead of dispatching
         fresh. Consults never reattach (cheap, and their action vocabulary
-        may have changed)."""
-        r = self._reattach
-        if not (r and r.get("session") and role in VERDICTS
-                and r.get("role") == role and r.get("phase") == phase_id):
+        may have changed). The record is spent either way — a crash that
+        never heard a session id leaves nothing to resume, and this round is
+        the one it belonged to."""
+        r = self._pending_reattach(role, phase_id)
+        if r is None:
             return prompt, None
         self._reattach = None
+        if not r.get("session"):
+            return prompt, None
         self.log(f"{label} reattaching to the interrupted session "
                  f"{r['session']}")
         return REATTACH_PROMPT.format(verdict_path=verdict_path), r["session"]
@@ -2857,6 +3212,13 @@ class RunLoop:
         existing = self.git("branch", "--list", branch, root=root)
         if self._reconcile_branch(phase_id, ps, root, base, branch, existing):
             return
+        if self._is_spec_root(root):
+            # This phase branches the tree every parallel session commits
+            # into: hold it exclusively from the checkout below to the stamp,
+            # so nobody else's work lands on this phase's branch. A resume
+            # comes back through here and takes it again.
+            self.spec_lock.acquire_exclusive(
+                f"slice {self.slice_num} P{phase_id} ({branch})")
         if ps["status"] == "pending" or not existing:
             if existing:
                 self.git("checkout", base, root=root)
@@ -2884,9 +3246,12 @@ class RunLoop:
             """build_prompt(verdict_path) → prompt, to which the phase digest
             is appended. Every round is a fresh session — fix rounds read
             their inputs from the digest, the plan and the durable outputs
-            dir, never from the prior round's context."""
-            ps["executor_rounds"] += 1
-            r = ps["executor_rounds"]
+            dir, never from the prior round's context. A round a crash
+            interrupted keeps its number: the in-flight record banked it."""
+            pending = self._reattach_round("code-writer", phase_id)
+            if pending is None:
+                ps["executor_rounds"] += 1
+            r = ps["executor_rounds"] if pending is None else pending
             self._save_state()
             prompt = (build_prompt(executor_verdict_path(r)) + "\n"
                       + self._phase_digest(phase_id))
@@ -2992,6 +3357,9 @@ class RunLoop:
             self.log(f"[P{phase_id}] merged into {base}")
             self.announce(f"P{phase_id} merged")
             self._stamp_done(phase_id)
+        # The stamp is in and the tree is back on its base: whoever is queued
+        # for it can have it. A no-op for every phase that never took it.
+        self.spec_lock.release_exclusive()
 
     def _rebase_onto_moved_base(self, phase_id: str, ps: dict, root: Path,
                                 base: str, branch: str,
@@ -3078,7 +3446,12 @@ class RunLoop:
                           spawn_executor) -> None:
         """A red gate spawns a fresh executor fix round (the fix rounds are
         the executor's — there is no separate fixer in the phase loop),
-        capped; still red at the cap bails."""
+        capped; still red at the cap bails.
+
+        A resume at stage `gate` re-runs the gate before anything else, so a
+        fix round a crash interrupted arrives here again — its number was
+        banked before the crash, and re-banking it would spend the cap
+        twice."""
         while True:
             green, gate_log = self._run_gate(phase.id, ps, outputs, target)
             if green:
@@ -3089,7 +3462,8 @@ class RunLoop:
                     details=f"gate still red after {GATE_FIX_CAP} executor "
                             f"fix rounds (latest output: {gate_log})",
                 )
-            ps["gate_fix_rounds"] += 1
+            if self._reattach_round("code-writer", phase.id) is None:
+                ps["gate_fix_rounds"] += 1
             r = ps["gate_fix_rounds"]
             self._save_state()
             spawn_executor(lambda vp, _r=r, _log=gate_log:
@@ -3113,10 +3487,8 @@ class RunLoop:
             # round actually produced a review. A round that died — blocked,
             # protocol failure, a session-limit window — funds nothing and
             # reviewed nothing.
-            r = ps["review_rounds"] + 1
-            if self._reattach and self._reattach.get("role") == "code-reviewer" \
-                    and self._reattach.get("phase") == phase_id:
-                r = self._reattach.get("round") or r
+            pending = self._reattach_round("code-reviewer", phase_id)
+            r = ps["review_rounds"] + 1 if pending is None else pending
             head = self.git("rev-parse", "HEAD", root=root)
             prev_head = ps.get("reviewed_head")
             gate_line = self._gate_line(ps, head, target)
@@ -3545,11 +3917,15 @@ class RunLoop:
     def _test_phase(self) -> bool:
         """The test phase, inside the loop: 'read the slice-testing-strategy
         doc and execute'. True → blocking findings were appended as phases,
-        loop again."""
+        loop again. A round a crash interrupted keeps its number — a second
+        one would look for its verdict under a name the finished round never
+        wrote, and re-run the whole verification."""
         self.state["run_phase"] = "test"
-        self.state["test_rounds"] = self.state.get("test_rounds", 0) + 1
+        pending = self._reattach_round("test-agent", None)
+        if pending is None:
+            self.state["test_rounds"] = self.state.get("test_rounds", 0) + 1
         self._save_state()
-        r = self.state["test_rounds"]
+        r = self.state["test_rounds"] if pending is None else pending
         test_plan_doc = self.cfg.test_strategy
         if not test_plan_doc:
             raise Bailout(
@@ -4140,11 +4516,18 @@ class RunLoop:
         except Bailout as bail:
             self.devlock.release(self.log)
             self._restore_bases()
+            # After the restore, not before: the tree goes back to its base
+            # while this run still owns it, so the session queued behind the
+            # lease never sees this run's phase branch.
+            self._release_spec_tree()
             self._bail(bail)
         except KeyboardInterrupt:
             # No branch restoring here: the in-flight session may be
             # reattached on resume, and it needs the worktree it was left on.
+            # The lease is given back regardless — an interrupted run is not
+            # coming back within the hour a waiter would spend on it.
             self.devlock.release(self.log)
+            self._release_spec_tree()
             self.log("interrupted — state.json is current; resume with "
                      "--resume")
             print("Interrupted — resume with --resume (the in-flight session "
@@ -4165,16 +4548,17 @@ class RunLoop:
         # Asserted before the template is written, not before the commit: a
         # report created onto the wrong branch and bailed on would be found
         # by the resume and never committed at all.
-        self._assert_spec_on_base()
-        try:
-            created = init_report(self.slice_dir)
-        except ReportError as e:
-            raise Bailout("protocol_failure", details=str(e)) from None
-        if created:
-            self.specs_git("add", str(self.report_path))
-            self.specs_git("commit", "-m",
-                           f"slice {self.slice_num}: close-out report")
-            self.log(f"created {self.report_path.name} from the template")
+        with self.spec_lock.shared("close-out report"):
+            self._assert_spec_on_base()
+            try:
+                created = init_report(self.slice_dir)
+            except ReportError as e:
+                raise Bailout("protocol_failure", details=str(e)) from None
+            if created:
+                self.specs_git("add", str(self.report_path))
+                self.specs_git("commit", "-m",
+                               f"slice {self.slice_num}: close-out report")
+                self.log(f"created {self.report_path.name} from the template")
 
     def _render_report(self) -> None:
         """The report in reading order — before the doc phase and at

@@ -54,6 +54,7 @@ Exit codes: 0 plan complete · 4 operator input needed · 3 bailed
 """
 
 import argparse
+import contextlib
 import json
 import os
 import subprocess
@@ -69,11 +70,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # --show-toplevel` in the process cwd — not from `__file__`, which locates the
 # plugin these tools ship in, never the repo being planned.
 import project_config  # noqa: E402
+import run_loop  # noqa: E402
 from close_out import ReportError, dispatch_line, init_report, report_path  # noqa: E402
 from run_loop import (  # noqa: E402
     AGENTS_DIR,
     PHILOSOPHY_LINE,
     SPAWN_ENV,
+    SpecTreeLock,
     _git_toplevel,
     _now_hms,
     _now_iso,
@@ -209,6 +212,7 @@ class PlanLoop:
         # launched from it, and the agents read the code there.
         self.repo_root = _git_toplevel()
         self._philosophy: str | None = None
+        self._spec_lock: SpecTreeLock | None = None
 
     # -- state ---------------------------------------------------------------
 
@@ -309,6 +313,36 @@ class PlanLoop:
             self._save_state()
         return self.state["base"]
 
+    @property
+    def spec_lock(self) -> SpecTreeLock:
+        """The lease over the shared spec tree (run_loop.SpecTreeLock). Built
+        on first use, because locating it asks git where this tree is."""
+        if self._spec_lock is None:
+            self._spec_lock = SpecTreeLock(
+                Path(self._spec_root()),
+                log=lambda msg: self.log(msg),
+                sleep=lambda seconds: self._sleep(seconds),
+                announce=lambda msg: self.announce(msg))
+        return self._spec_lock
+
+    @contextlib.contextmanager
+    def _spec_tree(self, purpose: str):
+        """The reader hold, in this loop's bail vocabulary: everything this
+        loop writes (plan.md, verification.json, close-out.md) lands in a
+        tree a run loop's spec-repo phase may be branching, so the dispatch
+        or commit waits for it. A wait past the cap is that run's problem to
+        answer for — `blocked`, naming the holder."""
+        try:
+            with self.spec_lock.shared(purpose):
+                yield
+        except run_loop.Bailout as e:
+            raise Bailout("blocked", details=e.details) from None
+
+    def _sleep(self, seconds: float) -> None:
+        """The loop's only wall-clock wait, isolated so tests can take it
+        out."""
+        time.sleep(seconds)
+
     def _assert_on_base(self) -> None:
         """The spec repo must still be on that branch before every dispatch
         and before the loop's own commit. The tree is shared with every
@@ -331,12 +365,15 @@ class PlanLoop:
                role: str) -> None:
         self.log(f"{label} nudging the session (resume)")
         try:
-            run_kc_session(
-                prompt=prompt, cwd=str(self.repo_root), timeout=NUDGE_TIMEOUT,
-                resume_session=session_id, extra_env=SPAWN_ENV,
-                flags=spawn_flags(role),
-                progress=lambda line: self._emit(f"    {label} {line}"),
-            )
+            # A nudge is a session committing into the shared spec tree like
+            # any other, so it waits for the tree like any other.
+            with self._spec_tree(label):
+                run_kc_session(
+                    prompt=prompt, cwd=str(self.repo_root),
+                    timeout=NUDGE_TIMEOUT, resume_session=session_id,
+                    extra_env=SPAWN_ENV, flags=spawn_flags(role),
+                    progress=lambda line: self._emit(f"    {label} {line}"),
+                )
         except subprocess.TimeoutExpired:
             self.log(f"{label} nudge timed out")
 
@@ -361,12 +398,10 @@ class PlanLoop:
         """Run one fresh session; return its validated verdict. A session
         failure, invalid verdict (after one nudge), or dirty slice folder
         (after one nudge) is a bail-out — the loop has no fallback driver.
-        The shared spec tree is checked first: an agent dispatched onto
+        The session runs under the spec tree's reader lease, with the branch
+        check it guards inside the same hold: an agent dispatched onto
         someone else's branch commits the plan there."""
-        self._assert_on_base()
         label = f"[{role} r{round_}]"
-        self.log(f"{label} session starting")
-        verdict_path.unlink(missing_ok=True)
         model, effort = MODELS[role]
 
         def _note_session(sid: str) -> None:
@@ -375,13 +410,18 @@ class PlanLoop:
 
         t0 = time.monotonic()
         try:
-            returncode, result = run_kc_session(
-                prompt=prompt, cwd=str(self.repo_root), timeout=TIMEOUTS[role],
-                agent=role, model=model, effort=effort, extra_env=SPAWN_ENV,
-                flags=spawn_flags(role),
-                progress=lambda line: self._emit(f"    {label} {line}"),
-                on_session=_note_session,
-            )
+            with self._spec_tree(label):
+                self._assert_on_base()
+                self.log(f"{label} session starting")
+                verdict_path.unlink(missing_ok=True)
+                returncode, result = run_kc_session(
+                    prompt=prompt, cwd=str(self.repo_root),
+                    timeout=TIMEOUTS[role], agent=role, model=model,
+                    effort=effort, extra_env=SPAWN_ENV,
+                    flags=spawn_flags(role),
+                    progress=lambda line: self._emit(f"    {label} {line}"),
+                    on_session=_note_session,
+                )
         except subprocess.TimeoutExpired:
             raise Bailout("timeout",
                           details=f"{role} exceeded {TIMEOUTS[role]}s") from None
@@ -617,16 +657,17 @@ class PlanLoop:
         records its base branch — before the template is written, so a report
         created onto the wrong branch and bailed on cannot be found (and
         skipped) by the rerun."""
-        self._assert_on_base()
-        try:
-            created = init_report(self.slice_dir)
-        except ReportError as e:
-            raise Bailout("protocol_failure", details=str(e)) from None
-        if created:
-            self.git("add", str(self.report_path))
-            self.git("commit", "-m",
-                     f"slice {self.slice_num}: close-out report")
-            self.log(f"created {self.report_path.name} from the template")
+        with self._spec_tree("close-out report"):
+            self._assert_on_base()
+            try:
+                created = init_report(self.slice_dir)
+            except ReportError as e:
+                raise Bailout("protocol_failure", details=str(e)) from None
+            if created:
+                self.git("add", str(self.report_path))
+                self.git("commit", "-m",
+                         f"slice {self.slice_num}: close-out report")
+                self.log(f"created {self.report_path.name} from the template")
 
     def run(self) -> None:
         if not (self.slice_dir / "slice.md").exists():

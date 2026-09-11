@@ -10,6 +10,7 @@ Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_run_loop.py` or via pytest.
 """
 
 import contextlib
+import fcntl
 import importlib.util
 import io
 import json
@@ -217,26 +218,35 @@ class ScriptedLoop(RunLoop):
     def _spawn(self, role, prompt, cwd, verdict_path, phase_id, round_,
                agent=None, display=None, spec_branch=None):
         # The real _spawn's preamble, kept in step so the scripted loop
-        # exercises the branch the dispatch expects the spec repo to be on.
-        self._assert_spec_on_base(spec_branch, phase_id)
-        prompt, resume_session = self._resolve_reattach(
-            role, phase_id, prompt, Path(verdict_path), "[t]")
-        assert self.script, f"unexpected extra spawn: {role} (P{phase_id})"
-        step = self.script.pop(0)
-        want_role, verdict = step[0], step[1]
-        self.prompts.append((role, prompt))
-        assert role == want_role, (
-            f"expected spawn of {want_role}, driver asked for {role} "
-            f"(P{phase_id}, round {round_})"
-        )
-        self.spawned.append((role, phase_id, round_, verdict["outcome"],
-                             resume_session))
-        self._record(phase_id, role, round_, verdict["outcome"],
-                     verdict.get("summary", ""), "sess-test", 1,
-                     extra={k: verdict[k] for k in ("findings", "refuted")
-                            if verdict.get(k)})
-        if len(step) > 2:
-            step[2](self)
+        # exercises the salvage of an interrupted round, the spec tree's
+        # reader lease, and the branch the dispatch expects that repo on.
+        verdict_path = Path(verdict_path)
+        salvaged = self._salvage_reattach(role, phase_id, verdict_path, "[t]")
+        if salvaged is not None:
+            verdict, session = salvaged
+            self._record(phase_id, role, round_, verdict["outcome"],
+                         verdict.get("summary", ""), session, 0)
+            return verdict, session
+        with self.spec_lock.shared("[t]"):
+            self._assert_spec_on_base(spec_branch, phase_id)
+            prompt, resume_session = self._resolve_reattach(
+                role, phase_id, prompt, verdict_path, "[t]")
+            assert self.script, f"unexpected extra spawn: {role} (P{phase_id})"
+            step = self.script.pop(0)
+            want_role, verdict = step[0], step[1]
+            self.prompts.append((role, prompt))
+            assert role == want_role, (
+                f"expected spawn of {want_role}, driver asked for {role} "
+                f"(P{phase_id}, round {round_})"
+            )
+            self.spawned.append((role, phase_id, round_, verdict["outcome"],
+                                 resume_session))
+            self._record(phase_id, role, round_, verdict["outcome"],
+                         verdict.get("summary", ""), "sess-test", 1,
+                         extra={k: verdict[k] for k in ("findings", "refuted")
+                                if verdict.get(k)})
+            if len(step) > 2:
+                step[2](self)
         return verdict, "sess-test"
 
 
@@ -290,7 +300,11 @@ class SpawningLoop(ScriptedLoop):
         if isinstance(payload, tuple) and payload[0] is TIMED_OUT:
             verdict_path.write_text(json.dumps(payload[1]))
             raise subprocess.TimeoutExpired("kc", timeout)
-        if isinstance(payload, str):
+        if isinstance(payload, tuple) and payload[0] is EXITED:
+            _, returncode, verdict = payload
+            verdict_path.write_text(json.dumps(verdict))
+            result.result_text = verdict.get("summary") or "verdict written"
+        elif isinstance(payload, str):
             result.result_text = payload
             returncode = 1
         else:
@@ -309,6 +323,7 @@ class SpawningLoop(ScriptedLoop):
 SESSION_LIMIT_TEXT = ("You've hit your session limit · resets 10:10pm "
                       "(Europe/Amsterdam)")
 TIMED_OUT = object()   # a script step whose session never returns
+EXITED = object()      # a script step whose session returns a chosen rc
 # The CLI's stopped-task recovery answering a resume in the model's place.
 SWALLOWED = "No response requested."
 
@@ -317,6 +332,13 @@ def timed_out_after(verdict):
     """A script step whose session wrote its verdict and *then* wedged: the
     turn never returns, but the work and the verdict are already on disk."""
     return (TIMED_OUT, verdict)
+
+
+def exited_with(returncode, verdict):
+    """A script step whose session wrote its verdict and then died on a
+    non-zero exit — a SIGTERM'd worker, a send the harness lost after the
+    turn."""
+    return (EXITED, returncode, verdict)
 
 
 def dirties(porcelain=" M src/app.py"):
@@ -360,6 +382,9 @@ def make_slice(tmp, phases=None, repo=True, config=None):
     root = Path(tmp)
     slice_dir = root / "specs" / "slices" / "074_test_slice"
     slice_dir.mkdir(parents=True)
+    # The spec tree's lease lives in its git dir, so the real lock runs in
+    # the suite — over tmp files, with real flock.
+    (root / "specs" / ".git").mkdir(exist_ok=True)
     if phases is None:
         phases = [("1", "First phase")]
     sections = [phase_section(*p) if isinstance(p, tuple) else p
@@ -2095,6 +2120,258 @@ def test_the_stamp_refuses_a_spec_repo_off_its_base():
         else:
             raise AssertionError("the stamp must not commit off the base")
         assert not r.fake_git.specs_ops()
+
+
+# -- the spec tree's lease ----------------------------------------------------
+#
+# The assertions above are after the fact: they catch a tree already moved.
+# The lease is what stops it moving — readers (every session, every driver
+# commit) against the one writer, the phase whose Target IS that repo.
+
+def spec_lock(tmp, log=None, sleep=None, announce=None):
+    """A lock over a tmp repo's git dir — real flock over real files. Two of
+    them stand in for two parallel drivers."""
+    root = Path(tmp)
+    (root / ".git").mkdir(exist_ok=True)
+    return run_loop.SpecTreeLock(root, log=log, sleep=sleep,
+                                 announce=announce)
+
+
+def probes_free(path, mode=fcntl.LOCK_EX):
+    """Whether a fresh fd can take `mode` on `path` right now. A second fd is
+    a separate flock owner even in this process, so the probe sees the loop's
+    own holds."""
+    fd = os.open(path, os.O_RDONLY | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, mode | fcntl.LOCK_NB)
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
+
+
+def test_the_lease_finds_a_repos_git_dir_without_running_git():
+    """A linked worktree's `.git` is a file pointing elsewhere. A directory
+    that is no repo at all leases nothing — and nothing here creates one."""
+    with tempfile.TemporaryDirectory() as tmp:
+        worktree = Path(tmp) / "wt"
+        worktree.mkdir()
+        elsewhere = Path(tmp) / "gitdir"
+        elsewhere.mkdir()
+        (worktree / ".git").write_text(f"gitdir: {elsewhere}\n")
+        assert run_loop.git_dir_for(worktree) == elsewhere
+        (worktree / ".git").write_text("gitdir: ../gitdir\n")
+        assert run_loop.git_dir_for(worktree).resolve() == elsewhere
+        plain = Path(tmp) / "nothing"
+        plain.mkdir()
+        assert run_loop.git_dir_for(plain) is None
+        assert not run_loop.SpecTreeLock(plain).configured
+        assert not (plain / ".git").exists()
+
+
+def test_two_shared_holds_over_the_spec_tree_coexist():
+    """Parallel sessions are the normal case — readers never queue."""
+    with tempfile.TemporaryDirectory() as tmp:
+        first, second = spec_lock(tmp), spec_lock(tmp)
+        with patched(run_loop, SPEC_TREE_MAX_WAIT=0):   # a wait would bail
+            with first.shared("one session"), second.shared("another"):
+                assert not probes_free(first.lease_path)
+        assert probes_free(first.lease_path)
+
+
+def test_the_exclusive_hold_waits_for_the_readers_to_drain():
+    with tempfile.TemporaryDirectory() as tmp:
+        logs = []
+        reader = spec_lock(tmp)
+        out = contextlib.ExitStack()
+        out.enter_context(reader.shared("a session"))
+        writer = spec_lock(tmp, log=logs.append,
+                           sleep=lambda _seconds: out.close())
+        writer.acquire_exclusive("slice 074 P1 (phase/074-P1)")
+        assert any("spec tree held — waiting" in line for line in logs)
+        assert "slice 074 P1 (phase/074-P1)" in writer.holder_note()
+        writer.release_exclusive()
+        assert probes_free(writer.lease_path)
+        assert not writer.holder_path.exists()
+
+
+def test_a_shared_hold_waits_while_the_tree_is_held_exclusively():
+    with tempfile.TemporaryDirectory() as tmp:
+        logs = []
+        writer = spec_lock(tmp)
+        writer.acquire_exclusive("slice 223 P1 (phase/223-P1)")
+        reader = spec_lock(
+            tmp, log=logs.append,
+            sleep=lambda _seconds: writer.release_exclusive())
+        with reader.shared("a session"):
+            assert any("slice 223 P1 (phase/223-P1)" in line for line in logs)
+        assert any(line.startswith("spec tree free after") for line in logs)
+
+
+def test_a_waiting_writer_holds_new_readers_off():
+    """Writer preference. Without it a spec-repo phase waits out its cap
+    behind an unbroken stream of parallel sessions."""
+    with tempfile.TemporaryDirectory() as tmp:
+        reader = spec_lock(tmp)
+        out = contextlib.ExitStack()
+        out.enter_context(reader.shared("a session"))
+        probed = []
+
+        def probe_then_let_go(_seconds):
+            probed.append(probes_free(writer.intent_path, fcntl.LOCK_SH))
+            out.close()
+
+        writer = spec_lock(tmp, sleep=probe_then_let_go)
+        writer.acquire_exclusive("slice 074 P1 (phase/074-P1)")
+        writer.release_exclusive()
+        assert probed == [False], "a new reader walked past a waiting writer"
+
+
+def test_the_shared_hold_is_reentrant_and_a_noop_under_the_exclusive_one():
+    """A second fd on one file is a separate flock owner, so a driver that
+    took the tree exclusively would deadlock against itself."""
+    with tempfile.TemporaryDirectory() as tmp:
+        lock = spec_lock(tmp)
+        with patched(run_loop, SPEC_TREE_MAX_WAIT=0):   # a wait would bail
+            with lock.shared("outer"):
+                with lock.shared("inner"):
+                    assert not probes_free(lock.lease_path)
+                assert not probes_free(lock.lease_path), "the outer holds"
+            assert probes_free(lock.lease_path)
+            lock.acquire_exclusive("slice 074 P1 (phase/074-P1)")
+            with lock.shared("a session of its own"):
+                assert lock.held_exclusive
+        lock.release_exclusive()
+        assert probes_free(lock.lease_path)
+
+
+def test_a_lease_wait_past_the_cap_bails_with_the_holder_note():
+    with tempfile.TemporaryDirectory() as tmp:
+        holder = spec_lock(tmp)
+        holder.acquire_exclusive("slice 223 P1 (phase/223-P1)")
+        waiter = spec_lock(tmp)
+        with patched(run_loop, SPEC_TREE_MAX_WAIT=0):
+            try:
+                with waiter.shared("a session"):
+                    raise AssertionError("the lease was not held")
+            except Bailout as exc:
+                assert exc.reason == "spec_tree_timeout"
+                assert "slice 223 P1 (phase/223-P1)" in exc.details
+        holder.release_exclusive()
+
+
+def test_a_spec_repo_phase_holds_the_spec_tree_exclusively_to_the_stamp():
+    """Two runs started seconds apart, and the second's executor committed
+    its done-record onto the first's phase branch. While a phase branches the
+    shared tree, nothing else commits there."""
+    seen = []
+
+    def sees_the_hold(loop):
+        seen.append((loop.spec_lock.holder_note(),
+                     loop.fake_git.branch_at.get(str(loop.spec_root))))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir,
+                         [(*V["exec_done"], sees_the_hold),
+                          V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        specs_phase(slice_dir, tmp)
+        assert run_to_exit(r) == 0
+        (note, branch), = seen
+        assert "slice 074 P1 (phase/074-P1)" in note
+        assert branch == "phase/074-P1", "held across the phase's own branch"
+        assert not r.spec_lock.holder_path.exists()
+        log = (slice_dir / "log.txt").read_text()
+        assert log.count(
+            "spec tree ACQUIRED (slice 074 P1 (phase/074-P1))") == 1
+        assert log.count("spec tree released") == 1
+
+
+def test_a_dispatch_waits_while_a_parallel_spec_phase_holds_the_tree():
+    """A parallel run's phase is waited out, not bailed on — and at the cap
+    the bail names the holder instead of hanging the run."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        parallel = run_loop.SpecTreeLock((Path(tmp) / "specs").resolve())
+        parallel.acquire_exclusive("slice 223 P1 (phase/223-P1)")
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        r._sleep = lambda _seconds: parallel.release_exclusive()
+        assert run_to_exit(r) == 0
+        log = (slice_dir / "log.txt").read_text()
+        assert "spec tree held — waiting" in log
+        assert "slice 223 P1 (phase/223-P1)" in log
+        assert "spec tree free after" in log
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        parallel = run_loop.SpecTreeLock((Path(tmp) / "specs").resolve())
+        parallel.acquire_exclusive("slice 223 P1 (phase/223-P1)")
+        r = ScriptedLoop(slice_dir, [V["exec_done"]], repo_root=repo)
+        with patched(run_loop, SPEC_TREE_MAX_WAIT=0):
+            assert run_to_exit(r) == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "spec_tree_timeout"
+        assert "slice 223 P1 (phase/223-P1)" in bail["details"]
+        assert not r.spawned
+        parallel.release_exclusive()
+
+
+def test_the_shared_hold_spans_the_session():
+    """Not the dispatch call — the whole turn: the agent commits into the
+    spec tree while it works, so a spec phase must not take the tree in the
+    middle of one."""
+    probes = []
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(
+            slice_dir,
+            [(*V["exec_done"],
+              lambda loop: probes.append(probes_free(loop.spec_lock
+                                                     .lease_path))),
+             V["review_signoff"], *TAIL],
+            repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert probes == [False]
+        assert probes_free(r.spec_lock.lease_path)
+
+
+def test_the_spec_tree_is_released_on_bail_after_the_base_is_restored():
+    """The tree goes back to its base while this run still owns it, so the
+    session queued behind the lease never sees this run's phase branch."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir,
+                         [("code-writer", {"outcome": "blocked",
+                                           "summary": "cannot proceed"})],
+                         repo_root=repo)
+        specs = specs_phase(slice_dir, tmp)
+        assert run_to_exit(r) == 3
+        assert not r.spec_lock.holder_path.exists()
+        assert r.fake_git.branch_at[str(specs)] == "main"
+        log = (slice_dir / "log.txt").read_text()
+        assert log.index("checked main back out") \
+            < log.index("spec tree released")
+
+
+def test_a_resumed_spec_repo_phase_reacquires_the_tree():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        specs_phase(slice_dir, tmp)
+        (slice_dir / "state.json").write_text(
+            json.dumps(resume_state("../specs")))
+        r = ScriptedLoop(slice_dir, [V["review_signoff"], *TAIL],
+                         resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        assert run_to_exit(r) == 0
+        log = (slice_dir / "log.txt").read_text()
+        assert log.count("spec tree ACQUIRED") == 1
+        assert log.count("spec tree released") == 1
+        assert not r.spec_lock.holder_path.exists()
 
 
 # -- the branch under the record ----------------------------------------------
@@ -3859,6 +4136,37 @@ def test_timed_out_session_keeps_a_verdict_it_had_already_written():
             (h["role"], h["outcome"]) for h in state["history"]]
 
 
+def test_a_valid_verdict_counts_when_the_session_exits_nonzero():
+    """The timeout salvage's twin (#957): the verdict file is unlinked at
+    dispatch, so a valid one on disk is this round's however the session
+    ended — a SIGTERM'd worker, a send the harness lost after the turn.
+    Ruling it `blocked` threw away a committed round."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            ("code-writer", exited_with(143, {"outcome": "done",
+                                              "summary": "built, then cut"})),
+            ("code-reviewer", {"outcome": "signoff", "summary": "ok"}),
+            ("consult", {"outcome": "complete", "summary": "done"}),
+            ("test-agent", {"outcome": "clean", "summary": "ok"}),
+            ("doc-writer", {"outcome": "done", "summary": "ok"}),
+        ]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        nudges = []
+        r._nudge = lambda prompt, cwd, sid, label, role, retry=True: \
+            nudges.append(prompt)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert not nudges, "a complete verdict needs no nudge"
+        assert not (slice_dir / "bailout.json").exists()
+        assert ("code-writer", "done") in [
+            (h["role"], h["outcome"])
+            for h in load_state(slice_dir)["history"]]
+        assert ("session ended rc=143 but had written "
+                "executor_result_r1.json — salvaged") \
+            in (slice_dir / "log.txt").read_text()
+
+
 # -- resume / reattach --------------------------------------------------------
 
 def test_resume_reattaches_the_in_flight_session():
@@ -3888,8 +4196,143 @@ def test_resume_reattaches_the_in_flight_session():
         assert run_to_exit(r) == 0
         role, phase, round_, outcome, resumed = r.spawned[0]
         assert role == "code-writer" and resumed == "sess-crashed"
-        # the reattached round keeps its number: no new round was banked
-        assert load_state(slice_dir)["phases"]["1"]["executor_rounds"] == 2
+        # the reattached round keeps its number: no new round was banked, so
+        # the resumed session is asked for the file its own round owns
+        assert load_state(slice_dir)["phases"]["1"]["executor_rounds"] == 1
+        assert round_ == 1
+        prompt = next(p for role, p in r.prompts if role == "code-writer")
+        assert "executor_result_r1.json" in prompt
+
+
+def merged_state(repo, run_phase, **extra):
+    """A crashed run whose only phase has landed, stopped in `run_phase`."""
+    state = {
+        "slice": "074_test_slice", "created_at": "t", "orchestrator": None,
+        "run_phase": run_phase, "bases": {str(repo): "main"},
+        "known_phases": ["1"],
+        "phases": {"1": {"status": "merged", "stage": None, "branch": None,
+                         "target": PROJECT, "executor_rounds": 1,
+                         "gate_fix_rounds": 0, "review_rounds": 1,
+                         "gate_runs": 1, "gate_green_commit": "abc123",
+                         "gate_green_log": "x", "reviewed_head": "abc123"}},
+        "generation": 0, "test_rounds": 0, "consult_seq": 1,
+        "in_flight": None, "history": [],
+    }
+    state.update(extra)
+    return state
+
+
+def test_resume_salvages_a_test_phase_verdict_the_hung_round_had_written():
+    """#957: the test agent wrote `clean`, and `kc session send` hung after
+    the turn had ended. The verdict on disk is that round's — a resume reads
+    it rather than paying for the whole verification a second time."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(
+            tmp, phases=[("1", "First", PROJECT, True)])
+        verdict_path = slice_dir / "test_phase_result_r1.json"
+        verdict_path.write_text('{"outcome": "clean", "summary": "verified"}')
+        state = merged_state(repo, "test", test_rounds=1)
+        state["in_flight"] = {
+            "phase": None, "role": "test-agent", "round": 1,
+            "verdict_path": str(verdict_path), "session": None,
+            "started_at": "t"}
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        r = SpawningLoop(slice_dir, [V["doc_done"]], resume=True,
+                         repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert [s[0] for s in r.sessions] == ["doc-writer"], (
+            "the finished test round was dispatched again")
+        state = load_state(slice_dir)
+        assert state["test_rounds"] == 1
+        assert ("test-agent", 1, "clean", None) in [
+            (h["role"], h["round"], h["outcome"], h["session"])
+            for h in state["history"]]
+        assert "salvaged, no session dispatched" \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_resume_salvages_an_executor_verdict_the_hung_round_had_written():
+    """The same hang one round earlier: the writer had committed and written
+    `done`, so the resume reviews that work instead of rebuilding it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        outputs = slice_dir / "phases" / "P1"
+        outputs.mkdir(parents=True)
+        verdict_path = outputs / "executor_result_r1.json"
+        verdict_path.write_text('{"outcome": "done", "summary": "built"}')
+        state = resume_state(PROJECT, stage="executor")
+        state["in_flight"] = {
+            "phase": "1", "role": "code-writer", "round": 1,
+            "verdict_path": str(verdict_path), "session": "sess-hung",
+            "started_at": "t"}
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        script = [("code-reviewer", {"outcome": "signoff", "summary": "ok"}),
+                  ("consult", {"outcome": "complete", "summary": "done"}),
+                  ("test-agent", {"outcome": "clean", "summary": "ok"}),
+                  ("doc-writer", {"outcome": "done", "summary": "ok"})]
+        r = SpawningLoop(slice_dir, script, resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert r.sessions[0][0] == "code-reviewer"
+        state = load_state(slice_dir)
+        assert state["phases"]["1"]["executor_rounds"] == 1
+        row = next(h for h in state["history"] if h["role"] == "code-writer")
+        assert (row["round"], row["outcome"], row["session"]) \
+            == (1, "done", "sess-hung")
+
+
+def test_a_test_phase_reattach_keeps_its_round():
+    """No verdict on disk, so the crashed session is reattached rather than
+    salvaged — as round 1, which is the file that session was told to
+    write."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(
+            tmp, phases=[("1", "First", PROJECT, True)])
+        state = merged_state(repo, "test", test_rounds=1)
+        state["in_flight"] = {
+            "phase": None, "role": "test-agent", "round": 1,
+            "verdict_path": str(slice_dir / "test_phase_result_r1.json"),
+            "session": "sess-crashed", "started_at": "t"}
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        r = SpawningLoop(slice_dir,
+                         [("test-agent", {"outcome": "clean",
+                                          "summary": "ok"}), V["doc_done"]],
+                         resume=True, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert ("test-agent", "sess-crashed",
+                run_loop.TIMEOUTS["test-agent"]) in r.session_resumes
+        state = load_state(slice_dir)
+        assert state["test_rounds"] == 1
+        assert next(h for h in state["history"]
+                    if h["role"] == "test-agent")["round"] == 1
+
+
+def test_a_reattached_gate_fix_round_keeps_its_numbers():
+    """A resume at stage `gate` re-runs the gate first, so an interrupted fix
+    round arrives here again — both its counters were banked before the
+    crash, and re-banking them spends the cap twice."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        state = resume_state(PROJECT, stage="gate")
+        state["phases"]["1"].update(executor_rounds=2, gate_fix_rounds=1)
+        state["in_flight"] = {
+            "phase": "1", "role": "code-writer", "round": 2,
+            "verdict_path": str(slice_dir / "phases" / "P1"
+                                / "executor_result_r2.json"),
+            "session": "sess-crashed", "started_at": "t"}
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"], V["review_signoff"], *TAIL],
+                         resume=True, repo_root=repo, gates=[False, True])
+        r.fake_git.branches.add("phase/074-P1")
+        assert run_to_exit(r) == 0
+        role, _, round_, _, resumed = r.spawned[0]
+        assert (role, round_, resumed) == ("code-writer", 2, "sess-crashed")
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert (ps["executor_rounds"], ps["gate_fix_rounds"]) == (2, 1)
 
 
 def test_resume_at_docs_skips_consult_and_test():
@@ -4152,6 +4595,41 @@ def test_spawn_flags_reach_create_headless_verbatim():
     assert "--strict-mcp-config" not in _create_args(
         flags=run_loop.spawn_flags("test-agent"))
     assert "--disable-slash-commands" not in _create_args()
+
+
+def test_the_session_id_is_learned_during_the_turn():
+    """#957: the id used to be read only after the send returned, so a send
+    that hung once the turn was over left the round with no session to
+    reattach. The engine reports it from the turn's first stream event, so
+    the driver polls for it while the send runs — and hears it once."""
+    ids = [None, "sess-mid"]
+    reported = []
+    ticks = []
+
+    class Created:
+        returncode, stdout, stderr = 0, "headless-1\n", ""
+
+    class FakeSubprocess:
+        @staticmethod
+        def run(args, **_):
+            return Created()
+
+    def fake_send(name, prompt, cwd, timeout, progress, tick=None):
+        for _ in range(3):
+            tick()
+            ticks.append(list(reported))
+        return 0, "the turn's text"
+
+    with patched(run_loop, subprocess=FakeSubprocess, _kc_send=fake_send,
+                 _kc_session_id=lambda name, cwd: ids.pop(0) if ids
+                 else "sess-mid", SESSION_ID_POLL=0):
+        returncode, result = run_loop.run_kc_session(
+            "prompt", "/tmp", 60, on_session=reported.append)
+    assert returncode == 0
+    assert reported == ["sess-mid"], "reported once, and only once"
+    assert ticks == [[], ["sess-mid"], ["sess-mid"]], (
+        "the id reached on_session before the send returned")
+    assert result.session_id == "sess-mid"
 
 
 # -- dry run ------------------------------------------------------------------
