@@ -55,7 +55,7 @@ new ones off — writers are preferred, so a stream of dispatches cannot starve 
 waits for the phase to merge. A wait is logged once with the holder and announced once, and one
 past `SPEC_TREE_MAX_WAIT` (four hours, the devlock's cap) bails `spec_tree_timeout`. Slice 224's
 P1 executor committed its done-record onto `phase/223-P1` seconds after slice 223's driver
-checked that branch out, and the assertion below caught it only after the round (Triage #954):
+checked that branch out, and the assertion below caught it only after the round:
 the assertion is the check, the lease is what makes it hold.
 
 A bail (either exit) checks every repo the run touched back out onto its base branch when the

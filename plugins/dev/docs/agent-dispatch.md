@@ -134,6 +134,6 @@ a session is consumed by the harness's stopped-task bookkeeping and never reache
 driver reads that no-op: a session that also owes its verdict is resumed with a recovery prompt
 in place of the nudge it lost — the report is gone but the sub-agent's transcript is saved, and
 the harness's notice says so — and recovers the report and finishes; the other nudges are sent
-once more ([run-loop.md](run-loop.md) § Protocol invariants). The engine-side fix is KubeCoder's
-(Triage #840). Nothing here changes what a role does: it ends the turn with nothing else in
+once more ([run-loop.md](run-loop.md) § Protocol invariants). The engine-side fix is KubeCoder's.
+Nothing here changes what a role does: it ends the turn with nothing else in
 flight, and when a resume brings one report of several, it ends the turn again.

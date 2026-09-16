@@ -118,7 +118,7 @@ role, round, verdict path, session id, start time — lets `--resume` **reattach
 left exactly as the crash left it, and the interrupted session is resumed with a recovery prompt
 instead of a fresh dispatch. The session id is in the record from the turn's first seconds: the
 driver polls `kc session status` while the send runs rather than reading it after, because a
-send that hangs once the turn has ended never returns (slice 222's test agent, Triage #957) —
+send that hangs once the turn has ended never returns (slice 222's test agent) —
 the same read logs the id and the transcript path. A reattached round keeps the round number its
 interrupted dispatch ran under — executor, gate-fix, review and test rounds alike — so caps do
 not re-fire, counters do not double-advance, and the verdict path the resume computes is the one

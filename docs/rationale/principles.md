@@ -148,7 +148,7 @@ dispatches as deterministic fact.
 *Origin:* slice 152 reached the completion consult with a known-red manual build "owed to the doc
 phase"; the consult answered `complete`, the test phase pushed, and CI failed a build the tree
 could never pass (comment above `_sweep_targets` in `run_loop.py`; **measured**). The
-per-phase gate stayed test-only by ruling on Triage #399 (v0.7.5): a per-phase lint taxes every
+per-phase gate stayed test-only by operator ruling (v0.7.5): a per-phase lint taxes every
 phase to save the one that fixes it.
 *Stated in:* `run-loop.md` § After the last phase.
 
@@ -157,7 +157,7 @@ push.** `## Push holds` in `plan.md` is the one `##` section the run loop reads.
 *Origin:* slice 135 held `../HelmCharts` by ruling (a push there deploys dev and prd together);
 the test agent honoured it, was nudged twice, the driver bailed `unpushed`, and the run session
 pushed 38 seconds later — `IaC/HelmCharts` #5668 deployed both stages and `kubecoder@prd`
-crash-looped (v0.8.0, Triage #445; **measured**).
+crash-looped (v0.8.0; **measured**).
 *Stated in:* `run-loop.md`, `plan-template.md`, `skills/run-slice/SKILL.md` Job 3.
 
 **One driver per slice; a phase branch is reconciled against its record.** A `flock` on the slice
@@ -165,7 +165,7 @@ folder; every commit the record vouches for must still be on the branch, or the 
 the run bails `lost_work`.
 *Origin:* slice 148's P2 gated green on commit `6373316` and round 2 started from a tree with none
 of that work — two drivers were running the slice at once in two environments sharing the spec
-repo but not the code checkout (v0.9.1, Triage #610; **measured**).
+repo but not the code checkout (v0.9.1; **measured**).
 *Stated in:* `runner-state.md`.
 
 **Never call a commit missing from a tree you have not fetched; the driver fetches refs only.**
@@ -251,7 +251,7 @@ preflight.
 *Origin:* the plugin rework's decision (`plugin-plan.md` § 1): every Jinja blank and per-repo
 constant of the template era became either a `kc` call or a line in the project's own contract.
 Onboarding a second project (Ansible) then showed the test, doc and devlock phases had to be
-switches, not KubeCoder-shaped defaults (v0.9.0, Triage #579).
+switches, not KubeCoder-shaped defaults (v0.9.0).
 *Stated in:* `CLAUDE.md` § Portability;
 [`project-contract.md`](../../plugins/dev/docs/project-contract.md).
 

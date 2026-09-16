@@ -34,7 +34,7 @@ round). The same sync made the review cap a budget — 2 → 3, extendable by tw
 `another_round` could buy the confirming review instead of merging a last-round fix unseen.
 
 **Readout.** The shape held through every later version; the `code-tester` never came back. The
-gate stays test-only by a later ruling (v0.7.5, Triage #399): the writer lints once itself, the
+gate stays test-only by a later ruling (v0.7.5): the writer lints once itself, the
 loop-tail sweep runs lint + build + test per component, so a per-phase lint would tax every phase to
 save the one that fixes it.
 
@@ -209,7 +209,7 @@ Explore agents, outside the gate — see [`plan-refinement.md`](plan-refinement.
 the plan-writer and plan-reviewer, the two roles that must catch what the discipline demands of a
 plan, were never told the doc exists.
 
-**Evidence.** Triage #738, measured three times in one lineage: KubeCoder's change-discipline doc
+**Evidence.** Measured three times in one lineage: KubeCoder's change-discipline doc
 requires a wire-contract (`api/*.md`) correction in the same change as the code, so a plan must
 carry it in the implementing phase — and slices 142, 179 and 184 each rediscovered that by hand
 (184's plan missed it; the plan reviewer caught it).
@@ -499,7 +499,7 @@ phase index, pre-edit plan reads on large plans, and the log's "carried whole" c
 
 **Incident.** Slice 224's P1 executor committed its spec-side done-record and close-out entry onto
 `phase/223-P1` — the branch slice 223's driver had checked out in the shared spec tree seconds
-earlier for a phase targeting that repo (Triage #954). 224's driver bailed `blocked` at its next
+earlier for a phase targeting that repo. 224's driver bailed `blocked` at its next
 dispatch; the commit reached main only because 223's reviewer signed off and the ff-merge carried
 it along.
 
@@ -515,7 +515,7 @@ queue).
 ### A hung send's round is counted from its file (v0.9.36)
 
 **Incident.** Slice 222's test agent wrote a valid `clean` verdict, then `kc session send` hung
-after the turn; the resume dispatched a fresh round-2 test phase (Triage #957).
+after the turn; the resume dispatched a fresh round-2 test phase.
 
 **Evidence.** `in_flight.session` was filled only after the send returned, so the resume had
 nothing to reattach; the test round counter was bumped before the record was consulted, so the
@@ -530,7 +530,7 @@ Resume and crash recovery).
 ### One driver per slice, and a branch reconciled against its record (v0.9.1)
 
 **Incident.** Slice 148's P2 gated green on commit `6373316`, and round 2 started from a tree with
-none of that work while `state.json` still pointed at the dead sha (Triage #610).
+none of that work while `state.json` still pointed at the dead sha.
 
 **Evidence.** The forensics: two drivers were running slice 148 at once, in two environments. The
 slice folder is on the spec repo, the mount every KubeCoder environment shares; `/work/KubeCoder`
@@ -555,7 +555,7 @@ not in the state file.
 **Incident.** Slice 135 held `../HelmCharts` by operator ruling (a push there deploys dev and prd
 together). The test agent honoured it, was nudged twice by the blanket push check, the driver bailed
 `unpushed` — whose message read as an instruction to push — and the run session pushed 38 seconds
-later: `IaC/HelmCharts` #5668 deployed both stages and `kubecoder@prd` crash-looped (Triage #445).
+later: `IaC/HelmCharts` #5668 deployed both stages and `kubecoder@prd` crash-looped.
 
 **Evidence.** The build number and the bail message in the entry; the ruling existed only as prose
 in `plan.md`, invisible to the driver.
@@ -629,7 +629,7 @@ redispatches the same round; nothing is nudged, consulted or counted
 
 ### The project contract moves to `.aiworkflowrc` (v0.9.0)
 
-**Incident.** Onboarding Ansible (Triage #579): the dev lock, the test phase and the doc phase had to
+**Incident.** Onboarding Ansible: the dev lock, the test phase and the doc phase had to
 be optional, because none of them, or only part, apply to an Ansible repo. Two switches half-existed
 as `CLAUDE.md` lines; the devlock was inferred from a `scripts/` directory happening to exist in the
 spec repo — a hardcoded convention in a plugin whose first constraint is portability.
@@ -667,7 +667,7 @@ phase).
 
 **Incident.** Ansible slice 015 planned a requirement — close a decision, record a hook URL, correct a
 phases doc — as "the run loop's own doc phase … not a phase here", so its criterion reached the test
-phase before anything could have earned it (Triage #650).
+phase before anything could have earned it.
 
 **Evidence.** KubeCoderSpecs showed the same reading sanctioned by plan rulings since slice 114:
 fourteen `owed_to_doc_phase` verdicts (plus `pending — doc phase`, `deferred` and one half-and-half)
@@ -685,7 +685,7 @@ phase, reviewed and merged like any other (its `plan.md`).
 ### Whole-number slice ids (v0.9.11)
 
 **Incident.** Closing `182b_per_client_operator_tokens` moved slice 182's Pending bullet — `^(\d+)`
-read the folder as slice 182 (Triage #584, #718, #763). Separately, AnsibleSpecs' README was
+read the folder as slice 182. Separately, AnsibleSpecs' README was
 unparseable to the tool, so Ansible slice 013 was closed by hand.
 
 **Change.** **Ruled:** slice ids are whole numbers only; every follow-up and split-out takes a fresh
@@ -699,7 +699,7 @@ b0e3f60a).
 
 **Incident.** "Wait by notification, never by polling" was restated in four near-identical places —
 two skills, `test-agent.md` rule 7, KubeCoder's `slice-test-plan.md` — and not one covered a
-dispatched sub-agent, the other kind of work that reports back (Trello #656).
+dispatched sub-agent, the other kind of work that reports back.
 
 **Change.** One `## Waiting on work` section in the in-pod `CLAUDE.md` preamble KubeCoder renders
 into every session in every pod; the plugin's three copies deleted. The plugin now leans on a file

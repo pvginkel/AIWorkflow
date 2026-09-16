@@ -131,7 +131,7 @@ On 146 the shape did not hold at all (v0.5.1): no entry carried an id, `Provenan
 `Disposition:`, because every register said "the shape is in the file" and `init` had written a
 file holding section charters only — the first author wrote freehand and every later one read the
 file and copied the precedent. `counts` read zero for a six-entry report, and the consult
-*deleted* the two entries it absorbed instead of striking them (Trello #630). The fix put the
+*deleted* the two entries it absorbed instead of striking them. The fix put the
 entry shape into the template's head comment.
 
 On the six reports of 2026-08-17 (v0.6.0) the shape held but the authoring did not: the shape
@@ -215,7 +215,7 @@ consult resolved.
 After the operator's pass the report reads, in rendered order:
 
 - **Two live entries.** B2 — the bot's reconnect reseed reads a one-shot read fault as a
-  departure and renders a false, permanent "Deleted" — carded as Triage #778; S9, the same shape at
+  departure and renders a false, permanent "Deleted" — carded; S9, the same shape at
   the other consumer of the same `None`, folded into B2's card.
 - **Two fixed on the spot**, struck as `fixed by the operator's ruling` with the commit: S3
   (KubeCoder `d2b1b38c`) and S7 (KubeCoderSpecs `69ba4ed8`).

@@ -64,7 +64,7 @@ contract and tells a new repo exactly what is missing. See **[`docs/ADOPTING.md`
   Both ship with the plugin rather than living here, because they read a state format the plugin
   owns and every run writes its own numbers.
 - **`workflow-improvements/`** — the R&D / evidence trail behind the workflow's design: the July
-  2026 cost investigation (#175) and the plan it produced, frozen as written. It describes the task
+  2026 cost investigation and the plan it produced, frozen as written. It describes the task
   runner that preceded the plugin, not the loops that run today; the story since is
   [`docs/rationale/history.md`](docs/rationale/history.md).
 - **`archive/quality/`** — the retired quality capability (`quality-improver`,

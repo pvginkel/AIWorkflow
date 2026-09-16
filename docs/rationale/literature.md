@@ -195,7 +195,7 @@ and lowers the weight rather than dropping the source.
 ## Outside the agent literature
 
 [`left-field.md`](../research/left-field.md) (2026-08-29) is the one document whose sources were
-not chosen to answer a named problem. Its premise: the risk-based-review question (#715) "came
+not chosen to answer a named problem. Its premise: the risk-based-review question "came
 from a Martin Fowler post, not from the reading list — and it was worth the research even though
 the answer was no"; the pipeline "is a review-and-inspection process with a queue, and those have
 been studied for fifty years." An idea qualifies if it "(a) comes from outside the LLM-agent

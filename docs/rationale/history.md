@@ -61,7 +61,7 @@ itself.
 
 ## #175 and the task runner (2026-07-09 → 2026-07-12)
 
-Trello card #175, "Workflow improvements", opened with a cost read of every KubeCoder slice run to
+The "Workflow improvements" card opened with a cost read of every KubeCoder slice run to
 date. The headline (`ANALYSIS.md` § 2, deduplicated by `message.id`): **≈ $5,223 total, of which the
 root orchestrator sessions were $2,763 — 53 % — and all manager sessions together 68 %**; the
 sub-agents everyone had been looking at were 32 %. Three slices were deep-read as exhibits: 052
@@ -190,7 +190,7 @@ plan, with a fuse and pre-committed kill criteria — and v0.7.1/v0.7.2 patched 
 by polling" out of the plugin's three copies into the KubeCoder pod preamble, and v0.7.5 settled
 that the per-phase gate is `kc project test` and only test.
 
-v0.8.0 came from a production incident (Triage #445): slice 135 held `../HelmCharts` by operator
+v0.8.0 came from a production incident: slice 135 held `../HelmCharts` by operator
 ruling, the test agent honoured the hold, the driver's blanket push check nudged twice and bailed
 `unpushed`, "and the run session pushed 38 seconds later — `IaC/HelmCharts` #5668 deployed both
 stages and `kubecoder@prd` crash-looped." `plan.md` gained `## Push holds`, the one `##` section the
@@ -208,7 +208,7 @@ that defaults on (devlock defaults off), refused unknown keys, and gave the driv
 when there is no test phase to do it. The reasoning against a second file is the single-source
 rule applied to configuration: "the first bug is a repo whose two answers disagree".
 
-v0.9.1 answered a forensic finding (Triage #610): slice 148's P2 "gated green on commit `6373316`,
+v0.9.1 answered a forensic finding: slice 148's P2 "gated green on commit `6373316`,
 and round 2 started from a tree with none of that work" — two drivers had been running the same
 slice in two environments, sharing the slice folder on the spec repo but not the checkout. A
 `run.lock` and a branch-reconciled-against-its-record check followed. v0.9.2 ruled that the doc
@@ -240,7 +240,7 @@ rediscovered each time. The tooling and what it found are [`measurement.md`](mea
 Four entries in two days, three of them the same class of defect — a fact the driver held but did
 not hand to every dispatch that needed it, or read once and never again. The change-discipline
 pointer rode every run-loop dispatch but never a planning one, and slices 142, 179 and 184 "each
-had to rediscover that by hand" (v0.9.10, Triage #738). `close_slice.py` read a letter-suffixed
+had to rediscover that by hand" (v0.9.10). `close_slice.py` read a letter-suffixed
 folder as its numeric prefix and could not parse AnsibleSpecs' README (v0.9.11; the operator ruled
 the id scheme — whole numbers only — rather than the regex). `run_loop.py` snapshotted `kc project
 list` once at run start, so slice 181's new component "stayed invalid for the whole run" and its
@@ -271,7 +271,7 @@ each against the changelog once they are pushed.
   moments re-asked as dialogs; the ruling is no dialogs in `/dev:plan-slice`, a `refinement.md`
   per slice written by a sub-agent from what the session collects, agree-or-comment in chat.
   **Untested** — the first four slices on it are the read. [`plan-refinement.md`](plan-refinement.md).
-- **0.9.20** — the KubeCoder memory handover (#785): a bail restores bases only from the run's own
+- **0.9.20** — the KubeCoder memory handover: a bail restores bases only from the run's own
   `phase/<slice>-` branches, the spec repo is asserted on its base before every dispatch and driver
   commit, a merge rebases onto a moved base, `triage_verbatim.py check|restore`.
 
