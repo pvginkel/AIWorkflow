@@ -332,11 +332,15 @@ Separate what shouldn't become a slice, and confirm the separation with the oper
   the record.
 
 Group the rest **by subject, on the asks as written**. Favor larger groups — a slice plans into
-3–6 (max 10) project-local, independently testable, PR-sized tasks, and a group that would
-clearly blow past that is split with the operator now — but don't count API surfaces or
-applications touched: delivering a feature end-to-end beats limiting development complexity.
-Bundling mistakes are fine; the planner splits, merges, and kicks items back cheaply during
-refinement. When in doubt, group together.
+project-local, independently testable, PR-sized phases, and **about seven is the sweet spot**,
+measured on overhead: every slice pays its planning session, its consult and its test and doc
+phases once, whatever its size, so a two- or three-phase slice pays all of that on little work
+and a slice near seven spreads it thin. Aim there where the subject allows it — a group well
+short of seven looks for a neighbouring subject before it is filed alone; unrelated asks are
+never bundled to reach a number. Ten is the ceiling: a group that would clearly blow past it is split
+with the operator now. Don't count API surfaces or applications touched: delivering a feature
+end-to-end beats limiting development complexity. Bundling mistakes are fine; the planner
+splits, merges, and kicks items back cheaply during refinement. When in doubt, group together.
 
 ### 7. File
 

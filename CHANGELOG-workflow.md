@@ -4,6 +4,16 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-18 — triage sizes a group at about seven phases (v0.9.37)
+
+Triage's grouping step said a slice plans into "3–6 (max 10)" tasks, which read as a target of
+three to six. The operator's measurement on overhead puts the sweet spot at about seven phases:
+a slice pays its planning session, consult, test phase and doc phase once whatever its size, so
+a small slice carries all of it on little work. Step 6 of `/dev:triage` now names seven as the
+aim and says why, keeps ten as the ceiling at which a group is split with the operator, and has
+a group well short of seven look for a neighbouring subject before it is filed alone — without
+bundling unrelated asks to reach a number. Prose only; no code or contract change.
+
 ## 2026-09-11 — the shared spec tree is leased, and a resume counts the verdict a hung round left on disk (v0.9.36)
 
 Trello #954 and #957, both from 2026-09-11's parallel runs on dev 0.9.34.
