@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-18 — `/dev:close-out` sorts the report when the operator hands it the triage (v0.9.38)
+
+The skill described one way through a report — present, wait, take dispositions entry by entry —
+while the reports show the operator mostly working the other way: "Please apply your
+suggestions", one ruling over a sheet the session proposed. What the session proposed came from
+the operator's standing rules, stated once on slice 181's report (2026-08-30) and kept in one
+project's session memory, so a session anywhere else proposed from nothing. The skill now has a
+section for a handed-over triage: check the entries whose bucket turns on a fact that can have
+moved since the run; sort every blank entry into `fix now` (a small change whose content is
+known — doc, comment and config text above all), `card` (a bug with real impact; entries that
+are one fix share a card), `close` (remote edge cases, low-stakes test gaps, nits, and
+Suggestions by default), one card for all Outstanding actions, and a small needs-your-eyes set
+for what does not sort; present the sheet with that set first and a one-clause why per entry;
+wait for the one ruling. Nothing is filed, fixed or struck before it, and the `Disposition:`
+line records the operator's words, then ` — suggested <disposition>`, then what was done. One
+change outside that mode: a `fix now`, once committed, is struck with the commit as its reason —
+a carded entry stays live, a fixed one does not. `close-out.md` and the reporting rationale
+follow; no code changed.
+
 ## 2026-09-18 — triage sizes a group at about seven phases (v0.9.37)
 
 Triage's grouping step said a slice plans into "3–6 (max 10)" tasks, which read as a target of

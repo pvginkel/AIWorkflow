@@ -1,6 +1,6 @@
 ---
 name: close-out
-description: Work through a slice's close-out report (close-out.md) with the operator — present it, take the operator's dispositions in their own words, and execute them (card / fix now / fold into a slice / close / defer). Invoke it yourself whenever the operator opens, discusses, pastes from, or wants to process a slice's close-out.md — the operator will not necessarily name this skill.
+description: Work through a slice's close-out report (close-out.md) with the operator — present it, take the operator's dispositions in their own words, and execute them (card / fix now / fold into a slice / close / defer); or, when the operator hands you the triage, sort the entries into proposed dispositions for one ruling. Invoke it yourself whenever the operator opens, discusses, pastes from, or wants to process a slice's close-out.md, or asks you to do a close-out for them — the operator will not necessarily name this skill.
 argument-hint: "[slice number or slice dir]"
 ---
 
@@ -40,7 +40,9 @@ from your host convention (`~/.claude/CLAUDE.md`).
      the host convention): title = the entry's headline, body = the entry verbatim + its
      `Provenance:` line + the report's path.
    - `fix now` — do it here only if the project's `CLAUDE.md` classes the change as ad hoc
-     work; otherwise say so and offer `fold into`.
+     work; otherwise say so and offer `fold into`. Done and committed, strike the entry as a
+     `close` is struck, the reason naming the commit (`--reason "fixed in <commit>"`) — a carded
+     entry stays live, a fixed one does not.
    - `fold into <slice>` — append the entry verbatim as an ask to that slice's `slice.md` under
      `slices/backlog/`; a slice that does not exist yet becomes a `/dev:triage` item instead.
    - `close` — `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py strike <slice_dir> <id>
@@ -63,10 +65,51 @@ from your host convention (`~/.claude/CLAUDE.md`).
    the report (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`), so nothing blank under an archived
    card is owed a disposition. Report short: dispositions by kind, cards filed, anything owed.
 
+## When the operator hands you the triage
+
+"Do the close-out", "triage it for me", "apply your suggestions for the rest" — the operator
+wants to rule once, not entry by entry. A report runs to dozens of entries, and their worry is
+missing the one that matters, not reading all of them: your product is a sheet they can rule on
+in one message, with the few entries that need their eyes pulled out of the rest. You propose,
+they dispose — nothing is filed, fixed or struck before the ruling. This stands in for steps 2–3,
+over every entry still blank; steps 4–6 then run as written on what they ruled.
+
+1. **Check what can have moved.** A report ages: a later phase, slice or ad hoc commit may have
+   fixed what an entry describes. Where an entry's bucket turns on a fact a command or two
+   settles — an id list, a page that "still contradicts", a script that may since have been
+   fixed — check it before you sort; an entry already fixed is a `close` whose why names the
+   commit. That is the whole of the checking: whether the claim still holds today, never whether
+   it was right.
+2. **Sort every entry into one bucket**, on its `Consequence:` line and its evidence class:
+   - **`fix now`** — a small change whose content is already known: the entry says what the text
+     should be. Doc, comment and config text above all. Step 4's ad hoc test still applies.
+   - **`card`** — a bug with real impact that is not a `fix now`: its Consequence names something
+     an operator or user will meet in the deployed shape. Entries that are one fix are one card.
+   - **`close`** — edge cases that are real but remote, missing tests with little riding on them,
+     nits and cosmetics — and Suggestions, by default: the operator progresses a small fraction
+     of them, so a suggestion is closed unless it is clearly interesting, and then it goes to the
+     last bucket, not to a card.
+   - **Outstanding actions** — all of them on **one** card, where the host convention keeps the
+     operator's own to-dos (else the intake queue): a list they work from, not a card each.
+   - **Needs your eyes** — whatever does not sort: a bug whose impact the entry does not let you
+     judge, an open question or ruling, the interesting suggestion, an entry two buckets both
+     fit. Do not force these — this set is what the sheet is for — and keep it small: a set that
+     is a third of the report means the sorting was not done.
+3. **Present the sheet and wait.** The `Run:` header and the Summary, then the buckets —
+   needs-your-eyes first, each with its count — one line per entry: `id — headline — why this
+   bucket`, the why in a clause. The operator rules in one message; an amendment ("card B4
+   instead", "S7 is interesting, fold it into 012") is a disposition like any other and wins
+   over the sheet. What they leave unruled is step 5's question.
+4. **Record it as what it was.** An entry's `Disposition:` line carries the operator's ruling in
+   their words, then ` — suggested <disposition>`, then what you did — so the file shows the
+   choice was yours and the decision theirs. An entry they ruled on by name carries their words
+   for it alone.
+
 ## Bounds
 
 - Never edit an operator's words, and never re-derive an entry's claim — the run's records are
   in the slice folder if the operator wants to look, and `/dev:triage` grounds what it takes on.
+  A handed-over triage checks whether a claim still holds today, nothing more.
 - When a disposition asks about the claim ("this says we built the wrong thing, right?"), answer
   from the entry's own body and `Provenance:` — quote what supports or fails to support the
   operator's reading, and say plainly when the entry does not settle it. Agreeing is not an

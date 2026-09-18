@@ -148,11 +148,14 @@ dispose is the operator's.
    report it names, not the card); nothing else from the run is carded.
 4. The operator reads the report and writes dispositions in place. The `close-out` skill (or an
    ad hoc session following it) executes them: `card` files a tracker card with the entry as its
-   body, `fix now` does the small thing or bails to a slice, `fold into` appends the entry to
-   that slice's `slice.md`, `close` strikes (`close_out.py strike`), `defer` leaves it — then
-   renders. Once the operator's own asks are settled it proposes closing whatever is still blank,
-   so a report is finished in one sitting rather than left half-dispositioned. Git in the spec
-   repo holds the history of the operator's remarks. **The card's closure is the report's.** The
+   body, `fix now` does the small thing and strikes the entry with the commit, or bails to a
+   slice, `fold into` appends the entry to that slice's `slice.md`, `close` strikes
+   (`close_out.py strike`), `defer` leaves it — then renders. An operator who would rather rule
+   once hands the skill the triage: it sorts the blank entries into proposed dispositions, pulls
+   out the few that need their eyes, and executes on their one ruling — the sort is the
+   session's, the disposal still the operator's. Once the operator's own asks are settled it
+   proposes closing whatever is still blank, so a report is finished in one sitting rather than
+   left half-dispositioned. Git in the spec repo holds the history of the operator's remarks. **The card's closure is the report's.** The
    operator does not treat a blank `Disposition:` as pending work, and a report is never a queue
    they work from: when they are done with it the close-out card is archived, and every entry
    still blank is closed by that act — written up as `close` in the file's own style, so the
@@ -166,5 +169,6 @@ Deliberately absent: any validation beyond "the section heading exists" and the 
 shape and how many live entries lack a `Consequence:` or `Provenance:` line, so an author that
 drifted from the shape shows in the run's completion line and the close-out card instead of as a
 report that counts zero — dedup tooling (`render` orders, it never merges), disposition parsing,
-and — for now — an automated triage pass over the report; the shape is meant not to change when
+and — for now — an automated triage pass over the report (the skill's sheet is asked for by the
+operator and ruled on by them, not a pass the loops run); the shape is meant not to change when
 that comes.

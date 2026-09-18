@@ -176,6 +176,17 @@ line — a card id, a commit), and when a disposition asks about a claim it answ
 entry's own body and Provenance rather than agreeing (v0.5.4: a challenge flips 32–86 % of
 correct answers in Sharma et al.).
 
+Since v0.9.38 the skill also carries the other way a report gets processed: the operator hands
+over the triage and rules once. The reports read below show it was already the habit — "Please
+apply your suggestions", "Apply your suggestions for the rest" — but what the session suggested
+came from rules the operator had stated once, on slice 181's report (2026-08-30), and that lived
+in one project's session memory: known small text changes are fixed now, bugs with real impact
+are carded, remote edge cases, low-stakes test gaps and nits are closed, suggestions are closed
+unless clearly interesting, and the remainder is theirs to look at. The stated reason is the
+report's size — the worry is missing the entry that matters, not reading every one — so the
+skill's product in that mode is a bucketed sheet with the needs-your-eyes set leading, and
+nothing is filed or struck before the ruling.
+
 The run's only tracker output is one card, `[NNN] close-out: <title>`, whose body is the Summary,
 the Focus lines, the entry counts and the report's path; it is archived when no live entry has a
 blank `Disposition:`.
@@ -294,4 +305,6 @@ agent runs `list` before it writes; no disposition parsing — the line is the o
 form; and no automated triage pass over the report, with one constraint set in advance for when
 it comes: it ranks and pre-fills, never closes, because the report is mostly the judgment class
 where an agentic filter suppresses 50–85 % of true findings (v0.5.4, from Sifting the Noise). The
-shape is meant not to change when that step arrives.
+shape is meant not to change when that step arrives. The handed-over triage of v0.9.38 sits
+inside that constraint — asked for by the operator, it sorts and proposes, and closes only on
+their ruling.
