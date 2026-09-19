@@ -24,6 +24,20 @@ repos:
   # parallel sessions read and append to the one working tree.
   - url: https://github.com/pvginkel/FieldnotesAppSpecs
     shared: true
+  # The Fieldnotes store: observations, triage docs and the install, reconciler
+  # and actioner skills. Data plus skills, written by the API and the skills.
+  - url: https://github.com/pvginkel/Fieldnotes
+  # Where Fieldnotes deploys: the `models` and `fieldnotes` charts, and the
+  # webhook-relay image the `fieldnotes` pod runs. Both are written and pushed
+  # from here.
+  - url: https://github.com/pvginkel/HelmCharts
+  - url: https://github.com/pvginkel/DockerImages
+  # The close-out reports Fieldnotes' test dataset is mined from. Read, never
+  # written from here, so shared: one clone per project, mounted in.
+  - url: https://github.com/pvginkel/KubeCoderSpecs
+    shared: true
+  - url: https://github.com/pvginkel/AnsibleSpecs
+    shared: true
 
 capabilities:
   github: rw
@@ -32,19 +46,38 @@ capabilities:
 tools:
   # AIWorkflow and FieldnotesApp are Python on uv, and the dev container has no uv.
   - use: python
+  # HelmCharts' deploy lint and template gates, and its poetry setup.
+  - use: iac
+  # webhook-relay, which is Go.
+  - use: go
+
+# Proves Fieldnotes' Dockerfile and webhook-relay's with `kaniko --no-push`
+# before a push hands them to Jenkins.
+imageBuilder: true
 
 preamble:
   instructions: |
     The AI workflow's environment: the `dev` plugin marketplace
     (/work/AIWorkflow, with its spec repo in /work/AIWorkflowSpecs), and
     Fieldnotes, the cross-project observation store for agents that is being
-    built beside it (/work/FieldnotesApp, with its design note and slices in
-    /work/FieldnotesAppSpecs).
+    built beside it (/work/FieldnotesApp, with its design and implementation
+    plan in /work/FieldnotesAppSpecs).
 
-    One toolchain sidecar:
+    Fieldnotes also touches /work/Fieldnotes (the store: observations and
+    skills), /work/HelmCharts (its charts) and /work/DockerImages (the
+    webhook-relay image). /work/KubeCoderSpecs and /work/AnsibleSpecs are
+    read-only sources for its test dataset: never commit there.
+
+    Three toolchain sidecars:
 
       cexec python    Python with uv, for every repo here. There is no uv
                       in the dev container.
+      cexec iac       Terraform, Helm, kubectl and poetry: HelmCharts'
+                      deploy lint / template gates.
+      cexec go        Go, for webhook-relay in DockerImages.
+
+    `kaniko --no-push` proves a Dockerfile; never push a `dev-*` or `prd-*`
+    tag from here, those are Jenkins'.
 
     Each repo carries its own CLAUDE.md; read the one for the repo you are
     working in. `kc project` verbs are cwd-bound, so run them from that
@@ -56,4 +89,6 @@ preamble:
     pushed and the plugin updated.
 
     /work/AIWorkflowSpecs and /work/FieldnotesAppSpecs are SHARED working
-    trees: stage files by name there, never `git add -A`.
+    trees: stage files by name there, never `git add -A`. /work/KubeCoderSpecs
+    and /work/AnsibleSpecs are shared too, and never pulled by a restart:
+    `git pull` them before mining.
