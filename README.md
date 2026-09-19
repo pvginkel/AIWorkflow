@@ -88,8 +88,9 @@ contract and tells a new repo exactly what is missing. See **[`docs/ADOPTING.md`
   per-slice report every agent writes its out-of-scope observations to) beside it, plus
   `project-contract.md`, `preflight.md`, and `residual-sweep.md` (the planning-free lane for
   card-described residuals).
-- **[`docs/fieldnotes/design-note.md`](docs/fieldnotes/design-note.md)** — design note for
-  Fieldnotes, a planned cross-project observation store beside the workflow: agents post what
-  they now leave in close-out reports, and a scheduled reconciler curates it into a triage doc.
-  Not built yet.
+- **[Fieldnotes](https://github.com/pvginkel/FieldnotesApp)** — a cross-project observation store
+  beside the workflow, in a repo of its own: agents post what they now leave in close-out reports,
+  and a scheduled reconciler curates it into a triage doc. Not built yet. This repo's KubeCoder
+  environment checks it out as `/work/FieldnotesApp`, with its design note and slices in
+  `/work/FieldnotesAppSpecs`.
 - **[`CHANGELOG-workflow.md`](CHANGELOG-workflow.md)** — the plugin's changelog.
