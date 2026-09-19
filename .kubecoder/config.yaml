@@ -10,6 +10,11 @@
 # close-out template and agent instructions it changes.
 
 repos:
+  # AIWorkflow's own spec repo — for now, the Trello Triage cards archived at the
+  # YouTrack cutover. Shared, like every spec repo: parallel sessions read and
+  # append to the one working tree.
+  - url: https://github.com/pvginkel/AIWorkflowSpecs
+    shared: true
   # The Fieldnotes application: REST API, MCP server and model pod. Carries its
   # own CLAUDE.md, .aiworkflowrc and .kubecoder/project.yaml, and runs through
   # the slice workflow like any other project.
@@ -24,15 +29,16 @@ capabilities:
   github: rw
 
 tools:
-  # Both repos are Python on uv, and the dev container has no uv.
+  # AIWorkflow and FieldnotesApp are Python on uv, and the dev container has no uv.
   - use: python
 
 preamble:
   instructions: |
     The AI workflow's environment: the `dev` plugin marketplace
-    (/work/AIWorkflow), and Fieldnotes, the cross-project observation store
-    for agents that is being built beside it (/work/FieldnotesApp, with its
-    design note and slices in /work/FieldnotesAppSpecs).
+    (/work/AIWorkflow, with its spec repo in /work/AIWorkflowSpecs), and
+    Fieldnotes, the cross-project observation store for agents that is being
+    built beside it (/work/FieldnotesApp, with its design note and slices in
+    /work/FieldnotesAppSpecs).
 
     One toolchain sidecar:
 
@@ -48,5 +54,5 @@ preamble:
     /work/AIWorkflow. An edit there changes no running pipeline until it is
     pushed and the plugin updated.
 
-    /work/FieldnotesAppSpecs is a SHARED working tree: stage files by name
-    there, never `git add -A`.
+    /work/AIWorkflowSpecs and /work/FieldnotesAppSpecs are SHARED working
+    trees: stage files by name there, never `git add -A`.
