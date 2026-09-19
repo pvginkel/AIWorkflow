@@ -12,7 +12,11 @@ Execute a planned slice. Argument: the slice number (e.g., `074`). Requires a sl
 
 `<spec-repo>` is the path in your `.aiworkflowrc`'s `spec_repo`. Run this from the **target
 code repo**. The loop's mechanics are `${CLAUDE_PLUGIN_ROOT}/docs/run-loop.md`; what it records
-is `${CLAUDE_PLUGIN_ROOT}/docs/runner-state.md`.
+is `${CLAUDE_PLUGIN_ROOT}/docs/runner-state.md`. The tracker — what realises the slice card's
+states, the intake queue and a related card — and the notification wiring come from your host
+convention (`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md`, section 3). **Load that convention
+before the first tracker call** — where the host ships it as a skill, invoke the skill: nothing
+in the pipeline loads it for you, and a convention that is not in context gets guessed at.
 
 **The loop drives the slice, not you.** `${CLAUDE_PLUGIN_ROOT}/tools/run_loop.py` owns the whole
 flow — every phase's executor→gate→review→merge round, the completion consult, the test phase
@@ -82,9 +86,11 @@ push and bails `unpushed` over the ruling it was told to honour. Then relaunch w
    `close-out.md`** (the run's who-did-what record and its report; only a stale `bailout.json`
    is dropped).
 4. File **one** tracker card in the intake queue (per the host convention) —
-   `[NNN] close-out: <slice title>` — whose body is the report's Summary, its `Focus:` lines,
-   its entry counts, and the report's path in the spec repo (its `slices/completed/…` form,
-   after step 3's move). That card is the "a report is waiting" marker, never an ask; nothing
+   `[NNN] close-out: <slice title>` — whose body is the report's `Focus:` lines, its entry
+   counts, and the report's path in the spec repo (its `slices/completed/…` form, after step 3's
+   move); the Summary stays in the report, which a card points at and never mirrors. Link the
+   card to the slice's card as related, never under it: what hangs under a slice card is what
+   the slice absorbed. That card is the "a report is waiting" marker, never an ask; nothing
    else from the run is carded — the operator dispositions the report's entries
    (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`).
 5. Advance the slice's tracker card to **delivered** — merged, waiting for the operator's review;

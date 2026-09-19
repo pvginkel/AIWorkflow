@@ -16,7 +16,10 @@ the executors is `plan.md`, nothing else.
 mechanics are `${CLAUDE_PLUGIN_ROOT}/docs/plan-loop.md`; the concrete plan.md/verification.json template
 is `${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md`; the run loop that executes the result is
 `${CLAUDE_PLUGIN_ROOT}/docs/run-loop.md`; the project contract is
-`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md`.
+`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md`. Its section 3 is where the tracker comes from —
+what realises the slice card and its states is your host convention. **Load that convention
+before the first tracker call** — where the host ships it as a skill, invoke the skill: nothing
+in the pipeline loads it for you, and a convention that is not in context gets guessed at.
 
 **Preflight (step 0).** Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for plan` and relay its
 message verbatim if it exits non-zero. A silent exit 0 means every gate passed.
@@ -159,7 +162,11 @@ slice.md — there is no fix-verify loop behind it. Handle the exit:
   who-did-what record), staging by name; drop a stale `plan_bailout.json`. The slice folder MUST
   be clean after.
 - Advance the slice's tracker card — the id in `slice.md`'s `issue:` frontmatter — from
-  **triaged** to **planned**.
+  **triaged** to **planned**. Where planning moved the slice's scope — a requirement dropped,
+  ruled out or split off — bring the card's highlights in line in the same move: the card is
+  what the operator sees of the slice. A card the slice absorbed whose requirement planning
+  ruled out is no longer absorbed: re-close it as **rejected**, still under the slice's card,
+  with a comment carrying the ruling.
 - Report what is now ready: the phases (id, target, title, one line each), the acceptance
   criteria, and any A/B decisions made with their grounds. A correction on top of this summary
   is a ruling — record it in plan.md (in place) and apply it, per §4's first bullet. Do **not**
@@ -179,4 +186,5 @@ slice.md — there is no fix-verify loop behind it. Handle the exit:
       content anywhere in the plan (a doc task is a phase); rulings edited in place, no
       correction-chains.
 - [ ] The plan loop exited 0 (reviewer verdict on file; findings adjudicated).
-- [ ] Slice folder committed clean; card advanced to planned.
+- [ ] Slice folder committed clean; card advanced to planned, its highlights matching the plan's
+      scope.

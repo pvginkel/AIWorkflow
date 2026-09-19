@@ -248,10 +248,11 @@ def build_artifacts(num: str, items: list[dict]) -> dict[str, str]:
 
 
 def pending_bullet(num: str, items: list[dict]) -> list[str]:
-    """The README `## Pending` entry, wrapped like its neighbours."""
+    """The README `## Pending` entry, wrapped like its neighbours. It counts the
+    cards and names none: a README is permanent, a card id is a working handle, and
+    `slice.md` holds the ids."""
     cards = distinct_cards(items)
-    text = (f"- **{num}** — Residual sweep: {len(cards)} Solution Known "
-            f"card(s) ({' '.join(cards)}).")
+    text = f"- **{num}** — Residual sweep: {len(cards)} Solution Known card(s)."
     lines, line = [], ""
     for word in text.split(" "):
         if line and len(line) + 1 + len(word) > README_WIDTH:

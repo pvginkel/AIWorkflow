@@ -143,9 +143,9 @@ dispose is the operator's.
    completes, and `/dev:run-slice` re-stamps it after the cost block lands (`close_out.py
    stamp`).
 3. `/dev:run-slice` files **one** tracker card — `[NNN] close-out: <slice title>`, in the intake
-   queue — whose body is the report's Summary, its `Focus:` lines, its entry counts, and its
-   path. That card is the "a report is waiting" marker, never an ask (`/dev:triage` reads the
-   report it names, not the card); nothing else from the run is carded.
+   queue, related to the slice's card — whose body is the report's `Focus:` lines, its entry
+   counts, and its path. That card is the "a report is waiting" marker, never an ask
+   (`/dev:triage` reads the report it names, not the card); nothing else from the run is carded.
 4. The operator reads the report and writes dispositions in place. The `close-out` skill (or an
    ad hoc session following it) executes them: `card` files a tracker card with the entry as its
    body, `fix now` does the small thing and strikes the entry with the commit, or bails to a

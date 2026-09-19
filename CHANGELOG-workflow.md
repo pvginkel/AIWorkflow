@@ -4,6 +4,43 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-19 — the first runs on the new tracker: the skills say to load the host convention, a slice card names its folder, `triage_verbatim.py` checks the `Ask:` quote (v0.9.41)
+
+AIWF-5. 0.9.40 shipped untested; `/dev:triage`, `/dev:plan-slice` and `/dev:run-slice` have now each
+run once on the operator's YouTrack (KubeCoder slice 229, 2026-09-19). Every tracker call
+succeeded first try and the loops, which touch no tracker, ran unchanged. What the three runs
+reported, each **ruled** by the operator the same day:
+
+- **The skills say to load the host convention.** `/dev:run-slice` named no host convention at
+  all, and the host's tracker skill reached that session only because the project's `CLAUDE.md`
+  happened to mention it: a skill's description did not trigger on "tracker card". `triage`,
+  `plan-slice`, `run-slice` and `close-out` now each say to load the convention before the first
+  tracker call, invoking the host's skill where it ships one. The plugin stays tracker-neutral
+  and names no skill; `project-contract.md` section 3 says why the line is there.
+- **A slice card names its slice folder, never a path.** Triage wrote a pointer into
+  `slices/backlog/`, which went stale when `/dev:plan-slice` moved the folder and again when
+  `close_slice.py` did. `NNN_slug` survives both moves.
+- **`/dev:plan-slice` §4 keeps the slice card true to the plan.** Where planning moved the scope
+  the card's highlights follow in the same move, and a card the slice absorbed whose requirement
+  planning ruled out is re-closed as rejected, still under the slice's card: absorbed means the
+  slice delivers it.
+- **The close-out card's body is the `Focus:` lines, the counts and the path**, no longer the
+  Summary: the report holds it, and with it the body ran past the host's word limit for a card.
+  The card is linked to the slice's card as related, never under it.
+- **A carded close-out entry loses its ` · <severity>` grade in the title.** The grade ranks a
+  finding inside its report; on a card it read as a claim about the card, and on one it
+  contradicted the entry's own "Consequence: none today".
+- **The README Pending line names no card**, in triage step 7 and in `sweep_slice.py`'s bullet
+  alike: a README is permanent, a card id is a working handle, and `slice.md` holds the ids.
+- **The status template's `Source:` line carries the card's title as filed**, which the document
+  showed nowhere.
+- **`triage_verbatim.py` checks and restores the `Ask:` quote — measured** (by test). The
+  operator's editor turned a card's `TF_VAR_*` into `TF*VAR*\*` on the `Ask:` line, the tool
+  read only `**Card text:**` blocks and said ok, and the `Ask:` quote is what `slice.md` quotes.
+  `check` now reports each quoted fragment that is not in the card's text, and `restore` puts
+  back the card's own wording where the corrupted fragment maps to exactly one place in it; one
+  it cannot place is reported, left alone, and exits 1.
+
 ## 2026-09-18 — the tracker under the skills: projects own cards, closing takes a disposition, a run ends at delivered (v0.9.40)
 
 Trello #1031. The operator's tracker moves from two shared Trello boards to a self-hosted YouTrack,

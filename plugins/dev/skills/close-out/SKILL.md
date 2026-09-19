@@ -11,7 +11,10 @@ run agent wrote its out-of-scope observations to (`${CLAUDE_PLUGIN_ROOT}/docs/cl
 what the report is; `${CLAUDE_PLUGIN_ROOT}/docs/close-out-template.md` its shape). The operator
 reads and decides; this session presents, records, files, and edits. `<spec-repo>` is the path
 in your `.aiworkflowrc`'s `spec_repo`; the tracker and the notification wiring come from your
-host convention (`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md`, section 3).
+host convention (`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md`, section 3). **Load that
+convention before the first tracker call** — where the host ships it as a skill, invoke the
+skill: nothing in the pipeline loads it for you, and a convention that is not in context gets
+guessed at.
 
 ## Procedure
 
@@ -36,8 +39,10 @@ host convention (`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md`, section 3).
    card id, the commit, the slice folded into.
 4. **Execute each disposition:**
    - `card [project]` — one tracker card per entry (in the named project's intake queue, else
-     this project's, per the host convention): title = the entry's headline, body = the entry verbatim + its
-     `Provenance:` line + the report's path.
+     this project's, per the host convention): title = the entry's headline without its
+     ` · <severity>` grade — the grade ranks a finding inside its report, and on a card's title
+     it reads as a claim about the card — body = the entry verbatim + its `Provenance:` line +
+     the report's path.
    - `fix now` — do it here only if the project's `CLAUDE.md` classes the change as ad hoc
      work; otherwise say so and offer `fold into`. Done and committed, strike the entry as a
      `close` is struck, the reason naming the commit (`--reason "fixed in <commit>"`) — a carded

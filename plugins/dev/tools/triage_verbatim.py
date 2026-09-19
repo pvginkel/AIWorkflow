@@ -20,17 +20,23 @@ identifier. Nothing downstream can tell; the corruption rides into `slice.md` an
 then into code.
 
 So after every operator pass, the inlined text is checked against the dump and
-restored from it. The operator's own lines — `Source:`, `Ask:`, `Category:`,
-`Ruling:`, every heading, every word of the document outside a `**Card text:**`
-block — are never touched: their prose is theirs, only the quoted source is ours.
+restored from it. The `Ask:` line goes the same way: it is the session's own
+verbatim quote of the card, and it is what `slice.md` later quotes, so it is
+checked against the card's text and restored from it too. A real run lost a card's
+`TF_VAR_*` that way — the quote came back `TF*VAR*\\*`, this tool reported the item
+ok, and the corrupted identifier is what the slice was written against. The
+operator's own lines — `Source:`, `Category:`, `Ruling:`, every heading, every word
+of the document outside a `**Card text:**` block — are never touched: their prose
+is theirs, only the quoted source is ours.
 
     triage_verbatim.py check   <status.md> <raw.md>
     triage_verbatim.py restore <status.md> <raw.md>
 
-`check` prints one line per item and changes nothing. `restore` rewrites the
-`**Card text:**` block of every item that differs, in place, and leaves the rest of
-the file byte-identical. Both are idempotent: a restored document checks clean, and
-a second restore rewrites nothing.
+`check` prints one line per item, plus an `ASK` line per fragment of its quote the
+card does not carry, and changes nothing. `restore` rewrites the `**Card text:**`
+block of every item that differs and every quoted fragment it can place in the
+card's text, in place, and leaves the rest of the file byte-identical. Both are
+idempotent: a restored document checks clean, and a second restore rewrites nothing.
 
 How the two formats are read:
 
@@ -52,18 +58,38 @@ How the two formats are read:
     inside a card's ``` fence is text, not a section boundary, and is not demoted.
   * Leading and trailing blank lines of a block are not significant. Nothing else
     is normalised — trailing whitespace included. The check is verbatim.
+  * An item's ask is the line starting `- Ask:` plus the lines under it, up to the
+    next `- ` bullet, a blank line or the card-text marker, joined with single
+    spaces. An item that carries none is not a format error; it is simply not
+    checked for one.
+  * That value is read as one quote — with a single outer pair of double quotes,
+    straight or curly, taken off — and, if that does not place it, as the pieces
+    between straight double quotes, because a session sometimes writes `"a" and
+    "b"` and a card's own text may contain quotes. Either reading splits on an
+    elision (`…`, `...`, `[…]`, `[...]`) and drops the whitespace and stray quote
+    characters at each fragment's ends. A fragment is carried when it is a
+    substring of the card's heading line and body — the title is part of the ask —
+    with the whitespace of both collapsed, so a quote may wrap where the card does
+    not. The card text is the dump's own, undemoted. Of two readings that both
+    fail, the one with fewer unplaced fragments is reported.
+  * `restore` places a fragment through a canonical form of it and of the card's
+    text: backslashes dropped, `*` read as `_`, whitespace runs collapsed — which
+    is exactly what the editor's damage costs. What the dump holds there goes back
+    into the quote. A fragment that matches nowhere, or in two different shapes,
+    is left for the session to settle by hand.
 
-Exit codes: 0 every card-backed item is ok · 1 (`check`) an item differs or its card
-is missing from the dump · 2 usage or format error — an unreadable file, a status
-document with no items, an item with no `**Card text:**` block. `restore` reports a
-missing card the same way but still exits 0: it restored everything it could, and
-the dump is the thing to fix.
+Exit codes: 0 every card-backed item is ok · 1 (`check`) an item differs, a
+fragment of its ask is not in the card's text, or its card is missing from the
+dump; (`restore`) a fragment of an ask could not be placed · 2 usage or format
+error — an unreadable file, a status document with no items, an item with no
+`**Card text:**` block. `restore` reports a missing card the same way but still
+exits 0: it restored everything it could, and the dump is the thing to fix.
 """
 
 import argparse
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 DEMOTE_LEVELS = 2
@@ -101,6 +127,13 @@ OUTLINE_RE = re.compile(r"^#{1,3}(\s|$)")
 HEADING_RE = re.compile(r"^(#{1,6})(\s|$)")
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
 CARD_TEXT_MARKER = "**Card text:**"
+
+# The item's ask, and what a session elides out of the middle of it. The quote
+# characters are the ones a quote is written with — straight, and the curly pair an
+# editor turns them into — trimmed off a fragment's ends, never from inside it.
+ASK_RE = re.compile(r"^(\s*)- Ask:\s*(.*)$")
+ELISION_RE = re.compile(r"\[\s*(?:…|\.\.\.)\s*\]|…|\.\.\.")
+QUOTE_CHARS = "\"“”"
 
 # How much of a differing line to show. The corruption this tool exists for hides
 # mid-paragraph, so the excerpt is a window around the first differing character
@@ -182,10 +215,20 @@ def strip_blanks(lines: list[str]) -> list[str]:
 # The dump
 # ---------------------------------------------------------------------------
 
-def parse_raw(lines: list[str]) -> dict[str, list[str]]:
-    """Card id → the section's body: every line after its `## <id> — …` heading,
-    up to the next `## ` line. Demotion is not applied here — the body is the
-    archive's own text, and only the comparison sees the demoted form."""
+@dataclass
+class Card:
+    """One card's section of the dump: its `## <id> — <title>` heading line, which
+    only an ask reads — the title is part of what a card asks for — and the body,
+    which is what the status document inlines."""
+
+    heading: str
+    body: list[str]
+
+
+def parse_raw(lines: list[str]) -> dict[str, Card]:
+    """Card id → its section: the `## <id> — …` heading and every line after it, up
+    to the next `## ` line. Demotion is not applied here — the section is the
+    archive's own text, and only the card-text comparison sees the demoted form."""
     in_code = fenced(lines)
     starts: list[tuple[int, str | None]] = []
     for i, line in enumerate(lines):
@@ -195,14 +238,14 @@ def parse_raw(lines: list[str]) -> dict[str, list[str]]:
         # One group per id shape; whichever matched is the id.
         starts.append((i, (m.group(1) or m.group(2)) if m else None))
 
-    cards: dict[str, list[str]] = {}
+    cards: dict[str, Card] = {}
     for k, (i, card) in enumerate(starts):
         if card is None:
             continue
         end = starts[k + 1][0] if k + 1 < len(starts) else len(lines)
         # A card filed twice in one dump: the first section wins, so a re-fetch
         # appended at the end cannot silently redefine what was already checked.
-        cards.setdefault(card, lines[i + 1:end])
+        cards.setdefault(card, Card(heading=lines[i], body=lines[i + 1:end]))
     return cards
 
 
@@ -211,15 +254,48 @@ def parse_raw(lines: list[str]) -> dict[str, list[str]]:
 # ---------------------------------------------------------------------------
 
 @dataclass
+class Ask:
+    """One item's `- Ask:` value: the lines it occupies (0-based, end exclusive),
+    the indentation its line carries, and the value itself — the continuation lines
+    joined on with single spaces."""
+
+    line: int
+    end: int
+    indent: str
+    value: str
+
+
+@dataclass
 class Item:
     """One item block, by line index into the status document (0-based, end
-    exclusive); `start`/`end` bound its card-text block alone."""
+    exclusive); `start`/`end` bound its card-text block alone, and `ask` is the
+    quote above it, which not every item carries."""
 
     item_id: str
     card: str | None
     heading: int
     start: int
     end: int
+    ask: Ask | None = None
+
+
+def parse_ask(lines: list[str], start: int, end: int) -> Ask | None:
+    """The `- Ask:` value between `start` and `end` — the item's heading and its
+    card-text marker — or None for an item that carries no ask."""
+    for i in range(start, end):
+        m = ASK_RE.match(lines[i])
+        if not m:
+            continue
+        parts = [m.group(2).strip()]
+        k = i + 1
+        # The value wraps until the block's next bullet or a blank line; the marker
+        # stops it too, being where this range ends.
+        while k < end and lines[k].strip() and not lines[k].strip().startswith("- "):
+            parts.append(lines[k].strip())
+            k += 1
+        return Ask(line=i, end=k, indent=m.group(1),
+                   value=" ".join(p for p in parts if p))
+    return None
 
 
 def parse_status(lines: list[str]) -> list[Item]:
@@ -257,7 +333,8 @@ def parse_status(lines: list[str]) -> list[Item]:
         card_match = CARD_ID_RE.match(item_id)
         items.append(Item(item_id=item_id,
                           card=card_match.group(1) if card_match else None,
-                          heading=i, start=marker + 1, end=end))
+                          heading=i, start=marker + 1, end=end,
+                          ask=parse_ask(lines, i + 1, marker)))
     if not items:
         raise Precondition(
             "no items found — a status document holds `### <id> — <title>` "
@@ -276,9 +353,21 @@ class Result:
     line: int = 0           # 1-based line in the status document
     status_text: str = ""
     raw_text: str = ""
+    # The item's ask, judged apart from its card text: the fragments the card does
+    # not carry, and — after a restore — which of them went back and which did not.
+    ask_line: int = 0       # 1-based line of the `- Ask:` line
+    ask_missing: list[str] = field(default_factory=list)
+    ask_restored: bool = False
+    ask_unrestorable: list[str] = field(default_factory=list)
 
 
 NOTHING = "(end of block)"
+
+
+def _window(s: str, start: int) -> str:
+    """`s` from `start`, EXCERPT_WIDTH wide, with an ellipsis for each end cut off."""
+    piece = s[start:start + EXCERPT_WIDTH]
+    return ("…" if start else "") + piece + ("…" if start + EXCERPT_WIDTH < len(s) else "")
 
 
 def _excerpt(a: str, b: str) -> tuple[str, str]:
@@ -289,23 +378,83 @@ def _excerpt(a: str, b: str) -> tuple[str, str]:
     j = next((k for k in range(min(len(a), len(b))) if a[k] != b[k]),
              min(len(a), len(b)))
     start = max(0, j - EXCERPT_WIDTH // 2)
-
-    def window(s: str) -> str:
-        piece = s[start:start + EXCERPT_WIDTH]
-        return ("…" if start else "") + piece + ("…" if start + EXCERPT_WIDTH < len(s) else "")
-
-    return window(a), window(b)
+    return _window(a, start), _window(b, start)
 
 
-def compare(item: Item, status: list[str], cards: dict[str, list[str]]) -> Result:
-    """One item's verdict, and where it first differs."""
+def _collapse(text: str) -> str:
+    """Whitespace runs as one space: a quote may wrap where the card does not."""
+    return re.sub(r"\s+", " ", text)
+
+
+def searchable(card: Card) -> str:
+    """What an ask may quote: the card's heading line and its body, as the dump
+    writes them. Undemoted — the quote was taken from the dump, not from the copy
+    the status document inlines."""
+    return "\n".join([card.heading, *card.body])
+
+
+def _fragments(value: str) -> list[str]:
+    """What a quote actually claims: the pieces its elisions leave, each without the
+    whitespace and the stray quote characters at its ends."""
+    pieces = (piece.strip().strip(QUOTE_CHARS).strip()
+              for piece in ELISION_RE.split(value))
+    return [piece for piece in pieces if piece]
+
+
+def _unquote(value: str) -> str:
+    """One outer pair of double quotes off. Only the outer pair: a card's own text
+    may contain quotes, and the whole value is read as one quote first."""
+    if len(value) > 1 and value[0] in QUOTE_CHARS and value[-1] in QUOTE_CHARS:
+        return value[1:-1]
+    return value
+
+
+def ask_missing(value: str, card: Card) -> list[str]:
+    """The fragments of an ask the card's text does not carry — empty when it does.
+
+    Two readings, in order: the value as one quote, and the pieces between straight
+    double quotes, which is what a session writes when it quotes twice in a sentence
+    of its own (`"a" and "b"`). Of two readings that both fail, the one with fewer
+    unplaced fragments is the one to report — a tie goes to the first, which is the
+    shape the format asks for.
+    """
+    text = _collapse(searchable(card))
+
+    def unplaced(fragments: list[str]) -> list[str]:
+        return [f for f in fragments if _collapse(f) not in text]
+
+    missing = unplaced(_fragments(_unquote(value)))
+    if not missing:
+        return []
+    pieces = [f for part in value.split('"')[1::2] for f in _fragments(part)]
+    if pieces:
+        quoted = unplaced(pieces)
+        if not quoted:
+            return []
+        if len(quoted) < len(missing):
+            return quoted
+    return missing
+
+
+def compare(item: Item, status: list[str], cards: dict[str, Card]) -> Result:
+    """One item's verdict: where its card text first differs, and which fragments of
+    its ask the card does not carry."""
     if item.card is None:
         return Result(item.item_id, "no card")
     if item.card not in cards:
         return Result(item.item_id, "missing in raw")
 
+    result = _compare_card_text(item, status, cards[item.card])
+    if item.ask is not None:
+        result.ask_line = item.ask.line + 1
+        result.ask_missing = ask_missing(item.ask.value, cards[item.card])
+    return result
+
+
+def _compare_card_text(item: Item, status: list[str], card: Card) -> Result:
+    """The inlined card text against the dump's, verbatim."""
     have = strip_blanks(status[item.start:item.end])
-    want = strip_blanks(demote(cards[item.card]))
+    want = strip_blanks(demote(card.body))
     # The first line index at which they part; the offset back to the document is
     # the block's start plus the leading blanks the strip took off.
     offset = item.start + next(
@@ -332,6 +481,18 @@ def format_result(result: Result, restored: bool = False) -> str:
             f"  ≠  {result.raw_text}")
 
 
+def format_ask(result: Result, restored: bool = False) -> list[str]:
+    """The item's ask lines, which follow its card-text line: one per fragment the
+    card does not carry, and on a restore the one line that says they went back."""
+    item = cite(result.item_id)
+    if not restored:
+        return [f"{item}  ASK  line {result.ask_line}: {_window(f, 0)}"
+                "  ≠  not in the card's text" for f in result.ask_missing]
+    lines = [f"{item}  ask restored"] if result.ask_restored else []
+    return lines + [f"{item}  ASK unrestorable  line {result.ask_line}: {_window(f, 0)}"
+                    for f in result.ask_unrestorable]
+
+
 # ---------------------------------------------------------------------------
 # Verbs
 # ---------------------------------------------------------------------------
@@ -341,16 +502,108 @@ def check(status_path: Path, raw_path: Path) -> tuple[list[Result], int]:
     status = read_lines(status_path)
     cards = parse_raw(read_lines(raw_path))
     results = [compare(item, status, cards) for item in parse_status(status)]
-    bad = any(r.verdict in ("diff", "missing in raw") for r in results)
+    bad = any(r.verdict in ("diff", "missing in raw") or r.ask_missing
+              for r in results)
     return results, 1 if bad else 0
 
 
+def _canonicalise(text: str) -> tuple[str, list[tuple[int, int]]]:
+    """`text` in the form the editor's damage leaves comparable — backslashes
+    dropped, `*` read as `_`, whitespace runs one space — with the span of `text`
+    each canonical character came from, so a match reads back as the original."""
+    out: list[str] = []
+    spans: list[tuple[int, int]] = []
+    i = 0
+    while i < len(text):
+        if text[i] == "\\":
+            i += 1
+            continue
+        if text[i].isspace():
+            k = i
+            while k < len(text) and text[k].isspace():
+                k += 1
+            out.append(" ")
+            spans.append((i, k))
+            i = k
+            continue
+        out.append("_" if text[i] == "*" else text[i])
+        spans.append((i, i + 1))
+        i += 1
+    return "".join(out), spans
+
+
+def locate(fragment: str, card: Card) -> str | None:
+    """What the dump holds where the status document holds `fragment` — or None
+    when the two do not meet canonically, or meet in two different shapes and only
+    the session can say which was quoted."""
+    text = searchable(card)
+    canonical, spans = _canonicalise(text)
+    needle, _ = _canonicalise(fragment)
+    if not needle:
+        return None
+    seen = set()
+    at = canonical.find(needle)
+    while at != -1:
+        start, end = spans[at][0], spans[at + len(needle) - 1][1]
+        seen.add(_collapse(text[start:end]))
+        at = canonical.find(needle, at + 1)
+    return seen.pop() if len(seen) == 1 else None
+
+
+def _restore_card_text(item: Item, status: list[str], out: list[str],
+                       card: Card) -> None:
+    """The item's card-text block, back to the dump's own text."""
+    block = status[item.start:item.end]
+    body = strip_blanks(demote(card.body))
+    lead = next((k for k, line in enumerate(block) if line.strip()), len(block))
+    tail = next((k for k, line in enumerate(reversed(block)) if line.strip()), 0)
+    if lead == len(block):
+        # The block held nothing but blanks, or nothing at all — an item whose card
+        # text was lost. There is no padding to keep, so pad it the way the shape
+        # does: a blank line each side, and none past end of file.
+        head = [""]
+        foot = [""] if item.end < len(status) else []
+    else:
+        head = block[:lead]
+        foot = block[len(block) - tail:] if tail else []
+    out[item.start:item.end] = head + body + foot
+
+
+def _restore_ask(item: Item, result: Result, status: list[str],
+                 card: Card) -> list[str] | None:
+    """The lines the item's ask becomes, once every fragment that can be placed in
+    the card's text is back — or None when none of them could be.
+
+    A one-line ask is edited in place, so the rest of the line keeps its bytes; an
+    ask that wrapped is rewritten as the one `- Ask:` line the format asks for.
+    Fragments that could not be placed are left as they are and recorded on the
+    result: the line needs the session's hand, and this tool would only guess.
+    """
+    placed = [(f, locate(f, card)) for f in result.ask_missing]
+    result.ask_unrestorable = [f for f, original in placed if original is None]
+    repairs = [(f, original) for f, original in placed if original is not None]
+    if not repairs:
+        return None
+    result.ask_restored = True
+    ask = item.ask
+    if ask.end == ask.line + 1:
+        line = status[ask.line]
+        for fragment, original in repairs:
+            line = line.replace(fragment, original, 1)
+        return [line]
+    value = ask.value
+    for fragment, original in repairs:
+        value = value.replace(fragment, original, 1)
+    return [f"{ask.indent}- Ask: {value}"]
+
+
 def restore(status_path: Path, raw_path: Path) -> list[Result]:
-    """Rewrite every differing card-text block from the dump, in place.
+    """Rewrite every differing card-text block, and every misquoted ask fragment,
+    from the dump, in place.
 
     Only the block's body is replaced; the blank lines that pad it are kept exactly
-    as they were, so the bytes outside `**Card text:**` blocks do not move. Items
-    that already match are not rewritten at all.
+    as they were, so the bytes outside `**Card text:**` blocks and the asks that
+    differ do not move. Items that already match are not rewritten at all.
     """
     status = read_lines(status_path)
     cards = parse_raw(read_lines(raw_path))
@@ -358,24 +611,16 @@ def restore(status_path: Path, raw_path: Path) -> list[Result]:
     results = [compare(item, status, cards) for item in items]
 
     out = list(status)
-    # Back to front, so an earlier item's rewrite cannot shift a later item's bounds.
+    # Back to front, so an earlier item's rewrite cannot shift a later item's
+    # bounds; within an item, the card text before the ask above it, for the same
+    # reason.
     for item, result in reversed(list(zip(items, results, strict=True))):
-        if result.verdict != "diff":
-            continue
-        block = status[item.start:item.end]
-        body = strip_blanks(demote(cards[item.card]))
-        lead = next((k for k, line in enumerate(block) if line.strip()), len(block))
-        tail = next((k for k, line in enumerate(reversed(block)) if line.strip()), 0)
-        if lead == len(block):
-            # The block held nothing but blanks, or nothing at all — an item whose
-            # card text was lost. There is no padding to keep, so pad it the way
-            # the shape does: a blank line each side, and none past end of file.
-            head = [""]
-            foot = [""] if item.end < len(status) else []
-        else:
-            head = block[:lead]
-            foot = block[len(block) - tail:] if tail else []
-        out[item.start:item.end] = head + body + foot
+        if result.verdict == "diff":
+            _restore_card_text(item, status, out, cards[item.card])
+        if result.ask_missing:
+            lines = _restore_ask(item, result, status, cards[item.card])
+            if lines is not None:
+                out[item.ask.line:item.ask.end] = lines
 
     if out != status:
         status_path.write_text("\n".join(out) + "\n", encoding="utf-8")
@@ -387,8 +632,8 @@ def main(argv: list[str] | None = None) -> int:
         description=__doc__.splitlines()[0],
         formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="verb", required=True)
-    for verb, help_text in (("check", "report each item's card text against the dump"),
-                            ("restore", "rewrite every differing card text from the dump")):
+    for verb, help_text in (("check", "report each item's card text and ask against the dump"),
+                            ("restore", "rewrite every differing card text and ask from the dump")):
         p = sub.add_parser(verb, help=help_text)
         p.add_argument("status", help="the status document, triage_YYYY-MM-DD.md")
         p.add_argument("raw", help="the raw dump, triage_YYYY-MM-DD_raw.md")
@@ -397,7 +642,10 @@ def main(argv: list[str] | None = None) -> int:
     restored = args.verb == "restore"
     try:
         if restored:
-            results, code = restore(Path(args.status), Path(args.raw)), 0
+            results = restore(Path(args.status), Path(args.raw))
+            # A restore answers for what it could not place, and for nothing else:
+            # a missing card stays the dump's problem, and exits 0.
+            code = 1 if any(r.ask_unrestorable for r in results) else 0
         else:
             results, code = check(Path(args.status), Path(args.raw))
     except Precondition as e:
@@ -406,6 +654,8 @@ def main(argv: list[str] | None = None) -> int:
 
     for result in results:
         print(format_result(result, restored=restored))
+        for line in format_ask(result, restored=restored):
+            print(line)
     return code
 
 

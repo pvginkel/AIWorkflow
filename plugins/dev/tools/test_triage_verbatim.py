@@ -7,7 +7,10 @@ status document with five items over them — a plain one, a card split in two
 Written literally rather than generated, so the demotion the tool applies is checked
 against a hand-written expectation rather than against itself. A second pair beside
 it carries the same shapes with the readable ids a tracker writes (`KC-701`), and
-one test splices the two into the mixed document a cutover leaves behind.
+one test splices the two into the mixed document a cutover leaves behind. A third
+pair is the one the `Ask:` tests rule on: a single card whose text carries a
+`TF_VAR_*`, a quoted phrase, a sentence that wraps, and the same identifier twice —
+once escaped, as a card that went through an editor has it.
 
 One test runs the real pair out of the spec repo's history (`git show`, nothing
 checked out) and asserts every card-backed item is verbatim; it skips cleanly where
@@ -282,6 +285,71 @@ Whatever was pasted in by hand.
 
 
 # ---------------------------------------------------------------------------
+# The pair the Ask tests rule on
+# ---------------------------------------------------------------------------
+
+RAW_ASK = """\
+# Triage 2099-03-03 — raw material
+
+## KC-57 — The deploy leaks TF_VAR_* into the pod's environment
+
+- URL: https://issues.example.org/issue/KC-57
+- Reporter: Someone (@someone)
+
+### Description
+
+Every TF_VAR_* the workspace sets reaches the container, so `_is_stuck` and
+KUBECODER_CLIENT_TOKEN_STAGING are readable by anything the pod runs.
+
+The operator calls it "a sharp edge", and wants the list filtered to what the
+deploy actually needs.
+
+### Comments
+
+A comment wrote it as `\\_is_stuck`, escape and all.
+"""
+
+CARD_ASK = """\
+- URL: https://issues.example.org/issue/KC-57
+- Reporter: Someone (@someone)
+
+##### Description
+
+Every TF_VAR_* the workspace sets reaches the container, so `_is_stuck` and
+KUBECODER_CLIENT_TOKEN_STAGING are readable by anything the pod runs.
+
+The operator calls it "a sharp edge", and wants the list filtered to what the
+deploy actually needs.
+
+##### Comments
+
+A comment wrote it as `\\_is_stuck`, escape and all.\
+"""
+
+# The quote every Ask test swaps out, and the line it sits on — the messages carry
+# that number, so it is asserted rather than searched for.
+DEFAULT_ASK = '- Ask: "Every TF_VAR_* the workspace sets reaches the container"'
+ASK_LINE = 8
+
+STATUS_ASK = f"""\
+# Triage 2099-03-03 — adjudication
+
+## Major
+
+### KC-57 — The deploy leaks the workspace's variables
+
+- Source: card KC-57
+{DEFAULT_ASK}
+- Category: Major — "readable by anything the pod runs"
+- Ruling: —
+
+**Card text:**
+
+{CARD_ASK}
+"""
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -309,6 +377,20 @@ def write_pair(ws, status=STATUS, raw=RAW):
     status_path.write_text(status)
     raw_path.write_text(raw)
     return status_path, raw_path
+
+
+def ask_pair(ws, ask=DEFAULT_ASK):
+    """The Ask pair, with KC-57's quote replaced by `ask` — one line or several."""
+    return write_pair(ws, status=STATUS_ASK.replace(DEFAULT_ASK, ask, 1), raw=RAW_ASK)
+
+
+def ask_of(status_path):
+    """The one `- Ask:` line the document now carries — a restore leaves exactly
+    one, whether the quote wrapped before it or not."""
+    lines = [line for line in status_path.read_text().split("\n")
+             if line.lstrip().startswith("- Ask:")]
+    assert len(lines) == 1, lines
+    return lines[0]
 
 
 def verdicts(results):
@@ -512,8 +594,10 @@ def test_dump_headings_take_either_id_shape():
          "## #KC-705 — e\nbody 705\n\n## Not a card\nbody none\n").split("\n"))
     assert sorted(cards) == ["701", "702", "KC-703", "KC-704", "KC-705"], \
         sorted(cards)
-    assert cards["701"] == ["body 701", ""]
-    assert cards["KC-705"] == ["body 705", ""]
+    assert cards["701"].body == ["body 701", ""]
+    assert cards["KC-705"].body == ["body 705", ""]
+    # The heading line rides along for the ask, which may quote the title.
+    assert cards["701"].heading == "## #701 — a"
 
 
 def test_item_ids_take_either_shape_with_the_split_suffix():
@@ -582,6 +666,224 @@ def test_one_document_may_carry_both_id_shapes(ws):
 
 
 # ---------------------------------------------------------------------------
+# The ask — the session's own quote of the card, checked the same way
+# ---------------------------------------------------------------------------
+
+def test_an_ask_is_read_to_where_the_block_moves_on():
+    """The value runs to the next bullet, a blank line or the card-text marker; the
+    continuation lines join on with single spaces, and the line's indentation is
+    kept for the rewrite."""
+    doc = ["### KC-9 — an item", "", '  - Ask: "the first line',
+           '    and the second"', "  - Category: Major", "", "**Card text:**"]
+    ask = triage_verbatim.parse_ask(doc, 1, 6)
+    assert (ask.line, ask.end, ask.indent) == (2, 4, "  ")
+    assert ask.value == '"the first line and the second"'
+    assert triage_verbatim.parse_ask(doc[:2] + doc[4:], 1, 4) is None
+
+
+@with_workspace
+def test_a_clean_ask_is_ok_and_adds_no_line(ws):
+    """A quote the card carries prints exactly what the card-text check printed."""
+    assert run_main("check", *ask_pair(ws)) == (0, ["KC-57  ok"])
+    curly = '- Ask: “Every TF_VAR_* the workspace sets reaches the container”'
+    assert run_main("check", *ask_pair(ws, curly)) == (0, ["KC-57  ok"])
+
+
+@with_workspace
+def test_an_escaped_underscore_in_the_ask_is_caught_and_restored(ws):
+    """The quote wraps over the card's own line break, so the two are compared with
+    their whitespace collapsed and the restored quote is one line of it."""
+    damaged = ('- Ask: "so `\\_is_stuck` and KUBECODER_CLIENT_TOKEN_STAGING '
+               'are readable"')
+    status_path, raw_path = ask_pair(ws, damaged)
+    assert run_main("check", status_path, raw_path)[0] == 1
+
+    assert run_main("restore", status_path, raw_path) == (
+        0, ["KC-57  ok", "KC-57  ask restored"])
+    assert ask_of(status_path) == ('- Ask: "so `_is_stuck` and '
+                                   'KUBECODER_CLIENT_TOKEN_STAGING are readable"')
+    assert run_main("check", status_path, raw_path)[0] == 0
+
+
+@with_workspace
+def test_the_eaten_token_in_the_ask_is_caught_and_restored(ws):
+    """`KUBECODER_CLIENT_TOKEN_<NAME>`, the pair of underscores read as emphasis."""
+    damaged = ('- Ask: "KUBECODER*CLIENT_TOKEN*STAGING are readable by anything '
+               'the pod runs"')
+    status_path, raw_path = ask_pair(ws, damaged)
+    assert run_main("check", status_path, raw_path)[0] == 1
+    run_main("restore", status_path, raw_path)
+    assert ask_of(status_path) == ('- Ask: "KUBECODER_CLIENT_TOKEN_STAGING are '
+                                   'readable by anything the pod runs"')
+
+
+@with_workspace
+def test_the_tf_var_case_is_caught_restored_and_settles(ws):
+    """2026-09-19: the card said `TF_VAR_*`, the quote came back `TF*VAR*\\*`, and
+    this tool said ok — the run this check exists for, start to finish."""
+    damaged = '- Ask: "Every TF*VAR*\\* the workspace sets reaches the container"'
+    status_path, raw_path = ask_pair(ws, damaged)
+
+    code, printed = run_main("check", status_path, raw_path)
+    assert code == 1
+    assert printed == [
+        "KC-57  ok",
+        f"KC-57  ASK  line {ASK_LINE}: Every TF*VAR*\\* the workspace sets reaches "
+        "the container  ≠  not in the card's text"], printed
+
+    assert run_main("restore", status_path, raw_path) == (
+        0, ["KC-57  ok", "KC-57  ask restored"])
+    # Byte for byte the document the session should have written.
+    assert status_path.read_text() == STATUS_ASK
+    assert run_main("check", status_path, raw_path) == (0, ["KC-57  ok"])
+
+    # And a second restore rewrites nothing at all.
+    before = status_path.read_bytes()
+    assert run_main("restore", status_path, raw_path) == (0, ["KC-57  ok"])
+    assert status_path.read_bytes() == before
+
+
+@with_workspace
+def test_an_elided_ask_is_checked_fragment_by_fragment(ws):
+    """One half of the quote is the card's, the other is not: only that half is
+    reported, and the elision survives the restore."""
+    damaged = ('- Ask: "Every TF_VAR_* the workspace sets … so `\\_is_stuck` and '
+               'KUBECODER_CLIENT_TOKEN_STAGING are readable"')
+    status_path, raw_path = ask_pair(ws, damaged)
+
+    code, printed = run_main("check", status_path, raw_path)
+    assert code == 1
+    assert len(printed) == 2 and printed[1].startswith(
+        f"KC-57  ASK  line {ASK_LINE}: so `\\_is_stuck`"), printed
+
+    run_main("restore", status_path, raw_path)
+    assert ask_of(status_path) == (
+        '- Ask: "Every TF_VAR_* the workspace sets … so `_is_stuck` and '
+        'KUBECODER_CLIENT_TOKEN_STAGING are readable"')
+
+
+@with_workspace
+def test_two_quoted_pieces_joined_by_the_session_are_read_apart(ws):
+    """`"a" and "b"` — read as one quote it is in no card, read as two it is."""
+    joined = ('- Ask: "Every TF_VAR_* the workspace sets reaches the container" '
+              'and the card wants "the list filtered to what the deploy actually '
+              'needs"')
+    assert run_main("check", *ask_pair(ws, joined)) == (0, ["KC-57  ok"])
+
+
+@with_workspace
+def test_an_ask_may_quote_the_card_s_title(ws):
+    """The title is part of the ask, so the heading line is searched as well."""
+    title = '- Ask: "The deploy leaks TF_VAR_* into the pod\'s environment"'
+    assert run_main("check", *ask_pair(ws, title)) == (0, ["KC-57  ok"])
+
+    damaged = '- Ask: "The deploy leaks TF*VAR*\\* into the pod\'s environment"'
+    status_path, raw_path = ask_pair(ws, damaged)
+    assert run_main("check", status_path, raw_path)[0] == 1
+    run_main("restore", status_path, raw_path)
+    assert ask_of(status_path) == title
+
+
+@with_workspace
+def test_an_ask_that_quotes_text_carrying_quotes_is_read_whole(ws):
+    """Only the outer pair comes off, or the card's own `"a sharp edge"` would
+    split a quote that is perfectly verbatim into pieces."""
+    inner = ('- Ask: "The operator calls it "a sharp edge", and wants the list '
+             'filtered"')
+    assert run_main("check", *ask_pair(ws, inner)) == (0, ["KC-57  ok"])
+
+
+@with_workspace
+def test_a_wrapped_ask_is_read_over_its_lines_and_rewritten_as_one(ws):
+    """The continuation lines join with single spaces; the repair puts the value
+    back on the one `- Ask:` line the format asks for."""
+    wrapped = ('- Ask: "so `\\_is_stuck` and KUBECODER_CLIENT_TOKEN_STAGING are '
+               'readable by\n  anything the pod runs"')
+    status_path, raw_path = ask_pair(ws, wrapped)
+
+    code, printed = run_main("check", status_path, raw_path)
+    assert code == 1
+    assert printed[1].startswith(f"KC-57  ASK  line {ASK_LINE}: "), printed
+
+    run_main("restore", status_path, raw_path)
+    one_line = ('- Ask: "so `_is_stuck` and KUBECODER_CLIENT_TOKEN_STAGING are '
+                'readable by anything the pod runs"')
+    assert status_path.read_text() == STATUS_ASK.replace(DEFAULT_ASK, one_line, 1)
+    assert run_main("check", status_path, raw_path)[0] == 0
+
+
+@with_workspace
+def test_a_fragment_the_card_has_nowhere_is_left_for_the_session(ws):
+    """Nothing to restore from, so the line stays as the session wrote it and the
+    exit code says so."""
+    invented = '- Ask: "the deploy writes the token to the log"'
+    status_path, raw_path = ask_pair(ws, invented)
+    before = status_path.read_bytes()
+
+    assert run_main("restore", status_path, raw_path) == (
+        1, ["KC-57  ok",
+            f"KC-57  ASK unrestorable  line {ASK_LINE}: "
+            "the deploy writes the token to the log"])
+    assert status_path.read_bytes() == before
+
+
+@with_workspace
+def test_an_ambiguous_fragment_is_left_for_the_session(ws):
+    """The card writes `_is_stuck` twice, once escaped: `*is*stuck` matches both
+    canonically, and which was quoted is not this tool's to decide."""
+    damaged = '- Ask: "`*is*stuck`"'
+    status_path, raw_path = ask_pair(ws, damaged)
+    before = status_path.read_bytes()
+
+    code, printed = run_main("restore", status_path, raw_path)
+    assert code == 1
+    assert printed[1] == (f"KC-57  ASK unrestorable  line {ASK_LINE}: "
+                          "`*is*stuck`"), printed
+    assert status_path.read_bytes() == before
+
+
+@with_workspace
+def test_an_ask_restores_what_it_can_and_reports_the_rest(ws):
+    """One fragment the dump settles, one it cannot: the first goes back, the
+    second is named, and the run still exits 1."""
+    mixed = ('- Ask: "Every TF*VAR*\\* the workspace sets reaches the container … '
+             'the deploy writes the token to the log"')
+    status_path, raw_path = ask_pair(ws, mixed)
+
+    code, printed = run_main("restore", status_path, raw_path)
+    assert code == 1
+    assert printed == ["KC-57  ok", "KC-57  ask restored",
+                       f"KC-57  ASK unrestorable  line {ASK_LINE}: "
+                       "the deploy writes the token to the log"], printed
+    assert ask_of(status_path) == (
+        '- Ask: "Every TF_VAR_* the workspace sets reaches the container … '
+        'the deploy writes the token to the log"')
+
+
+@with_workspace
+def test_an_item_without_an_ask_line_is_not_checked(ws):
+    """The shape allows an item with no quote — that is not a format error."""
+    status = STATUS_ASK.replace(DEFAULT_ASK + "\n", "", 1)
+    status_path, raw_path = write_pair(ws, status=status, raw=RAW_ASK)
+    assert triage_verbatim.parse_status(status.split("\n"))[0].ask is None
+    assert run_main("check", status_path, raw_path) == (0, ["KC-57  ok"])
+
+
+@with_workspace
+def test_an_ask_on_an_item_with_no_card_to_read_is_not_checked(ws):
+    """`no card` and `missing in raw` stand on their own: there is nothing to check
+    a quote against, and the corrupted ones below change no line of the output."""
+    status = STATUS.replace('- Ask: "the reviewer\'s S2"',
+                            '- Ask: "the reviewer\'s \\_S2"', 1)
+    status = status.replace('- Ask: "fetched after the dump was written"',
+                            '- Ask: "fetched *after* the dump was written"', 1)
+    code, printed = run_main("check", *write_pair(ws, status=status))
+    assert code == 1, "#790's card is still missing from the dump"
+    assert printed == ["#701  ok", "#712a  ok", "#712b  ok",
+                       "#S2  no card", "#790  missing in raw"], printed
+
+
+# ---------------------------------------------------------------------------
 # The real pair
 # ---------------------------------------------------------------------------
 
@@ -616,9 +918,17 @@ def test_the_real_triage_pair_is_verbatim_throughout(ws):
                                             "774", "770", "779"], results
     assert all(r.verdict == "ok" for r in results), \
         [triage_verbatim.format_result(r) for r in results if r.verdict != "ok"]
-    assert code == 0
 
-    # And restoring a clean document is a no-op, byte for byte.
+    # Two of the eight asks were not the card's words even then, which is what the
+    # ask check is for: #774 dropped the card's markdown link around its URL, #770
+    # trimmed inside a parenthesis without marking the elision. Neither can be put
+    # back from the dump — the session has to say what it meant to quote.
+    assert {r.item_id: len(r.ask_missing) for r in results if r.ask_missing} == \
+        {"774": 1, "770": 1}, [r.ask_missing for r in results if r.ask_missing]
+    assert code == 1
+
+    # And restoring leaves the document byte for byte as it was: every card text is
+    # already verbatim, and neither ask can be placed.
     triage_verbatim.restore(status_path, raw_path)
     assert status_path.read_text() == status
 

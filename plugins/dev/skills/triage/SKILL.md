@@ -35,7 +35,9 @@ there is no planning without a `slice.md`.
 its message verbatim on a non-zero exit. `<spec-repo>` is the path in your
 `.aiworkflowrc`'s `spec_repo`. The tracker — which cards are this project's, and how each state and
 disposition named here is written — and the notification wiring come from your host convention
-(`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md`, section 3).
+(`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md`, section 3). **Load that convention before the
+first tracker call** — where the host ships it as a skill, invoke the skill: nothing in the
+pipeline loads it for you, and a convention that is not in context gets guessed at.
 
 Steps that don't apply are skipped silently: no questions and clean labels → present and move on;
 nothing flagged for research → no research round and no second pass; the document is re-presented
@@ -89,7 +91,7 @@ running number for chat passages — so an item that changes group keeps its han
 
 ```
 ### <id> — <short title>
-- Source: <card id and/or findings-document section>
+- Source: <card id — the card's title as filed — and/or findings-document section>
 - Ask: "<the ask, quoted verbatim — the stated symptom and the stated consequence>"
 - Question: <only when one exists — see below>
 - Category: <label> — "<justifying quote>"
@@ -245,10 +247,14 @@ Before acting on a pass, `git diff` the document and run
 `python3 ${CLAUDE_PLUGIN_ROOT}/tools/triage_verbatim.py check <status.md> <raw.md>`. The
 operator's editor escapes markdown on save — `_is_stuck` becomes `\_is_stuck`, and
 `KUBECODER_CLIENT_TOKEN_<NAME>` becomes `KUBECODER*CLIENT_TOKEN*<NAME>`, paired underscores
-eaten as emphasis — and an inlined card text is the source a slice later quotes, so a corrupted
-identifier propagates into `slice.md` and then into code. `restore` rewrites the differing
-blocks from the dump and touches nothing else; the operator's own lines stay as written. An
-eyeball does not catch this; the check is cheap.
+eaten as emphasis — and an inlined card text and an `Ask:` quote are what a slice later quotes,
+so a corrupted identifier propagates into `slice.md` and then into code. `restore` rewrites the
+differing card-text blocks and `Ask:` quotes from the dump and touches nothing else — an `Ask:`
+it reports unrestorable is yours to re-quote from the dump — and the operator's own lines stay
+as written. Run `check` once on the document as you composed it, too, before presenting it: an
+`ASK` line there is a quote of yours that is not the card's words, and fixed then, the same line
+after an operator pass can only mean their editor. An eyeball does not catch this; the check is
+cheap.
 
 ### 4. Research — only what's still open, until nothing is
 
@@ -379,8 +385,9 @@ proposal — including anything already in `handovers/`) move into the slice fol
 unvalidated; you author none of your own.
 
 Add each slice to the **Pending** section of `<spec-repo>/README.md` — one line matching the
-existing entries, `- **NNN** — <short title>: <one-clause summary> (<headline category>; card ids)`,
-placed inside that section, above the heading that ends it. The file's end is `## Completed`, whose
+existing entries, `- **NNN** — <short title>: <one-clause summary> (<headline category>)`,
+placed inside that section, above the heading that ends it. The line names no card: a README
+outlives its cards as handles, and `slice.md` holds the ids. The file's end is `## Completed`, whose
 bullets have the same shape, and an entry landed there is one the close-out refuses. Verify before
 you commit: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_slice.py --check <slice-dir>...` runs the
 close-out's preconditions over each new folder and moves nothing. Then commit the slice folders to
@@ -454,7 +461,9 @@ Rules and rationale: `${CLAUDE_PLUGIN_ROOT}/docs/residual-sweep.md`.
 ### 9. Close out
 
 - **Slice cards:** one per slice, in this project, in its **triaged** state — title
-  `[NNN] <slice title>`, a short highlights summary and a pointer to the slice folder. The card's
+  `[NNN] <slice title>`, a short highlights summary and the slice folder's name — `NNN_slug`,
+  never a path: the folder moves from `slices/backlog/` to `slices/` to `slices/completed/` as
+  the slice advances, and a path is stale after the first move. The card's
   id then goes into the slice's `slice.md` as frontmatter above the title — `issue: <id>` between
   two `---` lines — and is committed (staged by name): `/dev:plan-slice` and `/dev:run-slice` move
   the card by that id, never by looking for its title.

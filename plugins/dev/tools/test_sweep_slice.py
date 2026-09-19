@@ -279,7 +279,7 @@ def test_pending_bullet_appends_at_section_end():
     at = lines.index(bullet[0])
     assert "single-line entry (#251)." in lines[at - 1]
     assert lines[at + len(bullet) :][:2] == ["", "## Deferred"]
-    assert "KC-400 KC-401 KC-402 KC-403 KC-404" in " ".join(bullet)
+    assert " ".join(bullet) == "- **137** — Residual sweep: 5 Solution Known card(s)."
 
 
 def test_insert_pending_requires_the_section():

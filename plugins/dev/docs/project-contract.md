@@ -105,7 +105,8 @@ mark is a flag beside all that ([residual-sweep.md](residual-sweep.md)). The tra
 triage verdict. The concrete wiring — which tracker, what realises each of those roles, states and
 dispositions, how a project is named there, the notification command — is environment-specific
 and lives in the host's own instructions: its `~/.claude/CLAUDE.md`, or a skill the host ships.
-The workflow neither ships nor duplicates it.
+The workflow neither ships nor duplicates it, and nothing in it loads a host skill: a skill that
+touches the tracker says to load the convention before its first tracker call.
 
 ## Keeping `CLAUDE.md` disciplined
 
