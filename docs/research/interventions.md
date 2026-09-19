@@ -555,7 +555,7 @@ the per-entry log). I2 is uncontroversial.
 ## 11. W — Workflow frictions (added 2026-08-22, from the 155–170 read)
 
 Not from the papers: from the run record. Each is a friction the loop's own artefacts showed on
-slice 170 (assessment in `tmp/slice-170-assessment.md`) and, where noted, earlier slices — small,
+slice 170 (assessment in [slice-170-assessment-2026-08-22.md](slice-170-assessment-2026-08-22.md)) and, where noted, earlier slices — small,
 mechanical, and outside the review-economics lanes above. Same entry fields; per-entry state in
 [status.md](status.md). None is built.
 

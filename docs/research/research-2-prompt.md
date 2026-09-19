@@ -3,7 +3,7 @@
 How to use: paste everything below the rule into claude.ai (Fable, web search on). Attach
 `docs/research/research.md` (the first briefing — it is the shape we want back) and
 `docs/research/interventions.md` (what the first run proposed and how it was decided — so nothing
-is re-proposed). `tmp/slice-170-assessment.md` is optional grounding. Save the answer as
+is re-proposed). `docs/research/slice-170-assessment-2026-08-22.md` is optional grounding. Save the answer as
 `docs/research/research-2.md`; a Claude Code session with repo access then reads the papers and
 writes `interventions-2.md`, the way the first run went.
 

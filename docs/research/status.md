@@ -71,7 +71,7 @@ hand archaeology; self-proving, so acceptance is essentially "it shipped and the
 - 2026-08-22 — sixteen slices (155–170) read from the fields alone: the cross-slice table — r1
   `issues` 12/71, blocking 15 / refuted 0, comment-prose 43/114, anchor distribution, bail-outs,
   appended phases, test rounds — was one script over `state.json`, no transcript archaeology
-  (assessment in `tmp/slice-170-assessment.md`, untracked). Limit stands: anchors are recorded only
+  (assessment in [slice-170-assessment-2026-08-22.md](slice-170-assessment-2026-08-22.md)). Limit stands: anchors are recorded only
   where `blocking`, so an advisory's evidence is not in the field. → accepted.
 
 ## I2 — Standard cost readout per run
