@@ -199,6 +199,13 @@ dispositions a stated vocabulary (`close` / `later` / `agreed` / `apply the sugg
 can resume from the labelled board. Same idea: the operator's decision, recorded where the next
 session finds it, in the operator's words.
 
+The label half of that was withdrawn a month later (2026-09-17). The committed status document,
+added in the same release, already held every verdict with its reasons, and nothing downstream
+ever read the label: planning, the lane plan and the run loop work from `slice.md`, slice cards
+never carried one, and intake cards are closed at dispose. The operator's ruling was that a
+verdict is cheap to give twice, so the tracker carries none, and a later session resumes from the
+committed document alone.
+
 ## A report, read
 
 Slice 190 (`/work/KubeCoderSpecs/slices/completed/190_fleet_state_under_faults/close-out.md`,

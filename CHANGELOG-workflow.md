@@ -4,6 +4,46 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-18 — the rubric verdict leaves the tracker; the tools read readable card ids and a `slice.md` with frontmatter (v0.9.39)
+
+Trello #1031, the part of the tracker move that is true on any tracker. It ships ahead of the
+move itself (0.9.40) so that release carries less.
+
+**The verdict label is withdrawn — ruled** (operator, 2026-09-17: "It's cheap to re-rubric a
+card"). 0.5.2 made triage's verdict durable twice: as a label on the card and in the committed
+status document. Nothing ever read the label — `/dev:plan-slice`, `/dev:slice-dag` and the run loop
+work from `slice.md`, slice cards never carried one, and intake cards are closed at dispose — and
+the document already holds the verdict with its reasons. So triage writes no verdict to the
+tracker: a card is adjudicated when an open status document under `handovers/` holds it, ruled,
+and every other card is adjudicated afresh, one pulled back from a deferral included. Step 5 is
+now "Action the rulings" (`close` and `later`, the disjoint-card-sets rule, the commit), the seam
+is the committed document alone, and step 8's widening runs over the project's other open intake
+cards, the litmus reading a card's text and never a category. `sweep_slice.py`'s short-batch
+refusal and `residual-sweep.md` say the same. The rubric, the status document,
+`triage_verbatim.py`, `slice.md`'s categories and the Solution Known mark are unchanged.
+`reporting.md`, `plan-refinement.md` and `overview.md` record that the label half of 0.5.2 was
+withdrawn and why.
+
+**Permanent documentation carries no tracker reference — ruled** (2026-09-16). `doc-writer`'s
+rule 4 gains the sentence, so a doc phase in a project with no rulebook of its own honours it:
+no card or issue number, id or URL in a page; a reference already there goes when the page is
+touched, and the fact stays.
+
+**`slice_intent` skips frontmatter — measured** (by test). The run loop briefs every phase with
+the first paragraph of `slice.md` after its `# ` title. A `slice.md` that opens with a `---`
+frontmatter block, which 0.9.40 introduces for the slice card's id, would have handed that block
+to every writer as the slice's intent. A leading frontmatter block is now skipped; an
+unterminated one is treated as no frontmatter.
+
+**Card ids may be readable ids — measured** (by test). `triage_verbatim.py` took a card id to be
+a bare number: dump headings `## #701`, item ids `472b`. It now also takes a readable id, the
+shape most trackers write (`## KC-701`, `KC-472b`), the split suffix working on both, because a
+triage working document can straddle a tracker move. Ids compare as written and sort naturally.
+
+**Untested:** the skill prose has not been run since the edit.
+
+0.9.39, not 0.9.37: the triage group-size change took that version while this sat unpushed.
+
 ## 2026-09-18 — `/dev:close-out` sorts the report when the operator hands it the triage (v0.9.38)
 
 The skill described one way through a report — present, wait, take dispositions entry by entry —

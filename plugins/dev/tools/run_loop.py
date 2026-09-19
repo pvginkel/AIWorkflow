@@ -606,12 +606,22 @@ def plan_sections(text: str) -> tuple[str, dict[str, list[str]]]:
 
 
 def slice_intent(slice_text: str) -> str:
-    """The first paragraph of slice.md after its title — the slice's intent
-    in the triage session's words. Empty when the file has none."""
+    """The first paragraph of slice.md after its frontmatter and title — the
+    slice's intent in the triage session's words. Empty when the file has
+    none."""
     lines = slice_text.splitlines()
     start = 0
-    if lines and lines[0].startswith("# "):
-        start = 1
+    if lines and lines[0] == "---":
+        # A frontmatter block (the tracker id triage filed the slice under).
+        # An opener with no closer is not frontmatter at all — a document that
+        # starts on a horizontal rule — so it is read from the top as before.
+        close = next((i for i in range(1, len(lines)) if lines[i] == "---"), None)
+        if close is not None:
+            start = close + 1
+            while start < len(lines) and not lines[start].strip():
+                start += 1
+    if start < len(lines) and lines[start].startswith("# "):
+        start += 1
     para: list[str] = []
     for line in lines[start:]:
         if line.strip():

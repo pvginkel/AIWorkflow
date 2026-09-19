@@ -34,15 +34,17 @@ a second restore rewrites nothing.
 
 How the two formats are read:
 
-  * A card's section in the dump runs from its `## #NNN — …` line to the next
-    line starting with `## ` (or end of file).
+  * A card's section in the dump runs from its `## KC-NNN — …` or `## #NNN — …`
+    line to the next line starting with `## ` (or end of file).
   * An item in the status document is a `### <id> — …` heading; its card-text block
     runs from the line after `**Card text:**` to where the document's own outline
-    resumes — the next heading of depth one to three — or end of file. Ids are
-    `#NNN`, or `#NNNa` / `#NNNb` when one card
-    yielded several items — all of which share card `#NNN`'s section. An id that is
-    not a card number (a findings-document section, a running number for a chat
-    passage) is backed by no section: reported `no card` and skipped.
+    resumes — the next heading of depth one to three — or end of file. An id is a
+    card's id as the tracker writes it — `KC-NNN` or `#NNN` — or that id suffixed
+    `a` / `b` when one card yielded several items, all of which share that one
+    card's section. Both shapes are read, so a document written across a tracker
+    cutover carries both. An id that is not a card id (a findings-document section,
+    a running number for a chat passage) is backed by no section: reported `no
+    card` and skipped. Every message cites an id as it was written.
   * Demotion adds two `#` to every heading line, capped at six — markdown has no
     seventh level, and a dump's cards sit at depth 3 and deeper, so the cap is a
     guard rather than a case.
@@ -67,16 +69,30 @@ from pathlib import Path
 DEMOTE_LEVELS = 2
 MAX_HEADING_DEPTH = 6
 
-# `## #703 — …` in the dump; `## Card #670 — …` is the older hand that some dumps
-# still carry. The number is the whole handle — the title is not matched on.
-CARD_HEADING_RE = re.compile(r"^##\s+(?:Card\s+)?#(\d+)(?:\s|$)")
+# A card's id, in either of the two shapes a tracker writes: a readable id — a
+# project key, a dash and a number — or the bare number. A working document may
+# straddle a cutover and carry both, so both are read wherever an id is.
+BARE_ID = r"\d+"
+READABLE_ID = r"[A-Za-z][A-Za-z0-9]*-\d+"
 
-# `### #778 — <short title> — <url>`; the `#` is optional because earlier status
-# documents wrote the bare number.
+# `## #703 — …` / `## KC-703 — …` in the dump; `## Card #670 — …` is the older
+# hand that some dumps still carry. A readable id is written without the `#`, but
+# one is tolerated; a bare number keeps needing it, or every `## 2026 …` heading
+# would read as a card. The id is the whole handle — the title is not matched on.
+CARD_HEADING_RE = re.compile(
+    rf"^##\s+(?:Card\s+)?(?:#({BARE_ID})|#?({READABLE_ID}))(?:\s|$)")
+
+# `### #778 — <short title> — …`, `### KC-778 — …`; the `#` is optional because
+# earlier status documents wrote the bare number.
 ITEM_HEADING_RE = re.compile(r"^###\s+#?([A-Za-z0-9][A-Za-z0-9._-]*)\s+—\s")
 
-# A card number, optionally suffixed when one card yielded several items (`#472b`).
-CARD_ID_RE = re.compile(r"^(\d+)([a-z]?)$")
+# A card id, optionally suffixed when one card yielded several items (`#472b`,
+# `KC-472b` — both of which belong to card `472` and `KC-472` respectively).
+CARD_ID_RE = re.compile(rf"^({BARE_ID}|{READABLE_ID})([a-z]?)$")
+
+# An id a message writes bare. Everything else keeps the `#` a bare card number
+# has always been cited with — a non-card id (`S2`) included.
+READABLE_ITEM_RE = re.compile(rf"^{READABLE_ID}[a-z]?$")
 
 # Where the status document's own outline resumes, and so where a card-text block
 # ends: a heading of depth one to three.
@@ -94,6 +110,11 @@ EXCERPT_WIDTH = 120
 
 class Precondition(Exception):
     """A usage or format failure — exit 2."""
+
+
+def cite(item_id: str) -> str:
+    """An id the way it was written: `KC-701` stands alone, `701` keeps its `#`."""
+    return item_id if READABLE_ITEM_RE.match(item_id) else f"#{item_id}"
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +183,7 @@ def strip_blanks(lines: list[str]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def parse_raw(lines: list[str]) -> dict[str, list[str]]:
-    """Card number → the section's body: every line after its `## #NNN — …` heading,
+    """Card id → the section's body: every line after its `## <id> — …` heading,
     up to the next `## ` line. Demotion is not applied here — the body is the
     archive's own text, and only the comparison sees the demoted form."""
     in_code = fenced(lines)
@@ -171,16 +192,17 @@ def parse_raw(lines: list[str]) -> dict[str, list[str]]:
         if in_code[i] or not line.startswith("## "):
             continue
         m = CARD_HEADING_RE.match(line)
-        starts.append((i, m.group(1) if m else None))
+        # One group per id shape; whichever matched is the id.
+        starts.append((i, (m.group(1) or m.group(2)) if m else None))
 
     cards: dict[str, list[str]] = {}
-    for k, (i, number) in enumerate(starts):
-        if number is None:
+    for k, (i, card) in enumerate(starts):
+        if card is None:
             continue
         end = starts[k + 1][0] if k + 1 < len(starts) else len(lines)
         # A card filed twice in one dump: the first section wins, so a re-fetch
         # appended at the end cannot silently redefine what was already checked.
-        cards.setdefault(number, lines[i + 1:end])
+        cards.setdefault(card, lines[i + 1:end])
     return cards
 
 
@@ -229,7 +251,7 @@ def parse_status(lines: list[str]) -> list[Item]:
                 break
         if marker is None:
             raise Precondition(
-                f"item #{item_id} (line {i + 1}) has no `{CARD_TEXT_MARKER}` block — "
+                f"item {cite(item_id)} (line {i + 1}) has no `{CARD_TEXT_MARKER}` block — "
                 "either the document drifted from the item shape or this heading is "
                 "not an item")
         card_match = CARD_ID_RE.match(item_id)
@@ -301,11 +323,12 @@ def compare(item: Item, status: list[str], cards: dict[str, list[str]]) -> Resul
 
 
 def format_result(result: Result, restored: bool = False) -> str:
+    item = cite(result.item_id)
     if result.verdict != "diff":
-        return f"#{result.item_id}  {result.verdict}"
+        return f"{item}  {result.verdict}"
     if restored:
-        return f"#{result.item_id}  restored"
-    return (f"#{result.item_id}  DIFF  line {result.line}: {result.status_text}"
+        return f"{item}  restored"
+    return (f"{item}  DIFF  line {result.line}: {result.status_text}"
             f"  ≠  {result.raw_text}")
 
 

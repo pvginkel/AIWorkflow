@@ -49,10 +49,9 @@ item per criterion), validates with `run_loop.py run <dir> --dry-run`, appends t
 **Pending** line, and stages by name — never a commit, never `git add -A` in the shared tree. It
 refuses fewer than five distinct cards without `--force` (a sweep amortises the run's fixed
 consult/test/doc overhead; small sets accumulate, and a short batch the operator wants moved is
-widened over the labelled board rather than forced — the triage skill), refuses more than ten
-phases without `--force`
-(a sweep is a slice and sized like one; a larger set splits by target into several sweeps of five
-to ten), and refuses a spec repo that is off `main` (a parallel run may hold the shared tree on
+widened over the project's other open intake cards rather than forced — the triage skill), refuses
+more than ten phases without `--force` (a sweep is a slice and sized like one; a larger set splits
+by target into several sweeps of five to ten), and refuses a spec repo that is off `main` (a parallel run may hold the shared tree on
 its phase branch).
 
 ## Why the run loop needs no changes

@@ -38,7 +38,7 @@ Guard rails:
 
   * Fewer than MIN_CARDS distinct cards is refused without --force — a sweep
     amortises the run loop's fixed overhead (consult, test phase, doc phase),
-    and a tiny batch wastes it. Labelled cards simply accumulate.
+    and a tiny batch wastes it. Marked cards simply accumulate.
   * More than MAX_PHASES items is refused without --force — a sweep is a slice
     and is sized like one, so a larger batch splits by target into several
     sweeps. The floor counts cards, the ceiling counts phases.
@@ -329,7 +329,8 @@ def file_sweep(payload_path: Path, code_root: Path, force: bool = False) -> Path
             f"loop's fixed overhead, so fewer than {MIN_CARDS} accumulate for "
             "the next triage pass instead. The move is to widen the batch, "
             "not to lower the floor: re-run the Solution Known litmus over "
-            "every card on the labelled board and add the ones that qualify.")
+            "the project's other open intake cards and add the ones that "
+            "qualify.")
     if len(items) > MAX_PHASES and not force:
         raise Precondition(
             f"{len(items)} phases — a sweep is a slice and sized like one; "

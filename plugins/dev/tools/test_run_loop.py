@@ -749,6 +749,15 @@ def test_phase_digest_shapes():
         "# T\n\n\nFirst para\ncontinues.\n\nSecond.\n") \
         == "First para\ncontinues."
     assert run_loop.slice_intent("") == ""
+    # A frontmatter block above the title is skipped, blank lines around it
+    # included; an opener with no closer is not frontmatter.
+    assert run_loop.slice_intent(
+        "---\nissue: KC-1201\n---\n# T\n\nFirst para.\n\nSecond.\n") \
+        == "First para."
+    assert run_loop.slice_intent(
+        "---\nissue: KC-1201\n---\n\n\n# T\n\nFirst para.\n") == "First para."
+    assert run_loop.slice_intent(
+        "---\nissue: KC-1201\n\n# T\n\nFirst para.\n") == "---\nissue: KC-1201"
     # a phase id the plan does not carry digests the slice parts only
     assert "Your phase" not in run_loop.build_phase_digest(plan, "7", "", [], [])
 

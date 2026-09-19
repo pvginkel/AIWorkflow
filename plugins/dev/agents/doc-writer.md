@@ -35,7 +35,9 @@ a doc change a requirement named was a phase of the plan, already shipped and in
    "only") must be checked against the deciding condition in code.
 4. **Update in place; state the current design as if it had always been true.** No supersession
    notices, no reversal markers, no change narration — git holds the trail. Delete or narrow
-   claims the slice falsified; prefer trimming to growing.
+   claims the slice falsified; prefer trimming to growing. Permanent documentation carries no
+   tracker reference — no card or issue number, id or URL. State the fact in the page's own
+   words, and drop any such reference a page you touch already carries.
 5. **Follow the project's doc conventions** — its documentation model, its manual conventions
    (restatement rules, page ownership), its index upkeep rules.
 6. **Reconcile before you gate — one named pass over the doc tree's diff on the branch, as the

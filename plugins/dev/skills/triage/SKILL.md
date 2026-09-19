@@ -1,6 +1,6 @@
 ---
 name: triage
-description: File a batch of findings, bugs, or requests with a filtering pass — mechanically categorize every item (nit pick → major) for the operator to adjudicate and persist each verdict on its tracker card, so cruft dies before planning spends on it; then record the survivors' asks verbatim as slice folders (slice.md under slices/backlog/NNN_slug/), the required input to /dev:plan-slice. Runs whole or as either half — adjudicate now, dispose later from the labelled board — over the intake queue or a selection of it. Comprehension, categorization, and routing only; grounding, design, and planning happen in /dev:plan-slice.
+description: File a batch of findings, bugs, or requests with a filtering pass — mechanically categorize every item (nit pick → major) for the operator to adjudicate, each verdict recorded in a committed working document, so cruft dies before planning spends on it; then record the survivors' asks verbatim as slice folders (slice.md under slices/backlog/NNN_slug/), the required input to /dev:plan-slice. Runs whole or as either half — adjudicate now, dispose later from the committed record — over the intake queue or a selection of it. Comprehension, categorization, and routing only; grounding, design, and planning happen in /dev:plan-slice.
 argument-hint: "[findings-document] [card ids to scope the run]"
 ---
 
@@ -14,12 +14,12 @@ the required input to `/dev:plan-slice`. Argument (optional): path to a findings
 
 The work has two halves with a durable seam between them. **Adjudicate** (steps 1–5): what is
 each item, and does it deserve to live — one item at a time, blind to the rest, ending with every
-verdict on its card as a tracker label. **Dispose** (steps 6–9): what becomes a slice and what
+verdict ruled and committed. **Dispose** (steps 6–9): what becomes a slice and what
 dies — the batch as a set. The operator chooses per run: both halves in one sitting, adjudicate
-now and dispose in a later session from the labelled board, or dispose cards an earlier session
+now and dispose in a later session from the committed record, or dispose cards an earlier session
 prepared — and any run may be scoped to a selection of cards. The seam holds because nothing of
-the record lives only in a session: the verdict is on the card, the reasons are in a committed
-working document.
+the record lives only in a session, and none of it on the tracker: the verdicts and their reasons
+are in a committed working document.
 
 **You are the intake clerk, not the analyst.** The job is to understand each ask *as the operator
 wrote it*, label it so the operator can decide what progresses, and file what survives where it
@@ -38,7 +38,7 @@ convention (`~/.claude/CLAUDE.md`).
 
 Steps that don't apply are skipped silently: no questions and clean labels → present and move on;
 nothing flagged for research → no research round and no second pass; the document is re-presented
-only when it changed; a run over already-labelled cards begins at step 6.
+only when it changed; a run over cards an earlier session adjudicated begins at step 6.
 
 ## Procedure
 
@@ -55,9 +55,10 @@ flagged by id — mine, mis-tagged? — never adopted; retagging is the operator
 entries whose `Disposition:` line is blank or says `defer` — one per entry, the entry verbatim as
 the source — and never itemize the card itself.
 
-A card already carrying a rubric label is adjudicated — by an earlier session or by the operator's
-own hand — and its verdict is not re-derived; where a working document under `handovers/` holds
-the item, its rulings and research are read from there. Such cards wait for step 6.
+A card that an open status document under `handovers/` holds, ruled, is adjudicated: its verdict
+is not re-derived, and its rulings and research are read from there. Such cards wait for step 6.
+Every other card is adjudicated afresh, one pulled back from a deferral included — the tracker
+carries no verdict, and ruling a card twice costs little.
 
 Before anything else, the raw material lands verbatim in
 `<spec-repo>/handovers/triage_YYYY-MM-DD_raw.md` — full card contents, the chat passages being
@@ -163,8 +164,8 @@ supported. Rules, in order:
 
 The rubric — the examples are part of the definition:
 
-- **Nit pick** (`user-visible` or `internal` — the sub-split is recorded in the block, not as a
-  second label; it matters at step 6) — a remark on wording: a code comment, a log line, screen
+- **Nit pick** (`user-visible` or `internal` — the sub-split is recorded in the block beside the
+  category; it matters at step 6) — a remark on wording: a code comment, a log line, screen
   text. Impactful wording still counts. *"the failure toast says 'unexpected error' even when the
   server names the cause"* → Nit pick, user-visible; *"the retry log line prints the attempt
   number twice"* → Nit pick, internal.
@@ -183,13 +184,13 @@ The rubric — the examples are part of the definition:
   impact, but not wording either. *"nothing covers the exporter's empty-list branch"* → Test gap.
   A *failing* test is a defect and takes its consequence's rung.
 - **Decision** — nothing is broken; the source asks the operator to rule. *"nothing to build —
-  confirm the deviation is acceptable"* → Decision. The cheapest class on the board: a minute of
+  confirm the deviation is acceptable"* → Decision. The cheapest class in the rubric: a minute of
   thought, not a planning session — the ruling is the disposition (step 6).
 - **Invalid** (guarded — rule 5) — no longer applies, or doesn't reproduce. *"the card targets
   the legacy import screen"* where the source itself notes that screen was removed.
 
 Outside the rubric: an **operator chore** — a maintenance task addressed to the operator, not an
-ask about the system (*"full-sync these three environments"*) — takes no rubric label. It is
+ask about the system (*"full-sync these three environments"*) — takes no category. It is
 operator-owned work (step 6), marked the way the host convention marks chores.
 
 **Questions** ride the same document. The `Question:` line takes both kinds — one the source
@@ -272,14 +273,11 @@ Rulings raise questions of their own, so this is a loop, not a terminus: changed
 answered questions go back for one more operator pass, and the round repeats until no
 `Research:` line is open — one machine pass per operator pass throughout.
 
-### 5. Persist the verdicts — the seam
+### 5. Action the rulings — the seam
 
-When the round settles, write every item's final category onto its card as the tracker's label —
-the operator-ruled category, from the host convention's label set, one rubric label per card. The
-owner tag and any status marker stay: labels are written additively, and a tracker whose label
-write replaces the card's whole set is sent the full set. Every ruled card is labelled, the ones
-about to close included — the archive stays auditable that way. Then action `close` and `later`,
-adjudication's own outcomes: `close` archives the card with a one-line comment carrying the ruling
+When the round settles, every item's final category stands in the status document — the
+operator-ruled one — and that is where it stays: no verdict is written to the tracker. Action
+`close` and `later`, adjudication's own outcomes: `close` archives the card with a one-line comment carrying the ruling
 ("closed at triage: corner case") — or takes the tracker's rejected disposition when the ruling
 rejects the ask itself — and `later` takes its deferred one.
 
@@ -287,10 +285,10 @@ Delegated board work runs on **disjoint card sets** — each brief names the car
 and the cards it must not touch — and is verified on the board itself, by spot check, never from
 the agent's report.
 
-Commit both working documents (staged by name). This is the seam: the board carries the verdicts
-and the documents carry the reasons, so a session may stop here — notify "N items adjudicated, K
-closed at the filter; labels on the board, record under `handovers/`; run /dev:triage again to
-dispose" — and a later session starts at step 6 from the labelled cards. Or carry on.
+Commit both working documents (staged by name). This is the seam: the documents carry the
+verdicts and their reasons, so a session may stop here — notify "N items adjudicated, K closed at
+the filter; record under `handovers/`; run /dev:triage again to dispose" — and a later session
+starts at step 6 from the committed status document. Or carry on.
 
 ### 6. Sort
 
@@ -425,10 +423,11 @@ The floor is **five or more** qualifying cards with this project's owner tag. Fe
 say so in the close-out: waiting cards cost nothing, and a sweep amortises the loop's fixed
 consult, test and doc overhead across the batch, so forcing it at three pays full overhead for
 three one-line fixes. `--force` is never the proposal. When the operator wants a short batch
-moved, the move is **widening**: re-run the litmus over every card on the labelled board — cards
-routed the normal route in an earlier pass are fair game; the usual qualifiers are renames,
-test-only fixes and other in-place corrections — and report the verdict for every card, the
-failures included, so the widened batch is auditable. Widening is owed to a batch the operator
+moved, the move is **widening**: re-run the litmus over the project's other open intake cards —
+cards routed the normal route in an earlier pass are fair game, and the litmus reads a card's
+text alone, never a category; the usual qualifiers are renames, test-only fixes and other
+in-place corrections — and report the verdict for every card, the failures included, so the
+widened batch is auditable. Widening is owed to a batch the operator
 wants moved, not to one that merely shrank by a withdrawal; still short after it, the cards
 accumulate.
 

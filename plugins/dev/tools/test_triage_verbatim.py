@@ -5,7 +5,9 @@ The fixture is a synthetic pair written out in full below: a dump with two cards
 status document with five items over them — a plain one, a card split in two
 (`#712a` / `#712b`), an id backed by no card, and a card the dump does not carry.
 Written literally rather than generated, so the demotion the tool applies is checked
-against a hand-written expectation rather than against itself.
+against a hand-written expectation rather than against itself. A second pair beside
+it carries the same shapes with the readable ids a tracker writes (`KC-701`), and
+one test splices the two into the mixed document a cutover leaves behind.
 
 One test runs the real pair out of the spec repo's history (`git show`, nothing
 checked out) and asserts every card-backed item is verbatim; it skips cleanly where
@@ -175,6 +177,102 @@ The findings document's own words, which no dump carries.
 - Source: card #790
 - Ask: "fetched after the dump was written"
 - Category: Minor — "later"
+- Ruling: —
+
+**Card text:**
+
+Whatever was pasted in by hand.
+"""
+
+
+# ---------------------------------------------------------------------------
+# The same pair again, with the readable ids a tracker writes
+# ---------------------------------------------------------------------------
+
+RAW_READABLE = """\
+# Triage 2099-02-02 — raw material
+
+Every marked card, whole and verbatim. This is the archive.
+
+## KC-701 — First card
+
+- Reporter: Someone (@someone)
+
+### Description
+
+The card names `_is_stuck`.
+
+## Card KC-712 — Second card, two asks in one
+
+- Reporter: Someone (@someone)
+
+### Description
+
+Two asks: retire `_is_stuck`, and rename KUBECODER_CLIENT_TOKEN_NAME.
+"""
+
+KC_701 = """\
+- Reporter: Someone (@someone)
+
+##### Description
+
+The card names `_is_stuck`.\
+"""
+
+KC_712 = """\
+- Reporter: Someone (@someone)
+
+##### Description
+
+Two asks: retire `_is_stuck`, and rename KUBECODER_CLIENT_TOKEN_NAME.\
+"""
+
+STATUS_READABLE = f"""\
+# Triage 2099-02-02 — adjudication
+
+## Major
+
+### KC-701 — First card
+
+- Source: card KC-701
+- Ruling: —
+
+**Card text:**
+
+{KC_701}
+
+### KC-712a — Second card, retire the flag
+
+- Source: card KC-712
+- Ruling: —
+
+**Card text:**
+
+{KC_712}
+
+## Minor
+
+### KC-712b — Second card, rename the token
+
+- Source: card KC-712
+- Ruling: —
+
+**Card text:**
+
+{KC_712}
+
+### S7 — A findings-document section, on no card
+
+- Source: findings document § S7
+- Ruling: —
+
+**Card text:**
+
+The findings document's own words, which no dump carries.
+
+### KC-790 — A card the dump does not carry
+
+- Source: card KC-790
 - Ruling: —
 
 **Card text:**
@@ -399,6 +497,88 @@ def test_check_exits_zero_only_when_every_card_backed_item_is_ok(ws):
     code, printed = run_main("check", status_path, raw_path)
     assert code == 0, printed
     assert printed == ["#701  ok", "#712a  ok", "#712b  ok", "#S2  no card"], printed
+
+
+# ---------------------------------------------------------------------------
+# Readable ids — the same properties, the other id shape
+# ---------------------------------------------------------------------------
+
+def test_dump_headings_take_either_id_shape():
+    """`## #701`, `## Card #701`, `## KC-701`, `## Card KC-701`, and a stray `#`
+    before a readable id. A `## ` heading naming no card still ends a section."""
+    cards = triage_verbatim.parse_raw(
+        ("## #701 — a\nbody 701\n\n## Card #702 — b\nbody 702\n\n"
+         "## KC-703 — c\nbody 703\n\n## Card KC-704 — d\nbody 704\n\n"
+         "## #KC-705 — e\nbody 705\n\n## Not a card\nbody none\n").split("\n"))
+    assert sorted(cards) == ["701", "702", "KC-703", "KC-704", "KC-705"], \
+        sorted(cards)
+    assert cards["701"] == ["body 701", ""]
+    assert cards["KC-705"] == ["body 705", ""]
+
+
+def test_item_ids_take_either_shape_with_the_split_suffix():
+    """A suffixed item belongs to the card its id names, in both shapes; an id
+    that is no card id at all is backed by no section."""
+    doc = ["# Triage — adjudication", "", "## Major", ""]
+    for item_id in ("#472", "472b", "KC-472", "KC-472b", "#KC-472c", "#S2"):
+        doc += [f"### {item_id} — item {item_id} — n/a", "",
+                "**Card text:**", "", "body", ""]
+    items = triage_verbatim.parse_status(doc)
+    assert [(i.item_id, i.card) for i in items] == [
+        ("472", "472"), ("472b", "472"), ("KC-472", "KC-472"),
+        ("KC-472b", "KC-472"), ("KC-472c", "KC-472"), ("S2", None)]
+
+
+@with_workspace
+def test_a_readable_pair_is_read_throughout(ws):
+    results, code = triage_verbatim.check(
+        *write_pair(ws, status=STATUS_READABLE, raw=RAW_READABLE))
+    assert code == 1, "the pair carries KC-790, which the dump does not"
+    assert verdicts(results) == {
+        "KC-701": "ok", "KC-712a": "ok", "KC-712b": "ok",
+        "S7": "no card", "KC-790": "missing in raw",
+    }, verdicts(results)
+
+
+@with_workspace
+def test_a_readable_split_item_reads_its_whole_card(ws):
+    """KC-712a and KC-712b share KC-712's one section — both see all of it."""
+    status = STATUS_READABLE.replace(f"{KC_712}\n\n## Minor",
+                                     f"{KC_712[:-6]}\n\n## Minor", 1)
+    results, _ = triage_verbatim.check(
+        *write_pair(ws, status=status, raw=RAW_READABLE))
+    assert verdicts(results)["KC-712a"] == "diff", verdicts(results)
+    assert verdicts(results)["KC-712b"] == "ok", "the second half was left intact"
+
+
+@with_workspace
+def test_every_line_cites_an_id_the_way_it_was_written(ws):
+    """A readable id stands alone; anything else keeps its `#`."""
+    corrupt = STATUS_READABLE.replace("The card names `_is_stuck`.",
+                                      "The card names `\\_is_stuck`.", 1)
+    code, printed = run_main("check", *write_pair(ws, status=corrupt,
+                                                  raw=RAW_READABLE))
+    assert code == 1
+    assert printed[0].startswith("KC-701  DIFF  line "), printed
+    assert "`\\_is_stuck`" in printed[0] and "≠" in printed[0], printed[0]
+    assert printed[1:] == ["KC-712a  ok", "KC-712b  ok", "#S7  no card",
+                           "KC-790  missing in raw"], printed
+
+
+@with_workspace
+def test_one_document_may_carry_both_id_shapes(ws):
+    """A triage pass that straddles a tracker cutover: the cards filed before it
+    keep their numbers, the ones after have readable ids, and both check."""
+    raw = RAW + "\n" + RAW_READABLE[RAW_READABLE.index("## KC-701"):]
+    status = (STATUS[:STATUS.index("### #790 — ")]
+              + STATUS_READABLE[STATUS_READABLE.index("### KC-701"):
+                                STATUS_READABLE.index("### KC-790")])
+    results, code = triage_verbatim.check(*write_pair(ws, status=status, raw=raw))
+    assert code == 0, [triage_verbatim.format_result(r) for r in results]
+    assert [(r.item_id, r.verdict) for r in results] == [
+        ("701", "ok"), ("712a", "ok"), ("712b", "ok"), ("S2", "no card"),
+        ("KC-701", "ok"), ("KC-712a", "ok"), ("KC-712b", "ok"),
+        ("S7", "no card")]
 
 
 # ---------------------------------------------------------------------------
