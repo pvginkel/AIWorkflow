@@ -80,9 +80,12 @@ writing — the pipeline just no longer reads it by machine. See
 ### 2c. Host conventions (`~/.claude/CLAUDE.md`)
 
 The skills reference the issue tracker and notifications **generically** ("file findings to the
-issue tracker", "notify per the host convention", "the project's owner tag"). The concrete wiring —
-kanban tool, board/list names, the owner-tag rule, the notify command — lives in the host
-`~/.claude/CLAUDE.md`. Nothing to do per-repo if the host already has it.
+issue tracker", "notify per the host convention", "this project's intake queue"). The concrete
+wiring — which tracker, how a project's cards are told from another's, what realises each state
+and disposition, the notify command — lives in the host's own instructions: its
+`~/.claude/CLAUDE.md`, or a skill the host ships
+([`project-contract.md`](../plugins/dev/docs/project-contract.md), section 3). Nothing to do
+per-repo if the host already has it.
 
 ### 2d. The spec repo
 

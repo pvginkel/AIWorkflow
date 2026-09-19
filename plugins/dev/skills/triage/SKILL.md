@@ -33,8 +33,9 @@ there is no planning without a `slice.md`.
 
 **Preflight (step 0):** run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage`; relay
 its message verbatim on a non-zero exit. `<spec-repo>` is the path in your
-`.aiworkflowrc`'s `spec_repo`. Boards, lists, owner tags, and notification wiring come from your host
-convention (`~/.claude/CLAUDE.md`).
+`.aiworkflowrc`'s `spec_repo`. The tracker — which cards are this project's, and how each state and
+disposition named here is written — and the notification wiring come from your host convention
+(`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md`, section 3).
 
 Steps that don't apply are skipped silently: no questions and clean labels → present and move on;
 nothing flagged for research → no research round and no second pass; the document is re-presented
@@ -44,12 +45,11 @@ only when it changed; a run over cards an earlier session adjudicated begins at 
 
 ### 1. Collect — everything on disk first
 
-Gather the inputs: the findings document if one was passed, the relevant chat discussion, and the
-outstanding intake-queue cards carrying **this project's owner tag** — all of them, or the
-selection the operator scoped the run to (ids, a list; the rest stay untouched, and the close-out
-says so). Other projects' and untagged cards stay: if pointed at an untagged card, say so instead
-of adopting it, and a card under another project's tag whose substance is this project's is
-flagged by id — mine, mis-tagged? — never adopted; retagging is the operator's. A
+Gather the inputs: the findings document if one was passed, the relevant chat discussion, and
+**this project's** outstanding intake-queue cards — all of them, or the selection the operator
+scoped the run to (ids, a list; the rest stay untouched, and the close-out says so). Other
+projects' cards stay: a card filed under another project whose substance is this project's is
+flagged by id — mine, misfiled? — never adopted; moving it is the operator's. A
 `[NNN] close-out: …` card is not an ask but the marker that a slice's `close-out.md` is waiting
 (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`): read the report it names, take as items its live
 entries whose `Disposition:` line is blank or says `defer` — one per entry, the entry verbatim as
@@ -66,7 +66,7 @@ triaged, a pointer to the findings document. When triage starts mid-session out 
 discussion, this dump is the first act: the session is ephemeral, the file is not. The card fetch
 is delegated — one read-only sub-agent per list or source, in parallel, each writing its part of
 the dump, so no card passes through this session's context on its way to disk. Each brief says:
-whole and verbatim — title, labels, reporter, description, comments, URL, in the source's order —
+whole and verbatim — id, title, marks, reporter, description, comments, in the source's order —
 the title is part of the ask (dead routing hides in a title as readily as in a body); the
 tracker's fetch caveats from the host convention (a narrowed query silently drops the field that
 tells an operator's ask from a session-authored card); and that broken markup in a source (a
@@ -82,13 +82,13 @@ step 9 deletes them.
 **Itemize mechanically** from the dump, no research: one item per distinct ask. A card is
 generally one item; a card that is itself a list of independent asks (a residuals card) becomes
 several. When it is unclear whether something is one task or many, keep it as one — the planner
-splits cheaply. Ids are assigned once and never change — the card number, suffixed `a`, `b`… when
-a card yields several items (`#472b`), the findings-document section, a running number for chat
-passages — so an item that changes group keeps its handle. Open the **status document**,
+splits cheaply. Ids are assigned once and never change — the card's id as the tracker writes it,
+suffixed `a`, `b`… when a card yields several items (`KC-472b`), the findings-document section, a
+running number for chat passages — so an item that changes group keeps its handle. Open the **status document**,
 `<spec-repo>/handovers/triage_YYYY-MM-DD.md`, one block per item:
 
 ```
-### <id> — <short title> — <card URL>
+### <id> — <short title>
 - Source: <card id and/or findings-document section>
 - Ask: "<the ask, quoted verbatim — the stated symptom and the stated consequence>"
 - Question: <only when one exists — see below>
@@ -277,12 +277,11 @@ answered questions go back for one more operator pass, and the round repeats unt
 
 When the round settles, every item's final category stands in the status document — the
 operator-ruled one — and that is where it stays: no verdict is written to the tracker. Action
-`close` and `later`, adjudication's own outcomes: `close` archives the card with a one-line comment carrying the ruling
-("closed at triage: corner case") — or takes the tracker's rejected disposition when the ruling
-rejects the ask itself — and `later` takes its deferred one.
+`close` and `later`, adjudication's own outcomes: `close` closes the card as rejected, with a one-line comment carrying
+the ruling ("closed at triage: corner case"), and `later` takes the deferred disposition.
 
-Delegated board work runs on **disjoint card sets** — each brief names the cards that are its
-and the cards it must not touch — and is verified on the board itself, by spot check, never from
+Delegated tracker work runs on **disjoint card sets** — each brief names the cards that are its
+and the cards it must not touch — and is verified on the tracker itself, by spot check, never from
 the agent's report.
 
 Commit both working documents (staged by name). This is the seam: the documents carry the
@@ -295,7 +294,7 @@ starts at step 6 from the committed status document. Or carry on.
 Separate what shouldn't become a slice, and confirm the separation with the operator:
 
 - **Duplicates** — within this triage set, or of a card a plain tracker query surfaces →
-  archive with a short comment. (Whether something is already *implemented* is a code question;
+  close as rejected, with a short comment naming the card it duplicates. (Whether something is already *implemented* is a code question;
   the planner discovers that cheaply.)
 - **Pure discussion**, nothing actionable → flag for the operator.
 - **Decisions** — a `Decision` item ends at its ruling: the answer closes the card, or rides as a
@@ -353,7 +352,8 @@ Follow-up work to an existing slice also takes a fresh number from the same help
 slice ids (`087b`) are not supported; `close_slice.py` rejects them.
 
 **`slice.md`** is the record. The planner works from it alone, in a fresh session that never saw
-this conversation. It holds:
+this conversation. Step 9 puts the slice card's id above its title as frontmatter; the body
+holds:
 
 - A one-line summary carrying the slice's **headline category** — the most severe among its
   items — then what is being requested and why, as the sources give it.
@@ -379,7 +379,7 @@ proposal — including anything already in `handovers/`) move into the slice fol
 unvalidated; you author none of your own.
 
 Add each slice to the **Pending** section of `<spec-repo>/README.md` — one line matching the
-existing entries, `- **NNN** — <short title>: <one-clause summary> (<headline category>; #refs)`,
+existing entries, `- **NNN** — <short title>: <one-clause summary> (<headline category>; card ids)`,
 placed inside that section, above the heading that ends it. The file's end is `## Completed`, whose
 bullets have the same shape, and an entry landed there is one the close-out refuses. Verify before
 you commit: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_slice.py --check <slice-dir>...` runs the
@@ -419,7 +419,7 @@ survivors keep their marks. The Solution Known set is part of step 6's confirmat
 operator. A criterion for a prose nit says the duplicate or false clause is gone — culled, not
 reworded — so the writer does not negotiate with it.
 
-The floor is **five or more** qualifying cards with this project's owner tag. Fewer accumulate —
+The floor is **five or more** qualifying cards of this project. Fewer accumulate —
 say so in the close-out: waiting cards cost nothing, and a sweep amortises the loop's fixed
 consult, test and doc overhead across the batch, so forcing it at three pays full overhead for
 three one-line fixes. `--force` is never the proposal. When the operator wants a short batch
@@ -447,26 +447,29 @@ It allocates the number, writes `slice.md` / `plan.md` / `verification.json` und
 `<spec-repo>/slices/NNN_<slug>/` — born planned, skipping `/dev:plan-slice` — validates the plan with
 the run loop's `--dry-run`, adds the README **Pending** line, and stages by name. Relay its
 errors verbatim; on success, fold the results into step 9: commit the staged spec-repo files, one
-slice card `[NNN] Residual sweep` (triaged, as in step 9), and archive each swept card with a
-comment naming the slice folder. Running the slice stays the operator's move (`/dev:run-slice`), like any other.
+slice card `[NNN] Residual sweep` (triaged, its id into `slice.md`, as in step 9), and close each
+swept card as absorbed into it, with a comment naming the slice folder. Running the slice stays the operator's move (`/dev:run-slice`), like any other.
 Rules and rationale: `${CLAUDE_PLUGIN_ROOT}/docs/residual-sweep.md`.
 
 ### 9. Close out
 
-- **Slice cards:** one per slice, in its **triaged** state — title `[NNN] <slice title>`, this
-  project's owner tag and no other, a short highlights summary, a pointer to the slice folder,
-  and the subsumed card ids.
-- **Intake queue:** archive the cards the slices subsume and the duplicates from step 6, each
-  with a short comment (`close` and `later` were actioned at the seam). A **split** ruling makes
-  one new card per split-off part, in the operator's words — their ruling as the body, the parent
-  cited — and the parent is archived or trimmed as the ruling says. A **superseded** card closes
+- **Slice cards:** one per slice, in this project, in its **triaged** state — title
+  `[NNN] <slice title>`, a short highlights summary and a pointer to the slice folder. The card's
+  id then goes into the slice's `slice.md` as frontmatter above the title — `issue: <id>` between
+  two `---` lines — and is committed (staged by name): `/dev:plan-slice` and `/dev:run-slice` move
+  the card by that id, never by looking for its title.
+- **Intake queue:** close the cards the slices subsume as **absorbed**, each under its slice's
+  card, and the duplicates from step 6 as rejected, each with a short comment (`close` and `later`
+  were actioned at the seam). A **split** ruling makes one new card per split-off part, in the
+  operator's words — their ruling as the body, the parent cited — and the parent is closed or
+  trimmed as the ruling says. A **superseded** card closes
   with a comment naming what supersedes it; when the ruling rewrites the ask, the card is retitled
   and rewritten in the operator's words with its original text kept below a rule, so its history
   stays legible.
 - **The working documents are deleted when nothing in them is still open** — every item filed,
   swept, closed, or parked. A partial disposition (a selection of the cards) leaves them in place,
   committed, each disposed item's `Ruling:` line saying where it went (`→ slice NNN`,
-  `archived`). If deleting them would lose a fact, it isn't absorbed yet.
+  `closed`). If deleting them would lose a fact, it isn't absorbed yet.
 - **Notify the operator** per the host convention — "N items triaged: K closed at the filter,
   M slices under `<spec-repo>/slices/backlog/`. Run /dev:plan-slice on a slice when ready." —
   plus, when step 8 ran, "J cards swept into slice NNN — run /dev:run-slice on it when ready"

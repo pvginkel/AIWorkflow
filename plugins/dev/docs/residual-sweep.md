@@ -35,14 +35,14 @@ documented ruling, and picking a failure policy — three design calls, each wit
 Mechanism-verified is not change-decided; when in doubt, the normal route.
 
 The criteria are appended to the card description under an `## Acceptance criteria` heading —
-that section is the card's only mark, persisting across triage sessions until a sweep archives
+that section is the card's only mark, persisting across triage sessions until a sweep closes
 the card; the Solution Known set is confirmed with the operator like every other sort outcome.
 
 ## The generator
 
 `sweep_slice.py` (docstring holds the payload schema) is filesystem + git only — the triage
-session keeps the tracker half. From a payload of one item per card (title, target, verbatim card
-body, criteria) it allocates a slice number, writes `slices/NNN_<slug>/` with `slice.md` (the
+session keeps the tracker half. From a payload of one item per card (the card's id as the tracker
+writes it, title, target, verbatim card body, criteria) it allocates a slice number, writes `slices/NNN_<slug>/` with `slice.md` (the
 record: every card quoted), `plan.md` (one phase per item, card bodies blockquoted — which is
 also what neutralises stray `###`/`Target:` lines for the parser), and `verification.json` (one
 item per criterion), validates with `run_loop.py run <dir> --dry-run`, appends the spec README's
@@ -67,6 +67,7 @@ triage-and-fix-inline session both trade the gates for speed; don't re-propose t
 
 ## Card lifecycle
 
-Criteria onto the card at triage → swept cards archived with a comment naming the slice folder
-when the slice files → one triaged slice card `[NNN] Residual sweep` → `/dev:run-slice`, launched by the
-operator like any other slice, closes out through the normal `close_slice.py` path.
+Criteria onto the card at triage → one triaged slice card `[NNN] Residual sweep` when the slice
+files, its id written into `slice.md` → swept cards closed as absorbed into it, with a comment
+naming the slice folder → `/dev:run-slice`, launched by the operator like any other slice, closes
+out through the normal `close_slice.py` path.

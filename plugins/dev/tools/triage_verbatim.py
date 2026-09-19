@@ -260,7 +260,7 @@ def parse_status(lines: list[str]) -> list[Item]:
                           heading=i, start=marker + 1, end=end))
     if not items:
         raise Precondition(
-            "no items found — a status document holds `### <id> — <title> — <url>` "
+            "no items found — a status document holds `### <id> — <title>` "
             "blocks; this file is not one, or the arguments are the wrong way round")
     return items
 

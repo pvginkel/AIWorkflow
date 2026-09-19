@@ -158,7 +158,8 @@ slice.md — there is no fix-verify loop behind it. Handle the exit:
   together with the loop-owned `plan_state.json` and `plan_log.txt` (they are the planning run's
   who-did-what record), staging by name; drop a stale `plan_bailout.json`. The slice folder MUST
   be clean after.
-- Advance the slice's tracker card from **triaged** to **planned**.
+- Advance the slice's tracker card — the id in `slice.md`'s `issue:` frontmatter — from
+  **triaged** to **planned**.
 - Report what is now ready: the phases (id, target, title, one line each), the acceptance
   criteria, and any A/B decisions made with their grounds. A correction on top of this summary
   is a ruling — record it in plan.md (in place) and apply it, per §4's first bullet. Do **not**

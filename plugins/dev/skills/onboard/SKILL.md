@@ -358,17 +358,20 @@ sessions live in it.
 
 ### 6. Issue-tracker wiring
 
-The skills reference the tracker generically; the host `~/.claude/CLAUDE.md` holds the concrete
-wiring. Per repo, only the identity is new: the owner tag is the **bare repo name from `origin`**
-(not the folder name).
+The skills reference the tracker generically; the host convention holds the concrete wiring
+(`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md`, section 3). Per repo, only the identity is new:
+the project is known to the tracker by the **bare repo name from `origin`** (not the folder name).
 
 ```bash
 git remote get-url origin
 ```
 
-Make sure that tag exists on whichever boards the host convention names, and that migrated
-outstanding slices are represented — an in-flight slice with no card is invisible to the operator.
-Reconciling a migrated backlog against the boards is a judgment call: propose what to create or
+Check that the tracker knows the project, the way the host convention says a project is
+represented there. When it does not, **stop and tell the operator**: setting a project up in the
+tracker — its name, whatever key it takes — is the operator's call, never this skill's. Then make
+sure migrated outstanding slices are represented — an in-flight slice with no card is invisible to
+the operator — and that each one's `slice.md` names its card (`issue: <id>` frontmatter).
+Reconciling a migrated backlog against the tracker is a judgment call: propose what to create or
 close, do not bulk-write cards.
 
 ### 7. Finish

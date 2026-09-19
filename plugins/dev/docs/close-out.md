@@ -128,7 +128,7 @@ dispose is the operator's.
   (a real defect with a contained consequence) · `nit` (true, no practical consequence today) ·
   `cosmetic` (no behavioural or informational consequence — a stale line pointer). The
   reviewer's own Blocker/Major/Minor never reaches the report: a Blocker gets fixed.
-- **`Disposition:` is the operator's line.** Free form; a suggested vocabulary is `card [board]`
+- **`Disposition:` is the operator's line.** Free form; a suggested vocabulary is `card [project]`
   · `fix now` · `fold into <slice>` · `close` · `defer`. Agents leave it blank; the session that
   executes it may rewrite the entry's fate (struck, moved) and records what it did after the
   operator's words on the same line — a card id, a commit, the slice folded into — but never
@@ -157,7 +157,7 @@ dispose is the operator's.
    proposes closing whatever is still blank, so a report is finished in one sitting rather than
    left half-dispositioned. Git in the spec repo holds the history of the operator's remarks. **The card's closure is the report's.** The
    operator does not treat a blank `Disposition:` as pending work, and a report is never a queue
-   they work from: when they are done with it the close-out card is archived, and every entry
+   they work from: when they are done with it the close-out card is closed, and every entry
    still blank is closed by that act — written up as `close` in the file's own style, so the
    record reads the same as a ruled one. `defer` is the one word that keeps the card open.
 5. While the card is open, `/dev:triage` reads the report it names — the `defer` entries and

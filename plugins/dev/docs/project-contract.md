@@ -93,13 +93,19 @@ phase that runs, or an optional phase would be mandatory again.
 ## 3. Host conventions (`~/.claude/CLAUDE.md`)
 
 The skills speak about the **issue tracker** and **notifications** in the workflow's own
-vocabulary, never a concrete tool's: an **intake queue** of owner-tagged cards, the **operator's
-action queue**, **deferred**/**rejected** dispositions, one **slice card** per slice advancing
-**triaged → planned → in progress → done**, and the **Solution Known** mark
-([residual-sweep.md](residual-sweep.md)). The concrete wiring — which tracker, which board, list
-or label realises each of those roles and states, the owner-tag rule (the bare repo name), the
-notification command — is environment-specific and lives in the host `~/.claude/CLAUDE.md`, which
-already holds it. The workflow neither ships nor duplicates it.
+vocabulary, never a concrete tool's. A **card** is one tracker item, cited by its id as the
+tracker writes it. Each project owns its cards, and how the tracker tells one project's cards from
+another's is the host's. A project has an **intake queue**; the operator has an **action queue**.
+A card is **closed** with one of three dispositions — **resolved** (the work happened),
+**absorbed** (folded into a slice, under whose card it then hangs) or **rejected** (ruled out,
+invalid, a duplicate) — or **deferred**, which parks it open. One **slice card** per slice advances
+**triaged → planned → in progress → delivered → done**: a run ends at *delivered*, merged and
+waiting for the operator's review, and *done* is the operator's own move. The **Solution Known**
+mark is a flag beside all that ([residual-sweep.md](residual-sweep.md)). The tracker holds no
+triage verdict. The concrete wiring — which tracker, what realises each of those roles, states and
+dispositions, how a project is named there, the notification command — is environment-specific
+and lives in the host's own instructions: its `~/.claude/CLAUDE.md`, or a skill the host ships.
+The workflow neither ships nor duplicates it.
 
 ## Keeping `CLAUDE.md` disciplined
 

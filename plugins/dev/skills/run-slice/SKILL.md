@@ -26,7 +26,8 @@ nothing from you between launch and close-out.
    its message verbatim** and stop — fix the root cause only if it is clearly environmental,
    otherwise notify the operator. A dirty working tree — or a repo preflight refused to pull — is
    never yours to clean up.
-2. Advance the slice's tracker card (`[NNN] …`, planned) to **in progress**.
+2. Advance the slice's tracker card — the id in `slice.md`'s `issue:` frontmatter; it is
+   **planned** — to **in progress**.
 3. Launch, in the background (`run_in_background: true`):
 
    ```bash
@@ -86,7 +87,8 @@ push and bails `unpushed` over the ruling it was told to honour. Then relaunch w
    after step 3's move). That card is the "a report is waiting" marker, never an ask; nothing
    else from the run is carded — the operator dispositions the report's entries
    (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`).
-5. Advance the slice's tracker card to **done**, notify the operator per the host's notification
+5. Advance the slice's tracker card to **delivered** — merged, waiting for the operator's review;
+   **done** is the operator's move, never yours — notify the operator per the host's notification
    convention, and report short: per-phase rounds from `state.json`, test/doc phase outcomes,
    the report's entry counts, anything owed.
 

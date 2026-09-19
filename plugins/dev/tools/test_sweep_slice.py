@@ -66,10 +66,13 @@ def with_workspace(fn):
 
 
 @contextlib.contextmanager
-def raises(exc):
+def raises(exc, says=None):
+    """`says` asserts on the message — used where the message is the feature."""
     try:
         yield
-    except exc:
+    except exc as e:
+        if says is not None and says not in str(e):
+            raise AssertionError(f"{e} does not say {says!r}") from None
         return
     raise AssertionError(f"expected {exc.__name__}")
 
@@ -110,15 +113,15 @@ def make_workspace(ws, readme=README):
 
 
 def make_items(n=5):
-    """n single-criterion items on n distinct cards. Bodies deliberately
-    carry a `###` heading and a `Target:` line — hostile plan input."""
+    """n single-criterion items on n distinct cards, cited by the ids the
+    tracker writes. Bodies deliberately carry a `###` heading and a `Target:`
+    line — hostile plan input."""
     return [{
-        "card": 400 + k,
-        "card_name": f"Card {400 + k} title",
-        "card_url": f"https://trello.com/c/x{k}",
+        "card": f"KC-{400 + k}",
+        "card_name": f"Card KC-{400 + k} title",
         "title": f"Fix thing {k}",
         "target": "root",
-        "body": (f"Body of card {400 + k}.\n\n### Not a phase heading\n"
+        "body": (f"Body of card KC-{400 + k}.\n\n### Not a phase heading\n"
                  "Target: not-a-target\n"),
         "acceptance_criteria": [f"Outcome {k} holds."],
     } for k in range(n)]
@@ -147,7 +150,7 @@ def staged(repo):
 
 @with_workspace
 def test_payload_rejects_missing_fields(ws):
-    for key in ("card_name", "card_url", "title", "target", "body"):
+    for key in ("card", "card_name", "title", "target", "body"):
         items = make_items(1)
         del items[0][key]
         with raises(Precondition):
@@ -176,10 +179,35 @@ def test_payload_rejects_multiline_single_line_fields(ws):
 def test_payload_rejects_bad_slug_and_bad_card(ws):
     with raises(Precondition):
         sweep_slice.load_payload(write_payload(ws, make_items(1), slug="Bad Slug"))
+    # An id is one whitespace-free token, whatever the tracker's shape is.
+    for card in ("", "  ", "KC 449", "KC-449\n"):
+        items = make_items(1)
+        items[0]["card"] = card
+        with raises(Precondition):
+            sweep_slice.load_payload(write_payload(ws, items))
+
+
+@with_workspace
+def test_a_numeric_card_is_refused_with_the_shape_it_wants(ws):
+    """The pre-cutover payload shape: `"card": 449`. The id is a string now,
+    and the message says which."""
     items = make_items(1)
-    items[0]["card"] = "449"
-    with raises(Precondition):
+    items[0]["card"] = 449
+    with raises(Precondition, says='"KC-449"'):
         sweep_slice.load_payload(write_payload(ws, items))
+
+
+@with_workspace
+def test_a_leftover_card_url_is_ignored(ws):
+    """A payload written against the old contract still files — the URL is
+    simply not read, and reaches none of the artifacts."""
+    items = [dict(item, card_url="https://trello.com/c/x") for item in make_items(5)]
+    spec, code = make_workspace(ws)
+    with stubbed_dry_run():
+        slice_dir = run_sweep(write_payload(ws, items), code)
+    for name in ("slice.md", "plan.md", "verification.json"):
+        assert "http" not in (slice_dir / name).read_text(), name
+    assert "http" not in (spec / "README.md").read_text().split("## Pending")[1]
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +231,7 @@ def test_verification_items_map_criteria_one_to_one():
     verification = json.loads(artifacts["verification.json"])
     ids = [item["id"] for item in verification["items"]]
     assert ids == ["V01", "V02", "V03"]
-    assert verification["items"][2]["area"] == "card #401 (P2)"
+    assert verification["items"][2]["area"] == "card KC-401 (P2)"
     assert verification["items"][2]["description"] == "Second outcome."
     assert all(item["verdict"] is None for item in verification["items"])
     # plan.md cites each phase's criteria range
@@ -212,9 +240,32 @@ def test_verification_items_map_criteria_one_to_one():
 
 def test_record_quotes_bodies_and_lists_cards():
     artifacts = sweep_slice.build_artifacts("137", make_items(2))
-    assert "> Body of card 400." in artifacts["slice.md"]
-    assert "> Body of card 400." in artifacts["plan.md"]
-    assert "#400 #401" in artifacts["slice.md"]
+    assert "> Body of card KC-400." in artifacts["slice.md"]
+    assert "> Body of card KC-400." in artifacts["plan.md"]
+    assert "KC-400 KC-401" in artifacts["slice.md"]
+
+
+def test_every_citation_is_the_id_verbatim():
+    """No `#` added, no link: plan, record and verification all write the id the
+    payload gave."""
+    artifacts = sweep_slice.build_artifacts("137", make_items(2))
+    assert "**(KC-400) Card KC-400 title**" in artifacts["plan.md"]
+    assert "**(KC-400) Card KC-400 title**" in artifacts["slice.md"]
+    assert ("Card KC-401 — Card KC-401 title. Criteria: V02."
+            in artifacts["plan.md"])
+    assert "#KC-400" not in artifacts["plan.md"]
+    assert json.loads(artifacts["verification.json"])["items"][0]["area"] \
+        == "card KC-400 (P1)"
+
+
+def test_cards_are_listed_in_reading_order():
+    """Natural, not lexical: KC-9 precedes KC-10, which precedes KC-100."""
+    items = make_items(3)
+    for item, card in zip(items, ("KC-10", "KC-100", "KC-9"), strict=True):
+        item["card"] = card
+    artifacts = sweep_slice.build_artifacts("137", items)
+    assert "KC-9 KC-10 KC-100" in artifacts["slice.md"]
+    assert sweep_slice.distinct_cards(items) == ["KC-9", "KC-10", "KC-100"]
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +279,7 @@ def test_pending_bullet_appends_at_section_end():
     at = lines.index(bullet[0])
     assert "single-line entry (#251)." in lines[at - 1]
     assert lines[at + len(bullet) :][:2] == ["", "## Deferred"]
-    assert "#400 #401 #402 #403 #404" in " ".join(bullet)
+    assert "KC-400 KC-401 KC-402 KC-403 KC-404" in " ".join(bullet)
 
 
 def test_insert_pending_requires_the_section():

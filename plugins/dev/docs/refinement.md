@@ -145,7 +145,7 @@ Writing rules — the reader is the PO, a week away from the slice, deciding fro
   premise that no longer holds is stated once, where its consequence lands: in the entry it
   produces — a decision's *Context*, a fact question — otherwise as a settled item. A slice
   with no decision says so in one line under the title, where the first decision would be.
-- **No code, no handles.** No fenced blocks, no `file:line`, no card numbers, decision ids or
+- **No code, no handles.** No fenced blocks, no `file:line`, no card ids, decision ids or
   requirement numbers: things are named in words ("the route that streams an environment's
   state", "the card that reported the Windows share"). The one exception is text the operator
   is ruling on verbatim — a message a user will read on screen, a config shape they will type.

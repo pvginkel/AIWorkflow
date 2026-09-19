@@ -20,9 +20,8 @@ access; this script touches no network:
       "slug": "residual_sweep",            // optional (this is the default)
       "items": [
         {
-          "card": 449,                      // tracker card number
+          "card": "KC-449",                 // the id as the tracker writes it
           "card_name": "<card title>",
-          "card_url": "<link to the card>",
           "title": "<phase title, imperative>",
           "target": "root",                 // kc component or ../SiblingRepo
           "body": "<card description, verbatim markdown>",
@@ -32,7 +31,9 @@ access; this script touches no network:
     }
 
 One item per card normally; a multi-item card whose bullets need different
-targets becomes several items citing the same card number.
+targets becomes several items citing the same card. Every artifact writes an
+id verbatim and never a link: a card's URL is derivable from its id and goes
+stale, and the id is what the tracker answers to.
 
 Guard rails:
 
@@ -50,7 +51,8 @@ Guard rails:
     unstaged, for inspection; the burned slice number is a harmless gap.
 
 Like close_slice.py this stages by name and does not commit — the triage
-session commits, archives the swept cards, and files the slice card.
+session commits, files the slice card, and closes the swept cards as absorbed
+into it.
 
 Usage:
     sweep_slice.py <payload.json> [--force]
@@ -74,6 +76,10 @@ MIN_CARDS = 5
 MAX_PHASES = 10
 DEFAULT_SLUG = "residual_sweep"
 SLUG_RE = re.compile(r"^[a-z0-9_]+$")
+# A card id is whatever the tracker writes, so it is only shaped, not parsed:
+# one whitespace-free token. `\Z` rather than `$`, which also matches before a
+# trailing newline — an id carrying one would break every line it is written to.
+CARD_RE = re.compile(r"^\S+\Z")
 README_WIDTH = 98
 
 
@@ -109,9 +115,11 @@ def load_payload(path: Path) -> tuple[str, list[dict]]:
         if not isinstance(item, dict):
             raise Precondition(f"{where} is not an object")
         card = item.get("card")
-        if not isinstance(card, int) or card <= 0:
-            raise Precondition(f"{where}.card must be a positive card number")
-        for key in ("card_name", "card_url", "title", "target", "body"):
+        if not isinstance(card, str) or not CARD_RE.match(card):
+            raise Precondition(
+                f"{where}.card must be a string — the card's id exactly as the "
+                'tracker writes it, e.g. "KC-449" — with no whitespace in it')
+        for key in ("card_name", "title", "target", "body"):
             value = item.get(key)
             if not isinstance(value, str) or not value.strip():
                 raise Precondition(f"{where}.{key} must be a non-empty string")
@@ -140,6 +148,19 @@ def blockquote(text: str) -> str:
     return "\n".join("> " + line if line.strip() else ">" for line in lines)
 
 
+def _natural_key(card: str) -> tuple:
+    """Sort an id the way a reader reads it: digit runs compare as numbers, so
+    KC-9 comes before KC-10, and bare numbers stay numeric. The leading 0/1
+    keeps numbers and text comparable across ids of different shapes."""
+    return tuple((0, int(part)) if part.isdigit() else (1, part)
+                 for part in re.split(r"(\d+)", card) if part)
+
+
+def distinct_cards(items: list[dict]) -> list[str]:
+    """The batch's cards, deduplicated, in reading order."""
+    return sorted({item["card"] for item in items}, key=_natural_key)
+
+
 def _criteria_ids(items: list[dict]) -> list[list[str]]:
     """Per item, its verification ids — V01.. sequential across the payload."""
     out, n = [], 0
@@ -156,8 +177,8 @@ def _id_range(ids: list[str]) -> str:
 
 def build_artifacts(num: str, items: list[dict]) -> dict[str, str]:
     """The three slice files, keyed by filename."""
-    cards = sorted({item["card"] for item in items})
-    card_list = " ".join(f"#{c}" for c in cards)
+    cards = distinct_cards(items)
+    card_list = " ".join(cards)
     title = f"Residual sweep: {len(cards)} Solution Known card(s)"
     vids = _criteria_ids(items)
 
@@ -169,7 +190,7 @@ def build_artifacts(num: str, items: list[dict]) -> dict[str, str]:
         "triage from the card text alone; verification.json holds them.")
     for k, item in enumerate(items):
         plan.append(
-            f"- R{k + 1}. **(#{item['card']}) {item['card_name'].strip()}** — "
+            f"- R{k + 1}. **({item['card']}) {item['card_name'].strip()}** — "
             f"P{k + 1}, criteria {_id_range(vids[k])}.")
     plan.append(
         "- A phase's scope is exactly what its card records. If the fix turns "
@@ -182,8 +203,8 @@ def build_artifacts(num: str, items: list[dict]) -> dict[str, str]:
     for k, item in enumerate(items):
         plan += [f"### P{k + 1} — {item['title'].strip()}", "",
                  f"Target: {item['target'].strip()}", "",
-                 f"Card #{item['card']} — {item['card_name'].strip()} "
-                 f"({item['card_url'].strip()}). Criteria: {_id_range(vids[k])}.",
+                 f"Card {item['card']} — {item['card_name'].strip()}. "
+                 f"Criteria: {_id_range(vids[k])}.",
                  "", blockquote(item["body"]), ""]
     plan += ["## Not in scope", "",
              "- Anything not recorded on a swept card — neighbourhood cleanups "
@@ -199,8 +220,7 @@ def build_artifacts(num: str, items: list[dict]) -> dict[str, str]:
         "(the dev plugin's residual-sweep.md).")
     record += ["", "## Requirements", ""]
     for k, item in enumerate(items):
-        record += [f"{k + 1}. **(#{item['card']}) {item['card_name'].strip()}** "
-                   f"({item['card_url'].strip()})", "",
+        record += [f"{k + 1}. **({item['card']}) {item['card_name'].strip()}**", "",
                    blockquote(item["body"]), "",
                    f"   Acceptance criteria ({_id_range(vids[k])}):"]
         record += [f"   - {a.strip()}" for a in item["acceptance_criteria"]]
@@ -213,7 +233,7 @@ def build_artifacts(num: str, items: list[dict]) -> dict[str, str]:
                                   strict=True):
             verification["items"].append({
                 "id": vid,
-                "area": f"card #{item['card']} (P{k + 1})",
+                "area": f"card {item['card']} (P{k + 1})",
                 "description": criterion.strip(),
                 "verdict": None,
                 "rationale": "",
@@ -229,9 +249,9 @@ def build_artifacts(num: str, items: list[dict]) -> dict[str, str]:
 
 def pending_bullet(num: str, items: list[dict]) -> list[str]:
     """The README `## Pending` entry, wrapped like its neighbours."""
-    cards = sorted({item["card"] for item in items})
+    cards = distinct_cards(items)
     text = (f"- **{num}** — Residual sweep: {len(cards)} Solution Known "
-            f"card(s) ({' '.join(f'#{c}' for c in cards)}).")
+            f"card(s) ({' '.join(cards)}).")
     lines, line = [], ""
     for word in text.split(" "):
         if line and len(line) + 1 + len(word) > README_WIDTH:
@@ -322,7 +342,7 @@ def dry_run(slice_dir: Path, code_root: Path) -> None:
 
 def file_sweep(payload_path: Path, code_root: Path, force: bool = False) -> Path:
     slug, items = load_payload(payload_path)
-    cards = sorted({item["card"] for item in items})
+    cards = distinct_cards(items)
     if len(cards) < MIN_CARDS and not force:
         raise Precondition(
             f"only {len(cards)} distinct card(s) — a sweep amortises the run "
@@ -369,15 +389,16 @@ def file_sweep(payload_path: Path, code_root: Path, force: bool = False) -> Path
         raise Precondition(f"git add failed: {result.stderr.strip()}")
 
     print(f"filed slice {num}_{slug}: {len(phases)} phase(s), "
-          f"{len(cards)} card(s) ({' '.join(f'#{c}' for c in cards)})")
+          f"{len(cards)} card(s) ({' '.join(cards)})")
     print(f"  {slice_dir}")
     print("  staged by name: " + " ".join(to_stage))
     print()
     print("the session's half, now:")
     print("  1. commit the staged spec-repo files (never `git add -A` there)")
-    print(f"  2. tracker: one triaged slice card `[{num}] Residual sweep`")
-    print("  3. intake queue: archive each swept card with a comment naming "
-          "the slice folder")
+    print(f"  2. tracker: one triaged slice card `[{num}] Residual sweep`, its id "
+          "into slice.md as `issue:` frontmatter (commit that too)")
+    print("  3. intake queue: close each swept card as absorbed into the "
+          "slice, with a comment naming the slice folder")
     print(f"  4. the run stays the operator's move: /dev:run-slice on "
           f"slices/{num}_{slug} when they choose")
     return slice_dir

@@ -188,7 +188,7 @@ skill's product in that mode is a bucketed sheet with the needs-your-eyes set le
 nothing is filed or struck before the ruling.
 
 The run's only tracker output is one card, `[NNN] close-out: <title>`, whose body is the Summary,
-the Focus lines, the entry counts and the report's path; it is archived when no live entry has a
+the Focus lines, the entry counts and the report's path; it is closed when no live entry has a
 blank `Disposition:`.
 
 Triage got the same durable seam one stage earlier and one day later (v0.5.2, 2026-08-16): after

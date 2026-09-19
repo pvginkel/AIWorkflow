@@ -4,6 +4,46 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-18 — the tracker under the skills: projects own cards, closing takes a disposition, a run ends at delivered (v0.9.40)
+
+Trello #1031. The operator's tracker moves from two shared Trello boards to a self-hosted YouTrack,
+and the move showed how much of the plugin's "generic" tracker vocabulary was one tracker's
+mechanics: cards told apart by an owner tag on a shared board, archiving as the way to close, a
+flat list of subsumed card ids, a slice card found by scanning a list for its `[NNN]` title. The
+plugin stays tracker-neutral and keeps "card" as its word for a tracker item; what changes is the
+model `project-contract.md` section 3 declares, and the skills follow it. **Ruled** (operator,
+2026-09-16 to -18); **untested**: no skill has run on the new tracker yet, and there is no
+rehearsal: the first real triage after the switch is the test (ruled 2026-09-19).
+
+- **A project owns its cards.** No owner tag anywhere: triage pulls *this project's* intake
+  queue, a card filed under another project is flagged, never adopted, and moving it is the
+  operator's. `/dev:onboard` step 6 checks that the tracker knows the project and, when it does
+  not, stops and tells the operator — setting a project up in the tracker is never the skill's
+  call.
+- **Closing takes a disposition: resolved, absorbed or rejected; deferred parks a card open.**
+  "Archive" is gone from the skills. Triage's `close`, a duplicate and a superseded card close as
+  rejected; a card a slice subsumes closes as **absorbed**, under its slice's card; the close-out
+  card closes as resolved.
+- **The slice card's ladder is triaged → planned → in progress → delivered → done.**
+  `/dev:run-slice` ends at *delivered* — merged, waiting for the operator's review. *Done* is the
+  operator's move, never a session's.
+- **`slice.md` names its card.** Triage's close-out writes the slice card's id into `slice.md` as
+  frontmatter (`issue: <id>`), and `/dev:plan-slice` and `/dev:run-slice` move the card by that id
+  instead of looking for its title. 0.9.39's `slice_intent` fix is what makes the frontmatter safe.
+- **A card is cited by its id as the tracker writes it, and never by URL.** The raw-dump brief
+  asks for id, title, marks, reporter, description and comments; the status template's item
+  heading is `### <id> — <short title>`; a close-out disposition records the card id alone.
+  `sweep_slice.py`'s payload takes `card` as that id, a string, and no `card_url`; everything it
+  writes cites the id verbatim, and its closing checklist says "close each swept card as absorbed
+  into the slice". A payload with an integer `card` is refused with a message that says what is
+  wanted. **Measured** (by test).
+- `close-out`'s `card [board]` disposition is `card [project]`, and 0.9.38's handed-over triage
+  puts the Outstanding actions on one card in the operator's action queue. `ADOPTING.md` and the
+  contract say the host's wiring may live in a skill the host ships as well as in
+  `~/.claude/CLAUDE.md`.
+
+0.9.40, not 0.9.38: the close-out handed-over triage took that version while this sat unpushed.
+
 ## 2026-09-18 — the rubric verdict leaves the tracker; the tools read readable card ids and a `slice.md` with frontmatter (v0.9.39)
 
 Trello #1031, the part of the tracker move that is true on any tracker. It ships ahead of the

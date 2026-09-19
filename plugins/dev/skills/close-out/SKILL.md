@@ -10,16 +10,15 @@ Execute the operator's dispositions on one slice's `close-out.md` — the report
 run agent wrote its out-of-scope observations to (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` is
 what the report is; `${CLAUDE_PLUGIN_ROOT}/docs/close-out-template.md` its shape). The operator
 reads and decides; this session presents, records, files, and edits. `<spec-repo>` is the path
-in your `.aiworkflowrc`'s `spec_repo`; boards, lists, owner tags, and notification wiring come
-from your host convention (`~/.claude/CLAUDE.md`).
+in your `.aiworkflowrc`'s `spec_repo`; the tracker and the notification wiring come from your
+host convention (`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md`, section 3).
 
 ## Procedure
 
 1. **Locate the report — and its card.** The argument names the report (a slice number or a slice
-   dir); without one, the newest open `[NNN] close-out: <slice title>` card in the intake queue
-   names it. The run filed one such card per report, carrying the project's owner tag per the
-   host convention, and an open card is what makes a report pending — a blank `Disposition:`
-   under an archived card is a closed entry, not work. Find the card by that title now and keep
+   dir); without one, the newest open `[NNN] close-out: <slice title>` card in this project's
+   intake queue names it. The run filed one such card per report, and an open card is what makes
+   a report pending — a blank `Disposition:` under a closed card is a closed entry, not work. Find the card by that title now and keep
    its id for step 6; the operator should never have to point you at it. Say which report you
    opened, and say once if the card is not there, then carry on without it.
 2. **Present it — ask nothing yet.** Show the `Run:` header, the Summary and every `Focus:` line
@@ -30,14 +29,14 @@ from your host convention (`~/.claude/CLAUDE.md`).
 3. **Take dispositions.** The operator writes them into the file under the entries, or says them
    in chat ("card B1, close B6, fold S1 into 009"). Chat dispositions you write into the file on
    the entry's `Disposition:` line **in the operator's words** — never paraphrased, never
-   completed. Free form; the usual vocabulary is `card [board]` · `fix now` ·
+   completed. Free form; the usual vocabulary is `card [project]` · `fix now` ·
    `fold into <slice>` · `close` · `defer`. A blanket ruling ("close the rest", "I'm not
    progressing anything else") is a `close` on every entry still blank, each carrying those
    words. What you then did goes after the operator's words on the same line, after ` — `: the
-   card id and URL, the commit, the slice folded into.
+   card id, the commit, the slice folded into.
 4. **Execute each disposition:**
-   - `card [board]` — one tracker card per entry (the named board, else the intake queue per
-     the host convention): title = the entry's headline, body = the entry verbatim + its
+   - `card [project]` — one tracker card per entry (in the named project's intake queue, else
+     this project's, per the host convention): title = the entry's headline, body = the entry verbatim + its
      `Provenance:` line + the report's path.
    - `fix now` — do it here only if the project's `CLAUDE.md` classes the change as ad hoc
      work; otherwise say so and offer `fold into`. Done and committed, strike the entry as a
@@ -53,16 +52,16 @@ from your host convention (`~/.claude/CLAUDE.md`).
    about and stops; the rest of the report is yours to close out, not theirs to work through.
    When their last message is settled — the dispositions executed, the question answered, "fine",
    a shrug — and nothing else is pending, ask in one line whether to strike what is still blank
-   (how many entries, by id) and archive the close-out card. You raise it, unprompted; once, and
+   (how many entries, by id) and close the close-out card. You raise it, unprompted; once, and
    again only after something has happened since. A yes is a `close` on each of those entries,
    struck per step 4, the words being the ones the operator agreed to; an entry they pull back
    out of the batch is a disposition like any other. A no is a `defer` on each of them — the
    card stays open for `/dev:triage` — and ends the asking.
 6. **Render, commit and finish.** Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py render
    <slice_dir>` (live entries first, the newly struck ones folded last), then commit the report
-   (staged by name — the spec repo is a shared tree). Archive the close-out card found in step 1
-   unless an entry is deferred or the step-5 question went unanswered: the card's closure closes
-   the report (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`), so nothing blank under an archived
+   (staged by name — the spec repo is a shared tree). Close the close-out card found in step 1 as
+   resolved unless an entry is deferred or the step-5 question went unanswered: the card's closure
+   closes the report (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`), so nothing blank under a closed
    card is owed a disposition. Report short: dispositions by kind, cards filed, anything owed.
 
 ## When the operator hands you the triage
@@ -89,8 +88,8 @@ over every entry still blank; steps 4–6 then run as written on what they ruled
      nits and cosmetics — and Suggestions, by default: the operator progresses a small fraction
      of them, so a suggestion is closed unless it is clearly interesting, and then it goes to the
      last bucket, not to a card.
-   - **Outstanding actions** — all of them on **one** card, where the host convention keeps the
-     operator's own to-dos (else the intake queue): a list they work from, not a card each.
+   - **Outstanding actions** — all of them on **one** card in the operator's action queue: a
+     list they work from, not a card each.
    - **Needs your eyes** — whatever does not sort: a bug whose impact the entry does not let you
      judge, an open question or ruling, the interesting suggestion, an entry two buckets both
      fit. Do not force these — this set is what the sheet is for — and keep it small: a set that
