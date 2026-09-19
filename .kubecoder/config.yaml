@@ -27,6 +27,7 @@ repos:
 
 capabilities:
   github: rw
+  fleetAdmin: true
 
 tools:
   # AIWorkflow and FieldnotesApp are Python on uv, and the dev container has no uv.
