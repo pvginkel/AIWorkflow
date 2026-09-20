@@ -55,6 +55,14 @@ tools:
 # before a push hands them to Jenkins.
 imageBuilder: true
 
+secrets:
+  # Both repos here push to Jenkins-built pipelines — HelmCharts deploys from
+  # IaC/HelmCharts, FieldnotesApp builds its image in its own job — and the
+  # Jenkins REST API answers an unauthenticated caller 403, so following a
+  # build from the shell needs this. Without it the only way to read a build
+  # is the jenkins MCP server, which leaves a session blind whenever it is down.
+  JENKINS_TOKEN: jenkins-token
+
 preamble:
   instructions: |
     The AI workflow's environment: the `dev` plugin marketplace
