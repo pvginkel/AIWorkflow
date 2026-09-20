@@ -11,6 +11,15 @@
     },
     {
       "path": "../FieldnotesAppSpecs"
+    },
+    {
+      "path": "../Fieldnotes"
+    },
+    {
+      "path": "../HelmCharts"
+    },
+    {
+      "path": "../DockerImages"
     }
   ]
 }
