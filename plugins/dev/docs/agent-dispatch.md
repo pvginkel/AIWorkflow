@@ -34,16 +34,26 @@ validation.
   one but the test-agent's — `kc` passes both through to the spawned claude, finishing the trim the
   env vars start. The first drops both plugins' skill listings from the prefix (a headless role
   invokes no skill; the plugin's *agents* are not skills and still register — `--agent dev:<role>`
-  and the Agent tool's sub-agents are untouched). The second, with no `--mcp-config` beside it,
-  spawns with no MCP server at all: the operator's `~/.claude.json` servers' instructions leave
-  the prefix (their tool schemas were never in it — Claude Code defers them since 2.1.212), and
-  with them a reach no role's contract ever gave it — a finding
-  goes to the close-out report, never to a tracker; CI is the test-agent's. The test-agent keeps
+  and the Agent tool's sub-agents are untouched). The second keeps the operator's `~/.claude.json`
+  servers out of a role's session: their instructions leave the prefix (their tool schemas were
+  never in it — Claude Code defers them since 2.1.212), and with them a reach no role's contract
+  ever gave it — a finding about the work goes to the close-out report, never to a tracker; CI is
+  the test-agent's. **The promoted servers are the exception**: `PROMOTED_MCP_SERVERS` in
+  `run_loop.py` names them, today `fieldnotes` alone, because what got in a role's way while it
+  worked goes there and not into the report ([close-out.md](close-out.md#what-it-is--and-is-not)),
+  and a role that cannot post cannot follow that rule. The loop copies each named entry verbatim
+  out of the user-level `mcpServers` of `~/.claude.json` into
+  `~/.claude/aiworkflow-promoted-mcp.json` (mode 0600, written atomically, once per process at the
+  first dispatch) and passes that path as `--mcp-config` beside `--strict-mcp-config`. An entry
+  carries a bearer token, which is why it travels as a file under the home and never on a command
+  line, in the log or in a slice folder. A promoted server the operator's config does not hold is
+  one line in `log.txt` and a role spawned without it, never a failed run. The test-agent keeps
   the operator's servers whole because it drives CI through Jenkins, a server the operator's config
   names and the plugin cannot. Sub-agents inherit the dispatching session's trim; a nudge resumes
   with the role's own flags, since a prefix that differs from the original's misses the cache. With
   the env vars, ≈ 7–8 k tokens off every turn's prefix — measured 2026-08-23 at `ctx1` 24.0–25.6 k
-  per role against the corpus's 31–34 k. Once, as `SPAWN_FLAGS` / `spawn_flags()` in `run_loop.py`.
+  per role against the corpus's 31–34 k, before a promoted server's instructions came back into it.
+  Once, as `SPAWN_FLAGS` / `spawn_flags()` in `run_loop.py`.
 - Session output goes to the loop's log file, never stdout (`-v` echoes it) — progress must not
   land in a calling session's context. The turn's response text is read back (`send`'s
   `--response-file`) solely to detect the account session-limit notice below; outcomes come only

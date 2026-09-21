@@ -4,6 +4,34 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-21 — the close-out report is about the work; what got in an agent's way goes to Fieldnotes, and every dispatched role is spawned with that server (v0.9.42)
+
+From Fieldnotes' build (FieldnotesApp's implementation plan, step 7), no AIWF card. Fieldnotes is the
+operator's complaint box, a curated store across projects for what gets in agents' way, and since
+2026-09-21 the host's `~/.claude/CLAUDE.md` tells every session there are two channels: the
+close-out report for the work, Fieldnotes for working. The plugin said the opposite in two places.
+**Ruled** (operator, 2026-09-21): "That the findings don't sit in the report isn't a cost. It's a
+very significant gain." **Untested**: no slice has run on it yet.
+
+- **Every dispatched role is spawned with the promoted MCP servers.** Roles ran under
+  `--strict-mcp-config` with no config beside it, so a code-writer told to post had no tool to post
+  with, and the code-writer and the reviewer write most of a report. `PROMOTED_MCP_SERVERS` in
+  `run_loop.py` names the servers every role keeps, today `fieldnotes` alone (the operator: "it's
+  where almost all value lies"). The loop copies each entry verbatim out of `~/.claude.json` into
+  `~/.claude/aiworkflow-promoted-mcp.json`, mode 0600 and written atomically, and passes the path
+  as `--mcp-config`: the entry carries a bearer token, so it never rides a command line or a log. A
+  server the operator's config does not hold is a line in `log.txt`, never a failed run. The
+  test-agent's spawn is unchanged. Both loops; `agent-dispatch.md` § Spawning has it.
+- **Notable events is the run's own story.** Its charter took "product and workflow alike", a tool
+  missing from the sidecar and a wait that hit a cap among its examples, so that plugin defects
+  surfaced in the report. That ruling is reversed: those now reach the operator through Fieldnotes,
+  curated and across projects, and the charter written into every new report says so. A bail-out,
+  an appended phase, a blocked proof re-routed and the driver's own entries stay.
+- **The rule is the host's, and the plugin points at it.** `close-out.md` has the line an agent
+  draws (would the entry change what the operator thinks of this slice's outcome?), and the dispatch
+  line both loops send carries one sentence of it, because a bare consult reads nothing else. No
+  agent definition restates it.
+
 ## 2026-09-19 — the first runs on the new tracker: the skills say to load the host convention, a slice card names its folder, `triage_verbatim.py` checks the `Ask:` quote (v0.9.41)
 
 AIWF-5. 0.9.40 shipped untested; `/dev:triage`, `/dev:plan-slice` and `/dev:run-slice` have now each

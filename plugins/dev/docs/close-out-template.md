@@ -42,10 +42,12 @@ Focus: <!-- doc-writer: what the operator must do before the slice's outcome hol
 
 Focus: <!-- doc-writer: the shape of the run — bail-outs, appended phases, surprises -->
 
-<!-- Everything that deviated from a completely uneventful run — product and workflow alike: a
-     bail-out, an appended phase, a live run that exposed what the suite hid; a tool missing from
-     the sidecar, a wait that hit a cap, a call the harness refused. What happened, when, how it
-     resolved, what it says. The driver appends refuted findings and funding-consult merges here
+<!-- What happened to this run that an uneventful one would not have had: a bail-out, an
+     appended phase, a blocked proof re-routed, a live run that exposed what the suite hid. What
+     happened, when, how it resolved, what it says about the slice. What got in your way while
+     you worked — a tool missing from the sidecar, a wait that hit a cap, a call the harness
+     refused — is not an event of the run and does not go here: post it to Fieldnotes, as the
+     host's CLAUDE.md says. The driver appends refuted findings and funding-consult merges here
      itself. -->
 
 ## Bugs

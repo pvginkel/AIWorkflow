@@ -94,9 +94,10 @@ Four ideas span the files and explain most design choices:
    agents (`test-agent`, `test-fixer`, `rebase-agent`) which pin `model:` in their own definitions.
 4. **The loops bail, they don't chat:** exit 3 = error, exit 4 = operator question. `state.json`,
    `bailout.json` and the exit code are the entire interface to the launching session — loop stdout
-   never reaches it. What an agent noticed but the loop will not act on has one destination —
-   the slice's `close-out.md` (`plugins/dev/docs/close-out.md`) — never a tracker card per
-   finding.
+   never reaches it. What an agent noticed about the work but the loop will not act on has one
+   destination — the slice's `close-out.md` (`plugins/dev/docs/close-out.md`) — never a tracker
+   card per finding. What got in its way while working goes to Fieldnotes instead (the host's
+   `~/.claude/CLAUDE.md`), which is why every dispatched role is spawned with that MCP server.
 
 **Portability is the constraint on every change.** The pipeline is generic; each project describes
 itself through `.kubecoder/project.yaml` and an `.aiworkflowrc` (TOML at the repo root: the spec

@@ -784,6 +784,8 @@ def test_dispatch_line_names_the_report_and_this_tool_once():
     # to guess `list --file …` or `list <report>`, fail, and read --help).
     assert f"`python3 {tool} append|note|strike /specs/slices/007_x/close-out.md …`" in line
     assert "`list`" in line and "never edit the file by hand" in line
+    # The two-channel rule rides every dispatch: a bare consult reads nothing else.
+    assert "`fieldnotes` MCP tool `post`" in line
     assert not line.endswith("\n")
 
 

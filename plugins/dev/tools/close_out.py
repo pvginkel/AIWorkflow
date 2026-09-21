@@ -91,13 +91,17 @@ REPORT_NAME = "close-out.md"
 # a dispatch that names it names the copy that will run.
 TOOL_PATH = Path(__file__).resolve()
 
-# The one sentence every dispatch carries about the report: where it is and
-# that this tool is the only way to write to it. Both loops use it as-is.
+# What every dispatch carries about the report: where it is, that this tool
+# is the only way to write to it, and what does not belong in it (close-out.md
+# § What it is — the host's CLAUDE.md has the rule in full). Both loops use it
+# as-is; it is the one text a bare consult, which has no agent definition,
+# is sure to read.
 DISPATCH_LINE = """\
 The slice's close-out report is {report}. Write to it only through
 `python3 {tool} append|note|strike {report} …` (`list` in place of the verb
 shows what is there — ids, headlines, Consequence lines);
-never edit the file by hand.\
+never edit the file by hand. The report is about the work; what got in
+your way while working goes to the `fieldnotes` MCP tool `post` instead.\
 """
 
 FOLD_OPEN = "<details><summary>struck — body kept for the record</summary>"

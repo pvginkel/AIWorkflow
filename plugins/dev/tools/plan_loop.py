@@ -371,7 +371,7 @@ class PlanLoop:
                 run_kc_session(
                     prompt=prompt, cwd=str(self.repo_root),
                     timeout=NUDGE_TIMEOUT, resume_session=session_id,
-                    extra_env=SPAWN_ENV, flags=spawn_flags(role),
+                    extra_env=SPAWN_ENV, flags=spawn_flags(role, self.log),
                     progress=lambda line: self._emit(f"    {label} {line}"),
                 )
         except subprocess.TimeoutExpired:
@@ -418,7 +418,7 @@ class PlanLoop:
                     prompt=prompt, cwd=str(self.repo_root),
                     timeout=TIMEOUTS[role], agent=role, model=model,
                     effort=effort, extra_env=SPAWN_ENV,
-                    flags=spawn_flags(role),
+                    flags=spawn_flags(role, self.log),
                     progress=lambda line: self._emit(f"    {label} {line}"),
                     on_session=_note_session,
                 )

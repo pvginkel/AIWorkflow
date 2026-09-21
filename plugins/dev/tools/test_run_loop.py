@@ -16,6 +16,7 @@ import io
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -39,6 +40,14 @@ stamp_phase = run_loop.stamp_phase
 # is the repo root — every session the loop would spawn is faked anyway.
 PROJECT = "app"
 run_loop.load_project_dirs = lambda cwd: {PROJECT: Path(cwd)}
+
+# spawn_flags copies the promoted MCP servers out of the user-level
+# ~/.claude.json. That seam is stubbed with a home that does not exist, so no
+# test reads or writes the operator's own files; nothing is promoted and the
+# flags are the bare trim. The tests that exercise the promotion point the
+# seam at a throwaway home of their own (`promoted_home`).
+NO_HOME = Path(tempfile.gettempdir()) / "aiworkflow-suite-no-home"
+run_loop._user_home = lambda: NO_HOME
 
 
 class FakeGit:
@@ -451,6 +460,44 @@ class patched:
         for name, value in self.saved.items():
             setattr(self.module, name, value)
         return False
+
+
+class promoted_home(patched):
+    """Point the promoted-MCP read and write at a throwaway home and drop the
+    per-process flag cache on the way in and out, so one test's answer never
+    becomes the next one's."""
+
+    def __init__(self, home, claude_json=None):
+        self.home = Path(home)
+        self.home.mkdir(parents=True, exist_ok=True)
+        if claude_json is not None:
+            (self.home / run_loop.USER_CLAUDE_JSON).write_text(claude_json)
+        super().__init__(run_loop, _user_home=lambda: self.home)
+
+    @property
+    def config_path(self):
+        return self.home / run_loop.PROMOTED_MCP_FILE
+
+    def __enter__(self):
+        run_loop._PROMOTED_MCP.clear()
+        return super().__enter__()
+
+    def __exit__(self, *exc):
+        run_loop._PROMOTED_MCP.clear()
+        return super().__exit__(*exc)
+
+
+# An invented ~/.claude.json: the promoted server, one that must not travel,
+# and the rest of the file's top-level keys the copy must ignore.
+FAKE_CLAUDE_JSON = json.dumps({
+    "numStartups": 12,
+    "mcpServers": {
+        "fieldnotes": {"type": "http", "url": "https://fieldnotes.invalid/mcp",
+                       "headers": {"Authorization": "Bearer sekrit-token"}},
+        "jenkins": {"type": "http", "url": "https://jenkins.invalid/mcp"},
+    },
+    "projects": {"/work/app": {"mcpServers": {"fieldnotes": {"type": "sse"}}}},
+})
 
 
 V = {
@@ -4051,9 +4098,10 @@ def test_dispatch_passes_model_and_effort_explicitly():
 def test_dispatch_trims_the_prefix_per_role():
     """Every dispatch passes `--disable-slash-commands`; every role but the
     test-agent — the one that drives CI through the operator's Jenkins MCP
-    server — also passes `--strict-mcp-config`. Nudges carry the resumed
-    role's flags: a prefix that differs from the original's misses the
-    cache."""
+    server — also passes `--strict-mcp-config` plus the `--mcp-config` naming
+    the promoted servers, so it spawns with those and nothing else. Nudges
+    carry the resumed role's flags: a prefix that differs from the original's
+    misses the cache."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         script = [
@@ -4064,15 +4112,120 @@ def test_dispatch_trims_the_prefix_per_role():
             ("doc-writer", {"outcome": "done", "summary": "ok"}),
         ]
         r = SpawningLoop(slice_dir, script, repo_root=repo)
-        with patched(run_loop, run_kc_session=r.run_kc_session):
+        home = promoted_home(Path(tmp) / "home", FAKE_CLAUDE_JSON)
+        with home, patched(run_loop, run_kc_session=r.run_kc_session):
             assert run_to_exit(r) == 0
-        by_role = dict(r.session_flags)
-        for role in ("code-writer", "code-reviewer", "consult", "doc-writer"):
-            assert by_role[role] == ["--disable-slash-commands",
-                                     "--strict-mcp-config"], role
-        assert by_role["test-agent"] == ["--disable-slash-commands"]
-    assert run_loop.spawn_flags(None) == run_loop.spawn_flags("consult")
-    assert "--strict-mcp-config" not in run_loop.spawn_flags("test-agent")
+            by_role = dict(r.session_flags)
+            for role in ("code-writer", "code-reviewer", "consult",
+                         "doc-writer"):
+                assert by_role[role] == [
+                    "--disable-slash-commands", "--strict-mcp-config",
+                    "--mcp-config", str(home.config_path)], role
+            assert by_role["test-agent"] == ["--disable-slash-commands"]
+            assert run_loop.spawn_flags(None) == run_loop.spawn_flags("consult")
+            assert "--strict-mcp-config" not in run_loop.spawn_flags(
+                "test-agent")
+    # No promoted server anywhere: the flags are what they were before the
+    # promotion existed, and the test-agent's are untouched either way.
+    assert run_loop.spawn_flags("code-writer") == ["--disable-slash-commands",
+                                                   "--strict-mcp-config"]
+    assert run_loop.spawn_flags("test-agent") == ["--disable-slash-commands"]
+
+
+def test_promoted_mcp_servers_are_copied_by_name():
+    """The promoted entry travels verbatim — type, url and the bearer header —
+    and nothing else in ~/.claude.json does: not the operator's other
+    servers, not the file's other top-level keys, not the per-project
+    sections."""
+    with tempfile.TemporaryDirectory() as tmp:
+        home = promoted_home(Path(tmp) / "home", FAKE_CLAUDE_JSON)
+        with home:
+            path, notes = run_loop.write_promoted_mcp_config()
+            assert path == home.config_path
+            assert notes == []
+            assert json.loads(path.read_text()) == {"mcpServers": {
+                "fieldnotes": {
+                    "type": "http", "url": "https://fieldnotes.invalid/mcp",
+                    "headers": {"Authorization": "Bearer sekrit-token"}}}}
+
+
+def test_the_promoted_config_is_private_and_written_atomically():
+    """It carries a bearer token, so it is written 0600 and under the user's
+    home, where no repo and no slice folder can pick it up — and by temp file
+    plus rename: one home serves the environments running loops concurrently,
+    so a write that dies half-way must leave the file a reader is loading
+    exactly as it was, and leave no debris beside it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        with promoted_home(Path(tmp) / "home", FAKE_CLAUDE_JSON) as home:
+            path, notes = run_loop.write_promoted_mcp_config()
+            assert path == home.config_path and notes == []
+            assert stat.S_IMODE(path.stat().st_mode) == 0o600
+            assert path.is_relative_to(home.home)
+            live = path.read_text()
+
+            class no_space:
+                loads = staticmethod(json.loads)
+
+                @staticmethod
+                def dump(*_args, **_kw):
+                    raise OSError("no space left on device")
+
+            with patched(run_loop, json=no_space):
+                failed, notes = run_loop.write_promoted_mcp_config()
+            assert failed is None
+            assert any("could not write" in note for note in notes)
+            assert path.read_text() == live
+            assert [p.name for p in path.parent.iterdir()] == [path.name]
+
+
+def test_the_promoted_token_never_reaches_the_flags():
+    """Only the path is passed; the entry — and the token in it — stays in the
+    0600 file, so it cannot land on a command line, in log.txt or in
+    state.json."""
+    with tempfile.TemporaryDirectory() as tmp:
+        with promoted_home(Path(tmp) / "home", FAKE_CLAUDE_JSON):
+            flags = run_loop.spawn_flags("code-writer")
+            assert "sekrit-token" not in " ".join(flags)
+            assert "Bearer" not in " ".join(flags)
+            assert flags.count("--mcp-config") == 1
+
+
+def test_the_promoted_flags_are_fixed_for_the_process():
+    """A nudge resumes the session a dispatch created and must carry the same
+    prefix, so the answer is computed once and cannot move mid-run."""
+    with tempfile.TemporaryDirectory() as tmp:
+        with promoted_home(Path(tmp) / "home", FAKE_CLAUDE_JSON) as home:
+            first = run_loop.spawn_flags("code-writer")
+            (home.home / run_loop.USER_CLAUDE_JSON).write_text("{}")
+            assert run_loop.spawn_flags("code-writer") == first
+
+
+def test_an_unreadable_claude_json_promotes_nothing_and_never_fails():
+    """A missing file, malformed JSON, a missing `mcpServers` and a promoted
+    name that is not there all leave the flags as they were before the
+    promotion existed — one log line, no raise. The store being unreachable
+    must never cost a slice its run."""
+    bare = ["--disable-slash-commands", "--strict-mcp-config"]
+    cases = {
+        "missing": None,
+        "malformed": "{not json at all",
+        "no mcpServers": '{"numStartups": 3}',
+        "not an object": '{"mcpServers": []}',
+        "other servers only": '{"mcpServers": {"jenkins": {"type": "http"}}}',
+    }
+    for label, content in cases.items():
+        with tempfile.TemporaryDirectory() as tmp:
+            with promoted_home(Path(tmp) / "home", content) as home:
+                config, missing = run_loop.promoted_mcp_config()
+                assert config == {"mcpServers": {}}, label
+                assert missing == ["fieldnotes"], label
+                logged = []
+                assert run_loop.spawn_flags("code-writer",
+                                            logged.append) == bare, label
+                assert run_loop.spawn_flags("test-agent") == [
+                    "--disable-slash-commands"], label
+                assert len(logged) == 1 and "fieldnotes" in logged[0], label
+                assert not home.config_path.exists(), label
 
 
 def test_announce_lines_mark_job_starts():
@@ -4594,13 +4747,23 @@ def test_consults_dispatch_with_no_agent_at_all():
 
 def test_spawn_flags_reach_create_headless_verbatim():
     """kc's pass-through options carry claude's own flag names, so the
-    dispatch appends them as given — after the env vars, nothing in
-    between."""
+    dispatch appends them as given — after the env vars, nothing in between,
+    and a flag that takes a value keeps its value in the next argv slot
+    (`--mcp-config <path>`, not one joined word)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        with promoted_home(Path(tmp) / "home", FAKE_CLAUDE_JSON) as home:
+            args = _create_args(extra_env={"A": "1"},
+                                flags=run_loop.spawn_flags("code-writer"))
+            i = args.index("-e")
+            assert args[i:] == ["-e", "A=1", "--disable-slash-commands",
+                                "--strict-mcp-config", "--mcp-config",
+                                str(home.config_path)]
+            assert "--mcp-config" not in _create_args(
+                flags=run_loop.spawn_flags("test-agent"))
     args = _create_args(extra_env={"A": "1"},
                         flags=run_loop.spawn_flags("code-writer"))
-    i = args.index("-e")
-    assert args[i:] == ["-e", "A=1", "--disable-slash-commands",
-                        "--strict-mcp-config"]
+    assert args[args.index("-e"):] == ["-e", "A=1", "--disable-slash-commands",
+                                       "--strict-mcp-config"]
     assert "--strict-mcp-config" not in _create_args(
         flags=run_loop.spawn_flags("test-agent"))
     assert "--disable-slash-commands" not in _create_args()

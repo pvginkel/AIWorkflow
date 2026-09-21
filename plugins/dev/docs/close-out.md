@@ -28,16 +28,27 @@ report entry never does), and not a place to restate the plan. It is the release
 everything an agent would otherwise have to decide what to do with — the destination is fixed
 (put it in the report), the shape is fixed (the entry), and the operator routes.
 
+**About the work, never about working.** The report holds what the operator needs to judge what
+the slice hands over. What got in an agent's way while it worked — a tool the sidecar lacks, a
+wait that hit a cap, a call the harness refused, an error that hid its cause, a plugin defect —
+is the other channel's: the agent posts it to Fieldnotes with the `fieldnotes` MCP tool `post`,
+which the host's `~/.claude/CLAUDE.md` describes and every dispatched role is spawned with
+([agent-dispatch.md](agent-dispatch.md#spawning)). It reaches the operator curated and across
+projects instead of once per slice, and it is what keeps a report at the length that gets read.
+The line is the agent's to draw and is easy to draw: would the entry change what the operator
+thinks of this slice's outcome? An event that did — a proof that could not be run because the
+validator was down, so the criterion stays open — is the report's, as the event it was; the
+outage itself is Fieldnotes'.
+
 The sections, in the template's order — Summary, Outstanding actions, Notable events, Bugs, Open
 questions and rulings, Suggestions — each carry their own charter as a comment in the file, and
 the file's head comment names the tool that writes entries and the three labels (the shape itself
 is [the template's](close-out-template.md#the-entry)); every section may be empty, and empty is
-the normal state of most. Two things the comments do not spell out: **Notable events** takes
-workflow deviations as much as product ones (its charter names both kinds — a bail-out, an
-appended phase, a blocked proof re-routed, a tool missing from the sidecar, a wait that hit a
-cap) so plugin defects surface there instead of living only in `log.txt`; and **Suggestions** is
-where a fix idea may go — the reviewer's "describe the problem, never the fix" governs review
-files, not this section.
+the normal state of most. Two things the comments do not spell out: **Notable events** is the
+run's own story (a bail-out, an appended phase, a blocked proof re-routed), the driver's
+deterministic entries included, and not the place for what slowed an agent down, which is
+Fieldnotes'; and **Suggestions** is where a fix idea may go — the reviewer's "describe the
+problem, never the fix" governs review files, not this section.
 
 ## Reading aids
 

@@ -208,13 +208,110 @@ SPAWN_ENV = {
 SPAWN_FLAGS = ("--disable-slash-commands",)
 MCP_ROLES = frozenset({"test-agent"})
 
+# The operator's MCP servers every dispatched role keeps, named one by one and
+# copied verbatim out of the user-level `~/.claude.json` (`mcpServers`) into a
+# config of the loop's own, which `--mcp-config` names beside
+# `--strict-mcp-config`. Everything else in that file stays out of a role's
+# session, so the trim above and its reason — no tracker reach, no tool
+# schemas a role never calls — still hold. Fieldnotes is where a role posts
+# the friction it hit while working, which is why every role needs it. Naming
+# the server here is fine: AIWorkflow is bespoke to this host.
+PROMOTED_MCP_SERVERS = ("fieldnotes",)
 
-def spawn_flags(role: str | None) -> list[str]:
+# The two sides of that copy. A promoted entry carries a bearer token, so the
+# copy lives under the user's home, which no repo contains — never a command
+# line, a log line, state.json or a slice folder. The path is stable and the
+# content identical from every writer (one home serves the environments
+# running loops concurrently) and the write is atomic, so a concurrent reader
+# sees one version or the other, never half a file.
+USER_CLAUDE_JSON = ".claude.json"
+PROMOTED_MCP_FILE = ".claude/aiworkflow-promoted-mcp.json"
+
+
+def _user_home() -> Path:
+    """The home both sides of the promoted-MCP copy live under — one seam, so
+    a test never reads or writes the operator's own files."""
+    return Path.home()
+
+
+def promoted_mcp_config(source: Path | None = None) -> tuple[dict, list[str]]:
+    """PROMOTED_MCP_SERVERS as an `--mcp-config` payload, copied verbatim out
+    of the user-level `~/.claude.json`, plus the promoted names that file did
+    not hold. A missing file, unreadable JSON or a missing `mcpServers`
+    promotes nothing and is not an error — the role spawns without the server
+    rather than the run failing. Only user-level `mcpServers` is read; the
+    per-project sections of that file are not."""
+    src = Path(source) if source is not None else _user_home() / USER_CLAUDE_JSON
+    try:
+        data = json.loads(src.read_text())
+    except (OSError, ValueError):
+        data = {}
+    servers = data.get("mcpServers") if isinstance(data, dict) else None
+    if not isinstance(servers, dict):
+        servers = {}
+    promoted = {name: servers[name]
+                for name in PROMOTED_MCP_SERVERS if name in servers}
+    missing = [name for name in PROMOTED_MCP_SERVERS if name not in promoted]
+    return {"mcpServers": promoted}, missing
+
+
+def write_promoted_mcp_config(source: Path | None = None,
+                              dest: Path | None = None
+                              ) -> tuple[Path | None, list[str]]:
+    """Write the promoted config to `dest` — mode 0600, atomically (temp file
+    in the same directory, then os.replace) — and return (its path, the lines
+    to log). The path is None when nothing was promoted or the write failed;
+    neither stops a run."""
+    config, missing = promoted_mcp_config(source)
+    notes = [f"promoted MCP server {name!r} is not in ~/{USER_CLAUDE_JSON} — "
+             "dispatched roles spawn without it" for name in missing]
+    if not config["mcpServers"]:
+        return None, notes
+    target = Path(dest) if dest is not None else _user_home() / PROMOTED_MCP_FILE
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=str(target.parent),
+                                   prefix=".promoted-mcp-", suffix=".json")
+        try:
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "w") as handle:
+                json.dump(config, handle, indent=2)
+            os.replace(tmp, target)
+        except OSError:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
+    except OSError as exc:
+        notes.append(f"could not write the promoted MCP config: {exc}")
+        return None, notes
+    return target, notes
+
+
+# The promoted flags, computed once per process: a nudge resumes the session a
+# dispatch created and must carry the same prefix, so the answer cannot move
+# mid-run. Rewritten at the first dispatch, which is what picks up a changed
+# `~/.claude.json` on the next run.
+_PROMOTED_MCP: list[list[str]] = []
+
+
+def _promoted_mcp_flags(log=None) -> list[str]:
+    """`--mcp-config <path>` for the promoted servers, or nothing at all when
+    none of them was found."""
+    if not _PROMOTED_MCP:
+        path, notes = write_promoted_mcp_config()
+        for note in notes:
+            (log or _silent)(note)
+        _PROMOTED_MCP.append(["--mcp-config", str(path)] if path else [])
+    return list(_PROMOTED_MCP[0])
+
+
+def spawn_flags(role: str | None, log=None) -> list[str]:
     """The pass-through flags for one dispatch — or for the nudge of one,
     which resumes the same session and must carry the same prefix."""
     flags = list(SPAWN_FLAGS)
     if role not in MCP_ROLES:
         flags.append("--strict-mcp-config")
+        flags += _promoted_mcp_flags(log)
     return flags
 
 # The devlock wait: poll the flock nonblocking so the wait is loggable and
@@ -2488,7 +2585,7 @@ class RunLoop:
                     _, result = run_kc_session(
                         prompt=prompt, cwd=str(cwd), timeout=NUDGE_TIMEOUT,
                         resume_session=session_id, extra_env=SPAWN_ENV,
-                        flags=spawn_flags(role),
+                        flags=spawn_flags(role, self.log),
                         progress=lambda line: self._emit(
                             f"    {label} {line}"),
                     )
@@ -2659,7 +2756,7 @@ class RunLoop:
                         effort=effort,
                         resume_session=resume_session,
                         extra_env=SPAWN_ENV,
-                        flags=spawn_flags(role),
+                        flags=spawn_flags(role, self.log),
                         progress=lambda line: self._emit(
                             f"    {label} {line}"),
                         on_session=_note_session,

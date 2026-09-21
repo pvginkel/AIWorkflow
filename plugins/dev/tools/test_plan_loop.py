@@ -27,6 +27,12 @@ VERDICTS = plan_loop.VERDICTS
 # The spec tree's lease is the run loop's; its globals are read there.
 run_loop = sys.modules[plan_loop.SpecTreeLock.__module__]
 
+# spawn_flags (the run loop's, shared) copies the promoted MCP servers out of
+# the user-level ~/.claude.json. That seam is stubbed with a home that does
+# not exist, so no test reads or writes the operator's own files; the one test
+# that asserts the flags points it at a throwaway home of its own.
+run_loop._user_home = lambda: Path(tempfile.gettempdir()) / "planloop-no-home"
+
 PLAN_HEADER = """\
 # Test slice — plan
 
@@ -495,9 +501,18 @@ def test_dirty_paths_parse_spaces_and_renames():
 
 
 def test_dispatch_passes_model_and_effort_explicitly():
+    """Both planning dispatches carry the trim and the promoted MCP servers —
+    `spawn_flags` is the run loop's, shared, so the planners spawn with
+    fieldnotes and nothing else of the operator's."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         calls = []
+        home = Path(tmp) / "home"
+        home.mkdir()
+        (home / ".claude.json").write_text(json.dumps({"mcpServers": {
+            "fieldnotes": {"type": "http", "url": "https://fn.invalid/mcp"},
+            "youtrack": {"type": "http", "url": "https://yt.invalid/mcp"},
+        }}))
 
         loop = PlanLoop(slice_dir)
         loop._assert_agents = lambda: None
@@ -524,13 +539,22 @@ def test_dispatch_passes_model_and_effort_explicitly():
             return 0, result
 
         original = plan_loop.run_kc_session
+        original_home = run_loop._user_home
         plan_loop.run_kc_session = fake_session
+        run_loop._user_home = lambda: home
+        run_loop._PROMOTED_MCP.clear()
         try:
             code = run_to_exit(loop)
         finally:
             plan_loop.run_kc_session = original
+            run_loop._user_home = original_home
+            run_loop._PROMOTED_MCP.clear()
         assert code == 0
-        trim = ["--disable-slash-commands", "--strict-mcp-config"]
+        promoted = home / run_loop.PROMOTED_MCP_FILE
+        assert json.loads(promoted.read_text()) == {"mcpServers": {
+            "fieldnotes": {"type": "http", "url": "https://fn.invalid/mcp"}}}
+        trim = ["--disable-slash-commands", "--strict-mcp-config",
+                "--mcp-config", str(promoted)]
         assert calls == [("plan-writer", "opus", "xhigh", trim),
                          ("plan-reviewer", "opus", "xhigh", trim)]
 
