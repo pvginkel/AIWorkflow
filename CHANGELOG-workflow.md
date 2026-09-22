@@ -4,6 +4,12 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-22 — `slice_cost.py` prices Claude Opus 5.5 (v0.9.43)
+
+- `PRICES` gains `claude-opus-5-5`: $4 input / $20 output per MTok, cache reads $0.20 (0.05× base,
+  its own `cache_read` multiplier), cache writes at the usual 1.25×. Sessions on it priced $0
+  and were flagged unpriced before.
+
 ## 2026-09-21 — the close-out report is about the work; what got in an agent's way goes to Fieldnotes, and every dispatched role is spawned with that server (v0.9.42)
 
 From Fieldnotes' build (FieldnotesApp's implementation plan, step 7), no AIWF card. Fieldnotes is the

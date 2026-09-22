@@ -65,11 +65,13 @@ import turn_profile  # noqa: E402
 # loop's dispatches force the 5-minute cache TTL (SPAWN_ENV in run_loop.py), so
 # the 5-minute write multiplier is the right one. The cache-read multiplier is
 # per model: CACHE_READ_MULT unless the entry carries its own `cache_read` —
-# the Fable/Mythos 5.1 tier reads cache at 0.025× base ($0.25/MTok).
+# the Fable/Mythos 5.1 tier reads cache at 0.025× base ($0.25/MTok), Opus 5.5
+# at 0.05× ($0.20/MTok; its $4/$20 rates from the claude-api skill, 2026-09-22).
 PRICES: dict[str, dict[str, float]] = {
     "claude-fable-5-1":          {"input": 10.0, "output": 50.0, "cache_read": 0.025},
     "claude-mythos-5-1":         {"input": 10.0, "output": 50.0, "cache_read": 0.025},
     "claude-fable-5":            {"input": 10.0, "output": 50.0},
+    "claude-opus-5-5":           {"input": 4.0,  "output": 20.0, "cache_read": 0.05},
     "claude-opus-5":             {"input": 5.0,  "output": 25.0},
     "claude-opus-4-8":           {"input": 5.0,  "output": 25.0},
     "claude-opus-4-7":           {"input": 5.0,  "output": 25.0},
