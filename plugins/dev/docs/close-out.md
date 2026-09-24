@@ -91,8 +91,10 @@ other slice-folder artifact).
   entries' Consequence lines and evidence class (witnessed before read), never on their length,
   and says how many are witnessed. If the run ends before the doc
   phase, or the doc phase reports `blocked`/`question`, the operator reads the report raw.
-- **the driver** — deterministic entries only: a refuted finding and a funding-consult merge
-  each become a Notable event; the report is **rendered** (`close_out.py render` — live first,
+- **the driver** — deterministic entries only: a refuted finding, a funding-consult merge and
+  every stop of the run (entered by the resume that follows it) each become a Notable event; on
+  a phase that targets the spec repo, an agent's append left uncommitted is committed onto the
+  phase branch before the driver leaves it; the report is **rendered** (`close_out.py render` — live first,
   Bugs by severity, struck folded last; idempotent) immediately before the doc phase is
   dispatched, so the doc-writer's Focus lines are written over the order the operator will
   read, and again when the run completes, before the run header is stamped from `state.json`

@@ -40,7 +40,13 @@ much as the existing rule stated: the workflow's bookkeeping — this run's `log
 the driver has never checked it when the target was a code repo. Two guards keep the record
 intact: every executor prompt fences it off (stage by name, never `git add -A`), and a run
 record found *committed* onto the phase branch bails before the merge's `git checkout <base>`
-would unlink the file the live log handle is writing to.
+would unlink the file the live log handle is writing to. The same exclusion lets an edit to this
+slice's own tracked files pass the dirty-checks uncommitted — a reviewer's `close_out.py append`
+it did not commit — and `git checkout <base>` then refuses to overwrite it, leaving the shared tree
+stranded on the phase branch. So before the driver checks the base out of that branch, at the
+merge and at a bail, it commits those edits onto the branch itself: this slice's folder only,
+tracked files only, the run record excluded. A head that moved only inside `slices/` keeps the
+gate's green.
 
 The tree is shared with parallel sessions — other runs, plan loops, the operator's own — so
 where it sits matters past this run. **Its HEAD is leased.** Every session either loop runs
@@ -65,8 +71,10 @@ checks the run's branch out again itself) — so no parallel session commits ont
 branch by accident, and the run never adopts a foreign one: the base a run records for a repo is
 the branch it finds there the first time it touches it, and a `phase/…` branch is refused at the
 record. Before every dispatch and every commit of its own into the spec repo, inside the same
-hold, the driver asserts that repo is on its base — or on the phase branch, for a phase that
-targets it — and bails `blocked` otherwise; the plan loop keeps the same hold and the same
+hold, the driver asserts that repo is on its base — or on the phase branch, for every dispatch
+within a phase that targets it, its review-funding consult included — and bails `blocked`
+otherwise, naming a branch of this run's own as the run's fault rather than a parallel
+session's; the plan loop keeps the same hold and the same
 assertion ([plan-loop.md](plan-loop.md)). What that guards: another slice's plan-loop commits
 and stamps landing on a phase branch and surfacing as out-of-scope changes in its review, and
 the doc-writer rewriting `close-out.md` from a stale checkout.
@@ -151,8 +159,10 @@ whole plan is a feature of the review, not a cost. Then:
 - **Merge** — worktree clean; a base that moved under the branch (a parallel session's commits
   in a shared tree) has the branch rebased onto it first, the diff proven unchanged and the
   record's head repointed — an unclean rebase or a changed diff bails `blocked` with the branch
-  left as it is; then gate green on HEAD (re-run if it moved, the rebase included; red cannot
-  merge), ff-merge into the base branch, branch deleted, stamp.
+  left as it is and the rebase handed to the operator, and the resume takes the rebased branch
+  as the one it asked for (review kept, gate re-run; [runner-state.md](runner-state.md)); then
+  gate green on HEAD (re-run if it moved, the rebase included, unless the move is only inside the
+  spec repo's `slices/`; red cannot merge), ff-merge into the base branch, branch deleted, stamp.
 - Executor terminals: `question` pauses the run for the operator (exit 4 — the answer lands in
   the plan's rulings section and the run resumes); `blocked` is an error bail.
 
@@ -265,10 +275,11 @@ but never before a push the test phase's own procedure doc orders.
 loop did not act on is in the slice's `close-out.md` — who writes what there is
 [close-out.md](close-out.md). The driver's own part is deterministic: it creates the report at
 run start when planning left none, names the report and `close_out.py` (the only way to write to
-it) in every dispatch, enters refuted findings and funding-consult merges, renders the report
-into reading order before the doc phase and again at completion, and stamps the run header from
-`state.json` when the run completes; the launching session re-stamps it once the cost block has
-landed and files **one** tracker card pointing at the report.
+it) in every dispatch, enters refuted findings, funding-consult merges and every stop of the
+run (written by the resume that follows the stop, from `state.json`'s `bailouts`), renders the
+report into reading order before the doc phase and again at completion, and stamps the run
+header from `state.json` when the run completes; the launching session re-stamps it once the
+cost block has landed and files **one** tracker card pointing at the report.
 
 ## Protocol invariants
 

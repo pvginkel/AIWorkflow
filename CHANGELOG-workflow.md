@@ -4,6 +4,39 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-24 — phases that target the spec repo stop stranding the tree, a rebase the driver asks for is accepted, and every stop is in the report (v0.9.44)
+
+AIWF-2, AIWF-12 (the same bug, met on Ansible slice 022 and KubeCoder slice 231), AIWF-6 and
+AIWF-7 (both Ansible slice 024).
+
+- **The reviewer's uncommitted close-out entry no longer strands the spec tree.** On a phase
+  whose `Target:` is the spec repo, the dirty-checks leave `slices/` out, so a `close_out.py
+  append` nobody committed passed them. `git checkout <base>` then refused to overwrite it, and the
+  run bailed `protocol_failure` with the shared tree still on the phase branch, blocking every
+  other slice's preflight. Before it checks the base out of such a branch, at the merge and at a
+  bail, the driver now commits the edits itself: this slice's folder, tracked files, the run
+  record excluded. That is the commit the hand recovery made. A head that moved only inside
+  `slices/` keeps the gate's green. A restore that still fails says where the tree stayed, and so
+  does the lease's release line. Before this, the line read "spec tree released" over a tree
+  still on the phase branch.
+- **The review-funding consult expects the phase branch.** On a spec-repo phase it was the one
+  dispatch that asserted the base, so any review returning `issues` deadlocked the phase: the fix
+  round is funded only through that consult, and a resume re-ran the reviewer and bailed again
+  (three bails on slice 024 P6). The spec-on-base message now tells a branch of this run's own
+  from a parallel session's.
+- **A rebase the driver hands over is accepted on resume.** When the merge-time rebase does not
+  apply cleanly, or changes the phase's diff, the driver bails `blocked` and asks for the rebase.
+  Doing that rewrote the recorded commits, and the resume bailed `lost_work`. The only ways out
+  were to undo the rebase or to throw away the review, and slice 024's was a signoff four rounds
+  in. The bail now marks the phase `rebase_requested`. The resume takes a branch that carries the
+  base's tip as the one it asked for: `reviewed_head` follows it, the gate re-runs, and the review
+  stands. A branch that does not carry the tip yet gets the same request again. A rewrite nobody
+  asked for is still `lost_work`.
+- **Every stop is a Notable events entry.** The run header counted bail-outs from `state.json`,
+  but nothing wrote them into the report, so slice 022's Events said "the run recorded no
+  bail-out" under a header that counted one. `bailouts` rows now keep the stage and the clipped
+  details. The resume that follows a stop enters it once and marks the row `reported`.
+
 ## 2026-09-22 — `slice_cost.py` prices Claude Opus 5.5 (v0.9.43)
 
 - `PRICES` gains `claude-opus-5-5`: $4 input / $20 output per MTok, cache reads $0.20 (0.05× base,

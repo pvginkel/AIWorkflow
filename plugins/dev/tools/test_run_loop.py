@@ -78,6 +78,8 @@ class FakeGit:
         self.merged = set()      # shas the base branch carries
         self.rebased_head = None  # sha `rebase` moves HEAD to, when set
         self.fails = set()       # argv tuples this git refuses, as git does
+        self.not_in = set()      # (sha-or-ref, ref) ancestry answered no
+        self.commits = 0         # pathspec commits made through `root=`
 
     def __call__(self, *args, root=None, check=True):
         self.calls.append((root, args))
@@ -125,19 +127,55 @@ class FakeGit:
         if args[0] == "rebase" and args[1] != "--abort" and self.rebased_head:
             self.head = self.rebased_head
             return ""
+        if args[0] == "commit" and "--" in args:
+            self._commit_paths(args, root)
+            return ""
         return ""
+
+    @staticmethod
+    def _under(path, spec):
+        return path == spec or path.startswith(spec + "/")
 
     def _status(self, args, root):
         """Porcelain, honouring `:(exclude)<dir>` — the pathspec the driver
         holds its own bookkeeping out with when the target repo holds the
-        slice folder."""
+        slice folder — a plain `<dir>` pathspec, and `--untracked-files=no`."""
         text = self.dirty_roots.get(str(root), self.dirty)
         excluded = [a[len(":(exclude)"):] for a in args
                     if a.startswith(":(exclude)")]
+        tail = args[args.index("--") + 1:] if "--" in args else ()
+        included = [a for a in tail if not a.startswith(":(") and a != "."]
         return "\n".join(
             line for line in text.splitlines()
-            if not any(line[3:] == x or line[3:].startswith(x + "/")
-                       for x in excluded))
+            if not any(self._under(line[3:], x) for x in excluded)
+            and (not included
+                 or any(self._under(line[3:], x) for x in included))
+            and not ("--untracked-files=no" in args
+                     and line.startswith("??")))
+
+    def _commit_paths(self, args, root):
+        """`commit … -- <dir> [:(exclude)<path>…]`: the tracked changes the
+        pathspec matches are committed — the untracked stay dirty, and so
+        does everything outside it — and HEAD moves to a new commit."""
+        tail = args[args.index("--") + 1:]
+        excluded = [a[len(":(exclude)"):] for a in tail
+                    if a.startswith(":(exclude)")]
+        included = [a for a in tail if not a.startswith(":(")]
+
+        def committed(path):
+            return (any(self._under(path, x) for x in included)
+                    and not any(self._under(path, x) for x in excluded))
+
+        key = str(root)
+        text = self.dirty_roots.get(key, self.dirty)
+        kept = "\n".join(line for line in text.splitlines()
+                         if line.startswith("??") or not committed(line[3:]))
+        if key in self.dirty_roots:
+            self.dirty_roots[key] = kept
+        else:
+            self.dirty = kept
+        self.commits += 1
+        self.head = f"slicecommit{self.commits}"
 
     def ok(self, *args, root=None):
         """`git_ok` — the queries answered by an exit status. A recorded
@@ -146,6 +184,8 @@ class FakeGit:
         self.calls.append((root, args))
         if args[:2] == ("merge-base", "--is-ancestor"):
             sha, ref = args[2], args[3]
+            if (sha, ref) in self.not_in:
+                return False
             if ref.startswith("phase/"):
                 return sha not in self.lost
             return sha in self.merged
@@ -1464,7 +1504,81 @@ def test_bail_outs_and_appended_phases_are_recorded_for_the_header():
         assert "doc phase done" in header
         assert "$" not in header      # no cost block yet — omitted, not guessed
         log = (slice_dir / "log.txt").read_text()
-        assert "close-out report: A 0 · N 0 · B 0 · Q 0 · S 0" in log
+        # the one Notable event is that bail, written by the resume
+        assert "close-out report: A 0 · N 1 · B 0 · Q 0 · S 0" in log
+
+
+def notable_events(slice_dir):
+    report = load_report(slice_dir)
+    return report[report.index("## Notable events"):report.index("## Bugs")]
+
+
+def test_every_stop_becomes_one_notable_event_written_by_the_resume():
+    """The report's Events said the run recorded no bail-out beneath a
+    header counting one. Each stop is written once its resume has the report
+    and the spec tree back — once, however many resumes follow."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r1 = ScriptedLoop(slice_dir, [("code-writer", {
+            "outcome": "blocked", "summary": "no creds for the registry"})],
+            repo_root=repo)
+        assert run_to_exit(r1) == 3
+        row, = load_state(slice_dir)["bailouts"]
+        assert row["details"] == "no creds for the registry"
+        assert row["run_phase"] == "phases" and "reported" not in row
+        assert "### N" not in notable_events(slice_dir), "not while stopped"
+
+        r2 = ScriptedLoop(slice_dir, [("code-writer", {
+            "outcome": "question", "summary": "which registry, prod or dev?"})],
+            resume=True, repo_root=repo)
+        assert run_to_exit(r2) == 4
+        events = notable_events(slice_dir)
+        assert "### N1 — Run stopped (blocked) in P1\n" in events
+        assert "> no creds for the registry" in events
+        assert "resumed" in events
+        assert ("**Provenance:** witnessed — the driver's bail record in "
+                "state.json") in events
+        assert "**Consequence:** none the loop acts on" in events
+        assert "### N2" not in events, "the question is still open"
+        first, second = load_state(slice_dir)["bailouts"]
+        assert first["reported"] is True and "reported" not in second
+
+        r3 = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                      *TAIL], resume=True, repo_root=repo)
+        assert run_to_exit(r3) == 0
+        events = notable_events(slice_dir)
+        assert events.count("Run stopped (blocked) in P1") == 1
+        assert "### N2 — Run paused for an operator question in P1\n" \
+            in events
+        assert "> which registry, prod or dev?" in events
+        assert "### N3" not in events
+        assert all(b["reported"] for b in load_state(slice_dir)["bailouts"])
+
+
+def test_a_stop_outside_a_phase_and_a_row_without_details_are_reported():
+    """No phase named: the stage the run stopped in heads the entry. A row an
+    earlier driver wrote has no details, and says where they are."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(
+            tmp, phases=[("1", "First", PROJECT, True)])
+        state = merged_state(repo, "test")
+        state["bailouts"] = [
+            {"reason": "unpushed", "phase": None, "question": False,
+             "ts": "2026-09-20T10:11:12.000000+02:00"},
+            {"reason": "blocked", "phase": None, "question": False,
+             "ts": "2026-09-21T08:00:00.000000+02:00", "run_phase": "test",
+             "details": "the cluster was down\n\n### not a heading"}]
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        r = ScriptedLoop(slice_dir, [V["test_clean"], V["doc_done"]],
+                         resume=True, repo_root=repo)
+        assert run_to_exit(r) == 0
+        events = notable_events(slice_dir)
+        assert "### N1 — Run stopped (unpushed) outside any phase" in events
+        assert "the stop is in full in log.txt" in events
+        assert "Stopped 2026-09-20 10:11; resumed" in events
+        assert "### N2 — Run stopped (blocked) in the test phase" in events
+        # quoted, so an agent's text can never open an entry of its own
+        assert "> ### not a heading" in events and "### N3" not in events
 
 
 def test_writer_question_resume_dispatches_writer_with_tagged_ruling():
@@ -1904,8 +2018,16 @@ def test_specs_target_holds_the_bookkeeping_tree_out_of_the_dirty_check():
         assert run_to_exit(r) == 0
         specs_status = [c for root, c in r.fake_git.calls
                         if c[0] == "status" and str(root) == str(specs)]
-        assert specs_status, "the phase never dirty-checked its target"
-        assert all(":(exclude)slices" in c for c in specs_status)
+        dirty_checks = [c for c in specs_status
+                        if "--untracked-files=no" not in c]
+        assert dirty_checks, "the phase never dirty-checked its target"
+        assert all(":(exclude)slices" in c for c in dirty_checks)
+        # The one query inside that tree is the merge's look for this
+        # slice's own uncommitted edits: its folder, tracked files only —
+        # so the untracked run records above never reach a commit.
+        assert all(c[c.index("--") + 1:] == SLICE_EDITS
+                   for c in specs_status if c not in dirty_checks)
+        assert r.fake_git.commits == 0
         # the exclusion is scoped to the target that holds the slice folder:
         # the invoking repo's own checks are untouched
         assert all("--" not in c for root, c in r.fake_git.calls
@@ -1967,6 +2089,131 @@ def test_committed_run_record_bails_before_the_merge_checkout():
         assert "log.txt" in bail["details"]
         assert not [c for root, c in r.fake_git.mutations("merge")
                     if str(root) == str(specs)]
+
+
+# The pathspec the driver commits a spec-repo phase's slice-folder edits by:
+# this slice's folder, its live run record excluded.
+SLICE_EDITS = ("slices/074_test_slice",
+               ":(exclude)slices/074_test_slice/log.txt",
+               ":(exclude)slices/074_test_slice/state.json",
+               ":(exclude)slices/074_test_slice/phases")
+
+
+def leaves_close_out_unstaged(loop):
+    """A script step's effect in a spec-repo phase: the session appended to
+    this slice's close-out.md and committed nothing — beside the untracked
+    run record, a stray `git add` of its state, and a parallel slice's own
+    uncommitted edit."""
+    loop.fake_git.dirty_roots[str(loop.spec_root)] = (
+        " M slices/074_test_slice/close-out.md\n"
+        "?? slices/074_test_slice/log.txt\n"
+        "A  slices/074_test_slice/state.json\n"
+        " M slices/124_parallel_run/plan.md\n")
+
+
+def gated_specs(tmp):
+    """The spec tree with a manifest of its own, so its phase has a gate."""
+    (Path(tmp) / "specs" / ".kubecoder").mkdir(exist_ok=True)
+    (Path(tmp) / "specs" / ".kubecoder" / "project.yaml").write_text(
+        "projects: {}\n")
+
+
+def test_a_spec_repo_phase_commits_its_own_slice_edits_before_the_merge():
+    """Slice 231 P1: the reviewer appended a close-out entry and committed
+    nothing. The dirty check holds `slices/` out, so the merge's `git
+    checkout main` was the first to notice — it refused, and the shared tree
+    stayed on the phase branch. The driver commits this slice's own tracked
+    edits onto the branch first, and nothing of anyone else's."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"],
+                          (*V["review_signoff"], leaves_close_out_unstaged),
+                          *TAIL],
+                         repo_root=repo)
+        specs = specs_phase(slice_dir, tmp)
+        gated_specs(tmp)
+        assert run_to_exit(r) == 0
+        calls = [c for root, c in r.fake_git.calls if str(root) == str(specs)]
+        commit = next(c for c in calls if c[0] == "commit")
+        assert commit[1:3] == ("-m", "slice 074: slice-folder edits left "
+                                     "uncommitted on phase/074-P1")
+        assert commit[3:] == ("--", *SLICE_EDITS)
+        assert ("add", "-u", "--", *SLICE_EDITS) in calls
+        # on the phase branch, and before the checkout that leaves it
+        assert calls.index(("checkout", "-b", "phase/074-P1", "main")) \
+            < calls.index(commit) < calls.index(("checkout", "main"))
+        assert r.fake_git.branch_at[str(specs)] == "main"
+        left = r.fake_git.dirty_roots[str(specs)]
+        assert "slices/124_parallel_run/plan.md" in left, "a parallel slice's"
+        assert "slices/074_test_slice/log.txt" in left, "untracked: never swept"
+        assert "slices/074_test_slice/state.json" in left, "staged, still not"
+        assert "close-out.md" not in left
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["status"] == "merged"
+        assert ps["landed"]["head"] == "slicecommit1"
+        # The commit moved the head past the gate's green, but only inside
+        # the bookkeeping tree: the green still speaks for it.
+        assert r.gate_calls == [("1", True)]
+        assert ("diff", "--name-only", "abc123", "slicecommit1", "--", ".",
+                ":(exclude)slices") in calls
+        assert "committed this slice's uncommitted slice-folder edits onto " \
+               "phase/074-P1" in (slice_dir / "log.txt").read_text()
+
+    # A head that differs from the green outside that tree is re-gated.
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc(test=False, doc=False))
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"],
+                          (*V["review_signoff"], leaves_close_out_unstaged),
+                          V["consult_complete"]],
+                         repo_root=repo)
+        specs_phase(slice_dir, tmp)
+        gated_specs(tmp)
+        r.fake_git.diff_files = "api/controller-api.md"
+        assert run_to_exit(r) == 0
+        assert r.gate_calls == [("1", True), ("1", True)]
+
+
+def test_a_bail_commits_its_own_slice_edits_before_checking_the_base_out():
+    """The same refusal at a bail stranded the tree on the phase branch while
+    the log said "spec tree released" — and every other slice's preflight
+    found it there."""
+    blocked = ("code-reviewer", {"outcome": "blocked", "summary": "no creds"},
+               leaves_close_out_unstaged)
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], blocked], repo_root=repo)
+        specs = specs_phase(slice_dir, tmp)
+        assert run_to_exit(r) == 3
+        calls = [c for root, c in r.fake_git.calls if str(root) == str(specs)]
+        commit = next(c for c in calls if c[0] == "commit")
+        assert commit[3:] == ("--", *SLICE_EDITS)
+        assert calls.index(commit) < calls.index(("checkout", "main"))
+        assert r.fake_git.branch_at[str(specs)] == "main"
+        assert "slices/124_parallel_run/plan.md" \
+            in r.fake_git.dirty_roots[str(specs)]
+        log = (slice_dir / "log.txt").read_text()
+        assert "[bail] specs: left on phase/074-P1, checked main back out" \
+            in log
+        assert "spec tree released\n" in log
+
+    # A checkout that still fails says where the tree stayed — in its own
+    # line and in the release line — instead of reading as restored.
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], blocked], repo_root=repo)
+        specs = specs_phase(slice_dir, tmp)
+        r.fake_git.fails.add(("checkout", "main"))
+        assert run_to_exit(r) == 3
+        assert r.fake_git.branch_at[str(specs)] == "phase/074-P1"
+        log = (slice_dir / "log.txt").read_text()
+        assert ("could not check main back out (git checkout main failed) — "
+                "the tree stays on phase/074-P1; check main out there by "
+                "hand") in log
+        assert ("spec tree released — the tree is still on phase/074-P1, "
+                "not main") in log
+        assert "checked main back out" not in log
 
 
 def resume_state(target, stage="review"):
@@ -2141,6 +2388,75 @@ def test_a_spec_repo_phase_dispatches_on_its_own_phase_branch():
         # exactly two dispatches expect that branch: the writer and the
         # reviewer of the phase that owns it
         assert len([e for e, _ in seen if e == "phase/074-P1"]) == 2
+
+
+def test_a_spec_repo_phases_funding_consult_expects_its_phase_branch():
+    """AIWF-6: the review-funding consult sits inside the phase, with the
+    spec tree on that phase's branch — and asked for the base, so every such
+    phase whose review came back `issues` twice was deadlocked. The
+    completion consult, after the merge, still expects the base."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            V["exec_done"],
+            V["review_issues"], V["exec_done"],        # round 1 + auto fix
+            V["review_issues"],                        # r2 → the consult
+            ("consult", {"outcome": "merge", "summary": "advisory only"}),
+            *TAIL,
+        ]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        specs = specs_phase(slice_dir, tmp)
+        seen = []
+        real = r._assert_spec_on_base
+
+        def spy(expected=None, phase_id=None):
+            seen.append((expected, phase_id,
+                         r.fake_git.branch_at.get(str(specs))))
+            return real(expected, phase_id)
+
+        r._assert_spec_on_base = spy
+        assert run_to_exit(r) == 0
+        assert not r.script
+        consults = [s for s in r.spawned if s[0] == "consult"]
+        assert [s[1] for s in consults] == ["1", None]
+        # writer ×2, reviewer ×2, and the funding consult
+        assert seen.count(("phase/074-P1", "1", "phase/074-P1")) == 5
+        assert (None, None, "main") in seen    # the completion consult
+
+
+def test_a_spec_tree_on_this_runs_own_branch_is_not_blamed_on_a_parallel_run():
+    """The bail used to say a parallel session left the tree there — on the
+    run's own phase branch, a misdiagnosis that sends the operator hunting
+    for a session that does not exist."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        specs = (Path(tmp) / "specs").resolve()
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r.state = {"bases": {str(specs): "main"}, "phases": {}}
+
+        def details(branch, expected=None, phase_id="1"):
+            r.fake_git.branch_at[str(specs)] = branch
+            try:
+                r._assert_spec_on_base(expected, phase_id)
+            except Bailout as exc:
+                assert exc.reason == "blocked" and exc.phase == phase_id
+                return exc.details
+            raise AssertionError(f"{branch} passed the branch assertion")
+
+        own = details("phase/074-P1")
+        assert "this run's own branch for P1, where this dispatch expected " \
+               "main" in own
+        assert "driver defect" in own and "resuming will hit it again" in own
+        assert "parallel session left it" not in own
+        earlier = details("phase/074-P2")
+        assert "a branch of this run's own, not main" in earlier
+        assert "an earlier stop of this run left it there" in earlier
+        assert "check out main there and resume" in earlier
+        assert "a branch of this run's own" in details("phase/074-P1",
+                                                        phase_id=None)
+        other = details("phase/191-P3")
+        assert "a parallel session left it there" in other
+        assert "check out main there and resume" in other
 
 
 def test_the_report_refuses_a_spec_repo_off_the_recorded_base():
@@ -3241,6 +3557,9 @@ def test_a_branch_that_will_not_rebase_onto_the_moved_base_bails():
         assert "does not rebase onto it cleanly" in bail["details"]
         assert ("rebase", "--abort") in [c for _, c in r.fake_git.calls]
         assert not r.fake_git.mutations("merge")
+        # the request is on the record, for the resume to recognise
+        req = load_state(slice_dir)["phases"]["1"]["rebase_requested"]
+        assert (req["base"], req["from"]) == ("main", "old111")
 
 
 def test_a_rebase_that_changes_the_phases_diff_bails():
@@ -3258,6 +3577,84 @@ def test_a_rebase_that_changes_the_phases_diff_bails():
         assert "changed the phase's diff" in bail["details"]
         assert "left rebased on new222" in bail["details"]
         assert not r.fake_git.mutations("merge")
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["rebase_requested"]["from"] == "old111"
+        assert ps["reviewed_head"] == "abc123", "not repointed by the bail"
+
+
+def test_a_rebase_the_driver_asked_for_is_taken_on_resume():
+    """AIWF-7: the driver asked for a rebase and then refused the rebased
+    branch as lost work, offering only lossy remedies — here a signoff four
+    rounds in. Done as asked, the review stands, its head follows the
+    branch, and the merge re-runs the gate over the rewritten commits."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r1 = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"]],
+                          repo_root=repo)
+        moved_base(r1, "3")
+        r1.fake_git.fails.add(("rebase", "main"))
+        assert run_to_exit(r1) == 3
+        # The operator rebases by hand: the reviewed commit is on neither
+        # the branch nor the base, and the branch now carries main's tip.
+        r2 = ScriptedLoop(slice_dir, list(TAIL), resume=True, repo_root=repo)
+        r2.fake_git.branches.add("phase/074-P1")
+        r2.fake_git.lost.add("abc123")
+        r2.fake_git.head = "new333"
+        assert run_to_exit(r2) == 0
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["status"] == "merged"
+        assert ps["reviewed_head"] == "new333"
+        assert "rebase_requested" not in ps
+        assert r2.gate_calls == [("1", True)], "the gate re-runs"
+        assert ps["gate_green_commit"] == "new333"
+        assert [s[0] for s in r2.spawned] == ["consult", "test-agent",
+                                              "doc-writer"], "no re-review"
+        assert ("branch rebased by hand as the driver asked (old111 → "
+                "new333); the review stands, the gate re-runs") \
+            in (slice_dir / "log.txt").read_text()
+
+
+def rebase_requested_state(**phase):
+    state = resume_state(PROJECT, stage="merging")
+    state["phases"]["1"].update(
+        review_rounds=4, reviewed_head="old111", gate_green_commit="old111",
+        **phase)
+    return state
+
+
+def test_a_requested_rebase_not_yet_done_asks_again_and_no_request_is_lost_work():
+    ask = {"base": "main", "from": "old111", "ts": "t"}
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        (slice_dir / "state.json").write_text(
+            json.dumps(rebase_requested_state(rebase_requested=ask)))
+        r = ScriptedLoop(slice_dir, [], resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        r.fake_git.lost.add("old111")
+        r.fake_git.not_in.add(("main", "phase/074-P1"))
+        assert run_to_exit(r) == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "blocked" and bail["phase"] == "1"
+        assert "waits on the rebase the driver asked for" in bail["details"]
+        assert "Rebase phase/074-P1 onto main" in bail["details"]
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["rebase_requested"] == ask
+        assert ps["reviewed_head"] == "old111"
+        assert not r.gate_calls and not r.fake_git.mutations("merge")
+
+    # Without the request, the same branch is lost work, exactly as before.
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        (slice_dir / "state.json").write_text(
+            json.dumps(rebase_requested_state()))
+        r = ScriptedLoop(slice_dir, [], resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        r.fake_git.lost.add("old111")
+        assert run_to_exit(r) == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "lost_work"
+        assert load_state(slice_dir)["phases"]["1"]["reviewed_head"] \
+            == "old111"
 
 
 def test_doc_phase_prompt_states_diff_files_digest_verbs_and_doc():

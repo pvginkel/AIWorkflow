@@ -29,7 +29,10 @@ order, as last parsed), `generation` (follow-up generations spent), `test_rounds
 `gate_sweep` (the loop-tail sweep's record: per-command `results` with log paths, `green`, and
 the exact `commits` it ran on — reused while every swept HEAD matches, re-run otherwise),
 `consult_seq`, `in_flight`, `bailouts` (every stop this run made — `reason`, `phase`,
-`question`, `ts` — kept here because `bailout.json` is unlinked on resume), `appended_phases`
+`question`, `ts`, the `run_phase` it stopped in and its `details` clipped to 600 characters —
+kept here because `bailout.json` is unlinked on resume; the resume that follows a stop writes it
+into the close-out report's Notable events and marks the row `reported`, so each stop is entered
+once however often the run resumes), `appended_phases`
 (the ids the plan gained after the run started — a consult's, the test phase's, or the
 operator's, as opposed to the phases it began with), `holds_reported` (the repos held by the
 plan's `## Push holds` section that the driver has already entered in the close-out report — one
@@ -38,8 +41,11 @@ entry per repo per run), `phases`, and `history`.
 Per phase: `status` (`pending` | `in_progress` | `merged`), `stage` (`executor` | `gate` |
 `review` | `merging` | `null`), `branch`, `target`, `executor_rounds`, `gate_fix_rounds`,
 `review_rounds`, `reviewed_head`, `gate_runs`, the gate's evidence pair `gate_green_commit` /
-`gate_green_log`, and `landed` — set at the ff-merge: the phase's `root`, the `base` sha its
-branch was cut from and the `head` that fast-forwarded the base branch. That range is the phase's
+`gate_green_log`, `rebase_requested` (set when a merge-time rebase bails `blocked` and hands the
+rebase to the operator — `base`, `from` (the branch head it asked to rebase), `ts`; cleared when
+the resume takes the rebased branch, and at the merge), and `landed` — set at the ff-merge: the
+phase's `root`, the `base` sha its branch was cut from and the `head` that fast-forwarded the
+base branch. That range is the phase's
 own commits and nothing else, which is what the executor digest's touched list and the doc
 phase's diff files read; a phase whose merge landed before its record did (the reconcile path)
 has none, and the doc dispatch names it as missing from the files.
@@ -97,7 +103,7 @@ error the orchestrator diagnoses).
 | `timeout` | – | a driver-run gate or sweep command exceeded its limit, or an agent session did with no usable verdict on disk |
 | `unpushed` | – | a repo the slice touched was still behind `origin/<base>` after the test phase and its push nudges |
 | `protocol_failure` | – | a git command failed, an agent left uncommitted changes, a consult chose an unoffered action, the worktree was dirty at merge, an agent committed the driver's run record onto the phase branch, or a `CLAUDE.md` procedure-doc pointer is missing |
-| `lost_work` | – | a commit the driver recorded on a phase branch is not on it any more, or a `pending` phase's branch carries commits the run has no record of |
+| `lost_work` | – | a commit the driver recorded on a phase branch is not on it any more (and the driver did not ask for the rebase that rewrote it), or a `pending` phase's branch carries commits the run has no record of |
 
 Exit codes: **0** slice complete · **3** error bail · **4** operator question · **2** usage or
 precondition — a `state.json` that exists without `--resume`, a slice another driver is already
@@ -164,5 +170,10 @@ clear the name takes them with it. Rounds spent before the first gate or review 
 they leave no commit on the record to check. A base that moved under the branch by merge time is
 the one case the driver rewrites the record itself: the branch is rebased onto it, the phase's
 diff proven identical before and after, `reviewed_head` repointed at the rebased commit and the
-gate's green cleared so it re-runs — a hand rebase would leave both recorded commits on neither
-branch nor base, which is exactly the `lost_work` shape.
+gate's green cleared so it re-runs. When that rebase does not apply cleanly, or changes the
+phase's diff, the driver bails `blocked` and hands the rebase to the operator, marking the phase
+`rebase_requested`. A hand rebase leaves both recorded commits on neither branch nor base, the
+`lost_work` shape, so the mark is what tells the resume the rewrite was asked for: a branch that
+now carries the base's tip gets the same repointing (the review stands, the gate re-runs), and a
+branch that does not yet carry it bails `blocked` again with the same request. Without the mark,
+a rewritten branch is still `lost_work`.
