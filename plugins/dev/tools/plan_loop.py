@@ -38,7 +38,10 @@ invocations.
 
 The loop is the first to run on a slice, so it creates and commits the
 slice's close-out report (<slice>/close-out.md — docs/close-out.md) before
-its first dispatch.
+its first dispatch. At exit 0 it seeds that report's Outstanding actions
+from the plan: one entry per `## Push holds` repo, listing the criteria
+verification.json marks `owed_after` that push, and one per criterion owed
+after anything else — each entered once, however often the loop reruns.
 
 All loop and session output goes to <slice>/plan_log.txt; stdout carries the
 log-file line plus one terse timestamped line per pass start and the final
@@ -59,6 +62,7 @@ import json
 import os
 import subprocess
 import sys
+import textwrap
 import time
 from pathlib import Path, PurePosixPath
 
@@ -71,7 +75,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # plugin these tools ship in, never the repo being planned.
 import project_config  # noqa: E402
 import run_loop  # noqa: E402
-from close_out import ReportError, dispatch_line, init_report, report_path  # noqa: E402
+from close_out import (  # noqa: E402
+    ReportError,
+    append_entry,
+    dispatch_line,
+    find_by_headline,
+    init_report,
+    report_path,
+)
 from run_loop import (  # noqa: E402
     AGENTS_DIR,
     PHILOSOPHY_LINE,
@@ -85,6 +96,7 @@ from run_loop import (  # noqa: E402
     _read_json,
     _transcript_path,
     parse_plan,
+    parse_push_holds,
     plugin_version,
     run_kc_session,
     spawn_flags,
@@ -113,6 +125,19 @@ LOOP_OWNED_FILES = frozenset({
     "plan_state.json",    # loop-owned state; survives so a rerun can resume
     "plan_bailout.json",  # bail record, rewritten each run
 })
+
+# The close-out section the exit-0 seed writes to, and the widths it
+# shortens to: a headline (a free-text `owed_after` can run long) and a
+# criterion quoted in a hold's entry.
+OUTSTANDING = "Outstanding actions"
+SEED_HEADLINE_WIDTH = 90
+SEED_CRITERION_WIDTH = 100
+
+
+def _target_key(target: str) -> str:
+    """A hold target or an `owed_after` as the seed compares them — the
+    backticks and trailing slash a hand-written one may carry set aside."""
+    return target.strip().strip("`").strip().rstrip("/")
 
 
 class Bailout(Exception):
@@ -669,6 +694,133 @@ class PlanLoop:
                          f"slice {self.slice_num}: close-out report")
                 self.log(f"created {self.report_path.name} from the template")
 
+    # -- the exit-0 seed: Outstanding actions the plan already owes -----------
+
+    def _held_repo_name(self, target: str) -> str:
+        """The held repo's directory name as the run loop's push check names
+        it (`root.name` of `_resolve_target(target).git_root`): a sibling
+        path's own, resolved against the code repo; a component's, the code
+        repo's. The seeded headline is then the one that check would write,
+        so it finds this entry instead of adding its own."""
+        if target.startswith("/"):
+            return Path(target).name
+        if target.startswith("../"):
+            return (self.repo_root / target).resolve().name
+        return self.repo_root.name
+
+    def _criteria(self) -> list[dict]:
+        """verification.json's items, as far as they read — the seed is a
+        convenience at exit 0, not a second check of the file."""
+        try:
+            items = json.loads(
+                (self.slice_dir / "verification.json").read_text()
+            ).get("items", [])
+        except (OSError, ValueError, AttributeError):
+            return []
+        if not isinstance(items, list):
+            return []
+        return [item for item in items if isinstance(item, dict)]
+
+    def _owed_entries(self) -> list[tuple[str, str, str, str]]:
+        """(headline, body, consequence, provenance) per Outstanding action
+        the plan owes the operator, as it stands at exit 0: one per `## Push
+        holds` repo, naming the criteria verification.json marks `owed_after`
+        that target; one per criterion whose `owed_after` names anything
+        else — an operator action the run cannot take either."""
+        try:
+            holds, errors = parse_push_holds(self.plan_path.read_text())
+        except OSError:
+            holds, errors = [], []
+        for error in errors:
+            self.log(f"push holds: {error} — not seeded")
+        owed: list[tuple[str, str, str]] = []   # (id, description, after)
+        for item in self._criteria():
+            after = item.get("owed_after")
+            if isinstance(after, str) and after.strip():
+                owed.append((str(item.get("id") or "?"),
+                             " ".join(str(item.get("description") or "").split()),
+                             " ".join(after.split())))
+
+        def row(vid: str, desc: str) -> str:
+            short = textwrap.shorten(desc, SEED_CRITERION_WIDTH,
+                                     placeholder=" …")
+            return f"- {vid} — {short}" if desc else f"- {vid}"
+
+        entries: list[tuple[str, str, str, str]] = []
+        for target, why in holds:
+            name = self._held_repo_name(target)
+            after = [o for o in owed if _target_key(o[2]) == _target_key(target)]
+            body = f"`plan.md`'s `## Push holds` section holds `{target}`: {why}"
+            consequence = (f"until you push it, nothing {name} deploys "
+                           "carries the slice")
+            provenance = "read — `plan.md`'s `## Push holds`"
+            if after:
+                ids = ", ".join(vid for vid, _, _ in after)
+                body += (
+                    "\n\nCriteria owed after that push — the run cannot "
+                    "prove them, so they stay open until the push lands and "
+                    "are settled after it:\n\n"
+                    + "\n".join(row(vid, desc) for vid, desc, _ in after))
+                consequence += (f", and {ids} "
+                                + ("stays" if len(after) == 1 else "stay")
+                                + " unproven")
+                provenance += " and `verification.json`'s `owed_after`"
+            entries.append((f"Push {name} by hand when its hold lifts", body,
+                            consequence + ".",
+                            provenance + ", seeded by the plan loop"))
+
+        held = {_target_key(target) for target, _ in holds}
+        for vid, desc, after in owed:
+            if _target_key(after) in held:
+                continue
+            entries.append((
+                textwrap.shorten(f"Settle {vid} after {after}",
+                                 SEED_HEADLINE_WIDTH, placeholder=" …"),
+                (f"{vid} — {desc}\n\n" if desc else "")
+                + f"`verification.json` marks {vid} owed after: {after}. "
+                "The run cannot take that action; settle the criterion once "
+                "it has happened.",
+                f"{vid} stays unproven until then; the test phase does not "
+                "settle it.",
+                "read — `verification.json`'s `owed_after`, seeded by the "
+                "plan loop"))
+        return entries
+
+    def _seed_outstanding(self) -> None:
+        """At exit 0, enter the Outstanding actions the plan already owes
+        into the close-out report, so the operator's runbook does not hang on
+        a later role noticing them. A headline the section already carries,
+        live or struck, is left be: the loop reruns after questions and
+        adjudication, and a slice may be replanned. Appended entries are
+        committed under the same lease and branch check as `_ensure_report`;
+        a report that refuses an entry is logged, never a failed plan."""
+        entries = self._owed_entries()
+        if not entries:
+            return
+        with self._spec_tree("close-out outstanding actions"):
+            self._assert_on_base()
+            seeded = 0
+            for headline, body, consequence, provenance in entries:
+                try:
+                    eid = find_by_headline(self.slice_dir, OUTSTANDING,
+                                           headline)
+                    if eid is not None:
+                        self.log(f"close-out {eid} already holds: {headline}")
+                        continue
+                    eid = append_entry(self.slice_dir, OUTSTANDING, headline,
+                                       body, consequence=consequence,
+                                       provenance=provenance)
+                except ReportError as e:
+                    self.log(f"close-out entry not written ({e}): {headline}")
+                    continue
+                seeded += 1
+                self.log(f"close-out {eid}: {headline}")
+            if seeded:
+                self.git("add", str(self.report_path))
+                self.git("commit", "-m",
+                         f"slice {self.slice_num}: seed close-out "
+                         "outstanding actions")
+
     def run(self) -> None:
         if not (self.slice_dir / "slice.md").exists():
             print(f"Error: {self.slice_dir} has no slice.md", file=sys.stderr)
@@ -740,6 +892,7 @@ class PlanLoop:
                                   details=f"unknown phase {phase!r}")
             self._verify_review_on_file()
             self._verify_plan_parses()
+            self._seed_outstanding()
         except Bailout as bail:
             self._bail(bail)
         except KeyboardInterrupt:

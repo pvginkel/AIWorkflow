@@ -76,6 +76,10 @@ other slice-folder artifact).
 - **plan-writer / plan-reviewer** — out-of-scope observations about the spec or the estate;
   events during planning. Their in-scope findings and questions keep their existing routes (the
   review file, the `questions` verdict, the interactive session).
+- **the plan loop** — at its exit 0, one Outstanding action per repo the plan's `## Push holds`
+  holds, listing the criteria `verification.json` marks `owed_after` that push, and one per
+  criterion owed after anything else ([plan-template.md](plan-template.md)). Each is entered
+  once: the push check notes the seeded hold entry instead of writing its own.
 - **code-writer** — anything out of the phase's scope it noticed; notable events in its session.
 - **code-reviewer** — its advisory findings, as Bug or Suggestion entries, in the report's shape;
   the review file keeps the full finding and stays the evidence trail.
@@ -149,7 +153,8 @@ dispose is the operator's.
 
 ## Lifecycle
 
-1. The plan loop creates `close-out.md` at its first dispatch; planning agents append.
+1. The plan loop creates `close-out.md` at its first dispatch; planning agents append; the loop
+   seeds the Outstanding actions the plan already owes at its exit 0.
 2. The run loop creates it if planning did not (a slice planned before this report existed),
    appends throughout; the completion consult reconciles; the driver renders; the doc-writer
    writes Summary and Focus lines; the driver renders again and stamps the header when the run

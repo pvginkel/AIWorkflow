@@ -44,7 +44,11 @@ plan is the queue). A plan that already parses with phases (a reset re-plan) ent
 The loop is the first thing to run on a slice, so it creates the slice's **close-out report**
 (`close-out.md`, from the plugin's template) and commits it before its first dispatch, and every
 dispatch names the report and `close_out.py`, the only way to write to it; what the planning
-agents write there is [close-out.md](close-out.md)'s. Every dispatch also names the project's
+agents write there is [close-out.md](close-out.md)'s. At exit 0 the loop seeds the report's
+Outstanding actions from the plan: one entry per push-hold repo, listing the criteria owed after
+that push, and one per criterion owed after anything else. It commits them under the same lease
+and branch check, and a headline the section already holds, live or struck, is not entered
+again, however often the loop reruns. Every dispatch also names the project's
 **change-discipline doc** (`.aiworkflowrc`'s `design_philosophy`) — the same pointer the run
 loop's dispatches carry, so the rules a plan's phases will be held to are in view while the plan
 is written and reviewed, not discovered at execution.
@@ -87,7 +91,8 @@ names, pseudo-code, or a specced implementation. Read on demand, never inlined.
 **`verification.json`** — outcome-level acceptance criteria, complete against slice.md's numbered
 requirements 1:1 in the operator's wording, with `file:line` evidence citations where a criterion
 rests on a code fact. Coverage-preservation criteria allowed; doc-truth universals banned.
-Checked off in the run loop's test phase.
+Checked off in the run loop's test phase, except a criterion marked `owed_after` an action the
+run cannot take, a held push above all ([plan-template.md](plan-template.md)).
 
 ## The reviewer's charter
 

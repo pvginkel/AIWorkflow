@@ -5,15 +5,20 @@ pointers, and how all of them are wired into main.
 it is checked before the repo is resolved, and triage — which dispatches
 nothing — is deliberately exempt. `check_synced` / `sync_roots`: which
 checkouts the environment syncs, and what fast-forward, rebase, ahead-only,
-dirty, detached, no upstream and a dead remote each do. The phase pointers and the devlock
-follow. The kc/manifest/clean-tree/baseline checks are not covered here.
+dirty, detached, no upstream and a dead remote each do. A repo on a run loop's
+phase branch — live run, bailed run, no slice folder — is refused before either
+the sync or the clean-tree check acts on it. The phase pointers and the devlock
+follow. The kc/manifest/baseline checks and the rest of clean-tree are not
+covered here.
 
 Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_preflight.py` or via pytest.
 """
 
 import contextlib
+import fcntl
 import importlib.util
 import io
+import os
 import shutil
 import subprocess
 import tempfile
@@ -366,6 +371,8 @@ def test_a_branch_without_an_upstream_is_refused():
         code, message = refused(preflight.check_synced, APP, None)
     assert code == 1
     assert "App" in message and "feature/x" in message and "upstream" in message
+    assert "--set-upstream-to=origin/feature/x" in message, (
+        "a branch that is no run's keeps the set-upstream advice")
     assert not subproc.called("fetch")
 
 
@@ -424,6 +431,146 @@ def test_plan_and_run_sync_the_environment_and_triage_does_not():
     run = preflight.PROFILES["run"]
     assert (run.index("clean_tree") < run.index("synced")
             < run.index("baseline_build"))
+
+
+# -- a run loop's phase branch -----------------------------------------------
+
+@contextlib.contextmanager
+def held_run_lock(lock, note):
+    """Hold `lock` the way the run loop's SliceLock does — an exclusive flock
+    on a read-write fd, the holder's note written into it — for the block."""
+    fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        os.ftruncate(fd, 0)
+        os.write(fd, note.encode())
+        yield
+    finally:
+        os.close(fd)
+
+
+def a_spec_repo(tmp, *slices):
+    """A spec repo on disk with these slice folders (paths under `slices/`)
+    and a git dir for the spec-tree lease's files."""
+    spec = Path(tmp) / "Specs"
+    for rel in slices:
+        (spec / "slices" / rel).mkdir(parents=True)
+    (spec / "slices").mkdir(parents=True, exist_ok=True)
+    (spec / ".git").mkdir()
+    return spec
+
+
+def on_branch(branch, spec):
+    """Every repo answers `branch` to symbolic-ref, and the spec repo its git
+    dir; nothing else is scripted — an upstream included, so a check that
+    reached the sync would fetch."""
+    return scripted_subprocess([
+        ("symbolic-ref", (0, f"{branch}\n", "")),
+        (("rev-parse", "--absolute-git-dir"), (0, f"{spec / '.git'}\n", "")),
+    ])
+
+
+def no_upstream_advice(message):
+    return "--set-upstream-to" not in message and "`-u`" not in message
+
+
+HOLDER = "host: env-b\npid: 4242\nstarted: 2026-09-24T10:00:00+00:00\n"
+
+
+def test_a_live_runs_phase_branch_names_the_run_and_says_wait():
+    """KubeCoder slice 232: the shared spec tree sat on slice 231's phase
+    branch while 231 ran, and preflight advised tracking or pushing it —
+    advice that changes a live run's branch. Now it names the run (its folder,
+    run.lock's holder, the spec tree's lease holder) and says to wait, and it
+    does so before the upstream check: this branch answers one, yet nothing
+    is fetched."""
+    with tempfile.TemporaryDirectory() as tmp:
+        spec = a_spec_repo(tmp, "231_spec_tree_lease")
+        (spec / ".git" / "dev-spec-tree.holder").write_text(
+            "slice 231 P1 (phase/231-P1)\npid: 4242\n")
+        lock = spec / "slices" / "231_spec_tree_lease" / "run.lock"
+        subproc = on_branch("phase/231-P1", spec)
+        with held_run_lock(lock, HOLDER), synced(subproc, roots=(spec,)):
+            code, message = refused(preflight.check_synced, spec,
+                                    a_config(spec_repo=spec))
+            still_held = preflight.run_lock_holder(lock)
+            note_after = lock.read_text()
+    assert code == 1
+    assert "`Specs`" in message and "phase/231-P1" in message
+    assert "231_spec_tree_lease" in message
+    assert "host: env-b" in message and "pid: 4242" in message
+    assert "slice 231 P1 (phase/231-P1)" in message
+    assert "live" in message and "Wait" in message
+    assert no_upstream_advice(message)
+    assert not subproc.called("fetch")
+    assert note_after == HOLDER, "the probe must not truncate the holder's note"
+    assert still_held == HOLDER.strip(), "the probe must not take the lock away"
+
+
+def test_a_phase_branch_whose_run_is_gone_says_to_check_the_base_back_out():
+    """run.lock with a note but no flock is a run that bailed (the flock goes
+    with the process). A code repo's doc-phase branch here: the slice folder
+    is still found in the spec repo, and the stale note is left as it was."""
+    with tempfile.TemporaryDirectory() as tmp:
+        spec = a_spec_repo(tmp, "231_spec_tree_lease")
+        lock = spec / "slices" / "231_spec_tree_lease" / "run.lock"
+        lock.write_text(HOLDER)
+        subproc = on_branch("phase/231-docs", spec)
+        with synced(subproc):
+            code, message = refused(preflight.check_synced, APP,
+                                    a_config(spec_repo=spec))
+        note_after = lock.read_text()
+    assert code == 1
+    assert "`App`" in message and "phase/231-docs" in message
+    assert "not running" in message and "log.txt" in message
+    assert "base branch back out" in message
+    assert "pid: 4242" not in message, "a dead run's note names no one"
+    assert no_upstream_advice(message)
+    assert note_after == HOLDER
+
+
+def test_a_phase_branch_with_no_slice_folder_gets_the_generic_refusal():
+    """No folder to find a run.lock in — so preflight cannot say whether the
+    run is live, only what kind of branch it is and both ways out."""
+    with tempfile.TemporaryDirectory() as tmp:
+        spec = a_spec_repo(tmp, "backlog/230_other", "completed/229_older")
+        subproc = on_branch("phase/231-P2", spec)
+        with synced(subproc, roots=(spec,)):
+            code, message = refused(preflight.check_synced, spec,
+                                    a_config(spec_repo=spec))
+    assert code == 1
+    assert "phase/231-P2" in message and "slice 231" in message
+    assert "not a branch to push or track" in message
+    assert no_upstream_advice(message)
+
+
+def test_the_slice_folder_is_found_in_backlog_and_completed_too():
+    """`slices/` holds a running slice, but a phase branch can outlive the
+    move — the folder is looked up in all three."""
+    with tempfile.TemporaryDirectory() as tmp:
+        spec = a_spec_repo(tmp, "240_running", "backlog/241_queued",
+                           "completed/242_done")
+        found = [preflight.find_slice_dir(spec, n)
+                 for n in ("240", "241", "242", "24")]
+    assert [d.name if d else None for d in found] == [
+        "240_running", "241_queued", "242_done", None]
+
+
+def test_a_dirty_target_on_a_live_phase_branch_hears_wait_not_stash():
+    """The clean-tree check runs before the sync, and its "commit or stash"
+    is exactly wrong for a live run's writer mid-phase in the target repo."""
+    with tempfile.TemporaryDirectory() as tmp:
+        spec = a_spec_repo(tmp, "231_spec_tree_lease")
+        lock = spec / "slices" / "231_spec_tree_lease" / "run.lock"
+        subproc = scripted_subprocess([
+            ("symbolic-ref", (0, "phase/231-P3\n", "")),
+            (("status", "--porcelain"), (0, " M app.py\n", "")),
+        ])
+        with held_run_lock(lock, HOLDER), patched(preflight, subprocess=subproc):
+            code, message = refused(preflight.check_clean_tree, APP,
+                                    a_config(spec_repo=spec))
+    assert code == 1
+    assert "live" in message and "stash" not in message
 
 
 # -- one live call -----------------------------------------------------------

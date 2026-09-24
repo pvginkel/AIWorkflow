@@ -47,6 +47,9 @@ imports run_loop) and a CLI for the agents and the skills:
 `verb_usage(*verbs)` renders the named verbs' usage lines and argument help
 from this parser, for a dispatch that hands an agent the argument shapes
 (the doc-writer's) — one definition, so the block cannot drift from the CLI.
+`find_by_headline(slice, section, headline)` is the importable probe for a
+writer that must enter a thing once however often it runs: the id of the
+live or struck entry carrying that headline, or None.
 
 Headings are read outside fenced code blocks and outside HTML comments
 only — an entry that quotes a document's `## Bugs` or a `### B3` inside a
@@ -55,7 +58,8 @@ boundary nor shifts an id, and a heading quoted inside an HTML comment
 (the template's section charters are comments) is text too.
 
 Deliberately not here: any validation beyond "the section heading exists"
-and those smoke counts, dedup, disposition parsing.
+and those smoke counts, dedup on append (a caller that must not repeat an
+entry asks `find_by_headline` first), disposition parsing.
 
 Usage:
     close_out.py init <slice>
@@ -414,6 +418,47 @@ def _blocks(text: str, start: int, end: int, letter: str) -> list[_Block]:
         nxt = heads[i + 1][0] if i + 1 < len(heads) else len(body)
         blocks.append(_Block(start + off, start + nxt, line, letter))
     return blocks
+
+
+def _entry_headline(heading: str) -> str | None:
+    """The headline an entry heading carries, whitespace collapsed — from
+    `### B3 — <headline>` (a ` · <severity>` tail included) or the struck
+    `### ~~B3 — <headline>~~ — <reason>`; None for a heading not in the
+    entry shape."""
+    m = _ENTRY_RE.match(heading)
+    if m is None:
+        return None
+    rest = heading[m.end():]
+    if m.group(1):
+        rest = rest.split("~~", 1)[0]
+    return " ".join(re.sub(r"^\s*—", "", rest).split())
+
+
+def find_by_headline(slice_dir: Path | str, section: str,
+                     headline: str) -> str | None:
+    """The id of the entry under `## <section>` whose headline is
+    `headline`, live or struck, or None when the section holds none. The
+    comparison is on the headline as `append_entry` was handed it:
+    whitespace collapsed on both sides, the struck markup and reason set
+    aside, a ` · <severity>` tail ignored. For a writer that must enter a
+    thing once however often it runs — a struck entry counts, because
+    striking is how the entry was settled, not a request to write it again.
+    Raises ReportError as `append_entry` does: no report, no such
+    section."""
+    if section not in SECTIONS:
+        raise ReportError(f"unknown section {section!r}; sections are "
+                          + ", ".join(SECTIONS))
+    _, text = _read(slice_dir)
+    start, end = _section_span(text, section)
+    want = " ".join(headline.split())
+    for block in _blocks(text, start, end, SECTIONS[section]):
+        got = _entry_headline(block.heading) if block.eid else None
+        if got is None:
+            continue
+        stem, sep, grade = got.rpartition(" · ")
+        if want == got or (sep and grade.lower() in SEVERITIES and want == stem):
+            return block.eid
+    return None
 
 
 def _find_entry(text: str, eid: str) -> _Block:

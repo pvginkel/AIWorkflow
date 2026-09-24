@@ -4,6 +4,35 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-24 — preflight names the live run whose phase branch it meets, planning seeds the operator's runbook, and a plan says which phase allocates a new record id (v0.9.45)
+
+AIWF-13, AIWF-14 and AIWF-15, each ruled "yes" on the Fieldnotes triage of 2026-09-24.
+
+- **Preflight tells a live run's phase branch from a stranded one** (AIWF-13). A repo checked out
+  on another slice's `phase/NNN-…` branch met the no-upstream refusal, whose advice
+  (`--set-upstream-to`, or push with `-u`) would move a live run's branch under it. KubeCoder
+  slice 232 found out only by reading slice 231's `state.json` and `run.lock`. Preflight now
+  refuses a phase branch first, in any repo, upstream or not. It looks the slice up in the spec
+  repo and probes its `run.lock` without taking it. A held lock names the run (its holder note,
+  and the spec tree's lease holder in the spec repo) and says to wait for the phase to merge. A
+  free lock says a bail left the branch and to check the base back out. The clean-tree check
+  says the same instead of "commit or stash".
+- **The plan loop seeds Outstanding actions** (AIWF-14). On AnsibleSpecs slice 025 the plan held
+  HelmCharts' push and marked two criteria owed after it, and the report still read
+  "Outstanding actions (none)" after every phase merged. Only the completion consult caught it.
+  At exit 0 the plan loop now enters one entry per `## Push holds` repo, listing the criteria
+  owed after that push, and one entry per criterion owed after anything else. It commits them,
+  once however often it reruns (`close_out.find_by_headline`). The push check notes the seeded
+  hold entry instead of writing a second one. The criteria are marked with a new optional
+  `verification.json` field, `owed_after`, documented in `plan-template.md` for the plan-writer.
+  The operator chose seeding over naming the case in the test-agent's contract, which is
+  unchanged.
+- **Which phase allocates a new record id** (AIWF-15). When later phases cite a new record's id
+  (a superseding decision's, in a supersession marker or a code comment), `plan-template.md` now
+  says it: a spec-repo phase placed before them writes the record and allocates the id at append
+  time, and the later phases take the id from its done-record. A KubeCoder planner had spent a
+  long deliberation settling that.
+
 ## 2026-09-24 — phases that target the spec repo stop stranding the tree, a rebase the driver asks for is accepted, and every stop is in the report (v0.9.44)
 
 AIWF-2, AIWF-12 (the same bug, met on Ansible slice 022 and KubeCoder slice 231), AIWF-6 and

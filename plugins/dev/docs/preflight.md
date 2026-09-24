@@ -71,8 +71,18 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   already assumes — then the spec repo if it lives elsewhere.
 - **Which branch.** The checked-out one, against its upstream, because that *is* the base: the run
   loop records as a repo's base whatever branch is checked out the first time it touches that repo
-  ([`run-loop.md`](run-loop.md)). Detached HEAD → skipped. No upstream → refused (exit 1), naming
-  the repo and the branch: a checkout preflight cannot fetch for would otherwise report green having
+  ([`run-loop.md`](run-loop.md)). Detached HEAD → skipped. A run loop's `phase/<slice>-…` branch
+  → refused (exit 1) first, upstream or not, in any repo of the set. It is usually a live run's,
+  often another environment's: pushing it, tracking it or checking something else out would
+  change that run's branch under it. So preflight never gives that advice for one. It looks the
+  slice up in the spec repo (`slices/`, then `backlog/`, then `completed/`) and probes its
+  `run.lock` without taking it. A held lock names the run by its holder note (the spec tree's
+  lease holder as well, when the repo is the spec repo), and the message says to wait for the
+  phase to merge, since the run checks the base back out itself. A free lock says a bail left the
+  branch: commit any work on it, check the base back out, and retry. The clean-tree check refuses
+  a phase branch the same way before it looks at the tree, because "commit or stash" must not
+  reach a live run's writer. Any other branch with no upstream → refused (exit 1), naming the repo
+  and the branch: a checkout preflight cannot fetch for would otherwise report green having
   synced nothing, and reach the run with its push checked against no tracking ref.
 - **The rules.** Fetch the upstream's remote. Not behind → nothing; ahead-only is left alone
   (unpushed commits are the operator's, and the run pushes at its test phase). Behind and clean →
@@ -81,7 +91,8 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   the shared spec repo included.
 - **Exit codes.** A fetch that fails is environment (exit 2). A refused dirty tree, a branch with no
   upstream or a rebase that does not apply is the operator's to resolve by hand (exit 1) — the
-  relaying session does not resolve it either.
+  relaying session does not resolve it either. A repo on a phase branch is exit 1 too, but a
+  live run's branch is waited out, not resolved.
 - **Mid-run, the loop moves no local branch.** Its own fetches are refs-only
   ([`run-loop.md`](run-loop.md) § Fetch); the pull that brings a base up to its origin is the
   operator's call, made once here.

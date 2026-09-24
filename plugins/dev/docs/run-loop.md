@@ -219,8 +219,8 @@ whole plan is a feature of the review, not a cost. Then:
   ([plan-template.md](plan-template.md)) names repos this slice must not push. The driver leaves
   them out of the check, states them in the test phase's dispatch — whose procedure doc says
   *push*, so a held repo has to be named as a deterministic fact or the agent is left choosing
-  between two instructions — and writes one Outstanding-actions entry per held repo instead of
-  nudging and bailing. Before this, a plan's hold was invisible to the driver and the run had two
+  between two instructions — and, instead of nudging and bailing, notes the Outstanding-actions
+  entry the plan loop seeded for each held repo, or writes one for a hold added after planning. Before this, a plan's hold was invisible to the driver and the run had two
   exits: violate the ruling or bail. One slice held `../HelmCharts` (a push there deploys dev and
   prd together and rolls both controllers); the test agent honoured the ruling, was nudged twice,
   the driver bailed `unpushed` — and the run session pushed 38 seconds later, crash-looping prd.

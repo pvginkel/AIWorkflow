@@ -3378,6 +3378,29 @@ def test_a_held_sibling_is_reported_not_nudged():
         assert pushes and pushes[-1][0] == repo
 
 
+def test_a_hold_the_plan_loop_seeded_is_noted_not_entered_twice():
+    # The plan loop enters the hold at planning's exit 0 under the headline
+    # the push check writes; the run adds its word to that entry instead.
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = held_sibling_slice(tmp)
+        run_loop.init_report(slice_dir)
+        run_loop.append_entry(
+            slice_dir, "Outstanding actions",
+            "Push Sibling by hand when its hold lifts", "seeded at planning",
+            consequence="c", provenance="read — seeded by the plan loop")
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        r.fake_git.unpushed[str(sib)] = "2"
+        r._nudge = _never_nudge
+        assert run_to_exit(r) == 0
+        report = load_report(slice_dir)
+        assert report.count("Push Sibling by hand when its hold lifts") == 1
+        assert "seeded at planning" in report
+        assert "driver, push check" in report and "held as planned" in report
+        assert load_state(slice_dir)["holds_reported"] == [str(sib)]
+
+
 def test_a_held_repo_already_on_origin_owes_nothing():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo, sib = held_sibling_slice(tmp)

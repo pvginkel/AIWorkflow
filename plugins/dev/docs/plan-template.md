@@ -73,9 +73,11 @@ The mechanical rules the parser holds every author to:
   investigation and the plan review checks it (semantics: [plan-loop.md](plan-loop.md)); the
   run loop's parser ignores it, as it does every `##` section but the next one.
 - **`## Push holds` names the repos this run must not push** — one `- <target> — <why>`
-  bullet each (em dash), target in the same vocabulary as `Target:`. The driver skips them in
-  its push check, names them in the test phase's dispatch, and writes one Outstanding-actions
-  entry per held repo; the doc landing merges locally and does not push a held primary repo. A
+  bullet each (em dash), target in the same vocabulary as `Target:`. The plan loop enters one
+  Outstanding-actions entry per held repo in the close-out report at its exit 0; the driver skips
+  held repos in its push check, names them in the test phase's dispatch, and notes that entry
+  (or writes it, for a hold added after planning). The doc landing merges locally and does not
+  push a held primary repo. A
   bullet in that section the parser cannot read is a structure error, not a skip — a hold
   missed silently is a repo the driver pushes. The section is absent from almost every plan.
 - **`Target:` is the first line of every phase body** — a `kc project list` component name or
@@ -116,7 +118,12 @@ The mechanical rules the parser holds every author to:
   carries no slice task. So a requirement that *is* a doc change — a decision to close, a
   design fact to record, a page to correct — is a phase like any other work, with its own
   `Target:` (the spec repo resolves as a sibling, `../<SpecRepo>`), reviewed and merged by the
-  loop. A plan that hands such work to the doc phase is a defect the plan review flags.
+  loop. A plan that hands such work to the doc phase is a defect the plan review flags. When
+  later phases cite a record's new id (a decision that supersedes another, cited by a
+  supersession marker or a code comment), a phase targeting the spec repo, placed before every
+  phase that cites the id, writes that record and allocates the id at append time. The later
+  phases take the id from that phase's done-record, never from a number the plan names in
+  advance.
 - **The plan carries no auto-doc content.** The doc phase writes from the shipped diff and the
   requirements/rulings — the rulings, in the operator's words, are the only steering it gets.
   A doc-deliverable section, drafted prose, or a doc-content attachment for it is a defect the
@@ -134,6 +141,7 @@ The mechanical rules the parser holds every author to:
       "id": "V01",
       "area": "<subsystem or requirement cluster>",
       "description": "<outcome-level criterion, in the operator's wording>",
+      "owed_after": "<optional: what the run cannot do that settles it — e.g. ../HelmCharts>",
       "verdict": null,
       "rationale": "",
       "evidence": []
@@ -153,5 +161,11 @@ The mechanical rules the parser holds every author to:
 - **Every criterion is earned by the plan's phases.** One whose work no phase delivers — a doc
   change assigned to the loop's doc phase, which carries no slice task — is a planning defect
   the plan review flags, not a verdict the test phase can write.
+- **`owed_after` marks a criterion the run cannot settle** because it waits on an action no role
+  in the run may take: a push the plan holds (the hold's target exactly as `## Push holds`
+  writes it, e.g. `../HelmCharts`), or, as free text, another operator action. Leave it out
+  everywhere else; almost every criterion has none. The plan loop turns it into the close-out
+  report's Outstanding actions, listing the criterion in its hold's entry or giving it a
+  `Settle <id> after …` entry of its own, so the operator's runbook carries it from planning on.
 - `verdict`/`rationale`/`evidence` stay empty at planning time — the run loop's test phase
   checks items off (`pass`/`fail` with rationale and evidence).

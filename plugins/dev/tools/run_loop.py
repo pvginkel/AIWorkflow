@@ -99,10 +99,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import project_config  # noqa: E402
 from close_out import (  # noqa: E402
     ReportError,
+    add_note,
     append_entry,
     counts_line,
     dispatch_line,
     entry_counts,
+    find_by_headline,
     init_report,
     render_report,
     report_path,
@@ -4336,13 +4338,26 @@ class RunLoop:
         self._save_state()
         self.log(f"[push-check] {root.name} is held by the plan ({why}) — "
                  "reported, not nudged")
+        headline = f"Push {root.name} by hand when its hold lifts"
+        where = (f"The slice's commits sit on `{self._base_branch(root)}` in "
+                 "that repo and nowhere else; every repo the plan does not "
+                 "hold was pushed as usual.")
+        # The plan loop seeds this entry at planning's exit 0, under this
+        # headline: the run confirms it with a note rather than a second one.
+        try:
+            eid = find_by_headline(self.slice_dir, "Outstanding actions",
+                                   headline)
+            if eid is not None:
+                add_note(self.slice_dir, eid, "driver, push check",
+                         f"held as planned. {where}")
+                self.log(f"close-out {eid} noted: {headline}")
+                return
+        except ReportError as e:
+            self.log(f"close-out not searched for the seeded hold ({e})")
         self._report(
-            "Outstanding actions",
-            f"Push {root.name} by hand when its hold lifts",
+            "Outstanding actions", headline,
             f"`plan.md`'s `## Push holds` section holds `{root}`: {why}\n\n"
-            f"The slice's commits sit on `{self._base_branch(root)}` in that "
-            "repo and nowhere else; every repo the plan does not hold was "
-            "pushed as usual.",
+            + where,
             consequence="none in this run — the driver took the hold as the "
                         "ruling it is; nothing this repo deploys carries the "
                         "slice until you push it.",

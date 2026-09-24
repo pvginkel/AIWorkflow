@@ -573,6 +573,62 @@ def test_strike_refuses_an_already_struck_or_unknown_entry():
         assert report(slice_dir) == before
 
 
+# -- find_by_headline -------------------------------------------------------
+
+def test_find_by_headline_finds_live_and_struck_entries_and_none_otherwise():
+    """The dedup probe for a writer that must enter a thing once however
+    often it runs: a struck entry counts, since striking settled it."""
+    push = "Push HelmCharts by hand when its hold lifts"
+    settle = "Settle V05 after the operator's DNS cutover"
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        close_out.append_entry(slice_dir, "Outstanding actions", push, "b", **FULL)
+        close_out.append_entry(slice_dir, "Outstanding actions", settle, "b", **FULL)
+        close_out.append_entry(slice_dir, "Bugs", "presync traceback", "b", **FULL,
+                               severity="minor")
+        close_out.strike_entry(slice_dir, "A2", "settled in P4 — dig ~~ok~~",
+                               by="consult 1")
+        find = close_out.find_by_headline
+        assert find(slice_dir, "Outstanding actions", push) == "A1"
+        # whitespace collapses on both sides, as append collapses it
+        assert find(slice_dir, "Outstanding actions",
+                    " Push  HelmCharts by hand\nwhen its hold lifts ") == "A1"
+        # struck: the markup, reason and signature set aside — folded too
+        assert find(slice_dir, "Outstanding actions", settle) == "A2"
+        close_out.render_report(slice_dir)
+        assert find(slice_dir, "Outstanding actions", settle) == "A2"
+        # a severity tail is append's, not the headline's
+        assert find(slice_dir, "Bugs", "presync traceback") == "B1"
+        assert find(slice_dir, "Bugs", "presync traceback · minor") == "B1"
+        # None otherwise: a prefix, another section, a quoted heading
+        assert find(slice_dir, "Outstanding actions", "Push HelmCharts by hand") is None
+        assert find(slice_dir, "Suggestions", push) is None
+        text = report(slice_dir).replace(
+            "## Notable events\n",
+            f"## Notable events\n\n### N1 — seen\n\n```\n### N2 — {push}\n```\n")
+        (slice_dir / "close-out.md").write_text(text)
+        assert find(slice_dir, "Notable events", push) is None
+        assert find(slice_dir, "Notable events", "seen") == "N1"
+
+
+def test_find_by_headline_raises_like_append():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        for section in ("Outstanding actions", "Nope"):
+            try:
+                close_out.find_by_headline(slice_dir, section, "x")
+                raise AssertionError(f"{section}: no report must raise")
+            except ReportError:
+                pass
+        (slice_dir / "close-out.md").write_text("# Close-out\n\n## Bugs\n")
+        try:
+            close_out.find_by_headline(slice_dir, "Outstanding actions", "x")
+            raise AssertionError("a missing section must raise")
+        except ReportError as e:
+            assert "Outstanding actions" in str(e)
+
+
 # -- list -------------------------------------------------------------------
 
 def test_list_shows_ids_headlines_and_consequence_lines_only():

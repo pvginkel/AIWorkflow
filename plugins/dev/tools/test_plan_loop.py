@@ -598,6 +598,219 @@ def test_no_design_philosophy_means_no_pointer_line():
             assert "change-discipline" not in prompt, role
 
 
+# -- the exit-0 seed: Outstanding actions the plan already owes ---------------
+#
+# AIWF-14: a ruled push hold, and the criteria that wait on it, reached the
+# report only when a completion consult happened to notice. The loop enters
+# them itself at exit 0 — once, however often it reruns.
+
+close_out = sys.modules[plan_loop.ReportError.__module__]
+
+HOLD_SECTION = """
+## Push holds
+
+- ../HelmCharts — Ruling Q1: the chart bump rides the operator's own release.
+"""
+
+
+def criterion(vid, description, owed_after=None):
+    item = {"id": vid, "area": "deploy", "description": description,
+            "verdict": None, "rationale": "", "evidence": []}
+    if owed_after is not None:
+        item["owed_after"] = owed_after
+    return item
+
+
+def plans(holds, items):
+    """A writer effect: the plan completed with `holds` as its `## Push
+    holds` section, and verification.json holding `items`."""
+    def effect(loop):
+        loop.plan_path.write_text(PLAN_HEADER + holds + PHASE_BLOCK)
+        (loop.slice_dir / "verification.json").write_text(
+            json.dumps({"items": items}, indent=2) + "\n")
+    return effect
+
+
+def outstanding(slice_dir):
+    """The Outstanding-actions part of `close_out.py list`."""
+    view = close_out.list_view(slice_dir)
+    return view.split("## Notable events")[0]
+
+
+def commits(loop):
+    return [c for c in loop.git_calls if c[:1] == ("commit",)]
+
+
+SEED_COMMIT = ("commit", "-m", "slice 099: seed close-out outstanding actions")
+
+
+def test_a_push_hold_is_seeded_once_naming_the_criteria_owed_after_it():
+    items = [criterion("V01", "The app serves the new route."),
+             criterion("V02", "The dev cluster runs the new chart.",
+                       owed_after="../HelmCharts"),
+             criterion("V13", "Rolling back the chart restores the old "
+                              "route without a manual step.",
+                       owed_after="../HelmCharts/")]
+    writer = ("plan-writer", {"outcome": "done", "summary": "written"},
+              plans(HOLD_SECTION, items))
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        report = slice_dir / "close-out.md"
+        loop = ScriptedLoop(slice_dir, [writer, R_ISSUES])
+        assert run_to_exit(loop) == 4
+        assert "### A1" not in report.read_text(), "exit 0 only"
+        assert commits(loop) == [("commit", "-m", "slice 099: close-out report")]
+
+        fix = ScriptedLoop(slice_dir, [writer])
+        assert run_to_exit(fix) == 0
+        assert outstanding(slice_dir) == (
+            "## Outstanding actions\n"
+            "A1 — Push HelmCharts by hand when its hold lifts\n"
+            "    Consequence: until you push it, nothing HelmCharts deploys "
+            "carries the slice, and V02, V13 stay unproven.\n")
+        text = report.read_text()
+        assert ("`plan.md`'s `## Push holds` section holds `../HelmCharts`: "
+                "Ruling Q1: the chart bump rides the operator's own "
+                "release.") in text
+        assert "stay open until the push lands" in text
+        assert "- V02 — The dev cluster runs the new chart." in text
+        assert "- V13 — Rolling back the chart" in text
+        assert "V01" not in text
+        assert ("**Provenance:** read — `plan.md`'s `## Push holds` and "
+                "`verification.json`'s `owed_after`, seeded by the plan "
+                "loop") in text
+        assert ("add", str(report)) in fix.git_calls
+        assert commits(fix) == [SEED_COMMIT]
+        log = (slice_dir / "plan_log.txt").read_text()
+        assert "close-out A1: Push HelmCharts by hand when its hold lifts" in log
+
+        # A rerun of the finished loop enters nothing twice, commits nothing.
+        again = ScriptedLoop(slice_dir, [])
+        assert run_to_exit(again) == 0
+        assert report.read_text() == text
+        assert not commits(again)
+
+
+def test_an_owed_criterion_no_hold_covers_gets_its_own_settle_entry():
+    """A criterion owed after anything but a held repo's push is its own
+    action; a held component names the code repo, as the run loop would."""
+    long_wait = ("the operator rotates the Vault root token and re-runs the "
+                 "cluster bootstrap by hand against the production estate")
+    items = [criterion("V05", "Pods resolve the new internal zone.",
+                       owed_after="the operator's DNS cutover"),
+             criterion("V07", "The bootstrap reads the new token.",
+                       owed_after=long_wait)]
+    holds = "\n## Push holds\n\n- app — Ruling Q2: ships with the next tag.\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [("plan-writer", {"outcome": "done"},
+                                         plans(holds, items)), R_GO])
+        loop.repo_root = Path(tmp) / "CodeRepo"
+        assert run_to_exit(loop) == 0
+        view = outstanding(slice_dir)
+        assert view.startswith(
+            "## Outstanding actions\n"
+            "A1 — Push CodeRepo by hand when its hold lifts\n"
+            "    Consequence: until you push it, nothing CodeRepo deploys "
+            "carries the slice.\n"
+            "A2 — Settle V05 after the operator's DNS cutover\n"
+            "    Consequence: V05 stays unproven until then; the test phase "
+            "does not settle it.\n"
+            "A3 — Settle V07 after the operator rotates the Vault root "), view
+        a3 = view.split("A3 — ")[1].split("\n")[0]
+        assert len(a3) <= plan_loop.SEED_HEADLINE_WIDTH and a3.endswith(" …")
+        text = (slice_dir / "close-out.md").read_text()
+        assert "V05 — Pods resolve the new internal zone." in text
+        assert "marks V05 owed after: the operator's DNS cutover." in text
+        assert f"marks V07 owed after: {long_wait}." in text
+        assert ("**Provenance:** read — `plan.md`'s `## Push holds`, seeded "
+                "by the plan loop") in text
+        assert commits(loop)[-1] == SEED_COMMIT
+        # The shortened headline is the one the rerun looks up.
+        again = ScriptedLoop(slice_dir, [])
+        again.repo_root = loop.repo_root
+        assert run_to_exit(again) == 0
+        assert (slice_dir / "close-out.md").read_text() == text
+
+
+def test_no_hold_and_nothing_owed_leaves_the_report_alone():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        seen = []
+
+        def writer_effect(loop):
+            seen.append((slice_dir / "close-out.md").read_text())
+            plans("", [criterion("V01", "The app serves the new route.")])(loop)
+
+        loop = ScriptedLoop(slice_dir, [("plan-writer", {"outcome": "done"},
+                                         writer_effect), R_GO])
+        assert run_to_exit(loop) == 0
+        assert (slice_dir / "close-out.md").read_text() == seen[0]
+        assert commits(loop) == [("commit", "-m", "slice 099: close-out report")]
+
+
+def test_a_struck_entry_with_the_seeded_headline_is_not_entered_again():
+    """Striking is how the operator or the completion consult settled it —
+    a replan must not bring it back."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        close_out.append_entry(
+            slice_dir, "Outstanding actions",
+            "Push HelmCharts by hand when its hold lifts", "pushed",
+            consequence="none", provenance="read")
+        close_out.strike_entry(slice_dir, "A1", "pushed 2026-09-20",
+                               by="operator")
+        before = (slice_dir / "close-out.md").read_text()
+        loop = ScriptedLoop(slice_dir, [
+            ("plan-writer", {"outcome": "done"},
+             plans(HOLD_SECTION, [criterion("V02", "Runs the new chart.",
+                                            owed_after="../HelmCharts")])),
+            R_GO])
+        assert run_to_exit(loop) == 0
+        assert (slice_dir / "close-out.md").read_text() == before
+        assert not commits(loop)
+        log = (slice_dir / "plan_log.txt").read_text()
+        assert "close-out A1 already holds: Push HelmCharts" in log
+
+
+def test_a_report_that_refuses_the_seed_is_logged_not_a_failed_plan():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        (slice_dir / "close-out.md").write_text("# Close-out\n\n## Bugs\n")
+        loop = ScriptedLoop(slice_dir, [
+            ("plan-writer", {"outcome": "done"}, plans(HOLD_SECTION, [])),
+            R_GO])
+        assert run_to_exit(loop) == 0
+        assert not commits(loop)
+        log = (slice_dir / "plan_log.txt").read_text()
+        assert "close-out entry not written (no `## Outstanding actions`" in log
+
+
+def test_the_seed_commits_on_the_base_branch_only():
+    """The seed writes into the shared tree like every other commit of the
+    loop's: a tree moved off the base bails before anything is appended."""
+    def moves_the_tree(loop):
+        loop.branch = "phase/191-P3"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [
+            ("plan-writer", {"outcome": "done"}, plans(HOLD_SECTION, [])),
+            R_GO + (moves_the_tree,)])
+        assert run_to_exit(loop) == 3
+        bail = json.loads((slice_dir / "plan_bailout.json").read_text())
+        assert bail["reason"] == "blocked"
+        assert "is on phase/191-P3, not main" in bail["details"]
+        assert "### A1" not in (slice_dir / "close-out.md").read_text()
+        # Back on base, the rerun (phase done) seeds it.
+        rerun = ScriptedLoop(slice_dir, [])
+        assert run_to_exit(rerun) == 0
+        assert "### A1 — Push HelmCharts by hand" in \
+            (slice_dir / "close-out.md").read_text()
+        assert commits(rerun) == [SEED_COMMIT]
+
+
 # -- the shared spec tree ----------------------------------------------------
 #
 # The loop runs IN the spec repo, one working tree shared with every parallel

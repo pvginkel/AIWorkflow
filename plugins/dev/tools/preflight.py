@@ -45,7 +45,10 @@ The command runs the profile and relays this message verbatim on non-zero.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
+import os
+import re
 import shutil
 import subprocess
 import sys
@@ -196,7 +199,133 @@ def check_manifest(root: Path) -> None:
                 f"one (see {CONTRACT_DOC}).")
 
 
-def check_clean_tree(root: Path) -> None:
+def current_branch(repo: Path) -> str | None:
+    """The checked-out branch, None on a detached HEAD."""
+    branch = _git(["-C", str(repo), "symbolic-ref", "--quiet", "--short", "HEAD"])
+    return branch.stdout.strip() if branch.returncode == 0 else None
+
+
+# ---------------------------------------------------------------------------
+# A repo on a run loop's phase branch. The loop checks `phase/<slice>-P<id>`
+# (the doc phase: `phase/<slice>-docs`) out in the phase's target repo — the
+# shared spec tree included — and checks the base back out once the phase
+# merges, or at a bail. Met here, the branch is usually a live run's, often
+# another environment's: pushing it, tracking it or checking something else
+# out changes that run's branch under it. So such a repo is refused before any
+# other check looks at it, naming the run when its run.lock is held.
+# ---------------------------------------------------------------------------
+
+PHASE_BRANCH = re.compile(r"phase/(\d+)-")
+
+
+def find_slice_dir(spec_repo: Path, num: str) -> Path | None:
+    """Slice `num`'s folder: `slices/` while it runs, else backlog or
+    completed. None when the spec repo has none."""
+    for parent in ("slices", "slices/backlog", "slices/completed"):
+        folder = spec_repo / parent
+        if not folder.is_dir():
+            continue
+        for d in sorted(folder.iterdir()):
+            if d.is_dir() and d.name.split("_")[0] == num:
+                return d
+    return None
+
+
+def run_lock_holder(lock: Path) -> str | None:
+    """The holder's note when a live driver holds `lock`, else None.
+
+    A probe that must not disturb the holder: opened read-only and never
+    created, so the note is neither truncated nor rewritten; a shared lock
+    tried non-blocking, released at once (the window where a starting driver
+    would find it busy is that one call)."""
+    try:
+        fd = os.open(lock, os.O_RDONLY)
+    except OSError:
+        return None  # no run.lock — no run has held it
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except OSError:
+            note = os.read(fd, 4096).decode(errors="replace").strip()
+            return note or "(no holder note)"
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return None
+    finally:
+        os.close(fd)
+
+
+def spec_tree_holder(spec_repo: Path) -> str:
+    """The spec-tree lease's exclusive holder note, beside the lease in the
+    spec repo's git dir; "" when no phase holds it. Read, never locked."""
+    git_dir = _git(["-C", str(spec_repo), "rev-parse", "--absolute-git-dir"])
+    if git_dir.returncode != 0 or not git_dir.stdout.strip():
+        return ""
+    try:
+        return (Path(git_dir.stdout.strip())
+                / "dev-spec-tree.holder").read_text().strip()
+    except OSError:
+        return ""
+
+
+def _indented(note: str) -> str:
+    return "\n".join(f"  {line}" for line in note.splitlines())
+
+
+def refuse_phase_branch(repo: Path, branch: str | None,
+                        cfg: project_config.ProjectConfig | None) -> None:
+    """Refuse (exit 1) a repo on a `phase/` branch — telling a live run's
+    branch from one a bail left, and never advising a push or an upstream."""
+    if branch is None or not branch.startswith("phase/"):
+        return
+    name, path = repo.name, str(repo)
+    match = PHASE_BRANCH.match(branch)
+    num = match.group(1) if match else None
+    spec = cfg.spec_repo if cfg is not None else None
+    slice_dir = find_slice_dir(spec, num) if spec and num else None
+    head = f"`{name}` ({path}) is on `{branch}`"
+
+    if slice_dir is None:
+        whose = f" for slice {num}" if num else ""
+        where = f" under {spec / 'slices'}" if spec and num else ""
+        fail(1,
+             f"{head}, a run loop's phase branch{whose} — not a branch to "
+             f"push or track. Preflight found no slice folder{where} to tell "
+             f"whether that run is live. If it is, wait for its phase to "
+             f"merge (the run checks the base branch back out itself); if it "
+             f"is not, once any work on the branch is committed, check "
+             f"`{name}`'s base branch back out, then retry.")
+
+    lock = slice_dir / "run.lock"
+    holder = run_lock_holder(lock)
+    if holder is None:
+        fail(1,
+             f"{head}, a phase branch left by slice {num}'s run "
+             f"({slice_dir}), which is not running — nothing holds its "
+             f"run.lock. A bail leaves the branch checked out; the slice's "
+             f"log.txt says why. Once any work on the branch is committed, "
+             f"check `{name}`'s base branch back out, then retry. Never push "
+             f"a phase branch or give it an upstream: it is the run's own.")
+
+    tree = ""
+    if spec is not None and repo.resolve() == spec.resolve():
+        note = spec_tree_holder(spec)
+        if note:
+            tree = f"The spec tree's lease is held by:\n{_indented(note)}\n"
+    fail(1,
+         f"{head}, the phase branch of slice {num}'s run ({slice_dir}), and "
+         f"that run is live — {lock} is held by:\n{_indented(holder)}\n"
+         f"{tree}"
+         f"The run checked this branch out for its phase and checks the base "
+         f"branch back out itself once the phase merges. Wait for that, then "
+         f"retry. Do not set an upstream, push, or check anything out in "
+         f"`{name}` meanwhile — each would change a live run's branch under it.")
+
+
+def check_clean_tree(root: Path,
+                     cfg: project_config.ProjectConfig | None = None) -> None:
+    # A dirty tree on a phase branch is most likely a live run's writer at
+    # work — "commit or stash" is the one advice that must not reach it.
+    refuse_phase_branch(root, current_branch(root), cfg)
     result = _git(["-C", str(root), "status", "--porcelain"])
     if result.stdout.strip():
         fail(1,
@@ -239,9 +368,10 @@ def check_synced(root: Path, cfg: project_config.ProjectConfig | None) -> None:
     every sibling: the run loop records whatever branch it finds the first time
     it touches a repo (`_base_branch`), so the checked-out branch is the base
     the slice will build on — no fixed `main` is assumed. A repo with a detached
-    HEAD has nothing to pull onto and is skipped; a branch with no upstream is
-    refused, naming the repo and the branch — skipped, it would report green
-    having synced nothing.
+    HEAD has nothing to pull onto and is skipped; a repo on a run loop's phase
+    branch is refused first (`refuse_phase_branch`), upstream or not; any other
+    branch with no upstream is refused, naming the repo and the branch —
+    skipped, it would report green having synced nothing.
 
     Behind and clean fast-forwards; behind with local commits rebases, and a
     rebase that conflicts is aborted (leaving the repo as it was) and handed to
@@ -251,10 +381,10 @@ def check_synced(root: Path, cfg: project_config.ProjectConfig | None) -> None:
     """
     for repo in sync_roots(root, cfg):
         name, path = repo.name, str(repo)
-        branch = _git(["-C", path, "symbolic-ref", "--quiet", "--short", "HEAD"])
-        if branch.returncode != 0:
+        branch_name = current_branch(repo)
+        if branch_name is None:
             continue  # detached HEAD — nothing to pull onto
-        branch_name = branch.stdout.strip()
+        refuse_phase_branch(repo, branch_name, cfg)
         tracking = _git(["-C", path, "rev-parse", "--abbrev-ref",
                          "--symbolic-full-name", "@{u}"])
         if tracking.returncode != 0:
@@ -368,7 +498,7 @@ def main() -> None:
     if "devlock" in checks:
         check_devlock(cfg)
     if "clean_tree" in checks:
-        check_clean_tree(root)
+        check_clean_tree(root, cfg)
     if "synced" in checks:
         check_synced(root, cfg)
     if "baseline_build" in checks:
