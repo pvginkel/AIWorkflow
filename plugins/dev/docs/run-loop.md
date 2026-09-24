@@ -137,9 +137,12 @@ whole plan is a feature of the review, not a cost. Then:
   only**: the executor runs the linter once itself before handing back, and lint or build
   breakage is caught deterministically by the loop-tail sweep and the doc gate — so a per-phase
   lint would tax every phase to save the one that fixes it. Green is recorded
-  commit+log and stated in the reviewer's dispatch so the review never re-runs the suite. A red
-  gate spawns a **fresh executor fix round** (cap 3, then `gate_red` bails); there is no
-  separate fixer in the phase loop.
+  commit+log and stated in the reviewer's dispatch so the review never re-runs the suite; the
+  claim is about tests, never lint. A red gate spawns a **fresh executor fix round** (cap 3,
+  then `gate_red` bails); there is no separate fixer in the phase loop. A gate kc says **ran
+  nothing** (exit 3: the target defines no tests) is neither: the phase proceeds as with no
+  gate, no green is recorded, and the reviewer is told the target defines no tests, so the
+  state is unverified.
 - **Review** — fresh **code-reviewer** per round against the phase's outcome, the acceptance
   criteria (`verification.json`) and repo conventions. Round 1 full branch diff; rounds 2+ are
   delta-scoped to the fix range. A `blocking` tag needs an anchor from the closed list in the
@@ -179,7 +182,10 @@ whole plan is a feature of the review, not a cost. Then:
   `<slice>/sweeps/r<N>/`; the record is commit-stamped in `state.json` and reused only while
   every swept HEAD is exactly the swept commit — any movement (a consult committing mechanical
   residue, an appended phase merging) re-runs it, so the report a dispatch carries always
-  describes the tree that dispatch sees. The completion consult and the test phase both receive
+  describes the tree that dispatch sees. A command kc says ran nothing (exit 3, no statement
+  for that verb) is its own row, `nothing ran`: it neither reds the sweep nor holds the push,
+  and the green stance claims only the rows that ran. A sweep in which nothing ran at all is
+  unverified, not green. The completion consult and the test phase both receive
   it as deterministic fact — green suites are not re-run by agents — under one principle, stated
   in both dispatches with no special cases: **a branch whose gates are red is not pushed**. A
   red sweep is the consult's to act on — append a fixing phase, or bail with the question — and
@@ -251,18 +257,24 @@ whole plan is a feature of the review, not a cost. Then:
   rendered from `close_out.py`'s own parser, plus where the Summary and `Focus:` lines go — the
   `--help` round trips and the previous-slice style reads go with them. The driver then runs the
   full gate sweep — `kc project lint` + `build` + `test`, fail-fast (red is nudged back to the
-  writer's session) — checks local `<base>` against `origin/<base>` (the branch rebases onto
+  writer's session; a verb that ran nothing is not red) — checks local `<base>` against
+  `origin/<base>` (the branch rebases onto
   origin but ff-merges into local, so a local-ahead base bails `blocked` before anything is
   mutated), rebase-merges the branch onto the base branch and pushes; the dev
-  roll that push triggers is left to land on its own, untracked. **The devlock is taken again
-  here, for the landing alone** — before the fetch, so nothing another driver pushes lands between
-  the rebase target and the push, and let go once the push is out. The writer's session and the
+  roll that push triggers is left to land on its own, untracked. **The doc branch exists in the
+  primary repo only**: a doc edit in another repo the slice touched is committed on that repo's
+  checked-out base branch, and once the primary has landed, the driver pushes each such repo
+  whose base is ahead of its origin (its own `siblings` stage, so a resume after the landing
+  pushes only these). A held repo is reported, not pushed; a base that has diverged from its
+  origin bails `blocked` rather than being rebased. **The devlock is taken again here, for the
+  pushes alone** — before the fetch, so nothing another driver pushes lands between the rebase
+  target and the push, and let go once the last push is out. The writer's session and the
   gate sweep, the slow part of the phase, run outside it: after test-complete the slice's dev
   occupancy is over, and another slice's verification proceeds while this one's docs are written.
-  This is the only push the driver makes itself, so it is where a hold on the *primary* repo
-  lands: the branch rebases onto the local base instead (a held repo's origin is behind by
-  everything the slice did, which is what the local-ahead check exists to catch) and the landing
-  stops at the merge, taking no lock.
+  With a test phase, this landing is the only place the driver pushes the primary repo, so it
+  is where a hold on the *primary* repo lands: the branch rebases onto the local base instead
+  (a held repo's origin is behind by everything the slice did, which is what the local-ahead
+  check exists to catch) and the landing stops at the merge.
 
 **The generation bar** terminates the append loop: the first follow-up generation appends only
 work the plan *owes* and no phase delivered — a requirement, ruling or acceptance criterion left

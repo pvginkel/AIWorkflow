@@ -26,8 +26,11 @@ target repo — the branch the run found there, never a
 `phase/…` one; a bail checks each back out from the run's own branch), `known_phases` (the
 plan's phase ids in document
 order, as last parsed), `generation` (follow-up generations spent), `test_rounds`, `sweep_runs`,
-`gate_sweep` (the loop-tail sweep's record: per-command `results` with log paths, `green`, and
-the exact `commits` it ran on — reused while every swept HEAD matches, re-run otherwise),
+`gate_sweep` (the loop-tail sweep's record: per-command `results` with log paths and an
+`outcome` — `green`, `red` or `nothing_ran` (kc's exit 3), with `green` kept beside it — the
+sweep's own `outcome` (red on any red row, else green on any green row, else `nothing_ran`) and
+`green`, and the exact `commits` it ran on — reused while every swept HEAD matches, re-run
+otherwise),
 `consult_seq`, `in_flight`, `bailouts` (every stop this run made — `reason`, `phase`,
 `question`, `ts`, the `run_phase` it stopped in and its `details` clipped to 600 characters —
 kept here because `bailout.json` is unlinked on resume; the resume that follows a stop writes it
@@ -41,7 +44,9 @@ entry per repo per run), `phases`, and `history`.
 Per phase: `status` (`pending` | `in_progress` | `merged`), `stage` (`executor` | `gate` |
 `review` | `merging` | `null`), `branch`, `target`, `executor_rounds`, `gate_fix_rounds`,
 `review_rounds`, `reviewed_head`, `gate_runs`, the gate's evidence pair `gate_green_commit` /
-`gate_green_log`, `rebase_requested` (set when a merge-time rebase bails `blocked` and hands the
+`gate_green_log`, `gate_nothing_ran_commit` (the head the gate last ran nothing on — the
+reviewer is told the target defines no tests only when it is the commit under review),
+`rebase_requested` (set when a merge-time rebase bails `blocked` and hands the
 rebase to the operator — `base`, `from` (the branch head it asked to rebase), `ts`; cleared when
 the resume takes the rebased branch, and at the merge), and `landed` — set at the ff-merge: the
 phase's `root`, the `base` sha its branch was cut from and the `head` that fast-forwarded the
@@ -52,7 +57,8 @@ has none, and the doc dispatch names it as missing from the files.
 
 `history` is append-only, one entry per agent run plus one per gate run (role `gate`), one per
 loop-tail sweep (role `sweep`), one per doc gate (role `doc-gate`) and one per consult: `ts`,
-`phase`, `role`, `round`, `outcome`, `summary`, `session`, `transcript`, `duration_s`. A
+`phase`, `role`, `round`, `outcome`, `summary`, `session`, `transcript`, `duration_s` (a gate,
+sweep or doc-gate row's outcome is `green`, `red` or `nothing_ran`). A
 code-reviewer row additionally carries the verdict's `findings` list (id, severity, impact,
 category, anchor per finding — the review contract's telemetry) and a review-fix executor row
 its `refuted` list, exactly as the agent reported them. The

@@ -60,8 +60,8 @@ reviewed like any other.
    product, not the defect count. Report advisory findings once, plainly, without demanding
    resolution — the operator decides their disposition from the close-out report, not you.
 8. **The test gate is an input, not your work.** Your dispatch states whether the deterministic
-   gate ran green on the commit under review, with the log. Take it: do not re-run the suite or
-   the linter to confirm it. Targeted runs still earn their turn: a test you suspect is vacuous,
+   gate ran green on the commit under review, with the log. Take it: do not re-run the suite to
+   confirm it. Targeted runs still earn their turn: a test you suspect is vacuous,
    an uncovered case, a mutation proving a test catches what it claims. If the dispatch says the
    gate state is *unverified*, the branch's test state is unknown: say so in your review where it
    bears on a finding, and probe it with targeted runs — the suite is still not yours to run.

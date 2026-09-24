@@ -4,6 +4,37 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-24 — the gate claims only what it ran, and the doc phase pushes the doc commits it left in sibling repos (v0.9.47)
+
+AIWF-10 (a Fieldnotes report on Ansible slice 025 P4; the kc half is KC-81) and AIWF-11 (the
+Fieldnotes triage of 2026-09-24, "yes").
+
+- **The gate stops claiming lint.** The reviewer's green line said "Tests and lints pass", but
+  the phase gate runs `kc project test` only. It now says the tests pass, and so does
+  `code-reviewer.md`.
+- **kc's "nothing ran" exit reads as unverified, not green.** KC-81 gives `kc project
+  test|build|lint` exit 3 when the requested scope holds no statement for the verb (`KC_NOTHING_RAN`).
+  Before, that case exited 0, and slice 025 P4's reviewer was told the tests passed where
+  nothing had run. The phase gate now proceeds as with no gate. It records no green, spends no
+  fix round, never bails `gate_red` (including at the merge's re-gate), and tells the reviewer
+  the target defines no tests (`gate_nothing_ran_commit`). A sweep row reads `nothing ran`.
+  Such a row neither reds the sweep nor holds the push, and the green stances claim only the
+  rows that ran. A sweep in which nothing ran at all takes the unverified stance, so an empty
+  sweep's `green` is now false. The doc gate goes past a verb that ran nothing. History rows
+  carry `nothing_ran`, and `t4_readout.py` no longer counts them as red. **Release before KC-81
+  ships**: an older loop reads exit 3 as red and would spend fix rounds on a target with no
+  tests, then bail.
+- **The doc phase pushes sibling doc commits.** The doc branch exists in the primary repo only,
+  so a doc commit the writer made in a sibling repo stayed on that repo's local main, unpushed
+  and unreported. With a test phase, nothing after it pushes. Slice 025 left one in
+  ArgoCDTools for the close-out to push. The dispatch now says where sibling doc edits
+  go: the checked-out base branch there, never a new branch. A new doc-phase stage, `siblings`,
+  runs after the primary's landing and pushes every other touched repo whose base is ahead of
+  its origin, under the same devlock hold. It reports a held repo rather than pushing it, and
+  bails `blocked` on a diverged base rather than rebasing it. A resume at that stage pushes only
+  the siblings. The spec repo stays outside it, as it is outside every driver push. Sibling doc
+  commits are not doc-gated: the doc gate runs in the primary repo.
+
 ## 2026-09-24 — a sibling repo's component is a `Target:`, and the dry run works from the spec repo (v0.9.46)
 
 AIWF-8 (Ansible slice 024's close-out, entry S2: "make Target use project names … I think that's

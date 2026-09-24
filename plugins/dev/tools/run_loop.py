@@ -168,6 +168,13 @@ SESSION_ID_POLL = 5
 # where fixing it costs one phase instead of a per-phase tax).
 SWEEP_VERBS = ("lint", "build", "test")
 
+# kc's exit code for "nothing ran in the requested scope" (KC-81): `kc
+# project test|build|lint` exits 3 when its selection holds no statement for
+# the verb — `--project X` where X has none, or no `--project` and no
+# component with any. Beside it, 0 is green, 1 red and 2 a usage error. It is
+# neither green nor red: there is nothing to fix, and nothing was proved.
+KC_NOTHING_RAN = 3
+
 GATE_FIX_CAP = 3       # executor fix rounds against a red gate, per phase
 # Nudges at the test session over a repo it committed to but never pushed.
 # The driver checks rather than pushes: a slice touching several repos may
@@ -977,6 +984,27 @@ def load_project_dirs(cwd: Path) -> dict[str, Path]:
     return {e["name"]: Path(e["cwd"]) for e in entries}
 
 
+# A gate command's outcome, as the phase gate, the sweep and the doc gate
+# record it — and as a sweep row renders it.
+GATE_OUTCOME_LABELS = {"green": "GREEN", "red": "RED",
+                       "nothing_ran": "nothing ran"}
+
+
+def kc_outcome(returncode: int) -> str:
+    """A `kc project <verb>` exit code as a gate outcome. rc 2, kc's usage
+    error, reads as red here; the phase gate and the sweep, which name a
+    component kc listed, bail on it first as a driver bug."""
+    if returncode == 0:
+        return "green"
+    return "nothing_ran" if returncode == KC_NOTHING_RAN else "red"
+
+
+def sweep_row_outcome(row: dict) -> str:
+    """A sweep row's outcome — read off its `green` for a row recorded
+    before rows carried one (a resume over an older plugin's sweep)."""
+    return row.get("outcome") or ("green" if row.get("green") else "red")
+
+
 class SessionResult:
     """The bits of a driven turn the driver consumes downstream: the claude
     sessionId (for --resume across rounds and the transcript locator) and the
@@ -1673,9 +1701,9 @@ Write your review to {review_path} and your verdict to {verdict_path}.
 # about a different commit would be worse than one told nothing.
 GATE_GREEN_LINE = """\
 The deterministic test gate ran GREEN on this exact commit ({green_at}):
-`{gate_cmd}` — with full output in {gate_log}. Tests and lints pass; that is
-an established input to your review, not something to re-derive.
-Do not re-run the suite or the linter to confirm it. Targeted runs remain
+`{gate_cmd}` — with full output in {gate_log}. The tests pass; that is an
+established input to your review, not something to re-derive.
+Do not re-run the suite to confirm it. Targeted runs remain
 yours to make where they buy a finding: a single test you suspect is vacuous,
 a case the diff leaves uncovered, a mutation that proves a test actually
 catches the behavior it claims. The green says the tests pass, never that
@@ -1684,9 +1712,17 @@ they are adequate.\
 
 GATE_UNVERIFIED_LINE = """\
 No deterministic test gate is recorded green against this commit — the
-branch's test and lint state is unverified: say so in your review where it
-bears on a finding, and probe it with targeted runs; the suite is still not
-yours to run.\
+branch's test state is unverified: say so in your review where it bears on
+a finding, and probe it with targeted runs; the suite is still not yours to
+run.\
+"""
+
+# The unverified line's reason, when kc itself said why: the gate ran on this
+# commit and found nothing to run (KC_NOTHING_RAN).
+GATE_NOTHING_RAN_LINE = """\
+`{gate_cmd}` ran nothing on this exact commit ({ran_at}): the target defines
+no tests, so the branch's test state is unverified — say so in your review
+where it bears on a finding, and probe it with targeted runs.\
 """
 
 # The review-funding bar: stated by the driver (which knows the round number
@@ -1829,8 +1865,10 @@ exactly these commits:
 """
 
 SWEEP_STANCE_CONSULT_GREEN = """\
-Every row is GREEN: the merged tree lints, builds and tests clean — an
-established input to your judgment, not something to re-derive or re-run.\
+Every row that ran is GREEN: those commands pass on the merged tree — an
+established input to your judgment, not something to re-derive or re-run.
+A `nothing ran` row found nothing to run for its verb and proves nothing
+about it.\
 """
 
 SWEEP_STANCE_CONSULT_RED = """\
@@ -1843,8 +1881,9 @@ exactly as it stands.\
 """
 
 SWEEP_STANCE_TEST_GREEN = """\
-Every row is GREEN: those suites pass, as an established input — do not
-re-run them to confirm it. Targeted runs remain yours where they buy a
+Every row that ran is GREEN: those suites pass, as an established input — do
+not re-run them to confirm it. A `nothing ran` row found nothing to run and
+proves nothing. Targeted runs remain yours where they buy a
 finding, and the re-validation your procedure doc orders after a rebase
 still applies: a rebase produces a tree nothing has run against. One
 principle, no special cases: a branch whose gates are red is not pushed —
@@ -1860,7 +1899,8 @@ The same holds for any red you find after the rebase.\
 """
 
 SWEEP_STANCE_NONE = """\
-No swept repo carries a kc manifest, so nothing ran — treat the tree's
+Nothing ran — no swept repo carries a kc manifest, or no swept component
+defines a lint, build or test statement — so treat the tree's
 lint/build/test state as unverified.\
 """
 
@@ -1921,8 +1961,12 @@ Deterministic facts from the driver:
   placeholder comment, and your one or two lines in place of each
   `Focus: <!-- doc-writer: … -->` comment — the comment says what the line
   is for. No other slice's report is a style reference.
-- Work on branch {branch}, which is checked out. Never push — any repo, any
-  branch. After your hand-back the driver runs the full gate sweep —
+- Work on branch {branch}, which is checked out in {root} — the one repo
+  that branch exists in. A doc edit in another code repo this slice touched
+  (a diff row above names it) is committed on the base branch checked out
+  there, never on a new branch; the driver pushes it after the landing.
+  Never push — any repo, any branch. After your hand-back the driver runs
+  the full gate sweep —
   `kc project lint` + `build` + `test` (a red comes back to this session) —
   rebase-merges the branch onto {base_branch} and pushes; the dev roll that
   push triggers is left to land on its own.
@@ -2166,6 +2210,7 @@ class RunLoop:
             "target": None, "executor_rounds": 0, "gate_fix_rounds": 0,
             "review_rounds": 0, "gate_runs": 0,
             "gate_green_commit": None, "gate_green_log": None,
+            "gate_nothing_ran_commit": None,
             "reviewed_head": None, "landed": None,
         }
         ps = self.state["phases"].setdefault(phase_id, dict(defaults))
@@ -3220,11 +3265,19 @@ class RunLoop:
 
     def _run_gate(self, phase_id: str, ps: dict, outputs: Path,
                   target: ResolvedTarget) -> tuple[bool, Path | None]:
-        """Run the target's test gate as a subprocess. Green/red is the exit
-        code; full output goes to gate_r<N>.log in the phase's outputs dir.
-        A target with no deterministic gate (a sibling repo without a
-        manifest) is green by definition — but records no green commit, so
-        the reviewer is told the state is unverified."""
+        """Run the target's test gate as a subprocess: (passed, its log).
+        The exit code decides; full output goes to gate_r<N>.log in the
+        phase's outputs dir. A target with no deterministic gate (a sibling
+        repo without a manifest) passes by definition — but records no green
+        commit, so the reviewer is told the state is unverified.
+
+        A gate kc says ran nothing (KC_NOTHING_RAN: the target defines no
+        tests) passes the same way, and for the same reason: a fix round
+        has nothing to fix, and a gate that can never go green would spend
+        the fix cap and bail `gate_red` — at the gate stage and at the
+        merge's re-gate alike. No green commit is recorded; the head it ran
+        nothing on is, so the reviewer's line can say why the state is
+        unverified. The history row says `nothing_ran`, never green."""
         if target.gate_argv is None:
             self.log(f"[P{phase_id}] no deterministic gate for "
                      f"{target.name} — proceeding (reviewer told unverified)")
@@ -3238,11 +3291,7 @@ class RunLoop:
         t0 = time.monotonic()
         try:
             with open(log_path, "w") as log_file:
-                result = subprocess.run(
-                    argv, cwd=target.gate_cwd,
-                    stdout=log_file, stderr=subprocess.STDOUT,
-                    timeout=GATE_TIMEOUT,
-                )
+                returncode = self._gate_exec(argv, target.gate_cwd, log_file)
         except subprocess.TimeoutExpired:
             raise Bailout(
                 "timeout", phase=phase_id,
@@ -3253,13 +3302,13 @@ class RunLoop:
         # rc 2 is kc's usage error — an unknown --project. The name came
         # from kc's own project list, so that is a driver bug, not a red
         # suite.
-        if result.returncode == 2:
+        if returncode == 2:
             raise Bailout(
                 "protocol_failure", phase=phase_id,
                 details=f"`{' '.join(argv)}` rejected its arguments "
                         f"(output in {log_path})",
             )
-        green = result.returncode == 0
+        outcome = kc_outcome(returncode)
         tail = ""
         try:
             lines = [ln for ln in log_path.read_text().splitlines()
@@ -3267,26 +3316,46 @@ class RunLoop:
             tail = lines[-1] if lines else ""
         except OSError:
             pass
-        if green:
+        if outcome == "green":
             ps["gate_green_commit"] = self.git("rev-parse", "HEAD",
                                                root=target.git_root)
             ps["gate_green_log"] = str(log_path)
-        self._record(phase_id, "gate", n, "green" if green else "red",
-                     tail, None, duration_s)
+        elif outcome == "nothing_ran":
+            ps["gate_nothing_ran_commit"] = self.git("rev-parse", "HEAD",
+                                                     root=target.git_root)
+        self._record(phase_id, "gate", n, outcome, tail, None, duration_s)
         self.log(f"[P{phase_id}] gate #{n} → "
-                 f"{'green' if green else 'RED'} ({duration_s}s) {tail[:120]}")
-        return green, log_path
+                 f"{GATE_OUTCOME_LABELS[outcome]} ({duration_s}s) "
+                 f"{tail[:120]}")
+        if outcome == "nothing_ran":
+            self.log(f"[P{phase_id}] {target.name} defines no tests — "
+                     "proceeding as with no gate (reviewer told unverified)")
+        return outcome != "red", log_path
+
+    def _gate_exec(self, argv: list[str], cwd: Path, log_file) -> int:
+        """One gate command's exit code, its output into `log_file` — the
+        subprocess seam the phase gate, the sweep and the doc gate share,
+        isolated for tests."""
+        return subprocess.run(
+            argv, cwd=cwd, stdout=log_file, stderr=subprocess.STDOUT,
+            timeout=GATE_TIMEOUT).returncode
 
     def _gate_line(self, ps: dict, head: str, target: ResolvedTarget) -> str:
         """The gate paragraph in a reviewer dispatch. The green claim is made
-        ONLY when the recorded green commit is the commit under review."""
+        ONLY when the recorded green commit is the commit under review; the
+        nothing-ran reason only when the gate ran nothing on it. Every other
+        case — no gate, a green or an empty run on an earlier commit — is
+        plainly unverified."""
+        gate_cmd = " ".join(target.gate_argv or [])
         green_at = ps.get("gate_green_commit")
         gate_log = ps.get("gate_green_log")
-        if not (green_at and gate_log and green_at == head):
-            return GATE_UNVERIFIED_LINE
-        return GATE_GREEN_LINE.format(
-            green_at=green_at[:12],
-            gate_cmd=" ".join(target.gate_argv or []), gate_log=gate_log)
+        if green_at and gate_log and green_at == head:
+            return GATE_GREEN_LINE.format(
+                green_at=green_at[:12], gate_cmd=gate_cmd, gate_log=gate_log)
+        if target.gate_argv and ps.get("gate_nothing_ran_commit") == head:
+            return GATE_NOTHING_RAN_LINE.format(gate_cmd=gate_cmd,
+                                                ran_at=head[:12])
+        return GATE_UNVERIFIED_LINE
 
     # -- the phase loop ------------------------------------------------------
 
@@ -3854,15 +3923,16 @@ class RunLoop:
                           spawn_executor) -> None:
         """A red gate spawns a fresh executor fix round (the fix rounds are
         the executor's — there is no separate fixer in the phase loop),
-        capped; still red at the cap bails.
+        capped; still red at the cap bails. A gate that ran nothing passes
+        (`_run_gate`): no round can make a target without tests go green.
 
         A resume at stage `gate` re-runs the gate before anything else, so a
         fix round a crash interrupted arrives here again — its number was
         banked before the crash, and re-banking it would spend the cap
         twice."""
         while True:
-            green, gate_log = self._run_gate(phase.id, ps, outputs, target)
-            if green:
+            passed, gate_log = self._run_gate(phase.id, ps, outputs, target)
+            if passed:
                 return
             if ps["gate_fix_rounds"] >= GATE_FIX_CAP:
                 raise Bailout(
@@ -4199,18 +4269,27 @@ class RunLoop:
                     results.append(
                         self._run_sweep_cmd(root, component, verb, out_dir))
         duration_s = int(time.monotonic() - t0)
-        green = all(r["green"] for r in results)
+        # Red only on a red row: a row that ran nothing is not a failure,
+        # and a sweep in which nothing ran at all proved nothing — it is not
+        # green either.
+        outcomes = [sweep_row_outcome(r) for r in results]
+        outcome = ("red" if "red" in outcomes
+                   else "green" if "green" in outcomes else "nothing_ran")
         self.state["gate_sweep"] = {
-            "run": n, "commits": heads, "green": green,
-            "ran_at": _now_iso(), "results": results,
+            "run": n, "commits": heads, "outcome": outcome,
+            "green": outcome == "green", "ran_at": _now_iso(),
+            "results": results,
         }
         reds = [f"{Path(r['repo']).name}/{r['component']} {r['verb']}"
-                for r in results if not r["green"]]
-        self._record(None, "sweep", n, "green" if green else "red",
-                     "; ".join(reds) or f"{len(results)} command(s)",
-                     None, duration_s)
+                for r, o in zip(results, outcomes, strict=True) if o == "red"]
+        empty = outcomes.count("nothing_ran")
+        summary = "; ".join(reds) or (
+            f"{len(results)} command(s)"
+            + (f", {empty} of them ran nothing" if empty else ""))
+        self._record(None, "sweep", n, outcome, summary, None, duration_s)
         self.announce(f"gate sweep r{n} → "
-                      + ("green" if green else "RED (" + ", ".join(reds) + ")")
+                      + ("RED (" + ", ".join(reds) + ")" if reds
+                         else GATE_OUTCOME_LABELS[outcome].lower())
                       + f" ({duration_s}s)")
         return self.state["gate_sweep"]
 
@@ -4218,15 +4297,15 @@ class RunLoop:
                        out_dir: Path) -> dict:
         """One sweep command, per component so a red in one suite never
         hides a red in the next (the kc verbs are fail-fast across their
-        selection)."""
+        selection). A component with no statement for the verb makes a
+        `nothing_ran` row — neither green nor red. `green` stays on the row
+        beside `outcome`, true for a green row only."""
         argv = ["kc", "project", verb, "--project", component]
         log_path = out_dir / f"{root.name}_{component}_{verb}.log"
         t0 = time.monotonic()
         try:
             with open(log_path, "w") as log_file:
-                result = subprocess.run(
-                    argv, cwd=root, stdout=log_file,
-                    stderr=subprocess.STDOUT, timeout=GATE_TIMEOUT)
+                returncode = self._gate_exec(argv, root, log_file)
         except subprocess.TimeoutExpired:
             raise Bailout(
                 "timeout",
@@ -4235,23 +4314,24 @@ class RunLoop:
             ) from None
         # rc 2 is kc's usage error — the component name came from kc's own
         # project list, so that is a driver bug, not a red suite.
-        if result.returncode == 2:
+        if returncode == 2:
             raise Bailout(
                 "protocol_failure",
                 details=f"sweep `{' '.join(argv)}` in {root} rejected its "
                         f"arguments (output in {log_path})")
-        green = result.returncode == 0
+        outcome = kc_outcome(returncode)
         duration_s = int(time.monotonic() - t0)
         self.log(f"[sweep] {root.name}/{component} {verb} → "
-                 f"{'green' if green else 'RED'} ({duration_s}s)")
+                 f"{GATE_OUTCOME_LABELS[outcome]} ({duration_s}s)")
         return {"repo": str(root), "component": component, "verb": verb,
-                "green": green, "log": str(log_path),
-                "duration_s": duration_s}
+                "outcome": outcome, "green": outcome == "green",
+                "log": str(log_path), "duration_s": duration_s}
 
     def _sweep_block(self, sweep: dict, green_stance: str,
                      red_stance: str) -> str:
         """The report as a dispatch carries it — every row with its log
-        path, then the stance the caller's dispatch takes on it."""
+        path, then the stance the caller's dispatch takes on it. A sweep in
+        which nothing ran takes the unverified stance, rows or none."""
         if not sweep["results"]:
             rows, stance = "- (nothing ran)", SWEEP_STANCE_NONE
         else:
@@ -4260,10 +4340,14 @@ class RunLoop:
                 lines.append(f"- {Path(repo).name} @ {sha[:12]}:")
                 lines.extend(
                     f"  - {r['component']} {r['verb']} → "
-                    f"{'GREEN' if r['green'] else 'RED'} — {r['log']}"
+                    f"{GATE_OUTCOME_LABELS[sweep_row_outcome(r)]} — "
+                    f"{r['log']}"
                     for r in sweep["results"] if r["repo"] == repo)
             rows = "\n".join(lines)
-            stance = green_stance if sweep["green"] else red_stance
+            outcome = sweep.get("outcome") \
+                or ("green" if sweep["green"] else "red")
+            stance = {"green": green_stance, "red": red_stance,
+                      "nothing_ran": SWEEP_STANCE_NONE}[outcome]
         return SWEEP_BLOCK.format(rows=rows, stance=stance)
 
     # -- follow-up generations ----------------------------------------------
@@ -4509,11 +4593,13 @@ class RunLoop:
         """The doc phase, after test-complete: one writer, diff-based over
         the whole slice, on its own branch — the writer never pushes. The
         writer and the gate run outside the devlock; the landing takes it
-        for the push and lets it go after. The driver gates the result with
-        the full lint+build+test sweep (red is nudged back to the writer's
-        session), then rebase-merges the branch onto the base branch and
-        pushes. The dev roll that push triggers is deliberately not tracked:
-        the sweep already proved the tree, and the roll lands on its own.
+        for the pushes and lets it go after the last. The driver gates the
+        result with the full lint+build+test sweep (red is nudged back to
+        the writer's session), then rebase-merges the branch onto the base
+        branch and pushes, then pushes the doc commits the writer made in
+        the slice's other repos (`_push_doc_siblings`). The dev roll that
+        push triggers is deliberately not tracked: the sweep already proved
+        the tree, and the roll lands on its own.
 
         A project that runs no doc phase skips all of it — the slice's code
         is already merged and settled by the time this is reached."""
@@ -4539,7 +4625,7 @@ class RunLoop:
         # Branch setup (fresh or resume; a resume past the writer stage
         # keeps the branch and the work on it). A landing-stage resume with
         # no branch means the merge landed before the crash — only the push
-        # is owed.
+        # is owed; past the landing, only the other repos' pushes are.
         existing = self.git("branch", "--list", branch, root=root)
         if ds["stage"] == "writer" and not (
                 self._reattach and self._reattach.get("role") == "doc-writer"):
@@ -4549,7 +4635,7 @@ class RunLoop:
             self.git("checkout", "-b", branch, base, root=root)
         elif existing:
             self.git("checkout", branch, root=root)
-        elif ds["stage"] != "landing":
+        elif ds["stage"] not in ("landing", "siblings"):
             ds.update(stage="writer", session=None)
             self.git("checkout", "-b", branch, base, root=root)
         self._save_state()
@@ -4574,7 +4660,7 @@ class RunLoop:
                     close_out_line=dispatch_line(self.report_path),
                     close_out_verbs=textwrap.indent(
                         verb_usage("list", "append", "note"), "  "),
-                    branch=branch, base_branch=base,
+                    branch=branch, root=root, base_branch=base,
                     verdict_path=verdict_path)
                 + build_slice_digest(plan_text),
                 self.repo_root, verdict_path, None, 1, agent="doc-writer",
@@ -4593,10 +4679,75 @@ class RunLoop:
             ds["stage"] = "landing"
             self._save_state()
 
+        # Its own stage, so a bail or a crash after the primary landed
+        # resumes into the other repos' pushes without landing it again.
         if ds["stage"] == "landing":
             self._land_doc_branch(branch, base)
+            ds["stage"] = "siblings"
+            self._save_state()
+
+        if ds["stage"] == "siblings":
+            self._push_doc_siblings()
             ds["stage"] = "done"
             self._save_state()
+        self.devlock.release(self.log)
+
+    def _push_doc_siblings(self) -> None:
+        """Push the doc commits the writer made outside the primary repo.
+
+        The doc branch exists in the primary repo only, so a doc edit in
+        another repo the slice touched is committed on that repo's base
+        branch — after the test phase (or `_settle_push`) pushed it. Nothing
+        else sends it: it would sit local and unreported. So once the
+        primary has landed, every other repo in `_touched_roots` (the spec
+        repo is not one) whose base is ahead of its origin is pushed, by the
+        rules the driver's own pushes follow: a plan hold is reported, not
+        pushed; a project that never pushes sends nothing; the devlock is
+        held over the pushes, as over the primary's. A base that is not a
+        fast-forward of its origin is the operator's to settle — never a
+        rebase of a branch the driver did not create. A repo already on its
+        origin owes nothing, so a resume just runs this again."""
+        primary = self.repo_root.resolve()
+        roots = [(root, base) for root, base in self._touched_roots()
+                 if root.resolve() != primary]
+        if not roots:
+            return
+        if not self.cfg.push:
+            self.log("[doc-phase] the project does not push — doc commits in "
+                     + ", ".join(root.name for root, _ in roots)
+                     + " stay local")
+            return
+        held_why = self._held_roots()
+        if any(str(root) not in held_why for root, _ in roots):
+            # Before the fetch, as for the primary: nothing another driver
+            # pushes lands between the fast-forward check and the push. Kept
+            # if the primary's landing already holds it.
+            self._acquire_devlock("doc landing")
+        for root, base in roots:
+            self._fetch_origin(root)
+            ahead = self.git("rev-list", "--count", f"origin/{base}..{base}",
+                             root=root)
+            if ahead in ("", "0"):
+                continue
+            why = held_why.get(str(root))
+            if why is not None:
+                self._report_hold(root, why)
+                continue
+            behind = self.git("rev-list", "--count", f"{base}..origin/{base}",
+                              root=root)
+            if behind not in ("", "0"):
+                raise Bailout(
+                    "blocked",
+                    details=f"{base} in {root} has diverged from "
+                            f"origin/{base} ({ahead} local commit(s) origin "
+                            f"lacks, {behind} on origin that {base} lacks), "
+                            "so the doc phase's commits there cannot go out "
+                            f"as a fast-forward — bring {base} up to "
+                            f"origin/{base} there and push it by hand, then "
+                            "resume")
+            self.git("push", "origin", base, root=root)
+            self.log(f"[doc-phase] pushed {base} in {root} ({ahead} "
+                     "commit(s) the doc phase left there)")
 
     def _write_doc_diffs(self) -> list[str]:
         """The slice's shipped diff, one file per repo under
@@ -4701,7 +4852,9 @@ class RunLoop:
         phase's deterministic gate. Fail-fast rather than per-component:
         this gate exists to go green or hand ONE red log to the fixer, not
         to produce a report. Output goes to doc_gate_r<N>.log in the slice
-        folder."""
+        folder. A verb no component defines a statement for ran nothing
+        (KC_NOTHING_RAN): not red, so never nudged back to the writer, and
+        the gate goes on to the next verb."""
         ds["gate_runs"] += 1
         n = ds["gate_runs"]
         self._save_state()
@@ -4709,7 +4862,7 @@ class RunLoop:
         self.log(f"[doc-phase] gate #{n} running "
                  f"(kc project {' + '.join(SWEEP_VERBS)})")
         t0 = time.monotonic()
-        green = True
+        outcomes: dict[str, str] = {}
         with open(log_path, "w") as log_file:
             for verb in SWEEP_VERBS:
                 argv = ["kc", "project", verb]
@@ -4723,9 +4876,15 @@ class RunLoop:
                         details=f"doc-phase gate `{' '.join(argv)}` exceeded "
                                 f"{GATE_TIMEOUT}s (output in {log_path})",
                     ) from None
-                if rc != 0:
-                    green = False
+                outcomes[verb] = kc_outcome(rc)
+                if outcomes[verb] == "nothing_ran":
+                    log_file.write(f"→ nothing ran: no component defines a "
+                                   f"{verb} statement\n")
+                if outcomes[verb] == "red":
                     break
+        seen = set(outcomes.values())
+        outcome = ("red" if "red" in seen
+                   else "green" if "green" in seen else "nothing_ran")
         duration_s = int(time.monotonic() - t0)
         tail = ""
         try:
@@ -4734,25 +4893,25 @@ class RunLoop:
             tail = lines[-1] if lines else ""
         except OSError:
             pass
-        self._record(None, "doc-gate", n, "green" if green else "red",
-                     tail, None, duration_s)
-        self.log(f"[doc-phase] gate #{n} → "
-                 f"{'green' if green else 'RED'} ({duration_s}s) {tail[:120]}")
-        return green, log_path
+        self._record(None, "doc-gate", n, outcome, tail, None, duration_s)
+        empty = [verb for verb, o in outcomes.items() if o == "nothing_ran"]
+        self.log(f"[doc-phase] gate #{n} → {GATE_OUTCOME_LABELS[outcome]} "
+                 f"({duration_s}s) {tail[:120]}"
+                 + (f" — {', '.join(empty)} ran nothing" if empty else ""))
+        return outcome != "red", log_path
 
     def _doc_gate_exec(self, argv: list[str], log_file) -> int:
-        """One doc-gate command — the subprocess seam, isolated for
-        tests."""
-        return subprocess.run(
-            argv, cwd=self.repo_root, stdout=log_file,
-            stderr=subprocess.STDOUT, timeout=GATE_TIMEOUT).returncode
+        """One doc-gate command, in the invoking repo — the seam the doc
+        gate's tests replace."""
+        return self._gate_exec(argv, self.repo_root, log_file)
 
     def _land_doc_branch(self, branch: str, base: str) -> None:
         """Rebase-merge the gated doc branch and push — no build tracking;
         the sweep proved the tree, and the resulting dev roll lands on its
         own. A plan holding this repo lands the merge locally and stops
-        there: the same ruling the push check honours, at the one place the
-        driver pushes anything."""
+        there: the same ruling the push check honours, where the driver
+        pushes the docs. The devlock this takes for the push is released by
+        `_doc_phase`, after the other repos' doc pushes."""
         root = self.repo_root
         held = self._held_roots().get(str(root))
         if self._worktree_dirty(root):
@@ -4769,9 +4928,9 @@ class RunLoop:
         onto = f"origin/{base}" if pushing else base
         if pushing:
             # Taken before the fetch, so nothing another driver pushes lands
-            # between the rebase target and the push; released once the push
-            # is out — the dev roll it triggers is untracked, so there is
-            # nothing to hold for.
+            # between the rebase target and the push; released once the last
+            # doc push is out — the dev roll it triggers is untracked, so
+            # there is nothing to hold for.
             self._acquire_devlock("doc landing")
         if self.git("branch", "--list", branch, root=root):
             if pushing:
@@ -4819,7 +4978,6 @@ class RunLoop:
         self.git("push", "origin", base, root=root)
         self.log(f"[doc-phase] merged into {base} and pushed — the dev roll "
                  "is not tracked")
-        self.devlock.release(self.log)
 
     # -- top level -----------------------------------------------------------
 
@@ -5074,7 +5232,9 @@ class RunLoop:
     def _acquire_devlock(self, purpose: str) -> None:
         """Idempotent — a caller that finds it held keeps it. The test phase
         takes it for the verification (`_test_phase_under_lock`) and the doc
-        landing for its push (`_land_doc_branch`); each releases its own."""
+        landing for its pushes (`_land_doc_branch`, `_push_doc_siblings`);
+        each releases its own — the doc landing's once its last push is
+        out."""
         if self.devlock.held:
             return
         self.announce(f"acquiring devlock ({purpose})")

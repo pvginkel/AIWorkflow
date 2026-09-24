@@ -262,7 +262,8 @@ class ScriptedLoop(RunLoop):
         log_path = out_dir / f"{root.name}_{component}_{verb}.log"
         log_path.write_text("sweep output\n")
         return {"repo": str(root), "component": component, "verb": verb,
-                "green": green, "log": str(log_path), "duration_s": 0}
+                "outcome": "green" if green else "red", "green": green,
+                "log": str(log_path), "duration_s": 0}
 
     def _spawn(self, role, prompt, cwd, verdict_path, phase_id, round_,
                agent=None, display=None, spec_branch=None):
@@ -984,8 +985,11 @@ def test_reviewer_dispatch_states_the_green_gate():
         assert "ran GREEN on this exact commit" in prompt
         assert r.fake_git.head[:12] in prompt
         assert "gate_r1.log" in prompt
-        assert "Do not re-run the suite or the linter" in prompt
+        assert "Do not re-run the suite to confirm it" in prompt
         assert "vacuous" in prompt
+        # the phase gate is `kc project test` alone: it claims no lint
+        for line in (run_loop.GATE_GREEN_LINE, run_loop.GATE_UNVERIFIED_LINE):
+            assert "lint" not in line
         # the phase model is explicit: testing/docs live in later phases
         assert "own later phases" in prompt
 
@@ -1001,6 +1005,116 @@ def test_gate_line_never_claims_a_stale_green():
         assert "ran GREEN" in r._gate_line(green, "deadbeefcafe0", target)
         assert "unverified" in r._gate_line(green, "0ther000head0", target)
         assert "unverified" in r._gate_line({}, "abc123", target)
+
+
+# -- kc's "nothing ran" exit code (KC-81) --------------------------------------
+#
+# `kc project test|build|lint` exits 3 when its selection holds no statement
+# for the verb. Read as red, a target with no tests spawned fix rounds that
+# could fix nothing and bailed `gate_red`; read as green, the sweep claimed a
+# lint no component defines.
+
+class KcExitLoop(ScriptedLoop):
+    """ScriptedLoop running the driver's OWN phase gate and sweep command —
+    only the kc process behind them is scripted, by exit code: `gate_rcs` in
+    order for the phase gate (0 once spent), `sweep_rcs` by (component,
+    verb) for the loop-tail sweep (0 when absent)."""
+
+    _run_gate = RunLoop._run_gate
+    _run_sweep_cmd = RunLoop._run_sweep_cmd
+
+    def __init__(self, slice_dir, script, gate_rcs=(), sweep_rcs=None, **kw):
+        super().__init__(slice_dir, script, **kw)
+        self.gate_rcs = list(gate_rcs)
+        self.sweep_rcs = dict(sweep_rcs or {})
+        self.kc_runs = []    # (argv, cwd, rc)
+        self._sweeping = False
+
+    def _run_gate_sweep(self, targets, heads):
+        self._sweeping = True
+        try:
+            return super()._run_gate_sweep(targets, heads)
+        finally:
+            self._sweeping = False
+
+    def _gate_exec(self, argv, cwd, log_file):
+        if self._sweeping:
+            rc_ = self.sweep_rcs.get((argv[4], argv[2]), 0)
+        else:
+            rc_ = self.gate_rcs.pop(0) if self.gate_rcs else 0
+        self.kc_runs.append((list(argv), Path(cwd), rc_))
+        log_file.write(f"{' '.join(argv)}: exit {rc_}\n")
+        return rc_
+
+
+def test_the_drivers_gate_reads_kcs_exit_codes():
+    """0 green (recorded), 1 red (a fix round), 2 a usage error (a driver
+    bug, never a red suite)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = KcExitLoop(slice_dir, [V["exec_done"], V["exec_done"],
+                                   V["review_signoff"], *TAIL],
+                       repo_root=repo, gate_rcs=[1, 0])
+        assert run_to_exit(r) == 0
+        assert not r.script
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["gate_fix_rounds"] == 1
+        assert ps["gate_green_commit"] == r.fake_git.head
+        assert r.kc_runs[0][:2] == (["kc", "project", "test", "--project",
+                                     PROJECT], repo)
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = KcExitLoop(slice_dir, [V["exec_done"]], repo_root=repo,
+                       gate_rcs=[2])
+        assert run_to_exit(r) == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "protocol_failure"
+
+
+def test_a_gate_that_ran_nothing_proceeds_unverified_without_a_fix_round():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = KcExitLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                   *TAIL],
+                       repo_root=repo, gate_rcs=[3, 3])
+        assert run_to_exit(r) == 0
+        assert not r.script, "no fix round was spawned"
+        state = load_state(slice_dir)
+        ps = state["phases"]["1"]
+        assert ps["status"] == "merged" and ps["gate_fix_rounds"] == 0
+        assert ps["gate_green_commit"] is None
+        assert ps["gate_nothing_ran_commit"] == r.fake_git.head
+        # the gate stage's run and the merge stage's re-gate (no green on
+        # record at the head) both ran nothing, and neither bailed
+        assert [h["outcome"] for h in state["history"]
+                if h["role"] == "gate"] == ["nothing_ran", "nothing_ran"]
+        prompt = next(p for role, p in r.prompts
+                      if role == "code-reviewer").replace("\n", " ")
+        assert (f"`kc project test --project {PROJECT}` ran nothing on this "
+                f"exact commit ({r.fake_git.head[:12]})") in prompt
+        assert "the target defines no tests" in prompt
+        assert "GREEN" not in prompt
+        assert f"{PROJECT} defines no tests — proceeding" \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_the_nothing_ran_line_is_stated_only_about_the_commit_it_ran_on():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        target = run_loop.ResolvedTarget(
+            PROJECT, "project", Path(repo),
+            ["kc", "project", "test", "--project", PROJECT], Path(repo))
+        ps = {"gate_nothing_ran_commit": "deadbeefcafe0"}
+        assert "defines\nno tests" in r._gate_line(ps, "deadbeefcafe0",
+                                                    target)
+        # a later commit, or a target with no gate at all: plainly unverified
+        assert r._gate_line(ps, "0ther000head0", target) \
+            == run_loop.GATE_UNVERIFIED_LINE
+        no_gate = run_loop.ResolvedTarget("../Sib", "sibling", Path(repo),
+                                          None, Path(repo))
+        assert r._gate_line(ps, "deadbeefcafe0", no_gate) \
+            == run_loop.GATE_UNVERIFIED_LINE
 
 
 def test_red_gate_spawns_fresh_executor_fix_round():
@@ -3320,6 +3434,77 @@ def test_sweep_with_no_targets_reports_unverified():
         assert "unverified" in consult
 
 
+def test_a_sweep_row_that_ran_nothing_is_neither_green_nor_red():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = KcExitLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                   *TAIL],
+                       repo_root=repo, sweep_rcs={(PROJECT, "lint"): 3})
+        assert run_to_exit(r) == 0
+        state = load_state(slice_dir)
+        sweep = state["gate_sweep"]
+        assert sweep["outcome"] == "green" and sweep["green"] is True
+        assert {row["verb"]: (row["outcome"], row["green"])
+                for row in sweep["results"]} == {
+            "lint": ("nothing_ran", False), "build": ("green", True),
+            "test": ("green", True)}
+        row = next(h for h in state["history"] if h["role"] == "sweep")
+        assert row["outcome"] == "green"
+        assert row["summary"] == "3 command(s), 1 of them ran nothing"
+        for role in ("consult", "test-agent"):
+            prompt = next(p for rl, p in r.prompts if rl == role)
+            assert f"{PROJECT} lint → nothing ran — " in prompt
+            assert f"{PROJECT} test → GREEN — " in prompt
+            flat = prompt.replace("\n", " ")
+            assert "Every row that ran is GREEN" in flat
+            assert "A `nothing ran` row found nothing to run" in flat
+
+
+def test_a_sweep_in_which_nothing_ran_reads_as_unverified():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = KcExitLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                   *TAIL],
+                       repo_root=repo,
+                       sweep_rcs={(PROJECT, verb): 3
+                                  for verb in run_loop.SWEEP_VERBS})
+        assert run_to_exit(r) == 0
+        sweep = load_state(slice_dir)["gate_sweep"]
+        assert sweep["outcome"] == "nothing_ran" and sweep["green"] is False
+        consult = next(p for role, p in r.prompts if role == "consult")
+        assert f"{PROJECT} build → nothing ran" in consult
+        assert run_loop.SWEEP_STANCE_NONE in consult
+        assert "GREEN" not in consult and "RED row" not in consult
+
+
+def test_a_red_row_beside_one_that_ran_nothing_is_a_red_sweep():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = KcExitLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                   *TAIL],
+                       repo_root=repo, sweep_rcs={(PROJECT, "lint"): 3,
+                                                  (PROJECT, "test"): 1})
+        assert run_to_exit(r) == 0
+        assert load_state(slice_dir)["gate_sweep"]["outcome"] == "red"
+        consult = next(p for role, p in r.prompts if role == "consult")
+        assert f"{PROJECT} test → RED" in consult
+        assert "append a phase that fixes it" in consult.replace("\n", " ")
+
+
+def test_a_sweep_recorded_before_rows_had_an_outcome_still_renders():
+    """A resume reuses the recorded sweep while the heads match — one an
+    older plugin wrote carries `green` alone."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        old = {"commits": {str(repo): "abc123"}, "green": False,
+               "results": [{"repo": str(repo), "component": PROJECT,
+                            "verb": "test", "green": False, "log": "t.log"}]}
+        block = r._sweep_block(old, "GREEN-STANCE", "RED-STANCE")
+        assert f"{PROJECT} test → RED — t.log" in block
+        assert block.endswith("RED-STANCE")
+
+
 def test_doc_gate_sweeps_lint_build_test_fail_fast():
     """The doc gate carries the same three verbs, whole-repo and fail-fast:
     it exists to go green or hand one red log to the fixer, not to report."""
@@ -3350,6 +3535,34 @@ def test_doc_gate_sweeps_lint_build_test_fail_fast():
             argv[2]) or 0
         green, _ = loop._run_doc_gate(ds)
         assert green and calls == ["lint", "build", "test"]
+
+
+def test_doc_gate_goes_on_past_a_verb_that_ran_nothing():
+    """A repo whose components define no lint statement is not red — a nudge
+    would hand the writer a failure it cannot fix."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        loop = RunLoop(slice_dir, resume=False)
+        loop.repo_root = repo
+        loop.state = {"history": []}
+        calls = []
+        rcs = {"lint": 3}
+        loop._doc_gate_exec = lambda argv, log_file: calls.append(
+            argv[2]) or rcs.get(argv[2], 0)
+        ds = {"gate_runs": 0}
+        passed, log_path = loop._run_doc_gate(ds)
+        assert passed and calls == ["lint", "build", "test"]
+        assert "nothing ran: no component defines a lint statement" \
+            in log_path.read_text()
+        assert loop.state["history"][-1]["outcome"] == "green"
+        rcs.update(build=3, test=3)
+        passed, _ = loop._run_doc_gate(ds)
+        assert passed
+        assert loop.state["history"][-1]["outcome"] == "nothing_ran"
+        rcs.update(test=1)
+        passed, _ = loop._run_doc_gate(ds)
+        assert not passed
+        assert loop.state["history"][-1]["outcome"] == "red"
 
 
 # -- the fetch: nobody reads a remote-tracking ref as old as the clone --------
@@ -4129,6 +4342,130 @@ def test_doc_landing_resume_with_merged_branch_only_pushes():
         pushes = r.fake_git.mutations("push")
         assert pushes and pushes[-1][1] == ("push", "origin", "main")
         assert not r.fake_git.mutations("rebase")
+
+
+# -- the doc commits a multi-repo slice leaves in its other repos ------------
+#
+# The doc branch exists in the primary repo only, and the test phase pushed
+# every other repo before the doc phase began — so a doc commit the writer
+# made in a sibling sat on its local base, unpushed and unreported (AIWF-11).
+
+def doc_writer_commits_in(sib, behind=None):
+    """The doc-writer's script step: done, having committed one doc commit
+    on the sibling's base — whose origin has meanwhile gained `behind`
+    commits of its own, when given."""
+    def effect(loop):
+        loop.fake_git.unpushed[str(sib)] = "1"
+        if behind:
+            loop.fake_git.ahead["main..origin/main"] = behind
+    return ("doc-writer", {"outcome": "done", "summary": "docs"}, effect)
+
+
+def sibling_doc_script(sib, behind=None):
+    return [V["exec_done"], V["review_signoff"], V["consult_complete"],
+            V["test_clean"], doc_writer_commits_in(sib, behind)]
+
+
+def test_the_doc_landing_pushes_a_siblings_doc_commits_under_the_lease():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = sibling_phase_slice(tmp)
+        (repo / ".aiworkflowrc").write_text(rc(devlock=True))
+        (slice_dir.parent.parent / "scripts").mkdir()
+        r = ScriptedLoop(slice_dir, sibling_doc_script(sib), repo_root=repo)
+        at_push = watch_push_holder(
+            r, slice_dir.parent.parent / "scripts" / "dev-holder")
+        assert run_to_exit(r) == 0
+        # the primary lands first, then the sibling goes out — both under
+        # the one hold the landing took
+        assert pushes(r) == [(str(repo), "main"), (str(sib), "main")]
+        assert at_push == [True, True]
+        log = (slice_dir / "log.txt").read_text()
+        assert log.count("devlock ACQUIRED (slice 074 doc landing)") == 1
+        assert log.count("devlock released") == 2
+        assert f"pushed main in {sib} (1 commit(s)" in log
+        # fetched right before it was measured against origin
+        calls = [c for root, c in r.fake_git.calls if str(root) == str(sib)]
+        last_fetch = max(i for i, c in enumerate(calls)
+                         if c == ("fetch", "origin"))
+        assert last_fetch < max(i for i, c in enumerate(calls)
+                                if c[0] == "push")
+        assert load_state(slice_dir)["doc_phase"]["stage"] == "done"
+        # and the writer was told where a sibling doc edit goes
+        prompt = next(p for role, p in r.prompts
+                      if role == "doc-writer").replace("\n", " ")
+        assert f"which is checked out in {repo} — the one repo" in prompt
+        assert "never on a new branch; the driver pushes it" in prompt
+        assert "Never push" in prompt
+
+
+def test_a_held_siblings_doc_commits_are_reported_not_pushed():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = held_sibling_slice(tmp)
+        r = ScriptedLoop(slice_dir, sibling_doc_script(sib), repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert pushes(r) == [(str(repo), "main")]
+        assert "Push Sibling by hand when its hold lifts" \
+            in load_report(slice_dir)
+
+
+def test_a_held_primary_still_pushes_a_siblings_doc_commits_under_the_lease():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = sibling_phase_slice(tmp)
+        (repo / ".aiworkflowrc").write_text(rc(devlock=True))
+        (slice_dir.parent.parent / "scripts").mkdir()
+        (slice_dir / "plan.md").write_text(
+            f"# plan\n\n## Push holds\n\n- {PROJECT} — prd rolls on this "
+            "push\n\n" + phase_section("1", "Chart change", "../Sibling"))
+        r = ScriptedLoop(slice_dir, sibling_doc_script(sib), repo_root=repo)
+        at_push = watch_push_holder(
+            r, slice_dir.parent.parent / "scripts" / "dev-holder")
+        assert run_to_exit(r) == 0
+        assert pushes(r) == [(str(sib), "main")]
+        assert at_push == [True]
+        assert "devlock ACQUIRED (slice 074 doc landing)" \
+            in (slice_dir / "log.txt").read_text()
+        assert not (slice_dir.parent.parent / "scripts"
+                    / "dev-holder").exists(), "released at end"
+
+
+def test_a_project_that_never_pushes_leaves_sibling_doc_commits_local():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = sibling_phase_slice(tmp)
+        (repo / ".aiworkflowrc").write_text(rc(push=False))
+        r = ScriptedLoop(slice_dir, sibling_doc_script(sib), repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert pushes(r) == []
+        assert "doc commits in Sibling stay local" \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_a_diverged_sibling_blocks_and_the_resume_pushes_it_alone():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = sibling_phase_slice(tmp)
+        r = ScriptedLoop(slice_dir, sibling_doc_script(sib, behind="2"),
+                         repo_root=repo)
+        assert run_to_exit(r) == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "blocked" and not bail["question"]
+        assert str(sib) in bail["details"]
+        assert "push it by hand, then resume" in bail["details"]
+        # the primary landed and went out; the sibling was never pushed, and
+        # never rebased
+        assert pushes(r) == [(str(repo), "main")]
+        assert not [c for root, c in r.fake_git.calls
+                    if str(root) == str(sib) and c[0] == "rebase"]
+        assert load_state(slice_dir)["doc_phase"]["stage"] == "siblings"
+
+        # the operator settles the sibling's base; the resume owes only its
+        # push — no session, no second landing of the primary
+        r2 = ScriptedLoop(slice_dir, [], resume=True, repo_root=repo)
+        r2.fake_git.unpushed[str(sib)] = "1"
+        assert run_to_exit(r2) == 0
+        assert not r2.spawned
+        assert pushes(r2) == [(str(sib), "main")]
+        for verb in ("rebase", "merge"):
+            assert not r2.fake_git.mutations(verb)
+        assert load_state(slice_dir)["doc_phase"]["stage"] == "done"
 
 
 # -- optional phases (.aiworkflowrc) -----------------------------------------

@@ -329,7 +329,7 @@ def slice_row(d: Path) -> dict:
     hist = s.get("history", [])
     r1_block = r1_reviews = refuted = blocking = gate_red = 0
     for e in hist:
-        if e.get("role") == "gate" and e.get("outcome") not in ("green", None):
+        if e.get("role") == "gate" and e.get("outcome") == "red":
             gate_red += 1
         if e.get("role") == "code-reviewer":
             fs = e.get("findings") or []

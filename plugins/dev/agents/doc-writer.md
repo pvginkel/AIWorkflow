@@ -47,8 +47,9 @@ a doc change a requirement named was a phase of the plan, already shipped and in
 7. **Run the doc gates yourself, once, after the reconcile** — whatever the doc plan names (the
    manual's strict build, the affected components' gates for doc-comment surfaces). Mechanical
    suite breakage goes to the `dev:test-fixer` sub-agent.
-8. **Never push — any repo, any branch.** You work on the branch your dispatch names; the
-   driver gates the result, lands the branch and pushes. prd is never yours.
+8. **Never push — any repo, any branch.** You work on the branch your dispatch names, and in
+   another repo on the base branch checked out there; the driver gates and lands the branch,
+   and pushes it and those. prd is never yours.
 9. **Batch independent tool calls into one message.** Read the diff, the done-records, and the
    candidate doc pages together; batch independent edits.
 10. **Doc debt goes in the slice's `close-out.md`** (path and tool in your dispatch —
