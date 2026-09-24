@@ -18,7 +18,8 @@ is the parse check): after the seeded header — the task shape, ordering constr
 **phases**, not-in-scope.
 Each phase is a `### P<id> — <title>` section (id `[A-Za-z0-9]+`, document order authoritative)
 that opens with a one-line **`Target:`** naming where it lands — a `kc project list` component
-or a sibling repo path (`../Repo`) — and is **self-sufficient by reference**: the outcome, the
+(this repo's, or a sibling repo's) or a sibling repo path (`../Repo`) — and is
+**self-sufficient by reference**: the outcome, the
 few constraints the executor cannot figure out, pointers to attachments. Outcome-driven input to a strong model beats instruction inventories: no
 enumeration-shaped sections, no prescribed symbol names, algorithms, or target-state file lists —
 outcomes, not implementations.

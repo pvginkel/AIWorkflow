@@ -24,8 +24,12 @@ Phases are `### P<id> — <title>` headings, id free-form `[A-Za-z0-9]+` — `P3
 one-line **`Target:`** naming where it lands — a `kc project list` component, or a sibling repo
 path (`../SiblingRepo`) — from which the driver roots its git operations (branch, merge,
 dirty-checks in that repo) and picks the gate: `kc project test --project <name>` for a
-component; `kc project test` from the sibling's own root when it carries a manifest; no
-deterministic gate otherwise (the reviewer is told the state is unverified). The component
+component, run from the root of the repo that lists it; `kc project test` from the sibling's own
+root when it carries a manifest; no
+deterministic gate otherwise (the reviewer is told the state is unverified). A component is the
+invoking repo's first. A name it lacks resolves in the one sibling repo whose `kc project list`
+has it (read lazily, only for such a name), and several owners ask for the repo path; the
+environment's repos sit side by side, the layout `../` Targets already assume. The component
 set is re-read at every plan parse, so a component a phase registers — declared by a `Creates:`
 line under its `Target:` ([plan-template.md](plan-template.md)) — is a valid target from the
 moment the creating phase merges, and may be named before that on the declaration's word.

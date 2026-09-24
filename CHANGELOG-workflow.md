@@ -4,6 +4,30 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-24 — a sibling repo's component is a `Target:`, and the dry run works from the spec repo (v0.9.46)
+
+AIWF-8 (Ansible slice 024's close-out, entry S2: "make Target use project names … I think that's
+a good suggestion") and AIWF-9 (the Fieldnotes triage of 2026-09-22, "limit to adding some
+smarts in the AI workflow").
+
+- **A component of another repo is a valid `Target:`.** The run loop built its component
+  vocabulary from `kc project list` in the repo the run started in, so a slice led from Ansible
+  could not write `Target: aac-tools`, a component of ArgoCDTools. It failed the plan check at
+  parse time. KubeCoder's own project surface addresses components across every repo of the
+  environment. Now the invoking repo's components resolve first and shadow any sibling's (`root`
+  stays this repo's). A name they lack is looked up in the sibling checkouts' own `kc project
+  list`, read lazily and re-read with every plan parse. A component of exactly one sibling
+  lands in that repo, like a `../Repo` Target, and is gated there per component. One that several
+  siblings have asks for the repo path. A sibling kc cannot list is logged and named in the
+  error, never a bail. A component a sibling-targeted phase registers (`Target: ../Repo` +
+  `Creates:`) is nameable by later phases, as a primary one always was.
+- **`--dry-run` from the spec repo resolves the Targets in the code repo.** Run where
+  `/dev:plan-slice` leaves its session, it warned that the project was not set up and then
+  reported every component Target of a valid plan as a problem. When the starting repo has no
+  manifest, the dry run now re-roots on the one code repo beside the spec repo whose
+  `.aiworkflowrc` names it. When none or several do, it stops with "run from the code repo that
+  holds .kubecoder/project.yaml". The run itself is unchanged, as scoped.
+
 ## 2026-09-24 — preflight names the live run whose phase branch it meets, planning seeds the operator's runbook, and a plan says which phase allocates a new record id (v0.9.45)
 
 AIWF-13, AIWF-14 and AIWF-15, each ruled "yes" on the Fieldnotes triage of 2026-09-24.

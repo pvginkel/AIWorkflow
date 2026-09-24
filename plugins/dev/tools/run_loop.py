@@ -2035,6 +2035,10 @@ class ResolvedTarget:
     def __init__(self, name: str, kind: str, git_root: Path,
                  gate_argv: list[str] | None, gate_cwd: Path):
         self.name = name
+        # What the Target names, not where it lives: "project" is a `kc
+        # project list` component, gated on its own — the invoking repo's, or
+        # a sibling repo's (git_root says which); "sibling" is a whole repo,
+        # named by its path.
         self.kind = kind            # "project" | "sibling"
         self.git_root = git_root    # where branches/merges happen
         self.gate_argv = gate_argv  # None → no deterministic gate
@@ -2069,6 +2073,22 @@ class RunLoop:
         # name → effective cwd, from `kc project list --output=json`; loaded
         # in run() (both fresh and resume need it before any dispatch).
         self.project_dirs: dict[str, Path] = {}
+        # The sibling repos' components (_sibling_owners): None until a
+        # Target misses project_dirs, and again whenever project_dirs is
+        # re-read.
+        self._sibling_owners: dict[str, list[Path]] | None = None
+        self._siblings_listed: list[str] = []
+        self._siblings_unlisted: list[str] = []
+
+    def reroot(self, root: Path) -> None:
+        """Point the loop at another code repo — the dry run's, started from
+        a repo that is not the one the slice's Targets live in. What was
+        derived from the old root goes with it and is re-derived on use."""
+        self.repo_root = root
+        self._cfg = None
+        self._devlock = None
+        self.project_dirs = {}
+        self._sibling_owners = None
 
     @property
     def cfg(self) -> project_config.ProjectConfig:
@@ -2537,8 +2557,11 @@ class RunLoop:
         with hand-run gates (#746). This method runs at every `_run_phases`
         iteration, i.e. after every phase merge, so resolution sees the
         manifest as it stands. A failing load bails exactly as run()'s
-        opening one does."""
+        opening one does. The sibling repos' sets are dropped with it and
+        re-read on the first Target that needs them — a phase may register
+        a component in a sibling just the same."""
         self.project_dirs = load_project_dirs(self.repo_root)
+        self._sibling_owners = None
         for attempt in (1, 2):
             try:
                 text = self.plan_path.read_text()
@@ -2614,16 +2637,72 @@ class RunLoop:
                 return entry["session"], entry.get("role")
         return None, None
 
+    def _sibling_repos(self) -> list[Path]:
+        """The environment's other repos with a kc manifest: every git
+        checkout beside the invoking repo (a `.git` file is a worktree, still
+        a checkout) that carries `.kubecoder/project.yaml`. In a KubeCoder
+        pod every repo of the environment is checked out side by side under
+        /work — the layout preflight's sync walks and `../Repo` Targets
+        already assume."""
+        primary = self.repo_root.resolve()
+        try:
+            beside = sorted(self.repo_root.parent.iterdir())
+        except OSError:
+            return []
+        return [d.resolve() for d in beside
+                if d.is_dir() and d.resolve() != primary
+                and (d / ".git").exists()
+                and (d / ".kubecoder" / "project.yaml").is_file()]
+
+    def _sibling_component_owners(self) -> dict[str, list[Path]]:
+        """Component name → the sibling repos whose `kc project list` has it.
+
+        Read only once a Target misses the invoking repo's own set, and kept
+        until `_load_plan` re-reads the manifests. kc reads each manifest,
+        from that repo's root, as it does the invoking one. A sibling kc
+        cannot list is skipped with a log line and named in the not-found
+        error, never a bail: the name the plan wants may live in another
+        sibling, and one that does not stays a plan problem the plan's
+        author can fix."""
+        if self._sibling_owners is None:
+            owners: dict[str, list[Path]] = {}
+            self._siblings_listed, self._siblings_unlisted = [], []
+            for sibling in self._sibling_repos():
+                try:
+                    components = load_project_dirs(sibling)
+                except Bailout as e:
+                    self._siblings_unlisted.append(sibling.name)
+                    self.log(f"sibling components: {sibling.name} skipped — "
+                             f"{e.details}")
+                    continue
+                self._siblings_listed.append(sibling.name)
+                for name in components:
+                    owners.setdefault(name, []).append(sibling)
+            self._sibling_owners = owners
+        return self._sibling_owners
+
     def _resolve_target(self, target: str,
                         creates: str | None = None) -> ResolvedTarget:
         """A `kc project list` component, or a sibling repo path. Raises
         ValueError with a fix-it message for anything else.
 
+        The invoking repo's components come first and shadow any sibling's
+        (every repo has a `root`, and `Target: root` means this one's). A
+        bare name that misses them is looked up in the sibling repos'
+        components: found in exactly one, it is that repo's component —
+        branched, merged and pushed there like a sibling path, gated per
+        component from that repo's root; found in several, the plan has to
+        say which repo.
+
         `creates` is the caller's phase's own `Creates:` declaration: a phase
         that registers its own target resolves optimistically, because the
         executor registers the component mid-phase and the gate runs after —
         by then the argv below is right. Only `_run_phase` passes it; every
-        other caller (push holds, dry run, the plan check) stays strict."""
+        other caller (push holds, dry run, the plan check) stays strict. The
+        optimism is the invoking repo's: a component a phase registers in a
+        sibling is declared on that phase (`Target: ../Repo`, `Creates:`),
+        and the later phases that target it resolve here once it is
+        listed."""
         self_created = (creates is not None and creates == target
                         and not target.startswith(("../", "/")))
         if target in self.project_dirs or self_created:
@@ -2646,10 +2725,26 @@ class RunLoop:
                     if (path / ".kubecoder" / "project.yaml").is_file()
                     else None)
             return ResolvedTarget(target, "sibling", path, gate, path)
+        owners = self._sibling_component_owners().get(target, [])
+        if len(owners) == 1:
+            root = owners[0]
+            return ResolvedTarget(
+                target, "project", root,
+                ["kc", "project", "test", "--project", target], root)
+        if owners:
+            raise ValueError(
+                f"Target `{target}` is a component of several sibling repos "
+                f"({', '.join(r.name for r in owners)}) — write the repo "
+                f"path instead (`../{owners[0].name}`)")
+        searched = ", ".join(self._siblings_listed) or "none"
+        if self._siblings_unlisted:
+            searched += ("; `kc project list` failed in "
+                         + ", ".join(self._siblings_unlisted))
         raise ValueError(
             f"Target `{target}` is neither a `kc project list` component "
             f"({', '.join(sorted(self.project_dirs)) or 'none found'}) nor "
-            "a sibling repo path (`../Repo`)")
+            "a sibling repo path (`../Repo`), and no sibling repo's "
+            f"components have it (siblings searched: {searched})")
 
     def _stamp_done(self, phase_id: str) -> None:
         """The driver's mechanical `✅ DONE` stamp, committed in the specs
@@ -3209,10 +3304,10 @@ class RunLoop:
             self._run_phase(pending)
 
     def _executor_where(self, target: ResolvedTarget) -> str:
-        """The clause locating a sibling target's working tree: the session
-        itself spawns in the invoking repo, so the prompt must carry the
-        pointer."""
-        if target.kind == "project":
+        """The clause locating a sibling target's working tree — a sibling
+        path, or a sibling repo's component: the session itself spawns in
+        the invoking repo, so the prompt must carry the pointer."""
+        if target.kind == "project" and target.git_root == self.repo_root:
             return ""
         return f" in the sibling repo {target.git_root}"
 
@@ -3287,7 +3382,9 @@ class RunLoop:
 
     def _gate_hint(self, target: ResolvedTarget) -> str:
         if target.kind == "project":
-            return f" (`kc project test --project {target.name}`)"
+            where = ("" if target.git_root == self.repo_root
+                     else f" from {target.git_root}")
+            return f" (`kc project test --project {target.name}`{where})"
         if target.gate_argv:
             return (f" (`kc project test` from {target.git_root})")
         return (f" ({target.git_root} has no kc manifest — gate per that "
@@ -5084,12 +5181,71 @@ def cmd_run(args) -> None:
     loop.run()
 
 
+def code_repos_for(spec_root: Path) -> list[Path]:
+    """The code repos a spec repo serves: the git checkouts beside it that
+    carry a kc manifest and whose `.aiworkflowrc` names it as `spec_repo`.
+    A repo whose config does not load is not one — preflight would refuse
+    to drive it anyway."""
+    spec = spec_root.resolve()
+    found = []
+    for d in sorted(spec.parent.iterdir()):
+        if not d.is_dir() or d.resolve() == spec \
+                or not (d / ".git").exists() \
+                or not (d / ".kubecoder" / "project.yaml").is_file():
+            continue
+        try:
+            cfg = project_config.load(d)
+        except project_config.ConfigError:
+            continue
+        if cfg.spec_repo is not None and cfg.spec_repo.resolve() == spec:
+            found.append(d)
+    return found
+
+
+def _dry_run_code_repo(loop: RunLoop) -> None:
+    """Re-root a dry run started outside the code repo — typically in the
+    spec repo, where /dev:plan-slice leaves its session — on the code repo
+    the slice belongs to, so its Targets resolve where the run will resolve
+    them. Only the dry run does this: a run is started from the code repo,
+    and preflight holds it to that. Where no code repo names the slice's
+    spec repo, or several do, the dry run stops with that one instruction
+    rather than reporting every component Target of a valid plan as a
+    problem."""
+    here = loop.repo_root
+    if (here / ".kubecoder" / "project.yaml").is_file():
+        return
+    spec_root = spec_root_for(loop.slice_dir)
+    found = code_repos_for(spec_root) if spec_root is not None else []
+    if len(found) == 1:
+        loop.reroot(found[0])
+        print(f"targets resolve in {found[0]}: {here} holds no "
+              f".kubecoder/project.yaml, and {found[0].name} is the one code "
+              f"repo whose .aiworkflowrc names {spec_root} as spec_repo")
+        return
+    if found:
+        why = (f"{len(found)} code repos name {spec_root} as their spec_repo "
+               "(" + ", ".join(str(d) for d in found) + ")")
+    elif spec_root is not None:
+        why = (f"no code repo beside {spec_root} (a checkout with a kc "
+               "manifest) names it as spec_repo in its .aiworkflowrc")
+    else:
+        why = f"{loop.slice_dir} is not inside a spec repo's slices/ tree"
+    print(f"Error: {here} holds no .kubecoder/project.yaml, and {why} — run "
+          "from the code repo that holds .kubecoder/project.yaml",
+          file=sys.stderr)
+    sys.exit(2)
+
+
 def cmd_dry_run(loop: RunLoop) -> None:
     """Parse the plan and resolve every target — no sessions, no branches.
     Exit 0 when the plan is drivable, 2 with the problems otherwise."""
     if not loop.plan_path.is_file():
         print(f"Error: {loop.plan_path} does not exist.", file=sys.stderr)
         sys.exit(2)
+    # A dry run keeps no log of its own: what resolution logs (a sibling kc
+    # could not list) is a warning here, and never lands in log.txt.
+    loop.log = lambda msg: print(f"warning: {msg}", file=sys.stderr)
+    _dry_run_code_repo(loop)
     phases, errors = parse_plan(loop.plan_path.read_text())
     try:
         loop.project_dirs = load_project_dirs(loop.repo_root)

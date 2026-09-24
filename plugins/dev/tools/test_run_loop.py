@@ -1981,6 +1981,181 @@ def test_sibling_without_manifest_has_no_deterministic_gate():
         assert "unverified" in prompt
 
 
+# -- a sibling repo's component as a Target ------------------------------------
+#
+# Run from /work/Ansible, `kc project list` knows Ansible's components only, so
+# `Target: aac-tools` — a component of ../ArgoCDTools — failed the plan check
+# as neither a component nor a sibling path (AIWF-8). A bare name the invoking
+# repo does not have is now looked up in the sibling repos' own lists.
+
+def kc_lists(**by_repo):
+    """A `load_project_dirs` answering per repo, keyed by the repo's
+    directory name: its component names (`[PROJECT]` for a repo not named),
+    or a string for a repo whose `kc project list` fails with that message.
+    `.asked` records every repo it was asked about, in order."""
+    asked = []
+
+    def load(cwd):
+        cwd = Path(cwd)
+        asked.append(cwd.name)
+        names = by_repo.get(cwd.name, [PROJECT])
+        if isinstance(names, str):
+            raise Bailout("protocol_failure", details=names)
+        return dict.fromkeys(names, cwd)
+
+    load.asked = asked
+    return load
+
+
+def test_a_sibling_repos_component_resolves_in_that_repo():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        sib = make_sibling(tmp, name="ArgoCDTools")
+        make_sibling(tmp, name="Bare", manifest=False)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        lists = kc_lists(ArgoCDTools=["root", "aac-tools", "argocd-hook"])
+        with patched(run_loop, load_project_dirs=lists):
+            r.project_dirs = run_loop.load_project_dirs(repo)
+            target = r._resolve_target("aac-tools")
+        assert target.kind == "project"
+        assert target.git_root == sib and target.gate_cwd == sib
+        assert target.gate_argv == ["kc", "project", "test",
+                                    "--project", "aac-tools"]
+        assert r._executor_where(target) == f" in the sibling repo {sib}"
+        assert r._gate_hint(target) == (
+            f" (`kc project test --project aac-tools` from {sib})")
+        # a checkout without a manifest has no components to ask for, and
+        # the spec repo beside it has none either
+        assert lists.asked == ["repo", "ArgoCDTools"]
+
+
+def test_the_invoking_repos_components_shadow_a_siblings():
+    """Every repo has a `root`; `Target: root` keeps meaning this one's — and
+    a hit here never lists a sibling at all."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        make_sibling(tmp, name="ArgoCDTools")
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        lists = kc_lists(repo=[PROJECT, "root"],
+                         ArgoCDTools=["root", "aac-tools"])
+        with patched(run_loop, load_project_dirs=lists):
+            r.project_dirs = run_loop.load_project_dirs(repo)
+            target = r._resolve_target("root")
+        assert target.git_root == repo and target.gate_cwd == repo
+        assert r._executor_where(target) == ""
+        assert r._gate_hint(target) == " (`kc project test --project root`)"
+        assert lists.asked == ["repo"]
+
+
+def test_a_component_two_siblings_define_must_name_its_repo():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        make_sibling(tmp, name="ArgoCDTools")
+        make_sibling(tmp, name="Charts")
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        with patched(run_loop, load_project_dirs=kc_lists(
+                ArgoCDTools=["shared"], Charts=["shared"])):
+            r.project_dirs = run_loop.load_project_dirs(repo)
+            try:
+                r._resolve_target("shared")
+            except ValueError as e:
+                assert "several sibling repos (ArgoCDTools, Charts)" in str(e)
+                assert "`../ArgoCDTools`" in str(e)
+            else:
+                raise AssertionError("an ambiguous component must not resolve")
+
+
+def test_a_sibling_kc_cannot_list_is_skipped_and_named():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        sib = make_sibling(tmp, name="ArgoCDTools")
+        make_sibling(tmp, name="Broken")
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        with patched(run_loop, load_project_dirs=kc_lists(
+                ArgoCDTools=["aac-tools"], Broken="manifest does not parse")):
+            r.project_dirs = run_loop.load_project_dirs(repo)
+            assert r._resolve_target("aac-tools").git_root == sib
+            try:
+                r._resolve_target("nosuch")
+            except ValueError as e:
+                assert "neither a `kc project list` component" in str(e)
+                assert ("siblings searched: ArgoCDTools; `kc project list` "
+                        "failed in Broken") in str(e)
+            else:
+                raise AssertionError("an unknown name must not resolve")
+        log = (slice_dir / "log.txt").read_text()
+        assert "Broken skipped — manifest does not parse" in log
+
+
+def test_a_phase_on_a_sibling_repos_component_lands_in_that_repo():
+    with tempfile.TemporaryDirectory() as tmp:
+        sib = make_sibling(tmp, name="ArgoCDTools")
+        slice_dir, repo = make_slice(
+            tmp, phases=[("1", "Hook change", "argocd-hook")])
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        with patched(run_loop, load_project_dirs=kc_lists(
+                ArgoCDTools=["argocd-hook"])):
+            assert run_to_exit(r) == 0
+        state = load_state(slice_dir)
+        assert state["phases"]["1"]["landed"]["root"] == str(sib)
+        assert state["bases"][str(sib)] == "main"
+        branch_ops = [root for root, c in r.fake_git.calls
+                      if c[0] in ("checkout", "merge")
+                      and any("phase/074-P1" in a for a in c)]
+        assert branch_ops and all(root == sib for root in branch_ops)
+        prompt = next(p for role, p in r.prompts if role == "code-writer")
+        assert f"out in the sibling repo {sib}." in prompt
+        assert f"--project argocd-hook` from {sib}" in prompt
+        # the loop-tail sweep covers the sibling's components too
+        assert (str(sib), "argocd-hook", "test") in r.sweep_calls
+
+
+def test_a_component_an_earlier_phase_creates_in_a_sibling_is_a_target():
+    """P1 registers `aac-tools` in ../ArgoCDTools and says so; P2 targets it
+    before it exists — the dry run and the plan check accept it through the
+    declaration — and once P1 has merged the sibling lookup finds it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sib = make_sibling(tmp, name="ArgoCDTools")
+        slice_dir, repo = make_slice(tmp, phases=[
+            ("1", "Stand up aac-tools", "../ArgoCDTools", False,
+             "Creates: aac-tools\n"),
+            ("2", "Build it out", "aac-tools"),
+        ])
+        argocd = ["root"]
+
+        def load(cwd):
+            names = argocd if Path(cwd).name == "ArgoCDTools" else [PROJECT]
+            return dict.fromkeys(names, Path(cwd))
+
+        def register(loop):
+            argocd.append("aac-tools")
+
+        with patched(run_loop, load_project_dirs=load):
+            dry = RunLoop(slice_dir, resume=False)
+            dry.repo_root = repo
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                run_loop.cmd_dry_run(dry)
+            assert "target=aac-tools [project]  (created by P1)" \
+                in out.getvalue()
+            script = [
+                ("code-writer", {"outcome": "done", "summary": "built"},
+                 register),
+                V["review_signoff"], V["exec_done"], V["review_signoff"],
+                *TAIL,
+            ]
+            r = ScriptedLoop(slice_dir, script, repo_root=repo)
+            assert run_to_exit(r) == 0
+        assert not r.script
+        state = load_state(slice_dir)
+        assert state["phases"]["2"]["status"] == "merged"
+        assert state["phases"]["2"]["landed"]["root"] == str(sib)
+        writers = [p for role, p in r.prompts if role == "code-writer"]
+        assert f"--project aac-tools` from {sib}" in writers[1]
+
+
 # -- the specs repo as a Target -----------------------------------------------
 #
 # A slice whose whole deliverable is in the spec repo (the wire contracts)
@@ -5226,11 +5401,19 @@ def test_the_session_id_is_learned_during_the_turn():
 
 # -- dry run ------------------------------------------------------------------
 
+def dry_run_repo(tmp):
+    """The code repo a dry run resolves in — one with a kc manifest, as the
+    repo a slice runs from always has."""
+    root = Path(tmp) / "repo"
+    (root / ".kubecoder").mkdir(parents=True)
+    (root / ".kubecoder" / "project.yaml").write_text("projects: {}\n")
+    return root
+
+
 def test_dry_run_lists_phases_and_validates_targets(capsys=None):
     with tempfile.TemporaryDirectory() as tmp:
         sib = make_sibling(tmp)
-        root = Path(tmp) / "repo"
-        root.mkdir(exist_ok=True)
+        root = dry_run_repo(tmp)
         slice_dir, _ = make_slice(tmp, repo=False)
         (slice_dir / "plan.md").write_text(
             "# plan\n\n"
@@ -5258,8 +5441,7 @@ def test_dry_run_lists_phases_and_validates_targets(capsys=None):
 
 def test_dry_run_flags_bad_targets():
     with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp) / "repo"
-        root.mkdir()
+        root = dry_run_repo(tmp)
         slice_dir, _ = make_slice(tmp, repo=False)
         (slice_dir / "plan.md").write_text(
             "# plan\n\n" + phase_section("1", "X", "nosuch"))
@@ -5281,8 +5463,7 @@ def test_dry_run_flags_bad_targets():
 
 def test_dry_run_accepts_a_target_a_phase_creates():
     with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp) / "repo"
-        root.mkdir()
+        root = dry_run_repo(tmp)
         slice_dir, _ = make_slice(tmp, repo=False)
         (slice_dir / "plan.md").write_text(
             "# plan\n\n"
@@ -5309,8 +5490,7 @@ def test_dry_run_accepts_a_target_a_phase_creates():
 
 def test_dry_run_flags_a_component_a_done_phase_never_created():
     with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp) / "repo"
-        root.mkdir()
+        root = dry_run_repo(tmp)
         slice_dir, _ = make_slice(tmp, repo=False)
         (slice_dir / "plan.md").write_text(
             "# plan\n\n"
@@ -5329,6 +5509,76 @@ def test_dry_run_flags_a_component_a_done_phase_never_created():
                 raise AssertionError("a false `Creates:` claim must exit 2")
         assert "target=INVALID" in out.getvalue()
         assert "declared `Creates:` by phase P1" in err.getvalue()
+
+
+# /dev:plan-slice leaves its session in the spec repo, and a dry run from
+# there asked kc about a repo with no manifest: a warning, then every
+# component Target of a valid plan reported as a plan problem (AIWF-9).
+
+def code_repo(tmp, name="code", spec_repo="../specs"):
+    """A code repo beside make_slice's spec tree — a checkout with a kc
+    manifest whose `.aiworkflowrc` names `spec_repo`."""
+    root = Path(tmp) / name
+    (root / ".git").mkdir(parents=True)
+    (root / ".kubecoder").mkdir()
+    (root / ".kubecoder" / "project.yaml").write_text("projects: {}\n")
+    (root / ".aiworkflowrc").write_text(
+        rc().replace('"../specs"', f'"{spec_repo}"'))
+    return root
+
+
+def dry_run_from(loop, repo_root):
+    """(exit code, stdout, stderr) of a dry run started in `repo_root`."""
+    loop.repo_root = Path(repo_root)
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            run_loop.cmd_dry_run(loop)
+        except SystemExit as e:
+            return e.code, out.getvalue(), err.getvalue()
+    return 0, out.getvalue(), err.getvalue()
+
+
+def test_a_dry_run_from_the_spec_repo_resolves_in_its_code_repo():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _ = make_slice(tmp, repo=False)
+        code = code_repo(tmp)
+        code_repo(tmp, name="elsewhere", spec_repo="../otherspecs")
+        unconfigured = code_repo(tmp, name="unconfigured")
+        (unconfigured / ".aiworkflowrc").write_text("not = [toml\n")
+        loop = RunLoop(slice_dir, resume=False)
+        rc_, out, err = dry_run_from(loop, Path(tmp) / "specs")
+        assert rc_ == 0, err
+        assert f"targets resolve in {code}:" in out
+        assert f"target={PROJECT} [project]  root={code}" in out
+        assert loop.repo_root == code
+
+
+def test_a_dry_run_that_finds_no_code_repo_stops_with_the_one_instruction():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _ = make_slice(tmp, repo=False, phases=[
+            ("1", "First"), ("2", "Second", "other")])
+        code_repo(tmp, name="elsewhere", spec_repo="../otherspecs")
+        rc_, out, err = dry_run_from(RunLoop(slice_dir, resume=False),
+                                     Path(tmp) / "specs")
+        assert rc_ == 2
+        assert "run from the code repo that holds .kubecoder/project.yaml" \
+            in err
+        assert "no code repo beside" in err
+        assert "INVALID" not in out and "plan problems" not in err
+
+
+def test_a_dry_run_whose_spec_repo_serves_two_code_repos_names_both():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _ = make_slice(tmp, repo=False)
+        one, two = code_repo(tmp, name="one"), code_repo(tmp, name="two")
+        rc_, out, err = dry_run_from(RunLoop(slice_dir, resume=False),
+                                     Path(tmp) / "specs")
+        assert rc_ == 2
+        assert "run from the code repo that holds .kubecoder/project.yaml" \
+            in err
+        assert str(one) in err and str(two) in err
+        assert "INVALID" not in out
 
 
 if __name__ == "__main__":

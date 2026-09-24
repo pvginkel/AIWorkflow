@@ -6,7 +6,9 @@ appending phases mid-run, the operator editing at will — produces a doc `run_l
 drives without nudges. Semantics (who writes which section, review charter, loop mechanics) are
 [plan-loop.md](plan-loop.md) and [run-loop.md](run-loop.md); this doc is the shape. Sanity-check
 a plan with `run_loop.py run <slice-dir> --dry-run` — it parses, resolves every `Target:`, and
-prints the gates without touching anything.
+prints the gates without touching anything. Run from the spec repo, it resolves the Targets in
+the one code repo whose `.aiworkflowrc` names that spec repo, and stops with "run from the code
+repo" when none or several do.
 
 ## plan.md
 
@@ -81,17 +83,23 @@ The mechanical rules the parser holds every author to:
   bullet in that section the parser cannot read is a structure error, not a skip — a hold
   missed silently is a repo the driver pushes. The section is absent from almost every plan.
 - **`Target:` is the first line of every phase body** — a `kc project list` component name or
-  a sibling repo path (`../SiblingRepo`). It roots the executor's cwd, the driver's git
-  operations, and the gate. Markdown decoration is tolerated (`**Target:**` with a backticked
-  value), but the
-  line carries nothing else. A phase without a resolvable Target is a structure error.
+  a sibling repo path (`../SiblingRepo`). A component name resolves in the repo the run starts
+  from first, and there it shadows any sibling's same name (`root` is this repo's). A name this
+  repo lacks is looked up in the sibling repos' own `kc project list`. A component of exactly one
+  sibling lands in that repo and is gated there per component; one that several siblings have
+  is a structure error, and the phase names the repo path instead. The Target roots the
+  executor's cwd, the driver's git operations, and the gate. Markdown decoration is tolerated
+  (`**Target:**` with a backticked value), but the line carries nothing else. A phase without a
+  resolvable Target is a structure error.
 - **`Creates: <component>` declares that a phase registers a new component** — an optional
   line under `Target:` for a phase that adds a `kc project list` entry to the manifest. The
   driver re-reads the component set at every plan parse, so the component is a valid `Target:`
   from the moment the creating phase merges; the declaration is what lets a *later* phase — or
   the creating phase itself — target the name before that: validation and `--dry-run` accept it
   on the declaration's word instead of failing against a manifest that does not hold it yet. A
-  declarer stamped done whose component never appeared in the manifest is a structure error.
+  declarer stamped done whose component never appeared in the manifest is a structure error. A
+  component registered in a sibling repo is declared on the phase that targets that repo
+  (`Target: ../Repo` + `Creates: <name>`); later phases may name it the same way.
 - **`✅ DONE <date>` on the heading is the driver's stamp.** Only the driver writes it, after
   review passes and the merge lands. No agent ever stamps, and a done phase is skipped on every
   re-parse.
