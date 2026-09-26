@@ -575,6 +575,38 @@ def test_a_dirty_target_on_a_live_phase_branch_hears_wait_not_stash():
 
 # -- one live call -----------------------------------------------------------
 
+# -- check_baseline_build ----------------------------------------------------
+
+def test_a_green_baseline_build_passes_silently():
+    subproc = fake_subprocess(0, "root: ok\n")
+    with patched(preflight, subprocess=subproc):
+        preflight.check_baseline_build(Path("/work/MyApp"))
+    assert subproc.calls == [["kc", "project", "build"]]
+
+
+def test_a_manifest_with_no_build_statement_passes():
+    """kc exits 3 (KC-81) when no component has a build statement — nothing
+    ran, so there is no baseline to break (Ansible slice 026)."""
+    subproc = fake_subprocess(
+        3, "root: no build statements — skipped\n"
+           "ansible: no build statements — skipped\n")
+    with patched(preflight, subprocess=subproc):
+        preflight.check_baseline_build(Path("/work/MyApp"))
+
+
+def test_a_red_baseline_build_is_the_projects_to_fix():
+    subproc = fake_subprocess(1, "ansible: FAILED\n")
+    stderr = io.StringIO()
+    with patched(preflight, subprocess=subproc):
+        with contextlib.redirect_stderr(stderr):
+            try:
+                preflight.check_baseline_build(Path("/work/MyApp"))
+                raise AssertionError("expected SystemExit")
+            except SystemExit as exit_:
+                assert exit_.code == 1
+    assert "ansible: FAILED" in stderr.getvalue()
+
+
 def test_against_the_real_kc_status():
     """Pins the invocation to the actual CLI rather than only to the stub: in a
     healthy pod the check passes silently. Skipped where `kc` is absent, or

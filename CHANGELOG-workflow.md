@@ -4,6 +4,13 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-26 — preflight's baseline build passes when kc ran nothing (v0.9.48)
+
+- **A manifest with no build statement no longer fails the run baseline.** 0.9.47 taught the
+  run loop KC-81's exit 3 ("nothing ran") but left preflight's `kc project build` baseline
+  reading every non-zero exit as a broken build. Ansible, whose manifest has no build
+  statements, could not start slice 026. Exit 3 now passes: there is no baseline to break.
+
 ## 2026-09-24 — the gate claims only what it ran, and the doc phase pushes the doc commits it left in sibling repos (v0.9.47)
 
 AIWF-10 (a Fieldnotes report on Ansible slice 025 P4; the kc half is KC-81) and AIWF-11 (the

@@ -448,10 +448,15 @@ def check_synced(root: Path, cfg: project_config.ProjectConfig | None) -> None:
                  f"the repo stands where it did.\n" + "\n".join(tail))
 
 
+# kc's exit code for "nothing ran" (KC-81; run_loop.KC_NOTHING_RAN): a project
+# whose manifest has no build statement has no baseline to break — it passes.
+KC_NOTHING_RAN = 3
+
+
 def check_baseline_build(root: Path) -> None:
     result = subprocess.run(
         ["kc", "project", "build"], cwd=str(root), capture_output=True, text=True)
-    if result.returncode != 0:
+    if result.returncode not in (0, KC_NOTHING_RAN):
         tail = (result.stdout + result.stderr).strip().splitlines()[-40:]
         fail(1,
              "Baseline `kc project build` failed — the suite must be green before a "

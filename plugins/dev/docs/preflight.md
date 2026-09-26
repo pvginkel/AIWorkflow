@@ -101,5 +101,6 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
 
 - The baseline is **`kc project build` only, always on** (no skip flag). A baseline-broken suite
   screams on the first phase's gate run anyway, and a project that cares can put a cheap collect
-  step in its manifest's `build` list. Full `kc project test` is **not** a preflight step — it is
-  the per-phase gate the run loop owns.
+  step in its manifest's `build` list. A manifest with no `build` statement passes: kc exits 3
+  (nothing ran), and there is no baseline to break. Full `kc project test` is **not** a preflight
+  step — it is the per-phase gate the run loop owns.
