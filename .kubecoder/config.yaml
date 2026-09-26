@@ -66,6 +66,16 @@ tools:
 # before a push hands them to Jenkins.
 imageBuilder: true
 
+env:
+  # FieldnotesApp's Grafana dashboard: `grafana/dashboard.py --upload` puts it
+  # there. In-cluster, because grafana.home has no HTTPS of its own: the proxy
+  # answers it with architecture.webathome.org's certificate.
+  - name: GRAFANA_URL
+    value: http://grafana.grafana-prd.svc.cluster.local
+
+secrets:
+  GRAFANA_TOKEN: grafana-api-key
+
 preamble:
   instructions: |
     The AI workflow's environment: the `dev` plugin marketplace
