@@ -24,6 +24,7 @@ repos:
   # parallel sessions read and append to the one working tree.
   - url: https://github.com/pvginkel/FieldnotesAppSpecs
     shared: true
+  - url: https://github.com/pvginkel/FieldnotesDeploy
   # The Fieldnotes store: observations, triage docs and the install, reconciler
   # and actioner skills. Data plus skills, written by the API and the skills.
   - url: https://github.com/pvginkel/Fieldnotes
@@ -38,6 +39,14 @@ repos:
     shared: true
   - url: https://github.com/pvginkel/AnsibleSpecs
     shared: true
+  # ModernAppTemplate, which FieldnotesApp is being rebuilt on (its `dev` branch).
+  # The two component templates nest inside it at backend/ and frontend/, the
+  # layout copier's relative _src_path and the template's sync tooling assume.
+  - url: https://github.com/pvginkel/ModernAppTemplate
+  - url: https://github.com/pvginkel/ModernAppBackendTemplate
+    path: ModernAppTemplate/backend
+  - url: https://github.com/pvginkel/ModernAppFrontendTemplate
+    path: ModernAppTemplate/frontend
 
 capabilities:
   github: rw
@@ -50,6 +59,8 @@ tools:
   - use: iac
   # webhook-relay, which is Go.
   - use: go
+  # The ModernAppTemplate instance: copier, Poetry/uv and pnpm in one sidecar.
+  - use: modern-app
 
 # Proves Fieldnotes' Dockerfile and webhook-relay's with `kaniko --no-push`
 # before a push hands them to Jenkins.
@@ -68,13 +79,15 @@ preamble:
     webhook-relay image). /work/KubeCoderSpecs and /work/AnsibleSpecs are
     read-only sources for its test dataset: never commit there.
 
-    Three toolchain sidecars:
+    Four toolchain sidecars:
 
       cexec python    Python with uv, for every repo here. There is no uv
                       in the dev container.
       cexec iac       Terraform, Helm, kubectl and poetry: HelmCharts'
                       deploy lint / template gates.
       cexec go        Go, for webhook-relay in DockerImages.
+      cexec modern-app  Node, pnpm, Poetry and uv: FieldnotesApp's `dev`
+                      branch, the ModernAppTemplate instance, and copier.
 
     `kaniko --no-push` proves a Dockerfile; never push a `dev-*` or `prd-*`
     tag from here, those are Jenkins'.
