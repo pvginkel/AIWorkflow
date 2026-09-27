@@ -61,6 +61,8 @@ tools:
   - use: go
   # The ModernAppTemplate instance: copier, Poetry/uv and pnpm in one sidecar.
   - use: modern-app
+  # FieldnotesDeploy's architecture gates: gen-architecture and arch-validate.
+  - use: aac-tools
 
 # Proves Fieldnotes' Dockerfile and webhook-relay's with `kaniko --no-push`
 # before a push hands them to Jenkins.
@@ -89,7 +91,7 @@ preamble:
     webhook-relay image). /work/KubeCoderSpecs and /work/AnsibleSpecs are
     read-only sources for its test dataset: never commit there.
 
-    Four toolchain sidecars:
+    Five toolchain sidecars:
 
       cexec python    Python with uv, for every repo here. There is no uv
                       in the dev container.
@@ -98,6 +100,8 @@ preamble:
       cexec go        Go, for webhook-relay in DockerImages.
       cexec modern-app  Node, pnpm, Poetry and uv: FieldnotesApp's `dev`
                       branch, the ModernAppTemplate instance, and copier.
+      cexec aac-tools  gen-architecture and arch-validate: FieldnotesDeploy's
+                      architecture gates.
 
     `kaniko --no-push` proves a Dockerfile; never push a `dev-*` or `prd-*`
     tag from here, those are Jenkins'.
