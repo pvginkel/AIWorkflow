@@ -78,6 +78,15 @@ env:
 secrets:
   GRAFANA_TOKEN: grafana-api-key
 
+ports:
+  # FieldnotesApp's dev stack (`scripts/dev.py`): the Vite dev server, which
+  # proxies /api to the backend on :3401 and the SSE gateway on :3402. Serves
+  # https://fieldnotes.<env-id>.home, for the operator to test the triage UI.
+  - name: fieldnotes
+    port: 3400
+    type: http
+    sslOffload: true
+
 preamble:
   instructions: |
     The AI workflow's environment: the `dev` plugin marketplace
