@@ -95,6 +95,8 @@ from run_loop import (  # noqa: E402
     _protocol_failure_detail,
     _read_json,
     _transcript_path,
+    assert_plugin_current,
+    assert_verification_keys,
     parse_plan,
     parse_push_holds,
     plugin_version,
@@ -384,6 +386,22 @@ class PlanLoop:
                         "another run, or its own branch) — check out "
                         f"{base} there and rerun")
 
+    def _assert_current(self, plugin: bool = True) -> None:
+        """The run loop's guards, in this loop's bail vocabulary: the
+        installed plugin — the one the agent about to run loads — is this
+        loop's, and verification.json holds no key this loop would ignore.
+        Before the run, before every dispatch, and (keys only) before the
+        exit-0 seed reads the file."""
+        try:
+            if plugin:
+                assert_plugin_current(
+                    Path(__file__).name,
+                    " (a plan loop rerun resumes from plan_state.json on its "
+                    "own)")
+            assert_verification_keys(self.slice_dir)
+        except run_loop.Bailout as e:
+            raise Bailout(e.reason, details=e.details) from None
+
     # -- session spawning ----------------------------------------------------
 
     def _nudge(self, prompt: str, session_id: str, label: str,
@@ -393,6 +411,7 @@ class PlanLoop:
             # A nudge is a session committing into the shared spec tree like
             # any other, so it waits for the tree like any other.
             with self._spec_tree(label):
+                self._assert_current()
                 run_kc_session(
                     prompt=prompt, cwd=str(self.repo_root),
                     timeout=NUDGE_TIMEOUT, resume_session=session_id,
@@ -437,6 +456,7 @@ class PlanLoop:
         try:
             with self._spec_tree(label):
                 self._assert_on_base()
+                self._assert_current()
                 self.log(f"{label} session starting")
                 verdict_path.unlink(missing_ok=True)
                 returncode, result = run_kc_session(
@@ -876,6 +896,7 @@ class PlanLoop:
             self._save_state()
 
         try:
+            self._assert_current()
             self._ensure_report()
             while True:
                 phase = self.state["phase"]
@@ -890,6 +911,7 @@ class PlanLoop:
                 else:
                     raise Bailout("protocol_failure",
                                   details=f"unknown phase {phase!r}")
+            self._assert_current(plugin=False)
             self._verify_review_on_file()
             self._verify_plan_parses()
             self._seed_outstanding()

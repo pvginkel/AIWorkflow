@@ -175,5 +175,6 @@ The mechanical rules the parser holds every author to:
   everywhere else; almost every criterion has none. The plan loop turns it into the close-out
   report's Outstanding actions, listing the criterion in its hold's entry or giving it a
   `Settle <id> after …` entry of its own, so the operator's runbook carries it from planning on.
+- **No other keys.** Both loops bail on an item key outside this schema.
 - `verdict`/`rationale`/`evidence` stay empty at planning time — the run loop's test phase
   checks items off (`pass`/`fail` with rationale and evidence).

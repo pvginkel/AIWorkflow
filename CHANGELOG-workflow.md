@@ -4,6 +4,22 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-28 — the loops refuse to run under a different installed plugin version (v0.9.49)
+
+AIWF-16 (a Fieldnotes report from KubeCoder slice 233's plan review; the Fieldnotes triage of
+2026-09-25, "yes").
+
+- **A loop no longer drives agents from another plugin version.** A loop keeps the version it
+  was launched from, but the agents it spawns load the installed plugin. A 0.9.43 plan loop drove
+  a 0.9.47 plan-writer, ignored the `owed_after` it wrote, and never seeded the Outstanding
+  action the plan promised. Both loops now compare their manifest's version with
+  `~/.claude/plugins/installed_plugins.json` at startup and before every dispatch. On a
+  difference they bail `plugin_version` (exit 3) and name the installed `tools/` path to relaunch
+  from, because the launching session's `${CLAUDE_PLUGIN_ROOT}` is the stale copy. A missing
+  file or entry passes.
+- **Unknown `verification.json` keys bail.** An item key outside plan-template.md's schema is a
+  `protocol_failure`, checked at the same points and, in the plan loop, before exit 0.
+
 ## 2026-09-26 — preflight's baseline build passes when kc ran nothing (v0.9.48)
 
 - **A manifest with no build statement no longer fails the run baseline.** 0.9.47 taught the

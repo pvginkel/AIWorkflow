@@ -108,7 +108,8 @@ error the orchestrator diagnoses).
 | `spec_tree_timeout` | – | the shared spec tree's lease stayed held past the wait cap — a parallel run's spec-repo phase, or the sessions in flight such a phase waits for ([run-loop.md](run-loop.md) § The plan is the queue) |
 | `timeout` | – | a driver-run gate or sweep command exceeded its limit, or an agent session did with no usable verdict on disk |
 | `unpushed` | – | a repo the slice touched was still behind `origin/<base>` after the test phase and its push nudges |
-| `protocol_failure` | – | a git command failed, an agent left uncommitted changes, a consult chose an unoffered action, the worktree was dirty at merge, an agent committed the driver's run record onto the phase branch, or a `CLAUDE.md` procedure-doc pointer is missing |
+| `plugin_version` | – | the installed plugin's version differs from the loop's own, at startup or before a dispatch; the details name the installed `tools/` path to relaunch from ([run-loop.md](run-loop.md) § Protocol invariants) |
+| `protocol_failure` | – | a git command failed, an agent left uncommitted changes, a consult chose an unoffered action, the worktree was dirty at merge, an agent committed the driver's run record onto the phase branch, a `CLAUDE.md` procedure-doc pointer is missing, or a `verification.json` item carries a key outside the schema |
 | `lost_work` | – | a commit the driver recorded on a phase branch is not on it any more (and the driver did not ask for the rebase that rewrote it), or a `pending` phase's branch carries commits the run has no record of |
 
 Exit codes: **0** slice complete · **3** error bail · **4** operator question · **2** usage or

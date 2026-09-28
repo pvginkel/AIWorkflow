@@ -59,6 +59,10 @@ application code yourself, and never by re-running suites or re-deriving an agen
 own context. Then relaunch with `--resume`. If the cause is unclear or the fix isn't yours,
 summarize and notify the operator.
 
+A `plugin_version` bail is the one relaunch that does not use `${CLAUDE_PLUGIN_ROOT}`: this
+session's copy is the stale one. Relaunch `--resume` from the installed path `bailout.json`
+names.
+
 ## Job 3 — operator questions (exit 4)
 
 The loop paused on something only the operator can decide (`bailout.json` carries the question —

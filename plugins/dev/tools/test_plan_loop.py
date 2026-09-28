@@ -33,6 +33,13 @@ run_loop = sys.modules[plan_loop.SpecTreeLock.__module__]
 # that asserts the flags points it at a throwaway home of its own.
 run_loop._user_home = lambda: Path(tempfile.gettempdir()) / "planloop-no-home"
 
+# The version guard reads Claude Code's installed_plugins.json, which on the
+# machine running the suite names whatever is installed there — not this
+# tree's version. Pointed at a file that does not exist, the guard fails open;
+# the tests that exercise it write their own (`installed`).
+run_loop.INSTALLED_PLUGINS = (Path(tempfile.gettempdir()) / "planloop-no-home"
+                              / "installed_plugins.json")
+
 PLAN_HEADER = """\
 # Test slice — plan
 
@@ -104,6 +111,7 @@ class ScriptedLoop(PlanLoop):
         # and a dispatch onto someone else's branch commits the plan there.
         with self._spec_tree(f"[{role} r{round_}]"):
             self._assert_on_base()
+            self._assert_current()
             assert self.script, f"unexpected extra spawn: {role} r{round_}"
             step = self.script.pop(0)
             want_role, verdict = step[0], step[1]
@@ -952,6 +960,166 @@ def test_a_lease_wait_past_the_cap_bails_blocked_with_the_holder():
         assert bail["reason"] == "blocked"
         assert "slice 223 P1 (phase/223-P1)" in bail["details"]
         assert not loop.spawned
+
+
+
+# -- the installed-plugin and verification-key guards -----------------------
+
+OURS = run_loop.plugin_version()
+
+
+class installed:
+    """installed_plugins.json in `tmp`, naming `version` for this plugin
+    (None: no entry for it), with the loop's guard pointed at it for the
+    `with` block. `set` rewrites it — the marketplace updating mid-run."""
+
+    def __init__(self, tmp, version):
+        self.path = Path(tmp) / "installed_plugins.json"
+        self.install = Path(tmp) / "cache" / "aiworkflow" / "dev"
+        self.set(version)
+
+    def set(self, version):
+        plugins = {"kubecoder@kubecoder-config": [
+            {"scope": "user", "installPath": "/elsewhere", "version": "0.8"}]}
+        if version is not None:
+            plugins["dev@aiworkflow"] = [{
+                "scope": "user", "version": version,
+                "installPath": str(self.install / version)}]
+        self.path.write_text(json.dumps({"version": 2, "plugins": plugins}))
+
+    def __enter__(self):
+        self.saved = run_loop.INSTALLED_PLUGINS
+        run_loop.INSTALLED_PLUGINS = self.path
+        return self
+
+    def __exit__(self, *exc):
+        run_loop.INSTALLED_PLUGINS = self.saved
+        return False
+
+
+def test_a_plugin_version_mismatch_bails_before_the_first_dispatch():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        with installed(tmp, "0.0.1") as inst:
+            loop = ScriptedLoop(slice_dir, [W_DONE, R_GO])
+            assert run_to_exit(loop) == 3
+            assert not loop.spawned
+            bail = json.loads((slice_dir / "plan_bailout.json").read_text())
+            assert bail["reason"] == "plugin_version"
+            assert f"runs plugin {OURS}" in bail["details"]
+            assert "installed plugin is 0.0.1" in bail["details"]
+            assert str(inst.install / "0.0.1" / "tools" / "plan_loop.py") \
+                in bail["details"]
+            assert "plan_state.json" in bail["details"]
+
+            inst.set(OURS)
+            loop = ScriptedLoop(slice_dir, [W_DONE, R_GO])
+            assert run_to_exit(loop) == 0, "the relaunch picks the run up"
+
+
+def test_a_matching_or_unknown_installed_plugin_proceeds():
+    for version in (OURS, None, "absent"):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir = make_slice(tmp)
+            with installed(tmp, version) as inst:
+                if version == "absent":
+                    inst.path.unlink()
+                loop = ScriptedLoop(slice_dir, [W_DONE, R_GO])
+                assert run_to_exit(loop) == 0, version
+
+
+def install_mid_writer(writes_verdict):
+    """Run the real _spawn with a writer session that updates the installed
+    plugin; return (sessions run, the bail)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        sessions = []
+        loop = PlanLoop(slice_dir)
+        loop._assert_agents = lambda: None
+        loop.git = lambda *args: (
+            "" if args[0] == "status"
+            else "/specs" if args == ("rev-parse", "--show-toplevel")
+            else "sha123")
+        with installed(tmp, OURS) as inst:
+
+            def fake_session(prompt, cwd, timeout, agent=None, model=None,
+                             effort=None, resume_session=None, extra_env=None,
+                             flags=None, progress=None, on_session=None):
+                sessions.append((agent, resume_session))
+                write_phases(loop)
+                if writes_verdict:
+                    (slice_dir / "plan_writer_result_r1.json").write_text(
+                        '{"outcome": "done", "summary": "ok"}')
+                inst.set("9.9.9")
+                return 0, type("R", (), {"session_id": "sess-1",
+                                         "result_text": "",
+                                         "is_error": False})()
+
+            original = plan_loop.run_kc_session
+            plan_loop.run_kc_session = fake_session
+            try:
+                assert run_to_exit(loop) == 3
+            finally:
+                plan_loop.run_kc_session = original
+        return sessions, json.loads(
+            (slice_dir / "plan_bailout.json").read_text())
+
+
+def test_an_install_mid_run_bails_before_the_next_dispatch_or_nudge():
+    """The real _spawn: the writer's pass updates the installed plugin, so
+    the reviewer's dispatch — or, when the writer left no verdict, the
+    verdict nudge — never goes out."""
+    for writes_verdict in (True, False):
+        sessions, bail = install_mid_writer(writes_verdict)
+        assert sessions == [("plan-writer", None)], writes_verdict
+        assert bail["reason"] == "plugin_version"
+        assert "installed plugin is 9.9.9" in bail["details"]
+
+
+def writes_items(*items):
+    def effect(loop):
+        write_phases(loop)
+        (loop.slice_dir / "verification.json").write_text(
+            json.dumps({"items": list(items)}))
+    return effect
+
+
+def test_an_unknown_verification_key_bails():
+    """Before the next dispatch, and before the exit-0 seed reads the file
+    when the last pass wrote it."""
+    unknown = dict(criterion("V02", "it works"), surprise=1)
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [
+            ("plan-writer", {"outcome": "done", "summary": "w"},
+             writes_items(criterion("V01", "fine"), unknown)), R_GO])
+        assert run_to_exit(loop) == 3
+        assert [s[0] for s in loop.spawned] == ["plan-writer"]
+        bail = json.loads((slice_dir / "plan_bailout.json").read_text())
+        assert bail["reason"] == "protocol_failure"
+        assert "V02 `surprise`" in bail["details"]
+        assert "V01" not in bail["details"]
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [
+            W_DONE, (*R_GO, writes_items(unknown))])
+        assert run_to_exit(loop) == 3
+        bail = json.loads((slice_dir / "plan_bailout.json").read_text())
+        assert bail["reason"] == "protocol_failure"
+        assert "V02 `surprise`" in bail["details"]
+        assert [s[0] for s in loop.spawned] == ["plan-writer", "plan-reviewer"]
+
+
+def test_the_full_verification_schema_proceeds():
+    item = criterion("V01", "it works", owed_after="../HelmCharts")
+    assert set(item) == run_loop.VERIFICATION_ITEM_KEYS
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [
+            ("plan-writer", {"outcome": "done", "summary": "w"},
+             writes_items(item)), R_GO])
+        assert run_to_exit(loop) == 0
 
 
 if __name__ == "__main__":

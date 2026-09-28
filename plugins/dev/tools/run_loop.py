@@ -419,6 +419,100 @@ def plugin_version() -> str | None:
     return manifest.get("version") or None
 
 
+# Claude Code's record of what is installed — the plugin every agent a loop
+# dispatches loads. The loop itself runs from wherever it was launched, and
+# the plugin cache keeps old versions, so the two can differ. A module
+# constant so the suites point it away from the operator's own file.
+INSTALLED_PLUGINS = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
+TOOLS_DIR = Path(__file__).resolve().parent
+
+
+def installed_plugin(tools_dir: Path | None = None) -> tuple[str, str] | None:
+    """(version, installPath) of this plugin as installed_plugins.json has it,
+    or None when that cannot be told. The entry is `<name>@<marketplace>`:
+    the marketplace is read off the cache layout this file runs from
+    (`.../plugins/cache/<marketplace>/<name>/<version>/tools/`), else the
+    file's sole `<name>@*` key is taken; several or none is None. Within the
+    entry the user-scope install wins, else a lone one."""
+    manifest = _read_json(PLUGIN_MANIFEST)
+    name = manifest.get("name") if isinstance(manifest, dict) else None
+    data = _read_json(INSTALLED_PLUGINS)
+    plugins = data.get("plugins") if isinstance(data, dict) else None
+    if not name or not isinstance(plugins, dict):
+        return None
+    parts = (tools_dir or TOOLS_DIR).parts
+    if (len(parts) >= 6 and parts[-1] == "tools" and parts[-3] == name
+            and parts[-5] == "cache" and parts[-6] == "plugins"):
+        key = f"{name}@{parts[-4]}"
+    else:
+        keys = [k for k in plugins if k.split("@", 1)[0] == name]
+        if len(keys) != 1:
+            return None
+        key = keys[0]
+    entries = plugins.get(key)
+    if not isinstance(entries, list):
+        return None
+    entries = [e for e in entries if isinstance(e, dict)]
+    user = [e for e in entries if e.get("scope") == "user"]
+    entry = user[0] if user else entries[0] if len(entries) == 1 else None
+    version = entry.get("version") if entry else None
+    if not isinstance(version, str) or not version:
+        return None
+    path = entry.get("installPath")
+    return version, path if isinstance(path, str) else ""
+
+
+def assert_plugin_current(script: str, rerun: str) -> None:
+    """Bail (`plugin_version`, an error) when this loop runs another plugin
+    version than the one its agents load: a newer agent writes what this
+    driver ignores, an older one misses what it expects. Fail open — an
+    unknown version on either side is no evidence of a mismatch. `script` is
+    the launching loop's filename, `rerun` how a relaunch picks the run up."""
+    ours = plugin_version()
+    installed = installed_plugin()
+    if not ours or installed is None or installed[0] == ours:
+        return
+    version, path = installed
+    relaunch = (str(Path(path) / "tools" / script) if path
+                else f"the installed plugin's tools/{script}")
+    raise Bailout(
+        "plugin_version",
+        details=f"this loop runs plugin {ours} from {TOOLS_DIR}; the "
+                f"installed plugin is {version}, which the agents it "
+                "dispatches load, so driver and agents disagree on what they "
+                f"hand each other. Relaunch from {relaunch} with the same "
+                f"arguments{rerun}.")
+
+
+# verification.json's item schema (docs/plan-template.md § verification.json).
+# A key outside it is one this driver does not act on — the agent that wrote
+# it loads a plugin that does.
+VERIFICATION_ITEM_KEYS = frozenset({
+    "id", "area", "description", "owed_after", "verdict", "rationale",
+    "evidence"})
+
+
+def assert_verification_keys(slice_dir: Path) -> None:
+    """Bail (`protocol_failure`) when a verification.json item carries a key
+    outside VERIFICATION_ITEM_KEYS, rather than silently ignore what it says.
+    A missing or unparseable file is not this check's business."""
+    data = _read_json(Path(slice_dir) / "verification.json")
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return
+    unknown = [f"{item.get('id') or f'item {i}'} `{key}`"
+               for i, item in enumerate(items, 1) if isinstance(item, dict)
+               for key in sorted(set(item) - VERIFICATION_ITEM_KEYS)]
+    if unknown:
+        raise Bailout(
+            "protocol_failure",
+            details="verification.json carries item key(s) this driver "
+                    f"(plugin {plugin_version() or 'unknown'}) does not know: "
+                    + ", ".join(unknown) + " — typically written by an agent "
+                    "loading a newer plugin. Relaunch from the installed "
+                    "plugin, or remove the key.")
+
+
 def _protocol_failure_detail(role: str, returncode: int, verdict: dict | None,
                              verdict_name: str, valid: bool,
                              nudged: bool, recoveries: int = 0) -> str:
@@ -2810,11 +2904,22 @@ class RunLoop:
 
     # -- session spawning ----------------------------------------------------
 
+    def _assert_current(self) -> None:
+        """Before the run and before every dispatch: the installed plugin —
+        the one the agent about to run loads — is this loop's, and
+        verification.json holds no key this loop would ignore. Either can
+        change under a running loop (a marketplace update, a newer agent)."""
+        assert_plugin_current(Path(__file__).name,
+                              " plus --resume (a run loop resumes from "
+                              "state.json)")
+        assert_verification_keys(self.slice_dir)
+
     def _nudge(self, prompt: str, cwd: Path, session_id: str,
                label: str, role: str | None, retry: bool = True) -> bool:
         """One resume-shot at a session that missed part of its protocol;
         returns whether the FIRST send was swallowed. Failures fall through
-        to the caller's re-check; a nudge never raises. `role` is the
+        to the caller's re-check; a nudge never raises, save the
+        `_assert_current` bail every dispatch takes. `role` is the
         resumed session's, so the resume carries the same spawn flags (a
         differing prefix would miss the cache).
 
@@ -2833,6 +2938,7 @@ class RunLoop:
                 # A nudge is a session committing into the shared spec tree
                 # like any other, so it waits for the tree like any other.
                 with self.spec_lock.shared(label):
+                    self._assert_current()
                     _, result = run_kc_session(
                         prompt=prompt, cwd=str(cwd), timeout=NUDGE_TIMEOUT,
                         resume_session=session_id, extra_env=SPAWN_ENV,
@@ -2998,6 +3104,7 @@ class RunLoop:
             try:
                 with self.spec_lock.shared(label):
                     self._assert_spec_on_base(spec_branch, phase_id)
+                    self._assert_current()
                     returncode, result = run_kc_session(
                         prompt=prompt,
                         cwd=str(cwd),
@@ -5080,6 +5187,9 @@ class RunLoop:
             if not self.resume:
                 self.preflight()
                 self._base_branch(self.repo_root)
+            # After preflight and the base, so the relaunch this bail asks
+            # for is an ordinary --resume.
+            self._assert_current()
             self._ensure_report()
             self._report_bailouts()
 

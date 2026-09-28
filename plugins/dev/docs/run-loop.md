@@ -325,3 +325,14 @@ session-limit window is not an agent outcome: the driver waits out the stated re
 redispatches the same round — nothing counted. The driver asserts its agent definitions resolve
 before dispatching anything (`kc session create-headless --agent` does
 not validate names).
+
+**The loop runs only under the plugin version its agents load.** A loop keeps the version it was
+launched from, while every session it spawns loads the installed plugin
+(`~/.claude/plugins/installed_plugins.json`); a 0.9.43 plan loop drove a 0.9.47 plan-writer,
+whose `owed_after` it ignored without a word (AIWF-16). So both loops compare their own
+manifest's version with the installed one at startup and before every dispatch, and bail
+`plugin_version` (exit 3) on a difference, naming the installed copy's `tools/` path to relaunch
+from — the run loop with `--resume`, the plan loop by a plain rerun. A missing file or entry
+passes: the check never holds a loop up on its own bookkeeping. The same points reject a
+`verification.json` item key outside [plan-template.md](plan-template.md)'s schema as
+`protocol_failure` — the second guard, for a newer agent's field the driver would otherwise drop.

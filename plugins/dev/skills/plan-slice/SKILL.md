@@ -149,8 +149,10 @@ slice.md — there is no fix-verify loop behind it. Handle the exit:
   passing it when you did not ships the plan unfixed. Recording the rulings, or squaring
   ordering/not-in-scope with a reversed ruling, is not applying the fixes. No review follows
   the fixes — your sanity-read in §4 is the second look.
-- **Exit 3 — bailed** (`blocked` / `timeout` / `protocol_failure`): diagnose; fix only what is
-  genuinely environmental, otherwise defer to the operator.
+- **Exit 3 — bailed** (`blocked` / `timeout` / `protocol_failure` / `plugin_version`): diagnose;
+  fix only what is genuinely environmental, otherwise defer to the operator. `plugin_version`
+  means this session's `${CLAUDE_PLUGIN_ROOT}` is stale: rerun from the installed path
+  `plan_bailout.json` names.
 
 ### 4. Promote and present
 
