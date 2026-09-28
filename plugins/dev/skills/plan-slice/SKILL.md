@@ -112,7 +112,10 @@ is the only place the plan-writer reads it; `refinement.md` carries none of it. 
 ordering constraints already known; not-in-scope. A ruling that forbids
 pushing a repo also gets its machine-readable half — a `## Push holds` bullet, shaped as the
 plan template above says; prose alone is invisible to the driver, which then nudges the test
-agent for that push and bails. No phases — the plan-writer designs those, and **`###` is theirs
+agent for that push and bails. Likewise, a ruling that replaces a target's test gate
+("the Jenkins build is the gate"), accepts a red lint, build or test, or authorizes prd gets a
+`## Driver rulings` bullet (`gate` / `accept` / `prd`). Without one, the driver runs the gate the
+ruling waived and spends its fix rounds on a red it cannot fix. No phases — the plan-writer designs those, and **`###` is theirs
 alone**: sub-structure inside your sections is `####`, because every `###` the parser sees is a
 phase heading and a stray one is a structure error. Commit it with `refinement.md` (stage by
 name — shared working tree), then:

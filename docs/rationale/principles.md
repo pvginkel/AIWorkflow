@@ -153,12 +153,22 @@ phase to save the one that fixes it.
 *Stated in:* `run-loop.md` § After the last phase.
 
 **The driver checks pushes, it does not push, when a test phase exists; a plan can hold a repo's
-push.** `## Push holds` in `plan.md` is the one `##` section the run loop reads.
+push.** `## Push holds` in `plan.md` is one of the two `##` sections the run loop reads.
 *Origin:* slice 135 held `../HelmCharts` by ruling (a push there deploys dev and prd together);
 the test agent honoured it, was nudged twice, the driver bailed `unpushed`, and the run session
 pushed 38 seconds later — `IaC/HelmCharts` #5668 deployed both stages and `kubecoder@prd`
 crash-looped (v0.8.0; **measured**).
 *Stated in:* `run-loop.md`, `plan-template.md`, `skills/run-slice/SKILL.md` Job 3.
+
+**A ruling that bends a driver rule needs a machine-readable half.** The driver doesn't read
+prose, so a ruling it must obey — waive a target's gate, accept a red row, authorize prd — is a
+`## Driver rulings` bullet beside the words in Requirements / rulings. The gate waiver is keyed
+per target, not per phase, so one bullet reaches the phase gate and the sweep alike.
+*Origin:* Ansible slice 030 ruled "the Jenkins build is the gate" for a sibling that its
+environment couldn't test. Jenkins went green, but the driver's gate spent three fix rounds and
+bailed `blocked`, and the test phase's red-row rule deadlocked against the same ruling (v0.9.50,
+AIWF-23; **measured**).
+*Stated in:* `run-loop.md` § After the last phase, `plan-template.md`.
 
 **One driver per slice; a phase branch is reconciled against its record.** A `flock` on the slice
 folder; every commit the record vouches for must still be on the branch, or the base decides, or

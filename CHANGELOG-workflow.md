@@ -4,6 +4,32 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-28 — operator rulings that bend the driver's rules, read from `## Driver rulings` (v0.9.50)
+
+AIWF-23, with AIWF-21 folded in (Fieldnotes reports from ElectronicsInventory, Ansible and
+AnsibleSpecs on 2026-09-26; the triage's "yes", refined with the operator on 2026-09-28 to key
+the gate override per target).
+
+- **A plan can now waive a gate, accept a red, or authorize prd.** In Ansible slice 030 the
+  operator ruled "the Jenkins build is the gate" for a sibling whose suites need Postgres and
+  MinIO, which that environment doesn't declare. Jenkins went green, but the driver's own gate
+  spent three fix rounds that could only answer `blocked`, and the test phase's "a red row does
+  not leave the machine" deadlocked against the same ruling. The ruling was prose, and the
+  driver doesn't read prose. A new optional `## Driver rulings` section in plan.md is the
+  ruling's machine-readable half, with a fixed vocabulary:
+  - `gate <target> — <substitute> — <why>` waives the per-phase test gate, and the target's
+    test rows in the sweep and doc gate. It is keyed per target so one bullet covers the phase
+    gate and the sweep.
+  - `accept <target> <verb> — <why>` makes a red sweep or doc-gate row non-blocking.
+  - `prd <target> — <why>` lifts "prd stays operator-gated" for that target in the test
+    phase's dispatch.
+
+  Rulings are re-read at every point of use, and the sweep's red is worked out when a dispatch
+  renders it. A ruling written at a bail therefore holds on resume, even over a sweep that ran
+  before it. Each ruling becomes one Notable-events entry the first time it takes effect. A
+  bullet the parser can't read is a structure error. `/dev:plan-slice` and `/dev:run-slice`
+  write the bullet beside the prose ruling, as they already do for `## Push holds`.
+
 ## 2026-09-28 — the loops refuse to run under a different installed plugin version (v0.9.49)
 
 AIWF-16 (a Fieldnotes report from KubeCoder slice 233's plan review; the Fieldnotes triage of

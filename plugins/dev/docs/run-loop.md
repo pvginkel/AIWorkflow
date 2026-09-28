@@ -142,7 +142,8 @@ whole plan is a feature of the review, not a cost. Then:
   then `gate_red` bails); there is no separate fixer in the phase loop. A gate kc says **ran
   nothing** (exit 3: the target defines no tests) is neither: the phase proceeds as with no
   gate, no green is recorded, and the reviewer is told the target defines no tests, so the
-  state is unverified.
+  state is unverified. A `gate` ruling in the plan waives the gate outright (§ After the last
+  phase, operator rulings).
 - **Review** — fresh **code-reviewer** per round against the phase's outcome, the acceptance
   criteria (`verification.json`) and repo conventions. Round 1 full branch diff; rounds 2+ are
   delta-scoped to the fix range. A `blocking` tag needs an anchor from the closed list in the
@@ -185,7 +186,8 @@ whole plan is a feature of the review, not a cost. Then:
   describes the tree that dispatch sees. A command kc says ran nothing (exit 3, no statement
   for that verb) is its own row, `nothing ran`: it neither reds the sweep nor holds the push,
   and the green stance claims only the rows that ran. A sweep in which nothing ran at all is
-  unverified, not green. The completion consult and the test phase both receive
+  unverified, not green. Rows a `gate` or `accept` ruling covers are shown as waived or
+  accepted and don't count as red (below). The completion consult and the test phase both receive
   it as deterministic fact — green suites are not re-run by agents — under one principle, stated
   in both dispatches with no special cases: **a branch whose gates are red is not pushed**. A
   red sweep is the consult's to act on — append a fixing phase, or bail with the question — and
@@ -201,7 +203,8 @@ whole plan is a feature of the review, not a cost. Then:
   for this phase (a `flock` on the inode `devlock.lease` names; it releases on crash): taken
   before the session, kept across a findings re-loop while the slice converges, released once the
   phase is clean and the push check below has passed. Under that hold pushing and rolling dev for
-  verification is pre-authorized — the lock *is* the coordination. prd stays operator-gated.
+  verification is pre-authorized — the lock *is* the coordination. prd stays operator-gated,
+  except for a target a `prd` ruling names (below).
   Blocking findings come back as appended phases; sub-bar findings go in the close-out report;
   `verification.json` is checked off.
 - **The phase is optional** (`test_phase.enabled = false`), as is the doc phase below and the
@@ -234,6 +237,33 @@ whole plan is a feature of the review, not a cost. Then:
   exits: violate the ruling or bail. One slice held `../HelmCharts` (a push there deploys dev and
   prd together and rolls both controllers); the test agent honoured the ruling, was nudged twice,
   the driver bailed `unpushed` — and the run session pushed 38 seconds later, crash-looping prd.
+- **Operator rulings bend three of the rules above.** `plan.md`'s `## Driver rulings` section
+  ([plan-template.md](plan-template.md) holds the bullet grammar) is re-read at every point of
+  use, so a ruling written while the run sits at a bail holds from the resume on.
+  - A **`gate`** ruling waives the driver's test gate for a target, keyed per target and not per
+    phase, because "this environment can't run these suites" is a fact about the repo. A phase
+    it covers runs no gate and so gets no fix round. The reviewer is told the driver did not
+    verify the commit and which substitute the ruling names, and the executor is told a red
+    suite there is not its to fix. The target's `test` rows drop out of the sweep (its lint and
+    build rows still run), and so does its test verb in the doc gate. A phase whose Target is a
+    whole repo is covered by any gate ruling in that repo, because its gate can't leave one
+    component out.
+  - An **`accept`** ruling turns one red sweep row (target plus verb) non-blocking. It is
+    rendered as accepted and drops out of the stances' red, and the doc gate honours it too. It
+    never covers the per-phase gate: a gate the environment can't pass needs a `gate` ruling.
+  - A **`prd`** ruling authorizes the test phase to push and roll prd for that target. Every
+    target it doesn't name stays operator-gated.
+
+  The sweep's red is worked out when a dispatch renders it, against the rulings as they stand
+  then, so a ruling added after the sweep ran still counts. The test phase's dispatch lists the
+  gate rulings with their substitutes, whose results are its evidence. The driver never runs or
+  polls a substitute: it is a name the driver passes on, and a phase branch isn't pushed at gate
+  time anyway. The first time a ruling takes effect, the driver writes a Notable-events entry,
+  so the report says what the run left unverified. The case behind this section: one slice's
+  sibling needed Postgres and MinIO, which its environment doesn't declare. The operator ruled
+  "the Jenkins build is the gate", and Jenkins went green. The driver's own gate still spent its
+  three fix rounds, and the fixes could only answer `blocked`. Meanwhile the test phase's "a red
+  row does not leave the machine" deadlocked against that same ruling.
 - **Doc phase** — after test-complete: auto docs. One `doc-writer` session told to read the
   slice-doc-plan doc (`.aiworkflowrc`'s `doc_phase.plan`) and execute it — the doc surfaces that
   already describe the changed behavior, brought up to date from the whole slice's diff, single
@@ -257,7 +287,8 @@ whole plan is a feature of the review, not a cost. Then:
   rendered from `close_out.py`'s own parser, plus where the Summary and `Focus:` lines go — the
   `--help` round trips and the previous-slice style reads go with them. The driver then runs the
   full gate sweep — `kc project lint` + `build` + `test`, fail-fast (red is nudged back to the
-  writer's session; a verb that ran nothing is not red) — checks local `<base>` against
+  writer's session; a verb that ran nothing is not red; a verb a ruling touches in this repo runs
+  per component, leaving out what the rulings cover) — checks local `<base>` against
   `origin/<base>` (the branch rebases onto
   origin but ff-merges into local, so a local-ahead base bails `blocked` before anything is
   mutated), rebase-merges the branch onto the base branch and pushes; the dev

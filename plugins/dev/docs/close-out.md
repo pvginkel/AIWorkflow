@@ -96,7 +96,9 @@ other slice-folder artifact).
   and says how many are witnessed. If the run ends before the doc
   phase, or the doc phase reports `blocked`/`question`, the operator reads the report raw.
 - **the driver** — deterministic entries only: a refuted finding, a funding-consult merge and
-  every stop of the run (entered by the resume that follows it) each become a Notable event; on
+  every stop of the run (entered by the resume that follows it) each become a Notable event, as
+  does each `## Driver rulings` bullet, once, the first time it takes effect
+  ([run-loop.md](run-loop.md)); on
   a phase that targets the spec repo, an agent's append left uncommitted is committed onto the
   phase branch before the driver leaves it; the report is **rendered** (`close_out.py render` — live first,
   Bugs by severity, struck folded last; idempotent) immediately before the doc phase is

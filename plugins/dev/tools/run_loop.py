@@ -644,6 +644,11 @@ TARGET_RE = re.compile(r"^\s*\**Target\**\s*:\**\s*`?([^`]+?)`?\s*$")
 CREATES_RE = re.compile(r"^\s*\**Creates\**\s*:\**\s*`?([^`]+?)`?\s*$")
 PUSH_HOLDS_RE = re.compile(r"^##\s+Push holds\s*$", re.IGNORECASE)
 HOLD_RE = re.compile(r"^\s*[-*]\s+\**`?(\S+?)`?\**\s+—\s+(\S.*?)\s*$")
+DRIVER_RULINGS_RE = re.compile(r"^##\s+Driver rulings\s*$", re.IGNORECASE)
+RULING_BULLET_RE = re.compile(r"^\s*[-*]\s+(\S+)\s+(.*?)\s*$")
+RULING_TARGET_RE = re.compile(r"^\**`?(\S+?)`?\**$")
+RULING_ACCEPT_RE = re.compile(r"^\**`?(\S+?)`?\**\s+`?(\S+?)`?$")
+RULING_SEP_RE = re.compile(r"\s+—\s+")
 
 
 class Phase:
@@ -773,6 +778,109 @@ def parse_push_holds(text: str) -> tuple[list[tuple[str, str]], list[str]]:
         seen.add(target)
         holds.append((target, why))
     return holds, errors
+
+
+class Ruling:
+    """One `## Driver rulings` bullet: the operator overriding a fixed rule
+    of the loop for one target. `gate` waives the phase gate and the sweep's
+    `test` row (`substitute` names what proves it instead, None for none);
+    `accept` lets a red sweep/doc-gate row through for one verb; `prd`
+    authorizes the test phase to push and roll prd."""
+
+    def __init__(self, kind: str, target: str, why: str,
+                 verb: str | None = None, substitute: str | None = None,
+                 text: str = ""):
+        self.kind = kind
+        self.target = target
+        self.why = why
+        # the verb the ruling governs: a gate ruling is the `test` gate
+        self.verb = "test" if kind == "gate" else verb
+        self.substitute = substitute
+        self.text = text
+
+    @property
+    def key(self) -> str:
+        """Identity for duplicates and the close-out's once-per-run record."""
+        return " ".join(p for p in (self.kind, self.target,
+                                    self.verb if self.kind == "accept"
+                                    else None) if p)
+
+    @property
+    def substitute_text(self) -> str:
+        return self.substitute or "no substitute"
+
+
+RULING_GRAMMAR = (
+    "`- gate <target> — <substitute or none> — <why>`, "
+    f"`- accept <target> <{'|'.join(SWEEP_VERBS)}> — <why>` or "
+    "`- prd <target> — <why>`; em dashes, target written as a phase writes "
+    "its `Target:`")
+
+
+def parse_rulings(text: str) -> tuple[list[Ruling], list[str]]:
+    """(rulings, structure errors) from `## Driver rulings`. Read like
+    `## Push holds`: prose and comments ignored, and every bullet that is not
+    a ruling is an error — a ruling the driver silently missed is a gate it
+    runs anyway, and the run deadlocks on a red the operator already
+    ruled on."""
+    rulings: list[Ruling] = []
+    errors: list[str] = []
+    in_section = in_comment = False
+    seen: set[str] = set()
+    for line_no, line in enumerate(text.splitlines()):
+        if in_comment:
+            in_comment = "-->" not in line
+            continue
+        if line.lstrip().startswith("<!--"):
+            in_comment = "-->" not in line
+            continue
+        if line.startswith("#"):
+            in_section = bool(DRIVER_RULINGS_RE.match(line))
+            continue
+        if not in_section or not line.lstrip().startswith(("-", "*")):
+            continue
+        ruling = _parse_ruling(line)
+        if ruling is None:
+            errors.append(f"line {line_no + 1}: `{line.strip()}` is not a "
+                          f"driver ruling ({RULING_GRAMMAR})")
+            continue
+        if ruling.key in seen:
+            errors.append(f"line {line_no + 1}: `{ruling.key}` is ruled "
+                          "twice")
+            continue
+        seen.add(ruling.key)
+        rulings.append(ruling)
+    return rulings, errors
+
+
+def _parse_ruling(line: str) -> Ruling | None:
+    """One bullet as a Ruling, None when it does not parse. The why is the
+    last field and may carry em dashes of its own."""
+    bullet = RULING_BULLET_RE.match(line)
+    if not bullet:
+        return None
+    kind, rest = bullet.group(1).strip("*`").lower(), bullet.group(2)
+    fields = {"gate": 3, "accept": 2, "prd": 2}.get(kind)
+    if fields is None:
+        return None
+    parts = [p.strip() for p in RULING_SEP_RE.split(rest, fields - 1)]
+    if len(parts) != fields or not all(parts):
+        return None
+    head, why = parts[0], parts[-1]
+    if kind == "accept":
+        match = RULING_ACCEPT_RE.match(head)
+        if not match or match.group(2) not in SWEEP_VERBS:
+            return None
+        return Ruling(kind, match.group(1), why, verb=match.group(2),
+                      text=line.strip())
+    match = RULING_TARGET_RE.match(head)
+    if not match:
+        return None
+    substitute = None
+    if kind == "gate" and parts[1].strip("`").lower() != "none":
+        substitute = parts[1]
+    return Ruling(kind, match.group(1), why, substitute=substitute,
+                  text=line.strip())
 
 
 # ---------------------------------------------------------------------------
@@ -1081,7 +1189,9 @@ def load_project_dirs(cwd: Path) -> dict[str, Path]:
 # A gate command's outcome, as the phase gate, the sweep and the doc gate
 # record it — and as a sweep row renders it.
 GATE_OUTCOME_LABELS = {"green": "GREEN", "red": "RED",
-                       "nothing_ran": "nothing ran"}
+                       "nothing_ran": "nothing ran",
+                       # a sweep `test` row a gate ruling covers: not run
+                       "waived": "WAIVED"}
 
 
 def kc_outcome(returncode: int) -> str:
@@ -1673,6 +1783,17 @@ name, never `git add -A`, and commit none of those. The plan doc is yours to
 edit as always.
 """
 
+# Carried by every executor dispatch whose target a gate ruling covers: the
+# driver runs no gate there, and the writer's own `kc project test` may be
+# red for the reason the operator ruled on.
+GATE_WAIVED_NOTE = """
+The driver's test gate for {target} is waived by the operator's ruling in
+plan.md's `## Driver rulings` (substitute: {substitute} — {why}): a red
+`kc project test` there is not this phase's to fix. Cite the substitute's
+result in your done-record where you can reach it; where it needs a push,
+the test phase owns it.
+"""
+
 EXECUTOR_GATE_FIX_PROMPT = """\
 The test gate for phase P{phase_id} of slice {slice_name} is red (branch
 {branch}, fix round {round}). The plan: {plan_path}, digested below.
@@ -1819,6 +1940,16 @@ no tests, so the branch's test state is unverified — say so in your review
 where it bears on a finding, and probe it with targeted runs.\
 """
 
+# The unverified line's reason, when the operator gave it: plan.md's
+# `## Driver rulings` waives this target's gate, so the driver ran nothing.
+GATE_WAIVED_LINE = """\
+The driver did not run the test gate on this commit: plan.md's `## Driver
+rulings` waives it for {target}, naming {substitute} as the gate — {why}.
+The branch's test state is unverified by the driver: say so in your review
+where it bears on a finding, and probe it with targeted runs; the suite is
+still not yours to run.\
+"""
+
 # The review-funding bar: stated by the driver (which knows the round number
 # and what the fix range touched), judged by the consult (which reads the
 # findings). Discrete steps — each admits roughly an order of magnitude fewer
@@ -1959,7 +2090,7 @@ exactly these commits:
 """
 
 SWEEP_STANCE_CONSULT_GREEN = """\
-Every row that ran is GREEN: those commands pass on the merged tree — an
+{every_row} is GREEN: those commands pass on the merged tree — an
 established input to your judgment, not something to re-derive or re-run.
 A `nothing ran` row found nothing to run for its verb and proves nothing
 about it.\
@@ -1975,7 +2106,7 @@ exactly as it stands.\
 """
 
 SWEEP_STANCE_TEST_GREEN = """\
-Every row that ran is GREEN: those suites pass, as an established input — do
+{every_row} is GREEN: those suites pass, as an established input — do
 not re-run them to confirm it. A `nothing ran` row found nothing to run and
 proves nothing. Targeted runs remain yours where they buy a
 finding, and the re-validation your procedure doc orders after a rebase
@@ -1990,6 +2121,21 @@ pushed. A RED row above means this tree does not leave the machine as it
 stands: route the red as a finding (append the fixing phase — a red gate
 is blocking by definition), and push nothing until every gate is green.
 The same holds for any red you find after the rebase.\
+"""
+
+# The green stances' subject — which rows the GREEN claim covers. A row a
+# ruling covers is not green (an accepted row ran red), so with any the
+# claim narrows.
+SWEEP_EVERY_ROW = "Every row that ran"
+SWEEP_EVERY_UNRULED_ROW = "Every row that ran and no ruling covers"
+
+# Appended to the stance when a row renders WAIVED or accepted, so the
+# consult and the test phase read those rows as rulings, not reds.
+SWEEP_RULINGS_NOTE = """\
+A WAIVED or accepted row is the operator's ruling in plan.md's `## Driver
+rulings`, not a gate this tree failed: it does not block the push. A waived
+test gate's substitute is the evidence the test phase cites for it — the
+driver never verified those tests.\
 """
 
 SWEEP_STANCE_NONE = """\
@@ -2007,11 +2153,11 @@ not in this prompt.
 Deterministic facts from the driver:
 - The driver holds the devlock. Under that hold, pushing and rolling dev for
   this slice's verification is pre-authorized — do not ask for permission.
-  prd stays operator-gated; nothing here touches it.
+{prd_line}
 - The slice folder is {slice_dir}; the plan is {plan_path}. Check off
   {verification_path} as you verify (verdict + evidence per item).
 - {close_out_line}
-{hold_block}
+{hold_block}{rulings_block}
 {sweep_block}
 
 Findings route through a generation bar, stated for this pass:
@@ -2084,6 +2230,23 @@ HOLD_BLOCK = """\
 {rows}
   Everything else this slice committed is yours to push, per your procedure
   doc.
+"""
+
+# The test-phase dispatch's prd line: fixed, unless plan.md's `## Driver
+# rulings` authorize prd for named targets.
+PRD_LINE = "  prd stays operator-gated; nothing here touches it."
+PRD_RULINGS_LINE = """\
+  prd stays operator-gated except for these targets, which plan.md's
+  `## Driver rulings` authorize — pushing and rolling prd for them is part
+  of this test phase:
+{rows}\
+"""
+
+RULINGS_BLOCK = """\
+- plan.md's `## Driver rulings` waive the driver's test gate for these
+  targets — the substitute named is the evidence to cite for each, and
+  where it needs a push, that push is this phase's:
+{rows}
 """
 
 PUSH_NUDGE_PROMPT = """\
@@ -2611,6 +2774,125 @@ class RunLoop:
         return HOLD_BLOCK.format(
             rows="\n".join(f"  - {t} — {why}" for t, why in holds))
 
+    # -- driver rulings --------------------------------------------------------
+    # `## Driver rulings` is the operator overriding one of the loop's fixed
+    # rules for one target — a gate the environment cannot run, a red that
+    # predates the slice, prd for a repo the slice must roll. Read like the
+    # push holds: re-read from the plan at every point of use, so a ruling
+    # added while the run sits at a bail takes effect on resume.
+
+    def _rulings(self, text: str
+                 ) -> tuple[list[tuple[Ruling, ResolvedTarget]], list[str]]:
+        """(each ruling with its resolved target, structure errors) — an
+        unresolvable target is an error, as for a push hold."""
+        rulings, errors = parse_rulings(text)
+        resolved: list[tuple[Ruling, ResolvedTarget]] = []
+        for ruling in rulings:
+            try:
+                resolved.append((ruling, self._resolve_target(ruling.target)))
+            except ValueError as e:
+                errors.append(f"driver ruling `{ruling.key}`: {e}")
+        return resolved, errors
+
+    def _current_rulings(self) -> list[tuple[Ruling, ResolvedTarget]]:
+        """The rulings as the plan stands right now. Unresolvable entries
+        drop out here and come back as plan structure errors from
+        `_load_plan`."""
+        try:
+            text = self.plan_path.read_text()
+        except OSError:
+            return []
+        return self._rulings(text)[0]
+
+    @staticmethod
+    def _covering(rulings: list[tuple[Ruling, ResolvedTarget]], root,
+                  component: str | None) -> Ruling | None:
+        """The ruling among `rulings` that covers `component` of the repo at
+        `root` — one naming that component first, then a repo-level one. A
+        None component is the whole repo, which any ruling in it covers: its
+        gate runs every component's tests, so a component's waiver cannot be
+        isolated from it, and running it anyway would redden on exactly the
+        red the operator ruled on."""
+        here = Path(root).resolve()
+        matches = [(r, t) for r, t in rulings
+                   if Path(t.git_root).resolve() == here
+                   and (t.kind == "sibling" or component is None
+                        or t.name == component)]
+        named = [r for r, t in matches if t.kind == "project"]
+        return (named or [r for r, _ in matches] or [None])[0]
+
+    def _gate_ruling(self, target: ResolvedTarget) -> Ruling | None:
+        """The gate ruling that waives this phase target's gate, if any."""
+        gates = [(r, t) for r, t in self._current_rulings()
+                 if r.kind == "gate"]
+        return self._covering(
+            gates, target.git_root,
+            target.name if target.kind == "project" else None)
+
+    def _gate_waived_note(self, target: ResolvedTarget) -> str:
+        """The executor's line when its target's gate is waived — empty
+        otherwise."""
+        ruling = self._gate_ruling(target)
+        if ruling is None:
+            return ""
+        return GATE_WAIVED_NOTE.format(target=target.name,
+                                       substitute=ruling.substitute_text,
+                                       why=ruling.why)
+
+    def _rulings_block(self) -> str:
+        """The gate rulings as the test phase's dispatch carries them: the
+        substitute is the evidence it cites, and it is the one to find out
+        whether that substitute ran."""
+        gates = [r for r, _ in self._current_rulings() if r.kind == "gate"]
+        if not gates:
+            return ""
+        return RULINGS_BLOCK.format(rows="\n".join(
+            f"  - {r.target} — substitute: {r.substitute_text} — {r.why}"
+            for r in gates))
+
+    def _prd_line(self) -> tuple[str, list[Ruling]]:
+        """The test phase's prd line, and the prd rulings it states."""
+        prd = [r for r, _ in self._current_rulings() if r.kind == "prd"]
+        if not prd:
+            return PRD_LINE, []
+        return PRD_RULINGS_LINE.format(rows="\n".join(
+            f"  - {r.target} — {r.why}" for r in prd)), prd
+
+    def _report_ruling(self, ruling: Ruling, where: str) -> None:
+        """A ruling the run applied, entered in the close-out report once per
+        run — the first time it changed what the driver did. Deduped across
+        resumes in state.json, as `_report_hold` dedupes holds."""
+        reported = self.state.setdefault("rulings_reported", [])
+        if ruling.key in reported:
+            return
+        reported.append(ruling.key)
+        self._save_state()
+        body = f"`plan.md`'s `## Driver rulings` section: `{ruling.text}`"
+        if ruling.kind == "gate":
+            headline = (f"Gate waived by ruling: {ruling.target} — "
+                        f"{ruling.substitute_text}")
+            consequence = (f"the driver never verified {ruling.target}'s "
+                           "tests in this run; "
+                           + ("the substitute's result is the only evidence."
+                              if ruling.substitute else
+                              "the ruling names no substitute, so nothing "
+                              "did."))
+        elif ruling.kind == "accept":
+            headline = (f"Red row accepted by ruling: {ruling.target} "
+                        f"{ruling.verb}")
+            consequence = (f"`kc project {ruling.verb}` is red for "
+                           f"{ruling.target} in the tree this slice leaves; "
+                           "the driver let it through on the ruling.")
+        else:
+            headline = f"prd authorized by ruling: {ruling.target}"
+            consequence = ("the test phase was told pushing and rolling prd "
+                           f"for {ruling.target} is its own; what it did "
+                           "there is in its verdict and verification.json.")
+        self._report("Notable events", headline, body,
+                      consequence=consequence,
+                      provenance=f"witnessed — the driver's {where}, against "
+                                 "`plan.md`'s `## Driver rulings`")
+
     def _base_branch(self, root: Path) -> str:
         """The base branch of a target repo, recorded the first time the loop
         touches that repo (the invoking repo is recorded at init).
@@ -2710,6 +2992,7 @@ class RunLoop:
             errors.extend(self._vanished_phases(phases))
             errors.extend(self._target_errors(phases))
             errors.extend(self._push_holds(text)[1])
+            errors.extend(self._rulings(text)[1])
             if not errors:
                 self._track_phases(phases)
                 return phases
@@ -3370,6 +3653,23 @@ class RunLoop:
 
     # -- the deterministic test gate -----------------------------------------
 
+    def _phase_gate(self, phase_id: str, ps: dict, outputs: Path,
+                    target: ResolvedTarget) -> tuple[bool, Path | None]:
+        """The phase's gate as every caller takes it — the first gate, a fix
+        round's re-gate, the merge's re-gate. A target plan.md's `## Driver
+        rulings` waives passes unrun, like a target with no deterministic
+        gate: no green commit is recorded, the reviewer is told why, and no
+        fix round is spent on a red the operator already ruled on."""
+        ruling = self._gate_ruling(target)
+        if ruling is None:
+            return self._run_gate(phase_id, ps, outputs, target)
+        self.log(f"[P{phase_id}] test gate for {target.name} waived by "
+                 f"plan.md's `## Driver rulings` (substitute: "
+                 f"{ruling.substitute_text}) — not run, proceeding "
+                 "(reviewer told unverified)")
+        self._report_ruling(ruling, "phase gate")
+        return True, None
+
     def _run_gate(self, phase_id: str, ps: dict, outputs: Path,
                   target: ResolvedTarget) -> tuple[bool, Path | None]:
         """Run the target's test gate as a subprocess: (passed, its log).
@@ -3450,6 +3750,7 @@ class RunLoop:
     def _gate_line(self, ps: dict, head: str, target: ResolvedTarget) -> str:
         """The gate paragraph in a reviewer dispatch. The green claim is made
         ONLY when the recorded green commit is the commit under review; the
+        waiver whenever plan.md's `## Driver rulings` waives the gate; the
         nothing-ran reason only when the gate ran nothing on it. Every other
         case — no gate, a green or an empty run on an earlier commit — is
         plainly unverified."""
@@ -3459,6 +3760,12 @@ class RunLoop:
         if green_at and gate_log and green_at == head:
             return GATE_GREEN_LINE.format(
                 green_at=green_at[:12], gate_cmd=gate_cmd, gate_log=gate_log)
+        ruling = self._gate_ruling(target)
+        if ruling is not None:
+            return GATE_WAIVED_LINE.format(
+                target=target.name, why=ruling.why,
+                substitute=(f"`{ruling.substitute}`" if ruling.substitute
+                            else "no substitute"))
         if target.gate_argv and ps.get("gate_nothing_ran_commit") == head:
             return GATE_NOTHING_RAN_LINE.format(gate_cmd=gate_cmd,
                                                 ran_at=head[:12])
@@ -3499,9 +3806,9 @@ class RunLoop:
     def _pointers(self, target: ResolvedTarget) -> str:
         """What every executor dispatch carries at its tail: the close-out
         report's path and tool, the project's change-discipline doc, plus the
-        bookkeeping fence where it applies."""
-        return (self._philosophy_line() + self._close_out_line()
-                + self._bookkeeping_note(target))
+        gate waiver and the bookkeeping fence where they apply."""
+        return (self._gate_waived_note(target) + self._philosophy_line()
+                + self._close_out_line() + self._bookkeeping_note(target))
 
     def _close_out_line(self) -> str:
         return CLOSE_OUT_LINE.format(
@@ -3889,7 +4196,8 @@ class RunLoop:
             head = self.git("rev-parse", "HEAD", root=root)
             if target.gate_argv is not None \
                     and not self._green_covers(ps, head, root):
-                green, gate_log = self._run_gate(phase_id, ps, outputs, target)
+                green, gate_log = self._phase_gate(phase_id, ps, outputs,
+                                                   target)
                 if not green:
                     raise Bailout(
                         "gate_red", phase=phase_id,
@@ -4038,7 +4346,8 @@ class RunLoop:
         banked before the crash, and re-banking it would spend the cap
         twice."""
         while True:
-            passed, gate_log = self._run_gate(phase.id, ps, outputs, target)
+            passed, gate_log = self._phase_gate(phase.id, ps, outputs,
+                                                target)
             if passed:
                 return
             if ps["gate_fix_rounds"] >= GATE_FIX_CAP:
@@ -4353,9 +4662,20 @@ class RunLoop:
         heads = {str(root): self.git("rev-parse", "HEAD", root=root)
                  for root in targets}
         sweep = self.state.get("gate_sweep")
-        if sweep and sweep.get("commits") == heads:
+        if sweep and sweep.get("commits") == heads \
+                and not self._unruled_waivers(sweep):
             return sweep
         return self._run_gate_sweep(targets, heads)
+
+    def _unruled_waivers(self, sweep: dict) -> bool:
+        """Whether the record holds a WAIVED row no gate ruling covers any
+        more — the operator withdrew it, so that suite is owed a run."""
+        gates = [(r, t) for r, t in self._current_rulings()
+                 if r.kind == "gate"]
+        return any(sweep_row_outcome(row) == "waived"
+                   and self._covering(gates, row["repo"],
+                                      row["component"]) is None
+                   for row in sweep.get("results", []))
 
     def _run_gate_sweep(self, targets: list[Path], heads: dict) -> dict:
         n = self.state["sweep_runs"] = self.state.get("sweep_runs", 0) + 1
@@ -4366,6 +4686,8 @@ class RunLoop:
                       f"{len(targets)} repo(s))")
         t0 = time.monotonic()
         results = []
+        gates = [(r, t) for r, t in self._current_rulings()
+                 if r.kind == "gate"]
         for root in targets:
             # Read every root's manifest here, the invoking repo included:
             # a phase may have registered a component since the run started,
@@ -4373,7 +4695,11 @@ class RunLoop:
             components = load_project_dirs(root)
             for component in components:
                 for verb in SWEEP_VERBS:
+                    ruling = (self._covering(gates, root, component)
+                              if verb == "test" else None)
                     results.append(
+                        self._waived_row(root, component, ruling)
+                        if ruling is not None else
                         self._run_sweep_cmd(root, component, verb, out_dir))
         duration_s = int(time.monotonic() - t0)
         # Red only on a red row: a row that ran nothing is not a failure,
@@ -4390,15 +4716,30 @@ class RunLoop:
         reds = [f"{Path(r['repo']).name}/{r['component']} {r['verb']}"
                 for r, o in zip(results, outcomes, strict=True) if o == "red"]
         empty = outcomes.count("nothing_ran")
+        waived = outcomes.count("waived")
         summary = "; ".join(reds) or (
             f"{len(results)} command(s)"
             + (f", {empty} of them ran nothing" if empty else ""))
+        if waived:
+            summary += f" ({waived} waived by ruling)"
         self._record(None, "sweep", n, outcome, summary, None, duration_s)
         self.announce(f"gate sweep r{n} → "
                       + ("RED (" + ", ".join(reds) + ")" if reds
                          else GATE_OUTCOME_LABELS[outcome].lower())
                       + f" ({duration_s}s)")
         return self.state["gate_sweep"]
+
+    def _waived_row(self, root: Path, component: str,
+                    ruling: Ruling) -> dict:
+        """A sweep `test` row a gate ruling covers: not run, recorded with
+        the substitute the ruling names — neither green nor red."""
+        self.log(f"[sweep] {root.name}/{component} test → WAIVED by plan.md's "
+                 f"`## Driver rulings` (substitute: {ruling.substitute_text})")
+        self._report_ruling(ruling, "sweep")
+        return {"repo": str(root), "component": component, "verb": "test",
+                "outcome": "waived", "green": False,
+                "substitute": ruling.substitute, "why": ruling.why,
+                "log": None, "duration_s": 0}
 
     def _run_sweep_cmd(self, root: Path, component: str, verb: str,
                        out_dir: Path) -> dict:
@@ -4434,27 +4775,84 @@ class RunLoop:
                 "outcome": outcome, "green": outcome == "green",
                 "log": str(log_path), "duration_s": duration_s}
 
+    def _ruled_rows(self, results: list[dict]
+                    ) -> list[tuple[str, Ruling | None]]:
+        """Each sweep row's effective outcome against the rulings as plan.md
+        stands NOW, with the ruling behind it: a red `test` row a gate ruling
+        covers is `waived`, any other red row an accept ruling covers is
+        `accepted`. Judged at render time because the record outlives the
+        rulings — it is reused while no head moves, and the operator may
+        rule on a red after the sweep that found it."""
+        rulings = self._current_rulings()
+        gates = [(r, t) for r, t in rulings if r.kind == "gate"]
+        out: list[tuple[str, Ruling | None]] = []
+        for row in results:
+            raw = sweep_row_outcome(row)
+            if raw in ("red", "waived") and row["verb"] == "test":
+                ruling = self._covering(gates, row["repo"], row["component"])
+                if ruling is not None or raw == "waived":
+                    out.append(("waived", ruling))
+                    continue
+            if raw == "red":
+                accepts = [(r, t) for r, t in rulings
+                           if r.kind == "accept" and r.verb == row["verb"]]
+                ruling = self._covering(accepts, row["repo"],
+                                        row["component"])
+                if ruling is not None:
+                    out.append(("accepted", ruling))
+                    continue
+            out.append((raw, None))
+        return out
+
+    @staticmethod
+    def _row_label(row: dict, outcome: str, ruling: Ruling | None) -> str:
+        if outcome == "accepted":
+            return f"RED, accepted by ruling ({ruling.why})"
+        if outcome != "waived":
+            return GATE_OUTCOME_LABELS[outcome]
+        substitute = (ruling.substitute_text if ruling is not None
+                      else row.get("substitute") or "no substitute")
+        why = ruling.why if ruling is not None else row.get("why", "")
+        ran = " (ran RED)" if sweep_row_outcome(row) == "red" else ""
+        return (f"WAIVED by ruling{ran} — substitute: {substitute}"
+                + (f" ({why})" if why else ""))
+
     def _sweep_block(self, sweep: dict, green_stance: str,
                      red_stance: str) -> str:
         """The report as a dispatch carries it — every row with its log
         path, then the stance the caller's dispatch takes on it. A sweep in
-        which nothing ran takes the unverified stance, rows or none."""
+        which nothing ran takes the unverified stance, rows or none. The
+        stance follows the rows as the rulings leave them: red only on a red
+        no ruling covers."""
         if not sweep["results"]:
             rows, stance = "- (nothing ran)", SWEEP_STANCE_NONE
         else:
+            ruled = self._ruled_rows(sweep["results"])
             lines = []
             for repo, sha in sweep["commits"].items():
                 lines.append(f"- {Path(repo).name} @ {sha[:12]}:")
                 lines.extend(
                     f"  - {r['component']} {r['verb']} → "
-                    f"{GATE_OUTCOME_LABELS[sweep_row_outcome(r)]} — "
-                    f"{r['log']}"
-                    for r in sweep["results"] if r["repo"] == repo)
+                    f"{self._row_label(r, outcome, ruling)}"
+                    + (f" — {r['log']}" if r.get("log") else "")
+                    for r, (outcome, ruling)
+                    in zip(sweep["results"], ruled, strict=True)
+                    if r["repo"] == repo)
             rows = "\n".join(lines)
-            outcome = sweep.get("outcome") \
-                or ("green" if sweep["green"] else "red")
-            stance = {"green": green_stance, "red": red_stance,
+            outcomes = [outcome for outcome, _ in ruled]
+            outcome = ("red" if "red" in outcomes
+                       else "green" if "green" in outcomes else "nothing_ran")
+            ruled_any = any(o in ("waived", "accepted") for o in outcomes)
+            every_row = (SWEEP_EVERY_UNRULED_ROW if ruled_any
+                         else SWEEP_EVERY_ROW)
+            stance = {"green": green_stance.format(every_row=every_row),
+                      "red": red_stance,
                       "nothing_ran": SWEEP_STANCE_NONE}[outcome]
+            if ruled_any:
+                stance += "\n\n" + SWEEP_RULINGS_NOTE
+            for o, ruling in ruled:
+                if ruling is not None and o in ("waived", "accepted"):
+                    self._report_ruling(ruling, "sweep")
         return SWEEP_BLOCK.format(rows=rows, stance=stance)
 
     # -- follow-up generations ----------------------------------------------
@@ -4545,6 +4943,9 @@ class RunLoop:
         for root, _ in self._touched_roots():
             self._fetch_origin(root)
         verdict_path = self.slice_dir / f"test_phase_result_r{r}.json"
+        prd_line, prd_rulings = self._prd_line()
+        for ruling in prd_rulings:
+            self._report_ruling(ruling, "test-phase dispatch")
         verdict, session = self._spawn(
             "test-agent",
             TEST_PHASE_PROMPT.format(
@@ -4553,7 +4954,9 @@ class RunLoop:
                 plan_path=self.plan_path,
                 verification_path=self.verification_path,
                 close_out_line=dispatch_line(self.report_path),
+                prd_line=prd_line,
                 hold_block=self._hold_block(),
+                rulings_block=self._rulings_block(),
                 sweep_block=self._sweep_block(self.state["gate_sweep"],
                                               SWEEP_STANCE_TEST_GREEN,
                                               SWEEP_STANCE_TEST_RED),
@@ -4961,33 +5364,44 @@ class RunLoop:
         to produce a report. Output goes to doc_gate_r<N>.log in the slice
         folder. A verb no component defines a statement for ran nothing
         (KC_NOTHING_RAN): not red, so never nudged back to the writer, and
-        the gate goes on to the next verb."""
+        the gate goes on to the next verb.
+
+        A verb plan.md's `## Driver rulings` rule on for a component of this
+        repo (a gate ruling's `test`, an accept ruling's verb) runs per
+        component instead, so the ruling can be honoured for its component
+        alone: a waived `test` is skipped, an accepted red is not red. Still
+        fail-fast, on the first red no ruling covers."""
         ds["gate_runs"] += 1
         n = ds["gate_runs"]
         self._save_state()
         log_path = self.slice_dir / f"doc_gate_r{n}.log"
+        rulings = [(r, t) for r, t in self._current_rulings()
+                   if r.kind in ("gate", "accept")
+                   and self._covering([(r, t)], self.repo_root, None)]
+        ruled_verbs = [v for v in SWEEP_VERBS
+                       if any(r.verb == v for r, _ in rulings)]
+        components = (list(load_project_dirs(self.repo_root))
+                      if ruled_verbs else [])
         self.log(f"[doc-phase] gate #{n} running "
-                 f"(kc project {' + '.join(SWEEP_VERBS)})")
+                 f"(kc project {' + '.join(SWEEP_VERBS)}"
+                 + (f"; {', '.join(ruled_verbs)} per component, by ruling"
+                    if ruled_verbs else "") + ")")
         t0 = time.monotonic()
         outcomes: dict[str, str] = {}
         with open(log_path, "w") as log_file:
             for verb in SWEEP_VERBS:
-                argv = ["kc", "project", verb]
-                log_file.write(f"$ {' '.join(argv)}\n")
-                log_file.flush()
-                try:
-                    rc = self._doc_gate_exec(argv, log_file)
-                except subprocess.TimeoutExpired:
-                    raise Bailout(
-                        "timeout",
-                        details=f"doc-phase gate `{' '.join(argv)}` exceeded "
-                                f"{GATE_TIMEOUT}s (output in {log_path})",
-                    ) from None
-                outcomes[verb] = kc_outcome(rc)
-                if outcomes[verb] == "nothing_ran":
-                    log_file.write(f"→ nothing ran: no component defines a "
-                                   f"{verb} statement\n")
-                if outcomes[verb] == "red":
+                if verb in ruled_verbs:
+                    commands = [(f"{c} {verb}",
+                                 ["kc", "project", verb, "--project", c], c)
+                                for c in components]
+                else:
+                    commands = [(verb, ["kc", "project", verb], None)]
+                for label, argv, component in commands:
+                    outcomes[label] = self._doc_gate_cmd(
+                        argv, verb, component, rulings, log_file, log_path)
+                    if outcomes[label] == "red":
+                        break
+                if "red" in outcomes.values():
                     break
         seen = set(outcomes.values())
         outcome = ("red" if "red" in seen
@@ -5006,6 +5420,49 @@ class RunLoop:
                  f"({duration_s}s) {tail[:120]}"
                  + (f" — {', '.join(empty)} ran nothing" if empty else ""))
         return outcome != "red", log_path
+
+    def _doc_gate_cmd(self, argv: list[str], verb: str,
+                      component: str | None,
+                      rulings: list[tuple[Ruling, ResolvedTarget]],
+                      log_file, log_path: Path) -> str:
+        """One doc-gate command's outcome, the rulings applied: `waived`
+        (not run) or `accepted` (ran red) where a ruling covers it."""
+        if component is not None and verb == "test":
+            waiver = self._covering([(r, t) for r, t in rulings
+                                     if r.kind == "gate"],
+                                    self.repo_root, component)
+            if waiver is not None:
+                log_file.write(f"$ {' '.join(argv)} → waived by plan.md's "
+                               "`## Driver rulings` (substitute: "
+                               f"{waiver.substitute_text})\n")
+                self._report_ruling(waiver, "doc gate")
+                return "waived"
+        log_file.write(f"$ {' '.join(argv)}\n")
+        log_file.flush()
+        try:
+            rc = self._doc_gate_exec(argv, log_file)
+        except subprocess.TimeoutExpired:
+            raise Bailout(
+                "timeout",
+                details=f"doc-phase gate `{' '.join(argv)}` exceeded "
+                        f"{GATE_TIMEOUT}s (output in {log_path})",
+            ) from None
+        outcome = kc_outcome(rc)
+        if outcome == "nothing_ran":
+            log_file.write("→ nothing ran: "
+                           + (f"{component} defines no" if component
+                              else "no component defines a")
+                           + f" {verb} statement\n")
+        if outcome == "red" and component is not None:
+            accept = self._covering([(r, t) for r, t in rulings
+                                     if r.kind == "accept" and r.verb == verb],
+                                    self.repo_root, component)
+            if accept is not None:
+                log_file.write("→ RED, accepted by plan.md's `## Driver "
+                               f"rulings` ({accept.why})\n")
+                self._report_ruling(accept, "doc gate")
+                return "accepted"
+        return outcome
 
     def _doc_gate_exec(self, argv: list[str], log_file) -> int:
         """One doc-gate command, in the invoking repo — the seam the doc
@@ -5166,6 +5623,7 @@ class RunLoop:
                 "test_rounds": 0,
                 "sweep_runs": 0,
                 "gate_sweep": None,
+                "rulings_reported": [],
                 "consult_seq": 0,
                 "in_flight": None,
                 "bailouts": [],
@@ -5555,6 +6013,19 @@ def cmd_dry_run(loop: RunLoop) -> None:
         except ValueError as e:
             errors.append(f"push hold `{target}`: {e}")
             print(f"  hold  {target}  INVALID")
+    rulings, ruling_errors = parse_rulings(loop.plan_path.read_text())
+    errors.extend(ruling_errors)
+    for ruling in rulings:
+        detail = {"gate": f"gate waived, substitute: {ruling.substitute_text}",
+                  "accept": f"red {ruling.verb} accepted",
+                  "prd": "prd authorized"}[ruling.kind]
+        try:
+            root = loop._resolve_target(ruling.target).git_root
+            print(f"  ruling  {ruling.key}  root={root}  {detail}: "
+                  f"{ruling.why}")
+        except ValueError as e:
+            errors.append(f"driver ruling `{ruling.key}`: {e}")
+            print(f"  ruling  {ruling.key}  INVALID: {e}")
     if errors:
         print("\nplan problems:", file=sys.stderr)
         for e in errors:

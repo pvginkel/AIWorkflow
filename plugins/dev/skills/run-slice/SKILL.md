@@ -73,7 +73,11 @@ plan, not this chat. A ruling that corrects an earlier one **replaces it in plac
 correction-chains; git holds the history. A ruling that forbids pushing a repo needs its
 machine-readable half too — a `- <repo> — <why>` bullet under `## Push holds`
 (`${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md`) — or the driver nudges the test agent for that
-push and bails `unpushed` over the ruling it was told to honour. Then relaunch with `--resume`.
+push and bails `unpushed` over the ruling it was told to honour. The same goes for a ruling
+that replaces a target's test gate, accepts a red sweep row, or authorizes prd: it needs a
+`## Driver rulings` bullet (`gate` / `accept` / `prd`, same doc). Without one, the driver runs
+the waived gate again on resume and bails `gate_red` or `blocked` where it bailed before. Then
+relaunch with `--resume`.
 
 ## Job 4 — close out (exit 0)
 

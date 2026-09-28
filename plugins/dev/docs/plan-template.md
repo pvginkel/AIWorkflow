@@ -44,6 +44,15 @@ pre-settled — slice.md's design section fixes the mechanism; planning is trans
      written as a phase writes its `Target:`. The driver leaves it out of the push check
      and reports it held instead. -->
 
+## Driver rulings
+
+<!-- Optional; almost always absent — omit the heading unless a ruling bends one of the
+     driver's fixed rules. The machine-readable half of a ruling whose words stand in
+     Requirements / rulings:
+       - gate <target> — <substitute, or none> — <why>
+       - accept <target> <lint|build|test> — <why>
+       - prd <target> — <why> -->
+
 ### P1 — <title>
 
 Target: <component>
@@ -66,8 +75,8 @@ The mechanical rules the parser holds every author to:
 
 - **Every `###` heading is a phase heading** — `### P<id> — <title>` (em dash), id
   `[A-Za-z0-9]+`. Any other `###` line is a structure error the driver nudges back. All
-  non-phase sections use `##`, and the driver reads exactly one of them — `## Push holds`;
-  the rest it ignores.
+  non-phase sections use `##`, and the driver reads exactly two of them — `## Push holds` and
+  `## Driver rulings`; the rest it ignores.
 - **Ids are free-form labels; document order is authoritative.** `P3a` inserted between `P3`
   and `P4` runs between them because of *where it sits*, not its name. Ids must be unique.
 - **`## Task shape` is the plan-writer's declaration** — `pre-settled`, `localized`, or
@@ -82,6 +91,17 @@ The mechanical rules the parser holds every author to:
   push a held primary repo. A
   bullet in that section the parser cannot read is a structure error, not a skip — a hold
   missed silently is a repo the driver pushes. The section is absent from almost every plan.
+- **`## Driver rulings` bends a fixed rule of the driver.** Each bullet has a fixed kind, then a
+  target written as in `Target:`, with em-dash-separated fields: `- gate <target> —
+  <substitute> — <why>` waives the driver's test gate for that target (`none` for no
+  substitute); `- accept <target> <verb> — <why>` makes that red sweep row non-blocking (verb
+  `lint`, `build` or `test`); `- prd <target> — <why>` authorizes the test phase to push and
+  roll prd for it. A sibling path covers every component of that repo; a component name covers
+  that component. What each does in the run is [run-loop.md](run-loop.md) § After the last phase.
+  A bullet the parser can't read (unknown kind, missing field, duplicate) or whose target
+  doesn't resolve is a structure error, as with holds: a ruling missed silently is a gate the
+  driver runs anyway. The prose ruling still goes in Requirements / rulings, in the operator's
+  words; this is only its machine-readable half.
 - **`Target:` is the first line of every phase body** — a `kc project list` component name or
   a sibling repo path (`../SiblingRepo`). A component name resolves in the repo the run starts
   from first, and there it shadows any sibling's same name (`root` is this repo's). A name this

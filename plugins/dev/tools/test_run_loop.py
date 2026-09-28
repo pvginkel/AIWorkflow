@@ -6136,6 +6136,416 @@ def test_the_full_verification_schema_proceeds():
         assert not r.script
 
 
+
+# -- driver rulings -------------------------------------------------------------
+#
+# `## Driver rulings` is the operator overriding a fixed rule of the loop for
+# one target: a gate the environment cannot run (waived, with the substitute
+# that proves it instead), a red that predates the slice (accepted), prd for
+# a repo the slice must roll. Before it, an unrunnable suite spent the fix
+# cap and bailed `gate_red` at every phase, and the operator's only lever was
+# hand-editing state.json.
+
+parse_rulings = run_loop.parse_rulings
+
+GATE_RULING = "gate app — Jenkins validation build — suites need Postgres"
+
+
+def ruled_plan(slice_dir, *rulings, body=None):
+    """plan.md with a `## Driver rulings` section holding `rulings` — the
+    one-phase plan make_slice writes, unless `body` says otherwise."""
+    (slice_dir / "plan.md").write_text(
+        "# plan\n\n## Driver rulings\n\n"
+        + "".join(f"- {r}\n" for r in rulings) + "\n"
+        + (body if body is not None else phase_section("1", "First phase")))
+
+
+def test_parse_rulings_reads_each_kind_and_the_section_only():
+    text = (
+        "# Plan\n\n## Requirements / rulings\n\n- gate app — not — here\n\n"
+        "## Driver rulings\n\n"
+        "<!-- Optional. `- gate <target> — <substitute> — <why>` -->\n\n"
+        "prose about the rulings is fine\n\n"
+        "- gate ../ElectronicsInventory — Jenkins validation build — "
+        "suites need Postgres + MinIO — not declared here\n"
+        "- gate `web` — none — no environment runs it\n"
+        "- accept ../Ansible lint — red before this slice, ANS-99\n"
+        "- accept **`backend`** `test` — flaky upstream fixture, ANS-101\n"
+        "- prd ../Ansible — roll prd once dev verifies (operator, "
+        "2026-09-26)\n\n"
+        "## Push holds\n\n- gate app — not — a ruling\n"
+        "\n### P1 — First\n\nTarget: app\n")
+    rulings, errors = parse_rulings(text)
+    assert errors == []
+    got = [(r.kind, r.target, r.verb, r.substitute, r.why) for r in rulings]
+    assert got == [
+        ("gate", "../ElectronicsInventory", "test",
+         "Jenkins validation build",
+         "suites need Postgres + MinIO — not declared here"),
+        ("gate", "web", "test", None, "no environment runs it"),
+        ("accept", "../Ansible", "lint", None, "red before this slice, ANS-99"),
+        ("accept", "backend", "test", None, "flaky upstream fixture, ANS-101"),
+        ("prd", "../Ansible", None, None,
+         "roll prd once dev verifies (operator, 2026-09-26)"),
+    ]
+    assert rulings[1].substitute_text == "no substitute"
+    assert [r.key for r in rulings][2:] == [
+        "accept ../Ansible lint", "accept backend test", "prd ../Ansible"]
+
+
+def test_parse_rulings_errors():
+    """A bullet the parser cannot read is an error, never a skip: a ruling
+    it misses silently is a gate the driver runs anyway."""
+    text = ("## Driver rulings\n\n"
+            "- waive app — Jenkins — why\n"
+            "- gate app — Jenkins\n"
+            "- accept app deploy — not a sweep verb\n"
+            "- accept app — no verb\n"
+            "- prd app\n"
+            "- prd ../A — first\n"
+            "- prd ../A — again\n"
+            "- accept app lint — one\n"
+            "- accept app build — another verb is another ruling\n")
+    rulings, errors = parse_rulings(text)
+    assert [r.key for r in rulings] == [
+        "prd ../A", "accept app lint", "accept app build"]
+    joined = "\n".join(errors)
+    for bad in ("waive app — Jenkins — why", "gate app — Jenkins",
+                "accept app deploy", "accept app — no verb", "- prd app`"):
+        assert bad in joined, bad
+    assert joined.count("is not a driver ruling") == 5
+    assert "`prd ../A` is ruled twice" in joined
+
+
+def test_parse_rulings_absent_section():
+    assert parse_rulings("# Plan\n\n### P1 — X\n\nTarget: app\n") == ([], [])
+
+
+def test_an_unresolvable_ruling_is_a_plan_structure_error():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        ruled_plan(slice_dir, "gate ../Nope — Jenkins — no suite here")
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        assert run_to_exit(r) == 4
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "plan_doc" and bail["question"] is True
+        assert "driver ruling `gate ../Nope`" in bail["details"]
+
+
+def test_a_ruling_covers_its_component_its_repo_or_a_whole_repo_target():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        sib = make_sibling(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+
+        def ruling(target, kind="project", root=repo):
+            return (run_loop.Ruling("gate", target, "why"),
+                    run_loop.ResolvedTarget(target, kind, root, None, root))
+
+        app, web = ruling("app"), ruling("web")
+        whole = ruling("../Sibling", "sibling", sib)
+        # a component ruling covers that component alone
+        assert r._covering([app], repo, "app") is app[0]
+        assert r._covering([app], repo, "web") is None
+        assert r._covering([app], sib, "app") is None
+        # a repo-level ruling covers every component of its repo
+        assert r._covering([whole], sib, "anything") is whole[0]
+        # a whole-repo target is covered by any ruling in that repo
+        assert r._covering([web], repo, None) is web[0]
+        # the component's own ruling wins over a repo-level one
+        repo_wide = ruling("../repo", "sibling", repo)
+        assert r._covering([repo_wide, app], repo, "app") is app[0]
+
+
+def test_a_waived_phase_gate_runs_nothing_and_says_why():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        ruled_plan(slice_dir, GATE_RULING)
+        # a red gate would spend a fix round: waived, it is never consulted
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL],
+                         repo_root=repo, gates=[False] * 4)
+        assert run_to_exit(r) == 0
+        assert not r.script, "no fix round was spawned"
+        assert r.gate_calls == []
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["status"] == "merged" and ps["gate_fix_rounds"] == 0
+        assert not ps.get("gate_green_commit")
+        writer = next(p for role, p in r.prompts
+                      if role == "code-writer").replace("\n", " ")
+        assert ("The driver's test gate for app is waived by the operator's "
+                "ruling in plan.md's `## Driver rulings` (substitute: Jenkins "
+                "validation build — suites need Postgres)") in writer
+        assert "is not this phase's to fix" in writer
+        reviewer = next(p for role, p in r.prompts
+                        if role == "code-reviewer").replace("\n", " ")
+        assert ("The driver did not run the test gate on this commit: "
+                "plan.md's `## Driver rulings` waives it for app, naming "
+                "`Jenkins validation build` as the gate") in reviewer
+        assert "ran GREEN" not in reviewer
+        assert "waived by plan.md's `## Driver rulings`" \
+            in (slice_dir / "log.txt").read_text()
+        events = notable_events(slice_dir)
+        assert events.count("Gate waived by ruling") == 1
+        assert "Gate waived by ruling: app — Jenkins validation build" \
+            in events
+        assert "the driver's phase gate, against `plan.md`'s `## Driver " \
+            "rulings`" in events.replace("\n", " ")
+        assert load_state(slice_dir)["rulings_reported"] == ["gate app"]
+
+
+def test_the_merge_re_gate_is_waived_too():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        ruled_plan(slice_dir, GATE_RULING)
+        r = KcExitLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                   *TAIL],
+                       repo_root=repo, gate_rcs=[1] * 4)
+        assert run_to_exit(r) == 0
+        # the sweep's lint and build ran; no `test` ran anywhere
+        assert [argv[2] for argv, _, _ in r.kc_runs] == ["lint", "build"]
+        assert not [h for h in load_state(slice_dir)["history"]
+                    if h["role"] == "gate"]
+
+
+def test_a_waived_sweep_test_row_is_not_run_and_lint_build_still_are():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        ruled_plan(slice_dir, GATE_RULING)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert r.sweep_calls == [(str(repo), PROJECT, "lint"),
+                                 (str(repo), PROJECT, "build")]
+        state = load_state(slice_dir)
+        sweep = state["gate_sweep"]
+        test_row = next(row for row in sweep["results"]
+                        if row["verb"] == "test")
+        assert test_row["outcome"] == "waived" and test_row["green"] is False
+        assert test_row["substitute"] == "Jenkins validation build"
+        assert sweep["outcome"] == "green"
+        row = next(h for h in state["history"] if h["role"] == "sweep")
+        assert row["summary"] == "3 command(s) (1 waived by ruling)"
+        for role in ("consult", "test-agent"):
+            prompt = next(p for rl, p in r.prompts if rl == role)
+            flat = prompt.replace("\n", " ")
+            assert (f"{PROJECT} test → WAIVED by ruling — substitute: "
+                    "Jenkins validation build (suites need Postgres)\n"
+                    in prompt)
+            assert "Every row that ran and no ruling covers is GREEN" in flat
+            assert "Every row that ran is GREEN" not in flat
+            assert "it does not block the push" in flat
+        test_prompt = next(p for rl, p in r.prompts if rl == "test-agent")
+        assert "waive the driver's test gate for these" in test_prompt
+        assert ("  - app — substitute: Jenkins validation build — suites "
+                "need Postgres") in test_prompt
+        # the phase gate reported it first; the sweep adds no second entry
+        assert notable_events(slice_dir).count("Gate waived by ruling") == 1
+
+
+def test_an_accepted_red_row_does_not_block():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        ruled_plan(slice_dir, "accept app lint — red before this slice, "
+                              "ANS-99")
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo,
+                         sweep_reds={(PROJECT, "lint"), (PROJECT, "build")})
+        # build is red too, and no ruling covers it: still a red sweep
+        assert run_to_exit(r) == 0
+        consult = next(p for rl, p in r.prompts if rl == "consult")
+        assert (f"{PROJECT} lint → RED, accepted by ruling (red before this "
+                "slice, ANS-99) — ") in consult
+        assert f"{PROJECT} build → RED — " in consult
+        assert "append a phase that fixes it" in consult.replace("\n", " ")
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        ruled_plan(slice_dir, "accept app lint — red before this slice, "
+                              "ANS-99")
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo,
+                         sweep_reds={(PROJECT, "lint")})
+        assert run_to_exit(r) == 0
+        # the record keeps what ran; the rulings are applied as it renders
+        assert load_state(slice_dir)["gate_sweep"]["outcome"] == "red"
+        for role in ("consult", "test-agent"):
+            flat = next(p for rl, p in r.prompts
+                        if rl == role).replace("\n", " ")
+            assert "Every row that ran and no ruling covers is GREEN" in flat
+            assert "A WAIVED or accepted row is the operator's ruling" in flat
+            assert "append a phase that fixes it" not in flat
+            assert "does not leave the machine" not in flat
+        events = notable_events(slice_dir)
+        assert events.count("Red row accepted by ruling: app lint") == 1
+        assert "the driver's sweep" in events
+
+
+def test_a_ruling_added_after_the_sweep_is_honoured_when_it_renders():
+    """The sweep record is reused while no head moves — across a resume
+    too — so the rulings are applied when it renders, not when it ran."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [V["exec_done"], V["review_signoff"], V["consult_complete"],
+                  ("test-agent", {"outcome": "blocked", "summary": "red"})]
+        r1 = ScriptedLoop(slice_dir, script, repo_root=repo,
+                          sweep_reds={(PROJECT, "test")})
+        assert run_to_exit(r1) == 3
+        first = next(p for rl, p in r1.prompts if rl == "test-agent")
+        assert "does not leave the machine" in first.replace("\n", " ")
+        # the operator rules while the run sits at the bail — on a state
+        # an older plugin wrote, without the reported-rulings record
+        ruled_plan(slice_dir, GATE_RULING,
+                   body=phase_section("1", "First phase", done=True))
+        state = load_state(slice_dir)
+        del state["rulings_reported"]
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        r2 = ScriptedLoop(slice_dir, [V["test_clean"], V["doc_done"]],
+                          resume=True, repo_root=repo,
+                          sweep_reds={(PROJECT, "test")})
+        assert run_to_exit(r2) == 0
+        assert r2.sweep_calls == [], "same heads: the record is reused"
+        prompt = next(p for rl, p in r2.prompts if rl == "test-agent")
+        assert (f"{PROJECT} test → WAIVED by ruling (ran RED) — substitute: "
+                "Jenkins validation build") in prompt
+        assert "does not leave the machine" not in prompt.replace("\n", " ")
+        events = notable_events(slice_dir)
+        assert events.count("Gate waived by ruling: app") == 1
+        assert "the driver's sweep" in events
+
+
+def test_a_withdrawn_gate_ruling_re_runs_the_waived_row():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        ruled_plan(slice_dir, GATE_RULING)
+        script = [V["exec_done"], V["review_signoff"], V["consult_complete"],
+                  ("test-agent", {"outcome": "blocked", "summary": "stuck"})]
+        r1 = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r1) == 3
+        assert (str(repo), PROJECT, "test") not in r1.sweep_calls
+        (slice_dir / "plan.md").write_text(
+            "# plan\n\n" + phase_section("1", "First phase", done=True))
+        r2 = ScriptedLoop(slice_dir, [V["test_clean"], V["doc_done"]],
+                          resume=True, repo_root=repo)
+        assert run_to_exit(r2) == 0
+        assert (str(repo), PROJECT, "test") in r2.sweep_calls
+
+
+def test_doc_gate_runs_ruled_verbs_per_component():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        ruled_plan(slice_dir, GATE_RULING,
+                   "accept web lint — red before this slice, ANS-99")
+        loop = RunLoop(slice_dir, resume=False)
+        loop.repo_root = repo
+        loop.project_dirs = {"app": repo, "web": repo}
+        loop.state = {"history": []}
+        calls = []
+        reds = {("lint", "web")}
+
+        def fake_exec(argv, log_file):
+            calls.append(" ".join(argv[2:]))
+            return 1 if (argv[2], argv[-1]) in reds else 0
+
+        loop._doc_gate_exec = fake_exec
+        ds = {"gate_runs": 0}
+        with patched(run_loop, load_project_dirs=lambda cwd: {
+                "app": Path(cwd), "web": Path(cwd)}):
+            green, log_path = loop._run_doc_gate(ds)
+            assert green
+            # lint and test are ruled on here, so they run per component;
+            # build is not, so it runs whole-repo as before
+            assert calls == ["lint --project app", "lint --project web",
+                             "build", "test --project web"]
+            text = log_path.read_text()
+            assert ("$ kc project test --project app → waived by plan.md's "
+                    "`## Driver rulings`") in text
+            assert "→ RED, accepted by plan.md's `## Driver rulings`" in text
+            assert loop.state["rulings_reported"] == ["accept web lint",
+                                                      "gate app"]
+            # a red no ruling covers is still red, and still fail-fast
+            calls.clear()
+            reds.add(("lint", "app"))
+            green, _ = loop._run_doc_gate(ds)
+            assert not green and calls == ["lint --project app"]
+
+
+def test_doc_gate_ignores_rulings_on_another_repo():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        make_sibling(tmp)
+        ruled_plan(slice_dir, "gate ../Sibling — Jenkins — no Postgres here")
+        loop = RunLoop(slice_dir, resume=False)
+        loop.repo_root = repo
+        loop.project_dirs = {PROJECT: repo}
+        loop.state = {"history": []}
+        calls = []
+        loop._doc_gate_exec = lambda argv, log_file: calls.append(
+            " ".join(argv[2:])) or 0
+        green, _ = loop._run_doc_gate({"gate_runs": 0})
+        assert green and calls == ["lint", "build", "test"]
+
+
+def test_prd_is_authorized_only_by_a_prd_ruling():
+    unchanged = ("pre-authorized — do not ask for permission.\n"
+                 "  prd stays operator-gated; nothing here touches it.\n"
+                 "- The slice folder")
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        ruled_plan(slice_dir, GATE_RULING)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0
+        prompt = next(p for rl, p in r.prompts if rl == "test-agent")
+        assert unchanged in prompt
+        assert "prd authorized" not in load_report(slice_dir)
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        ruled_plan(slice_dir, "prd app — roll prd once dev verifies")
+        script = [V["exec_done"], V["review_signoff"], V["consult_complete"],
+                  ("test-agent", {"outcome": "blocked", "summary": "stuck"})]
+        r1 = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r1) == 3
+        prompt = next(p for rl, p in r1.prompts if rl == "test-agent")
+        assert "nothing here touches it" not in prompt
+        flat = " ".join(prompt.split())
+        assert ("prd stays operator-gated except for these targets, which "
+                "plan.md's `## Driver rulings` authorize — pushing and "
+                "rolling prd for them is part of this test phase:") in flat
+        assert "  - app — roll prd once dev verifies\n- The slice" in prompt
+        # the resume dispatches the test phase again; the entry stays one
+        r2 = ScriptedLoop(slice_dir, [V["test_clean"], V["doc_done"]],
+                          resume=True, repo_root=repo)
+        assert run_to_exit(r2) == 0
+        events = notable_events(slice_dir)
+        assert events.count("prd authorized by ruling: app") == 1
+        assert "the driver's test-phase dispatch" in events
+
+
+def test_dry_run_prints_the_rulings():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = dry_run_repo(tmp)
+        slice_dir, _ = make_slice(tmp, repo=False)
+        ruled_plan(slice_dir, GATE_RULING, "accept app lint — ANS-99",
+                   "prd ../Nope — nowhere")
+        loop = RunLoop(slice_dir, resume=False)
+        loop.repo_root = root
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                run_loop.cmd_dry_run(loop)
+            except SystemExit as e:
+                assert e.code == 2
+            else:
+                raise AssertionError("an unresolvable ruling must exit 2")
+        text = out.getvalue()
+        assert (f"  ruling  gate app  root={root}  gate waived, substitute: "
+                "Jenkins validation build: suites need Postgres") in text
+        assert f"  ruling  accept app lint  root={root}  red lint accepted" \
+            in text
+        assert "  ruling  prd ../Nope  INVALID" in text
+        assert "driver ruling `prd ../Nope`" in err.getvalue()
+
+
 if __name__ == "__main__":
     _tests = [v for k, v in sorted(globals().items())
               if k.startswith("test_") and callable(v)]
