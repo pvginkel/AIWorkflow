@@ -234,11 +234,14 @@ MCP_ROLES = frozenset({"test-agent"})
 # `--strict-mcp-config`. Everything else in that file stays out of a role's
 # session, so the trim above and its reason — no tracker reach, no tool
 # schemas a role never calls — still hold. Fieldnotes is where a role posts
-# the friction it hit while working, which is why every role needs it. Naming
-# the server here is fine: AIWorkflow is bespoke to this host.
-PROMOTED_MCP_SERVERS = ("fieldnotes",)
+# the friction it hit while working, which is why every role needs it.
+# Gitblit is the read-only mirror of the operator's GitHub repos, so a role can
+# search the code of repos the environment does not check out (a slice ruling
+# may point it at gitblit's `find_files`); it needs no token. Naming the
+# servers here is fine: AIWorkflow is bespoke to this host.
+PROMOTED_MCP_SERVERS = ("fieldnotes", "gitblit")
 
-# The two sides of that copy. A promoted entry carries a bearer token, so the
+# The two sides of that copy. A promoted entry may carry a bearer token, so the
 # copy lives under the user's home, which no repo contains — never a command
 # line, a log line, state.json or a slice folder. The path is stable and the
 # content identical from every writer (one home serves the environments

@@ -39,13 +39,15 @@ validation.
   never in it — Claude Code defers them since 2.1.212), and with them a reach no role's contract
   ever gave it — a finding about the work goes to the close-out report, never to a tracker; CI is
   the test-agent's. **The promoted servers are the exception**: `PROMOTED_MCP_SERVERS` in
-  `run_loop.py` names them, today `fieldnotes` alone, because what got in a role's way while it
-  worked goes there and not into the report ([close-out.md](close-out.md#what-it-is--and-is-not)),
-  and a role that cannot post cannot follow that rule. The loop copies each named entry verbatim
-  out of the user-level `mcpServers` of `~/.claude.json` into
+  `run_loop.py` names them. `fieldnotes`, because what got in a role's way while it worked goes
+  there and not into the report ([close-out.md](close-out.md#what-it-is--and-is-not)), and a role
+  that cannot post cannot follow that rule. `gitblit`, the read-only mirror of the operator's
+  repos, because a role — or a slice ruling it follows — may need the code of a repo the
+  environment does not check out; it carries no token and reaches no tracker. The loop copies each
+  named entry verbatim out of the user-level `mcpServers` of `~/.claude.json` into
   `~/.claude/aiworkflow-promoted-mcp.json` (mode 0600, written atomically, once per process at the
   first dispatch) and passes that path as `--mcp-config` beside `--strict-mcp-config`. An entry
-  carries a bearer token, which is why it travels as a file under the home and never on a command
+  may carry a bearer token, which is why it travels as a file under the home and never on a command
   line, in the log or in a slice folder. A promoted server the operator's config does not hold is
   one line in `log.txt` and a role spawned without it, never a failed run. The test-agent keeps
   the operator's servers whole because it drives CI through Jenkins, a server the operator's config

@@ -4,6 +4,26 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-28 — preflight retries git's ref race, roles get gitblit, `owed` is a verdict (v0.9.52)
+
+AIWF-18, AIWF-19, AIWF-20 (Fieldnotes reports from Ansible, 2026-09-25; the triage's "yes" on
+2026-09-26).
+
+- **Preflight retries a fetch that loses git's ref-update race.** Parallel sessions in one pod
+  fetching the same `/work` sibling hit `incorrect old value provided` four times in one day, and
+  preflight called it "the environment's fault", sending the agent to check network and
+  credentials. That error now gets three attempts (1 s, then 2 s apart). If it persists, the
+  message names the race and says a rerun clears it. Other fetch failures are not retried and no
+  longer assign fault.
+- **Every dispatched role can search the estate's code.** `gitblit`, the read-only GitHub mirror,
+  joins `fieldnotes` in `PROMOTED_MCP_SERVERS`. A slice ruling that says to use gitblit's
+  `find_files` can now be followed as written; the Ansible plan-writer had fallen back to raw
+  JSON-RPC against its HTTP endpoint.
+- **A criterion owed after an operator action has a verdict of its own.** Once the test phase has
+  earned what the run can prove of an `owed_after` criterion, its verdict is `owed`: not null,
+  which reads as untested, and not the free text slices had been writing (`"owed to operator"`).
+  The rule is in `plan-template.md`, and the test-agent follows it.
+
 ## 2026-09-28 — the close-out card carries a close-out mark (v0.9.51)
 
 - **The reports still to work through are one query.** `/dev:run-slice` now gives the

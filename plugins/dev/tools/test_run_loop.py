@@ -535,13 +535,15 @@ class promoted_home(patched):
         return super().__exit__(*exc)
 
 
-# An invented ~/.claude.json: the promoted server, one that must not travel,
-# and the rest of the file's top-level keys the copy must ignore.
+# An invented ~/.claude.json: the promoted servers (fieldnotes with a bearer
+# token, gitblit with none, as on the host), one that must not travel, and the
+# rest of the file's top-level keys the copy must ignore.
 FAKE_CLAUDE_JSON = json.dumps({
     "numStartups": 12,
     "mcpServers": {
         "fieldnotes": {"type": "http", "url": "https://fieldnotes.invalid/mcp",
                        "headers": {"Authorization": "Bearer sekrit-token"}},
+        "gitblit": {"type": "http", "url": "http://git/api/mcp/mcp"},
         "jenkins": {"type": "http", "url": "https://jenkins.invalid/mcp"},
     },
     "projects": {"/work/app": {"mcpServers": {"fieldnotes": {"type": "sse"}}}},
@@ -5072,10 +5074,10 @@ def test_dispatch_trims_the_prefix_per_role():
 
 
 def test_promoted_mcp_servers_are_copied_by_name():
-    """The promoted entry travels verbatim — type, url and the bearer header —
-    and nothing else in ~/.claude.json does: not the operator's other
-    servers, not the file's other top-level keys, not the per-project
-    sections."""
+    """The promoted entries travel verbatim — type, url and, where there is
+    one, the bearer header — and nothing else in ~/.claude.json does: not the
+    operator's other servers, not the file's other top-level keys, not the
+    per-project sections."""
     with tempfile.TemporaryDirectory() as tmp:
         home = promoted_home(Path(tmp) / "home", FAKE_CLAUDE_JSON)
         with home:
@@ -5085,7 +5087,27 @@ def test_promoted_mcp_servers_are_copied_by_name():
             assert json.loads(path.read_text()) == {"mcpServers": {
                 "fieldnotes": {
                     "type": "http", "url": "https://fieldnotes.invalid/mcp",
-                    "headers": {"Authorization": "Bearer sekrit-token"}}}}
+                    "headers": {"Authorization": "Bearer sekrit-token"}},
+                "gitblit": {"type": "http", "url": "http://git/api/mcp/mcp"}}}
+
+
+def test_a_missing_promoted_server_is_a_note_and_the_rest_still_travel():
+    """A home without gitblit still promotes fieldnotes: the absent server is
+    one logged line, not an error, and the config carries what was there."""
+    fieldnotes_only = json.dumps({"mcpServers": {
+        "fieldnotes": {"type": "http", "url": "https://fieldnotes.invalid/mcp"},
+        "jenkins": {"type": "http", "url": "https://jenkins.invalid/mcp"}}})
+    with tempfile.TemporaryDirectory() as tmp:
+        with promoted_home(Path(tmp) / "home", fieldnotes_only) as home:
+            config, missing = run_loop.promoted_mcp_config()
+            assert list(config["mcpServers"]) == ["fieldnotes"]
+            assert missing == ["gitblit"]
+            logged = []
+            flags = run_loop.spawn_flags("code-writer", logged.append)
+            assert flags == ["--disable-slash-commands", "--strict-mcp-config",
+                             "--mcp-config", str(home.config_path)]
+            assert len(logged) == 1 and "gitblit" in logged[0]
+            assert json.loads(home.config_path.read_text()) == config
 
 
 def test_the_promoted_config_is_private_and_written_atomically():
@@ -5157,13 +5179,14 @@ def test_an_unreadable_claude_json_promotes_nothing_and_never_fails():
             with promoted_home(Path(tmp) / "home", content) as home:
                 config, missing = run_loop.promoted_mcp_config()
                 assert config == {"mcpServers": {}}, label
-                assert missing == ["fieldnotes"], label
+                assert missing == ["fieldnotes", "gitblit"], label
                 logged = []
                 assert run_loop.spawn_flags("code-writer",
                                             logged.append) == bare, label
                 assert run_loop.spawn_flags("test-agent") == [
                     "--disable-slash-commands"], label
-                assert len(logged) == 1 and "fieldnotes" in logged[0], label
+                assert len(logged) == 2, label
+                assert "fieldnotes" in logged[0] and "gitblit" in logged[1], label
                 assert not home.config_path.exists(), label
 
 

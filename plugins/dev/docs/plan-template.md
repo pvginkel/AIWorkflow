@@ -197,4 +197,6 @@ The mechanical rules the parser holds every author to:
   `Settle <id> after …` entry of its own, so the operator's runbook carries it from planning on.
 - **No other keys.** Both loops bail on an item key outside this schema.
 - `verdict`/`rationale`/`evidence` stay empty at planning time — the run loop's test phase
-  checks items off (`pass`/`fail` with rationale and evidence).
+  checks items off (`pass`/`fail` with rationale and evidence). A criterion marked `owed_after`
+  whose offline half the test phase has earned takes `owed` — never null, which reads as untested,
+  and never free text — until the action it waits on settles it `pass` or `fail`.

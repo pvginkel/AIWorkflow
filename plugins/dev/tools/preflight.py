@@ -52,6 +52,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -86,6 +87,36 @@ def fail(code: int, message: str):
 
 def _git(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(["git", *args], capture_output=True, text=True)
+
+
+# git's ref-update race: two sessions in one pod fetching the same clone at the
+# same moment (parallel /dev:plan-slice sessions share the /work siblings), and
+# the loser's ref transaction finds the ref already moved. Nothing is wrong with
+# the network or the credentials, and a moment later the fetch goes through —
+# so it is retried, with these waits (seconds) between the attempts.
+FETCH_RACE_MARKER = "incorrect old value provided"
+FETCH_RACE_BACKOFF = (1, 2)
+
+
+def _sleep(seconds: float) -> None:
+    time.sleep(seconds)
+
+
+def _lost_race(result: subprocess.CompletedProcess) -> bool:
+    return FETCH_RACE_MARKER in (result.stderr or "") + (result.stdout or "")
+
+
+def _fetch(path: str, remote: str) -> tuple[subprocess.CompletedProcess, int]:
+    """`git fetch` with the ref-update race retried; any other failure is
+    returned at once. Returns the last result and the attempts it took."""
+    attempts = 0
+    for wait in (*FETCH_RACE_BACKOFF, None):
+        attempts += 1
+        fetched = _git(["-C", path, "fetch", "--quiet", remote])
+        if fetched.returncode == 0 or wait is None or not _lost_race(fetched):
+            break
+        _sleep(wait)
+    return fetched, attempts
 
 
 def repo_root() -> Path:
@@ -398,15 +429,22 @@ def check_synced(root: Path, cfg: project_config.ProjectConfig | None) -> None:
         upstream = tracking.stdout.strip()
         remote = upstream.split("/", 1)[0]
 
-        fetched = _git(["-C", path, "fetch", "--quiet", remote])
+        fetched, attempts = _fetch(path, remote)
         if fetched.returncode != 0:
+            output = fetched.stderr or fetched.stdout
+            if _lost_race(fetched):
+                why = (f"Another session in this pod was updating the same "
+                       f"clone's refs at the same moment — git's ref-update "
+                       f"race, not a network or credentials problem. Preflight "
+                       f"tried {attempts} times; a rerun normally clears it.")
+            else:
+                why = ("Check that the remote is reachable from this pod "
+                       "(network, credentials), then retry.")
             fail(2,
                  f"`git fetch {remote}` failed in `{name}` ({path}) "
                  f"(rc={fetched.returncode}). Preflight syncs every repo of the "
-                 f"environment with its origin before a slice starts, and a "
-                 f"remote it cannot reach is the environment's fault, not the "
-                 f"project's — fix it (network, credentials) and retry.\n"
-                 + (fetched.stderr or fetched.stdout).rstrip("\n"))
+                 f"environment with its origin before a slice starts. {why}\n"
+                 + output.rstrip("\n"))
 
         counts = _git(["-C", path, "rev-list", "--left-right", "--count",
                        "HEAD...@{u}"])

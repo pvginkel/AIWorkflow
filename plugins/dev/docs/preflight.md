@@ -84,7 +84,9 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   reach a live run's writer. Any other branch with no upstream → refused (exit 1), naming the repo
   and the branch: a checkout preflight cannot fetch for would otherwise report green having
   synced nothing, and reach the run with its push checked against no tracking ref.
-- **The rules.** Fetch the upstream's remote. Not behind → nothing; ahead-only is left alone
+- **The rules.** Fetch the upstream's remote — up to three attempts when git reports `incorrect
+  old value provided`, the ref-update race two sessions fetching one clone lose, not a network or
+  credential fault; any other fetch failure is not retried. Not behind → nothing; ahead-only is left alone
   (unpushed commits are the operator's, and the run pushes at its test phase). Behind and clean →
   fast-forward, or rebase when local commits sit on top — a rebase that conflicts is aborted and
   reported. Behind and dirty → refused: preflight never pulls over uncommitted changes, in any repo,

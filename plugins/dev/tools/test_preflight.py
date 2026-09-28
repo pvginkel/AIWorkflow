@@ -337,13 +337,68 @@ def test_uncommitted_changes_are_never_pulled_over():
 
 def test_a_fetch_that_fails_is_an_environment_failure():
     """Exit 2, not 1: an unreachable remote is network or credentials, nothing
-    the project's contract can fix."""
+    the project's contract can fix — and it is not retried, nor blamed on
+    anyone: the message says what to check."""
     subproc = scripted_subprocess(repo_rules(
         "0\t0", first=[("fetch", (128, "", "fatal: could not read Username\n"))]))
-    with synced(subproc):
+    slept = []
+    with synced(subproc), patched(preflight, _sleep=slept.append):
         code, message = refused(preflight.check_synced, APP, None)
     assert code == 2 and "origin" in message
     assert "could not read Username" in message
+    assert "network, credentials" in message
+    assert "environment's fault" not in message
+    assert sum(argv_has(("fetch",), argv) for argv in subproc.calls) == 1
+    assert slept == []
+
+
+RACE = (1, "", "error: cannot lock ref 'refs/remotes/origin/main': is at "
+               "1a2b3c but expected 4d5e6f\n"
+               "error: incorrect old value provided\n")
+
+
+class racing_subprocess(scripted_subprocess):
+    """A scripted_subprocess whose first `races` fetches lose git's ref-update
+    race to another session, and whose later fetches go through."""
+
+    def __init__(self, races, rules=()):
+        super().__init__(rules)
+        self.races = races
+
+    def run(self, argv, **kwargs):
+        if argv_has(("fetch",), list(argv)) and self.races:
+            self.races -= 1
+            self.calls.append(list(argv))
+            return subprocess.CompletedProcess(argv, *RACE)
+        return super().run(argv, **kwargs)
+
+
+def test_a_fetch_that_loses_the_ref_race_is_retried_and_the_sync_goes_on():
+    """Another session fetching the same clone moved the ref first; a moment
+    later the fetch goes through, and the repo syncs as usual."""
+    subproc = racing_subprocess(1, repo_rules("0\t3"))
+    slept = []
+    with synced(subproc), patched(preflight, _sleep=slept.append):
+        preflight.check_synced(APP, None)
+    assert sum(argv_has(("fetch",), argv) for argv in subproc.calls) == 2
+    assert slept == [1]
+    assert subproc.called("merge", "--ff-only", "@{u}")
+
+
+def test_a_ref_race_that_persists_fails_naming_the_race():
+    """Three attempts, then exit 2 with a message that names the race — not
+    the network or credentials an agent would otherwise go and check."""
+    subproc = racing_subprocess(5, repo_rules("0\t0"))
+    slept = []
+    with synced(subproc), patched(preflight, _sleep=slept.append):
+        code, message = refused(preflight.check_synced, APP, None)
+    assert code == 2
+    assert sum(argv_has(("fetch",), argv) for argv in subproc.calls) == 3
+    assert slept == [1, 2]
+    assert "ref-update race" in message and "3 times" in message
+    assert "rerun" in message
+    assert "incorrect old value provided" in message
+    assert "environment's fault" not in message
 
 
 def test_a_detached_head_is_skipped_and_the_next_repo_still_syncs():
