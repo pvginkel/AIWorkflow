@@ -5,24 +5,6 @@
     },
     {
       "path": "../AIWorkflowSpecs"
-    },
-    {
-      "path": "../FieldnotesApp"
-    },
-    {
-      "path": "../FieldnotesAppSpecs"
-    },
-    {
-      "path": "../FieldnotesDeploy"
-    },
-    {
-      "path": "../Fieldnotes"
-    },
-    {
-      "path": "../HelmCharts"
-    },
-    {
-      "path": "../DockerImages"
     }
   ]
 }

@@ -90,7 +90,6 @@ contract and tells a new repo exactly what is missing. See **[`docs/ADOPTING.md`
   card-described residuals).
 - **[Fieldnotes](https://github.com/pvginkel/FieldnotesApp)** — a cross-project observation store
   beside the workflow, in a repo of its own: agents post what they now leave in close-out reports,
-  and a scheduled reconciler curates it into a triage doc. Not built yet. This repo's KubeCoder
-  environment checks it out as `/work/FieldnotesApp`, with its design note and slices in
-  `/work/FieldnotesAppSpecs`.
+  and a scheduled reconciler curates it into a triage doc. It is developed in a KubeCoder environment
+  of its own, with its design note and slices in `pvginkel/FieldnotesAppSpecs`.
 - **[`CHANGELOG-workflow.md`](CHANGELOG-workflow.md)** — the plugin's changelog.

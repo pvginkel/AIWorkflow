@@ -1,13 +1,9 @@
-# The environment for the AI workflow — and for Fieldnotes, the observation
-# store being built beside it.
+# The environment for the AI workflow.
 # Schema: https://kubecoder.home/help/reference/config-yaml/
 #
-# AIWorkflow itself needs almost nothing: it is a plugin marketplace, nothing is
-# built or deployed from it, and its suites and ruff run straight out of the
-# python toolchain (see .kubecoder/project.yaml). What makes this an environment
-# of its own is Fieldnotes: the application that takes the observations agents
-# now leave in close-out reports is developed here, next to the workflow whose
-# close-out template and agent instructions it changes.
+# AIWorkflow needs almost nothing: it is a plugin marketplace, nothing is built
+# or deployed from it, and its suites and ruff run straight out of the python
+# toolchain (see .kubecoder/project.yaml).
 
 repos:
   # AIWorkflow's own spec repo — for now, the Trello Triage cards archived at the
@@ -15,116 +11,30 @@ repos:
   # append to the one working tree.
   - url: https://github.com/pvginkel/AIWorkflowSpecs
     shared: true
-  # The Fieldnotes application: REST API, MCP server and model pod. Carries its
-  # own CLAUDE.md, .aiworkflowrc and .kubecoder/project.yaml, and runs through
-  # the slice workflow like any other project.
-  - url: https://github.com/pvginkel/FieldnotesApp
-  # Its spec repo: the design note FieldnotesApp is built from, and its slices.
-  # Shared: one clone per project, mounted into every environment of it, because
-  # parallel sessions read and append to the one working tree.
-  - url: https://github.com/pvginkel/FieldnotesAppSpecs
-    shared: true
-  - url: https://github.com/pvginkel/FieldnotesDeploy
-  # The Fieldnotes store: observations, triage docs and the install, reconciler
-  # and actioner skills. Data plus skills, written by the API and the skills.
-  - url: https://github.com/pvginkel/Fieldnotes
-  # Where Fieldnotes deploys: the `models` and `fieldnotes` charts, and the
-  # webhook-relay image the `fieldnotes` pod runs. Both are written and pushed
-  # from here.
-  - url: https://github.com/pvginkel/HelmCharts
-  - url: https://github.com/pvginkel/DockerImages
-  # The close-out reports Fieldnotes' test dataset is mined from. Read, never
-  # written from here, so shared: one clone per project, mounted in.
-  - url: https://github.com/pvginkel/KubeCoderSpecs
-    shared: true
-  - url: https://github.com/pvginkel/AnsibleSpecs
-    shared: true
-  # ModernAppTemplate, which FieldnotesApp is being rebuilt on (its `dev` branch).
-  # The two component templates nest inside it at backend/ and frontend/, the
-  # layout copier's relative _src_path and the template's sync tooling assume.
-  - url: https://github.com/pvginkel/ModernAppTemplate
-  - url: https://github.com/pvginkel/ModernAppBackendTemplate
-    path: ModernAppTemplate/backend
-  - url: https://github.com/pvginkel/ModernAppFrontendTemplate
-    path: ModernAppTemplate/frontend
 
 capabilities:
   github: rw
   fleetAdmin: true
 
 tools:
-  # AIWorkflow and FieldnotesApp are Python on uv, and the dev container has no uv.
+  # The plugin's suites and ruff; the dev container has no uv.
   - use: python
-  # HelmCharts' deploy lint and template gates, and its poetry setup.
-  - use: iac
-  # webhook-relay, which is Go.
-  - use: go
-  # The ModernAppTemplate instance: copier, Poetry/uv and pnpm in one sidecar.
-  - use: modern-app
-  # FieldnotesDeploy's architecture gates: gen-architecture and arch-validate.
-  - use: aac-tools
-
-# Proves Fieldnotes' Dockerfile and webhook-relay's with `kaniko --no-push`
-# before a push hands them to Jenkins.
-imageBuilder: true
-
-env:
-  # FieldnotesApp's Grafana dashboard: `grafana/dashboard.py --upload` puts it
-  # there. In-cluster, because grafana.home has no HTTPS of its own: the proxy
-  # answers it with architecture.webathome.org's certificate.
-  - name: GRAFANA_URL
-    value: http://grafana.grafana-prd.svc.cluster.local
-
-secrets:
-  GRAFANA_TOKEN: grafana-api-key
-
-ports:
-  # FieldnotesApp's dev stack (`scripts/dev.py`): the Vite dev server, which
-  # proxies /api to the backend on :3401 and the SSE gateway on :3402. Serves
-  # https://fieldnotes.<env-id>.home, for the operator to test the triage UI.
-  - name: fieldnotes
-    port: 3400
-    type: http
-    sslOffload: true
 
 preamble:
   instructions: |
     The AI workflow's environment: the `dev` plugin marketplace
-    (/work/AIWorkflow, with its spec repo in /work/AIWorkflowSpecs), and
-    Fieldnotes, the cross-project observation store for agents that is being
-    built beside it (/work/FieldnotesApp, with its design and implementation
-    plan in /work/FieldnotesAppSpecs).
+    (/work/AIWorkflow, with its spec repo in /work/AIWorkflowSpecs).
 
-    Fieldnotes also touches /work/Fieldnotes (the store: observations and
-    skills), /work/HelmCharts (its charts) and /work/DockerImages (the
-    webhook-relay image). /work/KubeCoderSpecs and /work/AnsibleSpecs are
-    read-only sources for its test dataset: never commit there.
+    One toolchain sidecar:
 
-    Five toolchain sidecars:
+      cexec python    Python with uv. There is no uv in the dev container.
 
-      cexec python    Python with uv, for every repo here. There is no uv
-                      in the dev container.
-      cexec iac       Terraform, Helm, kubectl and poetry: HelmCharts'
-                      deploy lint / template gates.
-      cexec go        Go, for webhook-relay in DockerImages.
-      cexec modern-app  Node, pnpm, Poetry and uv: FieldnotesApp's `dev`
-                      branch, the ModernAppTemplate instance, and copier.
-      cexec aac-tools  gen-architecture and arch-validate: FieldnotesDeploy's
-                      architecture gates.
-
-    `kaniko --no-push` proves a Dockerfile; never push a `dev-*` or `prd-*`
-    tag from here, those are Jenkins'.
-
-    Each repo carries its own CLAUDE.md; read the one for the repo you are
-    working in. `kc project` verbs are cwd-bound, so run them from that
-    repo's root.
+    `kc project` verbs are cwd-bound, so run them from the repo's root.
 
     The `dev` plugin this environment's sessions load is the INSTALLED one,
     from the marketplace's git URL — not the working tree in
     /work/AIWorkflow. An edit there changes no running pipeline until it is
     pushed and the plugin updated.
 
-    /work/AIWorkflowSpecs and /work/FieldnotesAppSpecs are SHARED working
-    trees: stage files by name there, never `git add -A`. /work/KubeCoderSpecs
-    and /work/AnsibleSpecs are shared too, and never pulled by a restart:
-    `git pull` them before mining.
+    /work/AIWorkflowSpecs is a SHARED working tree: stage files by name
+    there, never `git add -A`.
