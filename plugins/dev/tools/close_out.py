@@ -461,6 +461,22 @@ def find_by_headline(slice_dir: Path | str, section: str,
     return None
 
 
+def live_entries(slice_dir: Path | str, section: str) -> list[tuple[str, str]]:
+    """(id, headline) of every live entry under `## <section>`, in file
+    order — struck entries and headings not in the entry shape left out,
+    the headline as `find_by_headline` compares it (whitespace collapsed,
+    a ` · <severity>` tail kept). Raises ReportError as `find_by_headline`
+    does: no report, no such section."""
+    if section not in SECTIONS:
+        raise ReportError(f"unknown section {section!r}; sections are "
+                          + ", ".join(SECTIONS))
+    _, text = _read(slice_dir)
+    start, end = _section_span(text, section)
+    return [(block.eid, _entry_headline(block.heading) or "")
+            for block in _blocks(text, start, end, SECTIONS[section])
+            if block.kind == "live"]
+
+
 def _find_entry(text: str, eid: str) -> _Block:
     """The block whose heading carries `eid`, live or struck, under the
     section its letter names."""

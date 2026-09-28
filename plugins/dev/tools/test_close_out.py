@@ -629,6 +629,30 @@ def test_find_by_headline_raises_like_append():
             assert "Outstanding actions" in str(e)
 
 
+def test_live_entries_lists_live_ids_and_headlines_in_file_order():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        for h in ("Before /dev:run-slice: push it", "Push X by hand",
+                  "Settle V3 later"):
+            close_out.append_entry(slice_dir, "Outstanding actions", h, "b", **FULL)
+        close_out.append_entry(slice_dir, "Bugs", "a bug", "b", **FULL,
+                               severity="minor")
+        close_out.strike_entry(slice_dir, "A1", "pushed", by="operator")
+        live = close_out.live_entries
+        assert live(slice_dir, "Outstanding actions") == [
+            ("A2", "Push X by hand"), ("A3", "Settle V3 later")]
+        assert live(slice_dir, "Bugs") == [("B1", "a bug · minor")]
+        assert live(slice_dir, "Suggestions") == []
+        (slice_dir / "close-out.md").write_text("# Close-out\n\n## Bugs\n")
+        for section in ("Outstanding actions", "Nope"):
+            try:
+                live(slice_dir, section)
+                raise AssertionError(f"{section} must raise")
+            except ReportError:
+                pass
+
+
 # -- list -------------------------------------------------------------------
 
 def test_list_shows_ids_headlines_and_consequence_lines_only():

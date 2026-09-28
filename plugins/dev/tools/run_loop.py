@@ -106,6 +106,7 @@ from close_out import (  # noqa: E402
     entry_counts,
     find_by_headline,
     init_report,
+    live_entries,
     render_report,
     report_path,
     stamp_header,
@@ -200,6 +201,10 @@ BAIL_DETAILS_CAP = 600
 # entry's headline. `phases` with no phase is between them, or before any.
 BAIL_STAGES = {"consult": "at the completion consult",
                "test": "in the test phase", "docs": "in the doc phase"}
+# An Outstanding actions entry the operator must settle before a run can
+# work — the plan-writer heads it `Before /dev:run-slice: …`. After-run ones
+# (the plan loop's push-hold and settle-V entries) never match.
+PRERUN_HEADLINE_RE = re.compile(r"^before\s+`?/dev:run-slice\b`?", re.IGNORECASE)
 # The driver's live run record inside the slice folder — untracked for the
 # whole run, whichever branch the tree holding it is on.
 RUN_RECORD = ("log.txt", "state.json", "phases")
@@ -493,6 +498,38 @@ def assert_plugin_current(script: str, rerun: str) -> None:
 VERIFICATION_ITEM_KEYS = frozenset({
     "id", "area", "description", "owed_after", "verdict", "rationale",
     "evidence"})
+
+
+def open_prerun_actions(slice_dir: Path) -> list[tuple[str, str]]:
+    """(id, headline) of every live Outstanding actions entry in the slice's
+    close-out report whose headline opens `Before /dev:run-slice` (the
+    command in backticks or not, any case). A missing report, or one without
+    the section, has none."""
+    try:
+        entries = live_entries(slice_dir, "Outstanding actions")
+    except ReportError:
+        return []
+    return [(eid, headline) for eid, headline in entries
+            if PRERUN_HEADLINE_RE.match(headline)]
+
+
+def assert_no_prerun_actions(slice_dir: Path) -> None:
+    """Bail (`prerun_action`, an operator question) while the report holds an
+    open pre-run action: a phase dispatched before it is taken fails on what
+    it was meant to provide, and only the operator can take it."""
+    open_ = open_prerun_actions(slice_dir)
+    if not open_:
+        return
+    tool = TOOLS_DIR / "close_out.py"
+    raise Bailout(
+        "prerun_action", question=True,
+        details=f"{report_path(slice_dir)} holds {len(open_)} open pre-run "
+                "action(s), to be taken before this run can work:\n"
+                + "\n".join(f"- {eid} — {headline}" for eid, headline in open_)
+                + "\nTake each action (or have it taken on your word), strike "
+                f"its entry with `python3 {tool} strike {slice_dir} <id> "
+                "--reason \"<what was done>\" --by <who>`, commit the report, "
+                "then relaunch with --resume.")
 
 
 def assert_verification_keys(slice_dir: Path) -> None:
@@ -5653,6 +5690,9 @@ class RunLoop:
             self._assert_current()
             self._ensure_report()
             self._report_bailouts()
+            # The report exists from here, and nothing is dispatched yet —
+            # on a fresh run and on every resume alike.
+            assert_no_prerun_actions(self.slice_dir)
 
             if resume_at != "docs":
                 while True:
@@ -6016,6 +6056,11 @@ def cmd_dry_run(loop: RunLoop) -> None:
         except ValueError as e:
             errors.append(f"push hold `{target}`: {e}")
             print(f"  hold  {target}  INVALID")
+    # Reported, not a plan problem: a born-planned slice has no report, and
+    # the dry run's verdict is on the plan alone.
+    for eid, headline in open_prerun_actions(loop.slice_dir):
+        print(f"  pre-run  {eid}  open — a real run stops on it until struck: "
+              f"{headline}")
     rulings, ruling_errors = parse_rulings(loop.plan_path.read_text())
     errors.extend(ruling_errors)
     for ruling in rulings:

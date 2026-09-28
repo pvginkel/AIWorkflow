@@ -75,7 +75,10 @@ other slice-folder artifact).
 
 - **plan-writer / plan-reviewer** — out-of-scope observations about the spec or the estate;
   events during planning. Their in-scope findings and questions keep their existing routes (the
-  review file, the `questions` verdict, the interactive session).
+  review file, the `questions` verdict, the interactive session). An action only the operator can
+  take that the run needs *before* it starts — a push the plan's tools wait on, a pod restart —
+  is an Outstanding action whose headline begins `Before /dev:run-slice:`; the run loop refuses
+  to start or resume while one is live ([run-loop.md](run-loop.md) § Protocol invariants).
 - **the plan loop** — at its exit 0, one Outstanding action per repo the plan's `## Push holds`
   holds, listing the criteria `verification.json` marks `owed_after` that push, and one per
   criterion owed after anything else ([plan-template.md](plan-template.md)). Each is entered

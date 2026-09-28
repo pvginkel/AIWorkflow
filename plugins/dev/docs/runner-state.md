@@ -101,6 +101,7 @@ error the orchestrator diagnoses).
 | `operator_question` | ✓ | an executor or the doc-writer returned `question` |
 | `plan_doc` | ✓ | the plan doc is broken and no session could fix it on a nudge |
 | `generation_exhausted` | ✓ | a third follow-up generation of appended work is pending |
+| `prerun_action` | ✓ | at startup, fresh or `--resume`, the slice's `close-out.md` holds a live `Before /dev:run-slice` Outstanding action ([run-loop.md](run-loop.md) § Protocol invariants) |
 | `blocked` | – | an agent reported `blocked`, or a protocol failure after the nudge |
 | `gate_red` | – | the gate stayed red through the executor fix cap, or at merge |
 | `consult_bail` | – | any consult chose `bail` |

@@ -5949,6 +5949,108 @@ def test_a_dry_run_whose_spec_repo_serves_two_code_repos_names_both():
 
 
 
+# -- open pre-run actions ---------------------------------------------------
+
+PRERUN = "Before /dev:run-slice: push the toolchain commits, then kc env restart"
+AFTER_RUN = "Push HelmCharts by hand when its hold lifts"
+
+
+def report_with_actions(slice_dir, *headlines):
+    """A close-out report whose Outstanding actions hold `headlines` as
+    A1, A2, … — live, as the plan loop leaves them."""
+    actions = "".join(f"### A{i} — {h}\n\nbody\n\n**Consequence:** x\n\n"
+                      for i, h in enumerate(headlines, 1))
+    (slice_dir / "close-out.md").write_text(
+        "# Close-out — slice 074 test_slice\n\nRun: <not yet stamped>\n\n"
+        "## Summary\n\n## Outstanding actions\n\n" + actions
+        + "## Notable events\n\n## Bugs\n\n## Open questions and rulings\n\n"
+        "## Suggestions\n")
+
+
+def test_an_open_pre_run_action_refuses_the_run_until_struck():
+    """Slice 027's P1 writer was dispatched while its `Before /dev:run-slice`
+    action was live and came back blocked on the tool it would have
+    provided. The run stops before any dispatch — an operator question —
+    and a resume with the entry still live stops again."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        report_with_actions(slice_dir, AFTER_RUN, PRERUN)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        assert run_to_exit(r) == 4
+        assert not r.spawned
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "prerun_action" and bail["question"] is True
+        assert f"- A2 — {PRERUN}" in bail["details"]
+        assert "A1" not in bail["details"], "an after-run action never refuses"
+        tool = Path(run_loop.__file__).resolve().parent / "close_out.py"
+        assert (f"`python3 {tool} strike {slice_dir} <id> --reason "
+                '"<what was done>" --by <who>`') in bail["details"]
+        assert "relaunch with --resume" in bail["details"]
+        state = load_state(slice_dir)
+        assert state["run_phase"] == "phases"
+        assert state["bailouts"][-1]["reason"] == "prerun_action"
+
+        r = ScriptedLoop(slice_dir, [], resume=True, repo_root=repo)
+        assert run_to_exit(r) == 4
+        assert not r.spawned
+        assert json.loads((slice_dir / "bailout.json").read_text())[
+            "reason"] == "prerun_action"
+
+        sys.modules["close_out"].strike_entry(
+            slice_dir, "A2", "pushed and restarted", by="operator")
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], resume=True, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert r.spawned
+
+
+def test_an_after_run_action_alone_never_refuses_the_run():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        report_with_actions(slice_dir, AFTER_RUN,
+                            "Settle V3 after the operator's DNS cutover")
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0
+
+
+def test_the_pre_run_match_takes_backticks_and_any_case():
+    for headline in ("Before `/dev:run-slice`: publish the image",
+                     "before /DEV:RUN-SLICE — publish the image"):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp)
+            report_with_actions(slice_dir, headline)
+            r = ScriptedLoop(slice_dir, [], repo_root=repo)
+            assert run_to_exit(r) == 4, headline
+            assert f"- A1 — {headline}" in json.loads(
+                (slice_dir / "bailout.json").read_text())["details"]
+    assert run_loop.open_prerun_actions(Path("/nonexistent")) == []
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _ = make_slice(tmp, repo=False)
+        (slice_dir / "close-out.md").write_text("# Close-out\n\n## Bugs\n")
+        assert run_loop.open_prerun_actions(slice_dir) == []
+
+
+def test_a_dry_run_lists_open_pre_run_actions_without_failing():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = dry_run_repo(tmp)
+        slice_dir, _ = make_slice(tmp, repo=False)
+        report_with_actions(slice_dir, AFTER_RUN, PRERUN)
+        loop = RunLoop(slice_dir, resume=False)
+        loop.repo_root = root
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            try:
+                run_loop.cmd_dry_run(loop)
+            except SystemExit as e:
+                raise AssertionError(
+                    f"dry run must pass, exited {e.code}") from None
+        text = out.getvalue()
+        assert ("  pre-run  A2  open — a real run stops on it until struck: "
+                + PRERUN) in text
+        assert "A1" not in text
+
+
 # -- the installed-plugin and verification-key guards -----------------------
 
 OURS = run_loop.plugin_version()

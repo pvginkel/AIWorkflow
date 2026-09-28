@@ -4,6 +4,22 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-28 — the run loop will not start over an open pre-run action (v0.9.53)
+
+AIWF-17 (a Fieldnotes report from JenkinsPipelineUtils, 2026-09-25; the operator's ruling on
+2026-09-28: "Refuse to run a slice if it has pending actions").
+
+- **A run waits for the operator's pre-run actions instead of finding them through a blocked
+  phase.** Slice 027's first executor was dispatched while its close-out's A1 (push two toolchain
+  commits, restart the pod) was still open. It failed its first `cexec` and handed back
+  `blocked`. At startup, fresh or `--resume`, the run loop now reads the slice's own
+  `close-out.md` and bails `prerun_action` (exit 4) on any live Outstanding action whose headline
+  begins `Before /dev:run-slice`. The run-slice session puts the action to the operator, strikes
+  the entry once it's done, and resumes. After-run entries, such as the plan loop's held pushes
+  and owed criteria, don't stop a run. `--dry-run` lists the open entries without failing.
+- The plan-writer and `close-out.md` now name that headline as the marker, which the 027 planner
+  had only written by chance.
+
 ## 2026-09-28 — preflight retries git's ref race, roles get gitblit, `owed` is a verdict (v0.9.52)
 
 AIWF-18, AIWF-19, AIWF-20 (Fieldnotes reports from Ansible, 2026-09-25; the triage's "yes" on

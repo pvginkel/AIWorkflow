@@ -367,3 +367,12 @@ from — the run loop with `--resume`, the plan loop by a plain rerun. A missing
 passes: the check never holds a loop up on its own bookkeeping. The same points reject a
 `verification.json` item key outside [plan-template.md](plan-template.md)'s schema as
 `protocol_failure` — the second guard, for a newer agent's field the driver would otherwise drop.
+
+**The loop does not start over an open pre-run action.** At startup, fresh or `--resume`, before
+any dispatch, the run loop reads the slice's own `close-out.md` and bails `prerun_action` (exit 4)
+on any live Outstanding action whose headline begins `Before /dev:run-slice`
+([close-out.md](close-out.md) § Who writes what, when). Slice 027's first executor was dispatched
+while its A1 — push two toolchain commits, restart the pod — was still open, failed its first
+`cexec` and handed back `blocked`. The after-run actions the plan loop seeds (a held push, a
+criterion owed after it) do not stop a run; they are what the run leaves behind. `--dry-run` lists
+the open entries without failing.

@@ -81,7 +81,9 @@ rewrite in place — no supersession notices, no history narration.
 Out-of-scope observations about the spec or the estate — anything the plan will not act on — go
 in the slice's `close-out.md` (path and tool in your dispatch — `close_out.py append`; `list`
 first to see what is already there; never a hand edit), append only. In-scope questions keep
-their route: the `questions` verdict, never a report entry.
+their route: the `questions` verdict, never a report entry. An action only the operator can take
+that the run needs before it starts is an Outstanding action headed `Before /dev:run-slice: …` —
+the run loop will not start while it is live.
 
 ## Hand-back
 

@@ -79,6 +79,11 @@ that replaces a target's test gate, accepts a red sweep row, or authorizes prd: 
 the waived gate again on resume and bails `gate_red` or `blocked` where it bailed before. Then
 relaunch with `--resume`.
 
+A `prerun_action` bail is the close-out's `Before /dev:run-slice` entry still live: the run
+needs an action only the operator can take. Put it to them; once it is done — by them, or by you
+on their word — strike it (`close_out.py strike <slice_dir> <id> --reason "<what was done>" --by
+"run-slice session"`), commit `close-out.md`, and relaunch with `--resume`.
+
 ## Job 4 — close out (exit 0)
 
 1. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/slice_cost.py <slice_dir> --write-state` — it appends
