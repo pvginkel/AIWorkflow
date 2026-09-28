@@ -31,6 +31,12 @@ _spec = importlib.util.spec_from_file_location(
 preflight = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(preflight)
 
+# The sync also walks the workflow's scratch clones under /work/scratch. The
+# suite points that root at a directory that does not exist, so no test sees
+# the pod's own clones; the tests about them patch in a root of their own.
+preflight.github_target.SCRATCH_ROOT = (Path(tempfile.gettempdir())
+                                        / "preflight-suite-no-scratch")
+
 
 class patched:
     """Swap module attributes for a `with` block (this file also runs
@@ -475,6 +481,64 @@ def test_sync_roots_adds_a_spec_repo_only_when_it_is_not_already_a_sibling():
     assert [str(p) for p in beside] == [str(work / "App"), str(work / "Specs")]
     assert [str(p) for p in elsewhere] == [
         str(work / "App"), str(work / "Specs"), str(outside)]
+
+
+def _git(*args, cwd=None):
+    return subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=t@example.invalid",
+         "-c", "commit.gpgsign=false", *args],
+        cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def _origin_and_clone(tmp, clone):
+    """A bare origin with one commit on main, a clone of it at `clone`, and
+    a seed checkout to move origin on with. Returns the seed."""
+    bare = Path(tmp) / "origin.git"
+    seed = Path(tmp) / "seed"
+    _git("init", "-q", "--bare", "-b", "main", str(bare))
+    _git("clone", "-q", str(bare), str(seed))
+    _git("checkout", "-q", "-b", "main", cwd=seed)
+    (seed / "README").write_text("one\n")
+    _git("add", "README", cwd=seed)
+    _git("commit", "-qm", "one", cwd=seed)
+    _git("push", "-q", "origin", "main", cwd=seed)
+    _git("clone", "-q", str(bare), str(clone))
+    return seed
+
+
+def test_sync_roots_appends_the_marked_scratch_clones_only():
+    """A `github:` Target's clone carries the workflow's mark and is synced
+    like a sibling; a clone someone made by hand under the scratch root is
+    not the workflow's to pull."""
+    with tempfile.TemporaryDirectory() as tmp:
+        work = _checkout(Path(tmp) / "work" / "App").parent
+        scratch = work / "scratch"
+        for name in ("Marked", "Hand"):
+            _git("init", "-q", str(scratch / name))
+        _git("config", preflight.github_target.MARK_KEY, "acme/Marked",
+             cwd=scratch / "Marked")
+        with patched(preflight.github_target, SCRATCH_ROOT=scratch):
+            roots = preflight.sync_roots(work / "App", None)
+    assert [str(p) for p in roots] == [str(work / "App"),
+                                       str(scratch / "Marked")]
+
+
+def test_a_marked_scratch_clone_behind_origin_is_fast_forwarded():
+    """End to end over real git: the scratch clone gets exactly the siblings'
+    sync."""
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp) / "work"
+        _origin_and_clone(Path(tmp) / "app", work / "App")
+        clone = work / "scratch" / "Widget"
+        seed = _origin_and_clone(Path(tmp) / "widget", clone)
+        _git("config", preflight.github_target.MARK_KEY, "acme/Widget",
+             cwd=clone)
+        (seed / "README").write_text("two\n")
+        _git("commit", "-qam", "two", cwd=seed)
+        _git("push", "-q", "origin", "main", cwd=seed)
+        with patched(preflight.github_target, SCRATCH_ROOT=work / "scratch"):
+            preflight.check_synced(work / "App", None)
+        assert (clone / "README").read_text() == "two\n"
 
 
 def test_plan_and_run_sync_the_environment_and_triage_does_not():

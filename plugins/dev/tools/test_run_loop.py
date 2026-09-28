@@ -6671,6 +6671,184 @@ def test_dry_run_prints_the_rulings():
         assert "driver ruling `prd ../Nope`" in err.getvalue()
 
 
+
+# -- GitHub repo targets (AIWF-22) ---------------------------------------------
+#
+# `Target: github:<owner>/<repo>` is cloned into the scratch root and is a
+# sibling repo path from then on. The clone itself is github_target's (its own
+# suite runs real git); here `ensure_clone` is faked onto a sibling-shaped dir.
+
+GITHUB = "github:acme/Widget"
+
+
+def fake_clone(tmp, manifest=True):
+    """(the clone, the `ensure_clone` calls as (target, owned), the patch)
+    — a GitHub Target resolving to a checkout under a tmp scratch root."""
+    scratch = Path(tmp) / "scratch"
+    clone = scratch / "Widget"
+    (clone / ".git").mkdir(parents=True)
+    if manifest:
+        (clone / ".kubecoder").mkdir()
+        (clone / ".kubecoder" / "project.yaml").write_text("projects: []\n")
+    calls = []
+
+    def ensure(target, *, owned=False):
+        calls.append((target, owned))
+        return clone
+
+    return clone, calls, patched(run_loop.github_target, SCRATCH_ROOT=scratch,
+                                 ensure_clone=ensure)
+
+
+def clone_headline(clone):
+    return f"Delete the scratch clone {clone.resolve()} once the slice is done"
+
+
+def test_a_github_target_resolves_as_a_sibling_at_its_clone():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        clone, calls, patch = fake_clone(tmp)
+        bare, _, bare_patch = fake_clone(Path(tmp) / "bare", manifest=False)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        with patch:
+            target = r._resolve_target(GITHUB)
+        assert (target.name, target.kind) == (GITHUB, "sibling")
+        assert target.git_root == target.gate_cwd == clone.resolve()
+        assert target.gate_argv == ["kc", "project", "test"]
+        assert calls == [(GITHUB, False)]
+        with bare_patch:
+            assert r._resolve_target(GITHUB).gate_argv is None
+            assert r._resolve_target(GITHUB).git_root == bare.resolve()
+
+
+def test_a_github_target_is_never_a_component_name():
+    """`Creates:` names a component; a GitHub target is a repo."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        _, _, patch = fake_clone(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        with patch:
+            target = r._resolve_target(GITHUB, creates=GITHUB)
+        assert target.kind == "sibling"
+        phases, _ = parse_plan("# p\n\n" + phase_section("1", "X", GITHUB)
+                               + "\nCreates: " + GITHUB + "\n")
+        assert run_loop.creation_claim(phases, 0) == (None, None)
+
+
+def test_the_runs_own_clone_is_resolved_owned_and_a_dry_run_reads_it():
+    """A resume over the run's own clone must not sync it (its base holds
+    the merged, unpushed phases) — and neither may a dry run started while
+    that run is live, which holds no state of its own."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        clone, calls, patch = fake_clone(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        with patch:
+            r.state = {"bases": {str(clone.resolve()): "main"}}
+            r._resolve_target(GITHUB)
+            r.state = {}
+            r._resolve_target(GITHUB)
+            (slice_dir / "state.json").write_text(json.dumps(
+                {"bases": {str(clone.resolve()): "main"}}))
+            r._resolve_target(GITHUB)
+        assert calls == [(GITHUB, True), (GITHUB, False), (GITHUB, True)]
+
+
+def test_a_github_phase_runs_in_its_clone_and_reports_it_once():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(
+            tmp, phases=[("1", "First", GITHUB), ("2", "Second", GITHUB)])
+        clone, _, patch = fake_clone(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        with patch:
+            assert run_to_exit(r) == 0
+            branch_ops = [root for root, c in r.fake_git.calls
+                          if c[0] == "checkout"
+                          and any("phase/074-P" in a for a in c)]
+            assert branch_ops and all(str(root) == str(clone.resolve())
+                                      for root in branch_ops)
+            report = load_report(slice_dir)
+            assert report.count(clone_headline(clone)) == 1
+            assert f"`Target: {GITHUB}`" in report
+            assert ("**Provenance:** witnessed — the driver's target "
+                    "resolution") in report
+            assert load_state(slice_dir)["scratch_clones_reported"] == [
+                str(clone.resolve())]
+            # an Outstanding action for after the slice, never a pre-run one
+            assert run_loop.open_prerun_actions(slice_dir) == []
+            # a later run whose state lost the record finds the entry
+            again = ScriptedLoop(slice_dir, [], repo_root=repo)
+            again.state = {"bases": {}}
+            again._report_scratch_clone(again._resolve_target(GITHUB))
+            assert load_report(slice_dir).count(clone_headline(clone)) == 1
+
+
+def test_a_github_phase_with_no_manifest_and_no_gate_ruling_is_refused():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First", GITHUB)])
+        _, _, patch = fake_clone(tmp, manifest=False)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        with patch:
+            assert run_to_exit(r) == 4
+            assert r.spawned == [], "nothing dispatched on an ungated clone"
+            bail = json.loads((slice_dir / "bailout.json").read_text())
+            assert bail["reason"] == "plan_doc" and bail["question"] is True
+            assert "has no `.kubecoder/project.yaml`" in bail["details"]
+            assert (f"`- gate {GITHUB} — <substitute or none> — <why>`"
+                    in bail["details"])
+
+            # the operator's gate ruling lifts it
+            ruled_plan(slice_dir, f"gate {GITHUB} — none — no suite there",
+                       body=phase_section("1", "First", GITHUB))
+            r2 = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                          *TAIL], resume=True, repo_root=repo)
+            assert run_to_exit(r2) == 0
+            assert load_state(slice_dir)["phases"]["1"]["status"] == "merged"
+
+
+def dry_run_github(tmp, *rulings, manifest=False):
+    """(exit code or None, stdout, stderr) of a dry run over a one-phase
+    plan targeting GITHUB."""
+    root = dry_run_repo(tmp)
+    slice_dir, _ = make_slice(tmp, repo=False)
+    ruled_plan(slice_dir, *rulings, body=phase_section("1", "X", GITHUB))
+    _, _, patch = fake_clone(tmp, manifest=manifest)
+    loop = RunLoop(slice_dir, resume=False)
+    loop.repo_root = root
+    out, err = io.StringIO(), io.StringIO()
+    code = None
+    with patch, contextlib.redirect_stdout(out), \
+            contextlib.redirect_stderr(err):
+        try:
+            run_loop.cmd_dry_run(loop)
+        except SystemExit as e:
+            code = e.code
+    return code, out.getvalue(), err.getvalue()
+
+
+def test_a_dry_run_lists_an_ungated_github_target_as_a_plan_problem():
+    with tempfile.TemporaryDirectory() as tmp:
+        code, out, err = dry_run_github(tmp)
+    assert code == 2
+    assert f"target={GITHUB} [sibling]" in out
+    assert "gate: (no deterministic gate)" in out
+    assert f"phase P1: Target `{GITHUB}` is cloned at" in err
+    assert f"`- gate {GITHUB} — <substitute or none> — <why>`" in err
+
+
+def test_a_dry_run_passes_a_github_target_a_ruling_or_a_manifest_gates():
+    with tempfile.TemporaryDirectory() as tmp:
+        ruled = dry_run_github(tmp, f"gate {GITHUB} — none — no suite")
+    with tempfile.TemporaryDirectory() as tmp:
+        manifest = dry_run_github(tmp, manifest=True)
+    assert ruled[0] is None, ruled[2]
+    assert f"  ruling  gate {GITHUB}" in ruled[1]
+    assert manifest[0] is None, manifest[2]
+    assert "gate: kc project test" in manifest[1]
+
+
 if __name__ == "__main__":
     _tests = [v for k, v in sorted(globals().items())
               if k.startswith("test_") and callable(v)]

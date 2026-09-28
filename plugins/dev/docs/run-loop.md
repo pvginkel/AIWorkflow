@@ -34,6 +34,26 @@ set is re-read at every plan parse, so a component a phase registers — declare
 line under its `Target:` ([plan-template.md](plan-template.md)) — is a valid target from the
 moment the creating phase merges, and may be named before that on the declaration's word.
 
+**`Target: github:<owner>/<repo>` names a repo the environment does not check out.** A sibling
+path must exist under `/work`, and putting it there took a `repos:` entry in the project's
+`.kubecoder/config.yaml` — the repo in every environment of the project for one slice's sake.
+KubeCoder puts a task's repo in `/work/scratch/<repo>`, so the driver clones it there, hard-coded,
+and from then on it is a sibling path: branched, merged and pushed in that clone, gated by `kc
+project test` from its root when it carries a manifest. The first resolution in a process clones
+it, or adopts a clone already there: origin must be that repo, and a dirty clone, a detached HEAD, a
+`phase/` branch, no upstream or commits ahead of origin are refused; otherwise it is fetched and
+fast-forwarded. A clone the run has already recorded as one of its repos (a resume over its own
+merged phases) is only checked, never synced. Every resolution calls the one helper
+(`tools/github_target.py`) — the phase, the dry run (which is where planning clones it), the plan
+loop's held-repo name — and preflight's sync covers the clones it made
+([preflight.md](preflight.md) § Notes on the sync). Refused outright, before any clone: a repo
+some checkout under `/work` already has as its origin — the environment's own, named `../Repo`
+instead. A `github:` repo without a manifest has no gate, and its phase needs a `gate` line under
+`## Driver rulings` ([plan-template.md](plan-template.md)): without one the dry run lists a plan
+problem and the run refuses the phase. The first phase a run resolves on a clone leaves an
+Outstanding action in `close-out.md` suggesting the operator delete it once the slice's commits are
+on origin.
+
 **The spec repo is a legal `Target:`** — a slice whose whole deliverable is the wire contracts
 names it, and the driver then branches and merges the tree that also holds its own run record.
 The **whole `slices/` tree stays out of the driver's git queries in that repo**: its

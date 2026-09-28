@@ -699,6 +699,26 @@ def test_a_push_hold_is_seeded_once_naming_the_criteria_owed_after_it():
         assert not commits(again)
 
 
+def test_a_github_hold_is_named_as_its_clone_without_cloning_it():
+    """The run loop's push check names a `github:` target's repo by its
+    scratch clone's directory; the seed names it the same, from the path
+    alone — the plan loop never clones."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [])
+
+        def no_clone(*args, **kwargs):
+            raise AssertionError("the plan loop cloned")
+
+        saved = plan_loop.github_target.ensure_clone
+        plan_loop.github_target.ensure_clone = no_clone
+        try:
+            assert loop._held_repo_name("github:acme/Widget") == "Widget"
+            assert loop._held_repo_name("github:acme/Widget.git") == "Widget"
+        finally:
+            plan_loop.github_target.ensure_clone = saved
+
+
 def test_an_owed_criterion_no_hold_covers_gets_its_own_settle_entry():
     """A criterion owed after anything but a held repo's push is its own
     action; a held component names the code repo, as the run loop would."""

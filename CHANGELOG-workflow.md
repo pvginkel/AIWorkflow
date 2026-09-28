@@ -4,6 +4,30 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-28 — `Target: github:<owner>/<repo>` clones the repo into `/work/scratch` (v0.9.54)
+
+AIWF-22 (the operator's idea, 2026-09-27; ruled 2026-09-28).
+
+- **A phase can land in a repo the environment does not check out.** A sibling `../Repo` has to
+  exist under `/work`, which meant a `repos:` entry in `.kubecoder/config.yaml`: the repo in every
+  environment of the project for one slice. Ansible's slices 026 and 031 got around this with a
+  hand clone and `Target: ../scratch/<Repo>`. Now `Target: github:<owner>/<repo>` has the driver
+  clone the repo into `/work/scratch/<repo>`. From there it is a sibling path, gated by `kc project
+  test` when the clone has a manifest. One helper, `tools/github_target.py`, serves the phase, the
+  dry run (so planning clones it), the plan loop's held-repo name and preflight's sync. The sync
+  covers the clones the workflow marked and leaves hand clones alone.
+- **An existing clone is adopted only when origin holds all of it.** It is fetched and
+  fast-forwarded. A dirty clone, a clone ahead of origin, a detached HEAD, a `phase/` branch, no
+  upstream or a different origin is refused. A clone the run already records as one of its repos
+  is only checked, so a resume over merged but unpushed phases works.
+- **Refused:** a repo some `/work` checkout already has as its origin (use `../Repo`), and a
+  manifest-less clone with no `## Driver rulings` gate line (a plan problem in the dry run, a
+  `plan_doc` question at the phase). No `kc` verb lists an environment's declared repos, so the
+  first check compares `origin` URLs rather than reading the manifest.
+- The run leaves one Outstanding action per clone suggesting the operator delete it once the
+  slice is on origin. The plan-writer uses the form only for a repo the environment does not
+  check out, and says so in the phase.
+
 ## 2026-09-28 — the run loop will not start over an open pre-run action (v0.9.53)
 
 AIWF-17 (a Fieldnotes report from JenkinsPipelineUtils, 2026-09-25; the operator's ruling on

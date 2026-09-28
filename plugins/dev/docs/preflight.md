@@ -68,7 +68,9 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   otherwise ran by hand before each plan and run.
 - **Which repos.** The target repo, then every git checkout beside it — in a KubeCoder pod that is
   the environment's repo set under `/work/`, the layout `.aiworkflowrc`'s `spec_repo = "../…"`
-  already assumes — then the spec repo if it lives elsewhere.
+  already assumes — then the spec repo if it lives elsewhere, then every clone under
+  `/work/scratch/` that the run loop made or adopted for a `github:` Target (it marks them;
+  a hand clone there is not the environment's and is left alone).
 - **Which branch.** The checked-out one, against its upstream, because that *is* the base: the run
   loop records as a repo's base whatever branch is checked out the first time it touches that repo
   ([`run-loop.md`](run-loop.md)). Detached HEAD → skipped. A run loop's `phase/<slice>-…` branch

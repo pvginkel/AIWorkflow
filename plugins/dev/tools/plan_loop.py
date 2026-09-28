@@ -73,6 +73,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # plan-shape authority, and the target repo's root comes from `git rev-parse
 # --show-toplevel` in the process cwd — not from `__file__`, which locates the
 # plugin these tools ship in, never the repo being planned.
+import github_target  # noqa: E402
 import project_config  # noqa: E402
 import run_loop  # noqa: E402
 from close_out import (  # noqa: E402
@@ -719,9 +720,15 @@ class PlanLoop:
     def _held_repo_name(self, target: str) -> str:
         """The held repo's directory name as the run loop's push check names
         it (`root.name` of `_resolve_target(target).git_root`): a sibling
-        path's own, resolved against the code repo; a component's, the code
+        path's own, resolved against the code repo; a GitHub target's clone's
+        (the path alone — nothing is cloned here); a component's, the code
         repo's. The seeded headline is then the one that check would write,
         so it finds this entry instead of adding its own."""
+        if github_target.is_github(target):
+            try:
+                return github_target.clone_path(target).name
+            except ValueError:
+                return target
         if target.startswith("/"):
             return Path(target).name
         if target.startswith("../"):

@@ -96,14 +96,19 @@ The mechanical rules the parser holds every author to:
   <substitute> — <why>` waives the driver's test gate for that target (`none` for no
   substitute); `- accept <target> <verb> — <why>` makes that red sweep row non-blocking (verb
   `lint`, `build` or `test`); `- prd <target> — <why>` authorizes the test phase to push and
-  roll prd for it. A sibling path covers every component of that repo; a component name covers
-  that component. What each does in the run is [run-loop.md](run-loop.md) § After the last phase.
+  roll prd for it. A sibling path or a `github:` target covers every component of that repo; a
+  component name covers that component. What each does in the run is [run-loop.md](run-loop.md) § After the last phase.
   A bullet the parser can't read (unknown kind, missing field, duplicate) or whose target
   doesn't resolve is a structure error, as with holds: a ruling missed silently is a gate the
   driver runs anyway. The prose ruling still goes in Requirements / rulings, in the operator's
   words; this is only its machine-readable half.
-- **`Target:` is the first line of every phase body** — a `kc project list` component name or
-  a sibling repo path (`../SiblingRepo`). A component name resolves in the repo the run starts
+- **`Target:` is the first line of every phase body** — a `kc project list` component name, a
+  sibling repo path (`../SiblingRepo`), or `github:<owner>/<repo>` for a repo the environment
+  does not check out: the driver clones it into `/work/scratch/<repo>` and from there it is a
+  sibling path ([run-loop.md](run-loop.md) § The plan is the queue). A repo the environment
+  checks out is refused in that form — name it `../Repo`. A `github:` repo without a
+  `.kubecoder/project.yaml` has no gate, so its phases need a `gate` line under
+  `## Driver rulings`. A component name resolves in the repo the run starts
   from first, and there it shadows any sibling's same name (`root` is this repo's). A name this
   repo lacks is looked up in the sibling repos' own `kc project list`. A component of exactly one
   sibling lands in that repo and is gated there per component; one that several siblings have

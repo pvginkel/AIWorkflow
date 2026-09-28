@@ -57,6 +57,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import github_target  # noqa: E402
 import project_config  # noqa: E402
 
 # The project contract, for the pointer in every failure message. Resolved from
@@ -368,12 +369,14 @@ def check_clean_tree(root: Path,
 def sync_roots(root: Path,
                cfg: project_config.ProjectConfig | None) -> list[Path]:
     """Every checkout the sync covers: the target repo, then the environment's
-    other repos, then the spec repo.
+    other repos, then the spec repo, then the workflow's scratch clones.
 
     In a KubeCoder pod the environment's repos are all checked out beside the
     target (`/work/<Repo>`), which is the layout `.aiworkflowrc` already encodes
     (`spec_repo = "../Specs"`) — so the siblings *are* the environment. A `.git`
-    that is a file, not a directory, is a worktree and still a checkout.
+    that is a file, not a directory, is a worktree and still a checkout. The
+    scratch clones are the ones a `github:` Target had the workflow clone or
+    adopt (`github_target.scratch_clones`); they get the siblings' treatment.
     Deduped by resolved path, so a spec repo that is also a sibling is synced
     once.
     """
@@ -388,7 +391,12 @@ def sync_roots(root: Path,
         roots.append(d)
     if cfg is not None and cfg.spec_repo is not None:
         if cfg.spec_repo.resolve() not in seen:
+            seen.add(cfg.spec_repo.resolve())
             roots.append(cfg.spec_repo)
+    for d in github_target.scratch_clones():
+        if d.resolve() not in seen:
+            seen.add(d.resolve())
+            roots.append(d)
     return roots
 
 

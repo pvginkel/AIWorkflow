@@ -18,8 +18,8 @@ is the parse check): after the seeded header — the task shape, ordering constr
 **phases**, not-in-scope.
 Each phase is a `### P<id> — <title>` section (id `[A-Za-z0-9]+`, document order authoritative)
 that opens with a one-line **`Target:`** naming where it lands — a `kc project list` component
-(this repo's, or a sibling repo's) or a sibling repo path (`../Repo`) — and is
-**self-sufficient by reference**: the outcome, the
+(this repo's, or a sibling repo's), a sibling repo path (`../Repo`), or `github:<owner>/<repo>`
+— and is **self-sufficient by reference**: the outcome, the
 few constraints the executor cannot figure out, pointers to attachments. Outcome-driven input to a strong model beats instruction inventories: no
 enumeration-shaped sections, no prescribed symbol names, algorithms, or target-state file lists —
 outcomes, not implementations.
@@ -28,7 +28,10 @@ outcomes, not implementations.
   section outgrowing ~a page overflows into an attachment.
 - **Order so producers land before consumers**; each phase assumes every earlier phase is merged.
   There is no other dependency mechanism.
-- **Cross-repo work is its own phase** targeting the sibling repo.
+- **Cross-repo work is its own phase** targeting the sibling repo. `github:<owner>/<repo>` is
+  only for a repo the environment does not check out under `/work`; the phase says so in a line
+  of its own, since the driver clones the repo for this slice alone. A repo you cloned to research
+  it is still such a repo — the driver adopts a clean clone at `/work/scratch/<repo>`.
 - **As long as the phases need, no longer.** The operator reads the plan cold: no filler sections,
   no restated requirements, no summary of what the phases already say.
 - **No testing phase, no auto-doc phase, no auto-doc content — but a doc task is a phase.**

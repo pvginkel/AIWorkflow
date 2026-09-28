@@ -67,7 +67,8 @@ kc project lint        # cexec python uv run --with ruff ruff check .
 
 - **`plugins/dev/tools/`** — the drivers, each with a `test_*.py` beside it. `run_loop.py` (~3k
   lines) and `plan_loop.py` carry most of the logic and most of the ~4.4k lines of suite; plus
-  `close_out.py` (the close-out report's mechanics, imported by both loops), `preflight.py`,
+  `close_out.py` (the close-out report's mechanics, imported by both loops), `github_target.py`
+  (the `github:` Target's scratch clone), `preflight.py`,
   `sweep_slice.py`, `close_slice.py`, `slice_cost.py` (with `turn_profile.py`, the transcript
   replay behind its turn table), `allocate-next-slice.sh`.
   Suites load their subject via `importlib.util.spec_from_file_location` (`tools/` is not a
@@ -83,7 +84,8 @@ kc project lint        # cexec python uv run --with ruff ruff check .
 Four ideas span the files and explain most design choices:
 
 1. **The plan is the queue.** One `plan.md` per slice holds phases as `### P<id> — <title>`
-   headings opening with a `Target:` line (a `kc project list` component or a sibling repo path).
+   headings opening with a `Target:` line (a `kc project list` component, a sibling repo path, or
+   `github:<owner>/<repo>`, which the driver clones into `/work/scratch`).
    Document order is authoritative, ids are labels, every agent in the loop may edit the plan — and
    **only the driver stamps `✅ DONE`**.
 2. **Files are durable, sessions are ephemeral; scripts drive, agents judge.** Deterministic work —

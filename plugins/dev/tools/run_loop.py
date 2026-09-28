@@ -4,7 +4,8 @@
 The Markdown plan is the queue; this driver is its bookkeeper (see
 ${CLAUDE_PLUGIN_ROOT}/docs/run-loop.md — the canonical contract). The plan
 (<slice>/plan.md) holds phases as `### P<id> — <title>` headings, each opening
-with a `Target:` line naming a `kc project list` component or a sibling repo.
+with a `Target:` line naming a `kc project list` component, a sibling repo, or
+a GitHub repo the driver clones into the scratch root (`github:<owner>/<repo>`).
 Document order is authoritative; ids are labels. Per unfinished phase, in
 order: fetch the target repo (nothing else in a run refreshes a
 remote-tracking ref, so an unfetched clone dates an agent's read of
@@ -96,6 +97,7 @@ from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import github_target  # noqa: E402
 import project_config  # noqa: E402
 from close_out import (  # noqa: E402
     ReportError,
@@ -753,6 +755,13 @@ def parse_plan(text: str) -> tuple[list[Phase], list[str]]:
     return phases, errors
 
 
+def is_repo_path(target: str) -> bool:
+    """A Target naming a whole repo — a sibling path (`../Repo`, absolute)
+    or a GitHub repo the driver clones (`github:<owner>/<repo>`) — rather
+    than a `kc project list` component."""
+    return target.startswith(("../", "/")) or github_target.is_github(target)
+
+
 def creation_claim(phases: list[Phase],
                    index: int) -> tuple[Phase | None, str | None]:
     """For a phase whose `Target:` did not resolve: (the phase that still
@@ -763,9 +772,9 @@ def creation_claim(phases: list[Phase],
     claim was false and both phases are named. (None, None) means nothing in
     the plan claims the name — the caller's own error stands."""
     target = phases[index].target
-    if not target or target.startswith(("../", "/")):
-        # `Creates:` only ever names a component; a sibling path either
-        # exists on disk or it doesn't, and no declaration changes that.
+    if not target or is_repo_path(target):
+        # `Creates:` only ever names a component; a repo path either exists
+        # (or clones) or it doesn't, and no declaration changes that.
         return None, None
     claimers = [p for p in phases[:index + 1] if p.creates
                 and p.creates == target]
@@ -3145,8 +3154,10 @@ class RunLoop:
 
     def _resolve_target(self, target: str,
                         creates: str | None = None) -> ResolvedTarget:
-        """A `kc project list` component, or a sibling repo path. Raises
-        ValueError with a fix-it message for anything else.
+        """A `kc project list` component, a sibling repo path, or a GitHub
+        repo (`github:<owner>/<repo>`, cloned into the scratch root by
+        `github_target.ensure_clone` and a sibling path from then on).
+        Raises ValueError with a fix-it message for anything else.
 
         The invoking repo's components come first and shadow any sibling's
         (every repo has a `root`, and `Target: root` means this one's). A
@@ -3166,27 +3177,21 @@ class RunLoop:
         and the later phases that target it resolve here once it is
         listed."""
         self_created = (creates is not None and creates == target
-                        and not target.startswith(("../", "/")))
+                        and not is_repo_path(target))
         if target in self.project_dirs or self_created:
             return ResolvedTarget(
                 target, "project", self.repo_root,
                 ["kc", "project", "test", "--project", target],
                 self.repo_root)
+        if github_target.is_github(target):
+            # Cloned (or synced) once; from here it is a sibling path.
+            path = github_target.ensure_clone(
+                target, owned=self._owns_clone(target))
+            return self._repo_path_target(target, path.resolve())
         if target.startswith(("../", "/")):
             path = (self.repo_root / target).resolve() \
                 if not target.startswith("/") else Path(target)
-            if not path.is_dir():
-                raise ValueError(f"Target `{target}` is not an existing "
-                                 "directory")
-            if not (path / ".git").exists():
-                raise ValueError(f"Target `{target}` is not a git repo")
-            # A sibling with its own manifest gates through kc from its own
-            # root; one without has no deterministic gate — the reviewer is
-            # told the state is unverified.
-            gate = (["kc", "project", "test"]
-                    if (path / ".kubecoder" / "project.yaml").is_file()
-                    else None)
-            return ResolvedTarget(target, "sibling", path, gate, path)
+            return self._repo_path_target(target, path)
         owners = self._sibling_component_owners().get(target, [])
         if len(owners) == 1:
             root = owners[0]
@@ -3207,6 +3212,37 @@ class RunLoop:
             f"({', '.join(sorted(self.project_dirs)) or 'none found'}) nor "
             "a sibling repo path (`../Repo`), and no sibling repo's "
             f"components have it (siblings searched: {searched})")
+
+    @staticmethod
+    def _repo_path_target(target: str, path: Path) -> ResolvedTarget:
+        """A whole repo at `path` as a Target — a sibling path, or a GitHub
+        target's clone."""
+        if not path.is_dir():
+            raise ValueError(f"Target `{target}` is not an existing "
+                             "directory")
+        if not (path / ".git").exists():
+            raise ValueError(f"Target `{target}` is not a git repo")
+        # A sibling with its own manifest gates through kc from its own
+        # root; one without has no deterministic gate — the reviewer is
+        # told the state is unverified.
+        gate = (["kc", "project", "test"]
+                if (path / ".kubecoder" / "project.yaml").is_file()
+                else None)
+        return ResolvedTarget(target, "sibling", path, gate, path)
+
+    def _owns_clone(self, target: str) -> bool:
+        """Is this GitHub target's clone one of this slice's run's repos
+        (`state["bases"]`)? Then its base may carry the run's merged,
+        unpushed phases, and resolution checks the clone without syncing
+        it. A dry run holds no state of its own and reads the run's from
+        disk, so one started mid-run leaves the live run's clone alone."""
+        try:
+            key = str(github_target.clone_path(target).resolve())
+        except ValueError:
+            return False
+        state = self.state or _read_json(self.state_path)
+        bases = state.get("bases") if isinstance(state, dict) else None
+        return isinstance(bases, dict) and key in bases
 
     def _stamp_done(self, phase_id: str) -> None:
         """The driver's mechanical `✅ DONE` stamp, committed in the specs
@@ -4088,6 +4124,13 @@ class RunLoop:
         phase_id = phase.id
         ps = self._phase_state(phase_id)
         target = self._resolve_target(phase.target, creates=phase.creates)
+        self._report_scratch_clone(target)
+        problem = self._github_gate_problem(target)
+        if problem:
+            raise Bailout(
+                "plan_doc", question=True, phase=phase_id,
+                details="the plan doc needs a fix only you can make:\n"
+                        f"- phase P{phase_id}: {problem}")
         root = target.git_root
         outputs = self.slice_dir / "phases" / f"P{phase_id}"
         outputs.mkdir(parents=True, exist_ok=True)
@@ -5095,6 +5138,58 @@ class RunLoop:
             provenance="witnessed — the driver's push check, against "
                        "`plan.md`'s `## Push holds` section")
 
+    def _github_gate_problem(self, target: ResolvedTarget) -> str | None:
+        """Why a GitHub target cannot run as planned, None when it can. Its
+        clone gates through kc when it carries a manifest; one without has
+        no gate at all, and a phase nothing verifies runs only on the
+        operator's word — a `## Driver rulings` gate line covering it. A
+        plan problem: the dry run lists it, and `_run_phase` refuses the
+        phase with it."""
+        if not github_target.is_github(target.name) \
+                or target.gate_argv is not None \
+                or self._gate_ruling(target) is not None:
+            return None
+        return (f"Target `{target.name}` is cloned at {target.git_root}, "
+                "which has no `.kubecoder/project.yaml` — no deterministic "
+                "gate, and no driver ruling waives one. Add a gate ruling for "
+                "it under plan.md's `## Driver rulings`: "
+                f"`- gate {target.name} — <substitute or none> — <why>`")
+
+    def _report_scratch_clone(self, target: ResolvedTarget) -> None:
+        """A GitHub target's clone, entered in the close-out report once per
+        clone per run: the driver made (or adopted) it, and only the operator
+        can say when the slice no longer needs it."""
+        if not github_target.is_github(target.name):
+            return
+        clone = target.git_root
+        key = str(clone)
+        reported = self.state.setdefault("scratch_clones_reported", [])
+        if key in reported:
+            return
+        reported.append(key)
+        self._save_state()
+        headline = f"Delete the scratch clone {clone} once the slice is done"
+        try:
+            if find_by_headline(self.slice_dir, "Outstanding actions",
+                                headline) is not None:
+                self.log(f"close-out already holds: {headline}")
+                return
+        except ReportError as e:
+            self.log(f"close-out not searched for the scratch clone ({e})")
+        self._report(
+            "Outstanding actions", headline,
+            f"The driver cloned (or adopted) `{clone}` for `Target: "
+            f"{target.name}`; the slice's phases for that repo are branched, "
+            "merged and pushed there.\n\n"
+            "Deleting it is safe once the slice's commits are on origin — "
+            "the push check before the doc phase confirms that. A clone left "
+            "in place is synced by every later preflight in this environment "
+            "and adopted by the next `github:` target naming that repo.",
+            consequence="none in this run — the clone is where the run "
+                        "works; left behind, it only takes disk space and a "
+                        "sync in every later preflight.",
+            provenance="witnessed — the driver's target resolution")
+
     def _assert_pushed(self, session: str | None) -> None:
         """Before the doc phase: every repo the slice touched is on its
         origin. Nothing in the driver pushes a code phase — `_run_phase`
@@ -6035,6 +6130,9 @@ def cmd_dry_run(loop: RunLoop) -> None:
                 else "(no deterministic gate)"
             print(f"{line}\n        target={target.name} [{target.kind}]  "
                   f"root={target.git_root}  gate: {gate}")
+            problem = loop._github_gate_problem(target)
+            if problem:
+                errors.append(f"phase P{phase.id}: {problem}")
         except ValueError as e:
             # A name the plan says a phase still has to create is not a bad
             # Target — the dry run reads the plan before anything has run, so
