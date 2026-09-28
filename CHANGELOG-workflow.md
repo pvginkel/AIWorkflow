@@ -4,6 +4,14 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-28 — the close-out card carries a close-out mark (v0.9.51)
+
+- **The reports still to work through are one query.** `/dev:run-slice` now gives the
+  `[NNN] close-out: <slice title>` card the **close-out** mark, a flag like Solution Known that
+  `project-contract.md` § 3 names and the host convention realises (the `Close-out` tag on this
+  host). The mark stays when the card closes, so the open marked cards are the reports the
+  operator has not finished.
+
 ## 2026-09-28 — operator rulings that bend the driver's rules, read from `## Driver rulings` (v0.9.50)
 
 AIWF-23, with AIWF-21 folded in (Fieldnotes reports from ElectronicsInventory, Ansible and

@@ -96,10 +96,10 @@ relaunch with `--resume`.
 4. File **one** tracker card in the intake queue (per the host convention) —
    `[NNN] close-out: <slice title>` — whose body is the report's `Focus:` lines, its entry
    counts, and the report's path in the spec repo (its `slices/completed/…` form, after step 3's
-   move); the Summary stays in the report, which a card points at and never mirrors. Link the
-   card to the slice's card as related, never under it: what hangs under a slice card is what
-   the slice absorbed. That card is the "a report is waiting" marker, never an ask; nothing
-   else from the run is carded — the operator dispositions the report's entries
+   move); the Summary stays in the report, which a card points at and never mirrors. Give it the
+   **close-out** mark, and link it to the slice's card as related, never under it: what hangs
+   under a slice card is what the slice absorbed. That card is the "a report is waiting" marker,
+   never an ask; nothing else from the run is carded — the operator dispositions the report's entries
    (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`).
 5. Advance the slice's tracker card to **delivered** — merged, waiting for the operator's review;
    **done** is the operator's move, never yours — notify the operator per the host's notification

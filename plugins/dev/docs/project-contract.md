@@ -101,12 +101,13 @@ A card is **closed** with one of three dispositions — **resolved** (the work h
 invalid, a duplicate) — or **deferred**, which parks it open. One **slice card** per slice advances
 **triaged → planned → in progress → delivered → done**: a run ends at *delivered*, merged and
 waiting for the operator's review, and *done* is the operator's own move. The **Solution Known**
-mark is a flag beside all that ([residual-sweep.md](residual-sweep.md)). The tracker holds no
-triage verdict. The concrete wiring — which tracker, what realises each of those roles, states and
-dispositions, how a project is named there, the notification command — is environment-specific
-and lives in the host's own instructions: its `~/.claude/CLAUDE.md`, or a skill the host ships.
-The workflow neither ships nor duplicates it, and nothing in it loads a host skill: a skill that
-touches the tracker says to load the convention before its first tracker call.
+mark is a flag beside all that ([residual-sweep.md](residual-sweep.md)), and so is the
+**close-out** mark, on the one card a run files for its report ([close-out.md](close-out.md)).
+The tracker holds no triage verdict. The concrete wiring — which tracker, what realises each of
+those roles, states and dispositions, how a project is named there, the notification command — is
+environment-specific and lives in the host's own instructions: its `~/.claude/CLAUDE.md`, or a
+skill the host ships. The workflow neither ships nor duplicates it, and nothing in it loads a host
+skill: a skill that touches the tracker says to load the convention before its first tracker call.
 
 ## Keeping `CLAUDE.md` disciplined
 
