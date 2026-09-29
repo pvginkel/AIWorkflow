@@ -55,10 +55,13 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   extract|report|snapshots|sessions|score|order` reads every close-out report of the given spec
   repos against what the operator ruled — each entry's fate, the report as it was handed over,
   the close-out chats digested, a sort of the reports scored against the rulings, and where in
-  the reading order the operator's picks sit (the 2026-09-28 close-out read; what was ruled on
-  it and is to be built is `docs/research/close-out-triage-plan-2026-09-29.md`). Run 1's corpus
-  is frozen under
-  `docs/research/archive/run-1/`.
+  the reading order the operator's picks sit (the 2026-09-28 close-out read); its
+  `focus|who|labels|improvements|tables|signal|appended|testgaps` are the cuts of the discussion
+  that followed, from the committed label data, `table-check` holds the plugin's policy tables
+  against them and `corpus-check` imports and renders every hand-over snapshot with the
+  plugin's tool (`docs/research/close-out-triage-plan-2026-09-29.md`, built as 0.9.57–0.9.59;
+  its § 12 is what the build decided and what to look at in the first live slices). Run 1's
+  corpus is frozen under `docs/research/archive/run-1/`.
 - **Reading a run:** a slice's record is its folder in the project's spec repo
   (`slices/completed/NNN_slug/`): `log.txt` is the driver's narration, `state.json` is per
   `runner-state.md`, `phases/P*/` holds each round's review and result files, beside `plan.md`,

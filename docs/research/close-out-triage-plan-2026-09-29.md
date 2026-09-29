@@ -6,13 +6,13 @@ this plan does not restate. It came out of the operator's discussion of that rea
 same day that put a text-only sorter after the run (commit `2cdf7db`) and that plan's hand-over
 (`2975c85`); both were removed when this one was finished and are in the history.
 
-**Status: ruled on 2026-09-29, to be built.** The operator ruled D1 to D11 (§ 5) and gave the
-word: "Yes, build it in one go." Nothing in the plugin changed beyond 0.9.56, and nothing of
-this plan is built. The operator has not read this document — they took it to say what was
-discussed — so § 5 lists apart what was decided in the writing; that list was named to them
-when the session closed, and they ruled on two of its items. § 10 is
-the hand-over for the session that builds it; that session starts here and needs no other
-document but the read.
+**Status: built on 2026-09-29 as plugin 0.9.57, 0.9.58 and 0.9.59** (`7c32f5f`, `615074d`,
+`8159144`), in one go as ruled. § 12 says what the build verified, what it decided on the way
+and what it leaves as a risk for the first live slices. The operator ruled D1 to D11 (§ 5) and
+gave the word: "Yes, build it in one go." They had not read this document — they took it to say
+what was discussed — so § 5 lists apart what was decided in the writing; that list was named to
+them when the session closed, and they ruled on two of its items. § 10 was the hand-over for
+the session that built it, and stands as it was written.
 
 **Amended the same evening, on a remark of the operator's** in a later session (§ 2, the last
 of their words): they progress what fails silently far more often than what fails loudly. They
@@ -649,12 +649,13 @@ everything the 47 reports handed over:
   `docs/research/data/close-out-read-2026-09-28.json`.
 - The entries with their fates regenerate with `close_out_readout.py extract`, the snapshots
   with `snapshots` (the hand-over, § 6).
-- The scripts behind these tables are kept as they were run, in
-  `docs/research/tools/close_out_discussion_2026_09_29/`: `focus_check.py` (§ 3.1),
-  `who_ruled.py` (§ 3.2), `score.py` (§ 3.3, § 3.4), `improve_score.py` (§ 3.8),
-  `ruled_tables.py` (§ 3.5, § 3.9), `signal_score.py` (§ 3.10), `appended.py` (§ 3.6),
-  `testgaps2.py` (§ 3.7). They are owed to `close_out_readout.py` (§ 6). § 3.7's check against
-  the tracker was a sub-agent's reading and has no script.
+- The cuts behind these tables are subcommands of `docs/research/tools/close_out_readout.py`:
+  `focus` (§ 3.1), `who` (§ 3.2), `labels` (§ 3.3, § 3.4), `improvements` (§ 3.8), `tables`
+  (§ 3.5, § 3.9), `signal` (§ 3.10), `appended` (§ 3.6), `testgaps` (§ 3.7). On the day they
+  were eight ad-hoc scripts, `docs/research/tools/close_out_discussion_2026_09_29/`; the build
+  took them into the tool, where they reproduce every number here, and the folder is in the
+  history. Where a cut routes an entry as the plugin does, it calls the plugin's own function.
+  § 3.7's check against the tracker was a sub-agent's reading and has no script.
 - Every share is good to a few points, as in the read: the fate classifier is a list of
   patterns, and the labels and the session coding are model judgments.
 
@@ -1386,16 +1387,16 @@ cd /work/AIWorkflow
 python3 docs/research/tools/close_out_readout.py extract \
     /work/scratch/KubeCoderSpecs /work/scratch/AnsibleSpecs -o /tmp/close-out-entries.json
 python3 docs/research/tools/close_out_readout.py snapshots -o /tmp/co/snapshots
-python3 docs/research/tools/close_out_discussion_2026_09_29/ruled_tables.py   # § 3.9, § 3.5
-python3 docs/research/tools/close_out_discussion_2026_09_29/signal_score.py    # § 3.10
+python3 docs/research/tools/close_out_readout.py tables          # § 3.9, § 3.5
+python3 docs/research/tools/close_out_readout.py signal          # § 3.10
+python3 docs/research/tools/close_out_readout.py table-check     # the plugin's tables, held to § 3.10
+python3 docs/research/tools/close_out_readout.py corpus-check /tmp/co/snapshots
 ```
 
 The read and the labels were made at `KubeCoderSpecs` `9a3c102a` and `AnsibleSpecs` `c90d65c`.
 On later heads the operator has ruled more reports and the shares move by a little; check those
-commits out to get the numbers exactly. `ruled_tables.py` and `signal_score.py` read the
-committed labels; the other scripts of that folder read the labellers' files under
-`/tmp/co/labels/out/` and `/tmp/co/improve/`, which the committed data replaces — point them at
-it when they are taken into `close_out_readout.py`.
+commits out to get the numbers exactly. Every cut reads the committed labels; the labellers'
+own files under `/tmp/co/` held nothing the committed data does not.
 
 ### 10.6 Rules of the house that bite here
 
@@ -1510,3 +1511,72 @@ nuisance.
   task's description to 200 words.
 - **Who files.** A session: the tracker is reached through tools a session has and the driver
   has not. The run-slice session files the close-out card today (Job 4).
+
+## 12. As built
+
+Built on 2026-09-29 by one session, in the order of § 10.2: 0.9.57 (`7c32f5f`), 0.9.58
+(`615074d`), 0.9.59 (`8159144`) and the research commit that holds this section. The prose is
+the session's; the code is one Opus sub-agent's per commit, its diff read before the commit.
+Nothing is pushed by this section's commit; the push is asked of the operator.
+
+### 12.1 What was verified
+
+- **`kc project test` and `kc project lint` green at every commit.**
+- **The corpus through the new tool** (`close_out_readout.py corpus-check`): the 99 hand-over
+  snapshots, 1,367 entries. Every entry id is in the store once and in the rendered report
+  once, no body lost a line, a second render writes the same bytes, and an import reads
+  nothing back. The live count per id letter is 0.9.56's in every report but KubeCoder 146,
+  whose six headings without ids are entries now.
+- **The tables in the tool are the tables that were tested** (`table-check`): the routes of the
+  561 entries handed over, through the tool's own function, are § 3.10's route by route, and
+  § 3.9's without the signal. No entry routes differently from the replay.
+- **One report end to end, on a copy.** Ansible 029 and 032 had been processed by then, so it
+  was 032 as it was handed over: imported, rendered, labels and a card request given by hand
+  in the wrap-up's place, one ruling recorded in the session and one written on a
+  `Disposition:` line and read back, both executed, the report closed, a second render the
+  same bytes.
+- **Not exercised, as § 7 says: the wrap-up against a repository.** And the corpus check
+  renders the snapshots without labels; the committed labels were not applied first.
+
+### 12.2 Decided in the building
+
+As § 5's second list: settled by the building session, each as its best reading of the plan,
+and named to the operator in that session's report.
+
+| | decided | because |
+|---|---|---|
+| B1 | label values are written with hyphens, as the tool takes them (`ordinary-condition`, `test-gap`); the spaced form is accepted | a value is typed on a command line |
+| B2 | the tool has four verbs § 6 does not name: `labels` prints the contract's section on the labels, `worklist` what waits for the wrap-up, `leave` and `close` below | the definitions stay in one place and an author reads them in one call |
+| B3 | every entry the wrap-up is given ends with one mark — a strike, a card request, or `leave`: it looked and changed nothing, and says why. What it left is closed | "the rest we just close"; it is what makes *For the wrap-up* empty once it has run, and what tells a close-out session that entries still wait |
+| B4 | a ruling that was executed strikes the entry, a carded one included, the reason being what was done | until now a carded entry stayed live; live now means still open |
+| B5 | `close` leaves an entry live that carries a ruling nobody executed, and the report stays open over it | `defer` is the one word that keeps the card open |
+| B6 | an entry the operator has ruled on does not wait for the wrap-up, whatever its route | what they ruled is theirs; met on an imported report, where the wrap-up would have been given an entry they had carded |
+| B7 | § 4.4's row 1, the workflow's improvements, is a refusal of the tool and not a route; the second table opens with input for a slice | an entry the tool refuses never has to be routed |
+| B8 | for an improvement, § 4.3's row 5 stands in for the wrap-up alone: what comes to the operator or is closed does so wherever the change lives | § 4.4's "rows 4 and 5 stand before it", read of its row 2 |
+| B9 | in row 5 an `unknown` trigger or impact counts as one that shows and has an impact | an `unknown` is not taken for the value that closes; the replay had no `repo` label, so no tested number moves |
+| B10 | § 4.4's row 3 reads "prevents something severe, or is graded major" | it is how the replay ran it |
+| B11 | a soft failure of the wrap-up in the driver is all or nothing: a red gate in one repo leaves its commits out in every repo | one outcome to read, and the store taken back whole |
+| B12 | in the spec repo the wrap-up commits on the branch checked out, as every agent does; a soft failure takes the store back and leaves a fold or a prose commit there where it is | that tree is shared and the store lives in it |
+| B13 | in a project that runs no doc phase, a gate that is red with the wrap-up's commits and without them does not stop the run | without the wrap-up that project runs no gate there at all |
+| B14 | every write to the store holds a lock on the slice directory | the close-out session records rulings while the wrap-up it dispatched strikes and relabels |
+| B15 | what a loop enters with a Consequence that does not open with "none" — a funding-consult merge is one — has `unknown` labels and goes to the wrap-up to look | § 10.3, applied |
+| B16 | a slice cannot be named as `for` its own entries | the entry would be folded into the slice that reports it |
+| B17 | the plan loop leaves the rendered report out of its clean-tree checks, and neither loop renders while the spec repo stands on a phase branch | a render that commits nothing leaves the file modified, and a modified file refuses the next checkout |
+
+### 12.3 What to look at in the first live slices
+
+Beside § 7's look at the first slice. From the driver's build, none of it met in a run:
+
+- **The wrap-up will run in most slices**: a median 5 entries a report are its own, and B15
+  adds the driver's events. Its session may take up to two hours, and it adds one doc gate
+  sweep, two when the first is red.
+- **The gate in a repo other than the primary is `kc project test` over the whole repo and
+  knows no `accept` ruling.** A repo with a red the plan accepted leaves the wrap-up out every
+  time.
+- **A crash between the fast-forwards and the saved outcome** resumes into the stage, takes
+  the store back and dispatches the wrap-up again, over fixes that have landed.
+- **What the driver guards is kept in memory.** After an interrupt, a resume does not undo a
+  commit the interrupted session made on a base branch.
+- **The leave-out's git calls ran against a fake only**: the reset of a moved branch, the
+  discard of uncommitted work, the store read from a commit.
+- **`run_loop.py status` and the dry run do not show the wrap-up.**
