@@ -1414,3 +1414,99 @@ it when they are taken into `close_out_readout.py`.
 - **What runs is the installed copy.** Nothing here reaches a run before a push and a
   marketplace update.
 - **The settled rulings of § 9.**
+
+## 11. Not part of the plan — a follow-up idea: the tracker as the operator's queue
+
+**This section is not part of the plan, and nothing in it is to be built.** It records an idea
+from a later discussion so that it is not lost. It is not ruled. The build of § 6 is the plan as
+§ 1 to § 10 have it and does not anticipate this section: the session that builds starts at
+§ 10 and can skip it. Taking the idea up is a plan of its own, after that build and on the
+operator's word.
+
+Written on 2026-09-29 by a session in the FieldnotesApp environment, at the operator's request,
+after they had asked whether the Fieldnotes app could take their part of the triage. The
+numbers are § 3.10's.
+
+### 11.1 The idea
+
+What comes to the operator and is not an action is filed in the tracker when the run ends, as
+an issue in a state of its own that stands before the intake queue — working name `Proposed`.
+The operator rules there, when it suits them, by moving the issue. The report keeps the
+actions, which are handled when the slice is wrapped up.
+
+The operator's words:
+
+> I was thinking this would only be about items that are not actions. Actions are slice wrap up
+> things, that really should be handled asap. Which means that basically everything that's then
+> left is potential input for a card. Especially if the volume is so low, I would expect 100% to
+> become either a card, or be closed. That at least simplifies the processing aspect of this,
+> i.e. you don't have to go and make code changes in some environment. I would also expect only
+> things that are not time critical to be handled this way.
+
+> how does stuff come here? Because the answer is: a draft card, obviously. That means that
+> Fieldnotes does become a report channel, something I explicitly excluded from the scope. So,
+> we do one of two things: we expand the scope, or we send them to YouTrack with a new states
+> (Draft or Proposed). The latter would be kind of obvious, assuming everything that's not
+> closed, is carded.
+
+They ruled on neither option. The session recommended the second.
+
+### 11.2 Why the tracker, and why a state of its own
+
+- **The tracker's states are the ruling already.** A yes is a move into the intake queue or to
+  Accepted, a no is Done with the resolution Won't Do and the reason as its comment, a later is
+  Later. Nothing has to carry a ruling out, and nothing is copied.
+- **An unruled entry cannot stand in the intake queue.** `/dev:triage` pulls from it, and so
+  does the host's nightly card pass, which works the cards it takes without the operator. Both
+  ask for the intake state by name, so an issue in a state before it is seen by neither, and
+  neither changes. This was read in the host's tracker convention and in the card pass's skill;
+  no other reader of the tracker was checked.
+- **In Fieldnotes the entry would exist three times** — in `close-out.json`, as a draft in the
+  store, as a card after a yes — and would use nothing the store is for: no matching, no
+  reconciler, no reactions. Its scope, what got in an agent's way and not the work, was ruled
+  for reasons that still hold.
+- **"A card, or closed" holds, with one shift.** Of the operator's own rulings, § 3.10's table
+  brings them 30 entries that are no action: they closed 11, carded 11, folded 1 and had 7
+  fixed. The 7 become cards, and a small one, once it stands in the intake queue, is what the
+  card pass takes.
+
+### 11.3 What it would change
+
+It comes after the build of § 6, as a change on top of it: § 4.7, § 4.8 and D11 are built as
+planned. The labels, both tables and the wrap-up stay as they are, since the idea starts where
+the table has said "to the operator".
+
+| | as planned | with the idea |
+|---|---|---|
+| § 4.7, W6 | a card request is filed on the operator's word | it is filed when the run ends, in the new state; the operator's word moves it |
+| § 4.8 | Comes to you holds actions, decisions and risks; Card requests is a section beside it | Comes to you holds the actions; the rest is in the tracker, and the entry names its issue |
+| D11 | rulings in the session and on the `Disposition:` lines | the same, for actions; every other ruling is the state of the entry's issue |
+| the report's life | closed by the operator, after their rulings on what comes to them | closed when its actions are done; nothing waits on the rest |
+| § 7, the readout | from the stores alone | from the stores, with the fate of an entry's issue read from the tracker |
+
+### 11.4 The Fieldnotes app
+
+The scope the operator ruled is the store's: what agents post there, and what the reconciler
+curates. A second queue in the app's triage screen, which lists the tracker's issues in the new
+state and writes a ruling as the issue's state and a comment, would leave that scope as it is.
+It would be the first write the app makes to the tracker, which it only reads today.
+
+It is not needed to start. At a median 2 entries a report, actions included (§ 3.10), the
+tracker's own screens do. It is a second step, for when ruling there turns out to be a
+nuisance.
+
+### 11.5 Open
+
+- **The state's name**, and what the tracker needs for it: the state, the operator's board, the
+  text of the host's convention.
+- **Where a yes lands**: in the intake queue, where the card pass may take the card unattended,
+  or in Accepted, where it waits for `/dev:triage`.
+- **What is time critical and no action.** The wrap-up asks for a card where a likely problem
+  is beyond its bar (§ 4.3 row 8), and some of those are severe or graded major: 9 stood on
+  that route before § 3.10's amendment (finding 26). They should not wait in a queue that is
+  ruled at some point, and could come with the actions.
+- **Whether an issue can be ruled from its text alone.** An entry is written for a reader who
+  can ask, the operator asked advice on 39 of them (§ 3.2), and the host's convention holds a
+  task's description to 200 words.
+- **Who files.** A session: the tracker is reached through tools a session has and the driver
+  has not. The run-slice session files the close-out card today (Job 4).
