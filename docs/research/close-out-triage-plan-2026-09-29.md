@@ -35,7 +35,10 @@ and has not had their answer; it is D10.
    labels and the table keep 92 % of their picks and close 20 % of the entries — 96 % and 21 %
    with the improvements on their own route, a rule chosen on the sample it is scored on; the
    sorter of the superseded plan kept 83 % (§ 3.2, § 3.4, § 3.8).
-7. **Three versions, in this order**: 0.9.57 the labels, the routing and the report's shape;
+7. **The record is data, the report a rendering of it.** Entries are kept in `close-out.json`
+   for their whole life; `close-out.md` is written from it and never parsed for anything but
+   the operator's own line (§ 4.11, D11).
+8. **Three versions, in this order**: 0.9.57 the labels, the routing and the report's shape;
    0.9.58 the wrap-up agent with the close-out session as its caller; 0.9.59 the driver
    dispatches it (§ 6).
 
@@ -128,6 +131,11 @@ On where they read it:
 
 > I don't read the close out card body, or the head of the report. A list of entries is enough
 > for me.
+
+On the format:
+
+> I would very much consider storing close out information in a structured format (JSON or
+> YAML) until at the very end, when the close out report is written.
 
 On Suggestions:
 
@@ -719,6 +727,41 @@ grade.
   has just read those files. Moving it is a question for the readout of § 7, not for this
   build.
 
+### 4.11 The store
+
+**Proposed on the operator's suggestion (D11).** The labels make an entry a record with a dozen
+fields; the route is computed from them; the wrap-up corrects them. Kept in Markdown, each of
+those is a line the tool writes and then has to find and parse again.
+
+- **`close-out.json`, in the slice folder, is the record** — from the first append of the plan
+  loop to the operator's last ruling. `close-out.md` is `render`'s output: written when the run
+  stops for any reason, when it completes, after the wrap-up, and after a ruling was executed.
+  Its head says that it is generated.
+- **JSON, not YAML.** Plugin code is stdlib-only; Python's standard library reads and writes
+  JSON and has no YAML. Nobody reads the store raw: an agent reads `list`, the operator the
+  report.
+- **What an entry holds**: id, kind, grade, headline, body, consequence, evidence class and
+  author, labels, dated notes, a strike with its reason and commit, what the wrap-up did, the
+  operator's words and what was done on them. The body is kept as lines, so that a diff of the
+  store reads like a diff of text. The Summary is a field of the report; the run header stays
+  `state.json`'s.
+- **The route is not stored.** `render` computes it from the labels, so a changed table routes
+  an open report again at its next render, and a closed one can be read under any table.
+- **Nothing changes for an author.** `append`, `note`, `strike` and `list` keep their
+  arguments, and the three functions the loops import keep theirs.
+- **The operator's line is the one thing read back** from the rendered file, by entry id, if
+  they write there (D11); everything else in `close-out.md` is overwritten by the next render.
+
+What it removes: the tool's parsing of its own report — sections, fences, comments, headings
+out of shape, folds — which is about half of its 920 lines; `render` reading a report in
+either layout, and having to be idempotent; and the pattern classifier the read needed to tell
+an entry's fate from the words on it (88 % agreement, § 1 of the read). A ruling is data from
+here on, which is what the readout of § 7 is made of.
+
+What it costs: the 99 reports that exist stay Markdown and keep their reader in the research
+tool; a report in flight at the upgrade is imported once, by the parser the tool has today; and
+two files can disagree when somebody edits the rendered one by hand.
+
 ## 5. Yours to rule
 
 **D1 — The wrap-up may fix before you have ruled.** *Default: yes.* The contract says that
@@ -780,6 +823,17 @@ The rule was chosen on the 48 rulings it is scored on, so the first readout is i
 *The other ways:* every potential improvement comes to you; or they take § 4.3's table as the
 first pass of the replay had it, which closed three that you carded (§ 3.5).
 
+**D11 — The record is `close-out.json`, for the entry's whole life; the report is rendered
+from it.** *Default: yes, and you rule in the session.* Your suggestion, taken one step
+further: the store stays the record after the report is written, because the wrap-up, the
+close-out session and every readout still write and read entries then. What is yours in it is
+where you write your rulings. *In the session* (the default): you say them, the session records
+them with `close_out.py rule` and renders. *In the file:* you write on the `Disposition:` lines
+of `close-out.md` as today, and the session reads them back by entry id before it executes
+them; nothing else you change in that file survives a render. Both can hold at once.
+*The other way, as you put it:* structured until the report is written, Markdown from there —
+the tool then keeps its parser for everything that happens to an entry after the hand-over.
+
 ## 6. The build
 
 Prose — contract docs, agents, skills, changelog — is the session's. Code goes to one Opus
@@ -793,10 +847,11 @@ with the verify commands of § 7; its diff is read before the commit. Versions a
 - `docs/close-out.md`, `docs/close-out-template.md`: the labels and the table, each in its one
   place; the routes; the shape; who writes what. "An automated triage pass" leaves *Deliberately
   absent*.
-- `tools/close_out.py`, `test_close_out.py`: `append` with the labels of both kinds and the
+- `tools/close_out.py`, `test_close_out.py`: the store (§ 4.11) — `close-out.json` read and
+  written, `import` for a report in flight, `rule` for the operator's words and the reading
+  back of a `Disposition:` line by id; `append` with the labels of both kinds and the
   refusals, the one for an improvement of the workflow among them;
-  `relabel`; `request-card`; the table; `render` in the new shape, reading a report in either
-  layout; `counts` per route; the labels of the entries the driver and the plan loop write
+  `relabel`; `request-card`; the table; `render` in the new shape, from the store; `counts` per route; the labels of the entries the driver and the plan loop write
   themselves. `append_entry`, `live_entries` and `find_by_headline` keep taking the five
   section names.
 - Every role that appends gets the rule once, by reference: one sentence in
@@ -838,10 +893,9 @@ with the verify commands of § 7; its diff is read before the commit. Versions a
 
 - `kc project test` and `kc project lint` green at every commit.
 - **The corpus through the new tool.** Each of the 99 hand-over snapshots in a scratch slice
-  directory: labels from the committed data where the report has them, `render`, `render`
-  again. Asserted: every entry id that went in comes out once, no body lost a line, the second
-  render changes nothing, `counts` gives the per-kind numbers the 0.9.56 tool gives on the
-  untouched snapshot.
+  directory: `import`, labels from the committed data where the report has them, `render`.
+  Asserted: every entry id that went in is in the store and in the report once, no body lost a
+  line, `counts` gives the per-kind numbers the 0.9.56 tool gives on the untouched snapshot.
 - **The table in the tool is the table that was tested.** The committed labels, with the
   replay's vocabulary mapped onto § 4.2's (`wrong-or-lost` to `severe`, `broken-or-stuck` to
   `broken`, `misleading` to `degraded`, `question` to `decision`, `slice-input` to a `for`),
