@@ -7,9 +7,11 @@ to go through."
 
 **Status: ruled 2026-09-29.** The operator takes the four recommendations of § 7 — "I like the
 changes that are suggested here" — and asked for one plan that holds all of them and a rework
-of the report's shape. That plan is
-[close-out-rework-plan-2026-09-29.md](close-out-rework-plan-2026-09-29.md), for their ruling;
-nothing in the plugin changed yet. § 8 says what this read does not show.
+of the report's shape. R2 and the author side of R3 are built (0.9.56). The plan for the rest,
+[close-out-rework-plan-2026-09-29.md](close-out-rework-plan-2026-09-29.md), was superseded the
+same day by [close-out-triage-plan-2026-09-29.md](close-out-triage-plan-2026-09-29.md), which
+is for their ruling; its § 3 scores § 6 of this read again, against the rulings that are the
+operator's own. § 8 says what this read does not show.
 
 **The answer in short.**
 

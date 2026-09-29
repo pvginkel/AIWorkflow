@@ -10,8 +10,13 @@ of it:
 > B's, minor B's, nit B's, and then S's are just unsorted. Can you also design a more radical
 > rework of the close out report so that it structures the information better?
 
-**Status: for the operator's ruling.** Nothing in the plugin changed. § 4 has the four decisions
-that are the operator's; every one has a default, so "go" builds the plan as written.
+**Status: superseded on 2026-09-29, before it was ruled**, by
+[close-out-triage-plan-2026-09-29.md](close-out-triage-plan-2026-09-29.md): the entry's author
+labels it, a table in the tool routes it, a wrap-up phase acts on what does not come to the
+operator. What survives of this plan: R2 and R3 as built in 0.9.56, the Focus lines leaving
+(D2, since ruled), a report ordered by what is asked of the operator with bodies folded where
+one line settles it, one agent with two callers, the corpus check of § 5. What does not: the
+sorter and its rules, the `Proposed:` line, the sheet, and 0.9.57 and 0.9.58 as described here.
 
 **The plan in short.**
 

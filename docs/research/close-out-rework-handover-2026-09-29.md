@@ -1,5 +1,11 @@
 # Close-out rework — hand-over (2026-09-29)
 
+**Status: superseded in part on 2026-09-29.** The plan this hand-over serves was replaced, before
+it was ruled, by [close-out-triage-plan-2026-09-29.md](close-out-triage-plan-2026-09-29.md);
+read that one in place of item 2 below. § 3, and what § 1, § 2, § 4 and § 9 say of 0.9.57,
+0.9.58 and D1–D4, describe the sorter plan and are no longer the next work. § 5 to § 8 hold:
+where the code is, the scratch data, the corpus check, the rules of the house.
+
 For the session that picks this work up. It says where the work stands, what the operator has
 and has not ruled, and what the session that wrote the plan knew and did not put in it. It does
 not restate the plan or the read. Read in this order:
@@ -20,6 +26,8 @@ not restate the plan or the read. Read in this order:
 | `2cdf7db` | the rework plan; `close_out_readout.py order` | no |
 | `3d3c4a0` | **0.9.56** — R2 and the author side of R3 | no |
 | this commit | this hand-over; the replayed sorting brief under `docs/research/data/` | no |
+| `b36ed3c` | the label data of the discussion of 2026-09-29 and its brief | no |
+| the commit after it | the triage plan; the status lines here, in the read and in the superseded plan | no |
 
 `origin/main` stood at 0.9.54 (`18d047b`) on 2026-09-29. Fetch before trusting that: the
 operator pushes from the pod between sessions.
@@ -30,7 +38,8 @@ it resolved in part; its dispatch carries `strike`; a round that passed is not a
 consult strikes. `kc project test` and `kc project lint` were green at the commit.
 
 **Not built.** 0.9.57 (the new shape, the sorter, the skill, the Focus lines gone) and 0.9.58
-(the driver dispatches the sorter). No file of either has been touched.
+(the driver dispatches the sorter). No file of either has been touched. *Superseded: they will
+not be built as described; the versions and their content are the triage plan's § 6.*
 
 ## 2. What the operator has said, and what they have not
 
@@ -56,8 +65,14 @@ that.
 **Not ruled:** the plan itself, and its decisions D1–D4 (plan § 4). The plan was presented with
 "say go to build with the defaults"; the operator's next message asked for this hand-over. Do
 not read that as a go. Open with the four decisions and their defaults, and build on the answer.
+*Superseded: the operator discussed the read instead; what they said and ruled on 2026-09-29 is
+the triage plan's § 2, and the decisions to open with are its § 5.*
 
 ## 3. The order of work for 0.9.57 and 0.9.58
+
+*Superseded with the plan it orders. What carries over to the triage plan's build: fetch first,
+the contract before the code, one Opus sub-agent briefed from text that exists, the corpus
+check among its verify commands.*
 
 The plan's § 5 lists the files. The order that keeps the code sub-agent briefed from text that
 exists:
