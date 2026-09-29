@@ -5,13 +5,14 @@ different rulings from what's suggested in the close out report. Why is this, an
 leveraged to trim it down, possibly using a post processing step? … I find the reports laborious
 to go through."
 
-**Status: ruled 2026-09-29.** The operator takes the four recommendations of § 7 — "I like the
-changes that are suggested here" — and asked for one plan that holds all of them and a rework
-of the report's shape. R2 and the author side of R3 are built (0.9.56). The plan for the rest,
-[close-out-rework-plan-2026-09-29.md](close-out-rework-plan-2026-09-29.md), was superseded the
-same day by [close-out-triage-plan-2026-09-29.md](close-out-triage-plan-2026-09-29.md), which
-is for their ruling; its § 3 scores § 6 of this read again, against the rulings that are the
-operator's own. § 8 says what this read does not show.
+**Status: ruled 2026-09-29, and overtaken in part.** The operator took the four
+recommendations of § 7 — "I like the changes that are suggested here". R2 and the author side
+of R3 are built (0.9.56). R1 and R4, the sort of § 6 and the rules of the appendix are not
+built and will not be: in the discussion of this read the operator ruled for labels given by
+an entry's author, a policy table in the tool and a wrap-up phase. That is
+[close-out-triage-plan-2026-09-29.md](close-out-triage-plan-2026-09-29.md), ruled and to be
+built; its § 3 scores § 6 of this read again, against the rulings that are the operator's own,
+and corrects finding 17's 9 %. § 8 says what this read does not show.
 
 **The answer in short.**
 

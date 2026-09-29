@@ -18,7 +18,8 @@ read (``docs/research/close-out-read-2026-09-28.md``).
 
 ``order`` says where in a report the entries the operator progressed sit, under three reading
 orders: the one ``close_out.py render`` gives today, a mechanical one (severity across kinds),
-and the order of a sort from the read's data file (the rework plan of 2026-09-29, § 2).
+and the order of a sort from the read's data file (the sorter plan of 2026-09-29, commit
+2cdf7db, since replaced by close-out-triage-plan-2026-09-29.md).
 ``snapshots`` recovers, from the spec repo's history, each report as the run left it: the newest
 commit in which no ``Disposition:`` line carries words and no heading is struck by the
 operator's pass. ``sessions`` finds the interactive sessions that wrote dispositions or struck

@@ -1,15 +1,17 @@
 # The close-out report, triaged at the source — plan (2026-09-29)
 
-Companion to [close-out-read-2026-09-28.md](close-out-read-2026-09-28.md) (the read; this plan
-does not restate it) and successor to
-[close-out-rework-plan-2026-09-29.md](close-out-rework-plan-2026-09-29.md), which it supersedes
-before that plan was ruled. It came out of the operator's discussion of the read on 2026-09-29;
-§ 2 has their words, § 3 what was computed during it.
+Companion to [close-out-read-2026-09-28.md](close-out-read-2026-09-28.md), the read, which
+this plan does not restate. It came out of the operator's discussion of that read on
+2026-09-29; § 2 has their words, § 3 what was computed during it. It replaces the plan of the
+same day that put a text-only sorter after the run (commit `2cdf7db`) and that plan's hand-over
+(`2975c85`); both were removed when this one was finished and are in the history.
 
-**Status: ruled on 2026-09-29, but for how it is built and the word to build it.** The
-operator ruled D1 to D11 (§ 5); D9 went the other way than its default and the design follows
-their ruling. Open: D4, whether the whole is built in one go — their question, answered there
-— and with it the go. Nothing in the plugin changed beyond 0.9.56.
+**Status: ruled on 2026-09-29, to be built.** The operator ruled D1 to D11 (§ 5) and gave the
+word: "Yes, build it in one go." Nothing in the plugin changed beyond 0.9.56, and nothing of
+this plan is built. The operator has not read this document — they took it to say what was
+discussed — so § 5 lists apart what was decided in the writing and never put to them. § 10 is
+the hand-over for the session that builds it; that session starts here and needs no other
+document but the read.
 
 **The plan in short.**
 
@@ -35,15 +37,15 @@ their ruling. Open: D4, whether the whole is built in one go — their question,
 6. **The text-only sorter goes.** Replayed against the rulings that are the operator's own, the
    labels and the table keep 92 % of their picks and close 20 % of the entries — 96 % and 21 %
    with the improvements on their own route, a rule chosen on the sample it is scored on; the
-   sorter of the superseded plan kept 83 % (§ 3.2, § 3.4, § 3.9).
+   sorter of the plan this one replaces kept 83 % (§ 3.2, § 3.4, § 3.9).
 7. **The record is data, the report a rendering of it.** Entries are kept in `close-out.json`
    for their whole life; `close-out.md` is written from it and never parsed for anything but
    the operator's own line (§ 4.11, D11).
-8. **Three commits, in this order**: the store, the labels, the routing and the report's
-   shape; the wrap-up agent with the close-out session as its caller; the driver dispatches
-   it. Whether they ship together is D4 (§ 6).
+8. **One build, three commits, pushed together** (D4): the store, the labels, the routing and
+   the report's shape; the wrap-up agent with the close-out session as its caller; the driver
+   dispatches it (§ 6). Its first test against a repository is the first live slice (§ 7).
 
-## 1. What changed since the superseded plan
+## 1. What changed since the sorter plan
 
 That plan put one agent after the run to guess, from the report's text, what the operator would
 rule. Three things the operator said on 2026-09-29 move the design to the other end of the
@@ -159,6 +161,11 @@ And on where they write their rulings (D11): "Both are fine. In the beginning I 
 responses in session, but I do feel it's kind of nice to add them on the disposition lines.
 It's in-context for me."
 
+On the build, after D4's answer:
+
+> Yes, build it in one go. Can you please finalize the plan? I will wrap up this session and not
+> come back to it, so make sure everything is written down.
+
 **Ruled by these words:**
 
 - The Focus lines go: they are not read.
@@ -171,9 +178,10 @@ It's in-context for me."
   operator in place of the close. Where the table would fix it or ask for a card, it does.
 - The author labels its entry, in a form a tool can parse, and the labels are in plain view.
 
-- The decisions of § 5 as recorded there.
+- The decisions of § 5 as recorded there, D4 among them: one build.
 
-**Not ruled:** D4, and the word to build.
+**Not ruled:** what § 5 lists as decided in the writing; and the push, which is asked when the
+build is done.
 
 ## 3. The evidence
 
@@ -276,9 +284,10 @@ reports and 561 entries handed over; 234 of them are the operator's own rulings.
 
 ### 3.4 The policy table against the operator's own rulings
 
-The labels of § 3.3 through the operator's policy, mechanically. Three tables were run: the
-three bullets as stated; with impact in the rule and an event that describes a problem routed as
-that problem; and with what is severe placed ahead of the easy fix, as the operator then ruled.
+The labels of § 3.3 through the operator's policy, mechanically. Three tables were run before
+the operator ruled on severity: the three bullets as stated; with impact in the rule and an
+event that describes a problem routed as that problem; and with what is severe placed ahead of
+the easy fix, D9's default. The table as ruled is § 3.9's.
 
 | table | picks kept | cards and folds kept | entries closed |
 |---|--:|--:|--:|
@@ -315,8 +324,8 @@ Over everything the 47 reports handed over (561 entries, a median 11 a report):
     the operator ruled the same when asked.
 12. **The replay's first tier is wider than the plan's.** Its severe is the label
     `wrong-or-lost`, which holds wrong results beside lost data, where § 4.2's `severe` is
-    narrower; and it sent every idea to the operator as a decision — 26 of the 171 — where the
-    route of a potential improvement is open (§ 4.4). 171 is an upper bound.
+    narrower; and it sent every idea to the operator as a decision — 26 of the 171 — which
+    § 4.4 routes otherwise. § 3.9 has the count as ruled, with the same wide label.
 13. **The wrap-up would attempt more than the operator asked for.** It gets 37 % of the entries
     to fix where the operator had a quarter fixed; of those 87 they had 41 fixed, 12 carded or
     folded and 34 closed. Part of those closes were effort, in their own words, so an entry the
@@ -327,18 +336,21 @@ Over everything the 47 reports handed over (561 entries, a median 11 a report):
 
 ### 3.5 The misses
 
-Nine picks the last table closes — seven cards and two inline fixes, none graded above minor:
+§ 3.4's last table closes nine picks, seven cards and two inline fixes. The tables as ruled
+(§ 3.9) close five, none graded above minor:
 
 | class | entries | |
 |---|--:|---|
 | an event that describes a failing test run, a fault for a trigger | 2 | carded |
 | a defect and a test gap that break a flow, a fault for a trigger | 2 | carded |
-| hardening and cleanup with slight or no impact | 3 | carded — the operator's own call |
-| a defect and a hardening of slight impact, fix needs design | 2 | fixed inline |
+| a defect of slight impact, a fault for a trigger, fix needs design | 1 | fixed inline |
 
-Of the 35 closes on the operator's own rulings 15 have an impact that breaks a flow, and four of
-the seven lost cards are among them; over all 47 reports that is 31 of 72 closes, 0.7 a report
-(D7).
+The three cards the first tables lost among hardening and cleanup come to the operator as
+potential improvements (§ 4.4 row 5).
+
+All four lost cards have an impact that breaks a flow. Of the 37 closes on the operator's own
+rulings 12 do; over all 47 reports 24 of 67 closes, 0.5 a report. Those are the closes D7 has
+the wrap-up check in the code.
 
 ### 3.6 The appended phase
 
@@ -485,9 +497,12 @@ everything the 47 reports handed over:
   from the sessions in `docs/research/data/close-out-read-2026-09-28.json`.
 - The entries with their fates regenerate with `close_out_readout.py extract`, the snapshots
   with `snapshots` (the hand-over, § 6).
-- The scripts behind these tables are not in the repository:
-  `/work/scratch/close-out-discussion-2026-09-29/` (`focus_check.py`, `who_ruled.py`,
-  `score.py`, `improve_score.py`, `appended.py`, `testgaps2.py`). They are owed to `close_out_readout.py` (§ 6).
+- The scripts behind these tables are kept as they were run, in
+  `docs/research/tools/close_out_discussion_2026_09_29/`: `focus_check.py` (§ 3.1),
+  `who_ruled.py` (§ 3.2), `score.py` (§ 3.3, § 3.4), `improve_score.py` (§ 3.8),
+  `ruled_tables.py` (§ 3.5, § 3.9), `appended.py` (§ 3.6), `testgaps2.py` (§ 3.7). They are
+  owed to `close_out_readout.py` (§ 6). § 3.7's check against the tracker was a sub-agent's
+  reading and has no script.
 - Every share is good to a few points, as in the read: the fate classifier is a list of
   patterns, and the labels and the session coding are model judgments.
 
@@ -535,7 +550,14 @@ defined in `docs/close-out.md` and nowhere else.
 | **for** | a slice, optional | the slice still to run that should take it |
 
 `trigger`, `impact` and `fix` also take `unknown`: the author could not tell. The evidence class
-(`witnessed`, `read`) and the grade stay where they are, on the Provenance line and the heading.
+(`witnessed`, `read`) and the grade stay where they are, on the Provenance line and the heading;
+the grade applies to every kind, as it does today.
+
+**An entry's id is its kind's letter and a number**: `A` action, `D` decision, `E` event, `B`
+defect, `P` prose, `T` test gap, `I` improvement. The five section names the loops' own calls
+pass today are taken as kinds — Outstanding actions an action, Notable events an event, Bugs a
+defect, Open questions and rulings a decision, Suggestions an improvement — so the pre-run
+action check and the plan loop's seeding do not change.
 
 What the labellers of § 3.3 found unsharp, settled here:
 
@@ -586,7 +608,7 @@ here hold for it as well.
 
 ### 4.4 Potential improvements
 
-**Proposed, not ruled (D10).** The line between the operator's two categories is whether
+**Ruled (D10).** The line between the operator's two categories is whether
 something is wrong today. What should be fixed — a defect, prose, a test gap — takes § 4.3,
 entered as a Bug or as a Suggestion. A potential improvement says that something could be
 better, safer or simpler, and is labelled by what it would bring and what it would take:
@@ -708,19 +730,21 @@ taken back on its own. It is what the operator's "fix inline please" gets today.
 
 **Two callers.**
 
-- *The close-out session (0.9.58).* `/dev:close-out` renders the report, dispatches the wrap-up
-  when entries wait for it, and presents the entries that come to the operator meanwhile; the
-  card requests follow when it returns. Its commits land as the skill's `fix now` lands
-  today. The check of what has moved since the run stays the session's (finding 12 of the
-  read).
-- *The driver (0.9.59).* After the doc-writer's session and before the phase's gate sweep and
+- *The close-out session.* For a report no run wrapped up: a run that stopped before its end, a
+  wrap-up that failed or was switched off, a report an older plugin wrote. `/dev:close-out`
+  renders the report, dispatches the wrap-up when entries wait for it, and presents the entries
+  that come to the operator meanwhile; the card requests follow when it returns. Its commits
+  land as the skill's `fix now` lands today. The check of what has moved since the run stays
+  the session's (finding 12 of the read).
+- *The driver.* After the doc-writer's session and before the phase's gate sweep and
   landing, so that the driver's one landing carries both. Its commits sit on a branch of
   their own. It never fails the run: a timeout, a missing verdict, a `blocked`, or a sweep that
   is red with its commits and green without them leaves its commits out of the landing, takes
   the report back to where it stood, and is logged; the close-out session then finds the
   entries waiting. It needs a dispatch path of its own — `_spawn` ends in a ruling that bails
   the run — that still leaves the `history` row `slice_cost.py` prices a role from. The phase
-  is on in every project (D6).
+  is on in every project (D6); `.aiworkflowrc` can switch it off, as it can the test and the
+  doc phase — a brake for the first runs, not an option a project weighs.
 
 **An entry without labels** — a report an older plugin wrote, an author that drifted — is
 labelled by the wrap-up from its text before anything is routed. § 3.3 is that case, measured.
@@ -739,8 +763,6 @@ requested, entries that are one fix as one card.
 
 Run: <stamped by the driver>
 
-## Summary                  the doc-writer's: the slice and what shipped
-
 ## Comes to you             actions, decisions, risks — read in full
 ## Card requests            read in full, with what the wrap-up found
 
@@ -755,18 +777,22 @@ Run: <stamped by the driver>
 ```
 
 Inside a section the order is the grade (major, minor, ungraded, nit, cosmetic), then the kind,
-then the id. `render` writes the sections that hold something, and the Summary always. A
-potential improvement stands where its route puts it, after what should be fixed of the same
-grade.
+then the id. `render` writes the sections that hold something. A potential improvement stands
+where its route puts it, after what should be fixed of the same grade.
+
+**The Summary leaves with the Focus lines.** The operator reads the entries and not the head of
+the report, so the doc-writer writes neither; the run header, which the driver stamps from
+`state.json`, stays as the one line above the entries. Decided in the writing (§ 5).
 
 ### 4.9 What stays, what goes
 
 | | |
 |---|---|
 | **stays, built** | 0.9.56: whoever fixes an entry strikes it, a round that passed is not an event (R2, R3) |
-| **stays, from the superseded plan** | the report ordered by what is asked of the operator; bodies folded where one line settles it; the record; one agent with two callers; the tool as the only pen; the corpus check; the five section names as what the loops' own calls take |
+| **stays, from the sorter plan** | the report ordered by what is asked of the operator; bodies folded where one line settles it; the record; one agent with two callers; the tool as the only pen; the corpus check; the five section names as what the loops' own calls take |
 | **goes** | `dev:close-out-sorter`; the sorting rules as an agent's definition; `propose` and the `Proposed:` line; the Unsorted section; the second pass on the rules proposed during the discussion — the wrap-up decides with the code in hand instead of predicting a ruling |
-| **goes, ruled** | the Focus lines, a written one in a report still open being dropped at its next `render`; the sheet at the report's head and in the card's body |
+| **goes, ruled** | the Focus lines; the sheet at the report's head and in the card's body |
+| **goes, decided in the writing** | the Summary (§ 4.8) |
 | **left alone** | the grade and its vocabulary; the Consequence line; "in doubt, add it"; the authors' bar |
 
 ### 4.10 The consult's rider and the appended phase — unchanged
@@ -780,7 +806,7 @@ grade.
 
 ### 4.11 The store
 
-**Proposed on the operator's suggestion (D11).** The labels make an entry a record with a dozen
+**The operator's suggestion, ruled (D11).** The labels make an entry a record with a dozen
 fields; the route is computed from them; the wrap-up corrects them. Kept in Markdown, each of
 those is a line the tool writes and then has to find and parse again.
 
@@ -794,8 +820,7 @@ those is a line the tool writes and then has to find and parse again.
 - **What an entry holds**: id, kind, grade, headline, body, consequence, evidence class and
   author, labels, dated notes, a strike with its reason and commit, what the wrap-up did, the
   operator's words and what was done on them. The body is kept as lines, so that a diff of the
-  store reads like a diff of text. The Summary is a field of the report; the run header stays
-  `state.json`'s.
+  store reads like a diff of text. The run header stays `state.json`'s.
 - **The route is not stored.** `render` computes it from the labels, so a changed table routes
   an open report again at its next render, and a closed one can be read under any table.
 - **Nothing changes for an author.** `append`, `note`, `strike` and `list` keep their
@@ -815,14 +840,14 @@ two files can disagree when somebody edits the rendered one by hand.
 
 ## 5. The decisions, as ruled
 
-Put to the operator on 2026-09-29 with a default each; ruled the same day. D4 is open.
+Put to the operator on 2026-09-29 with a default each; ruled the same day.
 
 | | decision | ruling |
 |---|---|---|
 | D1 | the wrap-up may fix before the operator has ruled | **yes** — "that was happening already, and that's fine" |
 | D2 | in doubt the label is `unknown`, and the wrap-up looks | **yes** |
 | D3 | the wrap-up runs after the doc phase | **yes** |
-| D4 | the close-out session first, the driver after a priced replay | **open** — below |
+| D4 | the close-out session first, the driver after a priced replay | **no: one build** — "Yes, build it in one go" |
 | D5 | the wrap-up notes what it found under a risk that comes to the operator | **yes** |
 | D6 | the table lives in the tool, one policy for every project | **yes, and the phase is on**: "If we add this, the default is ON" |
 | D7 | before a close stands on an entry that breaks a flow, the wrap-up checks its trigger in the code | **yes**, on the recommendation |
@@ -846,70 +871,90 @@ harm is worst. The wrap-up's bar answers that: it touches nothing on timing, sto
 contracts or secrets, which is where most of what is severe lives, and those entries reach the
 operator as card requests.
 
-**D7** is the one place where the wrap-up doubts a label that closes an entry: 0.7 entries a
-report in the replay, and four of the seven cards the first table lost (§ 3.5).
+**D7** is the one place where the wrap-up doubts a label that closes an entry: 0.5 entries a
+report in the replay, and all four cards the tables as ruled lose (§ 3.5).
 
 **D11.** `close_out.py rule` records what the operator says in the session; before the
 session executes anything it reads the `Disposition:` lines of `close-out.md` back by entry id.
 Nothing else changed in that file survives a render.
 
-**D4 — open: why not the whole in one go.** The operator's question, with the last planned
-slice running as they asked it. The staging had three reasons: the wrap-up's price is not
-measured; its fixes land unattended where the close-out session has the operator present; and
-the driver is the largest and riskiest code of the build. Against them:
+**D4, as ruled: one build.** The operator asked why not, with the last planned slice running
+as they asked. The staging had three reasons: the wrap-up's price is not measured; its fixes
+land unattended where the close-out session has the operator present; and the driver is the
+largest and riskiest code of the build. What weighed against them:
 
-- **Nothing is in flight.** With no slice planned after the one that runs, no slice meets two
+- **Nothing is in flight.** With no slice planned after the one that ran, no slice meets two
   plugin versions and no open report has to be imported. That window closes with the next
-  `/dev:plan-slice`.
+  `/dev:plan-slice`: the build ships before it, or the first slice planned waits for it.
 - **The driver's wrap-up cannot fail a run** (§ 4.6), and its work is one commit per entry.
-- **Live slices price it for nothing.** `slice_cost.py` prices the role from the first run; the
+- **Live slices price it for nothing.** `slice_cost.py` prices the role from the first run; a
   replay costs an environment of the product and six sessions to learn the same.
-- **The close-out session as the only caller is a wait** at the start of every close-out, which
-  is when the operator has the least patience for one.
-- **Two builds cost more than one**: the first would ship a report with a section for a wrap-up
-  that nothing runs.
+- **The close-out session as the only caller is a wait** at the start of every close-out.
+- **Two builds cost more than one**: the first would ship a report with a section for a
+  wrap-up that nothing runs.
 
-*Recommended: one go.* The three commits of § 6 are built in their order and pushed together;
-the priced replay of § 7 gives way to a readout after the first five live slices instead of
-ten; and the phase gets an off switch in `.aiworkflowrc`, on by default as the test and the doc
-phase have theirs — not an option a project weighs, a brake for the first runs. The switch is
-the operator's to strike.
+So the priced replay is not run. In its place: a look at the first live slice before the second
+runs, and the readout after five (§ 7).
+
+### Decided in the writing, not put to the operator
+
+The operator ruled on what was discussed and did not read this document. These were settled by
+the session that wrote it. Each is the session's best reading of what they said; none is a
+ruling, and the building session changes one on their word without reopening the rest.
+
+| | decided | because |
+|---|---|---|
+| W1 | the Summary leaves the report with the Focus lines (§ 4.8) | "I don't read … the head of the report. A list of entries is enough for me" |
+| W2 | the phase has an off switch in `.aiworkflowrc`, on by default (§ 4.6) | offered as "yours to strike" with D4's answer; they took the answer and did not strike it |
+| W3 | the words of every label and their definitions (§ 4.2, § 4.4); `severe` as lost or corrupted data, an exposure, or a failure that cannot be recovered without repair | the labels were discussed as a set and by example, not word by word |
+| W4 | no reviewer reads what the wrap-up fixes; its assurance is the bar, the gate, one commit per entry (§ 4.6) | said in the discussion as the guard on unreviewed fixes and not objected to |
+| W5 | what the table closes is not struck: it stays in the report, folded, until the operator closes the report (§ 4.6, § 4.8) | D1 lifts the constraint of 2026-08-17 for fixing alone |
+| W6 | a card request is filed on the operator's word, never by the wrap-up (§ 4.7) | the same; their words were "request to card" |
+| W7 | a fix that lives in a repository the slice did not touch is a card request or closed, never the wrap-up's (§ 4.3 row 5) | the wrap-up has branches and gates only where the slice ran |
+| W8 | an improvement of the workflow is refused as an entry and goes to Fieldnotes (§ 4.4 row 1) | inside D10, which they ruled yes; stated here because it changes what authors may enter |
+| W9 | the tool refuses an entry without labels, and one that contradicts its own Consequence line (§ 4.5) | "it's very important that the labels are decided right" |
+| W10 | an entry's id is its kind's letter (§ 4.2) | the five sections go, and an id has to say what it names |
+| W11 | the first readout comes after five live slices, with a look at the first (§ 7) | it stands in for the replay D4 drops |
 
 ## 6. The build
 
-Prose — contract docs, agents, skills, changelog — is the session's. Code goes to one Opus
-sub-agent per version, on disjoint files, briefed from contract text that exists by then and
-with the verify commands of § 7; its diff is read before the commit. Versions are taken from
-`origin/main` at commit time after a fetch: `origin/main` stood at 0.9.54 on 2026-09-29, with
-0.9.55 and 0.9.56 local above it.
+**One build, pushed together** (D4): three commits with a version each, in the order below,
+and a research commit. Prose — contract docs, agents, skills, changelog — is the session's.
+Code goes to one Opus sub-agent per commit, on disjoint files, briefed from contract text that
+exists by then and with the verify commands of § 7; its diff is read before the commit.
+Versions are taken from `origin/main` at commit time after a fetch: `origin/main` stood at
+0.9.54 on 2026-09-29 with 0.9.55 and 0.9.56 local above it, which makes these 0.9.57, 0.9.58
+and 0.9.59 unless something was pushed in between. § 10 has the order of work.
 
-### 0.9.57 — the labels, the routing, the report's shape
+### 0.9.57 — the store, the labels, the routing, the report's shape
 
-- `docs/close-out.md`, `docs/close-out-template.md`: the labels and the table, each in its one
-  place; the routes; the shape; who writes what. "An automated triage pass" leaves *Deliberately
-  absent*.
+- `docs/close-out.md`, `docs/close-out-template.md`: the store; the labels and the two tables,
+  each in its one place; the routes; the shape; who writes what. "An automated triage pass"
+  leaves *Deliberately absent*.
 - `tools/close_out.py`, `test_close_out.py`: the store (§ 4.11) — `close-out.json` read and
-  written, `import` for a report in flight, `rule` for the operator's words and the reading
+  written, `import` for a report in Markdown, `rule` for the operator's words and the reading
   back of a `Disposition:` line by id; `append` with the labels of both kinds and the
-  refusals, the one for an improvement of the workflow among them;
-  `relabel`; `request-card`; the table; `render` in the new shape, from the store; `counts` per route; the labels of the entries the driver and the plan loop write
-  themselves. `append_entry`, `live_entries` and `find_by_headline` keep taking the five
-  section names.
+  refusals, the one for an improvement of the workflow among them; `relabel`; `request-card`;
+  the two tables; `render` in the new shape, from the store; `counts` per route; the labels of
+  the entries the driver and the plan loop write themselves. `append_entry`, `live_entries` and
+  `find_by_headline` keep taking the five section names (§ 4.2).
 - Every role that appends gets the rule once, by reference: one sentence in
   `agents/code-writer.md`, `code-reviewer.md`, `test-agent.md`, `doc-writer.md`,
   `plan-writer.md`, `plan-reviewer.md` and the consults' prompts, pointing at
   `docs/close-out.md`; the dispatch line carries `append`'s usage rendered from the parser, as
   the doc-writer's dispatch carries its verbs.
-- The Focus lines leave `agents/doc-writer.md`, the doc phase's prompt in `tools/run_loop.py`
-  with its two tests, and `skills/run-slice/SKILL.md` Job 4, where the card's body becomes the
-  path and the counts.
-- `skills/close-out/SKILL.md`: rewritten around the report in its reading order.
-  `skills/triage/SKILL.md` § 1: what it takes from a report, by route.
+- The Focus lines and the Summary leave `agents/doc-writer.md`, the doc phase's prompt in
+  `tools/run_loop.py` with its tests, and `skills/run-slice/SKILL.md` Job 4, where the card's
+  body becomes the path and the counts.
+- `skills/close-out/SKILL.md`: rewritten around the report in its reading order, the two ways
+  the operator rules (D11), and the closing of the report. `skills/triage/SKILL.md` § 1: what
+  it takes from a report, by route.
 - `CHANGELOG-workflow.md`, `plugin.json`, `docs/rationale/reporting.md`.
 
 ### 0.9.58 — the wrap-up, called by the close-out session
 
-- `agents/wrap-up.md`: new, with its `description` and `model: opus`.
+- `agents/wrap-up.md`: new, with its `description` — without one it is not registered — and
+  `model: opus`.
 - `docs/close-out.md`: the wrap-up's part, and the one exception to "append only".
   `docs/agent-dispatch.md`: the role.
 - `skills/close-out/SKILL.md`: when it dispatches, what it presents meanwhile.
@@ -926,9 +971,10 @@ with the verify commands of § 7; its diff is read before the commit. Versions a
 ### Research
 
 - `docs/research/tools/close_out_readout.py`: the cuts of § 3 as its own — whose ruling an entry
-  is, the labels and the table scored, the Focus line by place, the appended phases — reading
-  the committed label data, and the new layout with its `Triage:` and `Route:` lines. A research
-  commit, no version.
+  is, the labels and the tables scored, the Focus line by place, the appended phases — reading
+  the committed label data, and a report's store beside the Markdown of the 99 that exist. The
+  scripts of `docs/research/tools/close_out_discussion_2026_09_29/` are what it takes them
+  from; that folder is removed in the same commit. A research commit, no version.
 
 ## 7. Verification
 
@@ -937,39 +983,44 @@ with the verify commands of § 7; its diff is read before the commit. Versions a
   directory: `import`, labels from the committed data where the report has them, `render`.
   Asserted: every entry id that went in is in the store and in the report once, no body lost a
   line, `counts` gives the per-kind numbers the 0.9.56 tool gives on the untouched snapshot.
-- **The table in the tool is the table that was tested.** The committed labels, with the
-  replay's vocabulary mapped onto § 4.2's (`wrong-or-lost` to `severe`, `broken-or-stuck` to
-  `broken`, `misleading` to `degraded`, `question` to `decision`, `slice-input` to a `for`),
-  every repository taken as the slice's own, the 89 potential improvements with the labels of
-  the second pass: the routes of the 234 entries are those of § 3.8.
-- **The wrap-up, priced and compared — needs your go.** Five or six slices you ruled yourself,
-  each in the state the run left it: the product repository at the slice's landing commit, its
-  toolchains, the hand-over snapshot with the replay's labels. The wrap-up as defined runs on
-  each. Read from it: what it fixed against what you had fixed, what it asked to card against
-  what you carded, what it took back on a red gate, and its price a slice beside § 3.6's. That
-  takes the product's toolchains, so probably an environment of that project, and the spend of
-  six sessions; nothing in it touches a spec repo or pushes.
+  The snapshots include reports from before the entry shape held (slice 146 has headings
+  without ids) and entries that quote `## Bugs` inside a fence.
+- **The tables in the tool are the tables that were tested.** The committed labels, with the
+  replay's vocabulary mapped onto § 4.2's and § 4.4's (`wrong-or-lost` to `severe`,
+  `broken-or-stuck` to `broken`, `misleading` to `degraded`, `question` to `decision`,
+  `slice-input` to a `for`, `every-use` and `some-uses` to `in use`), every repository taken as
+  the slice's own, the 89 potential improvements with the labels of the second pass: the routes
+  of the 234 entries are those of § 3.9.
 - **One report end to end**, on a copy: `AnsibleSpecs` 029 and 032 if they are still
-  unprocessed — the skill opened, the entries that come to the operator presented, the
-  wrap-up dispatched, a ruling executed, the file rendered. Never on the spec repo itself
-  without the operator in the session.
-- **The readout after ten live slices**, from the files alone: the labels the authors gave
-  against your rulings, per label as in § 3.3; the share that comes to you, and whether the
-  first tier grows from slice to slice; what the wrap-up fixed, asked and took back; the closes
-  you pulled back; the wrap-up's price a report. The numbers to hold it against are § 3.4's.
+  unprocessed — the skill opened, the entries that come to the operator presented, a ruling
+  given in the session and one written on a `Disposition:` line, both executed, the file
+  rendered. Never on the spec repo itself without the operator in the session.
+- **What nothing exercises before it ships: the wrap-up against a repository.** The suites
+  fake every session, and the building environment holds no product repository with its
+  toolchains. Its first run is the first live slice.
+- **A look at the first live slice, before the second runs**: the wrap-up's commits, what it
+  asked to card, what it took back on a red gate, what it left, its price from `slice_cost.py`.
+  The off switch is what there is if that look goes wrong.
+- **The readout after five live slices**, from the stores alone: the labels the authors gave
+  against the operator's rulings, per label as in § 3.3 and § 3.8; the share that comes to the
+  operator, and whether the first tier grows from slice to slice; what the wrap-up fixed,
+  asked and took back; the closes the operator pulled back; the wrap-up's price a report. The
+  numbers to hold it against are § 3.9's.
 
 ## 8. What it costs, what can go wrong, what stays unmeasured
 
 - **A session per slice that re-orients on the repositories.** It works on a median 5 entries a
-  report, 17 at most. Its price is not known; the nearest figures are § 3.6's $2–10 for a small
+  report, 24 at most. Its price is not known; the nearest figures are § 3.6's $2–10 for a small
   fix phase with its review, and the 20 k tokens of the text-only sort.
 - **More inline fixes than you asked for** — half of the entries go to the wrap-up, where you
   had a quarter fixed — in code that no reviewer reads, what is severe included (finding 26).
 - **Every author writes five labels more per entry.** The facts are in its prose already; the
   refusal costs a turn when it drifts.
-- **Two plugin versions on one slice.** An older `close_out.py` cannot append to a report in
-  the new shape; every environment updates its marketplace copy before its next slice. A report
-  an older plugin wrote is read as it is, and its entries are labelled by the wrap-up.
+- **Two plugin versions on one slice.** An older `close_out.py` knows no store; every
+  environment updates its marketplace copy before its next slice is planned. A report an older
+  plugin wrote is imported once, and its entries are labelled by the wrap-up.
+- **It ships without having run.** The wrap-up's first run against a repository is a live
+  slice (§ 7).
 - **The first tier can inflate.** Nothing stops an author from calling an impact severe. The
   refusals catch the contradiction with its own Consequence line, the readout catches the
   trend.
@@ -996,8 +1047,8 @@ with the verify commands of § 7; its diff is read before the commit. Versions a
   and outside the phase loop.
 - **No hand-over stages, no two-stage doc phase** (2026-09-05). The wrap-up is after the doc
   phase and not part of it. It is nonetheless a fresh session that re-orients on a repository,
-  which is what that measurement priced at about twice the work. This is the plan's cost risk
-  and the reason the driver's half waits for the replay.
+  which is what that measurement priced at about twice the work. This is the plan's cost
+  risk; the operator ruled one build knowing it (D4), and the first slices price it.
 - **No Fable beyond the refinement-writer; no weaker model for a main role.** The wrap-up is
   pinned to Opus.
 - **No catch-rate or reviewer-recall work.** The readout holds labels against rulings; it seeds
@@ -1008,3 +1059,160 @@ with the verify commands of § 7; its diff is read before the commit. Versions a
   what the run itself reported, in the run.
 - **The doc phase is auto docs only.** Unchanged; prose the wrap-up corrects is an entry's, not
   a doc requirement.
+
+## 10. Hand-over — for the session that builds it
+
+### 10.1 Where it stands
+
+| commit | what | pushed |
+|---|---|---|
+| `52e7f95` | the read, its tool and its data | no |
+| `5f3be47` | 0.9.55, another session's (`/dev:close-out` leaves the slice card alone) | no |
+| `2cdf7db`, `2975c85` | the sorter plan and its hand-over — replaced by this document, removed | no |
+| `3d3c4a0` | **0.9.56** — whoever fixes an entry strikes it; a round that passed is not an event | no |
+| `b36ed3c` … the commit of this section | the label data of both passes, this plan, the scripts | no |
+
+`origin/main` stood at 0.9.54 (`18d047b`) on 2026-09-29. Fetch before trusting that: the
+operator pushes from the pod between sessions.
+
+**The word to build is given** ("Yes, build it in one go"). **The word to push is not**: it is
+asked when the three commits and the research commit are done, and asked again for every push.
+Nothing reaches a run before the push and a marketplace update in every environment.
+
+**The operator ended the session that wrote this and will not return to it.** They ruled on
+what was discussed and did not read this document. Open the building session by saying what
+will be built and naming § 5's W1 to W11 in a few lines, so that they can overrule one before
+it is code; do not ask them to read the plan.
+
+### 10.2 The order of work
+
+1. `git fetch origin`; the versions from `origin/main` and the local commits above it.
+2. The contract first: `docs/close-out.md` and `docs/close-out-template.md` — the store, the
+   labels with their definitions, the two tables, the shape, who writes what. The tool's brief
+   quotes them.
+3. One Opus sub-agent for `tools/close_out.py` and `test_close_out.py`, with the corpus check
+   and the table check of § 7 among its verify commands. Read its diff.
+4. The one sentence for every role that appends; the Focus lines and the Summary out of
+   `agents/doc-writer.md`; the code half — the doc phase's prompt, its tests, the dispatch
+   line — to the sub-agent.
+5. `skills/close-out/SKILL.md`, `skills/run-slice/SKILL.md` Job 4, `skills/triage/SKILL.md`
+   § 1. Changelog, `plugin.json`, `docs/rationale/reporting.md`. Commit as 0.9.57.
+6. `agents/wrap-up.md`, the wrap-up's part of `docs/close-out.md`, `docs/agent-dispatch.md`,
+   the skill's dispatch; the agent count in `README.md`, `CLAUDE.md`, `plugin.json`'s
+   description and `docs/rationale/overview.md`. Commit as 0.9.58.
+7. The driver: `docs/run-loop.md`, `docs/runner-state.md`, `docs/agent-dispatch.md` and the
+   brief together, then the sub-agent on `run_loop.py`, `test_run_loop.py`, `preflight.py`;
+   `docs/project-contract.md` for the switch. Commit as 0.9.59.
+8. The research commit: the scripts into `close_out_readout.py`, their folder removed.
+9. One report end to end on a copy (§ 7). Then ask for the push.
+10. After the push: the marketplace copy updated in every environment before a slice is
+    planned; the look at the first live slice; the readout after five.
+
+### 10.3 Settled for the build, beyond § 4
+
+- **The loops' own entries carry labels the tool gives them.** The driver's Notable events
+  (a refuted finding, a stop of the run, a driver ruling taking effect) are events that describe
+  no problem unless their text says otherwise; the plan loop's seeded Outstanding actions are
+  actions. Neither loop passes labels of its own choosing.
+- **The record's rule is a label now.** Under the sorter plan an event went to the record when
+  its Consequence opened with "none"; here it goes there when its trigger and impact are
+  `none` (§ 4.3 row 3), and the refusal of § 4.5 keeps the Consequence line and the labels from
+  disagreeing.
+- **The fold is `render`'s and nothing else's.** With the store there is no fold to take off or
+  put back: a closed entry is rendered with its body folded, an entry that comes to the
+  operator in full.
+- **A note added by anyone lands in the store**, dated and signed, and is rendered with its
+  entry.
+- **The wrap-up's definition** needs a `description` — without one the agent is silently not
+  registered — and `model: opus`: dispatched from a close-out session that runs on another
+  model it must not inherit it, and "no Fable for any role beyond the refinement-writer" is a
+  settled ruling.
+- **The driver's dispatch must not go through `_spawn` as it is.** `_spawn` ends in
+  `_rule_on_round`, which bails the run on a protocol failure. The wrap-up is never a reason
+  to stop a run: it needs a path that logs and goes on, and still leaves the `history` row
+  `slice_cost.py` prices a role from.
+- **Tests the Focus lines and the Summary turn over.** `test_run_loop.py`
+  `test_doc_phase_prompt_states_diff_files_digest_verbs_and_doc` asserts the Focus sentence of
+  the prompt, and a test near line 1539 that the report is rendered before the doc phase — keep
+  that render, a run that stalls in the doc phase then leaves a rendered report.
+  `test_close_out.py` asserts section preambles with their Focus placeholders around lines 742
+  and 785.
+- **Not decided, and not worth a question to the operator**: the names of the wrap-up's verdict
+  outcomes; the wording of the line `render` puts on a folded entry; the file name of the
+  store if `close-out.json` collides with anything.
+
+### 10.4 Where the code is
+
+Line numbers are of 0.9.56 and say where to look. Most of `close_out.py` below line 500 is the
+parser the store replaces; it stays as `import`'s reader.
+
+| what | where |
+|---|---|
+| kinds, severities, the fold constants, the entry regexes | `tools/close_out.py` 103–145 |
+| what every dispatch says about the report (`DISPATCH_LINE`) | `close_out.py` 103 |
+| `append_entry`; `entry_counts`, `counts_line` | `close_out.py` 304; 347, 370 |
+| blocks, `find_by_headline`, `live_entries`, `_find_entry` | `close_out.py` 391–495 |
+| `add_note`, `strike_entry`, `list_view` | `close_out.py` 532, 565, 609 |
+| `_fold`, `_render_section`, `render_report` | `close_out.py` 642–702 |
+| the CLI and `verb_usage` | `close_out.py` 807–882 |
+| role tables: `MODELS`, `REQUIRED_AGENTS`, `TIMEOUTS`, `VERDICTS` | `tools/run_loop.py` 127–157, 366 |
+| `BAIL_STAGES`; the pre-run action check | `run_loop.py` 204; 511 |
+| the completion consult's and the doc phase's prompts | `run_loop.py` 2100, 2223 |
+| `_spawn`, `_dispatch_rounds` | `run_loop.py` 3383, 3413 |
+| the doc phase: render, then dispatch | `run_loop.py` 5288–5320 |
+| `_run`: the stage ladder, where a resume re-enters, the end of the run | `run_loop.py` 5737–5833 |
+| `_render_report`, `_stamp_report`, `_summary` | `run_loop.py` 5905, 5914, 6011 |
+| the plan loop's seeding of Outstanding actions | `tools/plan_loop.py` 135, 832 |
+| the card's body | `skills/run-slice/SKILL.md` Job 4, step 4 |
+| what triage takes from a report | `skills/triage/SKILL.md` § 1 |
+| the residual sweep's litmus, the wrap-up's bar | `docs/residual-sweep.md` |
+| the phases a project switches | `docs/project-contract.md`, `tools/preflight.py` |
+| `run_phase` and its values | `docs/runner-state.md` |
+
+Every file that names the Focus lines or the Summary:
+`grep -rn "Focus\|Summary" plugins/dev --include=*.md --include=*.py`.
+
+### 10.5 The data, and how to make the scratch data again
+
+Committed: the read and its data (`docs/research/data/close-out-read-2026-09-28.json`, the
+sorts and the session coding as ids and buckets; `close-out-sort-brief-2026-09-28.md`), the
+label data of both passes with their briefs (§ 3, Sources), the scripts.
+
+Not committed, and gone when the pod's `/tmp` goes: the entries with their text
+(`/tmp/close-out-entries.json`) and the 99 reports as handed over (`/tmp/co/snapshots/`). They
+hold entry text from the spec repos and stay out of this repository. To make them again:
+
+```bash
+git clone https://github.com/pvginkel/KubeCoderSpecs /work/scratch/KubeCoderSpecs
+git clone https://github.com/pvginkel/AnsibleSpecs   /work/scratch/AnsibleSpecs
+cd /work/AIWorkflow
+python3 docs/research/tools/close_out_readout.py extract \
+    /work/scratch/KubeCoderSpecs /work/scratch/AnsibleSpecs -o /tmp/close-out-entries.json
+python3 docs/research/tools/close_out_readout.py snapshots -o /tmp/co/snapshots
+python3 docs/research/tools/close_out_discussion_2026_09_29/ruled_tables.py   # § 3.9, § 3.5
+```
+
+The read and the labels were made at `KubeCoderSpecs` `9a3c102a` and `AnsibleSpecs` `c90d65c`.
+On later heads the operator has ruled more reports and the shares move by a little; check those
+commits out to get the numbers exactly. `ruled_tables.py` reads the committed labels; the
+other scripts of that folder read the labellers' files under `/tmp/co/labels/out/` and
+`/tmp/co/improve/`, which the committed data replaces — point them at it when they are taken
+into `close_out_readout.py`.
+
+### 10.6 Rules of the house that bite here
+
+- **No push without the operator's word**, asked again each time.
+- **The version comes from `origin/main` after a fetch**, plus the local commits above it.
+- **Prose is the session's own; code goes to one Opus sub-agent** on disjoint files, briefed
+  with the files and the verify commands, its diff read before the commit. Have it assert on
+  what the tool renders, not on what the brief says the tool renders.
+- **State every claim once.** The labels, their definitions and the two tables live in
+  `docs/close-out.md`; an agent's definition points there, the wrap-up's says what it does
+  with a route, not how a route is reached.
+- **This repository is public.** No hostnames, no tracker URLs, no entry text from the spec
+  repos. Eleven of the 99 reports name hosts.
+- **Plugin code is stdlib-only** — which is why the store is JSON; the research tools need not
+  be.
+- **What runs is the installed copy.** Nothing here reaches a run before a push and a
+  marketplace update.
+- **The settled rulings of § 9.**

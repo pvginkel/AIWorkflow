@@ -6,8 +6,9 @@ workflow was copy-and-fill templates rather than an installed plugin).
 
 ## 2026-09-29 — whoever fixes an entry strikes it; a round that passed is not an event (v0.9.56)
 
-The first of three versions planned in `docs/research/close-out-rework-plan-2026-09-29.md`,
-from the read of 99 close-out reports (`docs/research/close-out-read-2026-09-28.md`, R2 and R3).
+From the read of 99 close-out reports (`docs/research/close-out-read-2026-09-28.md`, R2 and
+R3). The plan it was the first version of was replaced the same day; what follows it is
+`docs/research/close-out-triage-plan-2026-09-29.md`.
 
 - **The doc-writer strikes what its own commit resolved whole.** 58 live entries in 25 reports
   were already fixed when the report was handed over, 48 of them by the doc phase. It runs
