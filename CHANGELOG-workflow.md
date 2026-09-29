@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-29 — whoever fixes an entry strikes it; a round that passed is not an event (v0.9.56)
+
+The first of three versions planned in `docs/research/close-out-rework-plan-2026-09-29.md`,
+from the read of 99 close-out reports (`docs/research/close-out-read-2026-09-28.md`, R2 and R3).
+
+- **The doc-writer strikes what its own commit resolved whole.** 58 live entries in 25 reports
+  were already fixed when the report was handed over, 48 of them by the doc phase. It runs
+  after the last consult, and only the consult could strike, so the entry carried a note
+  ("Fixed in 1672029") and reached the operator as open work. They ruled "fix inline" on 13 of
+  them. The reason on the strike names the commit. An entry the commit resolved in part keeps
+  a note and stays live: four of the 58 were carded or folded for the half that was left. The
+  doc-writer's dispatch carries `strike` among its verbs.
+- **A round in which everything passed is not a Notable event.** About 40 of the 140 Notable
+  events the operator ruled on were records of something going right, in a section that is
+  progressed at 6 %. The test-agent's register and the section's charter now say so. The run
+  header counts the rounds.
+- A strike records a fix that was the striker's own work. It does not make the report a work
+  list: phase agents still append only.
+
 ## 2026-09-29 — `/dev:close-out` leaves the slice card alone (v0.9.55)
 
 - **The skill no longer offers to close the slice card.** The slice card stays where the run

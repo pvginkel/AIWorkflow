@@ -4123,7 +4123,9 @@ def test_doc_phase_prompt_states_diff_files_digest_verbs_and_doc():
         assert "close_out.py append --section {" in prompt
         assert "--consequence: what an operator or user experiences" in prompt
         assert "close_out.py note --by BY" in prompt
-        assert "close_out.py strike" not in prompt
+        assert "close_out.py strike --reason REASON" in prompt
+        assert ("--reason: why — resolved/refuted names the commit and the "
+                "re-run") in prompt
         assert "Focus: <!-- doc-writer: … -->" in prompt
 
 

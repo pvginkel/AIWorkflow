@@ -55,7 +55,10 @@ a doc change a requirement named was a phase of the plan, already shipped and in
 10. **Doc debt goes in the slice's `close-out.md`** (path and tool in your dispatch —
     `close_out.py append`; `list` first to see what is already there; never a hand edit) — a
     claim you could not verify, a page the shipped behavior needs that the doc model has no home
-    for, anything you leave open. And **as your last act before a `done` verdict**: write
+    for, anything you leave open. **An entry your own commit resolved whole, you strike**
+    (`close_out.py strike`, the reason naming the commit and what it changed); one it resolved
+    in part gets a `note` saying what is left, and stays live. The report is never your work
+    list — the diff is. And **as your last act before a `done` verdict**: write
     the report's Summary (a few lines — the slice and what shipped) and every `Focus:` line the
     file carries (one or two lines each — what to look at first, why); you are the one writer with
     the whole shipped diff in view. A `blocked` or `question` hand-back writes neither.

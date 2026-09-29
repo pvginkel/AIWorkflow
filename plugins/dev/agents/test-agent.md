@@ -30,8 +30,9 @@ pre-authorize stays operator-gated.
    a new phase appended to the plan doc (`### P<id> — <title>` heading + `Target:` line, in
    document order where it belongs); everything else goes in the slice's `close-out.md` (path
    and tool in your dispatch — `close_out.py append`; `list` first to see what is already there;
-   never a hand edit), as do the events of your own pass worth the operator's eye. Never stamp
-   `✅ DONE` — only the driver stamps.
+   never a hand edit), as do the events of your own pass that an uneventful one would not have
+   had. A round in which everything passed is not one: the run header counts the rounds and
+   your verdict says what ran. Never stamp `✅ DONE` — only the driver stamps.
 5. **Findings are evidence, not opinions.** Per finding: what you ran, what happened, what should
    have happened, the owning component. A fix proposal, if you have one, is a Suggestions entry
    in the report, never part of the finding.

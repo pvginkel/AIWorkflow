@@ -24,7 +24,8 @@ Run: <not yet stamped>
      stays as it is, in plain words, or "none" (the operator triages on this line);
      `**Provenance:**`, `witnessed` or `read`, then role, phase, round and the artifact with the
      full record; and a blank `**Disposition:**`, the operator's. A later observation about an
-     entry is `close_out.py note`, never a new entry; only the completion consult strikes. -->
+     entry is `close_out.py note`, never a new entry; a strike is for whoever resolved the
+     entry — the completion consult, the doc-writer for its own commit — never for a reader. -->
 
 ## Summary
 
@@ -44,7 +45,8 @@ Focus: <!-- doc-writer: the shape of the run — bail-outs, appended phases, sur
 
 <!-- What happened to this run that an uneventful one would not have had: a bail-out, an
      appended phase, a blocked proof re-routed, a live run that exposed what the suite hid. What
-     happened, when, how it resolved, what it says about the slice. What got in your way while
+     happened, when, how it resolved, what it says about the slice. A phase or a round that
+     went right is not an event — the run header counts them. What got in your way while
      you worked — a tool missing from the sidecar, a wait that hit a cap, a call the harness
      refused — is not an event of the run and does not go here: post it to Fieldnotes, as the
      host's CLAUDE.md says. The driver appends refuted findings and funding-consult merges here

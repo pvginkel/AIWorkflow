@@ -47,7 +47,8 @@ is [the template's](close-out-template.md#the-entry)); every section may be empt
 the normal state of most. Two things the comments do not spell out: **Notable events** is the
 run's own story (a bail-out, an appended phase, a blocked proof re-routed), the driver's
 deterministic entries included, and not the place for what slowed an agent down, which is
-Fieldnotes'; and **Suggestions** is where a fix idea may go — the reviewer's "describe the
+Fieldnotes', nor for a phase or a round that went right, which the run header already counts;
+and **Suggestions** is where a fix idea may go — the reviewer's "describe the
 problem, never the fix" governs review files, not this section.
 
 ## Reading aids
@@ -86,13 +87,17 @@ other slice-folder artifact).
 - **code-writer** — anything out of the phase's scope it noticed; notable events in its session.
 - **code-reviewer** — its advisory findings, as Bug or Suggestion entries, in the report's shape;
   the review file keeps the full finding and stays the evidence trail.
-- **consults** — sub-bar findings. The **completion consult is the only agent that reconciles**,
+- **consults** — sub-bar findings. The **completion consult reconciles the report**,
   and only through `close_out.py strike` and `note`: it strikes an entry it absorbed into an
   appended phase (the reason names the phase and commit), duplicates it is sure of, and what a
   later phase resolved (the reason names the commit and what was re-run); anything else it has
   to say about an entry is a `note`. It edits nobody's text.
-- **test-agent** — below-bar findings; live-check events.
-- **doc-writer** — doc debt, every claim it could not verify among it; and, **as its last act
+- **test-agent** — below-bar findings; live-check events — what its pass met that an uneventful
+  one would not have, never the record of a round that passed.
+- **doc-writer** — doc debt, every claim it could not verify among it; a strike on an entry its
+  own commit resolved whole (the reason names the commit), a `note` on one it resolved in part,
+  which stays live — the doc phase runs after the last consult, and what it fixed would
+  otherwise reach the operator as open work; and, **as its last act
   before a `done` verdict, the Summary and every `Focus:` line** — it has the whole shipped diff
   in view. A Focus line ranks on the
   entries' Consequence lines and evidence class (witnessed before read), never on their length,
@@ -114,7 +119,9 @@ other slice-folder artifact).
 **Reading the report is never a license to act on it.** Phase agents append only — otherwise
 the report becomes a new source of scope bleed, a writer "fixing while here" what an earlier
 phase reported. Reconcile is the completion consult's; render and stamp are the driver's;
-dispose is the operator's.
+dispose is the operator's. A strike is for whoever resolved the entry — the consult for what a
+phase resolved, the doc-writer for what its own commit did — and records work that was the
+striker's to do anyway; it never licenses the work.
 
 ## Entry rules
 
@@ -142,8 +149,7 @@ dispose is the operator's.
 - **One entry per thing, not per turn.** A later observation about an entry that already exists —
   its premise moved, its symptom was re-tested, a phase resolved it, a reviewer refuted it — is
   `close_out.py note <id>`: a dated paragraph at the end of that entry's body, never a new entry.
-  The reader who decides on B1 finds everything about B1 under B1, and only the completion
-  consult strikes.
+  The reader who decides on B1 finds everything about B1 under B1.
 - **In doubt, add it.** Nobody pre-dedups: every agent runs `list` before it writes, the
   completion consult strikes duplicates it is sure of, the operator merges the rest by reading.
 - **Severity vocabulary** for Bugs: `major` (a wrong result or a broken flow, unfixed) · `minor`

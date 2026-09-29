@@ -5304,7 +5304,7 @@ class RunLoop:
                     slice_dir=self.slice_dir, plan_path=self.plan_path,
                     close_out_line=dispatch_line(self.report_path),
                     close_out_verbs=textwrap.indent(
-                        verb_usage("list", "append", "note"), "  "),
+                        verb_usage("list", "append", "note", "strike"), "  "),
                     branch=branch, root=root, base_branch=base,
                     verdict_path=verdict_path)
                 + build_slice_digest(plan_text),

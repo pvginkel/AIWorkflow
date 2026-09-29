@@ -303,7 +303,8 @@ whole plan is a feature of the review, not a cost. Then:
   path instead of re-running `git diff`, which past the tool's output limit round-trips through a
   persisted file; the plan **digested whole** — title, rulings sections, every phase's
   done-record — so the plan is opened only where a record points and slice.md not at all; and
-  the close-out verbs the phase uses (`list`, `append`, `note`) with their argument shapes,
+  the close-out verbs the phase uses (`list`, `append`, `note`, `strike`) with their argument
+  shapes,
   rendered from `close_out.py`'s own parser, plus where the Summary and `Focus:` lines go — the
   `--help` round trips and the previous-slice style reads go with them. The driver then runs the
   full gate sweep — `kc project lint` + `build` + `test`, fail-fast (red is nudged back to the

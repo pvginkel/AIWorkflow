@@ -146,7 +146,10 @@ second entry, `strike <id>` rewrites the heading to the struck form and touches 
 `list` is the triage view without bodies, `render` puts each section in reading order — live
 entries first, Bugs by severity, struck entries last with their bodies folded into a `<details>`
 block — idempotently, `stamp` writes the run header from `state.json`, and `counts` reports the
-smoke checks. Only the completion consult strikes, and only through the tool.
+smoke checks. Only the completion consult strikes, and only through the tool — until v0.9.56,
+which lets the doc-writer strike what its own commit resolved whole: the doc phase runs after
+the last consult, and 58 live entries in 25 reports had reached the operator already fixed
+(`../research/close-out-read-2026-09-28.md`, finding 9).
 
 Two later versions closed what the tool's own interface cost. The template's head comment still
 spelled out the whole entry shape as if an author typed it, and had drifted from what the tool
