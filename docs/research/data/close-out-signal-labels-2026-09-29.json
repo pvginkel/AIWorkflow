@@ -1,0 +1,937 @@
+{
+ "note": "Third labelling pass of 2026-09-29, on the operator's remark that they progress what fails silently far more often than what fails loudly: the 233 entries of the first two passes (close-out-labels-2026-09-29.json, close-out-improvement-labels-2026-09-29.json) that describe a problem and are not prose, an action, a question or input for a slice \u2014 168 defects, test gaps and events with a trigger and an impact, 65 potential improvements that prevent something \u2014 labelled loud or silent from the entry text alone by two Opus sub-agents on the brief beside this file. Keys are '<report> <entry id>'. Ids and label values only; no entry text. Model judgments: they do not regenerate exactly.",
+ "labels": {
+  "Ansible-008 B1": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "Ansible-008 B2": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "Ansible-008 B3": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-008 B4": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "Ansible-008 B5": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "Ansible-009 B1": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "Ansible-009 B11": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-009 B12": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "Ansible-009 B15": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "Ansible-009 B16": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-009 B17": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-009 B3": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-009 B5": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "Ansible-009 B6": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "Ansible-009 B7": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-009 B9": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-009 N2": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "Ansible-009 S6": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "Ansible-009 S7": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "Ansible-009 S9": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "Ansible-010 B1": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "Ansible-010 S2": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "Ansible-010 S3": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "Ansible-010 S4": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "Ansible-010 S6": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-010 S8": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-011 B1": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-011 B2": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "Ansible-011 B3": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "Ansible-011 S4": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-012 B1": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "Ansible-012 S6": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-012 S7": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "Ansible-020 B1": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "Ansible-020 N1": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "Ansible-020 N2": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "Ansible-020 S1": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "Ansible-020 S10": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "Ansible-020 S12": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-020 S13": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "Ansible-020 S3": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-020 S6": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-020 S9": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "Ansible-029 B1": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "Ansible-029 B2": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "Ansible-029 B3": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "Ansible-029 B4": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "Ansible-029 B5": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-029 N4": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "Ansible-029 N6": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-029 S15": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "Ansible-029 S17": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-029 S18": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "Ansible-029 S19": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "Ansible-029 S2": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "Ansible-029 S23": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-029 S24": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "Ansible-029 S29": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "Ansible-029 S8": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-154 B1": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-154 B14": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-154 B2": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-154 B3": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-154 B4": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-154 B8": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-154 S2": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-158 B1": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-158 S1": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-158 S10": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-158 S13": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-158 S3": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-158 S6": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-158 S8": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-158 S9": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-161 S1": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-161 S3": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-162 B1": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-162 N1": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-162 S5": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-163 B1": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-163 B4": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-163 B5": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-163 S1": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-164 S1": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-164 S7": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-165 B1": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-165 N2": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-165 S3": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-165 S8": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-166 B1": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-166 N1": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-167 B4": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-167 B5": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-167 S1": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-167 S2": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-167 S5": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-169 N1": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-169 N2": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-169 N3": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-169 S11": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-169 S2": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-169 S3": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-169 S4": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-169 S6": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-169 S7": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-171 B3": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-171 B4": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-171 N1": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-171 N2": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-171 S1": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-172 B3": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-172 B4": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-172 B6": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-173 S2": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-173 S3": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-175 S2": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-175 S3": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-175 S4": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-175 S6": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-175 S8": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-175 S9": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-182 B6": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-182 B8": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-182 N7": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-182 S2": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-184 B2": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-184 B5": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-184 B7": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-184 B8": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-184 S1": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-184 S2": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-184 S3": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-185 B5": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-185 S1": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-186 B2": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-187 B1": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-187 B2": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-187 B3": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-187 B4": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-187 B5": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-187 S1": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-187 S10": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-187 S11": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-187 S5": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-187 S6": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-187 S8": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-188 S1": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-188 S2": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-188 S3": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-189 B1": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-189 B2": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-189 B3": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-189 B4": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-189 B7": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-189 B8": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-189 S1": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-189 S11": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-189 S2": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-189 S7": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-189 S9": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-191 N1": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-191 S1": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-192 B1": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-192 S1": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-192 S2": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-192 S4": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-192 S5": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-192 S6": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-193 B2": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-193 N1": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-193 N3": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-193 S1": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-193 S3": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-197 S2": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-197 S3": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-197 S5": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-197 S6": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-200 S1": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-200 S13": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-200 S14": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-200 S5": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-202 S10": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-202 S11": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-202 S3": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-202 S4": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-202 S6": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-209 B2": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-209 B3": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-209 B9": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-209 N2": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-211 S6": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-212 S3": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-212 S6": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-212 S7": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-212 S9": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-214 N1": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-214 N2": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-214 S10": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-216 B2": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-216 S1": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-216 S3": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-216 S4": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-216 S7": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-216 S9": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-218 B1": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-218 B3": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-218 S1": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-218 S11": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-218 S12": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-218 S13": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-218 S2": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-218 S9": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-220 B3": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-220 B4": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-220 B6": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-220 N1": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-220 S1": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-220 S3": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-220 S4": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-221 N2": {
+   "basis": "inferred",
+   "signal": "unknown"
+  },
+  "KubeCoder-221 N3": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-221 N4": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-221 S3": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-221 S4": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-221 S6": {
+   "basis": "inferred",
+   "signal": "silent"
+  },
+  "KubeCoder-221 S7": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-221 S8": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-221 S9": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-226 B2": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-226 N1": {
+   "basis": "stated",
+   "signal": "loud"
+  },
+  "KubeCoder-226 N2": {
+   "basis": "inferred",
+   "signal": "loud"
+  },
+  "KubeCoder-236 B1": {
+   "basis": "stated",
+   "signal": "silent"
+  },
+  "KubeCoder-236 S2": {
+   "basis": "stated",
+   "signal": "silent"
+  }
+ }
+}

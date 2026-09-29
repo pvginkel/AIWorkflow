@@ -14,19 +14,27 @@ when the session closed, and they ruled on two of its items. § 10 is
 the hand-over for the session that builds it; that session starts here and needs no other
 document but the read.
 
+**Amended the same evening, on a remark of the operator's** in a later session (§ 2, the last
+of their words): they progress what fails silently far more often than what fails loudly. They
+asked for no change and left its use to the session. It is in the plan as one label and one
+row — an entry says whether its problem announces itself (§ 4.2, `signal`), and what fails
+loudly on an ordinary condition is closed (§ 4.3 rows 8 and 10). § 3.10 has the measurement;
+§ 5 lists it as W12.
+
 **The plan in short.**
 
 1. **The author of an entry says what it is.** Every entry carries labels: what kind of thing it
-   is, what has to happen for it to show, what is then experienced, what is decided about the
-   fix, where the fix lives. Authors write these facts in prose already — 87 % of the entries
-   state them — and now give them in a vocabulary the tool checks (§ 4.2).
+   is, what has to happen for it to show, what is then experienced, whether it then says so
+   itself, what is decided about the fix, where the fix lives. Authors write these facts in
+   prose already — 87 % of the entries state them — and now give them in a vocabulary the tool
+   checks (§ 4.2).
 2. **The policy is the operator's and lives in the tool.** A table routes every entry from its
    labels: to the operator, to the wrap-up phase, closed, or the record. No author chooses a
    disposition (§ 4.1, § 4.3).
 3. **An action and a decision always come to the operator, and nothing severe is closed on a
    label's word** — in full, first in the report, their labels in words on the entry. There is
    no list to read before the entries. In the replay that is a median 2 entries of the 11 a
-   report hands over (§ 3.9).
+   report hands over (§ 3.10).
 4. **A wrap-up phase takes the rest**, after the doc phase: it fixes what is decided and safe,
    asks for a card where a likely problem is more than it can fix responsibly, and leaves closed
    what the table closes. One agent, two callers — the driver at the end of the run, the
@@ -38,7 +46,8 @@ document but the read.
 6. **The text-only sorter goes.** Replayed against the rulings that are the operator's own, the
    labels and the table keep 92 % of their picks and close 20 % of the entries — 96 % and 21 %
    with the improvements on their own route, a rule chosen on the sample it is scored on; the
-   sorter of the plan this one replaces kept 83 % (§ 3.2, § 3.4, § 3.9).
+   sorter of the plan this one replaces kept 83 % (§ 3.2, § 3.4, § 3.9). With what fails
+   loudly closed it is 95 % and 22 % (§ 3.10).
 7. **The record is data, the report a rendering of it.** Entries are kept in `close-out.json`
    for their whole life; `close-out.md` is written from it and never parsed for anything but
    the operator's own line (§ 4.11, D11).
@@ -173,6 +182,21 @@ And on the list of what had been decided in the writing, named to them as the se
 >
 > I don't need the switch.
 
+And the same evening, in a later session, on a factor in their rulings that the plan did not
+name. Their example was Ansible 029 B5, a defect graded minor, which they closed: a tool can
+write a resource request above the container's limit, and the deploy's sync then fails until
+somebody edits the file.
+
+> I will far more often progress/card issues that cause silent problems, than issues that
+> cause loud problems. … If this issue is hit, it will fail loudly. (I assume at deploy
+> already.) So I close it. Likelihood of this occuring? I'm guessing medium to low, but not
+> clearly low. So it's a real risk. But I know that when we hit this, it will be very visible.
+> So I'm OK with it. If this instead would e.g. silently disable the limit … then I would have
+> progressed this.
+>
+> I'm not asking you to make any change to the plan. But, if you feel like this clarifies
+> something in the plan, i.e. really helps improving the plan, then please use it.
+
 **Ruled by these words:**
 
 - The Focus lines go: they are not read.
@@ -188,8 +212,9 @@ And on the list of what had been decided in the writing, named to them as the se
 - The decisions of § 5 as recorded there, D4 among them: one build.
 - The Summary leaves the report. The wrap-up phase has no switch.
 
-**Not ruled:** what § 5 lists as decided in the writing; and the push, which is asked when the
-build is done.
+**Not ruled:** what § 5 lists as decided in the writing — the use made of their last remark
+among it (W12), which they left to the session; and the push, which is asked when the build is
+done.
 
 ## 3. The evidence
 
@@ -360,6 +385,10 @@ All four lost cards have an impact that breaks a flow. Of the 37 closes on the o
 rulings 12 do; over all 47 reports 24 of 67 closes, 0.5 a report. Those are the closes D7 has
 the wrap-up check in the code.
 
+The table as amended (§ 3.10) closes a sixth pick, a card: a defect that breaks a flow on an
+ordinary condition, loudly, with a fix that needs design. It breaks a flow as the other four
+cards do, so D7's check reads it too.
+
 ### 3.6 The appended phase
 
 The operator asked what goes into it and whether more should be steered to the report. Every
@@ -495,22 +524,137 @@ everything the 47 reports handed over:
 27. **Half of what a report hands over is the wrap-up's.** Of the 116 such entries among the
     operator's own rulings they had 45 fixed, 25 carded or folded and 46 closed.
 
+§ 3.10 has the table with the operator's later remark in it. Its numbers take the place of
+these as what the first readout is held against.
+
+### 3.10 Loud and silent
+
+The operator's remark of the evening (§ 2), measured. The 233 entries of the two passes that
+describe a problem and are not prose — 85 defects, 58 test gaps, 25 events that describe a
+problem, and the 65 potential improvements that prevent something — were labelled a third
+time, by two Opus sub-agents, from the entry text alone and with the dispositions not visible,
+on one question: when the problem happens, does whoever meets it know, at that moment and
+without looking for it, that something went wrong? 128 are silent, 83 loud, 22 unknown (9 %);
+the entry says it in so many words in 46 %. 95 are the operator's own rulings.
+
+| | signal | entries | progressed | carded or folded | fixed |
+|---|---|--:|--:|--:|--:|
+| every labelled entry | silent | 57 | 51 % | 37 % | 14 % |
+| | loud | 29 | 24 % | 17 % | 7 % |
+| | unknown | 9 | 44 % | 33 % | 11 % |
+| a defect | silent | 20 | 55 % | 40 % | 15 % |
+| | loud | 16 | 25 % | 19 % | 6 % |
+| a test gap, by what it would prevent | silent | 14 | 50 % | 50 % | 0 % |
+| | loud | 4 | 25 % | 0 % | 25 % |
+| a potential improvement, by what it would prevent | silent | 21 | 52 % | 29 % | 24 % |
+| | loud | 5 | 0 % | 0 % | 0 % |
+| what should be fixed, an easy fix | silent | 14 | 71 % | 64 % | 7 % |
+| | loud | 3 | 67 % | 33 % | 33 % |
+| what should be fixed, not an easy fix | silent | 22 | 36 % | 27 % | 9 % |
+| | loud | 21 | 24 % | 19 % | 5 % |
+
+The routes of § 3.9 where the label was given to more than a few entries, split by it:
+
+| route of § 3.9 | signal | entries | progressed |
+|---|---|--:|--:|
+| to the operator: severe or graded major, in place of a close | silent | 8 | 50 % |
+| to the wrap-up: fix | silent | 14 | 71 % |
+| | loud | 3 | 67 % |
+| to the wrap-up: fix, or ask for a card | silent | 6 | 83 % |
+| | loud | 5 | 20 % |
+| closed | silent | 13 | 0 % |
+| | loud | 19 | 21 % |
+
+28. **The rulings show what the operator says.** What fails silently is progressed twice as
+    often as what fails loudly: 51 % against 24 %, among defects 55 % against 25 %. The rulings
+    that are not their own show the same at half the level, 26 % against 11 %.
+29. **The labels the plan had carry most of it.** What the table closes and is silent was
+    never progressed, 0 of 13, and every pick the table loses is loud, or unknown in one case.
+    What the replay calls severe is silent without exception: its wide label holds the wrong
+    results, and a wrong result is what nobody is told of. A rule that keeps what is silent
+    from being closed was tried: it keeps no pick more and gives the wrap-up 22 entries more.
+    It is not in the design.
+30. **It separates in one row**, the one that fixes or asks for a card: 83 % against 20 % on
+    the operator's own rulings, and 69 % against 17 % over every ruling whoever made it (13
+    silent entries, 18 loud). The operator's example belongs to this row: an ordinary
+    condition, a flow that breaks, a fix that is more than one edit.
+31. **An easy fix is made whatever the signal**, 71 % and 67 %. The label has its place in the
+    third bullet of the policy and nowhere else.
+32. **A potential improvement follows the same line**, 52 % against none of five, and needs
+    no label for it: of the 15 that prevent something loud, nine are closed, Fieldnotes' or
+    the wrap-up's by § 4.4's rows as they are. The six that come to the operator hold none of
+    their own rulings, so the replay says nothing on them.
+
+Three rules were run over the 234 rulings of § 3.9:
+
+| table | picks kept | cards and folds kept | entries closed | to the wrap-up, all reports |
+|---|--:|--:|--:|--:|
+| as ruled (§ 3.9) | 96 % | 93 % | 21 % | 279 |
+| what is silent is not closed | 96 % | 93 % | 15 % | 301 |
+| what is loud on an ordinary condition is closed | 95 % | 91 % | 22 % | 260 |
+| both | 95 % | 91 % | 17 % | 282 |
+
+The third is § 4.3 as amended. By route, against what the operator did:
+
+| route | entries | | closed | fixed | carded | folded |
+|---|--:|--:|--:|--:|--:|--:|
+| to the operator: an action | 14 | 6 % | 11 | 0 | 3 | 0 |
+| to the operator: a decision | 11 | 5 % | 3 | 4 | 3 | 1 |
+| to the operator: severe or graded major, in place of a close | 9 | 4 % | 5 | 1 | 3 | 0 |
+| to the operator: a potential improvement | 10 | 4 % | 3 | 2 | 5 | 0 |
+| to the wrap-up: fix | 89 | 38 % | 32 | 40 | 16 | 1 |
+| to the wrap-up: a potential improvement | 13 | 6 % | 8 | 3 | 2 | 0 |
+| to the wrap-up: fix, or ask for a card | 7 | 3 % | 2 | 2 | 3 | 0 |
+| to the wrap-up: look | 3 | 1 % | 1 | 0 | 2 | 0 |
+| input for a later slice | 22 | 9 % | 9 | 4 | 3 | 6 |
+| to Fieldnotes | 4 | 2 % | 2 | 0 | 2 | 0 |
+| closed | 40 | 17 % | 34 | 1 | 5 | 0 |
+| the record | 12 | 5 % | 12 | 0 | 0 | 0 |
+
+106 of 112 picks kept (95 %), 50 of 55 cards and folds (91 %), 22 % of the entries closed. Over
+everything the 47 reports handed over:
+
+| | entries | | a report, median | max |
+|---|--:|--:|--:|--:|
+| comes to the operator | 126 | 22 % | 2 | 8 |
+| goes to the wrap-up | 260 | 46 % | 5 | 21 |
+| input for a later slice | 43 | 8 % | 0 | 8 |
+| to Fieldnotes | 13 | 2 % | 0 | 2 |
+| closed | 84 | 15 % | 1 | 7 |
+| the record | 35 | 6 % | 0 | 4 |
+
+33. **The rule moves 19 entries, 0.4 a report**: 17 are closed, and two that are graded major
+    come to the operator in place of the close. Of the 16 that anybody ruled, 13 were closed
+    and 3 carded; of the operator's own four, three were closed and one carded, which is the
+    pick the table now loses (§ 3.5).
+34. **The rule rests on the operator's word, not on this score.** The row holds eleven of
+    their own rulings; on those the rule loses one card and takes three entries from the
+    wrap-up that they closed. The replay says that their rulings do not contradict them, and
+    no more.
+35. **Where a reader could not draw the line**, by the labellers' own account: a message that
+    states something false and reads as true; an error that is plain while its cause is hidden
+    or blamed on something else; output that is visibly odd without an error; a problem that
+    is silent when it happens and fails loudly somewhere else a step later; an entry with two
+    outcomes, one of each. § 4.2 settles them.
+
 ### Sources
 
 - The label data and the briefs it was made on are committed:
   `docs/research/data/close-out-labels-2026-09-29.json` and
   `close-out-label-brief-2026-09-29.md` (the first pass),
   `close-out-improvement-labels-2026-09-29.json` and
-  `close-out-improvement-label-brief-2026-09-29.md` (the second). Whose ruling an entry is comes
-  from the sessions in `docs/research/data/close-out-read-2026-09-28.json`.
+  `close-out-improvement-label-brief-2026-09-29.md` (the second),
+  `close-out-signal-labels-2026-09-29.json` and `close-out-signal-label-brief-2026-09-29.md`
+  (the third, § 3.10). Whose ruling an entry is comes from the sessions in
+  `docs/research/data/close-out-read-2026-09-28.json`.
 - The entries with their fates regenerate with `close_out_readout.py extract`, the snapshots
   with `snapshots` (the hand-over, § 6).
 - The scripts behind these tables are kept as they were run, in
   `docs/research/tools/close_out_discussion_2026_09_29/`: `focus_check.py` (§ 3.1),
   `who_ruled.py` (§ 3.2), `score.py` (§ 3.3, § 3.4), `improve_score.py` (§ 3.8),
-  `ruled_tables.py` (§ 3.5, § 3.9), `appended.py` (§ 3.6), `testgaps2.py` (§ 3.7). They are
-  owed to `close_out_readout.py` (§ 6). § 3.7's check against the tracker was a sub-agent's
-  reading and has no script.
+  `ruled_tables.py` (§ 3.5, § 3.9), `signal_score.py` (§ 3.10), `appended.py` (§ 3.6),
+  `testgaps2.py` (§ 3.7). They are owed to `close_out_readout.py` (§ 6). § 3.7's check against
+  the tracker was a sub-agent's reading and has no script.
 - Every share is good to a few points, as in the read: the fate classifier is a list of
   patterns, and the labels and the session coding are model judgments.
 
@@ -550,6 +694,8 @@ defined in `docs/close-out.md` and nowhere else.
 | | `broken` | a wrong result, or a flow that fails or stays stuck until somebody intervenes |
 | | `degraded` | it works, and somebody is told something wrong or notices it is worse: a wrong message, status or document, a fault that corrects itself, a slowdown |
 | | `none` | nobody would notice; what is cosmetic is here |
+| **signal** | `loud` | when it happens it says so itself: an error, a crash, a refused request or deploy, a red gate, a flow that visibly stops — whoever meets it knows that something went wrong |
+| | `silent` | nothing says so: a wrong result taken for a right one, a protection that does not protect, data lost or changed without a message, a step skipped and reported done, a status that states something false and reads as true |
 | **fix** | `one edit` | the entry states the exact change, in one place |
 | | `several places` | known and mechanical, in more than one place |
 | | `design` | a choice with consequences is open, or the change adds behaviour — a code path, a piece of state, a process, a gate |
@@ -557,9 +703,9 @@ defined in `docs/close-out.md` and nowhere else.
 | **repo** | a name | the repository the fix lives in; the tool reads from the run's record whether the slice touched it |
 | **for** | a slice, optional | the slice still to run that should take it |
 
-`trigger`, `impact` and `fix` also take `unknown`: the author could not tell. The evidence class
-(`witnessed`, `read`) and the grade stay where they are, on the Provenance line and the heading;
-the grade applies to every kind, as it does today.
+`trigger`, `impact`, `signal` and `fix` also take `unknown`: the author could not tell. The
+evidence class (`witnessed`, `read`) and the grade stay where they are, on the Provenance line
+and the heading; the grade applies to every kind, as it does today.
 
 **An entry's id is its kind's letter and a number**: `A` action, `D` decision, `E` event, `B`
 defect, `P` prose, `T` test gap, `I` improvement. The five section names the loops' own calls
@@ -577,15 +723,29 @@ What the labellers of § 3.3 found unsharp, settled here:
 - **Input for a later slice is a label beside the kind**, not a kind: a defect that a later
   slice should take is still a defect. In the replay the order of precedence made such entries
   lose theirs.
-- **An action or an event that describes a problem** carries that problem's trigger and impact;
-  one that does not carries `none` twice.
-- **A test gap** carries the trigger and impact of what it would prevent — as a rule
-  `future change`. The replay's `hardening` and `cleanup` are potential improvements: neither
-  says that something is wrong today.
+- **An action or an event that describes a problem** carries that problem's trigger, impact
+  and signal; one that does not carries `none` for each.
+- **A test gap** carries the trigger, impact and signal of what it would prevent — as a rule
+  `future change`, and the signal of the fault as it would be met in use: a gate that stays
+  green is what every test gap is. The replay's `hardening` and `cleanup` are potential
+  improvements: neither says that something is wrong today.
 - **Prose is labelled by what following the words does**: a procedure that fails when followed
   is `broken`, a stale pointer is `none`. It has no sensitive area.
 - **An entry the run already fixed** is struck by whoever fixed it (0.9.56), so it is not
   labelled at all.
+
+And what the labellers of § 3.10 found unsharp in the signal:
+
+- **The signal is of the moment the problem happens**, not of how bad or how likely it is. A
+  failure that destroys data under a stack trace is `loud`; a harmless wrong number that
+  nobody questions is `silent`.
+- **An error that follows by itself from the same act is `loud`**: a configuration that loads
+  and then fails the pod's creation. What shows only through what follows from it — a disk
+  that fills, a certificate that was never renewed — is `silent`.
+- **A message that states something false is `silent`; an error whose cause is hidden or
+  blamed on something else is `loud`.** Output that is visibly odd and no more is `loud`.
+- **Of two outcomes, one of each, the label is `silent`**, and an entry without an impact has
+  no signal: `none`.
 
 ### 4.3 The policy table
 
@@ -597,17 +757,26 @@ The first row that fits.
 | 2 | a decision | to the operator |
 | 3 | an event that describes no problem | to the record |
 | 4 | input for a slice that exists | to that slice (D8) |
-| 5 | fixable only in a repository the slice did not touch | to a card request when it shows in normal use or on an ordinary condition and has an impact, or is `severe` or graded major; closed otherwise |
+| 5 | fixable only in a repository the slice did not touch | to a card request when it shows and has an impact as row 8 says, or is `severe` or graded major; closed otherwise |
 | 6 | prose; or fixed by one edit or in several known places, outside a sensitive area | to the wrap-up, to fix |
 | 7 | anything else, with a trigger or an impact `unknown` | to the wrap-up, to look |
-| 8 | anything else that shows in normal use or on an ordinary condition and has an impact | to the wrap-up, to fix within its bar or to ask for a card |
+| 8 | anything else that has an impact and shows in normal use, or on an ordinary condition and is not `loud` | to the wrap-up, to fix within its bar or to ask for a card |
 | 9 | anything else that is `severe`, or graded major | to the operator, as a risk |
-| 10 | anything else: it needs a fault or a future change, or has no impact | closed |
+| 10 | anything else: it needs a fault or a future change, it is `loud` on an ordinary condition, or it has no impact | closed |
 
 Rows 1 and 2 are the operator's first tier. Row 6 is their first two bullets, rows 8 and 10 the
 third, and row 9 their ruling on severity: it stands where the close would have been, and
-nowhere else (D9). Rows 4 and 5 rest on labels the replay did not have; § 3.9 is the table
+nowhere else (D9). Rows 4 and 5 rest on labels the replay did not have; § 3.10 is the table
 without them.
+
+**What is loud on an ordinary condition is closed** — the operator's word of the evening
+(§ 2, W12): "when we hit this, it will be very visible. So I'm OK with it." It is closed as what
+is unlikely is closed, and row 9 stands behind it as behind every close. Three limits:
+
+- **Only `loud` closes.** A signal that is `silent` or `unknown` leaves the entry in row 8.
+- **Only in the third bullet.** An easy fix is made whatever its signal (row 6).
+- **Not in normal use.** What fails on a path ordinary use takes is met by everybody, loud or
+  not; it stays the wrap-up's.
 
 The table is for what should be fixed: Bugs, and the Suggestions that are "kind of in the bug
 category" — a defect, prose or a test gap entered as a Suggestion takes the same rows as one
@@ -664,6 +833,9 @@ Its route, the first row that fits:
   this table: severity stands where the close would have been.
 - **Where the entry came from is not a label.** Nearly every Suggestion comes out of the slice's
   own work (§ 3.8), so the label would say the same of all of them.
+- **Nor is the signal of what it would prevent.** The rulings follow it here as well, and the
+  rows as they are take what prevents something loud; the label would route nothing
+  (finding 32).
 
 ### 4.5 How it is shown
 
@@ -676,8 +848,8 @@ On the entry, in words, between the Consequence and the Provenance; the route be
 <the body>
 
 **Consequence:** <what is experienced, and what has to happen for it to be reached>
-**Triage:** defect · shows on an ordinary condition · breaks a flow · fix needs design ·
-sensitive area · in KubeCoder
+**Triage:** defect · shows on an ordinary condition · breaks a flow · silent · fix needs
+design · sensitive area · in KubeCoder
 **Provenance:** witnessed — code-reviewer, P3 r1
 **Route:** the wrap-up — fix within its bar, or ask for a card
 **Disposition:**
@@ -724,7 +896,8 @@ the plan holds is not its to touch.
 | the change is within the bar | the edit, the component's gate, one commit for the entry, a strike naming it |
 | the label said one edit and the code says otherwise | the label corrected, with a note of what it found (`relabel`) |
 | a likely problem it cannot fix within the bar | a card request: how it is reached, what the fix takes |
-| a trigger or an impact the author could not tell | the label, from the code |
+| a trigger, an impact or a signal the author could not tell | the label, from the code |
+| a close on an entry that breaks a flow (D7) | the label the close rests on — its trigger, or its signal — checked in the code, and corrected where the code says otherwise |
 | a gate that goes red on its fix | the fix taken back, a note, the entry left as it was |
 
 **What it never does**: touch an entry that comes to the operator (D5 is the one exception
@@ -878,7 +1051,11 @@ contracts or secrets, which is where most of what is severe lives, and those ent
 operator as card requests.
 
 **D7** is the one place where the wrap-up doubts a label that closes an entry: 0.5 entries a
-report in the replay, and all four cards the tables as ruled lose (§ 3.5).
+report in the replay, and all four cards the tables as ruled lose (§ 3.5). With W12 a close
+can rest on the signal in place of the trigger, and the check is of the label the close rests
+on: a problem that is silent and was labelled `loud` is the one mislabel that goes against
+what the operator said. That makes it 0.8 entries a report — 36 of the 84 closes break a
+flow — and all five cards the table as amended loses.
 
 **D11.** `close_out.py rule` records what the operator says in the session; before the
 session executes anything it reads the `Disposition:` lines of `close-out.md` back by entry id.
@@ -908,7 +1085,8 @@ The operator ruled on what was discussed and did not read this document. These w
 the session that wrote it, each as its best reading of what they had said. The list was named
 to them in a few lines as the session closed. They ruled on W1 and W2 and raised nothing on the
 rest; W3 to W11 stand as decided, not as ruled, and the building session changes one on their
-word without reopening the others.
+word without reopening the others. W12 came after, in the session of their last remark, and
+was named to them there as it was written in; it stands as the others do.
 
 | | decided | because |
 |---|---|---|
@@ -923,6 +1101,7 @@ word without reopening the others.
 | W9 | the tool refuses an entry without labels, and one that contradicts its own Consequence line (§ 4.5) | "it's very important that the labels are decided right" |
 | W10 | an entry's id is its kind's letter (§ 4.2) | the five sections go, and an id has to say what it names |
 | W11 | the first readout comes after five live slices, with a look at the first (§ 7) | it stands in for the replay D4 drops |
+| W12 | an entry says whether its problem is `loud` or `silent`; what is loud on an ordinary condition is closed; D7's check reads the signal where a close rests on it (§ 4.2, § 4.3 rows 8 and 10, § 3.10) | the operator's remark on what fails loudly (§ 2). They asked for no change and left its use to the session: "if you feel like this … really helps improving the plan, then please use it" |
 
 ## 6. The build
 
@@ -931,8 +1110,8 @@ and a research commit. Prose — contract docs, agents, skills, changelog — is
 Code goes to one Opus sub-agent per commit, on disjoint files, briefed from contract text that
 exists by then and with the verify commands of § 7; its diff is read before the commit.
 Versions are taken from `origin/main` at commit time after a fetch: `origin/main` stood at
-0.9.54 on 2026-09-29 with 0.9.55 and 0.9.56 local above it, which makes these 0.9.57, 0.9.58
-and 0.9.59 unless something was pushed in between. § 10 has the order of work.
+0.9.56 on 2026-09-29, which makes these 0.9.57, 0.9.58 and 0.9.59 unless something was pushed
+in between. § 10 has the order of work.
 
 ### 0.9.57 — the store, the labels, the routing, the report's shape
 
@@ -997,8 +1176,9 @@ and 0.9.59 unless something was pushed in between. § 10 has the order of work.
   replay's vocabulary mapped onto § 4.2's and § 4.4's (`wrong-or-lost` to `severe`,
   `broken-or-stuck` to `broken`, `misleading` to `degraded`, `question` to `decision`,
   `slice-input` to a `for`, `every-use` and `some-uses` to `in use`), every repository taken as
-  the slice's own, the 89 potential improvements with the labels of the second pass: the routes
-  of the 234 entries are those of § 3.9.
+  the slice's own, the 89 potential improvements with the labels of the second pass, the
+  signal of the third where an entry has one and `unknown` where it has none: the routes of
+  the 234 entries are those of § 3.10.
 - **One report end to end**, on a copy: `AnsibleSpecs` 029 and 032 if they are still
   unprocessed — the skill opened, the entries that come to the operator presented, a ruling
   given in the session and one written on a `Disposition:` line, both executed, the file
@@ -1011,20 +1191,24 @@ and 0.9.59 unless something was pushed in between. § 10 has the order of work.
   The phase has no switch: if that look goes wrong, the remedy is a fix, or 0.9.59 reverted,
   pushed before the next slice runs.
 - **The readout after five live slices**, from the stores alone: the labels the authors gave
-  against the operator's rulings, per label as in § 3.3 and § 3.8; the share that comes to the
-  operator, and whether the first tier grows from slice to slice; what the wrap-up fixed,
-  asked and took back; the closes the operator pulled back; the wrap-up's price a report. The
-  numbers to hold it against are § 3.9's.
+  against the operator's rulings, per label as in § 3.3, § 3.8 and § 3.10; the share that
+  comes to the operator, and whether the first tier grows from slice to slice; what the wrap-up
+  fixed, asked and took back; the closes the operator pulled back, those that rest on the
+  signal apart; the wrap-up's price a report. The numbers to hold it against are § 3.10's.
 
 ## 8. What it costs, what can go wrong, what stays unmeasured
 
 - **A session per slice that re-orients on the repositories.** It works on a median 5 entries a
   report, 24 at most. Its price is not known; the nearest figures are § 3.6's $2–10 for a small
   fix phase with its review, and the 20 k tokens of the text-only sort.
-- **More inline fixes than you asked for** — half of the entries go to the wrap-up, where you
-  had a quarter fixed — in code that no reviewer reads, what is severe included (finding 26).
-- **Every author writes five labels more per entry.** The facts are in its prose already; the
-  refusal costs a turn when it drifts.
+- **More inline fixes than you asked for** — close to half of the entries go to the wrap-up,
+  where you had a quarter fixed — in code that no reviewer reads, what is severe included
+  (finding 26).
+- **Every author writes six labels more per entry.** The facts are in its prose already — the
+  signal in a little under half of the entries, the others in 87 % — and the refusal costs a
+  turn when it drifts.
+- **A silent problem labelled `loud` is closed unseen.** D7's check reads the closes that
+  break a flow; one that degrades shows its labels on a folded line and nothing more.
 - **Two plugin versions on one slice.** An older `close_out.py` knows no store; every
   environment updates its marketplace copy before its next slice is planned. A report an older
   plugin wrote is imported once, and its entries are labelled by the wrap-up.
@@ -1047,6 +1231,9 @@ and 0.9.59 unless something was pushed in between. § 10 has the order of work.
 - **The rows the replay did not have**: where the fix lives, and the slice an entry is for.
 - **The route of a potential improvement out of sample.** § 4.4's rows were fitted to 48
   rulings (finding 25).
+- **The signal in the table.** The row it changes holds eleven of the operator's own rulings;
+  the rule is their word, which the replay does not contradict (finding 34). And the signal as
+  an author gives it: a reader could not tell in 9 %.
 
 ## 9. Settled rulings this passes close to
 
@@ -1075,14 +1262,16 @@ and 0.9.59 unless something was pushed in between. § 10 has the order of work.
 
 | commit | what | pushed |
 |---|---|---|
-| `52e7f95` | the read, its tool and its data | no |
-| `5f3be47` | 0.9.55, another session's (`/dev:close-out` leaves the slice card alone) | no |
-| `2cdf7db`, `2975c85` | the sorter plan and its hand-over — replaced by this document, removed | no |
-| `3d3c4a0` | **0.9.56** — whoever fixes an entry strikes it; a round that passed is not an event | no |
-| `b36ed3c` … the commit of this section | the label data of both passes, this plan, the scripts | no |
+| `52e7f95` | the read, its tool and its data | yes |
+| `5f3be47` | 0.9.55, another session's (`/dev:close-out` leaves the slice card alone) | yes |
+| `2cdf7db`, `2975c85` | the sorter plan and its hand-over — replaced by this document, removed | yes |
+| `3d3c4a0` | **0.9.56** — whoever fixes an entry strikes it; a round that passed is not an event | yes |
+| `b36ed3c` … `ccfcf72` | the label data of both passes, this plan, the scripts | yes |
+| the commit after `ccfcf72` | the amendment: the signal's label data and script, § 3.10, W12 | no |
 
-`origin/main` stood at 0.9.54 (`18d047b`) on 2026-09-29. Fetch before trusting that: the
-operator pushes from the pod between sessions.
+`origin/main` stood at `ccfcf72` on 2026-09-29 at 22:00, 0.9.56 and this plan as it was before
+the amendment with it. Fetch before trusting that: the operator pushes from the pod between
+sessions.
 
 **The word to build is given** ("Yes, build it in one go"). **The word to push is not**: it is
 asked when the three commits and the research commit are done, and asked again for every push.
@@ -1184,7 +1373,7 @@ Every file that names the Focus lines or the Summary:
 
 Committed: the read and its data (`docs/research/data/close-out-read-2026-09-28.json`, the
 sorts and the session coding as ids and buckets; `close-out-sort-brief-2026-09-28.md`), the
-label data of both passes with their briefs (§ 3, Sources), the scripts.
+label data of the three passes with their briefs (§ 3, Sources), the scripts.
 
 Not committed, and gone when the pod's `/tmp` goes: the entries with their text
 (`/tmp/close-out-entries.json`) and the 99 reports as handed over (`/tmp/co/snapshots/`). They
@@ -1198,14 +1387,15 @@ python3 docs/research/tools/close_out_readout.py extract \
     /work/scratch/KubeCoderSpecs /work/scratch/AnsibleSpecs -o /tmp/close-out-entries.json
 python3 docs/research/tools/close_out_readout.py snapshots -o /tmp/co/snapshots
 python3 docs/research/tools/close_out_discussion_2026_09_29/ruled_tables.py   # § 3.9, § 3.5
+python3 docs/research/tools/close_out_discussion_2026_09_29/signal_score.py    # § 3.10
 ```
 
 The read and the labels were made at `KubeCoderSpecs` `9a3c102a` and `AnsibleSpecs` `c90d65c`.
 On later heads the operator has ruled more reports and the shares move by a little; check those
-commits out to get the numbers exactly. `ruled_tables.py` reads the committed labels; the
-other scripts of that folder read the labellers' files under `/tmp/co/labels/out/` and
-`/tmp/co/improve/`, which the committed data replaces — point them at it when they are taken
-into `close_out_readout.py`.
+commits out to get the numbers exactly. `ruled_tables.py` and `signal_score.py` read the
+committed labels; the other scripts of that folder read the labellers' files under
+`/tmp/co/labels/out/` and `/tmp/co/improve/`, which the committed data replaces — point them at
+it when they are taken into `close_out_readout.py`.
 
 ### 10.6 Rules of the house that bite here
 
