@@ -33,11 +33,12 @@ re-enter the loop through a generation bar: the first generation appends
 only work the plan owes and no phase delivered, the second blocking work
 only, a third pending generation bails to the operator.
 
-The driver's part in the slice's close-out report (<slice>/close-out.md —
+The driver's part in the slice's close-out report (<slice>/close-out.json,
+the store, and the close-out.md rendered from it —
 ${CLAUDE_PLUGIN_ROOT}/docs/close-out.md): create it if the plan loop did
 not, name it and close_out.py (the only way to write to it) in every
 dispatch, enter refuted findings and funding-consult merges through that
-tool, render it into reading order before the doc phase and at completion,
+tool, render it before the doc phase, at every bail and at completion,
 stamp the run header at completion.
 
 The plan doc is writable by every agent in the loop — deliberately. The
@@ -112,6 +113,7 @@ from close_out import (  # noqa: E402
     render_report,
     report_path,
     stamp_header,
+    store_path,
     verb_usage,
 )
 
@@ -196,14 +198,14 @@ REVIEW_ROUND_CAP = 5
 # pending generation bails to the operator.
 GENERATION_CAP = 2
 # A bail's details as its `bailouts` row keeps them for the close-out report's
-# Notable events entry: enough for the git error or the agent's summary,
+# event entry: enough for the git error or the agent's summary,
 # short of a whole log. bailout.json keeps them whole.
 BAIL_DETAILS_CAP = 600
 # Where a stop no phase owns happened, by the `run_phase` it left: the
 # entry's headline. `phases` with no phase is between them, or before any.
 BAIL_STAGES = {"consult": "at the completion consult",
                "test": "in the test phase", "docs": "in the doc phase"}
-# An Outstanding actions entry the operator must settle before a run can
+# An action entry the operator must settle before a run can
 # work — the plan-writer heads it `Before /dev:run-slice: …`. After-run ones
 # (the plan loop's push-hold and settle-V entries) never match.
 PRERUN_HEADLINE_RE = re.compile(r"^before\s+`?/dev:run-slice\b`?", re.IGNORECASE)
@@ -503,7 +505,7 @@ VERIFICATION_ITEM_KEYS = frozenset({
 
 
 def open_prerun_actions(slice_dir: Path) -> list[tuple[str, str]]:
-    """(id, headline) of every live Outstanding actions entry in the slice's
+    """(id, headline) of every live action entry in the slice's
     close-out report whose headline opens `Before /dev:run-slice` (the
     command in backticks or not, any case). A missing report, or one without
     the section, has none."""
@@ -2243,13 +2245,8 @@ Deterministic facts from the driver:
   the steering.
 - The slice folder is {slice_dir}.
 - {close_out_line}
-  The verbs this phase uses, with their arguments:
+  The other verbs this phase uses, with their arguments:
 {close_out_verbs}
-  The report's Summary and `Focus:` lines are the one thing you write into
-  the file by hand: the Summary under `## Summary` in place of its
-  placeholder comment, and your one or two lines in place of each
-  `Focus: <!-- doc-writer: … -->` comment — the comment says what the line
-  is for. No other slice's report is a style reference.
 - Work on branch {branch}, which is checked out in {root} — the one repo
   that branch exists in. A doc edit in another code repo this slice touched
   (a diff row above names it) is committed on the base branch checked out
@@ -2735,7 +2732,9 @@ class RunLoop:
         parallel slice's folder is its own session's business, and the live
         run record — untracked by design (`_assert_record_untracked`) — is
         excluded outright, so not even an agent's stray `git add` of it
-        reaches a commit the driver makes."""
+        reaches a commit the driver makes. The report's store is the one
+        untracked file taken, by name: an agent's append creates it on a
+        slice whose report predates it, and it is the report."""
         if not self._bookkeeping_pathspec(root):
             return False
         try:
@@ -2745,8 +2744,15 @@ class RunLoop:
         pathspec = [rel, *(f":(exclude){rel}/{name}" for name in RUN_RECORD)]
         changed = self.git("status", "--porcelain", "--untracked-files=no",
                            "--", *pathspec, root=root)
+        store = f"{rel}/{store_path(self.slice_dir).name}"
+        untracked = self.git("status", "--porcelain", "--", store, root=root)
+        if untracked.startswith("??"):
+            changed = "\n".join(filter(None, [changed, untracked]))
         if not changed:
             return False
+        if untracked.startswith("??"):
+            self.git("add", "--", store, root=root)
+            pathspec.append(store)
         self.git("add", "-u", "--", *pathspec, root=root)
         self.git("commit", "-m",
                  f"slice {self.slice_num}: slice-folder edits left "
@@ -5292,9 +5298,8 @@ class RunLoop:
                 plan_text = self.plan_path.read_text()
             except OSError:
                 plan_text = ""
-            # The writer ranks the Focus lines over the report as the
-            # operator will read it: rendered — live entries first, Bugs
-            # by severity, struck folded last.
+            # Rendered before the writer starts, so a run that stalls in the
+            # doc phase leaves a report that can be read.
             self._render_report()
             verdict, session = self._spawn(
                 "doc-writer",
@@ -5304,7 +5309,7 @@ class RunLoop:
                     slice_dir=self.slice_dir, plan_path=self.plan_path,
                     close_out_line=dispatch_line(self.report_path),
                     close_out_verbs=textwrap.indent(
-                        verb_usage("list", "append", "note", "strike"), "  "),
+                        verb_usage("list", "note", "strike"), "  "),
                     branch=branch, root=root, base_branch=base,
                     verdict_path=verdict_path)
                 + build_slice_digest(plan_text),
@@ -5833,27 +5838,32 @@ class RunLoop:
         sys.exit(0)
 
     def _ensure_report(self) -> None:
-        """close-out.md exists from here on: created from the template and
-        committed by the driver when the plan loop left none (a slice
-        planned before the report existed) — idempotent, so a resume picks
-        one up mid-run rather than running without."""
-        # Asserted before the template is written, not before the commit: a
+        """The report exists from here on — its store and the close-out.md
+        rendered from it, created and committed by the driver when the plan
+        loop left none (a slice planned before the report existed), or the
+        store imported from a close-out.md written before the store existed
+        and committed beside it. Idempotent, so a resume picks one up
+        mid-run rather than running without."""
+        # Asserted before the store is written, not before the commit: a
         # report created onto the wrong branch and bailed on would be found
         # by the resume and never committed at all.
         with self.spec_lock.shared("close-out report"):
             self._assert_spec_on_base()
+            store = store_path(self.slice_dir)
+            had_store = store.exists()
             try:
                 created = init_report(self.slice_dir)
             except ReportError as e:
                 raise Bailout("protocol_failure", details=str(e)) from None
-            if created:
-                self.specs_git("add", str(self.report_path))
+            if created or (not had_store and store.exists()):
+                self.specs_git("add", str(store), str(self.report_path))
                 self.specs_git("commit", "-m",
                                f"slice {self.slice_num}: close-out report")
-                self.log(f"created {self.report_path.name} from the template")
+                self.log(f"{'created' if created else 'imported'} "
+                         f"{store.name} beside {self.report_path.name}")
 
     def _report_bailouts(self) -> None:
-        """Every stop of this run becomes a Notable events entry, written by
+        """Every stop of this run becomes an event entry, written by
         the resume that follows it — the first moment the report exists and
         the spec tree is on its base again, and the one moment the stop is
         known to be over. A stop the report did not carry left its Events
@@ -5903,9 +5913,9 @@ class RunLoop:
                 self._save_state()
 
     def _render_report(self) -> None:
-        """The report in reading order — before the doc phase and at
-        completion. Idempotent, and never a failure: a report an agent
-        broke is logged, the run goes on."""
+        """close-out.md rendered from the store — before the doc phase, at
+        every bail and at completion. Idempotent, and never a failure: a
+        report an agent broke is logged, the run goes on."""
         try:
             self.log("close-out rendered: " + render_report(self.slice_dir))
         except ReportError as e:
@@ -6000,6 +6010,22 @@ class RunLoop:
         with open(self.slice_dir / "bailout.json", "w") as f:
             json.dump(payload, f, indent=2)
             f.write("\n")
+        # After bailout.json, so the header names the stage the run stopped
+        # in. The rendered files are left as they are — a bail commits
+        # nothing — and nothing here may mask the bail or change its code.
+        # Not with the spec repo on a phase branch: where `_restore_bases`
+        # had to leave it there, a report modified on that branch is what
+        # refuses the next checkout. Read off the branch's name, so that
+        # nothing is recorded in `bases` on the way out.
+        try:
+            cur = self._current_branch(self.spec_root)
+            if cur.startswith("phase/"):
+                self.log(f"close-out not rendered: the spec repo is on {cur}")
+            else:
+                self._render_report()
+        except Exception as e:
+            why = e.details if isinstance(e, Bailout) else str(e)
+            self.log(f"close-out not rendered: {why}")
         kind = "OPERATOR QUESTION" if bail.question else "BAIL-OUT"
         self.log(f"{kind} ({bail.reason}): {bail.details[:300]}")
         self.log(f"wrote {self.slice_dir / 'bailout.json'}; "

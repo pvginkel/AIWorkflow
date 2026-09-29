@@ -62,9 +62,12 @@ output: state the defect and the evidence, then stop. Do not manufacture finding
 gets `go` with an empty list; leanness findings matter only where the text would cost every
 downstream session. Batch independent tool calls into one message — read the plan and its cited
 code together. Out-of-scope observations about the spec or the estate go in the slice's
-`close-out.md` (path and tool in your dispatch — `close_out.py append`; `list` first to see what
-is already there; never a hand edit), append only; your findings and questions keep their route
-— the review file and the verdict.
+close-out report (path and tool in your dispatch — `close_out.py append`; `list` first to see
+what is already there; never a hand edit), append only; your findings and questions keep their
+route — the review file and the verdict. Label what you enter — the facts
+`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels asks for (`close_out.py labels` prints
+them), `unknown` where you cannot tell; where an entry goes is the tool's to decide, never
+yours.
 
 ## Output
 

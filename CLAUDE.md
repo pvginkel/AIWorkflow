@@ -62,9 +62,11 @@ kc project lint        # cexec python uv run --with ruff ruff check .
 - **Reading a run:** a slice's record is its folder in the project's spec repo
   (`slices/completed/NNN_slug/`): `log.txt` is the driver's narration, `state.json` is per
   `runner-state.md`, `phases/P*/` holds each round's review and result files, beside `plan.md`,
-  `slice.md`, `verification.json` and `close-out.md`. `plugins/dev/tools/slice_cost.py <slice_dir>`
-  prices it per role/phase/session; `close_out.py counts|list <slice_dir|close-out.md>` reads the
-  report; `state.json`'s `plugin_version` says which plugin ran it. A round whose session died
+  `slice.md`, `verification.json` and the close-out report — `close-out.json`, the record, and
+  the `close-out.md` rendered from it (Markdown only before 0.9.57).
+  `plugins/dev/tools/slice_cost.py <slice_dir>` prices it per role/phase/session; `close_out.py
+  counts|list|worklist <slice_dir|close-out.md>` reads the report; `state.json`'s
+  `plugin_version` says which plugin ran it. A round whose session died
   without a verdict leaves no history row — `log.txt` shows `[result] Done` with no `→ verdict`
   line — so it is absent from the report and from `slice_cost.py`; price it from the transcript
   with `turn_profile.replay`.
@@ -73,7 +75,8 @@ kc project lint        # cexec python uv run --with ruff ruff check .
 
 - **`plugins/dev/tools/`** — the drivers, each with a `test_*.py` beside it. `run_loop.py` (~3k
   lines) and `plan_loop.py` carry most of the logic and most of the ~4.4k lines of suite; plus
-  `close_out.py` (the close-out report's mechanics, imported by both loops), `github_target.py`
+  `close_out.py` (the close-out report: its store, the policy tables that route an entry from
+  its labels, the rendering; imported by both loops), `github_target.py`
   (the `github:` Target's scratch clone), `preflight.py`,
   `sweep_slice.py`, `close_slice.py`, `slice_cost.py` (with `turn_profile.py`, the transcript
   replay behind its turn table), `allocate-next-slice.sh`.
@@ -103,9 +106,10 @@ Four ideas span the files and explain most design choices:
 4. **The loops bail, they don't chat:** exit 3 = error, exit 4 = operator question. `state.json`,
    `bailout.json` and the exit code are the entire interface to the launching session — loop stdout
    never reaches it. What an agent noticed about the work but the loop will not act on has one
-   destination — the slice's `close-out.md` (`plugins/dev/docs/close-out.md`) — never a tracker
-   card per finding. What got in its way while working goes to Fieldnotes instead (the host's
-   `~/.claude/CLAUDE.md`), which is why every dispatched role is spawned with that MCP server.
+   destination — the slice's close-out report (`plugins/dev/docs/close-out.md`), where its
+   author labels it and a table routes it — never a tracker card per finding. What got in its
+   way while working goes to Fieldnotes instead (the host's `~/.claude/CLAUDE.md`), which is
+   why every dispatched role is spawned with that MCP server.
 
 **Portability is the constraint on every change.** The pipeline is generic; each project describes
 itself through `.kubecoder/project.yaml` and an `.aiworkflowrc` (TOML at the repo root: the spec

@@ -147,7 +147,7 @@ Then, from the `Kestrel` repo:
 /dev:triage            # groups findings/cards into slice folders in ../KestrelSpecs/slices/backlog/
 /dev:plan-slice 042    # settles the slice with you, then plans it as an ordered phase queue
 /dev:run-slice 042     # launches the run loop; drives write→test→review→merge, then test + docs
-/dev:close-out 042     # walks the slice's close-out.md with you and executes your dispositions
+/dev:close-out 042     # brings you what the slice's close-out report asks of you and executes your rulings
 ```
 
 If any contract piece is missing, the first skill's preflight tells you the exact line or file to

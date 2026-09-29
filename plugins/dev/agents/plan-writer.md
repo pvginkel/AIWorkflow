@@ -82,11 +82,13 @@ Artifacts state the current design as if it had always been true: when a ruling 
 rewrite in place — no supersession notices, no history narration.
 
 Out-of-scope observations about the spec or the estate — anything the plan will not act on — go
-in the slice's `close-out.md` (path and tool in your dispatch — `close_out.py append`; `list`
-first to see what is already there; never a hand edit), append only. In-scope questions keep
-their route: the `questions` verdict, never a report entry. An action only the operator can take
-that the run needs before it starts is an Outstanding action headed `Before /dev:run-slice: …` —
-the run loop will not start while it is live.
+in the slice's close-out report (path and tool in your dispatch — `close_out.py append`; `list`
+first to see what is already there; never a hand edit), append only. Label what you enter — the
+facts `${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels asks for (`close_out.py labels`
+prints them), `unknown` where you cannot tell; where an entry goes is the tool's to decide, never
+yours. In-scope questions keep their route: the `questions` verdict, never a report entry. An
+action only the operator can take that the run needs before it starts is an entry of the kind
+`action` headed `Before /dev:run-slice: …` — the run loop will not start while it is live.
 
 ## Hand-back
 

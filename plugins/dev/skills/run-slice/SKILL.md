@@ -82,30 +82,31 @@ relaunch with `--resume`.
 A `prerun_action` bail is the close-out's `Before /dev:run-slice` entry still live: the run
 needs an action only the operator can take. Put it to them; once it is done — by them, or by you
 on their word — strike it (`close_out.py strike <slice_dir> <id> --reason "<what was done>" --by
-"run-slice session"`), commit `close-out.md`, and relaunch with `--resume`.
+"run-slice session"`), render (`close_out.py render <slice_dir>`), commit `close-out.json` and
+`close-out.md`, and relaunch with `--resume`.
 
 ## Job 4 — close out (exit 0)
 
 1. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/slice_cost.py <slice_dir> --write-state` — it appends
    the slice's derived cost ratios and its per-role turn profile to `state.json` as `cost`, so the
    committed run record prices itself. Report its warnings if any; never hand-edit the numbers.
-2. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py stamp <slice_dir>` — it re-stamps the
-   close-out report's `Run:` header from `state.json`, now with the cost line — and
+2. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py stamp <slice_dir>` — it renders the
+   close-out report again, its `Run:` header now with the cost line — and
    `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py counts <slice_dir>` for the entry counts
    step 4 needs.
 3. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_slice.py <slice_dir>` (moves the README slice
    entry Pending → Completed and `git mv`s the folder to `slices/completed/`, staging by name);
-   commit together with the slice artifacts, **including `state.json`, `log.txt` and
-   `close-out.md`** (the run's who-did-what record and its report; only a stale `bailout.json`
-   is dropped).
+   commit together with the slice artifacts, **including `state.json`, `log.txt`,
+   `close-out.json` and `close-out.md`** (the run's who-did-what record, the report's store and
+   the report rendered from it; only a stale `bailout.json` is dropped).
 4. File **one** tracker card in the intake queue (per the host convention) —
-   `[NNN] close-out: <slice title>` — whose body is the report's `Focus:` lines, its entry
-   counts, and the report's path in the spec repo (its `slices/completed/…` form, after step 3's
-   move); the Summary stays in the report, which a card points at and never mirrors. Give it the
+   `[NNN] close-out: <slice title>` — whose body is the report's path in the spec repo (its
+   `slices/completed/…` form, after step 3's move) and its entry counts, and nothing else: a
+   card points at the report and never mirrors it. Give it the
    **close-out** mark, and link it to the slice's card as related, never under it: what hangs
    under a slice card is what the slice absorbed. That card is the "a report is waiting" marker,
-   never an ask; nothing else from the run is carded — the operator dispositions the report's entries
-   (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`).
+   never an ask; nothing else from the run is carded — the operator rules on what the report
+   brings them (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`).
 5. Advance the slice's tracker card to **delivered** — merged, waiting for the operator's review;
    **done** is the operator's move, never yours — notify the operator per the host's notification
    convention, and report short: per-phase rounds from `state.json`, test/doc phase outcomes,

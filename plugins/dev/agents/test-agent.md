@@ -28,14 +28,18 @@ pre-authorize stays operator-gated.
    "fixed" in this phase — they route through the generation bar.
 4. **Findings route exactly as your dispatch's bar states.** A finding that clears the bar becomes
    a new phase appended to the plan doc (`### P<id> — <title>` heading + `Target:` line, in
-   document order where it belongs); everything else goes in the slice's `close-out.md` (path
+   document order where it belongs); everything else goes in the slice's close-out report (path
    and tool in your dispatch — `close_out.py append`; `list` first to see what is already there;
    never a hand edit), as do the events of your own pass that an uneventful one would not have
-   had. A round in which everything passed is not one: the run header counts the rounds and
-   your verdict says what ran. Never stamp `✅ DONE` — only the driver stamps.
+   had. Label what you enter — the facts `${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels
+   asks for (`close_out.py labels` prints them), `unknown` where you cannot tell; where an entry
+   goes is the tool's to decide, never yours. A round in which everything passed is not one:
+   the run header counts the rounds and your verdict says what ran. Never stamp `✅ DONE` —
+   only the driver stamps.
 5. **Findings are evidence, not opinions.** Per finding: what you ran, what happened, what should
-   have happened, the owning component. A fix proposal, if you have one, is a Suggestions entry
-   in the report, never part of the finding.
+   have happened, the owning component. A fix you would propose stands in the report's entry
+   for it — its labels ask what is decided about the fix — never in a finding that becomes a
+   phase.
 6. **Batch independent tool calls into one message; keep suite output quiet.** Run suites `-q`
    (the pass/fail tail is all you need), pair independent commands in one message, and read
    command output directly from the call that produced it.

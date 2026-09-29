@@ -52,10 +52,13 @@ Gather the inputs: the findings document if one was passed, the relevant chat di
 scoped the run to (ids, a list; the rest stay untouched, and the close-out says so). Other
 projects' cards stay: a card filed under another project whose substance is this project's is
 flagged by id — mine, misfiled? — never adopted; moving it is the operator's. A
-`[NNN] close-out: …` card is not an ask but the marker that a slice's `close-out.md` is waiting
-(`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`): read the report it names, take as items its live
-entries whose `Disposition:` line is blank or says `defer` — one per entry, the entry verbatim as
-the source — and never itemize the card itself.
+`[NNN] close-out: …` card is not an ask but the marker that a slice's close-out report is
+waiting (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`): render the report it names
+(`python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py render <slice_dir>`) and take as items what
+the report brings the operator — the entries under **Comes to you** and **Card requests** whose
+`Disposition:` line is blank, and every entry whose line says `defer` — one per entry, the entry
+verbatim as the source. What the report closed, what waits for the wrap-up and the record are
+not items, and the card itself is never itemized.
 
 A card that an open status document under `handovers/` holds, ruled, is adjudicated: its verdict
 is not re-derived, and its rulings and research are read from there. Such cards wait for step 6.

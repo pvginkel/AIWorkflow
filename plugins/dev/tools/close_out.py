@@ -1,708 +1,1545 @@
 #!/usr/bin/env python3
-"""The close-out report's mechanics — create, append, note, strike, list, render, stamp, count.
+"""The close-out report's mechanics — the store, its verbs, the routing table, the render.
 
-`<slice>/close-out.md` is the one document every plan and run agent writes
-its out-of-scope observations to (${CLAUDE_PLUGIN_ROOT}/docs/close-out.md is
-the contract; docs/close-out-template.md the shape). Every writer goes
-through this tool — the shape is mechanical, the content is judgment — and
-nobody edits the file by hand; importable by both loops (the way plan_loop
-imports run_loop) and a CLI for the agents and the skills:
+`<slice>/close-out.json` is the record every plan and run agent writes its
+out-of-scope observations to, and `<slice>/close-out.md` is rendered from it
+(${CLAUDE_PLUGIN_ROOT}/docs/close-out.md is the contract — the labels, the
+routes, who writes what; docs/close-out-template.md the shapes of both files).
+Every writer goes through this tool — the shape is mechanical, the content
+is judgment — and nobody edits either file by hand; importable by both loops
+(the way plan_loop imports run_loop) and a CLI for the agents and the skills:
 
-  init   create close-out.md from the template if absent — the title takes
-         the slice's `NNN <slug>`; an existing file is never touched.
-  append add one entry to a section: the next id from the section's letter
-         (struck headings count), the standard entry shape — body, then the
-         three bold labels `**Consequence:**` (required: the line the operator
-         triages on), `**Provenance:**`, and a blank `**Disposition:**`.
-         Prints the id.
-  note   add a dated paragraph `<who>, <date> — <text>` at the end of one
-         entry's body — above its `**Consequence:**` line (an old-shape entry
-         without one: above `Provenance:`, else `Disposition:`, else at the
-         end); a struck entry takes it inside its fold. Never a new entry.
-  strike rewrite one live entry's heading to the struck form —
-         `### ~~B3 — <rest>~~ — <reason>[; struck by <who>]`. The body stays;
-         a struck entry needs no disposition. Prints the new heading.
-  list   the triage view, without bodies: per section its `## name`, then per
-         entry `B3 — <heading rest>` with its Consequence text under it
-         (`~~B3~~ — …` for a struck one), in file order.
-  render put every entry section in reading order, in place and idempotently:
-         live entries first (Bugs by severity major → minor → nit → cosmetic,
-         then ungraded; other sections by id), then `###` headings not in the
-         entry shape as they were, then struck entries by id — each with its
-         body folded once into `<details>` so the live ones lead. The section
-         preamble (Focus line, charter), the head comment, the Run header
-         and the Summary are not touched. Prints live/struck per section.
-  stamp  replace the `Run:` header block with the run's shape read from
-         state.json — window, phases planned/appended, bail-outs, test
-         rounds, doc phase, and the `cost` block once slice_cost.py
-         --write-state has run. Missing pieces are omitted, not guessed;
-         re-stamping overwrites the same block.
-  counts non-struck entries per section, one line — plus, when there are
-         any, the number of `###` headings in the entry sections that are
-         not in the entry shape (an author that drifted from the shape,
-         which would otherwise count as zero entries) and the number of
-         live entries without a `Consequence:` or a `Provenance:` line
-         (bold or not — the check is for the content, not the typography).
+  init         create the store (no entries) and render it; an existing
+               store is never touched.
+  labels       print the contract's `## The labels` section.
+  append       add one entry with the labels its kind carries — refused,
+               naming the flag, when one is missing, belongs to the other
+               family, or contradicts the Consequence line. Prints the id:
+               the kind's letter and the next number under it.
+  list         the view an agent takes before it appends: per kind, ids,
+               headlines and Consequence lines, struck entries marked.
+  note         add a dated paragraph `<who>, <date> — <text>` to one entry.
+  strike       strike one entry, with the reason and the commit.
+  relabel      give an entry its labels or correct them, with a note of what
+               changed and why. The id never changes, not even with the kind.
+  request-card the wrap-up asks for a card on an entry.
+  leave        the wrap-up looked at an entry and changed nothing.
+  worklist     what waits for the wrap-up, with what is asked of each.
+  rule         the operator's words on an entry, and what was done on them;
+               without an id, the `Disposition:` lines of close-out.md read
+               back into the store.
+  close        close the report on the operator's word.
+  render       read the `Disposition:` lines back, then write close-out.md:
+               sections by route, each entry in its form, the run header from
+               state.json.
+  stamp        render, printing the run header.
+  counts       live entries per section of the report and per id letter.
+  import       read a close-out.md of the old, parsed shape into a store.
 
-`verb_usage(*verbs)` renders the named verbs' usage lines and argument help
-from this parser, for a dispatch that hands an agent the argument shapes
-(the doc-writer's) — one definition, so the block cannot drift from the CLI.
-`find_by_headline(slice, section, headline)` is the importable probe for a
-writer that must enter a thing once however often it runs: the id of the
-live or struck entry carrying that headline, or None.
+The route is computed at every render, never stored: `route()` reads an
+entry's kind and labels, and the repositories the slice touched, against the
+two tables of the contract (§ The routes) — the policy is the operator's and
+lives here only.
 
-Headings are read outside fenced code blocks and outside HTML comments
-only — an entry that quotes a document's `## Bugs` or a `### B3` inside a
-``` fence (the entry rules ask for liberal quoting) neither moves a section
-boundary nor shifts an id, and a heading quoted inside an HTML comment
-(the template's section charters are comments) is text too.
+A report written before the store existed is imported by the first call that
+finds a `close-out.md` and no store beside it. The old parser stays as the
+reader behind that import: sections, `###` blocks read outside fenced code and
+outside HTML comments (an entry that quotes `## Bugs` or `### B3` inside a
+fence moves no boundary), struck headings, folds, the three bold label lines.
 
-Deliberately not here: any validation beyond "the section heading exists"
-and those smoke counts, dedup on append (a caller that must not repeat an
-entry asks `find_by_headline` first), disposition parsing.
+Every read-modify-write of the store holds an exclusive flock on the slice
+directory itself (no lock file lands in the spec repo's tree): the close-out
+session rules while the wrap-up it dispatched strikes and relabels, and a
+write lost to an overlap can be the operator's ruling. The render writes
+close-out.md under the same lock. A filesystem that refuses the flock gets
+the write without it.
 
-Usage:
-    close_out.py init <slice>
-    close_out.py append <slice> --section <name> --headline <text>
-                 --body <text | -> --consequence <text>
-                 [--provenance <text>] [--severity <s>]
-    close_out.py note <slice> <id> --by <who> --text <text | ->
-                 [--date YYYY-MM-DD]
-    close_out.py strike <slice> <id> --reason <text> [--by <who>]
-    close_out.py list <slice>
-    close_out.py render <slice>
-    close_out.py stamp <slice>
-    close_out.py counts <slice>
-
-`<slice>` is the slice directory or its close-out.md — the dispatch names
-the report, so the report's path is what an agent has in hand; a `.md`
+`<slice>` is the slice directory or its close-out.md — the dispatch names the
+report, so the report's path is what an agent has in hand; a `.md` or `.json`
 argument resolves to its directory.
 
 Exit codes: 0 ok · 2 usage/precondition error.
 """
 
 import argparse
+import contextlib
+import fcntl
 import json
+import os
 import re
+import string
 import sys
+import tempfile
 import textwrap
+import threading
 from datetime import datetime
 from pathlib import Path
 
 REPORT_NAME = "close-out.md"
+STORE_NAME = "close-out.json"
+STORE_VERSION = 1
 
 # This file, resolved — the driver runs from the installed plugin clone, so
 # a dispatch that names it names the copy that will run.
 TOOL_PATH = Path(__file__).resolve()
 
+# The contract ships one level up; `labels` prints a section of it.
+CONTRACT_DOC = TOOL_PATH.parents[1] / "docs" / "close-out.md"
+TEMPLATE_DOC = TOOL_PATH.parents[1] / "docs" / "close-out-template.md"
+LABELS_HEADING = "## The labels"
+
 # What every dispatch carries about the report: where it is, that this tool
-# is the only way to write to it, and what does not belong in it (close-out.md
-# § What it is — the host's CLAUDE.md has the rule in full). Both loops use it
+# is the only way to write to it, the labels, `append`'s arguments, and what
+# does not belong in it (close-out.md § What it is). Both loops use it
 # as-is; it is the one text a bare consult, which has no agent definition,
 # is sure to read.
 DISPATCH_LINE = """\
-The slice's close-out report is {report}. Write to it only through
-`python3 {tool} append|note|strike {report} …` (`list` in place of the verb
-shows what is there — ids, headlines, Consequence lines);
-never edit the file by hand. The report is about the work; what got in
-your way while working goes to the `fieldnotes` MCP tool `post` instead.\
+The slice's close-out report is {report}, rendered from its store,
+{store}. Write to it only through `python3 {tool} <verb> {report} …` —
+`append`, `note`, `strike`; `list` shows what is there (ids, headlines,
+Consequence lines) — never edit either file by hand, and commit the store
+with your own commit, staged by name. An entry carries labels that say
+what it is, and the tool routes it from them: you state what you know,
+never what should happen to the entry. `python3 {tool} labels` prints
+what each label means — read it before your first append. `append` takes:
+{append_usage}
+The report is about the work; what got in your way while working, and any
+improvement of the workflow itself, goes to the `fieldnotes` MCP tool
+`post` instead.\
 """
 
-FOLD_OPEN = "<details><summary>struck — body kept for the record</summary>"
-FOLD_CLOSE = "</details>"
+# -- the vocabulary (close-out.md § The labels) -------------------------------
 
-# The template ships one level up, next to the contract doc; the skeleton is
-# the doc's first fenced block.
-TEMPLATE_DOC = Path(__file__).resolve().parents[1] / "docs" / "close-out-template.md"
-TEMPLATE_TITLE = "# Close-out — slice NNN <slug>"
+# Kind → the letter its ids carry, in the contract's order.
+KINDS: dict[str, str] = {
+    "action": "A",
+    "decision": "D",
+    "event": "E",
+    "defect": "B",
+    "prose": "P",
+    "test-gap": "T",
+    "improvement": "I",
+}
+# The letters of the Markdown report the store replaced; an imported entry
+# keeps its id, so these stay in the count wherever the store holds one.
+OLD_LETTERS = ("N", "Q", "S")
 
-# Section heading → the letter its entry ids carry. Summary holds no entries.
+# The five sections of the old report, taken as kinds wherever a caller
+# passes one (the loops still do), and the letter an imported entry's id
+# carried under each.
 SECTIONS: dict[str, str] = {
+    "Outstanding actions": "action",
+    "Notable events": "event",
+    "Bugs": "defect",
+    "Open questions and rulings": "decision",
+    "Suggestions": "improvement",
+}
+SECTION_LETTERS: dict[str, str] = {
     "Outstanding actions": "A",
     "Notable events": "N",
     "Bugs": "B",
     "Open questions and rulings": "Q",
     "Suggestions": "S",
 }
+
 SEVERITIES = ("major", "minor", "nit", "cosmetic")
+# The reading order inside a section: an ungraded entry between minor and nit.
+GRADE_ORDER = ("major", "minor", None, "nit", "cosmetic")
+
+# Every label, in the order the Triage line says them, with its values; None
+# for a free value (`repo`, `for`).
+LABELS: dict[str, tuple[str, ...] | None] = {
+    "trigger": ("normal-use", "ordinary-condition", "fault", "future-change",
+                "none", "unknown"),
+    "impact": ("severe", "broken", "degraded", "none", "unknown"),
+    "signal": ("loud", "silent", "none", "unknown"),
+    "fix": ("one-edit", "several-places", "design", "unknown"),
+    "benefit": ("user", "operations", "workflow", "code", "unknown"),
+    "felt": ("in-use", "after-change", "after-incident", "not-observable",
+             "unknown"),
+    "change": ("remove", "adjust", "add", "unknown"),
+    "size": ("one-edit", "several-places", "design", "investigate", "unknown"),
+    "product-call": ("yes", "no"),
+    "prevents": ("severe", "broken", "degraded", "nothing", "unknown"),
+    "area": ("plain", "sensitive"),
+    "repo": None,
+    "for": None,
+}
+# What is wrong, or could go wrong — and what could be better. `area`,
+# `repo` and `for` are both families'.
+FIX_FAMILY = ("trigger", "impact", "signal", "fix")
+IMPROVEMENT_FAMILY = ("benefit", "felt", "change", "size", "product-call",
+                      "prevents")
+
+# The kinds the tool labels itself when a loop enters one without labels.
+TOOL_LABELLED = ("action", "event", "decision")
+
+# The labels an entry's kind asks of its author (close-out.md, "Which labels
+# an entry carries"); an event with an impact other than `none` owes
+# EVENT_PROBLEM as well.
+REQUIRED: dict[str, tuple[str, ...]] = {
+    "defect": ("trigger", "impact", "signal", "fix", "area", "repo"),
+    "test-gap": ("trigger", "impact", "signal", "fix", "area", "repo"),
+    "prose": ("trigger", "impact", "signal", "fix", "repo"),
+    "event": ("trigger", "impact", "signal"),
+    "action": ("trigger", "impact", "signal"),
+    "decision": ("trigger", "impact", "signal"),
+    "improvement": ("benefit", "felt", "change", "size", "product-call",
+                    "prevents", "area", "repo"),
+}
+EVENT_PROBLEM = ("fix", "area", "repo")
+
+# The labels in words, for the Triage line; a value mapped to None is left
+# out of it.
+WORDS: dict[str, dict[str, str | None]] = {
+    "kind": {"action": "action", "decision": "decision", "event": "event",
+             "defect": "defect", "prose": "prose", "test-gap": "test gap",
+             "improvement": "improvement"},
+    "trigger": {"normal-use": "shows in normal use",
+                "ordinary-condition": "shows on an ordinary condition",
+                "fault": "needs a fault", "future-change": "needs a future change",
+                "none": "nothing that could show", "unknown": "trigger unknown"},
+    "impact": {"severe": "severe", "broken": "breaks a flow", "degraded": "degrades",
+               "none": "no impact", "unknown": "impact unknown"},
+    "signal": {"loud": "loud", "silent": "silent", "none": None,
+               "unknown": "signal unknown"},
+    "fix": {"one-edit": "fix is one edit",
+            "several-places": "fix is known, in several places",
+            "design": "fix needs design", "unknown": "fix unknown"},
+    "benefit": {"user": "a user is better off",
+                "operations": "operations are better off",
+                "workflow": "the workflow is better off",
+                "code": "the code is better off", "unknown": "benefit unknown"},
+    "felt": {"in-use": "felt in use", "after-change": "felt after a change",
+             "after-incident": "felt after an incident",
+             "not-observable": "not observable", "unknown": "felt unknown"},
+    "change": {"remove": "removes something", "adjust": "adjusts what exists",
+               "add": "adds something", "unknown": "change unknown"},
+    "size": {"one-edit": "one edit", "several-places": "several places",
+             "design": "needs design", "investigate": "needs a look first",
+             "unknown": "size unknown"},
+    "product-call": {"yes": "a product call", "no": None},
+    "prevents": {"severe": "prevents something severe",
+                 "broken": "prevents a broken flow",
+                 "degraded": "prevents a degradation", "nothing": None,
+                 "unknown": "prevents unknown"},
+    "area": {"sensitive": "sensitive area", "plain": None},
+}
+TRIAGE_ORDER = ("trigger", "impact", "signal", "fix", "benefit", "felt",
+                "change", "size", "product-call", "prevents", "area", "repo",
+                "for")
+
+# "Not felt in use": the improvement table's rows 3 and 4. `unknown` is not
+# taken as unfelt.
+UNFELT = ("after-change", "after-incident", "not-observable")
+
+# -- the report (docs/close-out-template.md § The report) ---------------------
+
+REPORT_SECTIONS = ("Comes to you", "Card requests", "For the wrap-up",
+                   "Unlabelled", "Closed", "Record")
+# The counts line's word for each section, in the same order.
+COUNT_NAMES = ("to you", "card requests", "wrap-up", "unlabelled", "closed",
+               "record")
+# The smoke counts that trail the counts line when there are any.
+NO_CONSEQUENCE = "no_consequence"
+NO_PROVENANCE = "no_provenance"
+
+HEAD_COMMENT = """\
+<!-- Generated by `close_out.py render` from close-out.json, the record. The `Disposition:`
+     lines are yours to write; everything else is overwritten by the next render. -->"""
+UNSTAMPED = "Run: <not yet stamped>"
+
+BODY_FOLD = "<details><summary>body</summary>"
+STRUCK_FOLD = "<details><summary>struck — kept for the record</summary>"
+RECORD_FOLD = "<details><summary>kept for the record</summary>"
+FOLD_CLOSE = "</details>"
+# The fold the old render wrapped a struck entry's body in; import takes it off.
+OLD_FOLD_OPEN = "<details><summary>struck — body kept for the record</summary>"
 
 HEADER_WIDTH = 96
+
+RULED_BY = "the operator's ruling"
 
 _SECTION_RE = re.compile(r"^## (?P<name>.+?)\s*$")
 _ENTRY_RE = re.compile(r"^### (~~)?(?P<letter>[A-Z])(?P<num>\d+)\b")
 _ANY_HEADING_RE = re.compile(r"^### ")
-# The two labels every live entry carries above the operator's line. Bold in
-# the shape; a bare `Consequence:` counts too — the check is for the content.
-_LABEL_RES: dict[str, re.Pattern] = {
-    "Consequence": re.compile(r"^\*{0,2}Consequence:"),
-    "Provenance": re.compile(r"^\*{0,2}Provenance:"),
+_ID_RE = re.compile(r"([A-Z])(\d+)")
+# The three label lines of an old-shape entry; bold in the shape, bare too.
+_LABEL_LINE_RES: dict[str, re.Pattern] = {
+    "Consequence": re.compile(r"^\*{0,2}Consequence:\*{0,2}\s*"),
+    "Provenance": re.compile(r"^\*{0,2}Provenance:\*{0,2}\s*"),
+    "Disposition": re.compile(r"^\*{0,2}Disposition:\*{0,2}\s*"),
 }
-_DISPOSITION_RE = re.compile(r"^\*{0,2}Disposition:")
-_ANY_LABEL_RE = re.compile(r"^\*{0,2}(Consequence|Provenance|Disposition):")
+_ANY_LABEL_LINE_RE = re.compile(
+    r"^\*{0,2}(Consequence|Provenance|Disposition|Triage|Route):")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 # An HTML comment counts only when it opens a line (the template's comments
 # all do); `<!--` mentioned mid-line in prose opens nothing.
 _COMMENT_OPEN_RE = re.compile(r"^\s*<!--")
+_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+_MARKUP = string.punctuation + "—–…“”‘’"
 
 
 class ReportError(Exception):
-    """A precondition the caller must fix — no report, no such section."""
+    """A precondition the caller must fix — no store, no such entry, a label
+    the entry's kind does not take."""
 
 
 def report_path(slice_dir: Path | str) -> Path:
     return Path(slice_dir) / REPORT_NAME
 
 
+def store_path(slice_dir: Path | str) -> Path:
+    return Path(slice_dir) / STORE_NAME
+
+
 def slice_dir_of(arg: Path | str) -> Path:
     """The slice directory a CLI argument names: itself, or — for the
-    report's own path, which is what every dispatch hands an agent — its
-    parent. Any `.md` resolves to its directory, present or not, so the
-    first call works before `init` too."""
+    report's own path, which is what every dispatch hands an agent, or the
+    store's — its parent. Resolved present or not, so the first call works
+    before `init` too."""
     path = Path(arg)
-    return path.parent if path.suffix == ".md" else path
+    return path.parent if path.suffix in (".md", ".json") else path
 
 
 def dispatch_line(report: Path | str) -> str:
-    """The report pointer a dispatch prompt carries — the path and the
-    tool, once."""
-    return DISPATCH_LINE.format(report=report, tool=TOOL_PATH)
+    """The report pointer a dispatch prompt carries — the path, the store,
+    the tool, and `append`'s arguments rendered from the parser."""
+    return DISPATCH_LINE.format(report=report, store=STORE_NAME, tool=TOOL_PATH,
+                                append_usage=verb_usage("append"))
 
 
-def template_body() -> str:
-    """The skeleton, lifted from the template doc's first fenced block."""
-    text = TEMPLATE_DOC.read_text()
-    match = re.search(r"^```markdown\n(.*?)^```", text, re.S | re.M)
-    if not match or not match.group(1).startswith(TEMPLATE_TITLE):
-        raise ReportError(f"{TEMPLATE_DOC} does not open with the close-out "
-                          "skeleton as its first fenced block")
-    return match.group(1)
+def _collapse(text: str | None) -> str:
+    return " ".join((text or "").split())
 
 
-def init_report(slice_dir: Path | str) -> bool:
-    """Create close-out.md from the template. True when created; False when
-    it already existed (untouched)."""
-    path = report_path(slice_dir)
-    if path.exists():
-        return False
-    slice_name = Path(slice_dir).resolve().name
-    num, _, slug = slice_name.partition("_")
-    title = f"# Close-out — slice {num} {slug}".rstrip()
-    path.write_text(template_body().replace(TEMPLATE_TITLE, title, 1))
-    return True
+def _lines(text: str) -> list[str]:
+    """Text as the store keeps it: one string per line, the outer blank
+    lines and trailing spaces taken off."""
+    lines = [line.rstrip() for line in (text or "").split("\n")]
+    while lines and not lines[0]:
+        lines.pop(0)
+    while lines and not lines[-1]:
+        lines.pop()
+    return lines
 
 
-def _read(slice_dir: Path | str) -> tuple[Path, str]:
-    path = report_path(slice_dir)
+def _today() -> str:
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+def _date(date: str | None) -> str:
+    if date is None:
+        return _today()
+    if not _DATE_RE.fullmatch(date):
+        raise ReportError(f"--date {date!r} is not YYYY-MM-DD")
     try:
-        return path, path.read_text()
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise ReportError(f"--date {date!r} is not YYYY-MM-DD") from None
+    return date
+
+
+def _plural(n: int, noun: str, plural: str | None = None) -> str:
+    return f"{n} {noun if n == 1 else (plural or noun + 's')}"
+
+
+def opens_with_none(consequence: str | None) -> bool:
+    """Whether a Consequence line says `none`: its first word, any case, with
+    markup and punctuation stripped."""
+    words = (consequence or "").split()
+    return bool(words) and words[0].strip(_MARKUP).lower() == "none"
+
+
+def tool_labels(kind: str, consequence: str | None) -> dict | None:
+    """The labels the tool gives an entry a loop enters without any: an
+    action, an event or a decision describes no problem when its
+    Consequence opens with "none", and one whose trigger and impact are
+    unknown when it says anything else — the wrap-up then looks. Any other
+    kind is left unlabelled."""
+    if kind not in TOOL_LABELLED:
+        return None
+    value = "none" if opens_with_none(consequence) else "unknown"
+    return dict.fromkeys(("trigger", "impact", "signal"), value)
+
+
+def _ordered_labels(labels: dict) -> dict:
+    return {k: labels[k] for k in LABELS if labels.get(k) is not None}
+
+
+def _kind_of(section: str) -> str:
+    """A caller's `section` — one of the five old section names, or a
+    kind — as a kind."""
+    if section in SECTIONS:
+        return SECTIONS[section]
+    if section in KINDS:
+        return section
+    raise ReportError(f"unknown kind {section!r}; kinds are " + ", ".join(KINDS)
+                      + " (or the sections " + ", ".join(SECTIONS) + ")")
+
+
+def _home_kind(entry: dict) -> str | None:
+    """The kind a section-or-kind argument matches an entry on: the section
+    it stood under, for an imported entry; its kind otherwise."""
+    if entry.get("section") in SECTIONS:
+        return SECTIONS[entry["section"]]
+    return entry.get("kind")
+
+
+# -- the store: lock, load, save ---------------------------------------------
+
+_HELD = threading.local()
+
+
+@contextlib.contextmanager
+def _locked(slice_dir: Path | str):
+    """An exclusive flock on the slice directory for the length of one
+    read-modify-write. Re-entrant within a thread (a second fd on the
+    directory would be a second flock owner and wait on itself); a lock
+    that is held is waited for; a filesystem that cannot lock gets the
+    write without it — a write never fails for the lock."""
+    key = os.path.abspath(slice_dir)
+    held = getattr(_HELD, "dirs", None)
+    if held is None:
+        held = _HELD.dirs = {}
+    if held.get(key):
+        held[key] += 1
+        try:
+            yield
+        finally:
+            held[key] -= 1
+        return
+    fd = None
+    try:
+        fd = os.open(key, os.O_RDONLY)
+        fcntl.flock(fd, fcntl.LOCK_EX)
     except OSError:
+        if fd is not None:
+            os.close(fd)
+            fd = None
+    held[key] = 1
+    try:
+        yield
+    finally:
+        del held[key]
+        if fd is not None:
+            os.close(fd)
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    """Write through a temp file in the same directory and os.replace, so a
+    reader never sees half a file."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.",
+                               suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
+def _dump(store: dict) -> str:
+    return json.dumps(store, indent=2, ensure_ascii=False) + "\n"
+
+
+def _save(slice_dir: Path | str, store: dict) -> None:
+    _write_atomic(store_path(slice_dir), _dump(store))
+
+
+def _new_store(slice_dir: Path | str) -> dict:
+    return {"store": STORE_VERSION, "slice": Path(slice_dir).resolve().name,
+            "closed": None, "entries": []}
+
+
+def _load(slice_dir: Path | str) -> dict:
+    """The store — imported first from a close-out.md of the old shape when
+    that is all the slice holds. Called under the lock."""
+    path = store_path(slice_dir)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        if report_path(slice_dir).exists():
+            store = _import(slice_dir)
+            _save(slice_dir, store)
+            return store
         raise ReportError(f"{path} does not exist — run `close_out.py init` "
                           "(both loops do at start)") from None
+    except OSError as e:
+        raise ReportError(f"{path} is unreadable: {e}") from None
+    try:
+        store = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ReportError(f"{path} is not valid JSON: {e}") from None
+    if not isinstance(store, dict) or not isinstance(store.get("entries"), list):
+        raise ReportError(f"{path} is not a close-out store")
+    return store
 
 
-def _unfenced_lines(text: str):
-    """(offset, line) for every line outside a fenced code block and outside
-    an HTML comment — the only lines a heading can stand on. A comment runs
-    from a line it opens to the line holding its `-->`; a fence opened
-    inside a comment, or a comment inside a fence, is text."""
-    offset, fenced, commented = 0, False, False
-    for line in text.split("\n"):
-        hidden = True
-        if commented:
-            commented = "-->" not in line
-        elif _FENCE_RE.match(line):
-            fenced = not fenced
-        elif fenced:
-            pass
-        elif _COMMENT_OPEN_RE.match(line):
-            commented = "-->" not in line
-        else:
-            hidden = False
-        if not hidden:
-            yield offset, line
-        offset += len(line) + 1
+def _read_store(slice_dir: Path | str) -> dict:
+    with _locked(slice_dir):
+        return _load(slice_dir)
 
 
-def _sections(text: str) -> list[tuple[str, int, int]]:
-    """(name, body_start, body_end) per `## ` heading; the body runs to the
-    next `## ` heading or the end of the file."""
-    heads = []
-    for offset, line in _unfenced_lines(text):
-        m = _SECTION_RE.match(line)
-        if m:
-            heads.append((m.group("name"), offset + len(line), offset))
-    out = []
-    for i, (name, body_start, _) in enumerate(heads):
-        end = heads[i + 1][2] if i + 1 < len(heads) else len(text)
-        out.append((name, body_start, end))
-    return out
+@contextlib.contextmanager
+def _writing(slice_dir: Path | str):
+    """The one path every change takes: lock, load, change, save (only when
+    something changed), release. An exception inside writes nothing."""
+    with _locked(slice_dir):
+        store = _load(slice_dir)
+        before = _dump(store)
+        yield store
+        if _dump(store) != before:
+            _save(slice_dir, store)
 
 
-def _section_span(text: str, section: str) -> tuple[int, int]:
-    for name, start, end in _sections(text):
-        if name == section:
-            return start, end
-    raise ReportError(f"no `## {section}` section in the report; sections are "
-                      + ", ".join(SECTIONS))
+def _find(store: dict, eid: str) -> dict:
+    eid = eid.strip()
+    if not _ID_RE.fullmatch(eid):
+        raise ReportError(f"{eid!r} is not an entry id — a letter and a "
+                          "number, like B3")
+    for entry in store["entries"]:
+        if entry["id"] == eid:
+            return entry
+    raise ReportError(f"no entry {eid} in the report")
 
 
-def _entry_headings(body: str, letter: str,
-                    struck: bool = True) -> list[int]:
-    """The entry numbers under a section, from `### <letter><n>` headings
-    outside fences and comments — struck ones included when `struck` (ids
-    are never reused), excluded for a live count."""
-    numbers = []
-    for _, line in _unfenced_lines(body):
-        m = _ENTRY_RE.match(line)
-        if m and m.group("letter") == letter and (struck or not m.group(1)):
-            numbers.append(int(m.group("num")))
-    return numbers
+def _next_id(store: dict, letter: str) -> str:
+    """The letter and the next number under it — every entry that carries
+    the letter counts, struck ones included; ids are never reused."""
+    nums = [int(m.group(2)) for e in store["entries"]
+            if (m := _ID_RE.fullmatch(e["id"])) and m.group(1) == letter]
+    return f"{letter}{max(nums, default=0) + 1}"
 
 
-def _unshaped_headings(body: str, letter: str) -> int:
-    """`###` headings under a section that are not entries of it — no id,
-    or another section's letter. Zero in a report every author wrote in
-    the file's shape."""
-    count = 0
-    for _, line in _unfenced_lines(body):
-        if not _ANY_HEADING_RE.match(line):
-            continue
-        m = _ENTRY_RE.match(line)
-        if m is None or m.group("letter") != letter:
-            count += 1
-    return count
+def _split_provenance(provenance: str | None) -> tuple[str | None, str | None]:
+    """(`witnessed` | `read` | None, the rest) — the evidence class is the
+    first word when it is one; otherwise the provenance is kept whole."""
+    text = _collapse(provenance)
+    if not text:
+        return None, None
+    first, _, rest = text.partition(" ")
+    word = first.strip(_MARKUP).lower()
+    if word in ("witnessed", "read") and first.rstrip(_MARKUP).lower() == word:
+        # `witnessed — author`, `read: author`, `read, author`: the
+        # separator goes with the word.
+        tail = first[len(first.rstrip(_MARKUP)):] + (" " + rest if rest else "")
+        author = tail.strip().lstrip("—–-:;,").strip()
+        return word, author or None
+    return None, text
 
 
-def _entries_missing_labels(body: str, letter: str) -> dict[str, int]:
-    """Live entries under a section that lack a `Consequence:` or a
-    `Provenance:` line — bold or bare — before the next `###` heading.
-    Struck entries are nobody's to decide on and are not checked."""
-    missing = dict.fromkeys(_LABEL_RES, 0)
-    seen: dict[str, bool] | None = None   # None outside a live entry
+def _entry(eid: str, kind: str | None, headline: str, body: list[str],
+           consequence: str | None, provenance: str | None,
+           severity: str | None, labels: dict | None) -> dict:
+    evidence, author = _split_provenance(provenance)
+    return {
+        "id": eid, "kind": kind, "grade": severity,
+        "headline": _collapse(headline), "body": body,
+        "consequence": _collapse(consequence) or None,
+        "evidence": evidence, "author": author,
+        "labels": _ordered_labels(labels) if labels is not None else None,
+        "notes": [], "wrap_up": None, "strike": None, "ruling": None,
+    }
 
-    def close_entry() -> None:
-        if seen is not None:
-            for label, found in seen.items():
-                if not found:
-                    missing[label] += 1
 
-    for _, line in _unfenced_lines(body):
-        if _ANY_HEADING_RE.match(line):
-            close_entry()
-            m = _ENTRY_RE.match(line)
-            live = (m is not None and m.group("letter") == letter
-                    and not m.group(1))
-            seen = dict.fromkeys(_LABEL_RES, False) if live else None
-        elif seen is not None:
-            for label, pattern in _LABEL_RES.items():
-                if pattern.match(line):
-                    seen[label] = True
-    close_entry()
-    return missing
+# -- the API both loops import -----------------------------------------------
+
+def init_report(slice_dir: Path | str) -> bool:
+    """Create the store, without entries, and render it. True when created;
+    False when a store — or a close-out.md to import — was already there
+    (the second is imported, nothing else)."""
+    with _locked(slice_dir):
+        if store_path(slice_dir).exists():
+            return False
+        if report_path(slice_dir).exists():
+            _load(slice_dir)
+            return False
+        _save(slice_dir, _new_store(slice_dir))
+        render_report(slice_dir)
+        return True
 
 
 def append_entry(slice_dir: Path | str, section: str, headline: str,
                  body: str, consequence: str | None = None,
                  provenance: str | None = None,
-                 severity: str | None = None) -> str:
-    """Append one entry in the standard shape; returns its id. The driver
-    always passes a `consequence` (the CLI requires one); an entry minted
-    without it is one `counts` will name."""
-    if section not in SECTIONS:
-        raise ReportError(f"unknown section {section!r}; sections are "
-                          + ", ".join(SECTIONS))
+                 severity: str | None = None,
+                 labels: dict | None = None) -> str:
+    """Append one entry; returns its id. `section` is a kind or one of the
+    old section names. The loops' path, and it refuses nothing about labels:
+    without any, an action, an event or a decision gets the tool's own
+    (`tool_labels`) and any other kind is stored unlabelled. The CLI checks
+    an author's labels before it gets here."""
+    kind = _kind_of(section)
     if severity is not None and severity not in SEVERITIES:
         raise ReportError(f"unknown severity {severity!r}; one of "
                           + ", ".join(SEVERITIES))
-    path, text = _read(slice_dir)
-    start, end = _section_span(text, section)
-    letter = SECTIONS[section]
-    numbers = _entry_headings(text[start:end], letter)
-    eid = f"{letter}{max(numbers, default=0) + 1}"
-
-    head = f"### {eid} — {' '.join(headline.split())}"
-    if severity:
-        head += f" · {severity}"
-    parts = [head, "", body.strip(), ""]
-    if consequence:
-        parts += [f"**Consequence:** {' '.join(consequence.split())}", ""]
-    if provenance:
-        parts.append(f"**Provenance:** {' '.join(provenance.split())}")
-    parts.append("**Disposition:**")
-    entry = "\n".join(parts) + "\n"
-
-    section_body = text[start:end].rstrip("\n")
-    tail = text[end:]
-    new = (text[:start] + section_body + "\n\n" + entry
-           + ("\n" if tail else "") + tail)
-    path.write_text(new)
+    if labels is None:
+        labels = tool_labels(kind, consequence)
+    with _writing(slice_dir) as store:
+        eid = _next_id(store, KINDS[kind])
+        store["entries"].append(_entry(eid, kind, headline, _lines(body),
+                                       consequence, provenance, severity,
+                                       labels))
     return eid
 
 
-UNSHAPED = "unshaped"
-NO_CONSEQUENCE = "no_consequence"
-NO_PROVENANCE = "no_provenance"
+def _headline_with_grade(entry: dict) -> str:
+    return entry["headline"] + (f" · {entry['grade']}" if entry.get("grade") else "")
 
+
+def find_by_headline(slice_dir: Path | str, section: str,
+                     headline: str) -> str | None:
+    """The id of the entry of that kind (or, imported, under that old
+    section) whose headline is `headline`, live or struck, or None. The
+    comparison is whitespace-collapsed on both sides, a ` · <grade>` tail
+    ignored. For a writer that must enter a thing once however often it
+    runs — a struck entry counts, because striking is how the entry was
+    settled, not a request to write it again."""
+    kind = _kind_of(section)
+    want = _collapse(headline)
+    for entry in _read_store(slice_dir)["entries"]:
+        if _home_kind(entry) != kind:
+            continue
+        if want in (entry["headline"], _headline_with_grade(entry)):
+            return entry["id"]
+    return None
+
+
+def live_entries(slice_dir: Path | str, section: str) -> list[tuple[str, str]]:
+    """(id, headline) of every live entry of that kind (or, imported, under
+    that old section), in order of arrival — the headline with its
+    ` · <grade>` tail, as `find_by_headline` compares it."""
+    kind = _kind_of(section)
+    return [(e["id"], _headline_with_grade(e))
+            for e in _read_store(slice_dir)["entries"]
+            if _home_kind(e) == kind and not e.get("strike")]
+
+
+def add_note(slice_dir: Path | str, eid: str, by: str, text: str,
+             date: str | None = None, relabel: dict | None = None) -> str:
+    """Add `{by, date, text}` to an entry's notes — struck or not. Returns
+    the paragraph as the report shows it."""
+    lines = _lines(text.strip())
+    if not lines:
+        raise ReportError("a note needs text")
+    who = _collapse(by)
+    if not who:
+        raise ReportError("a note needs --by")
+    day = _date(date)
+    note = {"by": who, "date": day, "text": lines}
+    if relabel:
+        note["relabel"] = relabel
+    with _writing(slice_dir) as store:
+        _find(store, eid)["notes"].append(note)
+    return _note_text(note)
+
+
+def _strike_tail(strike: dict) -> str:
+    """What a struck heading carries after its `~~…~~`: the reason, the
+    commit where the reason does not name it, the striker."""
+    tail = strike["reason"]
+    commit = strike.get("commit")
+    if commit and commit not in tail:
+        tail += f" ({commit})"
+    if strike.get("by"):
+        tail += f"; struck by {strike['by']}"
+    return tail
+
+
+def _struck_heading(entry: dict) -> str:
+    return (f"### ~~{entry['id']} — {_headline_with_grade(entry)}~~ — "
+            + _strike_tail(entry["strike"]))
+
+
+def _strike(entry: dict, reason: str, by: str | None, commit: str | None,
+            date: str) -> None:
+    if entry.get("strike"):
+        raise ReportError(f"{entry['id']} is already struck: "
+                          + _struck_heading(entry)[4:])
+    reason = _collapse(reason)
+    if not reason:
+        raise ReportError("a strike needs a --reason")
+    entry["strike"] = {"reason": reason, "by": _collapse(by) or None,
+                       "date": date, "commit": _collapse(commit) or None}
+
+
+def strike_entry(slice_dir: Path | str, eid: str, reason: str,
+                 by: str | None = None, commit: str | None = None,
+                 date: str | None = None) -> str:
+    """Strike a live entry; returns its struck heading. The entry stays in
+    the store — in the Record of the report."""
+    day = _date(date)
+    with _writing(slice_dir) as store:
+        entry = _find(store, eid)
+        _strike(entry, reason, by, commit, day)
+        return _struck_heading(entry)
+
+
+UNLABELLED_MARK = "—"
+
+
+def _label_changes(old: dict | None, new: dict) -> dict:
+    old = old or {}
+    return {k: [old.get(k), new.get(k)] for k in LABELS
+            if old.get(k) != new.get(k)}
+
+
+def relabel_entry(slice_dir: Path | str, eid: str, by: str, note: str,
+                  kind: str | None = None, labels: dict | None = None,
+                  date: str | None = None) -> str:
+    """Merge `labels` into an entry's (an unlabelled one gets its first),
+    correct its kind where given — the id stays — and leave a note saying
+    what changed and why. The refusals of `append` apply to the labels as
+    they are after the change, but not the one against the Consequence line
+    (that is the author's text; the wrap-up corrects a label from the code).
+    Moving the kind to the other family drops the labels of the old one.
+    Returns the note's paragraph."""
+    note_lines = _lines(note.strip())
+    if not note_lines:
+        raise ReportError("relabel needs a --note: what was found")
+    day = _date(date)
+    with _writing(slice_dir) as store:
+        entry = _find(store, eid)
+        old_kind = entry.get("kind")
+        new_kind = kind or old_kind
+        if new_kind not in KINDS:
+            raise ReportError(f"{eid} has no kind; relabel it with --kind")
+        old = effective_labels(entry) or {}
+        merged = dict(old)
+        if (old_kind == "improvement") != (new_kind == "improvement"):
+            drop = IMPROVEMENT_FAMILY if old_kind == "improvement" else FIX_FAMILY
+            for k in drop:
+                merged.pop(k, None)
+        merged.update({k: v for k, v in (labels or {}).items() if v is not None})
+        merged = _ordered_labels(merged)
+        errors = check_labels(new_kind, merged, entry.get("consequence"),
+                              slice_dir, given=labels or {}, relabel=True)
+        if errors:
+            raise ReportError("\n".join(errors))
+        changes = _label_changes(entry.get("labels"), merged)
+        if new_kind != old_kind:
+            changes = {"kind": [old_kind, new_kind], **changes}
+        if not changes:
+            raise ReportError(f"relabel changes nothing on {eid}: its labels "
+                              "are already those")
+        entry["kind"] = new_kind
+        entry["labels"] = merged
+        said = ", ".join(f"{k}: {o or UNLABELLED_MARK} → {n or UNLABELLED_MARK}"
+                         for k, (o, n) in changes.items())
+        text = [f"relabelled ({said}): {note_lines[0]}", *note_lines[1:]]
+        record = {"by": _collapse(by), "date": day, "text": text,
+                  "relabel": changes}
+        if not record["by"]:
+            raise ReportError("relabel needs --by")
+        entry["notes"].append(record)
+        return _note_text(record)
+
+
+def _mark_wrap_up(slice_dir: Path | str, eid: str, outcome: str, by: str,
+                  text: str, date: str | None) -> str:
+    lines = _lines(text.strip())
+    if not lines:
+        raise ReportError("the wrap-up's mark needs --text")
+    who = _collapse(by)
+    if not who:
+        raise ReportError("the wrap-up's mark needs --by")
+    day = _date(date)
+    with _writing(slice_dir) as store:
+        entry = _find(store, eid)
+        if entry.get("strike"):
+            raise ReportError(f"{eid} is struck — a struck entry is settled")
+        if entry.get("wrap_up"):
+            # A second mark replaces the first; the first stays, as a note.
+            prior = entry["wrap_up"]
+            entry["notes"].append({"by": prior["by"], "date": prior["date"],
+                                   "text": _wrap_up_lines(prior)})
+        entry["wrap_up"] = {"outcome": outcome, "by": who, "date": day,
+                            "text": lines}
+        return _note_text({"by": who, "date": day,
+                           "text": _wrap_up_lines(entry["wrap_up"])})
+
+
+def request_card(slice_dir: Path | str, eid: str, by: str, text: str,
+                 date: str | None = None) -> str:
+    """The wrap-up asks for a card on an entry: its route becomes a card
+    request."""
+    return _mark_wrap_up(slice_dir, eid, "card", by, text, date)
+
+
+def leave_entry(slice_dir: Path | str, eid: str, by: str, text: str,
+                date: str | None = None) -> str:
+    """The wrap-up looked at an entry and changed nothing: what waited for
+    it is closed; every other route stands."""
+    return _mark_wrap_up(slice_dir, eid, "left", by, text, date)
+
+
+def _rule(entry: dict, words: str | None, did: str | None,
+          commit: str | None, day: str) -> None:
+    ruling = entry.get("ruling")
+    if words is not None:
+        words = words.strip()
+        if not words:
+            raise ReportError("--words is empty")
+        if ruling and ruling.get("words") and ruling["words"] != words:
+            entry["notes"].append({"by": "the operator", "date": day,
+                                   "text": _lines("ruled earlier: "
+                                                  + ruling["words"])})
+        if not ruling or ruling.get("words") != words:
+            ruling = entry["ruling"] = {"words": words,
+                                        "did": (ruling or {}).get("did"),
+                                        "date": day}
+    if did is not None:
+        if not ruling or not ruling.get("words"):
+            raise ReportError(f"{entry['id']} has no ruling to act on — give "
+                              "the operator's --words with --did")
+        did = _collapse(did)
+        if not did:
+            raise ReportError("--did is empty")
+        ruling["did"] = did
+        if not entry.get("strike"):
+            _strike(entry, did, RULED_BY, commit, day)
+
+
+def rule_entry(slice_dir: Path | str, eid: str, words: str | None = None,
+               did: str | None = None, commit: str | None = None,
+               date: str | None = None) -> str:
+    """Record the operator's words on an entry, verbatim — a second ruling
+    replaces the words and keeps the old ones in a note — and what the
+    session did on them, which strikes the entry. Returns the Disposition
+    line as the report shows it."""
+    if words is None and did is None:
+        raise ReportError("rule <id> needs --words, --did, or both")
+    day = _date(date)
+    with _writing(slice_dir) as store:
+        entry = _find(store, eid)
+        _rule(entry, words, did, commit, day)
+        return f"{entry['id']}: {_disposition(entry)}"
+
+
+def close_report(slice_dir: Path | str, words: str,
+                 date: str | None = None) -> tuple[int, list[str]]:
+    """Close the report on the operator's word: every live entry without a
+    ruling takes the words as its ruling and is struck. An entry that
+    carries a ruling nobody executed — a `defer`, words read back and not
+    acted on yet — stays live, and a report that keeps a live entry is not
+    closed. Returns how many entries were closed, and the ids that stay."""
+    words = (words or "").strip()
+    if not words:
+        raise ReportError("close needs the operator's --words")
+    day = _date(date)
+    with _writing(slice_dir) as store:
+        if store.get("closed"):
+            raise ReportError(f"the report was closed on "
+                              f"{store['closed']['date']} — "
+                              f"{store['closed']['words']}")
+        n, stay = 0, []
+        for entry in store["entries"]:
+            if entry.get("strike"):
+                continue
+            if _ruled(entry):
+                stay.append(entry["id"])
+                continue
+            entry["ruling"] = {"words": words, "did": None, "date": day}
+            _strike(entry, f"closed with the report, {day}", None, None, day)
+            n += 1
+        if not stay:
+            store["closed"] = {"date": day, "words": words}
+        return n, stay
+
+
+# -- labels: the checks of `append` and `relabel` -----------------------------
+
+def slices_to_run(slice_dir: Path | str) -> dict[int, str] | None:
+    """Number → folder number as written, of every slice still to run: a
+    `<number>_*` folder directly under the nearest `slices` ancestor of the
+    slice folder, or under its `backlog/` — the slice itself left out. None
+    without such an ancestor."""
+    here = Path(slice_dir).resolve()
+    root = next((p for p in here.parents if p.name == "slices"), None)
+    if root is None:
+        return None
+    out: dict[int, str] = {}
+    for parent in (root, root / "backlog"):
+        try:
+            children = list(parent.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            m = re.match(r"(\d+)_", child.name)
+            if m and child.is_dir() and child.resolve() != here:
+                out.setdefault(int(m.group(1)), m.group(1))
+    return out
+
+
+def _flag(label: str) -> str:
+    return f"--{label}"
+
+
+def _flags(labels) -> str:
+    names = [_flag(k) for k in labels]
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def check_labels(kind: str, labels: dict, consequence: str | None,
+                 slice_dir: Path | str, given: dict | None = None,
+                 relabel: bool = False) -> list[str]:
+    """What `append` (and `relabel`) refuse, one message per refusal, each
+    naming the flag: a label the kind carries that is missing, a label of
+    the other family, an impact that contradicts the Consequence line (not
+    on a relabel), a signal that contradicts the impact (not on a relabel),
+    a benefit of the workflow, a `for` naming no slice still to run.
+    `labels` are the entry's labels as they would be stored; `given` the
+    flags of this call, for the other-family check."""
+    errors: list[str] = []
+    improvement = kind == "improvement"
+    required = list(REQUIRED[kind])
+    if kind == "event" and labels.get("impact") not in (None, "none"):
+        required += EVENT_PROBLEM
+    missing = [k for k in required if labels.get(k) is None]
+    if missing:
+        errors.append(f"a{'n' if kind[0] in 'aeiou' else ''} {kind} carries "
+                      f"{_flags(required)}; missing: {_flags(missing)}")
+    other = FIX_FAMILY if improvement else IMPROVEMENT_FAMILY
+    wrong = [k for k in other if (given or labels).get(k) is not None]
+    if wrong:
+        errors.append(f"{_flags(wrong)}: not a label of a{'n' if kind[0] in 'aeiou' else ''}"
+                      f" {kind}, which carries {_flags(REQUIRED[kind])}")
+    impact, signal = labels.get("impact"), labels.get("signal")
+    if not improvement and not relabel:
+        if impact is not None and consequence is not None:
+            none = opens_with_none(consequence)
+            if none and impact not in ("none", "unknown"):
+                errors.append(f"--impact {impact} over a --consequence that opens "
+                              "with none: an entry nobody would notice has "
+                              "--impact none")
+            elif not none and impact == "none":
+                errors.append("--impact none over a --consequence that is not "
+                              "none: say in --impact what is experienced, or "
+                              "open the consequence with none")
+        if impact == "none" and signal not in (None, "none"):
+            errors.append(f"--signal {signal} with --impact none: an entry with "
+                          "no impact has nothing to announce — --signal none")
+        elif signal == "none" and impact not in (None, "none", "unknown"):
+            errors.append(f"--signal none with --impact {impact}: say whether it "
+                          "is loud, silent or unknown when it happens")
+    if labels.get("benefit") == "workflow":
+        errors.append("--benefit workflow: an improvement of the workflow — the "
+                      "agents that build slices, their suites and gates, CI, the "
+                      "tools they run — is not an entry. Post it to Fieldnotes "
+                      "instead: the `fieldnotes` MCP tool `post`, category `idea`")
+    target = labels.get("for")
+    if target is not None:
+        m = re.match(r"(\d+)(?:_|$)", str(target))
+        pending = slices_to_run(slice_dir)
+        if pending is None:
+            errors.append(f"--for {target}: the slice folder has no `slices` "
+                          "ancestor, so no slice still to run can be named")
+        elif not m or int(m.group(1)) not in pending:
+            errors.append(f"--for {target}: no slice still to run has that "
+                          "number (a <number>_* folder in slices/ or "
+                          "slices/backlog/)")
+    return errors
+
+
+def normalise_for(labels: dict, slice_dir: Path | str) -> dict:
+    """`for` as the folder's number is written (`12`, `012` and `012_slug`
+    all name 012)."""
+    target = labels.get("for")
+    if target is None:
+        return labels
+    m = re.match(r"(\d+)", str(target))
+    pending = slices_to_run(slice_dir) or {}
+    if m and int(m.group(1)) in pending:
+        return {**labels, "for": pending[int(m.group(1))]}
+    return labels
+
+
+# -- the routes (close-out.md § The routes) ------------------------------------
+
+def effective_labels(entry: dict) -> dict | None:
+    """The entry's labels — or, for a kind the tool labels itself that
+    arrived without any, the tool's."""
+    if entry.get("labels") is not None:
+        return entry["labels"]
+    return tool_labels(entry.get("kind"), entry.get("consequence"))
+
+
+def touched_repos(slice_dir: Path | str) -> set[str] | None:
+    """The basenames of every `root` in the slice's state.json — the
+    repositories its phases landed in. None without a state.json, or one
+    that names no root: every repository is then the slice's own."""
+    try:
+        state = json.loads((Path(slice_dir) / "state.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    roots: set[str] = set()
+
+    def walk(node) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "root" and isinstance(value, str) and value:
+                    roots.add(Path(value).name)
+                elif key != "history":
+                    walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(state)
+    return roots or None
+
+
+def _elsewhere(lab: dict, touched: set[str] | None) -> str | None:
+    repo = lab.get("repo")
+    if touched is None or not repo or repo in touched:
+        return None
+    return repo
+
+
+def _severe(entry: dict, lab: dict) -> str | None:
+    """`severe` / `graded major` where severity stands in for a close."""
+    if entry.get("kind") == "improvement":
+        if lab.get("prevents") == "severe":
+            return "severe"
+    elif lab.get("impact") == "severe" and lab.get("trigger") != "none":
+        return "severe"
+    return "graded major" if entry.get("grade") == "major" else None
+
+
+def _risk(why: str) -> tuple[str, str]:
+    return "operator:risk", f"to you — a risk: {why}, in place of a close"
+
+
+def _fold(lab: dict) -> tuple[str, str]:
+    return "wrap-up:fold", f"the wrap-up — fold into slice {lab['for']}"
+
+
+def _card_or_close(repo: str, card: bool) -> tuple[str, str]:
+    where = f"the fix lives in {repo}, which the slice did not touch"
+    return ("card:table", f"card request — {where}") if card \
+        else ("closed:elsewhere", f"closed — {where}")
+
+
+def _route_fix(entry: dict, lab: dict, touched: set[str] | None) -> tuple[str, str]:
+    """What should be fixed — every kind but `improvement`: the first row
+    that fits."""
+    kind = entry.get("kind")
+    trigger = lab.get("trigger", "unknown")
+    impact = lab.get("impact", "unknown")
+    signal = lab.get("signal", "unknown")
+    no_impact = impact == "none" or trigger == "none"
+    # Row 8's test: it has an impact, and shows in normal use, or on an
+    # ordinary condition without saying so itself.
+    shows = impact != "none" and (
+        trigger == "normal-use"
+        or (trigger == "ordinary-condition" and signal != "loud"))
+    if kind == "action":                                            # 1
+        return "operator:action", "to you — an action"
+    if kind == "decision":                                          # 2
+        return "operator:decision", "to you — a decision"
+    if kind == "event" and no_impact:                               # 3
+        return "record", "the record"
+    if lab.get("for"):                                              # 4
+        return _fold(lab)
+    repo = _elsewhere(lab, touched)
+    if repo:                                                        # 5
+        # An unknown trigger counts as one that shows, an unknown impact as
+        # one that has an impact.
+        shows_here = shows or (impact != "none" and trigger == "unknown")
+        return _card_or_close(repo, shows_here or bool(_severe(entry, lab)))
+    if kind == "prose" or (lab.get("fix") in ("one-edit", "several-places")
+                           and lab.get("area") != "sensitive"):     # 6
+        return "wrap-up:fix", "the wrap-up — fix"
+    unknown = [k for k, v in (("trigger", trigger), ("impact", impact))
+               if v == "unknown"]
+    if unknown:                                                     # 7
+        what = " and ".join(unknown)
+        verb = "are" if len(unknown) > 1 else "is"
+        return "wrap-up:look", f"the wrap-up — look: its {what} {verb} unknown"
+    if shows:                                                       # 8
+        return ("wrap-up:fix-or-card",
+                "the wrap-up — fix within its bar, or ask for a card")
+    severe = _severe(entry, lab)
+    if severe:                                                      # 9
+        return _risk(severe)
+    if no_impact:                                                   # 10
+        return "closed:no-impact", "closed — it has no impact"
+    if trigger == "fault":
+        return "closed:fault", "closed — it needs a fault"
+    if trigger == "future-change":
+        return "closed:future-change", "closed — it cannot show with the code as it is"
+    return "closed:loud", "closed — it is loud on an ordinary condition"
+
+
+def _route_improvement(entry: dict, lab: dict,
+                       touched: set[str] | None) -> tuple[str, str]:
+    """What could be better: the first row that fits."""
+    if lab.get("for"):                                              # 1
+        return _fold(lab)
+    change = lab.get("change")
+    if (change in ("adjust", "remove")
+            and lab.get("size") in ("one-edit", "several-places")
+            and lab.get("product-call") == "no"):                    # 2
+        repo = _elsewhere(lab, touched)
+        if repo:
+            return _card_or_close(repo, bool(_severe(entry, lab)))
+        return "wrap-up:improvement", "the wrap-up — a small change, within its bar"
+    if change == "add" and lab.get("felt") in UNFELT:
+        severe = _severe(entry, lab)
+        if severe:                                                  # 3
+            return _risk(severe)
+        return ("closed:unfelt", "closed — it adds something for a benefit "  # 4
+                "that is not felt in use")
+    return "operator:improvement", "to you — an improvement"        # 5
+
+
+def table_route(entry: dict, touched: set[str] | None = None) -> tuple[str, str]:
+    """(key, the Route line's words) of a live entry by the tables alone —
+    the wrap-up's mark not applied. `unlabelled` when the entry has no
+    labels and is not a kind the tool labels itself."""
+    lab = effective_labels(entry)
+    if lab is None or entry.get("kind") not in KINDS:
+        return "unlabelled", "none yet — the entry has no labels"
+    if entry["kind"] == "improvement":
+        return _route_improvement(entry, lab, touched)
+    return _route_fix(entry, lab, touched)
+
+
+def route(entry: dict, touched: set[str] | None = None) -> tuple[str, str]:
+    """(key, the Route line's words) of an entry — computed, never stored.
+    A struck entry has none: it is in the record. The wrap-up's mark
+    overrides the table: a card asked for makes a card request; an entry
+    it looked at and left is closed, where the table sent it to the
+    wrap-up."""
+    if entry.get("strike"):
+        return "record", "the record"
+    key, words = table_route(entry, touched)
+    mark = (entry.get("wrap_up") or {}).get("outcome")
+    if mark == "card":
+        return "card:wrap-up", "card request — the wrap-up asks for a card"
+    if mark == "left" and key.startswith("wrap-up:"):
+        return "closed:left", "closed — the wrap-up looked and left it"
+    return key, words
+
+
+def report_section(key: str) -> str:
+    """The section of the report a route key lands in."""
+    head = key.split(":", 1)[0]
+    return {"operator": "Comes to you", "card": "Card requests",
+            "wrap-up": "For the wrap-up", "unlabelled": "Unlabelled",
+            "closed": "Closed", "record": "Record"}[head]
+
+
+# -- worklist ----------------------------------------------------------------
+
+def _ruled(entry: dict) -> bool:
+    return bool((entry.get("ruling") or {}).get("words"))
+
+
+def _asked(entry: dict, touched: set[str] | None) -> str | None:
+    """What the wrap-up is asked to do with an entry, None when it waits for
+    nothing. An entry the operator has ruled on is theirs, whatever its
+    route: it does not wait."""
+    if entry.get("strike") or entry.get("wrap_up") or _ruled(entry):
+        return None
+    key, _ = table_route(entry, touched)
+    if key == "unlabelled":
+        return "label — give it its labels from its text"
+    if key == "wrap-up:fold":
+        return f"fold — fold it into slice {entry['labels']['for']}"
+    if key == "wrap-up:fix":
+        return "fix"
+    if key == "wrap-up:look":
+        return "look — give the label the author could not"
+    if key == "wrap-up:fix-or-card":
+        return "fix or card"
+    if key == "wrap-up:improvement":
+        return "improve — a small change, within the bar"
+    lab = effective_labels(entry) or {}
+    if key.startswith("closed:") and lab.get("impact") == "broken":
+        what = "signal" if key == "closed:loud" else "trigger"
+        return f"check — the {what} the close rests on"
+    if key == "operator:risk":
+        return "note — note what the code says under it; the entry stays the operator's"
+    return None
+
+
+def worklist(slice_dir: Path | str) -> list[tuple[dict, str]]:
+    """(entry, what is asked) for every entry that waits for the wrap-up,
+    in order of arrival."""
+    store = _read_store(slice_dir)
+    touched = touched_repos(slice_dir)
+    out = []
+    for entry in store["entries"]:
+        asked = _asked(entry, touched)
+        if asked:
+            out.append((entry, asked))
+    return out
+
+
+def worklist_view(slice_dir: Path | str) -> str:
+    items = worklist(slice_dir)
+    if not items:
+        return "nothing waits for the wrap-up"
+    verb = "waits" if len(items) == 1 else "wait"
+    out = [f"{_plural(len(items), 'entry', 'entries')} {verb} for the wrap-up"]
+    for entry, asked in items:
+        out.append(f"{entry['id']} · {asked}")
+        out.append(f"    {_headline_with_grade(entry)}")
+        triage = _triage_words(entry)
+        if triage:
+            out.append(f"    Triage: {triage}")
+        out.append(f"    Consequence: {entry['consequence']}" if entry.get("consequence")
+                   else "    (no Consequence line)")
+    return "\n".join(out)
+
+
+# -- counts ------------------------------------------------------------------
 
 def entry_counts(slice_dir: Path | str) -> dict[str, int]:
-    """Non-struck entries per section, in section order — plus the smoke
-    counts: under `UNSHAPED`, the `###` headings in the entry sections that
-    are not in the entry shape and so counted as no entry at all; under
-    `NO_CONSEQUENCE` / `NO_PROVENANCE`, the live entries lacking that
-    line."""
-    _, text = _read(slice_dir)
-    counts = dict.fromkeys(SECTIONS, 0)
-    unshaped = no_consequence = no_provenance = 0
-    for name, start, end in _sections(text):
-        if name in counts:
-            body, letter = text[start:end], SECTIONS[name]
-            counts[name] = len(_entry_headings(body, letter, struck=False))
-            unshaped += _unshaped_headings(body, letter)
-            missing = _entries_missing_labels(body, letter)
-            no_consequence += missing["Consequence"]
-            no_provenance += missing["Provenance"]
-    counts[UNSHAPED] = unshaped
+    """Live entries per section of the report — the events in the record
+    counted, the struck ones not — then live entries per id letter (the
+    old letters only where the store holds such entries), then the smoke
+    counts: live entries without a Consequence or a Provenance line."""
+    store = _read_store(slice_dir)
+    touched = touched_repos(slice_dir)
+    counts = dict.fromkeys(COUNT_NAMES, 0)
+    by_name = dict(zip(REPORT_SECTIONS, COUNT_NAMES, strict=True))
+    letters = dict.fromkeys(KINDS.values(), 0)
+    for entry in store["entries"]:
+        m = _ID_RE.fullmatch(entry["id"])
+        if m and m.group(1) in OLD_LETTERS:
+            letters.setdefault(m.group(1), 0)
+    no_consequence = no_provenance = 0
+    for entry in store["entries"]:
+        if entry.get("strike"):
+            continue
+        key, _ = route(entry, touched)
+        counts[by_name[report_section(key)]] += 1
+        letter = _ID_RE.fullmatch(entry["id"]).group(1)
+        letters[letter] = letters.get(letter, 0) + 1
+        no_consequence += not entry.get("consequence")
+        no_provenance += not (entry.get("evidence") or entry.get("author"))
+    counts.update(letters)
     counts[NO_CONSEQUENCE] = no_consequence
     counts[NO_PROVENANCE] = no_provenance
     return counts
 
 
 def counts_line(counts: dict[str, int]) -> str:
-    """`A 1 · N 3 · B 2 · Q 0 · S 1` — the summary form; the smoke counts
-    trail it (`· 6 headings not in entry shape · 2 entries without a
-    Consequence line · 1 entry without a Provenance line`) only when there
-    are any."""
-    line = " · ".join(f"{SECTIONS[name]} {counts.get(name, 0)}"
-                      for name in SECTIONS)
-    unshaped = counts.get(UNSHAPED, 0)
-    if unshaped:
-        line += f" · {_plural(unshaped, 'heading')} not in entry shape"
+    """`to you 2 · card requests 1 · wrap-up 5 · unlabelled 0 · closed 3 ·
+    record 9 — A 1 · D 0 · E 3 · B 2 · P 1 · T 0 · I 1` — one line; the
+    old letters after those when present, and the smoke counts (`· 2
+    entries without a Consequence line`) only when there are any."""
+    line = " · ".join(f"{name} {counts.get(name, 0)}" for name in COUNT_NAMES)
+    letters = [*KINDS.values(), *(k for k in OLD_LETTERS if k in counts)]
+    line += " — " + " · ".join(f"{k} {counts.get(k, 0)}" for k in letters)
     for key, label in ((NO_CONSEQUENCE, "Consequence"),
                        (NO_PROVENANCE, "Provenance")):
         n = counts.get(key, 0)
         if n:
-            line += (f" · {_plural(n, 'entry', 'entries')} without a "
-                     f"{label} line")
+            line += f" · {_plural(n, 'entry', 'entries')} without a {label} line"
     return line
 
 
-# -- entries: blocks, note, strike, list, render ----------------------------
-
-class _Block:
-    """One `###` block of an entry section — the heading line and everything
-    to the next unfenced `###` heading (or the section's end). `kind` is
-    `live` or `struck` for a heading in the section's entry shape,
-    `unshaped` for any other `###` heading."""
-
-    __slots__ = ("start", "end", "heading", "kind", "num", "eid")
-
-    def __init__(self, start: int, end: int, heading: str, letter: str):
-        self.start, self.end, self.heading = start, end, heading
-        m = _ENTRY_RE.match(heading)
-        if m is None or m.group("letter") != letter:
-            self.kind, self.num, self.eid = "unshaped", 0, None
-        else:
-            self.kind = "struck" if m.group(1) else "live"
-            self.num = int(m.group("num"))
-            self.eid = f"{letter}{self.num}"
-
-
-def _blocks(text: str, start: int, end: int, letter: str) -> list[_Block]:
-    """The `###` blocks of one section body, in file order, with absolute
-    offsets into `text`."""
-    body = text[start:end]
-    heads = [(off, line) for off, line in _unfenced_lines(body)
-             if _ANY_HEADING_RE.match(line)]
-    blocks = []
-    for i, (off, line) in enumerate(heads):
-        nxt = heads[i + 1][0] if i + 1 < len(heads) else len(body)
-        blocks.append(_Block(start + off, start + nxt, line, letter))
-    return blocks
-
-
-def _entry_headline(heading: str) -> str | None:
-    """The headline an entry heading carries, whitespace collapsed — from
-    `### B3 — <headline>` (a ` · <severity>` tail included) or the struck
-    `### ~~B3 — <headline>~~ — <reason>`; None for a heading not in the
-    entry shape."""
-    m = _ENTRY_RE.match(heading)
-    if m is None:
-        return None
-    rest = heading[m.end():]
-    if m.group(1):
-        rest = rest.split("~~", 1)[0]
-    return " ".join(re.sub(r"^\s*—", "", rest).split())
-
-
-def find_by_headline(slice_dir: Path | str, section: str,
-                     headline: str) -> str | None:
-    """The id of the entry under `## <section>` whose headline is
-    `headline`, live or struck, or None when the section holds none. The
-    comparison is on the headline as `append_entry` was handed it:
-    whitespace collapsed on both sides, the struck markup and reason set
-    aside, a ` · <severity>` tail ignored. For a writer that must enter a
-    thing once however often it runs — a struck entry counts, because
-    striking is how the entry was settled, not a request to write it again.
-    Raises ReportError as `append_entry` does: no report, no such
-    section."""
-    if section not in SECTIONS:
-        raise ReportError(f"unknown section {section!r}; sections are "
-                          + ", ".join(SECTIONS))
-    _, text = _read(slice_dir)
-    start, end = _section_span(text, section)
-    want = " ".join(headline.split())
-    for block in _blocks(text, start, end, SECTIONS[section]):
-        got = _entry_headline(block.heading) if block.eid else None
-        if got is None:
-            continue
-        stem, sep, grade = got.rpartition(" · ")
-        if want == got or (sep and grade.lower() in SEVERITIES and want == stem):
-            return block.eid
-    return None
-
-
-def live_entries(slice_dir: Path | str, section: str) -> list[tuple[str, str]]:
-    """(id, headline) of every live entry under `## <section>`, in file
-    order — struck entries and headings not in the entry shape left out,
-    the headline as `find_by_headline` compares it (whitespace collapsed,
-    a ` · <severity>` tail kept). Raises ReportError as `find_by_headline`
-    does: no report, no such section."""
-    if section not in SECTIONS:
-        raise ReportError(f"unknown section {section!r}; sections are "
-                          + ", ".join(SECTIONS))
-    _, text = _read(slice_dir)
-    start, end = _section_span(text, section)
-    return [(block.eid, _entry_headline(block.heading) or "")
-            for block in _blocks(text, start, end, SECTIONS[section])
-            if block.kind == "live"]
-
-
-def _find_entry(text: str, eid: str) -> _Block:
-    """The block whose heading carries `eid`, live or struck, under the
-    section its letter names."""
-    eid = eid.strip()
-    m = re.fullmatch(r"([A-Z])\d+", eid)
-    by_letter = {letter: name for name, letter in SECTIONS.items()}
-    section = by_letter.get(m.group(1)) if m else None
-    if section is None:
-        raise ReportError(f"{eid!r} is not an entry id — ids are a section "
-                          "letter (" + ", ".join(SECTIONS.values())
-                          + ") and a number, like B3")
-    start, end = _section_span(text, section)
-    for block in _blocks(text, start, end, SECTIONS[section]):
-        if block.eid == eid:
-            return block
-    raise ReportError(f"no entry {eid} under `## {section}`")
-
-
-def _label_offset(block: str, pattern: re.Pattern) -> int | None:
-    """Offset (within the block) of the first unfenced line matching the
-    label pattern, bold or bare — None when the block has none."""
-    for off, line in _unfenced_lines(block):
-        if pattern.match(line):
-            return off
-    return None
-
-
-def _fold_close_offset(block: str) -> int | None:
-    """Offset of the fold's closing line in a rendered struck block."""
-    for off, line in _unfenced_lines(block):
-        if line.strip() == FOLD_CLOSE:
-            return off
-    return None
-
-
-def _is_folded(block: str) -> bool:
-    _, _, body = block.partition("\n")
-    return body.lstrip("\n").startswith(FOLD_OPEN)
-
-
-def _insert_paragraph(block: str, off: int | None, para: str) -> str:
-    """`para` as a paragraph of its own before offset `off` in the block —
-    or, with no offset, at the block's end (its trailing newlines kept)."""
-    if off is None:
-        stripped = block.rstrip("\n")
-        return stripped + "\n\n" + para + block[len(stripped):]
-    before, after = block[:off], block[off:]
-    if not before.endswith("\n\n"):
-        before = before.rstrip("\n") + "\n\n"
-    return before + para + "\n\n" + after
-
-
-def add_note(slice_dir: Path | str, eid: str, by: str, text: str,
-             date: str | None = None) -> str:
-    """Append `<who>, <date> — <text>` to an entry's body: above its
-    Consequence line, else its Provenance line, else its Disposition line,
-    else at the end — inside the fold when the entry is struck and
-    rendered. Returns the paragraph."""
-    path, report = _read(slice_dir)
-    block = _find_entry(report, eid)
-    body = text.strip()
-    if not body:
-        raise ReportError("a note needs text")
-    who = " ".join(by.split())
-    if date:
-        try:
-            datetime.strptime(date, "%Y-%m-%d")
-        except ValueError:
-            raise ReportError(f"--date {date!r} is not YYYY-MM-DD") from None
-    day = date or datetime.now().strftime("%Y-%m-%d")
-    para = f"{who}, {day} — {body}"
-    old = report[block.start:block.end]
-    off = None
-    for pattern in (_LABEL_RES["Consequence"], _LABEL_RES["Provenance"],
-                    _DISPOSITION_RE):
-        off = _label_offset(old, pattern)
-        if off is not None:
-            break
-    if off is None and _is_folded(old):
-        off = _fold_close_offset(old)
-    new = _insert_paragraph(old, off, para)
-    path.write_text(report[:block.start] + new + report[block.end:])
-    return para
-
-
-def strike_entry(slice_dir: Path | str, eid: str, reason: str,
-                 by: str | None = None) -> str:
-    """Rewrite a live entry's heading to the struck form; returns the new
-    heading. The body stays as it is — `render` folds it."""
-    path, report = _read(slice_dir)
-    block = _find_entry(report, eid)
-    if block.kind == "struck":
-        raise ReportError(f"{eid} is already struck: {block.heading}")
-    heading = f"### ~~{block.heading[4:].rstrip()}~~ — {' '.join(reason.split())}"
-    if by:
-        heading += f"; struck by {' '.join(by.split())}"
-    hstart = block.start
-    hend = hstart + len(block.heading)
-    path.write_text(report[:hstart] + heading + report[hend:])
-    return heading
-
-
-def _consequence_text(block: str) -> str | None:
-    """The Consequence paragraph of a block, collapsed to one line — None
-    when the block has no Consequence line."""
-    off = _label_offset(block, _LABEL_RES["Consequence"])
-    if off is None:
-        return None
-    lines = block[off:].split("\n")
-    para = [re.sub(r"^\*{0,2}Consequence:\*{0,2}\s*", "", lines[0])]
-    for line in lines[1:]:
-        if not line.strip() or _ANY_LABEL_RE.match(line):
-            break
-        para.append(line)
-    return " ".join(" ".join(para).split())
-
-
-def _list_line(block: _Block) -> str:
-    rest = block.heading[4:].rstrip()
-    if block.kind == "live":
-        return rest
-    if block.kind == "struck":
-        # `~~B3 — headline~~ — reason` → `~~B3~~ — headline — reason`
-        eid = block.eid
-        tail = rest[len("~~" + eid):].replace("~~", "", 1)
-        return f"~~{eid}~~{tail}"
-    return f"(not in entry shape) {rest}"
-
+# -- list --------------------------------------------------------------------
 
 def list_view(slice_dir: Path | str) -> str:
-    """The triage view: per entry section its `## name`, then one line per
-    `###` block in file order — `B3 — <heading rest>`, with the Consequence
-    text indented under a live entry (or `(no Consequence line)`); a struck
-    entry as `~~B3~~ — <heading rest>`; `(none)` for an empty section."""
-    _, text = _read(slice_dir)
+    """The view an agent takes before it appends: per kind, in the
+    contract's order, `B3 — <headline> · <grade>` with the Consequence
+    indented under it; a struck entry as `~~B3~~ — <headline> — <reason>`;
+    `(none)` under an empty kind. An entry without a kind stands under
+    `## unlabelled`."""
+    store = _read_store(slice_dir)
+    groups: dict[str, list[dict]] = {k: [] for k in KINDS}
+    for entry in store["entries"]:
+        groups.setdefault(entry.get("kind") if entry.get("kind") in KINDS
+                          else "unlabelled", []).append(entry)
     out: list[str] = []
-    for name, start, end in _sections(text):
-        if name not in SECTIONS:
-            continue
-        out.append(f"## {name}")
-        blocks = _blocks(text, start, end, SECTIONS[name])
-        if not blocks:
+    for kind, entries in groups.items():
+        out.append(f"## {kind}")
+        if not entries:
             out.append("(none)")
-        for block in blocks:
-            out.append(_list_line(block))
-            if block.kind == "live":
-                consequence = _consequence_text(text[block.start:block.end])
-                out.append(f"    Consequence: {consequence}" if consequence
-                           else "    (no Consequence line)")
+        for entry in entries:
+            if entry.get("strike"):
+                out.append(f"~~{entry['id']}~~ — {_headline_with_grade(entry)} — "
+                           + _strike_tail(entry["strike"]))
+                continue
+            out.append(f"{entry['id']} — {_headline_with_grade(entry)}")
+            out.append(f"    Consequence: {entry['consequence']}"
+                       if entry.get("consequence") else "    (no Consequence line)")
     return "\n".join(out)
 
 
-def _severity_rank(heading: str) -> int:
-    """Position in SEVERITIES of the ` · <severity>` token a Bugs heading
-    carries; past the end when it carries none."""
-    for token in heading.split(" · ")[1:]:
-        grade = token.strip().lower()
-        if grade in SEVERITIES:
-            return SEVERITIES.index(grade)
-    return len(SEVERITIES)
+# -- render ------------------------------------------------------------------
+
+def _wrap(line: str) -> list[str]:
+    """A line wrapped at the report's width; a ` · ` separator stays with
+    the word before it, so no line opens with one."""
+    glued = line.replace(" · ", "\u00a0· ")
+    return [part.replace("\u00a0", " ")
+            for part in textwrap.wrap(glued, width=HEADER_WIDTH,
+                                      break_long_words=False,
+                                      break_on_hyphens=False)] or [line]
 
 
-def _fold(block: str) -> str:
-    """A struck block with its body wrapped once in the fold; a block that
-    already carries it, or has no body, comes back as it was."""
-    heading, _, body = block.partition("\n")
-    if not body.strip() or _is_folded(block):
-        return block
-    return (heading + "\n\n" + FOLD_OPEN + "\n\n" + body.strip("\n") + "\n\n"
-            + FOLD_CLOSE + block[len(block.rstrip("\n")):])
+def _triage_words(entry: dict) -> str | None:
+    lab = effective_labels(entry)
+    if lab is None or entry.get("kind") not in KINDS:
+        return None
+    words = [WORDS["kind"][entry["kind"]]]
+    for key in TRIAGE_ORDER:
+        value = lab.get(key)
+        if value is None:
+            continue
+        if key == "repo":
+            words.append(f"in {value}")
+        elif key == "for":
+            words.append(f"for slice {value}")
+        else:
+            said = WORDS[key].get(value, value)
+            if said:
+                words.append(said)
+    return " · ".join(words)
 
 
-def _render_section(text: str, name: str, start: int, end: int
-                    ) -> tuple[str, dict[str, int]]:
-    """One entry section's body in reading order — preamble verbatim, then
-    live (Bugs by severity, else by id), unshaped as they were, struck by
-    id and folded — plus its live/struck/unshaped tally."""
-    letter = SECTIONS[name]
-    body = text[start:end]
-    blocks = _blocks(text, start, end, letter)
-    tally = {"live": 0, "struck": 0, "unshaped": 0}
-    for b in blocks:
-        tally[b.kind] += 1
-    if not blocks:
-        return body, tally
-    live = [b for b in blocks if b.kind == "live"]
-    if name == "Bugs":
-        live.sort(key=lambda b: (_severity_rank(b.heading), b.num))
-    else:
-        live.sort(key=lambda b: b.num)
-    unshaped = [b for b in blocks if b.kind == "unshaped"]
-    struck = sorted((b for b in blocks if b.kind == "struck"),
-                    key=lambda b: b.num)
-    pieces = [text[b.start:b.end] for b in live + unshaped]
-    pieces += [_fold(text[b.start:b.end]) for b in struck]
-    preamble = text[start:blocks[0].start]
-    trailing = body[len(body.rstrip("\n")):]
-    return (preamble + "\n\n".join(p.rstrip("\n") for p in pieces) + trailing,
-            tally)
+def _note_text(note: dict) -> str:
+    return f"{note['by']}, {note['date']} — " + "\n".join(note["text"])
+
+
+def _wrap_up_lines(mark: dict) -> list[str]:
+    said = "asks for a card" if mark["outcome"] == "card" else "looked and left it"
+    return [f"{said}: {mark['text'][0]}", *mark["text"][1:]]
+
+
+def _notes(entry: dict) -> list[str]:
+    paras = [_note_text(n) for n in entry.get("notes") or []]
+    if entry.get("wrap_up"):
+        mark = entry["wrap_up"]
+        paras.append(_note_text({"by": mark["by"], "date": mark["date"],
+                                 "text": _wrap_up_lines(mark)}))
+    return paras
+
+
+def _disposition(entry: dict) -> str:
+    """What the Disposition line carries: the operator's words, then ` — `
+    and what was done on them; empty until they rule."""
+    ruling = entry.get("ruling") or {}
+    words = ruling.get("words") or ""
+    if words and ruling.get("did"):
+        return f"{words} — {ruling['did']}"
+    return words
+
+
+def _provenance(entry: dict) -> str | None:
+    evidence, author = entry.get("evidence"), entry.get("author")
+    if evidence and author:
+        return f"{evidence} — {author}"
+    return evidence or author
+
+
+def _body_and_notes(entry: dict) -> str:
+    return "\n\n".join(p for p in ["\n".join(entry.get("body") or []), *_notes(entry)]
+                       if p.strip())
+
+
+def _tail(entry: dict, route_words: str | None) -> list[str]:
+    """The lines under the body: Consequence, then the block the operator
+    triages on — Triage, Provenance, Route, Disposition."""
+    out: list[str] = []
+    if entry.get("consequence"):
+        out += [f"**Consequence:** {entry['consequence']}", ""]
+    triage = _triage_words(entry)
+    if triage:
+        out += _wrap(f"**Triage:** {triage}")
+    provenance = _provenance(entry)
+    if provenance:
+        out.append(f"**Provenance:** {provenance}")
+    if route_words:
+        out.append(f"**Route:** {route_words}")
+    disposition = _disposition(entry)
+    out.append(f"**Disposition:** {disposition}" if disposition else "**Disposition:**")
+    return out
+
+
+def _render_entry(entry: dict, form: str, route_words: str | None) -> str:
+    """One entry in one of its three forms: `full`, `body` (the body and
+    its notes folded) or `whole` (folded whole, under a struck heading when
+    it is struck)."""
+    body = _body_and_notes(entry)
+    if form == "whole":
+        struck = bool(entry.get("strike"))
+        heading = _struck_heading(entry) if struck else \
+            f"### {entry['id']} — {_headline_with_grade(entry)}"
+        inner = ([body, ""] if body else []) + _tail(entry, None if struck else route_words)
+        return "\n".join([heading, "", STRUCK_FOLD if struck else RECORD_FOLD, "",
+                          *inner, "", FOLD_CLOSE])
+    lines = [f"### {entry['id']} — {_headline_with_grade(entry)}", ""]
+    if body:
+        if form == "body":
+            lines += [BODY_FOLD, "", body, "", FOLD_CLOSE, ""]
+        else:
+            lines += [body, ""]
+    return "\n".join(lines + _tail(entry, route_words))
+
+
+def _sort_key(entry: dict) -> tuple:
+    grade = entry.get("grade")
+    kinds = list(KINDS)
+    m = _ID_RE.fullmatch(entry["id"])
+    return (GRADE_ORDER.index(grade) if grade in GRADE_ORDER else GRADE_ORDER.index(None),
+            kinds.index(entry["kind"]) if entry.get("kind") in kinds else len(kinds),
+            m.group(1), int(m.group(2)))
+
+
+def _id_key(entry: dict) -> tuple:
+    m = _ID_RE.fullmatch(entry["id"])
+    return m.group(1), int(m.group(2))
+
+
+def _title(store: dict) -> str:
+    num, _, slug = str(store.get("slice") or "").partition("_")
+    return f"# Close-out — slice {num} {slug}".rstrip()
+
+
+def _header(slice_dir: Path | str) -> str:
+    try:
+        state = json.loads((Path(slice_dir) / "state.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return UNSTAMPED
+    return run_header(state, slice_dir) if isinstance(state, dict) else UNSTAMPED
+
+
+def _render(store: dict, slice_dir: Path | str) -> tuple[str, dict[str, int]]:
+    """The report's text and the number of entries in each section it
+    wrote."""
+    touched = touched_repos(slice_dir)
+    placed: dict[str, list[tuple[dict, str]]] = {s: [] for s in REPORT_SECTIONS}
+    for entry in store["entries"]:
+        key, words = route(entry, touched)
+        placed[report_section(key)].append((entry, words))
+    out = [_title(store), "", HEAD_COMMENT, "", *_wrap(_header(slice_dir))]
+    if store.get("closed"):
+        closed = store["closed"]
+        out += ["", *_wrap(f"Closed: {closed['date']} — {_collapse(closed['words'])}")]
+    tally: dict[str, int] = {}
+    for section in REPORT_SECTIONS:
+        items = placed[section]
+        if not items:
+            continue
+        if section == "Record":
+            events = sorted((x for x in items if not x[0].get("strike")),
+                            key=lambda x: _id_key(x[0]))
+            struck = sorted((x for x in items if x[0].get("strike")),
+                            key=lambda x: _id_key(x[0]))
+            items, form = events + struck, "whole"
+        else:
+            items = sorted(items, key=lambda x: _sort_key(x[0]))
+            form = "body" if section in ("For the wrap-up", "Closed") else "full"
+        out += ["", f"## {section}"]
+        for entry, words in items:
+            out += ["", _render_entry(entry, form, words)]
+        tally[section] = len(items)
+    return "\n".join(out) + "\n", tally
+
+
+def _read_back(slice_dir: Path | str, store: dict) -> list[tuple[str, str]]:
+    """Take into the store every `Disposition:` line of close-out.md that
+    differs from what the store would render there: the text is the
+    operator's (`ruling.words`) — where it ends in ` — <did>` as the store
+    has it, the words are what stands before that. Returns (id, words) per
+    entry taken; changes `store` in place."""
+    try:
+        text = report_path(slice_dir).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return []
+    except OSError as e:
+        raise ReportError(f"{report_path(slice_dir)} is unreadable: {e}") from None
+    found = _dispositions(text)
+    by_id = {e["id"]: e for e in store["entries"]}
+    taken: list[tuple[str, str]] = []
+    day = _today()
+    for eid, written in found.items():
+        entry = by_id.get(eid)
+        said = _collapse(written)
+        if entry is None or not said or said == _collapse(_disposition(entry)):
+            continue
+        ruling = entry.get("ruling") or {}
+        did = ruling.get("did")
+        words = written.strip()
+        if did and said.endswith(" — " + _collapse(did)):
+            words = said[:-len(" — " + _collapse(did))].strip()
+        if _collapse(words) == _collapse(ruling.get("words")):
+            continue
+        _rule(entry, words, None, None, day)
+        taken.append((eid, words))
+    return taken
+
+
+def _dispositions(text: str) -> dict[str, str]:
+    """Id → the text after an entry's last `Disposition:` label, up to the
+    end of the entry (the next heading, or the `</details>` of a fold),
+    read off headings outside fences and comments."""
+    out: dict[str, str] = {}
+    current: str | None = None
+    collected: list[str] | None = None
+
+    def close() -> None:
+        if current and collected is not None:
+            out[current] = "\n".join(collected).strip()
+
+    for line, what in _scan(text, kinds=True):
+        hidden = what is not None
+        if not hidden and (line.startswith("## ") or _ANY_HEADING_RE.match(line)):
+            close()
+            m = _ENTRY_RE.match(line)
+            current = f"{m.group('letter')}{m.group('num')}" if m else None
+            collected = None
+            continue
+        if current is None:
+            continue
+        if not hidden and _LABEL_LINE_RES["Disposition"].match(line):
+            collected = [_LABEL_LINE_RES["Disposition"].sub("", line, count=1)]
+            continue
+        if collected is not None:
+            if not hidden and line.strip() == FOLD_CLOSE:
+                close()
+                collected = None
+                continue
+            if what != "comment":   # a report's charter comment is nobody's words
+                collected.append(line)
+    close()
+    return out
+
+
+def read_back(slice_dir: Path | str) -> list[tuple[str, str]]:
+    """`rule` without an id: the `Disposition:` lines of close-out.md into
+    the store. (id, words) per entry taken."""
+    with _writing(slice_dir) as store:
+        return _read_back(slice_dir, store)
 
 
 def render_report(slice_dir: Path | str) -> str:
-    """Put every entry section in reading order, in place; idempotent — a
-    second run changes nothing. Nothing outside the entry sections is
-    touched. Returns the one-line tally (`Bugs: 6 live, 10 struck; …`)."""
-    path, text = _read(slice_dir)
-    out, cursor, summary = [], 0, []
-    for name, start, end in _sections(text):
-        if name not in SECTIONS:
-            continue
-        rendered, tally = _render_section(text, name, start, end)
-        out.append(text[cursor:start])
-        out.append(rendered)
-        cursor = end
-        line = f"{name}: {tally['live']} live, {tally['struck']} struck"
-        if tally["unshaped"]:
-            line += f", {tally['unshaped']} not in entry shape"
-        summary.append(line)
-    out.append(text[cursor:])
-    new = "".join(out)
-    if new != text:
-        path.write_text(new)
-    return "; ".join(summary)
+    """Read the `Disposition:` lines back, then write close-out.md from the
+    store, under the store's lock; the same bytes when nothing changed.
+    Returns a one-line tally of the sections written."""
+    with _writing(slice_dir) as store:
+        _read_back(slice_dir, store)
+        text, tally = _render(store, slice_dir)
+        path = report_path(slice_dir)
+        try:
+            old = path.read_text(encoding="utf-8")
+        except OSError:
+            old = None
+        if old != text:
+            _write_atomic(path, text)
+    return " · ".join(f"{name} {n}" for name, n in tally.items()) or "no entries"
 
 
-# -- the run header ----------------------------------------------------------
+# -- the run header ------------------------------------------------------------
 
 def _fmt_ts(value, day_of: str | None = None) -> str | None:
     """`2026-08-14 19:49`, or `23:53` when the day equals `day_of`."""
@@ -715,10 +1552,6 @@ def _fmt_ts(value, day_of: str | None = None) -> str | None:
     day = dt.strftime("%Y-%m-%d")
     hm = dt.strftime("%H:%M")
     return hm if day_of == day else f"{day} {hm}"
-
-
-def _plural(n: int, noun: str, plural: str | None = None) -> str:
-    return f"{n} {noun if n == 1 else (plural or noun + 's')}"
 
 
 def run_header(state: dict, slice_dir: Path | str | None = None) -> str:
@@ -777,32 +1610,297 @@ def run_header(state: dict, slice_dir: Path | str | None = None) -> str:
 
 
 def stamp_header(slice_dir: Path | str) -> str:
-    """Replace the report's `Run:` block (the `Run:` line and the non-blank
-    lines that follow it) with the header from state.json. Idempotent."""
-    path, text = _read(slice_dir)
+    """Render, and return the run header — raising ReportError, before
+    anything is written, when the slice holds no readable state.json."""
     state_path = Path(slice_dir) / "state.json"
     try:
         state = json.loads(state_path.read_text())
     except (OSError, json.JSONDecodeError):
         raise ReportError(f"{state_path} is missing or unreadable — nothing "
                           "to stamp from") from None
-    header = run_header(state, slice_dir)
-    lines = text.split("\n")
-    idx = next((i for i, line in enumerate(lines) if line.startswith("Run:")),
-               None)
-    if idx is None:
-        raise ReportError(f"{path} has no `Run:` line to stamp")
-    j = idx + 1
-    while j < len(lines) and lines[j].strip() and not lines[j].startswith("#"):
-        j += 1
-    lines[idx:j] = textwrap.wrap(header, width=HEADER_WIDTH,
-                                 break_long_words=False,
-                                 break_on_hyphens=False)
-    path.write_text("\n".join(lines))
-    return header
+    render_report(slice_dir)
+    return run_header(state, slice_dir)
+
+
+# -- import: the old Markdown report -------------------------------------------
+
+def _scan(text: str, kinds: bool = False):
+    """(line, hidden) for every line: hidden inside a fenced code block or
+    an HTML comment — with `kinds`, what hides it (`fence`, `comment`, or
+    None). A comment runs from a line it opens to the line holding its
+    `-->`; a fence opened inside a comment, or a comment inside a fence, is
+    text."""
+    fenced = commented = False
+    for line in text.split("\n"):
+        hidden = "fence"
+        if commented:
+            commented = "-->" not in line
+            hidden = "comment"
+        elif _FENCE_RE.match(line):
+            fenced = not fenced
+        elif fenced:
+            pass
+        elif _COMMENT_OPEN_RE.match(line):
+            commented = "-->" not in line
+            hidden = "comment"
+        else:
+            hidden = None
+        yield line, (hidden if kinds else hidden is not None)
+
+
+def _unfenced_lines(text: str):
+    """(offset, line) for every line outside a fenced code block and outside
+    an HTML comment — the only lines a heading can stand on."""
+    offset = 0
+    for line, hidden in _scan(text):
+        if not hidden:
+            yield offset, line
+        offset += len(line) + 1
+
+
+def _sections(text: str) -> list[tuple[str, int, int, int]]:
+    """(name, heading_start, body_start, body_end) per `## ` heading; the
+    body runs to the next `## ` heading or the end of the file."""
+    heads = []
+    for offset, line in _unfenced_lines(text):
+        m = _SECTION_RE.match(line)
+        if m:
+            heads.append((m.group("name"), offset, offset + len(line)))
+    out = []
+    for i, (name, head, body_start) in enumerate(heads):
+        end = heads[i + 1][1] if i + 1 < len(heads) else len(text)
+        out.append((name, head, body_start, end))
+    return out
+
+
+def _blocks(body: str) -> list[tuple[str, str]]:
+    """(heading, the text under it) per unfenced `###` heading of one
+    section body, in file order."""
+    heads = [(off, line) for off, line in _unfenced_lines(body)
+             if _ANY_HEADING_RE.match(line)]
+    out = []
+    for i, (off, line) in enumerate(heads):
+        nxt = heads[i + 1][0] if i + 1 < len(heads) else len(body)
+        out.append((line, body[off + len(line):nxt]))
+    return out
+
+
+def _split_grade(text: str) -> tuple[str, str | None]:
+    stem, sep, grade = text.rpartition(" · ")
+    if sep and grade.strip().lower() in SEVERITIES:
+        return stem.strip(), grade.strip().lower()
+    return text.strip(), None
+
+
+def _parse_heading(heading: str, letter: str) -> dict:
+    """An old heading as (id, headline, grade, strike): `### B3 — <headline>
+    · <grade>`, or the struck `### ~~B3 — <headline>~~ — <reason>; struck by
+    <who>`. A heading not in that shape, or under another section's letter,
+    has no id."""
+    m = _ENTRY_RE.match(heading)
+    if m is None or m.group("letter") != letter:
+        return {"id": None, "headline": _collapse(heading[4:]), "grade": None,
+                "strike": None}
+    rest = heading[m.end():]
+    strike = None
+    if m.group(1):
+        inside, _, tail = rest.partition("~~")
+        rest = inside
+        reason = re.sub(r"^\s*—\s*", "", tail).strip()
+        by = None
+        stem, sep, who = reason.rpartition("; struck by ")
+        if sep:
+            reason, by = stem.strip(), _collapse(who)
+        strike = {"reason": _collapse(reason) or "struck", "by": by or None,
+                  "date": None, "commit": None}
+    headline, grade = _split_grade(_collapse(re.sub(r"^\s*—", "", rest)))
+    return {"id": f"{letter}{m.group('num')}", "headline": headline,
+            "grade": grade, "strike": strike}
+
+
+def _take_label(lines: list[str], hidden: list[bool], label: str
+                ) -> tuple[str | None, list[int]]:
+    """The first unfenced paragraph opening with `label:` — its text,
+    collapsed, and the line numbers it spans."""
+    pattern = _LABEL_LINE_RES[label]
+    for i, line in enumerate(lines):
+        if hidden[i] or not pattern.match(line):
+            continue
+        span = [i]
+        para = [pattern.sub("", line, count=1)]
+        j = i + 1
+        while (j < len(lines) and lines[j].strip() and not hidden[j]
+               and not _ANY_LABEL_LINE_RE.match(lines[j])
+               and not _ANY_HEADING_RE.match(lines[j])
+               and lines[j].strip() != FOLD_CLOSE):
+            para.append(lines[j])
+            span.append(j)
+            j += 1
+        return "\n".join(para).strip(), span
+    return None, []
+
+
+def _parse_block(text: str) -> dict:
+    """The body of one old block — its label lines and the fold taken off,
+    nothing else lost — and the three labels."""
+    lines = text.strip("\n").split("\n") if text.strip() else []
+    hidden = [h for _, h in _scan("\n".join(lines))]
+    drop: set[int] = set()
+    # The old render's fold: its opening line, and the last `</details>`.
+    opens = [i for i, line in enumerate(lines)
+             if not hidden[i] and line.strip() == OLD_FOLD_OPEN]
+    if opens:
+        drop.add(opens[0])
+        closes = [i for i, line in enumerate(lines)
+                  if not hidden[i] and line.strip() == FOLD_CLOSE and i > opens[0]]
+        if closes:
+            drop.add(closes[-1])
+    found: dict[str, str | None] = {}
+    for label in ("Consequence", "Provenance", "Disposition"):
+        value, span = _take_label(lines, hidden, label)
+        found[label] = value
+        drop.update(span)
+    body: list[str] = []
+    for i, line in enumerate(lines):
+        if i in drop:
+            continue
+        # Squeeze the blank lines a removed line leaves behind.
+        if not line.strip() and (not body or not body[-1].strip()):
+            continue
+        body.append(line.rstrip())
+    while body and not body[-1].strip():
+        body.pop()
+    return {"body": body, "consequence": found["Consequence"],
+            "provenance": found["Provenance"], "disposition": found["Disposition"]}
+
+
+def _import(slice_dir: Path | str) -> dict:
+    """A store from a close-out.md of the old shape. Every entry keeps its
+    id and carries the section it stood under; the kind is the section's —
+    with the tool's labels for an action, an event or a decision, none for
+    a Bugs or Suggestions entry, which stays unlabelled until the wrap-up
+    labels it. A `###` heading not in the entry shape becomes an entry with
+    the next id under its section's letter. The head, the Summary, the
+    sections' `Focus:` lines and charters are kept under `imported`, not
+    rendered."""
+    text = report_path(slice_dir).read_text(encoding="utf-8")
+    store = _new_store(slice_dir)
+    sections = _sections(text)
+    imported: dict[str, list[str]] = {}
+    head = _lines(text[:sections[0][1]] if sections else text)
+    if head:
+        imported["head"] = head
+    pending: list[tuple[str, str, dict, dict]] = []
+    taken: dict[str, set[int]] = {}
+    for name, _, start, end in sections:
+        body = text[start:end]
+        if name not in SECTIONS:
+            kept = _lines(body)
+            if kept:
+                imported[name] = kept
+            continue
+        letter = SECTION_LETTERS[name]
+        blocks = _blocks(body)
+        first = next((off for off, line in _unfenced_lines(body)
+                      if _ANY_HEADING_RE.match(line)), len(body))
+        preamble = _lines(body[:first])
+        if preamble:
+            imported[name] = preamble
+        for heading, rest in blocks:
+            parsed = _parse_heading(heading, letter)
+            if parsed["id"]:
+                num = int(parsed["id"][1:])
+                if num in taken.setdefault(letter, set()):
+                    parsed["id"] = None     # a duplicate id: a fresh one below
+                    parsed["headline"] = _collapse(heading[4:])
+                    parsed["strike"] = None
+                    parsed["grade"] = None
+                else:
+                    taken[letter].add(num)
+            pending.append((name, letter, parsed, _parse_block(rest)))
+    for name, letter, parsed, block in pending:
+        eid = parsed["id"]
+        if eid is None:
+            num = max(taken.get(letter) or {0}) + 1
+            taken.setdefault(letter, set()).add(num)
+            eid = f"{letter}{num}"
+        kind = SECTIONS[name]
+        entry = _entry(eid, kind, parsed["headline"], block["body"],
+                       block["consequence"], block["provenance"], parsed["grade"],
+                       tool_labels(kind, block["consequence"]))
+        entry = {"id": entry.pop("id"), "kind": entry.pop("kind"), "section": name,
+                 **entry}
+        entry["strike"] = parsed["strike"]
+        if block["disposition"]:
+            entry["ruling"] = {"words": block["disposition"], "did": None,
+                               "date": None}
+        store["entries"].append(entry)
+    if imported:
+        store["imported"] = imported
+    return store
+
+
+def import_report(slice_dir: Path | str) -> int:
+    """`import`: read close-out.md into a new store; refused when a store
+    exists. Returns the number of entries."""
+    with _locked(slice_dir):
+        if store_path(slice_dir).exists():
+            raise ReportError(f"{store_path(slice_dir)} exists — import reads a "
+                              "report into a new store only")
+        if not report_path(slice_dir).exists():
+            raise ReportError(f"{report_path(slice_dir)} does not exist — "
+                              "nothing to import")
+        return len(_load(slice_dir)["entries"])
 
 
 # -- CLI --------------------------------------------------------------------
+
+def _label_value(value: str) -> str:
+    """A label value as the tool keeps it: lower-case, spaces and
+    underscores as hyphens (`test gap`, `ordinary_condition`)."""
+    return re.sub(r"[\s_]+", "-", value.strip().lower())
+
+
+# The help strings are prompt text: `verb_usage("append")` is rendered
+# into every dispatch.
+LABEL_HELP = {
+    "trigger": "what has to happen for the problem to show",
+    "impact": "what is then experienced",
+    "signal": "whether it then says so itself",
+    "fix": "what is decided about the fix",
+    "area": "sensitive: concurrency or timing, stored data, a wire contract, "
+            "authentication or secrets",
+    "repo": "the repository the fix lives in, by its directory name",
+    "for": "the number of the slice still to run that should take the entry",
+    "benefit": "improvement: who is better off",
+    "felt": "improvement: when that is felt",
+    "change": "improvement: whether it removes, adjusts or adds",
+    "size": "improvement: what the change takes",
+    "product-call": "improvement: whether it changes what a user of the product "
+                    "sees or can do",
+    "prevents": "improvement: the worst it would prevent",
+}
+LABEL_FLAG_ORDER = ("trigger", "impact", "signal", "fix", "area", "repo", "for",
+                    "benefit", "felt", "change", "size", "product-call", "prevents")
+
+
+def _add_label_args(p: argparse.ArgumentParser) -> None:
+    for label in LABEL_FLAG_ORDER:
+        values = LABELS[label]
+        kwargs: dict = {"dest": f"label_{label.replace('-', '_')}",
+                        "help": LABEL_HELP[label]}
+        if values is None:
+            kwargs["metavar"] = "NAME" if label == "repo" else "SLICE"
+        else:
+            kwargs.update(choices=values, type=_label_value)
+        p.add_argument(f"--{label}", **kwargs)
+
+
+def _labels_from(args) -> dict:
+    return {label: getattr(args, f"label_{label.replace('-', '_')}")
+            for label in LABELS
+            if getattr(args, f"label_{label.replace('-', '_')}", None) is not None}
+
 
 def build_parser() -> tuple[argparse.ArgumentParser,
                             dict[str, argparse.ArgumentParser]]:
@@ -815,15 +1913,26 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     sub = parser.add_subparsers(dest="command", required=True)
 
     slice_help = "the slice directory, or its close-out.md"
+    id_help = "the entry's id, like B3"
 
-    p = sub.add_parser("init", help="create close-out.md if absent")
-    p.add_argument("slice", help=slice_help)
+    def verb(name: str, help_: str, entry: bool = False) -> argparse.ArgumentParser:
+        p = sub.add_parser(name, help=help_)
+        p.add_argument("slice", help=slice_help)
+        if entry:
+            p.add_argument("id", help=id_help)
+        return p
 
-    p = sub.add_parser("append", help="append one entry; prints its id")
-    p.add_argument("slice", help=slice_help)
-    p.add_argument("--section", required=True, choices=list(SECTIONS))
+    verb("init", "create the store and render it, if absent")
+
+    sub.add_parser("labels", help="print what each label means")
+
+    p = verb("append", "add one entry with its labels; prints its id")
+    p.add_argument("--kind", choices=list(KINDS), type=_label_value,
+                   help="what the entry is — it decides which of the labels "
+                        "below the entry carries")
+    p.add_argument("--section", help=argparse.SUPPRESS)
     p.add_argument("--headline", required=True,
-                   help="one line, the claim itself; a Bug names its repo or component")
+                   help="one line, the claim itself; a defect names its repo or component")
     p.add_argument("--body", required=True, help="entry body, or - for stdin")
     p.add_argument("--consequence", required=True,
                    help="what an operator or user experiences if this stays as it is, "
@@ -831,33 +1940,67 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p.add_argument("--provenance",
                    help="witnessed | read, then role, phase, round, and the artifact "
                         "with the full record")
-    p.add_argument("--severity", choices=SEVERITIES)
+    p.add_argument("--severity", choices=SEVERITIES, type=_label_value,
+                   help="the grade, where the entry has one")
+    _add_label_args(p)
+    # `--kind` is required unless the suppressed `--section` stands in for
+    # it; the usage line an author reads says it is required.
+    usage = " ".join(p.format_usage().removeprefix("usage:").split())
+    p.usage = "%(prog)s" + re.sub(r"\[(--kind \{[^}]*\})\]", r"\1",
+                                  usage.removeprefix(p.prog), count=1)
 
-    p = sub.add_parser("note", help="add a dated paragraph to one entry's body")
-    p.add_argument("slice", help=slice_help)
-    p.add_argument("id", help="the entry's id, like B3")
+    verb("list", "ids, headlines and Consequence lines by kind")
+
+    p = verb("note", "add a dated paragraph to one entry", entry=True)
     p.add_argument("--by", required=True, help="who notes — role and round")
     p.add_argument("--text", required=True, help="the note, or - for stdin")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
-    p = sub.add_parser("strike", help="strike one live entry; prints the heading")
-    p.add_argument("slice", help=slice_help)
-    p.add_argument("id", help="the entry's id, like B3")
+    p = verb("strike", "strike one live entry; prints its heading", entry=True)
     p.add_argument("--reason", required=True,
                    help="why — resolved/refuted names the commit and the re-run")
     p.add_argument("--by", help="who strikes, e.g. `consult 1`")
+    p.add_argument("--commit", help="the commit that resolved the entry")
+    p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
-    p = sub.add_parser("list", help="the triage view: ids, headlines, Consequence lines")
-    p.add_argument("slice", help=slice_help)
+    p = verb("relabel", "give an entry its labels or correct them", entry=True)
+    p.add_argument("--by", required=True, help="who relabels")
+    p.add_argument("--note", required=True,
+                   help="what was found that the labels now say, or - for stdin")
+    p.add_argument("--kind", choices=list(KINDS), type=_label_value,
+                   help="the corrected kind; the id stays")
+    _add_label_args(p)
+    p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
-    p = sub.add_parser("render", help="put the entry sections in reading order, in place")
-    p.add_argument("slice", help=slice_help)
+    p = verb("request-card", "the wrap-up asks for a card on an entry", entry=True)
+    p.add_argument("--by", required=True, help="who asks")
+    p.add_argument("--text", required=True,
+                   help="how it is reached and what the fix takes, or - for stdin")
+    p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
-    p = sub.add_parser("stamp", help="stamp the Run: header from state.json")
-    p.add_argument("slice", help=slice_help)
+    p = verb("leave", "the wrap-up looked at an entry and changed nothing", entry=True)
+    p.add_argument("--by", required=True, help="who looked")
+    p.add_argument("--text", required=True, help="why it stays, or - for stdin")
+    p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
-    p = sub.add_parser("counts", help="non-struck entries per section")
-    p.add_argument("slice", help=slice_help)
+    verb("worklist", "what waits for the wrap-up, with what is asked of each")
+
+    p = verb("rule", "the operator's words on an entry; without an id, read the "
+                     "Disposition lines back")
+    p.add_argument("id", nargs="?", help=id_help)
+    p.add_argument("--words", help="the operator's words, verbatim")
+    p.add_argument("--did", help="what was done on them — strikes the entry")
+    p.add_argument("--commit", help="the commit of what was done")
+    p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
+
+    p = verb("close", "close the report on the operator's word")
+    p.add_argument("--words", required=True, help="the operator's words, verbatim")
+    p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
+
+    verb("render", "read the Disposition lines back, then write close-out.md")
+    verb("stamp", "render, printing the run header from state.json")
+    verb("counts", "live entries per section and per id letter, one line")
+    verb("import", "read a close-out.md of the old shape into a new store")
     return parser, sub.choices
 
 
@@ -875,44 +2018,122 @@ def verb_usage(*verbs: str) -> str:
         out.append(usage.replace(" [-h]", ""))
         for action in sub._actions:
             # `slice` is the report path the dispatch line already names
-            if action.dest in ("help", "slice") or not action.help:
+            if action.dest in ("help", "slice") or not action.help \
+                    or action.help == argparse.SUPPRESS:
                 continue
             name = ", ".join(action.option_strings) or action.dest
             out.append(f"    {name}: {action.help}")
     return "\n".join(out)
 
 
+def labels_text() -> str:
+    """The contract's `## The labels` section, verbatim, up to the next
+    `## ` heading."""
+    try:
+        text = CONTRACT_DOC.read_text(encoding="utf-8")
+    except OSError as e:
+        raise ReportError(f"{CONTRACT_DOC} is unreadable: {e}") from None
+    lines = text.split("\n")
+    try:
+        start = lines.index(LABELS_HEADING)
+    except ValueError:
+        raise ReportError(f"{CONTRACT_DOC} has no `{LABELS_HEADING}` "
+                          "section") from None
+    end = next((i for i in range(start + 1, len(lines))
+                if lines[i].startswith("## ")), len(lines))
+    return "\n".join(lines[start:end]).rstrip("\n")
+
+
+def _stdin_or(value: str) -> str:
+    return sys.stdin.read() if value == "-" else value
+
+
+def _append_cli(slice_dir: Path, args) -> str:
+    if args.kind:
+        kind = args.kind
+    elif args.section:
+        kind = _kind_of(args.section)
+    else:
+        raise ReportError("append needs --kind")
+    labels = _labels_from(args)
+    errors = check_labels(kind, labels, args.consequence, slice_dir)
+    if errors:
+        raise ReportError("\n".join(errors))
+    labels = normalise_for(labels, slice_dir)
+    return append_entry(slice_dir, kind, args.headline, _stdin_or(args.body),
+                        consequence=args.consequence, provenance=args.provenance,
+                        severity=args.severity, labels=labels)
+
+
+def _rule_cli(slice_dir: Path, args) -> str:
+    if args.id is None:
+        if args.words or args.did or args.commit:
+            raise ReportError("--words, --did and --commit need an entry id")
+        taken = read_back(slice_dir)
+        if not taken:
+            return "nothing to take from the Disposition lines"
+        return "\n".join(f"{eid}: {_collapse(words)}" for eid, words in taken)
+    return rule_entry(slice_dir, args.id, words=args.words, did=args.did,
+                      commit=args.commit, date=args.date)
+
+
 def main(argv=None) -> int:
     parser, _ = build_parser()
     args = parser.parse_args(argv)
-    slice_dir = slice_dir_of(args.slice)
-    if not slice_dir.is_dir():
-        print(f"Error: slice directory not found: {slice_dir}", file=sys.stderr)
-        return 2
     try:
-        if args.command == "init":
+        if args.command == "labels":
+            print(labels_text())
+            return 0
+        slice_dir = slice_dir_of(args.slice)
+        if not slice_dir.is_dir():
+            print(f"Error: slice directory not found: {slice_dir}", file=sys.stderr)
+            return 2
+        command = args.command
+        if command == "init":
             created = init_report(slice_dir)
-            print(f"{'created' if created else 'exists'} {report_path(slice_dir)}")
-        elif args.command == "append":
-            body = sys.stdin.read() if args.body == "-" else args.body
-            print(append_entry(slice_dir, args.section, args.headline, body,
-                               consequence=args.consequence,
-                               provenance=args.provenance,
-                               severity=args.severity))
-        elif args.command == "note":
-            text = sys.stdin.read() if args.text == "-" else args.text
-            add_note(slice_dir, args.id, args.by, text, date=args.date)
-            print(f"{args.id} noted")
-        elif args.command == "strike":
-            print(strike_entry(slice_dir, args.id, args.reason, by=args.by))
-        elif args.command == "list":
+            print(f"{'created' if created else 'exists'} {store_path(slice_dir)}")
+        elif command == "append":
+            print(_append_cli(slice_dir, args))
+        elif command == "list":
             print(list_view(slice_dir))
-        elif args.command == "render":
+        elif command == "note":
+            add_note(slice_dir, args.id, args.by, _stdin_or(args.text), date=args.date)
+            print(f"{args.id} noted")
+        elif command == "strike":
+            print(strike_entry(slice_dir, args.id, args.reason, by=args.by,
+                               commit=args.commit, date=args.date))
+        elif command == "relabel":
+            print(relabel_entry(slice_dir, args.id, args.by, _stdin_or(args.note),
+                                kind=args.kind,
+                                labels=normalise_for(_labels_from(args), slice_dir),
+                                date=args.date))
+        elif command == "request-card":
+            print(request_card(slice_dir, args.id, args.by, _stdin_or(args.text),
+                               date=args.date))
+        elif command == "leave":
+            print(leave_entry(slice_dir, args.id, args.by, _stdin_or(args.text),
+                              date=args.date))
+        elif command == "worklist":
+            print(worklist_view(slice_dir))
+        elif command == "rule":
+            print(_rule_cli(slice_dir, args))
+        elif command == "close":
+            n, stay = close_report(slice_dir, args.words, date=args.date)
+            if stay:
+                print(f"{_plural(n, 'entry', 'entries')} closed; the report stays "
+                      f"open over {', '.join(stay)}, ruled and not executed")
+            else:
+                print(f"closed, {_plural(n, 'entry', 'entries')} with it")
+        elif command == "render":
             print(render_report(slice_dir))
-        elif args.command == "stamp":
+        elif command == "stamp":
             print(stamp_header(slice_dir))
-        elif args.command == "counts":
+        elif command == "counts":
             print(counts_line(entry_counts(slice_dir)))
+        elif command == "import":
+            n = import_report(slice_dir)
+            print(f"imported {_plural(n, 'entry', 'entries')} into "
+                  f"{store_path(slice_dir)}")
     except ReportError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 2

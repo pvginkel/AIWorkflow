@@ -1,8 +1,9 @@
 # From per-finding cards to the close-out report
 
 Why the loops stopped filing a tracker card per finding and started writing one document per
-slice, what that document's shape is for, and what the first forty-one reports show. The
-report's contract — who writes what, the entry rules, the lifecycle — is
+slice, what that document's shape is for, what the first forty-one reports show, and why the
+entries are since 0.9.57 labelled by their authors and routed by a table. The
+report's contract — the labels and the routes, who writes what, the entry rules, the lifecycle — is
 [`plugins/dev/docs/close-out.md`](../../plugins/dev/docs/close-out.md) and its shape
 [`close-out-template.md`](../../plugins/dev/docs/close-out-template.md); this doc does not
 restate them. The papers behind the design are in [`literature.md`](literature.md), the
@@ -64,13 +65,15 @@ critique regresses, and Han et al. (TALE) on numeric caps producing *more* outpu
 less, which is why the report has no limit on prose or count (§ 2; the readings are in
 [`literature.md`](literature.md)).
 
-The six sections and what each is for are the template's; two choices are worth the why. **Notable
-events** exists so that workflow deviations — a bail-out, a blocked proof re-routed, a tool
-missing from the sidecar — surface in the report rather than only in `log.txt` (H4 below).
-**Outstanding actions** was the operator's addition on 2026-08-15: "a runbook for the operator to
-complete" (§ 8).
+Until 0.9.57 the report had six sections, one per kind of entry, and two of them are worth the
+why; both live on as kinds. **Notable events** existed so that workflow deviations — a bail-out,
+a blocked proof re-routed, a tool missing from the sidecar — surface in the report rather than
+only in `log.txt` (H4 below). **Outstanding actions** was the operator's addition on 2026-08-15:
+"a runbook for the operator to complete" (§ 8).
 
-The entry closes with three bold labels, each added when a read showed the gap:
+The entry closed with three bold labels, each added when a read showed the gap; 0.9.57 put two
+lines of the tool's between them, `**Triage:**` and `**Route:**`
+([below](#triage-at-the-source)):
 
 - `**Consequence:**` (v0.5.3, 2026-08-17). The template had put the consequence inside the
   body's placeholder prose, and six finished reports showed authors treating it as prose: two
@@ -88,7 +91,7 @@ The entry closes with three bold labels, each added when a read showed the gap:
   states a cause only where shown, and a strike is a claim like any other — it names the commit
   and what was re-run.
 - `**Disposition:**` — blank, the operator's line, free form. The only thing written into the file
-  in words rather than through the tool.
+  in words rather than through the tool, and since 0.9.57 the only thing read back from it.
 
 The design note stated its hypotheses in advance (§ 7): **H1** cards per slice created by the run
 10 → 1, trivially true by construction, the real number being cards the operator files at
@@ -102,7 +105,9 @@ section split, never by a cap.
 `../research/close-out-plan.md` records the fourteen operator decisions of 2026-08-15 so a fresh
 session does not relitigate them (no JSON, no YAML, no tables; no pre-dedup; no validation beyond
 the section headings; the doc-writer writes Summary and Focus lines; automated triage is the end
-game, not now) and, in its header, where the build departed from the plan the same day.
+game, not now) and, in its header, where the build departed from the plan the same day. The
+operator reversed three of them on 2026-09-29, with 99 reports read: the record is JSON, the
+Summary and the Focus lines are gone, and the triage is automated — at the source.
 
 ## The generation bar, re-priced
 
@@ -149,7 +154,8 @@ block — idempotently, `stamp` writes the run header from `state.json`, and `co
 smoke checks. Only the completion consult strikes, and only through the tool — until v0.9.56,
 which lets the doc-writer strike what its own commit resolved whole: the doc phase runs after
 the last consult, and 58 live entries in 25 reports had reached the operator already fixed
-(`../research/close-out-read-2026-09-28.md`, finding 9).
+(`../research/close-out-read-2026-09-28.md`, finding 9). 0.9.57 kept the pen and changed what
+it writes on: a store, from which the report is rendered ([below](#triage-at-the-source)).
 
 Two later versions closed what the tool's own interface cost. The template's head comment still
 spelled out the whole entry shape as if an author typed it, and had drifted from what the tool
@@ -166,33 +172,34 @@ own parser (`verb_usage`), so no `--help` turn is spent and the block cannot dri
 
 ## Dispositions and the close-out skill
 
-The operator reads the rendered report and writes one line under each live entry; the suggested
-vocabulary is `card [board]` · `fix now` · `fold into <slice>` · `close` · `defer`, free form. The
-`/dev:close-out` skill ([`SKILL.md`](../../plugins/dev/skills/close-out/SKILL.md)) presents the
-report through `list` and asks nothing, then executes: `card` files one tracker card with the
-entry verbatim as its body, `fix now` does the small thing only if the project's own conventions
-class it as ad hoc work, `fold into` appends the entry to a backlog slice's `slice.md`, `close`
-strikes with `— closed by the operator, <date>`, `defer` leaves it for `/dev:triage`. A blanket
-ruling ("close the rest") is a `close` on every blank entry. Two bounds carry the design's
-intent: the session never edits the operator's words (what it did goes after them on the same
-line — a card id, a commit), and when a disposition asks about a claim it answers from the
-entry's own body and Provenance rather than agreeing (v0.5.4: a challenge flips 32–86 % of
-correct answers in Sharma et al.).
+The operator rules on an entry in a line; the suggested vocabulary is `card [board]` · `fix now`
+· `fold into <slice>` · `close` · `defer`, free form. The `/dev:close-out` skill
+([`SKILL.md`](../../plugins/dev/skills/close-out/SKILL.md)) presents what the report brings
+them and asks nothing, then executes: `card` files one tracker card with the entry verbatim as
+its body, `fix now` does the small thing only if the project's own conventions class it as ad
+hoc work, `fold into` appends the entry to a backlog slice's `slice.md`, `close` strikes,
+`defer` leaves it for `/dev:triage`. A blanket ruling ("close the rest") is a `close` on every
+entry that came to them and is not ruled. Two bounds carry the design's intent: the session
+never edits the operator's words (what it did is recorded after them — a card id, a commit),
+and when a ruling asks about a claim it answers from the entry's own body and Provenance rather
+than agreeing (v0.5.4: a challenge flips 32–86 % of correct answers in Sharma et al.).
 
-Since v0.9.38 the skill also carries the other way a report gets processed: the operator hands
-over the triage and rules once. The reports read below show it was already the habit — "Please
-apply your suggestions", "Apply your suggestions for the rest" — but what the session suggested
-came from rules the operator had stated once, on slice 181's report (2026-08-30), and that lived
-in one project's session memory: known small text changes are fixed now, bugs with real impact
-are carded, remote edge cases, low-stakes test gaps and nits are closed, suggestions are closed
-unless clearly interesting, and the remainder is theirs to look at. The stated reason is the
-report's size — the worry is missing the entry that matters, not reading every one — so the
-skill's product in that mode is a bucketed sheet with the needs-your-eyes set leading, and
-nothing is filed or struck before the ruling.
+They rule where it suits them, in the session or on the `Disposition:` lines of the rendered
+file: "In the beginning I sent most responses in session, but I do feel it's kind of nice to add
+them on the disposition lines. It's in-context for me" (2026-09-29).
 
-The run's only tracker output is one card, `[NNN] close-out: <title>`, whose body is the Summary,
-the Focus lines, the entry counts and the report's path; it is closed when no live entry has a
-blank `Disposition:`.
+From v0.9.38 to v0.9.56 the skill carried a second way to process a report: the operator handed
+over the triage and ruled once, on a sheet the session had sorted into buckets. The reports
+read below show it was the habit before it was the skill's — "Please apply your suggestions",
+"Apply your suggestions for the rest" — and what the session suggested came from rules the
+operator had stated once, on slice 181's report (2026-08-30). The sheet went with 0.9.57. The
+operator's own account of those rulings is that they were not their pattern: a third of the
+time they had seen that there was little to progress, two thirds they were "doing the third or
+fourth close out report in a sitting and I'm fed up with them". A sort learned from such
+rulings learns the sheet.
+
+The run's only tracker output is one card, `[NNN] close-out: <title>`, whose body is the report's
+path and its entry counts; it is closed when the report is.
 
 Triage got the same durable seam one stage earlier and one day later (v0.5.2, 2026-08-16): after
 a run of 86 in-scope cards over two days, the rubric verdict — the skill's main product — turned
@@ -306,15 +313,89 @@ things going right — was noted against the kill signal and not acted on from o
 154 were most of the Bugs section — v0.6.0's `render` folds them into a `<details>` block rather
 than removing them.
 
+## Triage at the source
+
+0.9.57 to 0.9.59 (2026-09-29) rebuilt the report around one observation of the operator's and
+one read. The read is `../research/close-out-read-2026-09-28.md`: 99 reports, 1,429 entries,
+every entry followed to what the operator did with it. The discussion of it, the design and
+every number below are in `../research/close-out-triage-plan-2026-09-29.md`; the rules
+themselves are the contract's.
+
+**What was wrong.** A report hands over a median 11 entries and the operator progresses one in
+three. The aids written over the entries did not help them choose: the Focus lines, the
+Summary, the head of the report and the body of the close-out card were not read — "I judge the
+items at their merit" — and a Focus line named 76 % of the entries, so it could not select. The
+operator's diagnosis was of the entries themselves (**ruled**): "right now the close out report
+is just a dump of thoughts and ideas. They aren't questions … the agent isn't really taking
+responsibility for what it's reporting. 'I saw this; not sure what you want to do with it.'"
+And what they guard is not a lost entry — "there will always be bugs" — but "an agent trying to
+get my eyes on something that I then don't see".
+
+**The author states facts, the tool applies the policy.** An author knows what it found and
+does not know the operator's bar; a bar written into eight role definitions cannot be moved.
+So the author labels — what kind of thing, what has to happen for it to show, what is then
+experienced, whether it then says so itself, what is decided about the fix, where the fix
+lives — and one table in `close_out.py` routes. The facts were there already: read from the
+text alone, 87 % of the entries state what has to happen and what is then experienced, and the
+labellers answered `unknown` for 4 % (**measured**, 561 entries of 47 reports).
+
+**The table is the operator's policy**, as they stated it: prose and nits with a simple fix are
+always progressed; a bug with an obvious fix is always progressed; "everything that's more
+complicated is decided on how likely it is to cause problems". Two rulings followed from the
+replay. Severity: the first table closed a defect graded major because it needed a fault, and
+the operator ruled that what is severe comes to them in place of the close — and only there: "I
+have no problem never knowing of an issue". And the signal: they progress what fails silently
+twice as often as what fails loudly, 51 % against 24 % on their own rulings, because "when we
+hit this, it will be very visible" — so what is loud on an ordinary condition is closed.
+
+**Replayed on the rulings that are the operator's own** (234 entries, labels given by a reader;
+**measured**), the tables keep 95 % of what they progressed, close 22 % of the entries, bring
+them a median 2 entries of the 11 a report hands over and give 46 % to the wrap-up. The
+text-only sorter this design replaced — one agent after the run, guessing the ruling from the
+report's text — kept 83 %. The rule for improvements was chosen on the 48 rulings it is scored
+on, so its part of that number is an upper bound.
+
+**An improvement has labels of its own**, because the operator's two categories are different
+questions: what should be fixed is asked how likely and how bad, what could be better is asked
+who is better off and when that is felt. What adds something for a benefit nobody feels today
+— a gate, an alarm, a check for an event that may never come — is what they close: 13 of 48,
+none progressed. An improvement of the workflow was never the report's; the tool now refuses
+it and names Fieldnotes.
+
+**The constraint of v0.5.4 — a triage pass "ranks and pre-fills, never closes" — was set for an
+agent that filters by judgment**, the class where an agentic filter suppresses 50–85 % of true
+findings. What closes here is a rule of the operator's applied to facts the author stated, and
+it closes in view: a closed entry keeps its heading, its Consequence, its labels and its route
+on the page, stays live until the operator closes the report, and is pulled back by a ruling
+that names it. Where a close rests on a label and the entry breaks a flow, the wrap-up checks
+that label in the code first.
+
+**The store.** With labels an entry is a record of a dozen fields, the route is computed from
+them, and the wrap-up corrects them. Kept in Markdown, each of those is a line the tool writes
+and then has to find and parse again — about half of the tool was the parser of its own
+output. The operator's suggestion: "I would very much consider storing close out information
+in a structured format (JSON or YAML) until at the very end". JSON, because plugin code is
+stdlib-only. It also makes a ruling data: the read needed a pattern classifier to tell an
+entry's fate from the words on it, at 88 % agreement.
+
+**The wrap-up** automates what the operator did by hand — "fix inline please": it fixes what is
+decided and safe, asks for a card where a likely problem is more than it can fix responsibly,
+and the rest stays closed. Its bar is the residual sweep's litmus, calibrated on the same class
+of work. No reviewer reads its fixes: a review writes advisory findings, those are entries, and
+entries go to a wrap-up — the loop has no end, and fix rounds on advisory findings are a
+settled no. Its assurance is the bar, the gate, and one commit per entry.
+
+**What it costs and what nobody has measured** (plan § 8): a session per slice that re-orients
+on the repositories, which the doc-phase measurement of 2026-09-05 priced at about twice the
+work; more inline fixes than the operator asked for, in code no reviewer reads; six labels
+more per entry. Every number above rests on labels a reader gave — an author knows more than
+its entry says, and has a stake a reader has not — and the wrap-up was never simulated. The
+first live slice is looked at before the second runs, and the readout comes after five.
+
 ## Deliberately absent
 
-From the contract's own closing section (`plugins/dev/docs/close-out.md`), each a decision of
-2026-08-15 or 2026-08-17: no validation beyond "the section heading exists" and the smoke counts
-(the operator: don't go overboard); no dedup tooling — `render` orders, it never merges, and every
-agent runs `list` before it writes; no disposition parsing — the line is the operator's, free
-form; and no automated triage pass over the report, with one constraint set in advance for when
-it comes: it ranks and pre-fills, never closes, because the report is mostly the judgment class
-where an agentic filter suppresses 50–85 % of true findings (v0.5.4, from Sifting the Noise). The
-shape is meant not to change when that step arrives. The handed-over triage of v0.9.38 sits
-inside that constraint — asked for by the operator, it sorts and proposes, and closes only on
-their ruling.
+From the contract's own closing section (`plugins/dev/docs/close-out.md`): no dedup tooling —
+`render` orders, it never merges, and every agent runs `list` before it writes; no table of a
+project's own and no switch on the routing or on the wrap-up — the operator's word on the
+switch was "I don't need the switch"; and nothing written over the entries by anyone, no list,
+no summary, no ranking: the report is its entries.

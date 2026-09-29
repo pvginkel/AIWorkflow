@@ -4,6 +4,50 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-29 — the close-out report is triaged at the source: labels, a table, a store (v0.9.57)
+
+The first of three versions that build `docs/research/close-out-triage-plan-2026-09-29.md`,
+ruled by the operator on 2026-09-29 and pushed together. The plan has their words, the evidence
+and the decisions; `docs/rationale/reporting.md` § Triage at the source has the why.
+
+- **The author of an entry says what it is.** Every entry carries labels: its kind, what has to
+  happen for the problem to show, what is then experienced, whether it then says so itself,
+  what is decided about the fix, and where the fix lives. An improvement has labels of its own:
+  who is better off, when that is felt, whether it adds, adjusts or removes. `close_out.py
+  append` takes them and refuses an entry without them, or with an impact that contradicts its
+  own `Consequence:` line. `close_out.py labels` prints what each label means. In doubt the
+  label is `unknown`.
+- **A table in the tool routes every entry from its labels**: to the operator, to the wrap-up,
+  closed, or to the record. No author chooses a disposition. An action and a decision always
+  come to the operator. What is severe or graded major is not closed for being unlikely. What
+  fails loudly on an ordinary condition is closed. An improvement of the workflow is refused as
+  an entry and goes to Fieldnotes. The policy is the operator's, one for every project.
+- **The record is `close-out.json`; `close-out.md` is rendered from it.** The route is computed
+  at every render, so a corrected label routes the entry again. Both files are committed. A
+  report written before the store existed is imported on first touch; its old Bugs and
+  Suggestions have no labels until somebody gives them.
+- **The report is ordered by what is asked of the operator**: what comes to them and the card
+  requests in full, what the table closed with its body folded and its labels in view, the
+  record last. Every entry shows its labels in words (`Triage:`) and where the table sent it
+  (`Route:`). Ids carry the kind's letter: `A` action, `D` decision, `E` event, `B` defect,
+  `P` prose, `T` test gap, `I` improvement.
+- **The Focus lines and the Summary are gone**, with the sheet at the head of the report and
+  in the close-out card's body: the operator read none of them. The doc-writer writes nothing
+  over the entries; the card's body is the report's path and its counts.
+- **The operator rules in the session or on the `Disposition:` lines, both.** The session
+  records their words with `close_out.py rule`; what they wrote in the file is read back by the
+  entry's id, and a render never loses it. `close_out.py close` closes the report on their
+  word.
+- **`/dev:close-out` is rewritten around what comes to the operator.** It presents those
+  entries in full and one line of counts for the rest. The handed-over triage and its sheet
+  (0.9.38) are gone: the table sorts. `/dev:triage` takes from a report what came to the
+  operator and is not ruled, and what they deferred.
+- Both loops render the report when they stop, for whatever reason, and when they complete.
+  The five section names the loops' own calls pass are taken as kinds, and the tool labels what
+  a loop enters.
+- Every environment updates its marketplace copy before its next slice is planned: an older
+  `close_out.py` knows no store.
+
 ## 2026-09-29 — whoever fixes an entry strikes it; a round that passed is not an event (v0.9.56)
 
 From the read of 99 close-out reports (`docs/research/close-out-read-2026-09-28.md`, R2 and

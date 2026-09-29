@@ -37,11 +37,13 @@ not relayed content. State persists in <slice>/plan_state.json across
 invocations.
 
 The loop is the first to run on a slice, so it creates and commits the
-slice's close-out report (<slice>/close-out.md — docs/close-out.md) before
-its first dispatch. At exit 0 it seeds that report's Outstanding actions
-from the plan: one entry per `## Push holds` repo, listing the criteria
-verification.json marks `owed_after` that push, and one per criterion owed
-after anything else — each entered once, however often the loop reruns.
+slice's close-out report (<slice>/close-out.json, the store, and the
+close-out.md rendered from it — docs/close-out.md) before its first
+dispatch. At exit 0 it seeds that report's actions from the plan: one entry
+per `## Push holds` repo, listing the criteria verification.json marks
+`owed_after` that push, and one per criterion owed after anything else —
+each entered once, however often the loop reruns. It renders the report at
+every exit.
 
 All loop and session output goes to <slice>/plan_log.txt; stdout carries the
 log-file line plus one terse timestamped line per pass start and the final
@@ -82,7 +84,9 @@ from close_out import (  # noqa: E402
     dispatch_line,
     find_by_headline,
     init_report,
+    render_report,
     report_path,
+    store_path,
 )
 from run_loop import (  # noqa: E402
     AGENTS_DIR,
@@ -128,8 +132,14 @@ LOOP_OWNED_FILES = frozenset({
     "plan_state.json",    # loop-owned state; survives so a rerun can resume
     "plan_bailout.json",  # bail record, rewritten each run
 })
+# The report the loop renders from its store at every exit, and commits only
+# where it commits the store: left modified by an exit that commits nothing,
+# it is the loop's own output, not an agent's work left uncommitted, so the
+# cleanliness checks pass it by as they pass the files above. The store
+# itself is an agent's commit and stays checked.
+RENDERED_FILES = frozenset({"close-out.md"})
 
-# The close-out section the exit-0 seed writes to, and the widths it
+# The kind the exit-0 seed enters, by its old section name, and the widths it
 # shortens to: a headline (a free-text `owed_after` can run long) and a
 # criterion quoted in a hold's entry.
 OUTSTANDING = "Outstanding actions"
@@ -227,6 +237,7 @@ class PlanLoop:
         self.slice_num = self.slice_name.split("_")[0]
         self.plan_path = self.slice_dir / "plan.md"
         self.report_path = report_path(self.slice_dir)
+        self._report_ready = False   # set once _ensure_report has run
         self.state_path = self.slice_dir / "plan_state.json"
         self.log_path = self.slice_dir / "plan_log.txt"
         self.verbose = verbose
@@ -312,7 +323,7 @@ class PlanLoop:
             status, path = entry[:2], entry[3:]
             if status[0] in ("R", "C"):
                 i += 1  # skip the origin path of a rename/copy
-            if PurePosixPath(path).name not in LOOP_OWNED_FILES:
+            if PurePosixPath(path).name not in LOOP_OWNED_FILES | RENDERED_FILES:
                 dirty.append(path)
         return dirty
 
@@ -356,7 +367,7 @@ class PlanLoop:
     @contextlib.contextmanager
     def _spec_tree(self, purpose: str):
         """The reader hold, in this loop's bail vocabulary: everything this
-        loop writes (plan.md, verification.json, close-out.md) lands in a
+        loop writes (plan.md, verification.json, the close-out report) lands in a
         tree a run loop's spec-repo phase may be branching, so the dispatch
         or commit waits for it. A wait past the cap is that run's problem to
         answer for — `blocked`, naming the holder."""
@@ -696,26 +707,49 @@ class PlanLoop:
 
     def _ensure_report(self) -> None:
         """The slice's close-out report exists before the first dispatch —
-        created from the template and committed by the loop (by name; the
-        spec repo is a shared tree). A rerun finds it and leaves it be. Runs
-        under the bail handler: a git or template failure is a bail
+        its store created, the report rendered from it, and both committed
+        by the loop (by name; the spec repo is a shared tree); a close-out.md
+        written before the store existed is imported, and the store
+        committed beside it. A rerun finds the store and leaves it be. Runs
+        under the bail handler: a git or store failure is a bail
         (plan_bailout.json), never a traceback. This is where the loop
-        records its base branch — before the template is written, so a report
+        records its base branch — before the store is written, so a report
         created onto the wrong branch and bailed on cannot be found (and
         skipped) by the rerun."""
         with self._spec_tree("close-out report"):
             self._assert_on_base()
+            store = store_path(self.slice_dir)
+            had_store = store.exists()
             try:
                 created = init_report(self.slice_dir)
             except ReportError as e:
                 raise Bailout("protocol_failure", details=str(e)) from None
-            if created:
-                self.git("add", str(self.report_path))
+            if created or (not had_store and store.exists()):
+                self.git("add", str(store), str(self.report_path))
                 self.git("commit", "-m",
                          f"slice {self.slice_num}: close-out report")
-                self.log(f"created {self.report_path.name} from the template")
+                self.log(f"{'created' if created else 'imported'} "
+                         f"{store.name} beside {self.report_path.name}")
+        self._report_ready = True
 
-    # -- the exit-0 seed: Outstanding actions the plan already owes -----------
+    def _render_report(self) -> None:
+        """close-out.md rendered from the store, at the loop's exit — any
+        exit. Never a failure and never a change to the exit: a report that
+        does not render is logged. Only on the loop's base branch: the tree
+        is shared, and a render onto another session's branch would leave
+        this slice's report modified there."""
+        if not self._report_ready:
+            return
+        try:
+            if self._current_branch() != self.state.get("base"):
+                self.log("close-out not rendered: the spec repo is not on "
+                         "this loop's base branch")
+                return
+            self.log("close-out rendered: " + render_report(self.slice_dir))
+        except (ReportError, Bailout, OSError) as e:
+            self.log(f"close-out not rendered: {getattr(e, 'details', e)}")
+
+    # -- the exit-0 seed: the actions the plan already owes ---------------------
 
     def _held_repo_name(self, target: str) -> str:
         """The held repo's directory name as the run loop's push check names
@@ -814,8 +848,8 @@ class PlanLoop:
         return entries
 
     def _seed_outstanding(self) -> None:
-        """At exit 0, enter the Outstanding actions the plan already owes
-        into the close-out report, so the operator's runbook does not hang on
+        """At exit 0, enter the actions the plan already owes into the
+        close-out report, so the operator's runbook does not hang on
         a later role noticing them. A headline the section already carries,
         live or struck, is left be: the loop reruns after questions and
         adjudication, and a slice may be replanned. Appended entries are
@@ -843,7 +877,11 @@ class PlanLoop:
                 seeded += 1
                 self.log(f"close-out {eid}: {headline}")
             if seeded:
-                self.git("add", str(self.report_path))
+                # Rendered before the commit, so the report committed is the
+                # store's; the exit's own render then finds nothing to change.
+                self._render_report()
+                self.git("add", str(store_path(self.slice_dir)),
+                         str(self.report_path))
                 self.git("commit", "-m",
                          f"slice {self.slice_num}: seed close-out "
                          "outstanding actions")
@@ -902,33 +940,38 @@ class PlanLoop:
                 self.state["phase"] = "fixing"
             self._save_state()
 
+        # Every exit from here on — 0, the questions and adjudication exits,
+        # a bail, an interrupt — renders the report on its way out.
         try:
-            self._assert_current()
-            self._ensure_report()
-            while True:
-                phase = self.state["phase"]
-                if phase == "writing":
-                    self._writer_pass(initial=True)
-                elif phase == "fixing":
-                    self._writer_pass(initial=False)
-                elif phase == "reviewing":
-                    self._review_round()
-                elif phase == "done":
-                    break
-                else:
-                    raise Bailout("protocol_failure",
-                                  details=f"unknown phase {phase!r}")
-            self._assert_current(plugin=False)
-            self._verify_review_on_file()
-            self._verify_plan_parses()
-            self._seed_outstanding()
-        except Bailout as bail:
-            self._bail(bail)
-        except KeyboardInterrupt:
-            self.log("interrupted — plan_state.json is current; rerun to "
-                     "continue")
-            print("Interrupted — rerun to continue.", file=sys.stderr)
-            sys.exit(130)
+            try:
+                self._assert_current()
+                self._ensure_report()
+                while True:
+                    phase = self.state["phase"]
+                    if phase == "writing":
+                        self._writer_pass(initial=True)
+                    elif phase == "fixing":
+                        self._writer_pass(initial=False)
+                    elif phase == "reviewing":
+                        self._review_round()
+                    elif phase == "done":
+                        break
+                    else:
+                        raise Bailout("protocol_failure",
+                                      details=f"unknown phase {phase!r}")
+                self._assert_current(plugin=False)
+                self._verify_review_on_file()
+                self._verify_plan_parses()
+                self._seed_outstanding()
+            except Bailout as bail:
+                self._bail(bail)
+            except KeyboardInterrupt:
+                self.log("interrupted — plan_state.json is current; rerun to "
+                         "continue")
+                print("Interrupted — rerun to continue.", file=sys.stderr)
+                sys.exit(130)
+        finally:
+            self._render_report()
 
         self.log(f"plan complete: {self.state['writer_rounds']} writer "
                  f"pass(es), review on file")

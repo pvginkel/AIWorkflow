@@ -193,11 +193,13 @@ def test_fresh_slice_happy_path():
 
 def test_the_loop_creates_and_commits_the_close_out_report_first():
     """The plan loop is the first to run on a slice, so it is the one that
-    creates close-out.md — before the first dispatch, committed by name —
-    and every dispatch names it. A rerun leaves the existing report alone."""
+    creates the report — its store and close-out.md, before the first
+    dispatch, committed together by name — and every dispatch names it. A
+    rerun leaves the existing store alone."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         report = slice_dir / "close-out.md"
+        store = slice_dir / "close-out.json"
         seen_at_spawn = []
 
         def writer_effect(loop):
@@ -208,19 +210,66 @@ def test_the_loop_creates_and_commits_the_close_out_report_first():
         assert run_to_exit(loop) == 4
         assert seen_at_spawn == [True], "the report predates the first dispatch"
         assert report.read_text().startswith("# Close-out — slice 099 test_slice\n")
-        assert ("add", str(report)) in loop.git_calls
+        assert json.loads(store.read_text())["entries"] == []
+        assert ("add", str(store), str(report)) in loop.git_calls
         commits = [c for c in loop.git_calls if c[:1] == ("commit",)]
         assert commits == [("commit", "-m", "slice 099: close-out report")]
         for role, prompt in loop.prompts:
             assert f"close-out report is {report}" in prompt, role
-        # The rerun (fix pass) finds the report and neither recreates nor
+        # The rerun (fix pass) finds the store and neither recreates nor
         # recommits it; the writer's fix dispatch names it too.
-        report.write_text(report.read_text() + "\n### Q1 — planning asked\n")
+        close_out.append_entry(slice_dir, "decision", "planning asked", "b",
+                               consequence="the rollout waits on it")
         rerun = ScriptedLoop(slice_dir, [W_DONE])
         assert run_to_exit(rerun) == 0
-        assert "### Q1 — planning asked" in report.read_text()
+        assert "### D1 — planning asked" in report.read_text()
         assert not [c for c in rerun.git_calls if c[:1] == ("commit",)]
         assert f"close-out report is {report}" in rerun.prompts[0][1]
+
+
+def test_the_loop_renders_the_report_at_every_exit_and_commits_none_of_it():
+    """What planning appended shows in close-out.md once the loop stops —
+    at a questions exit, at a bail, at exit 0 — and a stop that commits
+    nothing today commits no render either."""
+    def appends(what):
+        def effect(loop):
+            write_phases(loop)
+            close_out.append_entry(loop.slice_dir, "event", what, "b",
+                                   consequence="none")
+        return effect
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        report = slice_dir / "close-out.md"
+        loop = ScriptedLoop(slice_dir, [("plan-writer", {"outcome": "questions",
+                                                         "summary": "q"},
+                                         appends("asked the operator"))])
+        assert run_to_exit(loop) == 4
+        assert "### E1 — asked the operator" in report.read_text()
+        assert commits(loop) == [("commit", "-m", "slice 099: close-out report")]
+        assert "close-out rendered: Record 1" in (slice_dir / "plan_log.txt").read_text()
+
+        def bails(loop):
+            appends("the tree moved")(loop)
+            loop.branch = "phase/191-P3"
+
+        # A bail with the tree off its base leaves the report as it was: the
+        # render would land on another session's branch.
+        before = report.read_text()
+        loop = ScriptedLoop(slice_dir, [("plan-writer", {"outcome": "done"}, bails),
+                                        R_GO])
+        assert run_to_exit(loop) == 3
+        assert report.read_text() == before
+        assert "the spec repo is not on this loop's base branch" in \
+            (slice_dir / "plan_log.txt").read_text()
+        # Back on base, a bail renders.
+        def fails(loop):
+            raise plan_loop.Bailout("protocol_failure", details="scripted")
+
+        loop = ScriptedLoop(slice_dir, [(*R_GO, fails)])
+        assert run_to_exit(loop) == 3
+        assert "### E2 — the tree moved" in report.read_text()
+        assert not commits(loop)
 
 
 def test_report_creation_failure_is_a_bail_not_a_traceback():
@@ -497,6 +546,22 @@ def test_loop_owned_files_pass_preflight():
         assert run_to_exit(loop) == 0
 
 
+def test_the_rendered_report_passes_preflight_and_the_store_does_not():
+    """close-out.md is the loop's own render, left modified by an exit that
+    commits nothing — the rerun after a questions exit must not refuse on
+    it. The store is an agent's commit: left uncommitted, it is caught."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = DirtyGitLoop(slice_dir, [W_DONE, R_GO],
+                            porcelain=" M specs/099/close-out.md\0")
+        assert run_to_exit(loop) == 0
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = DirtyGitLoop(slice_dir, [],
+                            porcelain=" M specs/099/close-out.json\0")
+        assert run_to_exit(loop) == 2
+
+
 def test_dirty_paths_parse_spaces_and_renames():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
@@ -640,9 +705,9 @@ def plans(holds, items):
 
 
 def outstanding(slice_dir):
-    """The Outstanding-actions part of `close_out.py list`."""
+    """The actions part of `close_out.py list`."""
     view = close_out.list_view(slice_dir)
-    return view.split("## Notable events")[0]
+    return view.split("## decision")[0]
 
 
 def commits(loop):
@@ -672,7 +737,7 @@ def test_a_push_hold_is_seeded_once_naming_the_criteria_owed_after_it():
         fix = ScriptedLoop(slice_dir, [writer])
         assert run_to_exit(fix) == 0
         assert outstanding(slice_dir) == (
-            "## Outstanding actions\n"
+            "## action\n"
             "A1 — Push HelmCharts by hand when its hold lifts\n"
             "    Consequence: until you push it, nothing HelmCharts deploys "
             "carries the slice, and V02, V13 stay unproven.\n")
@@ -687,7 +752,8 @@ def test_a_push_hold_is_seeded_once_naming_the_criteria_owed_after_it():
         assert ("**Provenance:** read — `plan.md`'s `## Push holds` and "
                 "`verification.json`'s `owed_after`, seeded by the plan "
                 "loop") in text
-        assert ("add", str(report)) in fix.git_calls
+        assert ("add", str(slice_dir / "close-out.json"), str(report)) \
+            in fix.git_calls
         assert commits(fix) == [SEED_COMMIT]
         log = (slice_dir / "plan_log.txt").read_text()
         assert "close-out A1: Push HelmCharts by hand when its hold lifts" in log
@@ -737,7 +803,7 @@ def test_an_owed_criterion_no_hold_covers_gets_its_own_settle_entry():
         assert run_to_exit(loop) == 0
         view = outstanding(slice_dir)
         assert view.startswith(
-            "## Outstanding actions\n"
+            "## action\n"
             "A1 — Push CodeRepo by hand when its hold lifts\n"
             "    Consequence: until you push it, nothing CodeRepo deploys "
             "carries the slice.\n"
@@ -789,6 +855,7 @@ def test_a_struck_entry_with_the_seeded_headline_is_not_entered_again():
             consequence="none", provenance="read")
         close_out.strike_entry(slice_dir, "A1", "pushed 2026-09-20",
                                by="operator")
+        close_out.render_report(slice_dir)
         before = (slice_dir / "close-out.md").read_text()
         loop = ScriptedLoop(slice_dir, [
             ("plan-writer", {"outcome": "done"},
@@ -805,14 +872,17 @@ def test_a_struck_entry_with_the_seeded_headline_is_not_entered_again():
 def test_a_report_that_refuses_the_seed_is_logged_not_a_failed_plan():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
-        (slice_dir / "close-out.md").write_text("# Close-out\n\n## Bugs\n")
+        (slice_dir / "close-out.json").write_text("{ not json\n")
         loop = ScriptedLoop(slice_dir, [
             ("plan-writer", {"outcome": "done"}, plans(HOLD_SECTION, [])),
             R_GO])
         assert run_to_exit(loop) == 0
         assert not commits(loop)
         log = (slice_dir / "plan_log.txt").read_text()
-        assert "close-out entry not written (no `## Outstanding actions`" in log
+        assert "close-out entry not written (" in log
+        assert "is not valid JSON" in log
+        # …and the exit's render, which cannot read it either, is logged too
+        assert "close-out not rendered: " in log
 
 
 def test_the_seed_commits_on_the_base_branch_only():

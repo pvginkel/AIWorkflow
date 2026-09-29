@@ -34,7 +34,7 @@ otherwise),
 `consult_seq`, `in_flight`, `bailouts` (every stop this run made — `reason`, `phase`,
 `question`, `ts`, the `run_phase` it stopped in and its `details` clipped to 600 characters —
 kept here because `bailout.json` is unlinked on resume; the resume that follows a stop writes it
-into the close-out report's Notable events and marks the row `reported`, so each stop is entered
+into the close-out report as an event and marks the row `reported`, so each stop is entered
 once however often the run resumes), `appended_phases`
 (the ids the plan gained after the run started — a consult's, the test phase's, or the
 operator's, as opposed to the phases it began with), `holds_reported` (the repos held by the
@@ -73,11 +73,13 @@ complete who-did-what record.
 local wall clock**, taken from the process's `TZ` (UTC when unset). The ISO stamps stay
 offset-aware, so they remain unambiguous to anything that parses them back.
 
-**`close-out.md`** sits beside `state.json` and is not the driver's: created by the loops from the
-template, written by every agent, stamped by the driver — the header the driver writes at
-completion is read off this state (`created_at` → `updated_at`, `known_phases` against
-`appended_phases`, `bailouts`, `test_rounds`, `doc_phase.stage`, and `cost` once
-`slice_cost.py --write-state` has run). What goes in it is [close-out.md](close-out.md).
+**`close-out.json`** and the **`close-out.md`** rendered from it sit beside `state.json` and are
+not the driver's: created by the loops, written by every agent through `close_out.py`, rendered
+by the driver — the header of the rendered report is read off this state (`created_at` →
+`updated_at`, `known_phases` against `appended_phases`, `bailouts`, `test_rounds`,
+`doc_phase.stage`, and `cost` once `slice_cost.py --write-state` has run), and so is which
+repositories the slice touched: the `root` of every phase. What goes in the report is
+[close-out.md](close-out.md).
 
 Session outputs live under `<slice>/phases/P<id>/` (review docs, gate logs, verdict files) and at
 the slice root for the consult/test/doc stages; the loop-tail sweep's logs live under
@@ -101,7 +103,7 @@ error the orchestrator diagnoses).
 | `operator_question` | ✓ | an executor or the doc-writer returned `question` |
 | `plan_doc` | ✓ | the plan doc is broken and no session could fix it on a nudge |
 | `generation_exhausted` | ✓ | a third follow-up generation of appended work is pending |
-| `prerun_action` | ✓ | at startup, fresh or `--resume`, the slice's `close-out.md` holds a live `Before /dev:run-slice` Outstanding action ([run-loop.md](run-loop.md) § Protocol invariants) |
+| `prerun_action` | ✓ | at startup, fresh or `--resume`, the slice's close-out report holds a live `Before /dev:run-slice` action ([run-loop.md](run-loop.md) § Protocol invariants) |
 | `blocked` | – | an agent reported `blocked`, or a protocol failure after the nudge |
 | `gate_red` | – | the gate stayed red through the executor fix cap, or at merge |
 | `consult_bail` | – | any consult chose `bail` |

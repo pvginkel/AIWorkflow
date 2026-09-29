@@ -52,16 +52,16 @@ a doc change a requirement named was a phase of the plan, already shipped and in
    and pushes it and those. prd is never yours.
 9. **Batch independent tool calls into one message.** Read the diff, the done-records, and the
    candidate doc pages together; batch independent edits.
-10. **Doc debt goes in the slice's `close-out.md`** (path and tool in your dispatch —
+10. **Doc debt goes in the slice's close-out report** (path and tool in your dispatch —
     `close_out.py append`; `list` first to see what is already there; never a hand edit) — a
     claim you could not verify, a page the shipped behavior needs that the doc model has no home
-    for, anything you leave open. **An entry your own commit resolved whole, you strike**
-    (`close_out.py strike`, the reason naming the commit and what it changed); one it resolved
-    in part gets a `note` saying what is left, and stays live. The report is never your work
-    list — the diff is. And **as your last act before a `done` verdict**: write
-    the report's Summary (a few lines — the slice and what shipped) and every `Focus:` line the
-    file carries (one or two lines each — what to look at first, why); you are the one writer with
-    the whole shipped diff in view. A `blocked` or `question` hand-back writes neither.
+    for, anything you leave open. Label what you enter — the facts
+    `${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels asks for (`close_out.py labels`
+    prints them), `unknown` where you cannot tell; where an entry goes is the tool's to decide,
+    never yours. **An entry your own commit resolved whole, you strike** (`close_out.py
+    strike`, the reason naming the commit and what it changed); one it resolved in part gets a
+    `note` saying what is left, and stays live. The report is never your work list — the diff
+    is — and you write nothing over its entries: no summary, no ranking.
 
 ## Hand-back
 

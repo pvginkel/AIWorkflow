@@ -51,7 +51,7 @@ some checkout under `/work` already has as its origin — the environment's own,
 instead. A `github:` repo without a manifest has no gate, and its phase needs a `gate` line under
 `## Driver rulings` ([plan-template.md](plan-template.md)): without one the dry run lists a plan
 problem and the run refuses the phase. The first phase a run resolves on a clone leaves an
-Outstanding action in `close-out.md` suggesting the operator delete it once the slice's commits are
+action in the close-out report suggesting the operator delete it once the slice's commits are
 on origin.
 
 **The spec repo is a legal `Target:`** — a slice whose whole deliverable is the wire contracts
@@ -101,7 +101,7 @@ otherwise, naming a branch of this run's own as the run's fault rather than a pa
 session's; the plan loop keeps the same hold and the same
 assertion ([plan-loop.md](plan-loop.md)). What that guards: another slice's plan-loop commits
 and stamps landing on a phase branch and surfacing as out-of-scope changes in its review, and
-the doc-writer rewriting `close-out.md` from a stale checkout.
+the doc-writer writing to the close-out report from a stale checkout.
 
 **The plan doc is writable by every agent in the loop — deliberately; this is load-bearing.**
 Executors append their done-record and edit later phases their work changes; consult and test
@@ -303,10 +303,9 @@ whole plan is a feature of the review, not a cost. Then:
   path instead of re-running `git diff`, which past the tool's output limit round-trips through a
   persisted file; the plan **digested whole** — title, rulings sections, every phase's
   done-record — so the plan is opened only where a record points and slice.md not at all; and
-  the close-out verbs the phase uses (`list`, `append`, `note`, `strike`) with their argument
-  shapes,
-  rendered from `close_out.py`'s own parser, plus where the Summary and `Focus:` lines go — the
-  `--help` round trips and the previous-slice style reads go with them. The driver then runs the
+  the close-out verbs the phase uses beside `append` (`list`, `note`, `strike`) with their
+  argument shapes, rendered from `close_out.py`'s own parser — the `--help` round trips go with
+  them. The driver then runs the
   full gate sweep — `kc project lint` + `build` + `test`, fail-fast (red is nudged back to the
   writer's session; a verb that ran nothing is not red; a verb a ruling touches in this repo runs
   per component, leaving out what the rulings cover) — checks local `<base>` against
@@ -340,14 +339,15 @@ driver's sweep re-runs on any commit it has not seen, which gates the fix before
 but never before a push the test phase's own procedure doc orders.
 
 **Close-out.** Nothing from a run is carded per finding: everything an agent noticed but the
-loop did not act on is in the slice's `close-out.md` — who writes what there is
+loop did not act on is in the slice's close-out report — who writes what there is
 [close-out.md](close-out.md). The driver's own part is deterministic: it creates the report at
 run start when planning left none, names the report and `close_out.py` (the only way to write to
-it) in every dispatch, enters refuted findings, funding-consult merges and every stop of the
-run (written by the resume that follows the stop, from `state.json`'s `bailouts`), renders the
-report into reading order before the doc phase and again at completion, and stamps the run
-header from `state.json` when the run completes; the launching session re-stamps it once the
-cost block has landed and files **one** tracker card pointing at the report.
+it) in every dispatch, with `append`'s arguments, enters refuted findings, funding-consult
+merges and every stop of the run (written by the resume that follows the stop, from
+`state.json`'s `bailouts`), and renders the report — before the doc phase, whenever the run
+stops, and when it completes, the run header from `state.json` with it; the launching session
+renders once more when the cost block has landed and files **one** tracker card pointing at the
+report.
 
 ## Protocol invariants
 
@@ -390,8 +390,8 @@ passes: the check never holds a loop up on its own bookkeeping. The same points 
 `protocol_failure` — the second guard, for a newer agent's field the driver would otherwise drop.
 
 **The loop does not start over an open pre-run action.** At startup, fresh or `--resume`, before
-any dispatch, the run loop reads the slice's own `close-out.md` and bails `prerun_action` (exit 4)
-on any live Outstanding action whose headline begins `Before /dev:run-slice`
+any dispatch, the run loop reads the slice's own close-out report and bails `prerun_action`
+(exit 4) on any live action whose headline begins `Before /dev:run-slice`
 ([close-out.md](close-out.md) § Who writes what, when). Slice 027's first executor was dispatched
 while its A1 — push two toolchain commits, restart the pod — was still open, failed its first
 `cexec` and handed back `blocked`. The after-run actions the plan loop seeds (a held push, a

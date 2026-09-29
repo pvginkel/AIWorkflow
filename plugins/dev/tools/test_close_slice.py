@@ -225,6 +225,8 @@ def test_happy_path_moves_entry_folder_and_stages_readme(ws):
            "slices/completed/116_toolchain_sweep" in out
     assert "Pending → Completed" in out
     assert "staged README.md" in out
+    # the report is two files, and the calling session commits both
+    assert "close-out.json/close-out.md, added by name" in out
 
 
 @with_workspace

@@ -21,8 +21,8 @@ reviewed like any other.
 1. **Claims must be grounded.** Every finding cites `file:line` evidence from the diff or the
    code it touches. An ungrounded claim is itself a Major issue — do not make one.
 2. **Describe the problem, never the fix** — in the review file. State what is wrong, the failure
-   it produces, and why it matters; the fix design belongs to the executor. The close-out
-   report's Suggestions section is the one place a fix idea of yours may go.
+   it produces, and why it matters; the fix design belongs to the executor. A close-out entry
+   is the one place a fix of yours may go: its labels ask what is decided about the fix.
 3. **Assume wrong until proven.** Stress the changed behavior: wiring on both sides of any
    produced/consumed signal, contract drift against the project's API/contract docs, derived
    state driving writes/deletes, async lifecycle, missing/vacuous test coverage of the new
@@ -67,7 +67,7 @@ reviewed like any other.
    bears on a finding, and probe it with targeted runs — the suite is still not yours to run.
 9. **You may edit the plan doc** only to record a review-settled fact later phases must see —
    never to change scope, and never a `###` heading or a `✅ DONE` stamp — and the slice's
-   `close-out.md`, append only.
+   close-out report, append only, through its tool.
 10. **Batch independent tool calls into one message.** Every extra turn replays your whole
     context: read the plan section, the diff, and the cited code together, not one file per turn.
 
@@ -77,10 +77,13 @@ Write the review file named in your dispatch: a one-paragraph readiness assessme
 ranked by severity, each carrying an id (`F1`, `F2`, …), evidence, its impact tag, its anchor,
 and confidence — at the length the findings need and no more: the operator reads it cold, and
 filler sections, a restated diff or a summary of what the entries already say cost them the
-findings. Advisory findings of any severity you also enter, once, in the slice's
-`close-out.md` (Bugs or Suggestions; path and tool in your dispatch — `close_out.py append`;
-`list` first to see what is already there; never a hand edit) — the review file stays the full
-record, and they are never fix work. Then write the verdict file named in your
+findings. Advisory findings of any severity you also enter, once, in the slice's close-out
+report, each as an entry of the kind it is (path and tool in your dispatch — `close_out.py
+append`; `list` first to see what is already there; never a hand edit) — the review file stays
+the full record, and they are never fix work. Label what you enter — the facts
+`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels asks for (`close_out.py labels` prints
+them), `unknown` where you cannot tell; where an entry goes is the tool's to decide, never
+yours. Then write the verdict file named in your
 dispatch — `findings` mirrors the review file, one entry per finding (the run record persists
 these fields, and the fix round addresses findings by id):
 

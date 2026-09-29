@@ -85,7 +85,7 @@ The mechanical rules the parser holds every author to:
   run loop's parser ignores it, as it does every `##` section but the next one.
 - **`## Push holds` names the repos this run must not push** — one `- <target> — <why>`
   bullet each (em dash), target in the same vocabulary as `Target:`. The plan loop enters one
-  Outstanding-actions entry per held repo in the close-out report at its exit 0; the driver skips
+  action per held repo in the close-out report at its exit 0; the driver skips
   held repos in its push check, names them in the test phase's dispatch, and notes that entry
   (or writes it, for a hold added after planning). The doc landing merges locally and does not
   push a held primary repo. A
@@ -198,7 +198,7 @@ The mechanical rules the parser holds every author to:
   in the run may take: a push the plan holds (the hold's target exactly as `## Push holds`
   writes it, e.g. `../HelmCharts`), or, as free text, another operator action. Leave it out
   everywhere else; almost every criterion has none. The plan loop turns it into the close-out
-  report's Outstanding actions, listing the criterion in its hold's entry or giving it a
+  report's actions, listing the criterion in its hold's entry or giving it a
   `Settle <id> after …` entry of its own, so the operator's runbook carries it from planning on.
 - **No other keys.** Both loops bail on an item key outside this schema.
 - `verdict`/`rationale`/`evidence` stay empty at planning time — the run loop's test phase

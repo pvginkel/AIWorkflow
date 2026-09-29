@@ -712,12 +712,12 @@ def test_happy_path_two_phases():
         assert plan.count("✅ DONE") == 2
         # the stamp is committed in the specs repo, plan.md staged by name;
         # the only other driver commit there is the close-out report's
-        # creation, also by name
+        # creation, its store and its render staged together, also by name
         specs = r.fake_git.specs_ops()
         adds = [c for c in specs if c[2] == "add"]
         commits = [c for c in specs if c[2] == "commit"]
-        assert [Path(c[3]).name for c in adds] == \
-            ["close-out.md", "plan.md", "plan.md"]
+        assert [[Path(a).name for a in c[3:]] for c in adds] == \
+            [["close-out.json", "close-out.md"], ["plan.md"], ["plan.md"]]
         assert any("stamp P1 done" in " ".join(c) for c in commits)
         assert any("close-out report" in " ".join(c) for c in commits)
         assert not (slice_dir / "bailout.json").exists()
@@ -1193,7 +1193,7 @@ def test_review_funding_consult_merges_and_reports():
         # its own: the consult's reasoning, the findings as tagged, the
         # review file.
         report = load_report(slice_dir)
-        assert ("### N1 — P1 merged with unresolved review findings after r2"
+        assert ("### E1 — P1 merged with unresolved review findings after r2"
                 in report)
         assert "advisory only" in report
         assert "F1 [Major/blocking]: wrong branch on empty input" in report
@@ -1230,7 +1230,7 @@ def test_review_funding_consult_can_fund_a_fix_round():
         ps = state["phases"]["1"]
         assert ps["status"] == "merged"
         assert ps["review_rounds"] == 3 and ps["executor_rounds"] == 3
-        assert "### N" not in load_report(slice_dir)
+        assert "### E" not in load_report(slice_dir)
 
 
 def test_review_budget_cap_forces_merge_or_bail():
@@ -1355,7 +1355,7 @@ def test_all_blocking_refuted_without_code_change_settles_review():
         # The refutation is a Notable event carrying the reviewer's claim,
         # the writer's evidence, and the review file — nothing to chase.
         report = load_report(slice_dir)
-        assert "### N1 — Fix round after review r1 of P1 refuted F1" in report
+        assert "### E1 — Fix round after review r1 of P1 refuted F1" in report
         assert '"wrong branch on empty input"' in report
         assert "ran the repro; output correct" in report
         assert "code_review_r1.md" in report
@@ -1454,6 +1454,7 @@ def test_executor_question_bails_as_operator_question():
 # run completes.
 
 CLOSE_OUT_TOOL = str(Path(__file__).resolve().parent / "close_out.py")
+close_out = sys.modules[run_loop.ReportError.__module__]
 
 def test_run_start_creates_and_commits_the_report_once():
     with tempfile.TemporaryDirectory() as tmp:
@@ -1469,6 +1470,20 @@ def test_run_start_creates_and_commits_the_report_once():
         assert len(creates) == 1
         # A run started with the plan loop's report in place leaves it be.
         (slice_dir / "state.json").unlink()
+        run_loop.append_entry(slice_dir, "event", "planning saw something",
+                              "body", consequence="none")
+        plan = (slice_dir / "plan.md").read_text()
+        (slice_dir / "plan.md").write_text(re.sub(r" ✅ DONE \S+", "", plan))
+        r2 = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                      *TAIL], repo_root=repo)
+        assert run_to_exit(r2) == 0
+        assert "### E1 — planning saw something" in load_report(slice_dir)
+        assert not [c for c in r2.fake_git.specs_ops()
+                    if c[2] == "commit" and "close-out report" in c[4]]
+        # A report written before the store existed is imported, and the
+        # store committed beside it, by name.
+        (slice_dir / "state.json").unlink()
+        (slice_dir / "close-out.json").unlink()
         (slice_dir / "close-out.md").write_text(
             "# Close-out — slice 074 test_slice\n\nRun: <not yet stamped>\n\n"
             "## Summary\n\n## Outstanding actions\n\n## Notable events\n\n"
@@ -1476,12 +1491,16 @@ def test_run_start_creates_and_commits_the_report_once():
             "## Bugs\n\n## Open questions and rulings\n\n## Suggestions\n")
         plan = (slice_dir / "plan.md").read_text()
         (slice_dir / "plan.md").write_text(re.sub(r" ✅ DONE \S+", "", plan))
-        r2 = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+        r3 = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
                                       *TAIL], repo_root=repo)
-        assert run_to_exit(r2) == 0
+        assert run_to_exit(r3) == 0
         assert "### N1 — planning saw something" in load_report(slice_dir)
-        assert not [c for c in r2.fake_git.specs_ops()
-                    if c[2] == "commit" and "close-out report" in c[4]]
+        imports = [c for c in r3.fake_git.specs_ops()
+                   if c[2] == "commit" and "close-out report" in c[4]]
+        assert len(imports) == 1
+        assert [Path(a).name for a in next(
+            c for c in r3.fake_git.specs_ops() if c[2] == "add")[3:]] == \
+            ["close-out.json", "close-out.md"]
 
 
 def test_resume_creates_the_report_when_the_run_predates_it():
@@ -1523,28 +1542,31 @@ def test_every_dispatch_carries_the_report_path():
         assert all(pointer in p for p in by_role["test-agent"])
         assert all(pointer in p for p in by_role["doc-writer"])
         assert all(pointer in p for p in by_role["consult"])
-        # …and the tool, once per dispatch — the installed close_out.py by
-        # absolute path, the subcommands that write, and the ban on hand
-        # edits — never restated within a prompt.
+        # …and the tool, in the one dispatch line — the installed
+        # close_out.py by absolute path, in the invocation and in the
+        # pointer to its labels, the ban on hand edits, and `append`'s
+        # arguments — never restated within a prompt.
         report = slice_dir / "close-out.md"
         for _, prompt in r.prompts:
-            assert prompt.count(CLOSE_OUT_TOOL) == 1, prompt
-            assert f"`python3 {CLOSE_OUT_TOOL} append|note|strike {report} …`" in prompt
-            assert "never edit the file by hand" in prompt
+            assert prompt.count(CLOSE_OUT_TOOL) == 2, prompt
+            assert f"`python3 {CLOSE_OUT_TOOL} <verb> {report} …`" in prompt
+            assert f"`python3 {CLOSE_OUT_TOOL} labels` prints" in prompt
+            assert "never edit either file by hand" in prompt
+            assert prompt.count("close_out.py append --kind") == 1
         # and no prompt still speaks of cards
         assert not any("card" in p for _, p in r.prompts)
 
 
 def test_report_is_rendered_before_the_doc_phase_and_at_completion():
-    """The doc-writer ranks its Focus lines over the report as the operator
-    will read it, so the driver renders before dispatching it: live entries
-    first, Bugs by severity, struck entries folded last. At completion it
-    renders again (idempotent) and then stamps."""
+    """A run that stalls in the doc phase leaves a report that can be read,
+    so the driver renders before dispatching the doc-writer: sections by
+    route, graded entries first, struck entries folded in the Record. At
+    completion it renders again (idempotent) and then stamps."""
     plant = {}
 
     def plant_entries(loop):
-        # The test phase's session leaves a report in arrival order: a
-        # struck nit ahead of a live major, a hand-typed struck heading.
+        # The test phase's session leaves entries in arrival order, one of
+        # them struck — the store changed, the report not yet rendered.
         d = loop.slice_dir
         run_loop.append_entry(d, "Bugs", "a nit", "b1", consequence="c1",
                               provenance="read P1 r1", severity="nit")
@@ -1553,9 +1575,8 @@ def test_report_is_rendered_before_the_doc_phase_and_at_completion():
                               severity="major")
         run_loop.append_entry(d, "Bugs", "a minor", "b3", consequence="c3",
                               provenance="read P1 r1", severity="minor")
-        text = (d / "close-out.md").read_text().replace(
-            "### B1 — a nit · nit", "### ~~B1 — a nit · nit~~ — dup of B3")
-        (d / "close-out.md").write_text(text)
+        close_out.strike_entry(d, "B1", "dup of B3")
+        plant["planted"] = load_report(d)
 
     def snapshot(loop):
         plant["at_doc_dispatch"] = load_report(loop.slice_dir)
@@ -1569,25 +1590,30 @@ def test_report_is_rendered_before_the_doc_phase_and_at_completion():
         slice_dir, repo = make_slice(tmp)
         r = ScriptedLoop(slice_dir, script, repo_root=repo)
         assert run_to_exit(r) == 0
+        assert "## " not in plant["planted"], "appends do not render"
         seen = plant["at_doc_dispatch"]
-        bugs = seen[seen.index("\n## Bugs\n"):seen.index("\n## Open questions")]
-        # Rendered when the doc-writer was dispatched: major, minor, then
-        # the struck nit folded — its body kept, behind the live ones.
-        assert (bugs.index("### B2 — the major one · major")
-                < bugs.index("### B3 — a minor · minor")
-                < bugs.index("### ~~B1 — a nit · nit~~ — dup of B3")
-                < bugs.index("<details><summary>struck — body kept")
-                < bugs.index("b1\n") < bugs.index("</details>"))
-        # Completion rendered again and stamped: byte-identical entry
-        # sections, header stamped, counts unchanged.
+        # Rendered when the doc-writer was dispatched: the unlabelled
+        # defects in full, major before minor; the struck nit folded whole
+        # in the Record, its body kept.
+        body = seen[seen.index("\n## "):]
+        assert (body.index("## Unlabelled")
+                < body.index("### B2 — the major one · major")
+                < body.index("### B3 — a minor · minor")
+                < body.index("## Record")
+                < body.index("### ~~B1 — a nit · nit~~ — dup of B3")
+                < body.index("<details><summary>struck — kept for the record")
+                < body.index("b1\n") < body.index("</details>"))
+        # Completion rendered again and stamped: byte-identical sections,
+        # header stamped, counts unchanged.
         final = load_report(slice_dir)
-        assert final[final.index("\n## Bugs\n"):] == seen[seen.index("\n## Bugs\n"):]
+        assert final[final.index("\n## "):] == body
         assert "<not yet stamped>" not in final
-        assert "close-out report: A 0 · N 0 · B 2 · Q 0 · S 0" in \
-            (slice_dir / "log.txt").read_text()
         log = (slice_dir / "log.txt").read_text()
+        assert ("close-out report: to you 0 · card requests 0 · wrap-up 0 · "
+                "unlabelled 2 · closed 0 · record 0 — A 0 · D 0 · E 0 · B 2 · "
+                "P 0 · T 0 · I 0") in log
         assert log.count("close-out rendered: ") == 2
-        assert "Bugs: 2 live, 1 struck" in log
+        assert "close-out rendered: Unlabelled 2 · Record 1" in log
 
 
 def test_bail_outs_and_appended_phases_are_recorded_for_the_header():
@@ -1619,7 +1645,7 @@ def test_bail_outs_and_appended_phases_are_recorded_for_the_header():
         # The header is stamped from that state when the run completes.
         report = load_report(slice_dir)
         assert "<not yet stamped>" not in report
-        header = report[report.index("Run:"):report.index("## Summary")]
+        header = report[report.index("Run:"):report.index("\n## ")]
         header = " ".join(header.split())
         assert "2 phases (1 planned, P2 appended)" in header
         assert "1 bail-out" in header
@@ -1627,13 +1653,54 @@ def test_bail_outs_and_appended_phases_are_recorded_for_the_header():
         assert "doc phase done" in header
         assert "$" not in header      # no cost block yet — omitted, not guessed
         log = (slice_dir / "log.txt").read_text()
-        # the one Notable event is that bail, written by the resume
-        assert "close-out report: A 0 · N 1 · B 0 · Q 0 · S 0" in log
+        # the one event is that bail, written by the resume, in the record
+        assert ("close-out report: to you 0 · card requests 0 · wrap-up 0 · "
+                "unlabelled 0 · closed 0 · record 1 — A 0 · D 0 · E 1 · B 0") in log
+
+
+def test_a_bail_renders_the_report_and_commits_nothing():
+    """A run that stops leaves its report rendered from the store as it
+    stood — the header naming the stage it stopped in — and the files as
+    they are: a bail adds no commit."""
+    def appends(loop):
+        run_loop.append_entry(loop.slice_dir, "defect", "found on the way", "b",
+                              consequence="c")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [("code-writer", {"outcome": "blocked",
+                                                       "summary": "no creds"},
+                                      appends)],
+                         repo_root=repo)
+        assert run_to_exit(r) == 3
+        report = load_report(slice_dir)
+        assert "### B1 — found on the way" in report
+        assert "run bailed in phases" in " ".join(report.split())
+        assert "close-out rendered: Unlabelled 1" in (slice_dir / "log.txt").read_text()
+        commits = [c for c in r.fake_git.specs_ops() if c[2] == "commit"]
+        assert [c[4] for c in commits] == ["slice 074: close-out report"]
+
+    # A render that fails is logged; the bail keeps its code.
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+
+        def breaks_the_store(loop):
+            (loop.slice_dir / "close-out.json").write_text("{ torn")
+
+        r = ScriptedLoop(slice_dir, [("code-writer", {"outcome": "question",
+                                                       "summary": "which?"},
+                                      breaks_the_store)],
+                         repo_root=repo)
+        assert run_to_exit(r) == 4
+        assert "close-out not rendered: " in (slice_dir / "log.txt").read_text()
 
 
 def notable_events(slice_dir):
+    """The rendered report's entries — the driver's events stand in the
+    Record or with the wrap-up, as their labels route them."""
     report = load_report(slice_dir)
-    return report[report.index("## Notable events"):report.index("## Bugs")]
+    start = report.find("\n## ")
+    return report[start:] if start != -1 else ""
 
 
 def test_every_stop_becomes_one_notable_event_written_by_the_resume():
@@ -1649,20 +1716,20 @@ def test_every_stop_becomes_one_notable_event_written_by_the_resume():
         row, = load_state(slice_dir)["bailouts"]
         assert row["details"] == "no creds for the registry"
         assert row["run_phase"] == "phases" and "reported" not in row
-        assert "### N" not in notable_events(slice_dir), "not while stopped"
+        assert "### E" not in notable_events(slice_dir), "not while stopped"
 
         r2 = ScriptedLoop(slice_dir, [("code-writer", {
             "outcome": "question", "summary": "which registry, prod or dev?"})],
             resume=True, repo_root=repo)
         assert run_to_exit(r2) == 4
         events = notable_events(slice_dir)
-        assert "### N1 — Run stopped (blocked) in P1\n" in events
+        assert "### E1 — Run stopped (blocked) in P1\n" in events
         assert "> no creds for the registry" in events
         assert "resumed" in events
         assert ("**Provenance:** witnessed — the driver's bail record in "
                 "state.json") in events
         assert "**Consequence:** none the loop acts on" in events
-        assert "### N2" not in events, "the question is still open"
+        assert "### E2" not in events, "the question is still open"
         first, second = load_state(slice_dir)["bailouts"]
         assert first["reported"] is True and "reported" not in second
 
@@ -1671,10 +1738,10 @@ def test_every_stop_becomes_one_notable_event_written_by_the_resume():
         assert run_to_exit(r3) == 0
         events = notable_events(slice_dir)
         assert events.count("Run stopped (blocked) in P1") == 1
-        assert "### N2 — Run paused for an operator question in P1\n" \
+        assert "### E2 — Run paused for an operator question in P1\n" \
             in events
         assert "> which registry, prod or dev?" in events
-        assert "### N3" not in events
+        assert "### E3" not in events
         assert all(b["reported"] for b in load_state(slice_dir)["bailouts"])
 
 
@@ -1696,12 +1763,12 @@ def test_a_stop_outside_a_phase_and_a_row_without_details_are_reported():
                          resume=True, repo_root=repo)
         assert run_to_exit(r) == 0
         events = notable_events(slice_dir)
-        assert "### N1 — Run stopped (unpushed) outside any phase" in events
+        assert "### E1 — Run stopped (unpushed) outside any phase" in events
         assert "the stop is in full in log.txt" in events
         assert "Stopped 2026-09-20 10:11; resumed" in events
-        assert "### N2 — Run stopped (blocked) in the test phase" in events
+        assert "### E2 — Run stopped (blocked) in the test phase" in events
         # quoted, so an agent's text can never open an entry of its own
-        assert "> ### not a heading" in events and "### N3" not in events
+        assert "> ### not a heading" in events and "### E3" not in events
 
 
 def test_writer_question_resume_dispatches_writer_with_tagged_ruling():
@@ -2317,13 +2384,15 @@ def test_specs_target_holds_the_bookkeeping_tree_out_of_the_dirty_check():
         specs_status = [c for root, c in r.fake_git.calls
                         if c[0] == "status" and str(root) == str(specs)]
         dirty_checks = [c for c in specs_status
-                        if "--untracked-files=no" not in c]
+                        if "--untracked-files=no" not in c
+                        and c[-1] != SLICE_STORE]
         assert dirty_checks, "the phase never dirty-checked its target"
         assert all(":(exclude)slices" in c for c in dirty_checks)
-        # The one query inside that tree is the merge's look for this
+        # The queries inside that tree are the merge's look for this
         # slice's own uncommitted edits: its folder, tracked files only —
-        # so the untracked run records above never reach a commit.
-        assert all(c[c.index("--") + 1:] == SLICE_EDITS
+        # so the untracked run records above never reach a commit — and
+        # the report's store, by name.
+        assert all(c[c.index("--") + 1:] in (SLICE_EDITS, (SLICE_STORE,))
                    for c in specs_status if c not in dirty_checks)
         assert r.fake_git.commits == 0
         # the exclusion is scoped to the target that holds the slice folder:
@@ -2395,6 +2464,7 @@ SLICE_EDITS = ("slices/074_test_slice",
                ":(exclude)slices/074_test_slice/log.txt",
                ":(exclude)slices/074_test_slice/state.json",
                ":(exclude)slices/074_test_slice/phases")
+SLICE_STORE = "slices/074_test_slice/close-out.json"
 
 
 def leaves_close_out_unstaged(loop):
@@ -2407,6 +2477,36 @@ def leaves_close_out_unstaged(loop):
         "?? slices/074_test_slice/log.txt\n"
         "A  slices/074_test_slice/state.json\n"
         " M slices/124_parallel_run/plan.md\n")
+
+
+def leaves_a_new_store_uncommitted(loop):
+    """A script step's effect in a spec-repo phase: the session's append
+    created the store of a report that predates it, and committed nothing."""
+    loop.fake_git.dirty_roots[str(loop.spec_root)] = (
+        "?? slices/074_test_slice/close-out.json\n"
+        " M slices/074_test_slice/close-out.md\n"
+        "?? slices/074_test_slice/log.txt\n")
+
+
+def test_a_spec_repo_phase_commits_a_new_store_by_name_with_its_edits():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"],
+                          (*V["review_signoff"], leaves_a_new_store_uncommitted),
+                          *TAIL],
+                         repo_root=repo)
+        specs = specs_phase(slice_dir, tmp)
+        gated_specs(tmp)
+        assert run_to_exit(r) == 0
+        calls = [c for root, c in r.fake_git.calls if str(root) == str(specs)]
+        commit = next(c for c in calls if c[0] == "commit")
+        assert commit[3:] == ("--", *SLICE_EDITS, SLICE_STORE)
+        assert ("add", "--", SLICE_STORE) in calls
+        assert calls.index(("add", "--", SLICE_STORE)) < calls.index(commit)
+        # the rest of the untracked record stays out
+        assert not [c for c in calls if c[0] == "add"
+                    and any("log.txt" in a and "exclude" not in a for a in c)]
 
 
 def gated_specs(tmp):
@@ -4119,14 +4219,21 @@ def test_doc_phase_prompt_states_diff_files_digest_verbs_and_doc():
         assert "**Done (P1).** Shipped the thing" in prompt
         assert "not the writer's" not in prompt
         assert "slice.md is not your input" in prompt
-        # the close-out verbs' argument shapes, from the tool's own parser
-        assert "close_out.py append --section {" in prompt
+        # the close-out verbs' argument shapes, from the tool's own parser:
+        # `append`'s in the dispatch line, the other three under it
+        assert prompt.count("close_out.py append --kind {") == 1
         assert "--consequence: what an operator or user experiences" in prompt
+        line = close_out.dispatch_line(slice_dir / "close-out.md")
+        verbs = "\n".join("  " + v for v in close_out.verb_usage(
+            "list", "note", "strike").splitlines())
+        assert (f"- {line}\n  The other verbs this phase uses, with their "
+                f"arguments:\n{verbs}\n- Work on branch") in prompt
         assert "close_out.py note --by BY" in prompt
         assert "close_out.py strike --reason REASON" in prompt
         assert ("--reason: why — resolved/refuted names the commit and the "
                 "re-run") in prompt
-        assert "Focus: <!-- doc-writer: … -->" in prompt
+        # the report is rendered, never written by hand: no Summary, no Focus
+        assert "Focus" not in prompt and "Summary" not in prompt
 
 
 def test_doc_phase_diff_rows_name_unchanged_repos_without_a_file():

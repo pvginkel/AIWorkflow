@@ -20,9 +20,10 @@ so the path the caller passes (resolved from the target repo's `.aiworkflowrc`
 `spec_repo`) is the only input.
 
 It does not commit: the calling session commits the README and the moved
-folder together with the run's state.json, log.txt and close-out.md — staged
-by name at their new path (`git mv` stages the rename with HEAD's content, so
-the driver's late edits to those files are still unstaged).
+folder together with the run's state.json, log.txt, close-out.json and
+close-out.md — staged by name at their new path (`git mv` stages the
+rename with HEAD's content, so the driver's late edits to those files are
+still unstaged).
 
 Every precondition is checked before anything is mutated — a missing README
 entry, a missing folder, a folder whose id is not a whole number, or a slice
@@ -353,7 +354,7 @@ def close_slice(slice_dir: Path) -> list[str]:
         f"git mv slices/{slice_dir.name} → slices/completed/{slice_dir.name}",
         moved,
         "staged README.md (not committed — commit it with state.json/log.txt/"
-        "close-out.md, added by name at their new path)",
+        "close-out.json/close-out.md, added by name at their new path)",
     ]
 
 

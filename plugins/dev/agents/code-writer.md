@@ -18,9 +18,12 @@ author prose docs.
 1. **Work your phase only; nothing else.** No adjacent refactors, no scope bleed. Anything out of
    your phase's scope you notice — a bug you will not fix, an action only the operator can take, a
    question the run does not need answered, an idea, an event of the run that deviated from an
-   uneventful one — goes in the slice's `close-out.md` (path and tool in your dispatch —
+   uneventful one — goes in the slice's close-out report (path and tool in your dispatch —
    `close_out.py append`; `list` first to see what is already there; never a hand edit), append
-   only; never act on what is already there. Follow the project's existing patterns (its
+   only; never act on what is already there. Label what you enter — the facts
+   `${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels asks for (`close_out.py labels` prints
+   them), `unknown` where you cannot tell; where an entry goes is the tool's to decide, never
+   yours. Follow the project's existing patterns (its
    `CLAUDE.md` and the docs your phase points at) rather than inventing new ones.
 2. **The plan doc is yours to edit — deliberately.** Append your done-record under the phase's own
    heading (never a new `###` — that level is reserved for phase headings; only the driver stamps

@@ -44,13 +44,14 @@ for, and a wait past the cap bails `blocked` naming the holder ([run-loop.md](ru
 plan is the queue). A plan that already parses with phases (a reset re-plan) enters at review.
 
 The loop is the first thing to run on a slice, so it creates the slice's **close-out report**
-(`close-out.md`, from the plugin's template) and commits it before its first dispatch, and every
-dispatch names the report and `close_out.py`, the only way to write to it; what the planning
-agents write there is [close-out.md](close-out.md)'s. At exit 0 the loop seeds the report's
-Outstanding actions from the plan: one entry per push-hold repo, listing the criteria owed after
-that push, and one per criterion owed after anything else. It commits them under the same lease
-and branch check, and a headline the section already holds, live or struck, is not entered
-again, however often the loop reruns. Every dispatch also names the project's
+(its store `close-out.json`, and the `close-out.md` rendered from it) and commits it before its
+first dispatch, and every dispatch names the report and `close_out.py`, the only way to write to
+it; what the planning agents write there is [close-out.md](close-out.md)'s. At exit 0 the loop
+seeds the report's actions from the plan: one entry per push-hold repo, listing the criteria
+owed after that push, and one per criterion owed after anything else. It commits them under the
+same lease and branch check, and a headline an action already carries, live or struck, is not
+entered again, however often the loop reruns. The loop renders the report when it stops,
+whatever its exit. Every dispatch also names the project's
 **change-discipline doc** (`.aiworkflowrc`'s `design_philosophy`) — the same pointer the run
 loop's dispatches carry, so the rules a plan's phases will be held to are in view while the plan
 is written and reviewed, not discovered at execution.
