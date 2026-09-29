@@ -5,8 +5,11 @@ different rulings from what's suggested in the close out report. Why is this, an
 leveraged to trim it down, possibly using a post processing step? … I find the reports laborious
 to go through."
 
-**Status: for the operator's ruling.** Nothing in the plugin changed. § 7 has the options and a
-recommendation; § 8 says what this read does not show.
+**Status: ruled 2026-09-29.** The operator takes the four recommendations of § 7 — "I like the
+changes that are suggested here" — and asked for one plan that holds all of them and a rework
+of the report's shape. That plan is
+[close-out-rework-plan-2026-09-29.md](close-out-rework-plan-2026-09-29.md), for their ruling;
+nothing in the plugin changed yet. § 8 says what this read does not show.
 
 **The answer in short.**
 

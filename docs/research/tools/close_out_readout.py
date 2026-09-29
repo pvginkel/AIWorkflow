@@ -14,7 +14,11 @@ read (``docs/research/close-out-read-2026-09-28.md``).
     close_out_readout.py snapshots [entries.json] -o <dir>    # each report as handed over
     close_out_readout.py sessions <transcript-dir>... -o <dir> # the close-out chats, digested
     close_out_readout.py score <sorted-dir>... [--modes report-mode.json]
+    close_out_readout.py order [entries.json] [--arm heldout-v2]  # where the picks sit
 
+``order`` says where in a report the entries the operator progressed sit, under three reading
+orders: the one ``close_out.py render`` gives today, a mechanical one (severity across kinds),
+and the order of a sort from the read's data file (the rework plan of 2026-09-29, § 2).
 ``snapshots`` recovers, from the spec repo's history, each report as the run left it: the newest
 commit in which no ``Disposition:`` line carries words and no heading is struck by the
 operator's pass. ``sessions`` finds the interactive sessions that wrote dispositions or struck
@@ -707,6 +711,134 @@ def cmd_score(args) -> int:
     return 0
 
 
+# --- where in the report the progressed entries sit ------------------------------------------
+
+_GRADES = ("major", "minor", "", "nit", "cosmetic")     # ungraded reads between minor and nit
+READING = ("action", "needs-eyes", "card", "fix now", "fold", "test gaps", "close", "moot")
+
+
+def _number(e: dict) -> int:
+    m = re.search(r"\d+", e["id"])
+    return int(m.group(0)) if m else 0
+
+
+def _key_today(e: dict) -> tuple:
+    """`close_out.py render` as it is: sections A N B Q S, Bugs by severity, the rest by id."""
+    grade = (*SEVERITIES, "").index(e["severity"]) if e["section"] == "B" else 0
+    return ("ANBQS".index(e["section"]), grade, _number(e))
+
+
+def _key_mechanical(e: dict) -> tuple:
+    """No judgment: actions, then graded by severity across kinds, nits and `Consequence:
+    none` after them, events of the run last — those without a consequence at the very end."""
+    if e["section"] == "A":
+        tier = 0
+    elif e["section"] == "N":
+        tier = 4 if e["consequence_none"] else 3
+    elif e["severity"] in ("nit", "cosmetic") or e["consequence_none"]:
+        tier = 2
+    else:
+        tier = 1
+    return (tier, _GRADES.index(e["severity"]), "BQSNA".index(e["section"]), _number(e))
+
+
+def _key_sorted(buckets: dict):
+    def key(e: dict) -> tuple:
+        bucket = buckets.get(e["id"], "needs-eyes")
+        return (READING.index(bucket) if bucket in READING else 1,
+                _GRADES.index(e["severity"]), "AQBSN".index(e["section"]), _number(e))
+    return key
+
+
+def _positions(entries: list[dict], key) -> list[tuple[float, dict]]:
+    """Each entry with the share of the report's words that precede it in that order."""
+    order = sorted(entries, key=key)
+    words = [e["body_words"] + len(e["consequence"].split()) + len(e["headline"].split())
+             for e in order]
+    total, before, out = sum(words) or 1, 0, []
+    for e, w in zip(order, words, strict=True):
+        out.append((before / total, e))
+        before += w
+    return out
+
+
+def cmd_order(args) -> int:
+    sorts = json.loads(Path(args.sorts).read_text(encoding="utf-8"))["sorts"][args.arm]
+    reports = []
+    for r in _load(args.data):
+        handed = [e for e in r["entries"]
+                  if e["fate"] != "in-run" and re.fullmatch(r"[ANBQS]\d+", e["id"])
+                  and e["severity"] in _GRADES]
+        if sum(e["fate"] in ("card", "fix", "fold", "close") for e in handed) >= 4:
+            reports.append((f"{r['project']}-{r['slice']}", handed))
+    held = [(name, es) for name, es in reports if name in sorts]
+
+    def row(label: str, which: list, key_of) -> list:
+        ruled, picked = Counter(), Counter()
+        starts = []
+        for name, es in which:
+            for at, e in _positions(es, key_of(name)):
+                if e["fate"] not in ("card", "fix", "fold", "close"):
+                    continue
+                fifth = min(int(at * 5), 4)
+                ruled[fifth] += 1
+                if e["progressed"]:
+                    picked[fifth] += 1
+                    starts.append(at)
+        return [label, len(which), *(_pct(picked[i], ruled[i]) for i in range(5)),
+                _pct(sum(s < 1 / 3 for s in starts), len(starts)),
+                _pct(sum(s >= 2 / 3 for s in starts), len(starts))]
+
+    print("Progressed share of the entries ruled, by fifth of the report in reading order "
+          "(by words);\nthen the share of all progressed entries that start in the first and "
+          "in the last third.\n")
+    _table([
+        row("today's order", reports, lambda _: _key_today),
+        row("mechanical order", reports, lambda _: _key_mechanical),
+        row(f"today's order, {args.arm}", held, lambda _: _key_today),
+        row(f"mechanical order, {args.arm}", held, lambda _: _key_mechanical),
+        row(f"sorted, {args.arm}", held, lambda name: _key_sorted(sorts[name])),
+    ], ["order", "reports", "1st fifth", "2nd", "3rd", "4th", "5th", "first third",
+        "last third"])
+
+    # What stays open when the sorted report folds what one line settles: a sheet line per
+    # entry, the read-in-full buckets whole, and the events without a consequence as headlines.
+    n = Counter()
+    total = sheet = whole = labels = 0
+    shares = []
+    for name, es in held:
+        r_total = r_open = 0
+        for e in es:
+            bucket = sorts[name].get(e["id"])
+            if bucket is None:
+                continue
+            head, claim = len(e["headline"].split()), len(e["consequence"].split())
+            words = head + e["body_words"] + claim
+            r_total += words
+            if e["section"] == "N" and e["consequence_none"]:
+                n["record"] += 1
+                r_open += head
+                continue
+            sheet += head + 12          # the headline and a why-clause
+            r_open += head + 12
+            if bucket in READ_WHOLE:
+                n["whole"] += 1
+                whole += words
+                r_open += words
+            else:
+                n["folded"] += 1
+                labels += claim
+        total += r_total
+        shares.append(r_open / (r_total or 1))
+    print(f"\nSorted, {args.arm}: {n['whole']} entries read in full, {n['folded']} folded, "
+          f"{n['record']} events without a consequence to the record.\n"
+          f"Open words — the sheet and the bodies read in full: "
+          f"{_pct(sheet + whole, total)} of today's (median report "
+          f"{round(100 * statistics.median(shares))} %); with the Consequence line of every folded "
+          f"entry read as well: {_pct(sheet + whole + labels, total)}.")
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -735,6 +867,12 @@ def main(argv=None) -> int:
     c.add_argument("--data", default=str(DEFAULT_DATA))
     c.add_argument("--modes")
     c.set_defaults(fn=cmd_score)
+    o = sub.add_parser("order")
+    o.add_argument("data", nargs="?", default=str(DEFAULT_DATA))
+    o.add_argument("--sorts", default=str(
+        Path(__file__).resolve().parents[1] / "data" / "close-out-read-2026-09-28.json"))
+    o.add_argument("--arm", default="heldout-v2")
+    o.set_defaults(fn=cmd_order)
     args = p.parse_args(argv)
     return args.fn(args)
 
