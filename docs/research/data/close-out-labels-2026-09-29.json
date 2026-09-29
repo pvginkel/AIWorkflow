@@ -1,0 +1,4798 @@
+{
+ "labels": {
+  "Ansible-008_helmcharts_argo_coexistence": {
+   "A1": {
+    "basis": "inferred",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B1": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B2": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "unknown",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "B4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "N1": {
+    "basis": "inferred",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S1": {
+    "basis": "partly",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "slice-input",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "S2": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "none"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "future-change"
+   }
+  },
+  "Ansible-009_argocd_standup": {
+   "A1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "A2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "A3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "A4": {
+    "basis": "partly",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   },
+   "B1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "ordinary-condition"
+   },
+   "B10": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "B11": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B12": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B14": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "slice-input",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "B15": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B16": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B17": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "broken-or-stuck",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B5": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B6": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "B7": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B9": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "broken-or-stuck",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "N2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "event",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "N3": {
+    "basis": "inferred",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S1": {
+    "basis": "partly",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S11": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S12": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S13": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S14": {
+    "basis": "partly",
+    "fix": "design",
+    "impact": "unknown",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S4": {
+    "basis": "partly",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "yes",
+    "trigger": "normal-use"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S6": {
+    "basis": "partly",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "idea",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "S7": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "idea",
+    "sensitive": "yes",
+    "trigger": "ordinary-condition"
+   },
+   "S8": {
+    "basis": "partly",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S9": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "hardening",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   }
+  },
+  "Ansible-010_kubecoder_deploy_repo": {
+   "A1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   },
+   "A2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "A3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B1": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "N2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "Q1": {
+    "basis": "partly",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "future-change"
+   },
+   "S1": {
+    "basis": "partly",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S10": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S11": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "wrong-or-lost",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "hardening",
+    "sensitive": "yes",
+    "trigger": "ordinary-condition"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S7": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "S8": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S9": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   }
+  },
+  "Ansible-011_kubecoder_ci_version_pins": {
+   "A1": {
+    "basis": "partly",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "unknown"
+   },
+   "A2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "B1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "slice-input",
+    "sensitive": "yes",
+    "trigger": "normal-use"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S7": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   }
+  },
+  "Ansible-012_kubecoder_argo_cutover": {
+   "A1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "A2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "B1": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "prose",
+    "sensitive": "yes",
+    "trigger": "normal-use"
+   },
+   "B4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "N2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "Q1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "S7": {
+    "basis": "partly",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "S8": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S9": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   }
+  },
+  "Ansible-020_ci_quality_gates": {
+   "A1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "A2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "A3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "B1": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "normal-use"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "wrong-or-lost",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   },
+   "N2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "idea",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S10": {
+    "basis": "partly",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S11": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "none-observable",
+    "kind": "idea",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S12": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S13": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "S14": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S15": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S16": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S7": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S8": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S9": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   }
+  },
+  "Ansible-029_helmcharts_decommission": {
+   "A1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "A2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "A3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "A4": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "B4": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "B5": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "N2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "N3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "N4": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "wrong-or-lost",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   },
+   "N5": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "N6": {
+    "basis": "partly",
+    "fix": "na",
+    "impact": "unknown",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S10": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S11": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "none-observable",
+    "kind": "hardening",
+    "sensitive": "yes",
+    "trigger": "none"
+   },
+   "S12": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S13": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S14": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S15": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "normal-use"
+   },
+   "S16": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "wrong-or-lost",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S17": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S18": {
+    "basis": "partly",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S19": {
+    "basis": "partly",
+    "fix": "known-several",
+    "impact": "wrong-or-lost",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "none-observable",
+    "kind": "cleanup",
+    "sensitive": "yes",
+    "trigger": "normal-use"
+   },
+   "S20": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S21": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "S22": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S23": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S24": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S25": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "prose",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "S29": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S3": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S7": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S8": {
+    "basis": "partly",
+    "fix": "na",
+    "impact": "unknown",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "S9": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   }
+  },
+  "KubeCoder-146_worker_daemon_env_setup_robustness": {},
+  "KubeCoder-154_residual_sweep": {
+   "B1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "B14": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "B4": {
+    "basis": "partly",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "B8": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "idea",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S4": {
+    "basis": "inferred",
+    "fix": "unknown",
+    "impact": "none-observable",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "idea",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S7": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "none-observable",
+    "kind": "cleanup",
+    "sensitive": "yes",
+    "trigger": "none"
+   },
+   "S9": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "none"
+   }
+  },
+  "KubeCoder-158_problem_documents_and_refusal_rendering": {
+   "B1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S10": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "hardening",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "S12": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S13": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "S14": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "question",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S7": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "question",
+    "sensitive": "yes",
+    "trigger": "ordinary-condition"
+   },
+   "S8": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S9": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   }
+  },
+  "KubeCoder-159_compose_time_config_faults": {
+   "B1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "Q1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   }
+  },
+  "KubeCoder-161_cexec_diagnosability": {
+   "B1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "idea",
+    "sensitive": "yes",
+    "trigger": "ordinary-condition"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   }
+  },
+  "KubeCoder-162_residual_sweep": {
+   "B1": {
+    "basis": "partly",
+    "fix": "unknown",
+    "impact": "unknown",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   },
+   "N2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "none-observable",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "none"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S4": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   }
+  },
+  "KubeCoder-163_planned_eviction_recovery": {
+   "B1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "ordinary-condition"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "none-observable",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "B4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "B5": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "S1": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "unknown",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   }
+  },
+  "KubeCoder-164_pushed_environment_state": {
+   "B1": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "none-observable",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "hardening",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "S10": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S11": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S5": {
+    "basis": "partly",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S7": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "S8": {
+    "basis": "partly",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   },
+   "S9": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   }
+  },
+  "KubeCoder-165_cross_repo_sidecar_and_ssh_prereqs": {
+   "A1": {
+    "basis": "partly",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "A2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   },
+   "A3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "future-change"
+   },
+   "A4": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B1": {
+    "basis": "partly",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "N2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   },
+   "S10": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S3": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "hardening",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S7": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S8": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S9": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   }
+  },
+  "KubeCoder-166_home_overlay_mountpoints": {
+   "A1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "B1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "N1": {
+    "basis": "partly",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   }
+  },
+  "KubeCoder-167_doc_scope_mechanism_only": {
+   "B1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "B4": {
+    "basis": "partly",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B5": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B6": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "wrong-or-lost",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   }
+  },
+  "KubeCoder-169_in_pod_surface": {
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   },
+   "N2": {
+    "basis": "partly",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   },
+   "N3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "none-observable",
+    "kind": "idea",
+    "sensitive": "no",
+    "trigger": "none"
+   },
+   "S11": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S12": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "idea",
+    "sensitive": "yes",
+    "trigger": "ordinary-condition"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "idea",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S6": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "unknown",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S7": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "none"
+   }
+  },
+  "KubeCoder-171_tunnel_opt_in": {
+   "B3": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "hardening",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "B4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B9": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "N1": {
+    "basis": "partly",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   },
+   "N2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "idea",
+    "sensitive": "yes",
+    "trigger": "normal-use"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   }
+  },
+  "KubeCoder-172_ssh_transport_hardening": {
+   "B1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "B4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "B6": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "Q1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "slice-input",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "none-observable",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   }
+  },
+  "KubeCoder-173_surface_2_delivery_and_coverage": {
+   "S1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "hardening",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   }
+  },
+  "KubeCoder-175_worker_test_suite_reliability": {
+   "A1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "A2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "N2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "N3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "none-observable",
+    "kind": "idea",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "idea",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S4": {
+    "basis": "partly",
+    "fix": "unknown",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "ordinary-condition"
+   },
+   "S6": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S7": {
+    "basis": "inferred",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S8": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S9": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   }
+  },
+  "KubeCoder-179_headless_claude_flags": {
+   "B1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "none-observable",
+    "kind": "idea",
+    "sensitive": "yes",
+    "trigger": "none"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   }
+  },
+  "KubeCoder-182_surface_2_inversion": {
+   "A1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "prose",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "ordinary-condition"
+   },
+   "B4": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "B6": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "B7": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "B8": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "none"
+   },
+   "N10": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "none-observable",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "N2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "N3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "N4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "N6": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "N7": {
+    "basis": "partly",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "N8": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   }
+  },
+  "KubeCoder-182b_per_client_operator_tokens": {
+   "A1": {
+    "basis": "partly",
+    "fix": "known-several",
+    "impact": "wrong-or-lost",
+    "kind": "action",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "A2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   },
+   "A3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "A4": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "slice-input",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "slice-input",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S1": {
+    "basis": "partly",
+    "fix": "design",
+    "impact": "unknown",
+    "kind": "idea",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "idea",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   }
+  },
+  "KubeCoder-184_crash_loop_diagnosis_and_watch_guard": {
+   "B2": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "B5": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "B6": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "B7": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "misleading",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "B8": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "test-gap",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "idea",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   }
+  },
+  "KubeCoder-185_residual_sweep": {
+   "B2": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "B5": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   }
+  },
+  "KubeCoder-186_typescript_contract_codegen": {
+   "B1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B3": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B5": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "B6": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "B7": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S1": {
+    "basis": "partly",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "slice-input",
+    "sensitive": "na",
+    "trigger": "future-change"
+   }
+  },
+  "KubeCoder-187_client_credential_lifecycle": {
+   "B1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "B2": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "hardening",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "B4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "B5": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "B6": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "prose",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "B7": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "hardening",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "S10": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "S11": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S12": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S13": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "hardening",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "idea",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "S8": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "idea",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   }
+  },
+  "KubeCoder-188_desktop_environment_row": {
+   "A1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "A2": {
+    "basis": "partly",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "unknown"
+   },
+   "A3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   },
+   "B4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S1": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "unknown",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   }
+  },
+  "KubeCoder-189_session_stream_and_headless": {
+   "B1": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "ordinary-condition"
+   },
+   "B10": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "B4": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "B5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "B7": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B8": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "idea",
+    "sensitive": "yes",
+    "trigger": "normal-use"
+   },
+   "S11": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "idea",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "slice-input",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S7": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S9": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "unknown",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   }
+  },
+  "KubeCoder-191_pod_tmp_mode_and_client_token_name": {
+   "A1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   },
+   "A2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "A3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "N1": {
+    "basis": "partly",
+    "fix": "design",
+    "impact": "unknown",
+    "kind": "idea",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "yes",
+    "trigger": "ordinary-condition"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "none"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S7": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   }
+  },
+  "KubeCoder-192_desktop_extension_host": {
+   "B1": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S6": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "unknown",
+    "kind": "test-gap",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "S8": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   }
+  },
+  "KubeCoder-193_ux_and_gate_residuals": {
+   "B1": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "B2": {
+    "basis": "partly",
+    "fix": "unknown",
+    "impact": "unknown",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "B4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "misleading",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "N2": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "N3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   },
+   "S1": {
+    "basis": "partly",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "idea",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   }
+  },
+  "KubeCoder-197_mcp_adapter_oauth_scope_and_manual": {
+   "A1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "A2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "A3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S10": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S11": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S7": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "S8": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S9": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   }
+  },
+  "KubeCoder-200_worker_boot_restore_and_queued_nudge": {
+   "S1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S10": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "none-observable",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S12": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "none-observable",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "normal-use"
+   },
+   "S13": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "S14": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S15": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S16": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "none-observable",
+    "kind": "cleanup",
+    "sensitive": "yes",
+    "trigger": "none"
+   },
+   "S5": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "unknown",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   }
+  },
+  "KubeCoder-201_homelab_literals_become_config": {
+   "A1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "na",
+    "trigger": "none"
+   }
+  },
+  "KubeCoder-202_kubeconfig_grants_and_clone_host_config": {
+   "A1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   },
+   "A2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "A3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S10": {
+    "basis": "partly",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S11": {
+    "basis": "partly",
+    "fix": "unknown",
+    "impact": "unknown",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S8": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   }
+  },
+  "KubeCoder-209_controller_config_validation": {
+   "A1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B10": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "B11": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "yes",
+    "trigger": "ordinary-condition"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "hardening",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "B9": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "N2": {
+    "basis": "partly",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   },
+   "N3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   }
+  },
+  "KubeCoder-211_north_surface_session_seeding_and_clients": {
+   "B1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "Q1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "none-observable",
+    "kind": "idea",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "yes",
+    "trigger": "none"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S4": {
+    "basis": "partly",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   }
+  },
+  "KubeCoder-212_residual_sweep": {
+   "S1": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "none-observable",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S10": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S11": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "none-observable",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S12": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "S7": {
+    "basis": "partly",
+    "fix": "design",
+    "impact": "unknown",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S8": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S9": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   }
+  },
+  "KubeCoder-214_phase0_toolchains": {
+   "A1": {
+    "basis": "partly",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   },
+   "A3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "A4": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "future-change"
+   },
+   "N2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "wrong-or-lost",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "future-change"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S10": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S12": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S16": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "future-change"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "none"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S7": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S8": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S9": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "misleading",
+    "kind": "slice-input",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   }
+  },
+  "KubeCoder-216_fleet_drive_waits_and_payloads": {
+   "B1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B11": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "ordinary-condition"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B4": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B7": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "B8": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B9": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "ordinary-condition"
+   },
+   "S10": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "hardening",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "hardening",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "S5": {
+    "basis": "partly",
+    "fix": "design",
+    "impact": "none-observable",
+    "kind": "idea",
+    "sensitive": "yes",
+    "trigger": "normal-use"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S7": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "broken-or-stuck",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S8": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "none-observable",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "none"
+   },
+   "S9": {
+    "basis": "partly",
+    "fix": "known-several",
+    "impact": "unknown",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   }
+  },
+  "KubeCoder-218_kc_describe_and_catalog_output": {
+   "B1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "ordinary-condition"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "B4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "idea",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S10": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S11": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "S12": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S13": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "S14": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S15": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S16": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S17": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S18": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S19": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "none-observable",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "none"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "none-observable",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "none"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S6": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S7": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "question",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "S9": {
+    "basis": "partly",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "cleanup",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   }
+  },
+  "KubeCoder-220_north_adapter_residuals": {
+   "A1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   },
+   "A2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "cleanup",
+    "sensitive": "no",
+    "trigger": "none"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "B4": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "B6": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "fault-or-coincidence"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "wrong-or-lost",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   },
+   "N2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S1": {
+    "basis": "partly",
+    "fix": "design",
+    "impact": "unknown",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S3": {
+    "basis": "partly",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "misleading",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   }
+  },
+  "KubeCoder-221_manual_stage_origin_and_cluster_identities": {
+   "A1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "fault-or-coincidence"
+   },
+   "A2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "B1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B4": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "prose",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B5": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "N2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "N3": {
+    "basis": "partly",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   },
+   "N4": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "misleading",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   },
+   "S1": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S10": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "broken-or-stuck",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "design",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "none-observable",
+    "kind": "test-gap",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S6": {
+    "basis": "partly",
+    "fix": "unknown",
+    "impact": "wrong-or-lost",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   },
+   "S7": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "misleading",
+    "kind": "hardening",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "S8": {
+    "basis": "stated",
+    "fix": "known-several",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "ordinary-condition"
+   },
+   "S9": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "hardening",
+    "sensitive": "no",
+    "trigger": "future-change"
+   }
+  },
+  "KubeCoder-226_held_mcp_calls_never_go_silent": {
+   "A1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   },
+   "A2": {
+    "basis": "partly",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "unknown"
+   },
+   "B2": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "broken-or-stuck",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "fault-or-coincidence"
+   },
+   "B3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   },
+   "N2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "ordinary-condition"
+   },
+   "N3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   }
+  },
+  "KubeCoder-236_agent_environment_fixes": {
+   "A1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "broken-or-stuck",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "normal-use"
+   },
+   "A2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "A3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "A4": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "A5": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "action",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "B1": {
+    "basis": "stated",
+    "fix": "unknown",
+    "impact": "wrong-or-lost",
+    "kind": "defect",
+    "sensitive": "yes",
+    "trigger": "normal-use"
+   },
+   "N1": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "N2": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "N3": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "N4": {
+    "basis": "stated",
+    "fix": "na",
+    "impact": "none-observable",
+    "kind": "event",
+    "sensitive": "na",
+    "trigger": "none"
+   },
+   "S2": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "wrong-or-lost",
+    "kind": "hardening",
+    "sensitive": "yes",
+    "trigger": "future-change"
+   },
+   "S3": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   },
+   "S4": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "misleading",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "normal-use"
+   },
+   "S5": {
+    "basis": "stated",
+    "fix": "one-edit",
+    "impact": "broken-or-stuck",
+    "kind": "prose",
+    "sensitive": "no",
+    "trigger": "ordinary-condition"
+   }
+  }
+ },
+ "note": "Labels for the sweep discussion of 2026-09-29: every live entry of the 49 hand-over snapshots ruled by the operator's own reading (session mode direct or mixed in close-out-read-2026-09-28.json), labelled from the report text alone by four Opus sub-agents on the brief beside this file. Ids and label values only; no entry text. Model judgments: they do not regenerate exactly."
+}
