@@ -120,5 +120,8 @@ over every entry still blank; steps 4–6 then run as written on what they ruled
   answer; neither is re-deriving.
 - Present, record, file, edit — no planning, no design here; that is `/dev:triage` →
   `/dev:plan-slice`.
+- The slice's own card is not yours: it stays where the run left it, and moving it on is the
+  operator's, after a review of their own. Leave it silently — don't move it, don't offer to,
+  don't mention it.
 - Steps that do not apply are skipped silently: an operator who wrote every disposition into
   the file gets step 4 straight away.

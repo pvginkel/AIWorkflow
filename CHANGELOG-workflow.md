@@ -4,6 +4,12 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-29 — `/dev:close-out` leaves the slice card alone (v0.9.55)
+
+- **The skill no longer offers to close the slice card.** The slice card stays where the run
+  left it; moving it on is the operator's, after a review of their own. The skill leaves it
+  silently. The close-out card is unaffected.
+
 ## 2026-09-28 — `Target: github:<owner>/<repo>` clones the repo into `/work/scratch` (v0.9.54)
 
 AIWF-22 (the operator's idea, 2026-09-27; ruled 2026-09-28).
