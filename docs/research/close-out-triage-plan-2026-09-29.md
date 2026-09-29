@@ -9,7 +9,8 @@ same day that put a text-only sorter after the run (commit `2cdf7db`) and that p
 **Status: ruled on 2026-09-29, to be built.** The operator ruled D1 to D11 (§ 5) and gave the
 word: "Yes, build it in one go." Nothing in the plugin changed beyond 0.9.56, and nothing of
 this plan is built. The operator has not read this document — they took it to say what was
-discussed — so § 5 lists apart what was decided in the writing and never put to them. § 10 is
+discussed — so § 5 lists apart what was decided in the writing; that list was named to them
+when the session closed, and they ruled on two of its items. § 10 is
 the hand-over for the session that builds it; that session starts here and needs no other
 document but the read.
 
@@ -166,6 +167,12 @@ On the build, after D4's answer:
 > Yes, build it in one go. Can you please finalize the plan? I will wrap up this session and not
 > come back to it, so make sure everything is written down.
 
+And on the list of what had been decided in the writing, named to them as the session closed:
+
+> I don't read the summary.
+>
+> I don't need the switch.
+
 **Ruled by these words:**
 
 - The Focus lines go: they are not read.
@@ -179,6 +186,7 @@ On the build, after D4's answer:
 - The author labels its entry, in a form a tool can parse, and the labels are in plain view.
 
 - The decisions of § 5 as recorded there, D4 among them: one build.
+- The Summary leaves the report. The wrap-up phase has no switch.
 
 **Not ruled:** what § 5 lists as decided in the writing; and the push, which is asked when the
 build is done.
@@ -731,7 +739,7 @@ taken back on its own. It is what the operator's "fix inline please" gets today.
 **Two callers.**
 
 - *The close-out session.* For a report no run wrapped up: a run that stopped before its end, a
-  wrap-up that failed or was switched off, a report an older plugin wrote. `/dev:close-out`
+  wrap-up that failed, a report an older plugin wrote. `/dev:close-out`
   renders the report, dispatches the wrap-up when entries wait for it, and presents the entries
   that come to the operator meanwhile; the card requests follow when it returns. Its commits
   land as the skill's `fix now` lands today. The check of what has moved since the run stays
@@ -743,8 +751,7 @@ taken back on its own. It is what the operator's "fix inline please" gets today.
   the report back to where it stood, and is logged; the close-out session then finds the
   entries waiting. It needs a dispatch path of its own — `_spawn` ends in a ruling that bails
   the run — that still leaves the `history` row `slice_cost.py` prices a role from. The phase
-  is on in every project (D6); `.aiworkflowrc` can switch it off, as it can the test and the
-  doc phase — a brake for the first runs, not an option a project weighs.
+  is on in every project and has no switch (D6).
 
 **An entry without labels** — a report an older plugin wrote, an author that drifted — is
 labelled by the wrap-up from its text before anything is routed. § 3.3 is that case, measured.
@@ -780,9 +787,9 @@ Inside a section the order is the grade (major, minor, ungraded, nit, cosmetic),
 then the id. `render` writes the sections that hold something. A potential improvement stands
 where its route puts it, after what should be fixed of the same grade.
 
-**The Summary leaves with the Focus lines.** The operator reads the entries and not the head of
-the report, so the doc-writer writes neither; the run header, which the driver stamps from
-`state.json`, stays as the one line above the entries. Decided in the writing (§ 5).
+**The Summary leaves with the Focus lines** — "I don't read the summary". The doc-writer
+writes neither; the run header, which the driver stamps from `state.json`, stays as the one
+line above the entries.
 
 ### 4.9 What stays, what goes
 
@@ -791,8 +798,7 @@ the report, so the doc-writer writes neither; the run header, which the driver s
 | **stays, built** | 0.9.56: whoever fixes an entry strikes it, a round that passed is not an event (R2, R3) |
 | **stays, from the sorter plan** | the report ordered by what is asked of the operator; bodies folded where one line settles it; the record; one agent with two callers; the tool as the only pen; the corpus check; the five section names as what the loops' own calls take |
 | **goes** | `dev:close-out-sorter`; the sorting rules as an agent's definition; `propose` and the `Proposed:` line; the Unsorted section; the second pass on the rules proposed during the discussion — the wrap-up decides with the code in hand instead of predicting a ruling |
-| **goes, ruled** | the Focus lines; the sheet at the report's head and in the card's body |
-| **goes, decided in the writing** | the Summary (§ 4.8) |
+| **goes, ruled** | the Focus lines; the Summary; the sheet at the report's head and in the card's body |
 | **left alone** | the grade and its vocabulary; the Consequence line; "in doubt, add it"; the authors' bar |
 
 ### 4.10 The consult's rider and the appended phase — unchanged
@@ -849,7 +855,7 @@ Put to the operator on 2026-09-29 with a default each; ruled the same day.
 | D3 | the wrap-up runs after the doc phase | **yes** |
 | D4 | the close-out session first, the driver after a priced replay | **no: one build** — "Yes, build it in one go" |
 | D5 | the wrap-up notes what it found under a risk that comes to the operator | **yes** |
-| D6 | the table lives in the tool, one policy for every project | **yes, and the phase is on**: "If we add this, the default is ON" |
+| D6 | the table lives in the tool, one policy for every project | **yes, and the phase is on, without a switch**: "If we add this, the default is ON", "I don't need the switch" |
 | D7 | before a close stands on an entry that breaks a flow, the wrap-up checks its trigger in the code | **yes**, on the recommendation |
 | D8 | input for a slice that exists is folded into that slice by the wrap-up | **yes** |
 | D9 | what is severe comes to the operator unfixed, however easy the fix | **no** — below |
@@ -896,16 +902,18 @@ largest and riskiest code of the build. What weighed against them:
 So the priced replay is not run. In its place: a look at the first live slice before the second
 runs, and the readout after five (§ 7).
 
-### Decided in the writing, not put to the operator
+### Decided in the writing
 
 The operator ruled on what was discussed and did not read this document. These were settled by
-the session that wrote it. Each is the session's best reading of what they said; none is a
-ruling, and the building session changes one on their word without reopening the rest.
+the session that wrote it, each as its best reading of what they had said. The list was named
+to them in a few lines as the session closed. They ruled on W1 and W2 and raised nothing on the
+rest; W3 to W11 stand as decided, not as ruled, and the building session changes one on their
+word without reopening the others.
 
 | | decided | because |
 |---|---|---|
-| W1 | the Summary leaves the report with the Focus lines (§ 4.8) | "I don't read … the head of the report. A list of entries is enough for me" |
-| W2 | the phase has an off switch in `.aiworkflowrc`, on by default (§ 4.6) | offered as "yours to strike" with D4's answer; they took the answer and did not strike it |
+| W1 | the Summary leaves the report with the Focus lines (§ 4.8) | **ruled: yes** — "I don't read the summary" |
+| W2 | the phase has an off switch in `.aiworkflowrc`, on by default | **ruled: no** — "I don't need the switch"; none is built |
 | W3 | the words of every label and their definitions (§ 4.2, § 4.4); `severe` as lost or corrupted data, an exposure, or a failure that cannot be recovered without repair | the labels were discussed as a set and by example, not word by word |
 | W4 | no reviewer reads what the wrap-up fixes; its assurance is the bar, the gate, one commit per entry (§ 4.6) | said in the discussion as the guard on unreviewed fixes and not objected to |
 | W5 | what the table closes is not struck: it stays in the report, folded, until the operator closes the report (§ 4.6, § 4.8) | D1 lifts the constraint of 2026-08-17 for fixing alone |
@@ -965,7 +973,7 @@ and 0.9.59 unless something was pushed in between. § 10 has the order of work.
 
 - `tools/run_loop.py`, `test_run_loop.py`: the role (model, timeout, verdict), the dispatch
   between the doc-writer's session and the landing, its branch, a stage a resume re-enters, the
-  soft failure of § 4.6. `tools/preflight.py` and `docs/project-contract.md`: the switch.
+  soft failure of § 4.6.
 - `docs/run-loop.md`, `docs/runner-state.md`, `docs/agent-dispatch.md` follow.
 
 ### Research
@@ -1000,7 +1008,8 @@ and 0.9.59 unless something was pushed in between. § 10 has the order of work.
   toolchains. Its first run is the first live slice.
 - **A look at the first live slice, before the second runs**: the wrap-up's commits, what it
   asked to card, what it took back on a red gate, what it left, its price from `slice_cost.py`.
-  The off switch is what there is if that look goes wrong.
+  The phase has no switch: if that look goes wrong, the remedy is a fix, or 0.9.59 reverted,
+  pushed before the next slice runs.
 - **The readout after five live slices**, from the stores alone: the labels the authors gave
   against the operator's rulings, per label as in § 3.3 and § 3.8; the share that comes to the
   operator, and whether the first tier grows from slice to slice; what the wrap-up fixed,
@@ -1080,9 +1089,9 @@ asked when the three commits and the research commit are done, and asked again f
 Nothing reaches a run before the push and a marketplace update in every environment.
 
 **The operator ended the session that wrote this and will not return to it.** They ruled on
-what was discussed and did not read this document. Open the building session by saying what
-will be built and naming § 5's W1 to W11 in a few lines, so that they can overrule one before
-it is code; do not ask them to read the plan.
+what was discussed and did not read this document; what was decided in the writing was named
+to them and is § 5's list. Open the building session by saying in a few lines what will be
+built. Do not ask them to read the plan, and do not put W3 to W11 to them again.
 
 ### 10.2 The order of work
 
@@ -1101,8 +1110,8 @@ it is code; do not ask them to read the plan.
    the skill's dispatch; the agent count in `README.md`, `CLAUDE.md`, `plugin.json`'s
    description and `docs/rationale/overview.md`. Commit as 0.9.58.
 7. The driver: `docs/run-loop.md`, `docs/runner-state.md`, `docs/agent-dispatch.md` and the
-   brief together, then the sub-agent on `run_loop.py`, `test_run_loop.py`, `preflight.py`;
-   `docs/project-contract.md` for the switch. Commit as 0.9.59.
+   brief together, then the sub-agent on `run_loop.py` and `test_run_loop.py`. Commit as
+   0.9.59.
 8. The research commit: the scripts into `close_out_readout.py`, their folder removed.
 9. One report end to end on a copy (§ 7). Then ask for the push.
 10. After the push: the marketplace copy updated in every environment before a slice is
@@ -1166,7 +1175,6 @@ parser the store replaces; it stays as `import`'s reader.
 | the card's body | `skills/run-slice/SKILL.md` Job 4, step 4 |
 | what triage takes from a report | `skills/triage/SKILL.md` § 1 |
 | the residual sweep's litmus, the wrap-up's bar | `docs/residual-sweep.md` |
-| the phases a project switches | `docs/project-contract.md`, `tools/preflight.py` |
 | `run_phase` and its values | `docs/runner-state.md` |
 
 Every file that names the Focus lines or the Summary:
