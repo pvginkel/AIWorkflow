@@ -548,7 +548,7 @@ taken back on its own. It is what the operator's "fix inline please" gets today.
   today. The check of what has moved since the run stays the session's (finding 12 of the
   read).
 - *The driver (0.9.59).* After the doc-writer's session and before the phase's gate sweep and
-  landing, so that the one push the run makes carries both. Its commits sit on a branch of
+  landing, so that the driver's one landing carries both. Its commits sit on a branch of
   their own. It never fails the run: a timeout, a missing verdict, a `blocked`, or a sweep that
   is red with its commits and green without them leaves its commits out of the landing, takes
   the report back to where it stood, and is logged; the close-out session then finds the
@@ -656,6 +656,13 @@ lost. *The other ways:* check nothing — the price of the table is § 3.5; or c
 to that slice's `slice.md` with its provenance, and the planning of that slice rules on it with
 you. On your own reading you closed 8 of 18. *The other way:* they are listed for you, one line
 each, and "go" folds them.
+
+**D9 — What is severe comes to you unfixed, however easy the fix.** *Default: yes.* Your second
+bullet has an obvious fix made whatever the likelihood; your ruling on severity has what is
+severe come to you. Where both hold — 25 of the 561 entries handed over in the replay, 13 among
+your own rulings, of which you carded 6, closed 4 and had 3 fixed — row 3 stands before row 7:
+nothing severe gets a fix no reviewer reads, and the fix costs you one word. *The other way:*
+the wrap-up makes the fix and the entry still comes to you, with the commit under it.
 
 **Open, and not yet a decision with a default:** the labels and the route of a potential
 improvement (§ 4.4).
