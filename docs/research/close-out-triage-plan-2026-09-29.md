@@ -6,10 +6,10 @@ does not restate it) and successor to
 before that plan was ruled. It came out of the operator's discussion of the read on 2026-09-29;
 § 2 has their words, § 3 what was computed during it.
 
-**Status: for the operator's ruling; one section open.** Nothing in the plugin changed beyond
-0.9.56. § 5 has the decisions that are the operator's, each with a default. § 4.4, the
-treatment of potential improvements, is being worked out with the operator and is not settled;
-"go" builds everything else as written.
+**Status: for the operator's ruling.** Nothing in the plugin changed beyond 0.9.56. § 5 has the
+decisions that are the operator's, each with a default, so "go" builds the plan as written.
+§ 4.4, the treatment of potential improvements, was proposed to the operator in the discussion
+and has not had their answer; it is D10.
 
 **The plan in short.**
 
@@ -27,10 +27,15 @@ treatment of potential improvements, is being worked out with the operator and i
    asks for a card where a likely problem is more than it can fix responsibly, and leaves closed
    what the table closes. One agent, two callers — the close-out session first, the driver once
    a replay has priced it (§ 4.6).
-5. **The text-only sorter goes.** Replayed against the rulings that are the operator's own, the
-   labels and the table keep 92 % of their picks and close 20 % of the entries; the sorter of
-   the superseded plan kept 83 % (§ 3.2, § 3.4).
-6. **Three versions, in this order**: 0.9.57 the labels, the routing and the report's shape;
+5. **A potential improvement has labels of its own**: who is better off, when that is felt,
+   whether it adds, adjusts or removes. What adds something for a benefit nobody feels today is
+   closed; what benefits the workflow is Fieldnotes'; a small adjustment is the wrap-up's; the
+   rest comes to the operator (§ 4.4).
+6. **The text-only sorter goes.** Replayed against the rulings that are the operator's own, the
+   labels and the table keep 92 % of their picks and close 20 % of the entries — 96 % and 21 %
+   with the improvements on their own route, a rule chosen on the sample it is scored on; the
+   sorter of the superseded plan kept 83 % (§ 3.2, § 3.4, § 3.8).
+7. **Three versions, in this order**: 0.9.57 the labels, the routing and the report's shape;
    0.9.58 the wrap-up agent with the close-out session as its caller; 0.9.59 the driver
    dispatches it (§ 6).
 
@@ -144,8 +149,8 @@ On Suggestions:
 
 **Not ruled:** this plan; that the wrap-up may fix before the operator has ruled (D1 — their
 proposal implies it, the contract forbids it in words of 2026-08-17, so it is asked plainly);
-the other decisions of § 5; the labels and the route of a potential improvement (§ 4.4). They
-called the wrap-up phase "one of the options".
+the other decisions of § 5, the labels and the route of a potential improvement among them
+(D10). They called the wrap-up phase "one of the options".
 
 ## 3. The evidence
 
@@ -359,17 +364,73 @@ The operator asked whether closing test gaps neglects the code base.
     it as the entry describes it — and D7's check would not have looked. The operator's "there
     will always be bugs" covers it; no rule here claims to.
 
+### 3.8 Potential improvements
+
+The 89 entries the first pass called an idea, a hardening or a cleanup — 76 of them
+Suggestions — labelled a second time, as potential improvements, by one Opus sub-agent from the
+entry text. 48 are the operator's own rulings, the entries they asked advice on included: 15
+carded, 6 fixed, 27 closed.
+
+| label | value | entries | progressed | carded | fixed |
+|---|---|--:|--:|--:|--:|
+| change | adjusts what exists | 20 | 65 % | 50 % | 15 % |
+| | removes something | 8 | 50 % | 25 % | 25 % |
+| | adds something | 18 | 22 % | 17 % | 6 % |
+| felt | in use, as things are | 13 | 62 % | 62 % | 0 % |
+| | after a change | 25 | 40 % | 20 % | 20 % |
+| | after an incident | 5 | 20 % | 20 % | 0 % |
+| | not observable | 5 | 40 % | 20 % | 20 % |
+| benefit | a user | 10 | 60 % | 60 % | 0 % |
+| | the workflow | 6 | 50 % | 50 % | 0 % |
+| | the code | 16 | 44 % | 19 % | 25 % |
+| | operations | 16 | 31 % | 19 % | 12 % |
+| ground | met in the run | 8 | 62 % | 38 % | 25 % |
+| | left by the slice | 35 | 40 % | 29 % | 11 % |
+| | read in passing | 5 | 40 % | 40 % | 0 % |
+
+22. **The Suggestions are not random, as the operator says.** Five of the 48 were read in
+    passing; the rest came out of the slice's own work. That is also why `ground` separates
+    nothing — the labeller called it the least reliable of the labels — and it is not in the
+    design.
+23. **What adds something for a benefit nobody feels today is what the operator closes**: 13 of
+    the 48, none progressed. Over all rulings 18, of which 2 were progressed, both on a sheet.
+24. **An improvement is carded or closed, seldom fixed inline**: 6 of 48, none of them where a
+    user is the one better off.
+
+§ 4.4's routes against the same 48:
+
+| route | entries | closed | fixed | carded |
+|---|--:|--:|--:|--:|
+| to the operator: it prevents something severe | 5 | 3 | 1 | 1 |
+| to the operator | 13 | 3 | 2 | 8 |
+| to the wrap-up | 13 | 7 | 3 | 3 |
+| to Fieldnotes | 4 | 1 | 0 | 3 |
+| closed | 13 | 13 | 0 | 0 |
+
+Both tables together, the 89 by § 4.4 and every other entry by § 3.4's last table, against the
+234 rulings of § 3.4: 107 of 112 picks kept (96 %), 51 of 55 cards and folds (93 %), 21 % of the
+entries closed. 61 entries come to the operator, of which they progressed 57 %. Over the 561
+handed over that is 162 (29 %), a median 2 a report and 14 at most; 31 of them are potential
+improvements, 0.7 a report where the reports hand over 1.9.
+
+25. **These are the numbers of a rule chosen on its own sample.** Three rules were tried on the
+    48 and the one that lost no pick was kept; the two labels it rests on were named from a
+    reading of the rulings before any entry was labelled. 96 % is an upper bound, and what holds
+    of it is the readout's to say (§ 7).
+
 ### Sources
 
-- The label data and the brief it was made on are committed:
-  `docs/research/data/close-out-labels-2026-09-29.json`,
-  `docs/research/data/close-out-label-brief-2026-09-29.md`. Whose ruling an entry is comes from
-  the sessions in `docs/research/data/close-out-read-2026-09-28.json`.
+- The label data and the briefs it was made on are committed:
+  `docs/research/data/close-out-labels-2026-09-29.json` and
+  `close-out-label-brief-2026-09-29.md` (the first pass),
+  `close-out-improvement-labels-2026-09-29.json` and
+  `close-out-improvement-label-brief-2026-09-29.md` (the second). Whose ruling an entry is comes
+  from the sessions in `docs/research/data/close-out-read-2026-09-28.json`.
 - The entries with their fates regenerate with `close_out_readout.py extract`, the snapshots
   with `snapshots` (the hand-over, § 6).
 - The scripts behind these tables are not in the repository:
   `/work/scratch/close-out-discussion-2026-09-29/` (`focus_check.py`, `who_ruled.py`,
-  `score.py`, `appended.py`, `testgaps2.py`). They are owed to `close_out_readout.py` (§ 6).
+  `score.py`, `improve_score.py`, `appended.py`, `testgaps2.py`). They are owed to `close_out_readout.py` (§ 6).
 - Every share is good to a few points, as in the read: the fate classifier is a list of
   patterns, and the labels and the session coding are model judgments.
 
@@ -399,9 +460,7 @@ defined in `docs/close-out.md` and nowhere else.
 | | `defect` | the code, the configuration or the deployed system does something wrong today, however rarely |
 | | `prose` | text is wrong, stale or missing — a document, a comment, help text, a message — and the behaviour is not in question |
 | | `test gap` | a test is missing, pins nothing or cannot fail, and the code it would guard is right today |
-| | `hardening` | right today; to be guarded against a condition that does not occur with the code as it is |
-| | `cleanup` | a change without a change in behaviour |
-| | `improvement` | a potential improvement: something the product could do, or do otherwise (§ 4.4) |
+| | `improvement` | nothing is wrong today: a guard against what does not occur with the code as it is, a cleanup, behaviour the product could have or have otherwise. It takes § 4.4's labels in place of trigger, impact and fix |
 | **trigger** | `normal use` | shows on a path ordinary use takes |
 | | `ordinary condition` | needs what ordinary operation produces now and then: a restart, a second environment, a slow dependency, an upgrade, a legitimate but particular input |
 | | `fault` | needs a fault, a narrow timing window, a misconfiguration, a misuse, or several conditions together |
@@ -433,8 +492,9 @@ What the labellers of § 3.3 found unsharp, settled here:
   lose theirs.
 - **An action or an event that describes a problem** carries that problem's trigger and impact;
   one that does not carries `none` twice.
-- **A test gap, a hardening and a cleanup** carry the trigger and impact of what they would
-  prevent — as a rule `future change`.
+- **A test gap** carries the trigger and impact of what it would prevent — as a rule
+  `future change`. The replay's `hardening` and `cleanup` are potential improvements: neither
+  says that something is wrong today.
 - **Prose is labelled by what following the words does**: a procedure that fails when followed
   is `broken`, a stale pointer is `none`. It has no sensitive area.
 - **An entry the run already fixed** is struck by whoever fixed it (0.9.56), so it is not
@@ -463,19 +523,58 @@ the table without them.
 
 The table is for what should be fixed: Bugs, and the Suggestions that are "kind of in the bug
 category" — a defect, prose or a test gap entered as a Suggestion takes the same rows as one
-entered as a Bug. A potential improvement takes none of them (§ 4.4).
+entered as a Bug. A potential improvement takes § 4.4's rows in their place; rows 5 and 6
+here hold for it as well.
 
 ### 4.4 Potential improvements
 
-Not settled. The operator wants the Suggestions that are potential improvements labelled as
-well, "with different attributes", and given "a different treatment" from what should be
-fixed; which attributes, and where such an entry goes, is being worked out with them and is not
-designed here. Until it is, this plan fixes two things only: the kind exists, so that an author
-can say an entry is one, and no row of § 4.3 applies to it. What the replay did with the
-entries nearest to it — it sent an idea to the operator and took a hardening and a cleanup
-through rows 7 to 10 — is in § 3.4's numbers and is not a proposal; whether a hardening or a
-cleanup is something that should be fixed or a potential improvement is part of the same
-question.
+**Proposed, not ruled (D10).** The line between the operator's two categories is whether
+something is wrong today. What should be fixed — a defect, prose, a test gap — takes § 4.3,
+entered as a Bug or as a Suggestion. A potential improvement says that something could be
+better, safer or simpler, and is labelled by what it would bring and what it would take:
+
+| label | values | |
+|---|---|---|
+| **benefit** | `user` | somebody using the product is better off: what they see, can do, or have to do by hand |
+| | `operations` | whoever deploys, runs, upgrades or recovers the system |
+| | `workflow` | the agents that build slices, their suites and gates, CI, the tools they run |
+| | `code` | whoever maintains the code or the documentation |
+| **felt** | `in use` | as things are today, each time or on ordinary occasions |
+| | `after a change` | only once somebody changes something, or something outside changes |
+| | `after an incident` | only when something goes wrong first |
+| | `not observable` | nobody would notice the difference |
+| **change** | `remove` | it takes something away: code, a duplicate, a step |
+| | `adjust` | it changes what exists, in place |
+| | `add` | it adds something: behaviour, a check, a gate, an alarm, state, a process, a document |
+| **size** | `one edit` · `several places` · `design` | as § 4.2's fix |
+| | `investigate` | something is to be looked into before anything changes |
+| **product call** | `yes` · `no` | it changes what a user of the product sees or can do |
+| **prevents** | `severe` · `broken` · `degraded` · `nothing` | the worst it would prevent, on § 4.2's scale of impact |
+
+`area`, `repo` and `for` are § 4.2's. `benefit`, `felt`, `change`, `size` and `prevents` take
+`unknown`.
+
+Its route, the first row that fits:
+
+| | a potential improvement that | goes |
+|--:|---|---|
+| 1 | prevents something severe | to the operator, as a risk |
+| 2 | adds something, for a benefit that is not felt in use | closed |
+| 3 | benefits the workflow | to Fieldnotes, as an `idea` — it is not an entry |
+| 4 | adjusts or removes, in one edit or in several known places, and is no product call | to the wrap-up, within its bar |
+| 5 | is anything else — a product call, a change that needs design or a look first, an addition felt in use | to the operator |
+
+- **Row 2 is the operator's "I can think up suggestions till the cows come home"** as a rule
+  the tool can apply: a gate, an alarm or a check for an event that may never come. In the
+  replay it closes 13 of their 48 rulings and none they progressed (§ 3.8).
+- **Row 3 is the line the contract draws already**: the report is about the work, Fieldnotes
+  about working. An improvement to the workflow is posted there by its author and reaches the
+  operator curated across projects; the tool refuses it as an entry and says where it goes.
+- **Row 4 is the first tier of the operator's policy**, for what is not a defect: a small known
+  change is made because it costs less than deciding about it. § 4.6's bar holds, and rows 5 and
+  6 of § 4.3 stand before it — input for a slice that exists, a fix that lives elsewhere.
+- **Where the entry came from is not a label.** Nearly every Suggestion comes out of the slice's
+  own work (§ 3.8), so the label would say the same of all of them.
 
 ### 4.5 How it is shown
 
@@ -493,6 +592,14 @@ sensitive area · in KubeCoder
 **Provenance:** witnessed — code-reviewer, P3 r1
 **Route:** the wrap-up — fix within its bar, or ask for a card
 **Disposition:**
+```
+
+A potential improvement shows its own labels the same way:
+
+```markdown
+**Triage:** improvement · a user is better off · felt in use · adjusts what exists · fix needs
+design · a product call · in KubeCoder
+**Route:** to you
 ```
 
 That is all there is to read besides the entries. The report has no list at its head and the
@@ -589,8 +696,9 @@ Run: <stamped by the driver>
 ```
 
 Inside a section the order is the grade (major, minor, ungraded, nit, cosmetic), then the kind,
-then the id. `render` writes the sections that hold something, and the Summary always. Where
-a potential improvement stands in this order waits for § 4.4.
+then the id. `render` writes the sections that hold something, and the Summary always. A
+potential improvement stands where its route puts it, after what should be fixed of the same
+grade.
 
 ### 4.9 What stays, what goes
 
@@ -664,8 +772,13 @@ your own rulings, of which you carded 6, closed 4 and had 3 fixed — row 3 stan
 nothing severe gets a fix no reviewer reads, and the fix costs you one word. *The other way:*
 the wrap-up makes the fix and the entry still comes to you, with the commit under it.
 
-**Open, and not yet a decision with a default:** the labels and the route of a potential
-improvement (§ 4.4).
+**D10 — A potential improvement is labelled and routed as § 4.4 says.** *Default: yes.* It
+closes what adds something for a benefit nobody feels today, sends a small adjustment to the
+wrap-up and an improvement of the workflow to Fieldnotes, and brings you the rest: 0.7 entries a
+report in the replay, of which you progressed two in three, where the reports hand over 1.9.
+The rule was chosen on the 48 rulings it is scored on, so the first readout is its test.
+*The other ways:* every potential improvement comes to you; or they take § 4.3's table as the
+first pass of the replay had it, which closed three that you carded (§ 3.5).
 
 ## 6. The build
 
@@ -680,7 +793,8 @@ with the verify commands of § 7; its diff is read before the commit. Versions a
 - `docs/close-out.md`, `docs/close-out-template.md`: the labels and the table, each in its one
   place; the routes; the shape; who writes what. "An automated triage pass" leaves *Deliberately
   absent*.
-- `tools/close_out.py`, `test_close_out.py`: `append` with the labels and the refusals;
+- `tools/close_out.py`, `test_close_out.py`: `append` with the labels of both kinds and the
+  refusals, the one for an improvement of the workflow among them;
   `relabel`; `request-card`; the table; `render` in the new shape, reading a report in either
   layout; `counts` per route; the labels of the entries the driver and the plan loop write
   themselves. `append_entry`, `live_entries` and `find_by_headline` keep taking the five
@@ -731,8 +845,8 @@ with the verify commands of § 7; its diff is read before the commit. Versions a
 - **The table in the tool is the table that was tested.** The committed labels, with the
   replay's vocabulary mapped onto § 4.2's (`wrong-or-lost` to `severe`, `broken-or-stuck` to
   `broken`, `misleading` to `degraded`, `question` to `decision`, `slice-input` to a `for`),
-  every repository taken as the slice's own: the routes of the 234 entries are those of § 3.4,
-  the 11 ideas among them left out until § 4.4 is settled.
+  every repository taken as the slice's own, the 89 potential improvements with the labels of
+  the second pass: the routes of the 234 entries are those of § 3.8.
 - **The wrap-up, priced and compared — needs your go.** Five or six slices you ruled yourself,
   each in the state the run left it: the product repository at the slice's landing commit, its
   toolchains, the hand-over snapshot with the replay's labels. The wrap-up as defined runs on
@@ -776,6 +890,8 @@ with the verify commands of § 7; its diff is read before the commit. Versions a
 - **Whether the fold hides a pick.** What the table closes shows its heading, Consequence,
   labels and route, the body folded; § 8 of the read asked the same of a sheet's line.
 - **The rows the replay did not have**: where the fix lives, and the slice an entry is for.
+- **The route of a potential improvement out of sample.** § 4.4's rows were fitted to 48
+  rulings (finding 25).
 
 ## 9. Settled rulings this passes close to
 

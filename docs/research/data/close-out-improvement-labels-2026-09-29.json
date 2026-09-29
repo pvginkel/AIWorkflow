@@ -1,0 +1,806 @@
+{
+ "labels": {
+  "Ansible-008 S3": {
+   "benefit": "code",
+   "change": "remove",
+   "felt": "not-observable",
+   "ground": "read-in-passing",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "Ansible-009 B16": {
+   "benefit": "workflow",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "Ansible-009 B3": {
+   "benefit": "operations",
+   "change": "unknown",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "unknown"
+  },
+  "Ansible-009 S6": {
+   "benefit": "operations",
+   "change": "adjust",
+   "felt": "after-an-incident",
+   "ground": "left-by-slice",
+   "prevents": "severe",
+   "product_call": "no",
+   "size": "design"
+  },
+  "Ansible-009 S7": {
+   "benefit": "operations",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "Ansible-009 S9": {
+   "benefit": "operations",
+   "change": "adjust",
+   "felt": "after-an-incident",
+   "ground": "left-by-slice",
+   "prevents": "severe",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "Ansible-010 S2": {
+   "benefit": "operations",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "read-in-passing",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "design"
+  },
+  "Ansible-010 S4": {
+   "benefit": "operations",
+   "change": "add",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "design"
+  },
+  "Ansible-010 S6": {
+   "benefit": "operations",
+   "change": "add",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "design"
+  },
+  "Ansible-011 B2": {
+   "benefit": "operations",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "met-in-run",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "design"
+  },
+  "Ansible-011 B3": {
+   "benefit": "operations",
+   "change": "add",
+   "felt": "after-an-incident",
+   "ground": "met-in-run",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "Ansible-011 S4": {
+   "benefit": "workflow",
+   "change": "add",
+   "felt": "after-an-incident",
+   "ground": "met-in-run",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "Ansible-020 S1": {
+   "benefit": "operations",
+   "change": "add",
+   "felt": "after-an-incident",
+   "ground": "left-by-slice",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "Ansible-020 S11": {
+   "benefit": "workflow",
+   "change": "add",
+   "felt": "every-use",
+   "ground": "met-in-run",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "design"
+  },
+  "Ansible-020 S9": {
+   "benefit": "operations",
+   "change": "remove",
+   "felt": "after-a-change",
+   "ground": "read-in-passing",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "Ansible-029 S11": {
+   "benefit": "workflow",
+   "change": "adjust",
+   "felt": "some-uses",
+   "ground": "read-in-passing",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "design"
+  },
+  "Ansible-029 S2": {
+   "benefit": "operations",
+   "change": "remove",
+   "felt": "every-use",
+   "ground": "left-by-slice",
+   "prevents": "severe",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-154 S2": {
+   "benefit": "user",
+   "change": "adjust",
+   "felt": "some-uses",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "yes",
+   "size": "several-places"
+  },
+  "KubeCoder-154 S4": {
+   "benefit": "code",
+   "change": "remove",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "design"
+  },
+  "KubeCoder-154 S6": {
+   "benefit": "user",
+   "change": "adjust",
+   "felt": "every-use",
+   "ground": "left-by-slice",
+   "prevents": "nothing",
+   "product_call": "yes",
+   "size": "several-places"
+  },
+  "KubeCoder-154 S7": {
+   "benefit": "code",
+   "change": "remove",
+   "felt": "not-observable",
+   "ground": "left-by-slice",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-158 S1": {
+   "benefit": "code",
+   "change": "adjust",
+   "felt": "some-uses",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-158 S10": {
+   "benefit": "user",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "yes",
+   "size": "design"
+  },
+  "KubeCoder-158 S6": {
+   "benefit": "code",
+   "change": "adjust",
+   "felt": "some-uses",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-158 S8": {
+   "benefit": "code",
+   "change": "adjust",
+   "felt": "some-uses",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-158 S9": {
+   "benefit": "code",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-161 S1": {
+   "benefit": "user",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "read-in-passing",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "investigate"
+  },
+  "KubeCoder-162 S1": {
+   "benefit": "code",
+   "change": "remove",
+   "felt": "not-observable",
+   "ground": "read-in-passing",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-162 S4": {
+   "benefit": "code",
+   "change": "remove",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "KubeCoder-164 S1": {
+   "benefit": "user",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "investigate"
+  },
+  "KubeCoder-164 S5": {
+   "benefit": "code",
+   "change": "remove",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-165 S3": {
+   "benefit": "operations",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "KubeCoder-165 S8": {
+   "benefit": "code",
+   "change": "remove",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "KubeCoder-169 S1": {
+   "benefit": "user",
+   "change": "add",
+   "felt": "not-observable",
+   "ground": "left-by-slice",
+   "prevents": "nothing",
+   "product_call": "yes",
+   "size": "one-edit"
+  },
+  "KubeCoder-169 S2": {
+   "benefit": "user",
+   "change": "adjust",
+   "felt": "some-uses",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "yes",
+   "size": "design"
+  },
+  "KubeCoder-169 S4": {
+   "benefit": "operations",
+   "change": "unknown",
+   "felt": "some-uses",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "unknown"
+  },
+  "KubeCoder-169 S7": {
+   "benefit": "code",
+   "change": "remove",
+   "felt": "not-observable",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "KubeCoder-171 B3": {
+   "benefit": "code",
+   "change": "adjust",
+   "felt": "some-uses",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "KubeCoder-171 S1": {
+   "benefit": "user",
+   "change": "adjust",
+   "felt": "some-uses",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "yes",
+   "size": "design"
+  },
+  "KubeCoder-173 S2": {
+   "benefit": "user",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "design"
+  },
+  "KubeCoder-175 S1": {
+   "benefit": "code",
+   "change": "add",
+   "felt": "after-a-change",
+   "ground": "read-in-passing",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "design"
+  },
+  "KubeCoder-175 S2": {
+   "benefit": "workflow",
+   "change": "add",
+   "felt": "some-uses",
+   "ground": "met-in-run",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "design"
+  },
+  "KubeCoder-175 S7": {
+   "benefit": "workflow",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-179 S1": {
+   "benefit": "user",
+   "change": "add",
+   "felt": "after-a-change",
+   "ground": "met-in-run",
+   "prevents": "nothing",
+   "product_call": "yes",
+   "size": "design"
+  },
+  "KubeCoder-182 S1": {
+   "benefit": "operations",
+   "change": "add",
+   "felt": "after-an-incident",
+   "ground": "read-in-passing",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "KubeCoder-182 S2": {
+   "benefit": "operations",
+   "change": "add",
+   "felt": "after-an-incident",
+   "ground": "read-in-passing",
+   "prevents": "severe",
+   "product_call": "no",
+   "size": "design"
+  },
+  "KubeCoder-184 B7": {
+   "benefit": "code",
+   "change": "unknown",
+   "felt": "some-uses",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "unknown"
+  },
+  "KubeCoder-184 S2": {
+   "benefit": "workflow",
+   "change": "adjust",
+   "felt": "some-uses",
+   "ground": "met-in-run",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "design"
+  },
+  "KubeCoder-186 B2": {
+   "benefit": "code",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "KubeCoder-187 B2": {
+   "benefit": "code",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-187 S1": {
+   "benefit": "operations",
+   "change": "add",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "unknown",
+   "product_call": "no",
+   "size": "design"
+  },
+  "KubeCoder-187 S5": {
+   "benefit": "operations",
+   "change": "adjust",
+   "felt": "after-an-incident",
+   "ground": "left-by-slice",
+   "prevents": "severe",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "KubeCoder-187 S6": {
+   "benefit": "operations",
+   "change": "unknown",
+   "felt": "after-an-incident",
+   "ground": "left-by-slice",
+   "prevents": "severe",
+   "product_call": "no",
+   "size": "design"
+  },
+  "KubeCoder-187 S8": {
+   "benefit": "operations",
+   "change": "add",
+   "felt": "after-an-incident",
+   "ground": "left-by-slice",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "design"
+  },
+  "KubeCoder-188 S1": {
+   "benefit": "code",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "KubeCoder-189 B7": {
+   "benefit": "user",
+   "change": "add",
+   "felt": "after-an-incident",
+   "ground": "left-by-slice",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "KubeCoder-189 S1": {
+   "benefit": "user",
+   "change": "remove",
+   "felt": "some-uses",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "yes",
+   "size": "several-places"
+  },
+  "KubeCoder-189 S11": {
+   "benefit": "user",
+   "change": "adjust",
+   "felt": "some-uses",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "yes",
+   "size": "design"
+  },
+  "KubeCoder-189 S2": {
+   "benefit": "code",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "read-in-passing",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "design"
+  },
+  "KubeCoder-191 N1": {
+   "benefit": "workflow",
+   "change": "add",
+   "felt": "some-uses",
+   "ground": "left-by-slice",
+   "prevents": "unknown",
+   "product_call": "yes",
+   "size": "design"
+  },
+  "KubeCoder-191 S4": {
+   "benefit": "code",
+   "change": "remove",
+   "felt": "not-observable",
+   "ground": "left-by-slice",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "KubeCoder-193 N1": {
+   "benefit": "workflow",
+   "change": "unknown",
+   "felt": "after-a-change",
+   "ground": "read-in-passing",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "unknown"
+  },
+  "KubeCoder-193 S1": {
+   "benefit": "workflow",
+   "change": "add",
+   "felt": "some-uses",
+   "ground": "met-in-run",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "KubeCoder-197 S2": {
+   "benefit": "code",
+   "change": "remove",
+   "felt": "not-observable",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-197 S6": {
+   "benefit": "operations",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "design"
+  },
+  "KubeCoder-200 S1": {
+   "benefit": "operations",
+   "change": "add",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "design"
+  },
+  "KubeCoder-200 S3": {
+   "benefit": "code",
+   "change": "remove",
+   "felt": "not-observable",
+   "ground": "left-by-slice",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-202 S10": {
+   "benefit": "workflow",
+   "change": "add",
+   "felt": "after-a-change",
+   "ground": "met-in-run",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "design"
+  },
+  "KubeCoder-202 S11": {
+   "benefit": "code",
+   "change": "unknown",
+   "felt": "after-a-change",
+   "ground": "read-in-passing",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "unknown"
+  },
+  "KubeCoder-209 B2": {
+   "benefit": "operations",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "KubeCoder-209 B3": {
+   "benefit": "operations",
+   "change": "add",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "design"
+  },
+  "KubeCoder-211 S1": {
+   "benefit": "user",
+   "change": "adjust",
+   "felt": "some-uses",
+   "ground": "left-by-slice",
+   "prevents": "nothing",
+   "product_call": "yes",
+   "size": "several-places"
+  },
+  "KubeCoder-212 S1": {
+   "benefit": "code",
+   "change": "remove",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-212 S11": {
+   "benefit": "code",
+   "change": "adjust",
+   "felt": "every-use",
+   "ground": "left-by-slice",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-216 S3": {
+   "benefit": "code",
+   "change": "add",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "unknown",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "KubeCoder-216 S4": {
+   "benefit": "code",
+   "change": "add",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "KubeCoder-216 S5": {
+   "benefit": "user",
+   "change": "adjust",
+   "felt": "every-use",
+   "ground": "left-by-slice",
+   "prevents": "nothing",
+   "product_call": "yes",
+   "size": "design"
+  },
+  "KubeCoder-216 S7": {
+   "benefit": "workflow",
+   "change": "add",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "broken",
+   "product_call": "no",
+   "size": "design"
+  },
+  "KubeCoder-216 S8": {
+   "benefit": "code",
+   "change": "adjust",
+   "felt": "every-use",
+   "ground": "left-by-slice",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-218 S1": {
+   "benefit": "user",
+   "change": "adjust",
+   "felt": "some-uses",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "yes",
+   "size": "design"
+  },
+  "KubeCoder-218 S3": {
+   "benefit": "code",
+   "change": "adjust",
+   "felt": "every-use",
+   "ground": "read-in-passing",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-218 S4": {
+   "benefit": "code",
+   "change": "remove",
+   "felt": "not-observable",
+   "ground": "read-in-passing",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-218 S9": {
+   "benefit": "code",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "several-places"
+  },
+  "KubeCoder-220 B1": {
+   "benefit": "code",
+   "change": "remove",
+   "felt": "not-observable",
+   "ground": "read-in-passing",
+   "prevents": "nothing",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "KubeCoder-220 S4": {
+   "benefit": "code",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "met-in-run",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "design"
+  },
+  "KubeCoder-221 S6": {
+   "benefit": "operations",
+   "change": "adjust",
+   "felt": "after-a-change",
+   "ground": "met-in-run",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "design"
+  },
+  "KubeCoder-221 S7": {
+   "benefit": "workflow",
+   "change": "unknown",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "unknown"
+  },
+  "KubeCoder-221 S9": {
+   "benefit": "operations",
+   "change": "add",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "misleading",
+   "product_call": "no",
+   "size": "one-edit"
+  },
+  "KubeCoder-236 S2": {
+   "benefit": "operations",
+   "change": "add",
+   "felt": "after-a-change",
+   "ground": "left-by-slice",
+   "prevents": "severe",
+   "product_call": "no",
+   "size": "one-edit"
+  }
+ },
+ "note": "Second labelling pass of 2026-09-29: the 89 entries the first pass (close-out-labels-2026-09-29.json) called an idea, a hardening or a cleanup, labelled as potential improvements from the entry text alone by one Opus sub-agent on the brief beside this file. Keys are '<report> <entry id>'. Ids and label values only; no entry text. Model judgments: they do not regenerate exactly."
+}
