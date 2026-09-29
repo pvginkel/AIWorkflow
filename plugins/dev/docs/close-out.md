@@ -14,7 +14,8 @@ pointing at the report.
 whole life, from the plan loop's first append to the operator's last ruling, and the report is
 what a reader is shown of it. `${CLAUDE_PLUGIN_ROOT}/tools/close_out.py` is the one pen: it
 writes every author's entries (`append`), notes (`note`) and strikes (`strike`), the corrections
-of a label (`relabel`), the operator's rulings (`rule`), renders the report and counts it. Both
+of a label (`relabel`), what the wrap-up asked for and left (`request-card`, `leave`), the
+operator's rulings (`rule`), renders the report and counts it. Both
 loops import it, and every dispatch names it beside the report's path — which the tool takes as
 its positional, the slice directory or the report itself, so the first call works — with
 `append`'s arguments, rendered from the tool's own parser (`close_out.verb_usage`), so no
@@ -283,15 +284,59 @@ it.
   `state.json` (run window, phases planned/appended, bail-outs, test rounds, doc phase
   outcome); `/dev:run-slice` renders again once `slice_cost.py --write-state` has added the
   `cost` block.
+- **the wrap-up** — strikes for what it fixed, corrected labels, card requests, and what it
+  left ([below](#the-wrap-up)).
 - **the close-out session** — the operator's rulings, in their words (`rule`), what it did on
   them, and the closing of the report ([the lifecycle](#lifecycle)).
 
 **Reading the report is never a license to act on it.** Phase agents append only — otherwise
 the report becomes a new source of scope bleed, a writer "fixing while here" what an earlier
-phase reported. Reconcile is the completion consult's; render is the loops'; ruling is the
-operator's. A strike is for whoever resolved the entry — the consult for what a phase resolved,
+phase reported. Reconcile is the completion consult's; render is the loops'; fixing what the
+table sends it is the wrap-up's, and only that; ruling is the operator's. A strike is for whoever resolved the entry — the consult for what a phase resolved,
 the doc-writer for what its own commit did — and records work that was the striker's to do
 anyway; it never licenses the work.
+
+## The wrap-up
+
+What the table gives the wrap-up is worked on by one agent, `dev:wrap-up` — called the wrap-up,
+never a sweep: the run loop has its gate sweep and the plugin the residual sweep. It does what
+the operator used to ask for by hand, "fix inline please": it fixes what is decided and safe,
+asks for a card where a likely problem is more than it can fix responsibly, and the rest stays
+closed. [Its definition](../agents/wrap-up.md) holds its bar and what it does entry by entry.
+
+**It is the one exception to "append only".** For the entries the table sends it, and for
+fixing alone, the report is a license to act, before the operator has ruled. Nothing else is:
+what the table closed stays live until the operator closes the report, what comes to the
+operator is theirs, and no card is filed without their word.
+
+| it finds | it writes |
+|---|---|
+| a dated note says the run fixed the entry, and the commit is there | a strike naming that commit |
+| the change is within its bar | the edit, the gate, one commit for the entry, a strike naming it |
+| the label said one edit and the code says otherwise | the label corrected, with a note of what it found (`relabel`) |
+| a likely problem it cannot fix within its bar | a card request: how it is reached, what the fix takes (`request-card`) |
+| a trigger or an impact the author could not tell | the label, from the code |
+| an entry without labels | its labels, from its text |
+| input for a slice that is still to run | the entry appended to that slice's `slice.md`, and a strike naming the slice |
+| a close that rests on one label, on an entry that breaks a flow | that label checked in the code — its trigger, or its signal — and corrected where the code says otherwise |
+| a risk that comes to the operator | what the code shows, under the entry; the entry stays theirs |
+| a gate that goes red on its fix | the fix taken back, and a card request or a note that says so |
+| anything else it looked at and does not change | that it left it, and why (`leave`) |
+
+**The wrap-up changes facts, never routes.** What it finds in the code it writes as a fix, a
+corrected label or a card request, and the table routes again. Every entry it was given ends
+with one mark — a strike, a card request, or that it was left; `close_out.py worklist` names
+what still waits. An entry the operator has ruled on is theirs, whatever its route, and does
+not wait for the wrap-up.
+
+**No reviewer reads what it fixes.** A review of its diff would write advisory findings, those
+are entries, and entries go to a wrap-up: the loop has no end, and fix rounds resolve blocking
+findings only ([run-loop.md](run-loop.md)). Its assurance is its bar, the gate, and one commit
+per entry — each can be read and taken back on its own.
+
+**Its caller is the close-out session**, for a report whose entries wait: the session
+dispatches it, presents what comes to the operator meanwhile, and the card requests when it has
+returned. Its commits land as a `fix now` of the session lands.
 
 ## Entry rules
 
@@ -348,8 +393,9 @@ anyway; it never licenses the work.
    report's path and its entry counts. That card is the "a report is waiting" marker, never an
    ask (`/dev:triage` reads the report it names, not the card); nothing else from the run is
    carded.
-4. The operator reads what comes to them and rules. The `close-out` skill (or an ad hoc session
-   following it) executes: `card` files a tracker card with the entry as its body, `fix now`
+4. The close-out session dispatches the wrap-up when entries wait for it. The operator reads
+   what comes to them and rules. The `close-out` skill (or an ad hoc session following it)
+   executes: `card` files a tracker card with the entry as its body, `fix now`
    does the small thing and strikes the entry with the commit, or bails to a slice, `fold into`
    appends the entry to that slice's `slice.md`, `close` strikes, `defer` leaves it — then
    renders. Git in the spec repo holds the history. **The card's closure is the report's.** The
@@ -367,5 +413,6 @@ finds a `close-out.md` and no store beside it (`close_out.py import` does only t
 entries keep their ids and have no labels.
 
 Deliberately absent: dedup tooling (`render` orders, it never merges); a table of a project's
-own, or a switch on any part of the routing — the policy is one and the operator's; and a list,
-a summary or a ranking written over the entries by anyone.
+own, or a switch on any part of the routing or on the wrap-up — the policy is one and the
+operator's; a reviewer for what the wrap-up fixes; and a list, a summary or a ranking written
+over the entries by anyone.

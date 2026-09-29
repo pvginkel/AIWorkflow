@@ -75,7 +75,9 @@ their own definitions so they stay Sonnet even as sub-agents: **test-agent** (th
 agent, the **refinement-writer**, which pins `model: fable`: it writes the operator's decision
 document from the plan-slice session's material and nothing else
 ([refinement.md](refinement.md)); the interactive session that dispatches it runs whatever the
-operator chose.
+operator chose. The **wrap-up** pins `model: opus` for the same reason turned round: the
+close-out session that dispatches it may run on any model, and what fixes code unreviewed does
+not inherit it ([close-out.md](close-out.md#the-wrap-up)).
 
 There is no per-task grading and no model routing by difficulty — the graded lane measured out:
 the premium tier bought nothing on an inflated base, and "mechanical" routing produced Opus redos
@@ -108,7 +110,9 @@ red-suite repair — goes to a sub-agent that returns conclusions. Every verdict
 and write-back stays with the dispatching agent. The one delegated *write* is the interview's:
 the plan-slice session hands its grounded material to the `dev:refinement-writer`, which writes
 `refinement.md` for the operator and returns a receipt; the grounding, the rulings and the plan
-stay with the session ([refinement.md](refinement.md)). The doc phase's pages are not delegated:
+stay with the session ([refinement.md](refinement.md)); and the close-out session hands what
+waits in a report to the `dev:wrap-up`, whose writes are its own role's
+([close-out.md](close-out.md#the-wrap-up)). The doc phase's pages are not delegated:
 a per-scope authoring sub-agent was built (0.9.14) and read on nine slices — about twice the cost
 per phase of shipped work, a fresh session re-orienting on every hand-over brief — and reverted
 (`docs/research/doc-phase-read-2026-09-04.md` § 5–6); the doc-writer surveys through sub-agents

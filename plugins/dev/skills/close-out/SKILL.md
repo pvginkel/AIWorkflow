@@ -27,7 +27,7 @@ slice directory.
 1. **Locate the report — and its card.** The argument names the report (a slice number or a slice
    dir); without one, the newest open `[NNN] close-out: <slice title>` card in this project's
    intake queue names it. The run filed one such card per report, and an open card is what makes
-   a report pending. Find the card by that title now and keep its id for step 8; the operator
+   a report pending. Find the card by that title now and keep its id for step 9; the operator
    should never have to point you at it. Say which report you opened, and say once if the card
    is not there, then carry on without it.
 2. **Read back, then render.** `close_out.py rule <slice>` takes what the operator wrote on the
@@ -35,22 +35,36 @@ slice directory.
    then writes the report as the table routes it today. A report from before the store existed
    is imported by the first call: its old Bugs and Suggestions carry no labels and stand under
    **Unlabelled**.
-3. **Check what can have moved.** A report ages: a later phase, slice or ad hoc commit may have
+3. **Dispatch the wrap-up when entries wait for it.** `close_out.py worklist <slice>` names what
+   the table gave the wrap-up and no run wrapped up: a run that stopped before its end, a
+   wrap-up that failed, a report an older plugin wrote. When it names any, say so in a line and
+   dispatch the `dev:wrap-up` agent as a sub-agent, in the background, with the slice directory
+   and the report's path, the path of `close_out.py`, and for every repository the slice touched
+   (`state.json`: the `root` of every phase) its path and the branch that is checked out there —
+   where its commits go, as a `fix now` of yours would. Carry on with step 4 while it works,
+   within two limits: you change nothing in a repository it works in until it has returned — a
+   ruling is recorded at once and executed after — and the card requests are presented when it
+   has returned, because most of them are its own. When it returns, render, and say in a line or
+   two what it did: what it fixed, with the commits, what it asks a card for, what it left. A
+   wrap-up that fails changes nothing else in this procedure: what waited for it comes to the
+   operator with the rest, said as what it is — an entry nobody looked at.
+4. **Check what can have moved.** A report ages: a later phase, slice or ad hoc commit may have
    fixed what an entry describes. Where the claim of an entry that comes to the operator turns
    on a fact a command or two settles — an id list, a page that "still contradicts", a script
    that may since have been fixed — check it before you present, and put what you found under
    the entry (`close_out.py note`). An entry already fixed is presented as that, with the
    commit. That is the whole of the checking: whether the claim still holds today, never whether
    it was right.
-4. **Present what comes to the operator — ask nothing yet.** Show the `Run:` header, then the
+5. **Present what comes to the operator — ask nothing yet.** Show the `Run:` header, then the
    entries under **Comes to you** and **Card requests** as the rendered report has them: in its
    order, each in full — heading, body, `Consequence:`, `Triage:`, `Route:` — with the ruling
    the operator already wrote on it, if any. Entries that still stand under **Unlabelled** or
    **For the wrap-up** come with them: nobody routed or handled those, so they are the
    operator's to see. Then one line for the rest, from `close_out.py counts <slice>`: how many
-   entries the table closed and how many are in the record. They are in the report under their
-   headings; nothing is asked about them. The operator reads; you wait.
-5. **Take the rulings.** The operator rules in the session ("card B1, close D2, fold I1 into
+   entries the table closed, how many the wrap-up settled, how many are in the record. They are
+   in the report under their headings; nothing is asked about them. The operator reads; you
+   wait.
+6. **Take the rulings.** The operator rules in the session ("card B1, close D2, fold I1 into
    009") or on the `Disposition:` lines of `close-out.md`, as it suits them, and both in one
    report. What they say you record at once, `close_out.py rule <slice> <id> --words "<their
    words>"` — **in the operator's words**, never paraphrased, never completed. What they wrote
@@ -63,14 +77,15 @@ slice directory.
    what you would do with an entry, say it in a clause, with the reason and from the entry's own
    text, and wait — the ruling stays theirs, and what you record as done on it opens
    `suggested <disposition>`.
-6. **Execute each ruling**, then record what you did, `close_out.py rule <slice> <id> --did
+7. **Execute each ruling**, then record what you did, `close_out.py rule <slice> <id> --did
    "<what was done>"` (`--commit <sha>` where there is one) — "carded as <card id>", "fixed in
    <commit>", "folded into <slice>", "closed by the operator, <date>". Recording it strikes the
    entry.
    - `card [project]` — one tracker card per entry (in the named project's intake queue, else
      this project's, per the host convention): title = the entry's headline without its
      ` · <grade>` — the grade ranks a finding inside its report, and on a card's title it reads
-     as a claim about the card — body = the entry verbatim and the report's path. Entries that are one fix are one card. Actions the operator wants
+     as a claim about the card — body = the entry verbatim, what the wrap-up found under it, and
+     the report's path. Entries that are one fix are one card. Actions the operator wants
      carded go together, on **one** card in their action queue: a list they work from, not a
      card each. A card request they say yes to is filed the same way.
    - `fix now` — do it here only if the project's `CLAUDE.md` classes the change as ad hoc
@@ -81,7 +96,7 @@ slice directory.
      of their words.
    - `defer` — leave it, with their words recorded and nothing recorded as done: it stays live,
      and it is `/dev:triage`'s.
-7. **Offer to close the report — don't wait to be asked.** The operator rules on what they care
+8. **Offer to close the report — don't wait to be asked.** The operator rules on what they care
    about and stops; the rest of the report is yours to finish, not theirs to work through. When
    their last message is settled — the rulings executed, the question answered, "fine", a
    shrug — and nothing else is pending, ask in one line whether to close the report: which
@@ -92,12 +107,12 @@ slice directory.
    report stays open over it. An entry they pull back out of the close is a ruling like any
    other, executed first. A no is a `defer` on each entry that came to them and has no ruling
    — the card stays open for `/dev:triage` — and ends the asking.
-8. **Render, commit and finish.** Run `close_out.py render <slice>`, then commit
+9. **Render, commit and finish.** Run `close_out.py render <slice>`, then commit
    `close-out.json` and `close-out.md` (staged by name — the spec repo is a shared tree). Close
    the close-out card found in step 1 as resolved unless an entry is deferred or the question of
-   step 7 went unanswered: the card's closure closes the report
+   step 8 went unanswered: the card's closure closes the report
    (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`), so nothing under a closed card is owed a ruling.
-   Report short: rulings by kind, cards filed, anything owed.
+   Report short: rulings by kind, cards filed, what the wrap-up did, anything owed.
 
 ## Bounds
 
@@ -118,4 +133,4 @@ slice directory.
   operator's, after a review of their own. Leave it silently — don't move it, don't offer to,
   don't mention it.
 - Steps that do not apply are skipped silently: an operator who wrote every ruling into the
-  file gets step 6 straight away.
+  file gets step 7 straight away.

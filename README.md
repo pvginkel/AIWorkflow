@@ -34,7 +34,7 @@ goes): nothing from a run is carded per finding. The author of an entry labels w
 table in the tool routes it, the operator rules on what comes to them and `/dev:close-out`
 executes.
 
-- **`plugins/dev/`** — the plugin: 7 skills, 10 agents, the tools (`run_loop.py`,
+- **`plugins/dev/`** — the plugin: 7 skills, 11 agents, the tools (`run_loop.py`,
   `plan_loop.py`, `close_out.py`, `sweep_slice.py`, `close_slice.py`, `slice_cost.py`,
   `turn_profile.py`, `preflight.py`, `project_config.py`, `triage_verbatim.py`, and
   `allocate-next-slice.sh`, with their suites), and the

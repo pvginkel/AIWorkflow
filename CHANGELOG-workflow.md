@@ -4,6 +4,32 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-29 — the wrap-up: what is decided and safe is fixed, the rest asked for or left (v0.9.58)
+
+The second of the three versions of `docs/research/close-out-triage-plan-2026-09-29.md`.
+
+- **A new agent, `dev:wrap-up`, works on what the table gives it.** It does what the operator
+  asked for by hand, "fix inline please". It fixes what is decided and safe: the edit, the
+  gate, one commit for the entry, a strike naming the commit. It asks for a card where a likely
+  problem is more than it can fix responsibly. It gives the label an author could not, and the
+  labels of an entry that has none. The rest it leaves, and says why.
+- **Its bar is the residual sweep's litmus**, calibrated on the same class of work: fully
+  decided, corrected in place, no added behaviour, nothing on timing, stored data, wire
+  contracts or secrets. A fix whose proof needs a deploy is not its to make, and a repository
+  the plan holds is not its to touch.
+- **It is the one exception to "append only"**, for the entries the table sends it and for
+  fixing alone. What the table closed stays live until the operator closes the report. No card
+  is filed without their word.
+- **Before a close stands on an entry that breaks a flow, it checks the label the close rests
+  on** in the code: the trigger, or the signal. Under a risk that comes to the operator it
+  notes what the code shows.
+- **No reviewer reads its fixes.** A review would write advisory findings, and those are
+  entries for a wrap-up. Its assurance is the bar, the gate, and one commit per entry.
+- **`/dev:close-out` dispatches it when entries wait**: a run that stopped before its end, a
+  report an older plugin wrote. It presents what comes to the operator meanwhile.
+- It is pinned to Opus in its definition, so a close-out session on another model cannot move
+  it. The plugin ships eleven agents.
+
 ## 2026-09-29 — the close-out report is triaged at the source: labels, a table, a store (v0.9.57)
 
 The first of three versions that build `docs/research/close-out-triage-plan-2026-09-29.md`,
