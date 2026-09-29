@@ -280,7 +280,8 @@ it.
   the spec repo, an agent's append left uncommitted is committed onto the phase branch before
   the driver leaves it. **Each loop renders when it stops, for whatever reason, and when it
   completes**, and the driver once more before it dispatches the doc phase, so that a run that
-  stalls there leaves a report that can be read. The run header is written by `render` from
+  stalls there leaves a report that can be read, and once after the wrap-up. The run header is
+written by `render` from
   `state.json` (run window, phases planned/appended, bail-outs, test rounds, doc phase
   outcome); `/dev:run-slice` renders again once `slice_cost.py --write-state` has added the
   `cost` block.
@@ -334,9 +335,13 @@ are entries, and entries go to a wrap-up: the loop has no end, and fix rounds re
 findings only ([run-loop.md](run-loop.md)). Its assurance is its bar, the gate, and one commit
 per entry — each can be read and taken back on its own.
 
-**Its caller is the close-out session**, for a report whose entries wait: the session
-dispatches it, presents what comes to the operator meanwhile, and the card requests when it has
-returned. Its commits land as a `fix now` of the session lands.
+**Two callers.** The driver dispatches it at the end of the run, after the doc-writer's
+session, and lands what it committed with the doc phase; it never fails a run
+([run-loop.md](run-loop.md) § After the last phase). The close-out session dispatches it for a
+report whose entries still wait — a run that stopped before its end, a wrap-up the driver left
+out, a report an older plugin wrote — presents what comes to the operator meanwhile, and the
+card requests when it has returned. There its commits land as a `fix now` of the session
+lands.
 
 ## Entry rules
 
@@ -386,14 +391,16 @@ returned. Its commits land as a `fix now` of the session lands.
 1. The plan loop creates the store at its first dispatch; planning agents append; the loop
    seeds the actions the plan already owes at its exit 0, and renders.
 2. The run loop creates it if planning did not, appends throughout; the completion consult
-   reconciles; the driver renders before the doc phase, at every stop and when the run
-   completes, and `/dev:run-slice` once more after the cost block lands.
+   reconciles; the wrap-up works on what the table gave it, after the doc-writer; the driver
+   renders before the doc phase, after the wrap-up, at every stop and when the run completes,
+   and `/dev:run-slice` once more after the cost block lands.
 3. `/dev:run-slice` files **one** tracker card — `[NNN] close-out: <slice title>`, in the intake
    queue, carrying the **close-out** mark, related to the slice's card — whose body is the
    report's path and its entry counts. That card is the "a report is waiting" marker, never an
    ask (`/dev:triage` reads the report it names, not the card); nothing else from the run is
    carded.
-4. The close-out session dispatches the wrap-up when entries wait for it. The operator reads
+4. The close-out session dispatches the wrap-up when entries still wait for it. The operator
+   reads
    what comes to them and rules. The `close-out` skill (or an ad hoc session following it)
    executes: `card` files a tracker card with the entry as its body, `fix now`
    does the small thing and strikes the entry with the commit, or bails to a slice, `fold into`

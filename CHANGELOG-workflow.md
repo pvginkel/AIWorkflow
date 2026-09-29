@@ -4,6 +4,28 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-29 — the driver dispatches the wrap-up, and it never fails a run (v0.9.59)
+
+The third of the three versions of `docs/research/close-out-triage-plan-2026-09-29.md`. With
+it the wrap-up runs in every slice, in every project. It has no switch.
+
+- **The wrap-up runs after the doc-writer's session and before the gate sweep**, so one
+  landing carries both. When nothing waits for it, it is skipped. A project that runs no doc
+  phase still runs it.
+- **Its commits sit on a branch of their own**, `phase/<NNN>-wrap-up`, in every code repo the
+  slice touched and the plan does not hold. The driver gates what it committed: the primary
+  repo in the doc phase's sweep, every other repo with the gate a phase there gets.
+- **It never stops a run.** A timeout, a missing verdict, a `blocked`, or a gate that is red
+  with its commits and green without them leaves all of its commits out of the landing, takes
+  the store back to where it stood, enters the failure in the report as an event, and the run
+  goes on. The close-out session then finds the entries waiting and dispatches it.
+- The session leaves a `history` row whatever its outcome, so `slice_cost.py` prices the
+  role. The run header says whether the wrap-up landed or was left out.
+- **Its first run against a repository is the first live slice.** The suites fake every
+  session. The first slice is looked at before the second runs: its commits, what it asked to
+  card, what it took back on a red gate, what it left, its price. If that look goes wrong, the
+  remedy is a fix, or this version reverted, pushed before the next slice runs.
+
 ## 2026-09-29 — the wrap-up: what is decided and safe is fixed, the rest asked for or left (v0.9.58)
 
 The second of the three versions of `docs/research/close-out-triage-plan-2026-09-29.md`.

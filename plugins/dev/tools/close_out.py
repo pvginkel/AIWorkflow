@@ -1583,10 +1583,17 @@ def run_header(state: dict, slice_dir: Path | str | None = None) -> str:
     if isinstance(state.get("test_rounds"), int):
         bits.append(_plural(state["test_rounds"], "test round"))
     doc = state.get("doc_phase")
-    if isinstance(doc, dict) and doc.get("stage"):
+    # A project with no doc phase still runs its ladder for the wrap-up,
+    # marked `writer: false`: that is no doc phase done.
+    if isinstance(doc, dict) and doc.get("stage") and doc.get("writer", True):
         stage = doc["stage"]
         bits.append("doc phase done" if stage == "done"
                     else f"doc phase at stage {stage}")
+    wrap_up = state.get("wrap_up")
+    outcome = wrap_up.get("outcome") if isinstance(wrap_up, dict) else None
+    if outcome in ("landed", "left_out"):
+        bits.append("wrap-up landed" if outcome == "landed"
+                    else "wrap-up left out")
     run_phase = state.get("run_phase")
     if run_phase and run_phase != "done":
         bailed = bool(slice_dir

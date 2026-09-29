@@ -1185,6 +1185,27 @@ def test_run_header_pieces():
     assert "· 0 bail-outs ·" in close_out.run_header(dict(STATE, bailouts=[]))
 
 
+def test_run_header_says_what_the_wrap_up_did():
+    """After the doc phase's piece: `wrap-up landed` or `wrap-up left out`,
+    nothing for a wrap-up nothing waited for. A project with no doc phase
+    runs the ladder for the wrap-up alone (`writer: false`), and that is no
+    doc phase done."""
+    def header(**wrap_up):
+        return close_out.run_header(dict(STATE, wrap_up=wrap_up))
+    assert header(outcome="landed").endswith("· doc phase done · wrap-up landed")
+    assert header(outcome="left_out", reason="the session timed out after 7200s"
+                  ).endswith("· doc phase done · wrap-up left out")
+    for quiet in (header(outcome="skipped"), header(outcome=None),
+                  close_out.run_header(STATE)):
+        assert "wrap-up" not in quiet
+        assert quiet.endswith("· doc phase done")
+    no_writer = dict(STATE, doc_phase={"stage": "done", "writer": False},
+                     wrap_up={"outcome": "landed"})
+    text = close_out.run_header(no_writer)
+    assert "doc phase" not in text
+    assert text.endswith("· 1 test round · wrap-up landed")
+
+
 def test_the_route_follows_the_repositories_the_state_names():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)

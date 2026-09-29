@@ -165,7 +165,8 @@ guessed for the pieces that are not:
 
 ```markdown
 Run: 2026-08-14 19:49 → 23:53 · 11 phases (8 planned, P9–P11 appended) · 2 bail-outs ·
-1 test round · doc phase done · $118.41 (planner 18 %, research 4 %, rework 14 %)
+1 test round · doc phase done · wrap-up landed · $118.41 (planner 18 %, research 4 %,
+rework 14 %)
 ```
 
 ## The verbs

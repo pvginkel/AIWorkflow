@@ -326,6 +326,41 @@ whole plan is a feature of the review, not a cost. Then:
   is where a hold on the *primary* repo lands: the branch rebases onto the local base instead
   (a held repo's origin is behind by everything the slice did, which is what the local-ahead
   check exists to catch) and the landing stops at the merge.
+- **Wrap-up** — after the doc-writer's session and before the gate sweep, so that one landing
+  carries both. One `dev:wrap-up` session works on what the close-out report's table gave the
+  wrap-up ([close-out.md](close-out.md#the-wrap-up)): `close_out.py worklist` names it, and
+  when it names nothing the stage is skipped. It has no switch, and a project that runs no doc
+  phase still runs it: the ladder then starts here, after the test phase, and the gate and the
+  landing below are the wrap-up's alone. **Its commits sit on a branch of their own**,
+  `phase/<NNN>-wrap-up`, in every code repo the slice touched and the plan does not hold — in
+  the primary repo cut from the doc branch, elsewhere from the base branch. In the spec repo it
+  commits as every agent does, on the branch checked out there: the store, a fold into another
+  slice, and prose of the spec repo where a phase targeted it. Its dispatch carries the report
+  and the tool, and per repository the path, the branch and the gate it runs on its own fixes.
+  When the session has ended the driver gates what it committed — the primary repo in the doc
+  phase's sweep, run on the wrap-up branch; every other repo it committed to with the gate a
+  phase in that repo gets. Green, the doc branch moves up to the wrap-up branch and the landing
+  carries both; the other repos' branches are fast-forwarded into their base and pushed with
+  the doc phase's siblings. The driver renders the report when the stage is over.
+
+  **The wrap-up is never a reason to stop a run.** A timeout — whatever the session had
+  written by then — a missing or invalid verdict, a `blocked`, changes it left uncommitted, a
+  commit it made outside its branches, a gate that is red with its commits, or any error the
+  driver itself meets in the stage is a *soft failure*: all of its commits are left out, in
+  every code repo, the repos whose gate was green included — the branches stay, unmerged, for
+  whoever wants to read them — the store goes back to what it was before the dispatch, the
+  failure is entered in the report as an event that names the branches, and the run goes on
+  with the doc phase's own gate and landing. What it committed in the spec repo beside the
+  store — a fold, prose — stays where it is: that tree has no branch of the wrap-up's to leave
+  behind. What the table gave the wrap-up then still waits, and the close-out session
+  dispatches it. A repo it would branch that holds uncommitted work is a soft failure before
+  anything is dispatched. A gate in the primary repo that is red with its commits is run once
+  more without them: red there too, it is the doc phase's red and goes to the doc-writer as
+  before — and in a project that runs no doc phase, which would have completed over that red
+  without a wrap-up, the run completes. An account session limit is waited out and the session
+  redispatched, as for every role; an interrupt is an interrupt, and the resume starts the
+  stage again from a clean slate. The session leaves its `history` row whatever its outcome,
+  which is what `slice_cost.py` prices the role from.
 
 **The generation bar** terminates the append loop: the first follow-up generation appends only
 work the plan *owes* and no phase delivered — a requirement, ruling or acceptance criterion left
@@ -344,8 +379,9 @@ loop did not act on is in the slice's close-out report — who writes what there
 run start when planning left none, names the report and `close_out.py` (the only way to write to
 it) in every dispatch, with `append`'s arguments, enters refuted findings, funding-consult
 merges and every stop of the run (written by the resume that follows the stop, from
-`state.json`'s `bailouts`), and renders the report — before the doc phase, whenever the run
-stops, and when it completes, the run header from `state.json` with it; the launching session
+`state.json`'s `bailouts`), dispatches the wrap-up, and renders the report — before the doc
+phase, after the wrap-up, whenever the run stops, and when it completes, the run header from
+`state.json` with it; the launching session
 renders once more when the cost block has landed and files **one** tracker card pointing at the
 report.
 

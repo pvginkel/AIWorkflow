@@ -28,7 +28,11 @@ under that hold pushing and rolling dev for verification is pre-authorized,
 and a clean pass that left any repo the slice touched behind its origin is
 nudged, capped, then bails), then the doc phase ("read the slice-doc-plan
 doc and execute", diff-based, single writer, gated by the driver's own
-lint+build+test sweep). Phases appended by the consult or the test phase
+lint+build+test sweep) — and between its writer and that sweep the wrap-up:
+one `dev:wrap-up` session on what the close-out report's table gave it, its
+commits on branches of its own, gated and landed with the doc phase or left
+out whole, never a reason to stop the run (a project with no doc phase runs
+it all the same). Phases appended by the consult or the test phase
 re-enter the loop through a generation bar: the first generation appends
 only work the plan owes and no phase delivered, the second blocking work
 only, a third pending generation bails to the operator.
@@ -38,8 +42,9 @@ the store, and the close-out.md rendered from it —
 ${CLAUDE_PLUGIN_ROOT}/docs/close-out.md): create it if the plan loop did
 not, name it and close_out.py (the only way to write to it) in every
 dispatch, enter refuted findings and funding-consult merges through that
-tool, render it before the doc phase, at every bail and at completion,
-stamp the run header at completion.
+tool, dispatch the wrap-up, render it before the doc phase, after the
+wrap-up, at every bail and at completion, stamp the run header at
+completion.
 
 The plan doc is writable by every agent in the loop — deliberately. The
 driver's job is keeping the shared doc parseable: a parse error, a vanished
@@ -115,6 +120,8 @@ from close_out import (  # noqa: E402
     stamp_header,
     store_path,
     verb_usage,
+    worklist,
+    worklist_view,
 )
 
 # ---------------------------------------------------------------------------
@@ -130,6 +137,7 @@ MODELS: dict[str, tuple[str, str | None]] = {
     "code-writer": ("opus", "xhigh"),
     "code-reviewer": ("opus", "xhigh"),
     "doc-writer": ("opus", "xhigh"),
+    "wrap-up": ("opus", "xhigh"),
     "consult": ("opus", "xhigh"),
     "test-agent": ("sonnet", None),
 }
@@ -143,7 +151,7 @@ AGENT_NAMESPACE = "dev"
 # docs route to. `kc session create-headless --agent` does not validate the
 # name — an unknown agent spawns a plain SDK session that answers anyway — so
 # the driver asserts these definitions exist before any dispatch.
-REQUIRED_AGENTS = ("code-writer", "code-reviewer", "doc-writer",
+REQUIRED_AGENTS = ("code-writer", "code-reviewer", "doc-writer", "wrap-up",
                    "test-agent", "test-fixer", "rebase-agent")
 
 # Where those definitions live: this script is <plugin>/tools/run_loop.py, so
@@ -157,6 +165,7 @@ TIMEOUTS = {
     "consult": 1800,
     "test-agent": 14400,   # includes a CI build wait and live checks
     "doc-writer": 7200,
+    "wrap-up": 7200,
 }
 
 GATE_TIMEOUT = 3600
@@ -370,7 +379,13 @@ VERDICTS = {
     "code-reviewer": {"signoff", "issues", "critical"},
     "test-agent": {"clean", "findings", "blocked"},
     "doc-writer": {"done", "question", "blocked"},
+    "wrap-up": {"done", "blocked"},
 }
+# The wrap-up's verdict beside its outcome: lists of entry ids, each optional,
+# carried onto its history row as the agent reported them. A key the driver
+# does not know is ignored, never a protocol failure — nothing about the
+# wrap-up's verdict stops a run.
+WRAP_UP_LISTS = ("fixed", "folded", "cards", "left", "relabelled")
 
 
 class Bailout(Exception):
@@ -386,6 +401,18 @@ class Bailout(Exception):
         self.details = details
         self.consult = consult
         self.question = question
+
+
+class WrapUpLeftOut(Exception):
+    """A soft failure of the wrap-up (`RunLoop._wrap_up`): never a stop, the
+    reason it was left out of the landing. `without` is the doc gate's run
+    on the doc branch without its commits, when that run is what decided it
+    — the doc phase goes on from it (`gate_last`)."""
+
+    def __init__(self, reason: str, without: dict | None = None):
+        super().__init__(reason)
+        self.reason = reason
+        self.without = without
 
 
 # Every timestamp the loops write or print is the operator's local wall clock
@@ -2278,6 +2305,49 @@ HOLD_BLOCK = """\
   doc.
 """
 
+WRAP_UP_PROMPT = """\
+Slice {slice_name} is built: its phases are merged and tested, and what
+is left of the run is its landing. Work through what the slice's close-out
+report gives the wrap-up.
+
+Deterministic facts from the driver:
+- {close_out_line}
+  The other verbs the wrap-up uses, with their arguments:
+{close_out_verbs}
+- What waits for you, as `worklist` prints it now:
+{worklist}
+- The repositories this slice touched, the branch your commits go on in
+  each, and the gate you run on a fix there. A repository that is not in
+  this list is not yours to change:
+{repo_rows}
+- The spec repo is {spec_root}. What you commit there — the report's store,
+  a fold into another slice{spec_prose} — goes on the branch that is checked
+  out, staged by name: other sessions share that tree.
+{hold_block}- The plan is {plan_path}; the slice folder is {slice_dir}.
+- Never push — any repo, any branch. After your hand-back the driver gates
+  what you committed and lands it with the doc phase, or leaves all of it
+  out.
+
+Write your verdict to {verdict_path}.
+"""
+
+# The held repos as the wrap-up's dispatch names them — the rows HOLD_BLOCK
+# carries, not its words: those tell the test phase that everything else is
+# its to push, and the wrap-up pushes nothing.
+WRAP_UP_HOLD_BLOCK = """\
+- The plan holds these repos (`## Push holds`): they are not yours to
+  change, and the driver cut no branch in them:
+{rows}
+"""
+
+# The event a soft failure of the wrap-up enters. Its Consequence opens with
+# "none", so the tool labels it closed and it sits in the record — never on
+# the wrap-up's own work list, which a close-out session then reads.
+WRAP_UP_LEFT_OUT_HEADLINE = "The wrap-up was left out of the landing: {reason}"
+WRAP_UP_LEFT_OUT_CONSEQUENCE = (
+    "none in this run — what the table gave the wrap-up still waits, and the "
+    "close-out session dispatches it")
+
 # The test-phase dispatch's prd line: fixed, unless plan.md's `## Driver
 # rulings` authorize prd for named targets.
 PRD_LINE = "  prd stays operator-gated; nothing here touches it."
@@ -2815,18 +2885,19 @@ class RunLoop:
             return {}
         return self._push_holds(text)[0]
 
-    def _hold_block(self) -> str:
+    def _hold_block(self, template: str = HOLD_BLOCK) -> str:
         """The held repos as the test phase's dispatch carries them. The
         plan says it too, but the procedure doc that dispatch executes says
         `push`, and a deterministic fact outranks a section the agent has to
-        find."""
+        find. The wrap-up's dispatch names the same rows in its own words
+        (`WRAP_UP_HOLD_BLOCK`)."""
         try:
             holds, _ = parse_push_holds(self.plan_path.read_text())
         except OSError:
             return ""
         if not holds:
             return ""
-        return HOLD_BLOCK.format(
+        return template.format(
             rows="\n".join(f"  - {t} — {why}" for t, why in holds))
 
     # -- driver rulings --------------------------------------------------------
@@ -5252,18 +5323,34 @@ class RunLoop:
         push triggers is deliberately not tracked: the sweep already proved
         the tree, and the roll lands on its own.
 
-        A project that runs no doc phase skips all of it — the slice's code
-        is already merged and settled by the time this is reached."""
-        if not self.cfg.doc_phase:
-            self.log(f"doc phase disabled in {self.cfg.path.name} — skipped")
-            return
+        Between the writer and the gate sweep sits the wrap-up (`_wrap_up`),
+        so that one landing carries both: `writer` → `wrap-up` → `gate` →
+        `landing` → `siblings` → `done`.
+
+        A project that runs no doc phase has no writer, and the ladder starts
+        at the wrap-up — the gate and the landing below are then the
+        wrap-up's alone. When nothing waits for the wrap-up either, all of it
+        is skipped: the slice's code is already merged and settled by the
+        time this is reached. The ladder is the doc phase's own record
+        (`doc_phase`, marked `writer: false`) rather than a second one, so a
+        resume re-enters it through `run_phase` exactly as before."""
+        writes = self.cfg.doc_phase
+        if not writes and "doc_phase" not in self.state:
+            if not self._wrap_up_waits():
+                self.log(f"doc phase disabled in {self.cfg.path.name} — "
+                         "skipped; nothing waits for the wrap-up")
+                return
+            self.log(f"doc phase disabled in {self.cfg.path.name} — the "
+                     "ladder starts at the wrap-up")
         self.state["run_phase"] = "docs"
         ds = self.state.setdefault(
             "doc_phase", {"stage": "writer", "gate_runs": 0, "nudges": 0,
-                          "session": None})
+                          "session": None} if writes else
+            {"stage": "wrap-up", "gate_runs": 0, "nudges": 0,
+             "session": None, "writer": False})
         self._save_state()
         doc_plan_doc = self.cfg.doc_plan
-        if not doc_plan_doc:
+        if writes and not doc_plan_doc:
             raise Bailout(
                 "protocol_failure",
                 details=f"{self.cfg.path} runs the doc phase but names no "
@@ -5273,12 +5360,23 @@ class RunLoop:
         root = self.repo_root
         branch = f"phase/{self.slice_num}-docs"
 
+        if ds["stage"] == "wrap-up":
+            # A resume into the stage starts it again from a clean slate —
+            # before the branch setup below, which checks the doc branch out
+            # of whatever tree an interrupted attempt left.
+            self._wrap_up_clean_slate(branch)
+
         # Branch setup (fresh or resume; a resume past the writer stage
         # keeps the branch and the work on it). A landing-stage resume with
         # no branch means the merge landed before the crash — only the push
-        # is owed; past the landing, only the other repos' pushes are.
+        # is owed; past the landing, only the other repos' pushes are. With
+        # no writer there is a doc branch only once a wrap-up landed on it,
+        # and nothing here creates one.
         existing = self.git("branch", "--list", branch, root=root)
-        if ds["stage"] == "writer" and not (
+        if not writes:
+            if existing:
+                self.git("checkout", branch, root=root)
+        elif ds["stage"] == "writer" and not (
                 self._reattach and self._reattach.get("role") == "doc-writer"):
             if existing:
                 self.git("checkout", base, root=root)
@@ -5321,8 +5419,13 @@ class RunLoop:
             verdict = self._ensure_committed(None, "doc-writer", session,
                                              root, verdict, verdict_path)
             self._handle_executor_terminals(verdict, None)
-            ds.update(stage="gate", session=session)
+            ds.update(stage="wrap-up", session=session)
             self._save_state()
+
+        if ds["stage"] == "wrap-up":
+            # Never raises a Bailout: whatever goes wrong in it is left out
+            # of the landing, and the stage moves on.
+            self._wrap_up(ds, branch)
 
         if ds["stage"] == "gate":
             self._doc_gate_until_green(ds, branch)
@@ -5472,9 +5575,29 @@ class RunLoop:
     def _doc_gate_until_green(self, ds: dict, branch: str) -> None:
         """The driver's own full-sweep gate on the doc branch. Red is
         nudged back to the writer's session (a fix in place, committed,
-        never pushed), capped; still red at the cap bails."""
+        never pushed), capped; still red at the cap bails.
+
+        The wrap-up stage may already have run this gate on the very commit
+        the doc branch now stands at (`gate_last`): green on its own
+        commits, or on the doc branch without them. That run stands for the
+        first one here — a full sweep is the slowest step of the phase, and
+        running it twice on one commit proves nothing more. A red one is the
+        doc phase's red, and goes straight to the writer's nudge. Taken once:
+        the next round runs the gate as ever."""
+        last = ds.pop("gate_last", None)
+        if last is not None:
+            self._save_state()
         while True:
-            green, log_path = self._run_doc_gate(ds)
+            head = (self.git("rev-parse", "HEAD", root=self.repo_root)
+                    if isinstance(last, dict) and last.get("head") else None)
+            if head and head == last["head"]:
+                green, log_path = bool(last.get("green")), Path(last["log"])
+                self.log(f"[doc-phase] gate: the wrap-up stage's run on "
+                         f"{head[:12]} stands — "
+                         + ("GREEN" if green else "RED") + f" ({log_path})")
+            else:
+                green, log_path = self._run_doc_gate(ds)
+            last = None
             if green:
                 return
             session = ds.get("session")
@@ -5682,6 +5805,752 @@ class RunLoop:
         self.git("push", "origin", base, root=root)
         self.log(f"[doc-phase] merged into {base} and pushed — the dev roll "
                  "is not tracked")
+
+    # -- the wrap-up -----------------------------------------------------------
+
+    def _wrap_up_waits(self) -> bool:
+        """Whether anything waits for the wrap-up — asked by a project that
+        runs no doc phase before it enters the ladder at all. A report that
+        cannot be read counts as waiting: the stage then records that as its
+        soft failure, rather than the run passing it by without a word."""
+        try:
+            return bool(worklist(self.slice_dir))
+        except ReportError as e:
+            self.log(f"[wrap-up] its work list could not be read ({e})")
+            return True
+
+    def _wrap_up_branch(self) -> str:
+        return f"phase/{self.slice_num}-wrap-up"
+
+    def _wrap_up_spec_home(self, writes: bool, doc_branch: str) -> str | None:
+        """The branch the spec tree stands on around the wrap-up's session —
+        the doc branch where the primary repo IS the spec repo and the doc
+        phase branched it, else its base (None, as `_assert_spec_on_base`
+        takes it)."""
+        if writes and self._is_spec_root(self.repo_root):
+            return doc_branch
+        return None
+
+    def _wrap_up(self, ds: dict, doc_branch: str) -> None:
+        """The wrap-up stage: one `dev:wrap-up` session works on what the
+        close-out report's table gave it, its commits on branches of its own
+        (`phase/<NNN>-wrap-up`); the driver gates them and they land with the
+        doc phase, or are left out whole. run-loop.md § After the last phase
+        is the contract, and `_wrap_up_run` its steps.
+
+        **The wrap-up is never a reason to stop a run.** A soft failure — the
+        session timed out, wrote no verdict or an invalid one, answered
+        `blocked`, left changes uncommitted or committed outside its
+        branches, or a gate is red with its commits — and equally any error
+        the driver meets on the way (a git call that fails, the spec tree's
+        lease, a report that cannot be read, a bug here) ends the stage one
+        way (`_wrap_up_leave_out`): no commit of it reaches a base or the doc
+        branch, in any repo; the store goes back to where it stood; one event
+        is entered; and the ladder goes on. No Bailout leaves this method and
+        the exit code never changes. Only an interrupt goes past it, as it
+        does anywhere — a resume into the stage starts it over from a clean
+        slate (`_wrap_up_clean_slate`).
+
+        Whatever the outcome, the stage ends by moving `doc_phase.stage` on
+        (`_wrap_up_decide`), and — when it did anything — by rendering the
+        report and committing it."""
+        writes = ds.get("writer", True)
+        wu = self.state["wrap_up"] = {
+            "outcome": None, "reason": None, "session": None, "entries": [],
+            "store": None, "repos": {}}
+        self._save_state()
+        # What the leave-out needs to undo, filled in as the steps go: the
+        # branch each tree must stand on after the session (`watch`), and
+        # every ref no commit of the wrap-up may reach (`guard`).
+        ctx: dict = {"watch": {}, "guard": {},
+                     "spec_home": self._wrap_up_spec_home(writes, doc_branch)}
+        try:
+            self._wrap_up_run(ds, doc_branch, wu, ctx)
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:
+            if isinstance(e, WrapUpLeftOut):
+                reason, without = e.reason, e.without
+            else:
+                reason = (e.details if isinstance(e, Bailout)
+                          else f"{type(e).__name__}: {e}")
+                without = None
+            try:
+                self._wrap_up_leave_out(ds, wu, ctx, reason, without)
+            except KeyboardInterrupt:
+                raise
+            except Exception as e2:
+                self.log(f"[wrap-up] the leave-out did not finish "
+                         f"({type(e2).__name__}: {e2})")
+                if wu.get("outcome") is None:
+                    wu["reason"] = wu.get("reason") or reason
+                    self._wrap_up_decide(ds, wu, "left_out")
+        if wu["outcome"] == "skipped":
+            return
+        self._render_report()
+        try:
+            self._commit_report(f"slice {self.slice_num}: close-out report "
+                                "after the wrap-up", ctx["spec_home"])
+        except Exception as e:
+            why = e.details if isinstance(e, Bailout) else str(e)
+            self.log(f"[wrap-up] close-out report not committed ({why})")
+
+    def _wrap_up_run(self, ds: dict, doc_branch: str, wu: dict,
+                     ctx: dict) -> None:
+        """The stage's steps, in order; a soft failure raises WrapUpLeftOut
+        for `_wrap_up` to end the stage with."""
+        writes = ds.get("writer", True)
+        primary = self.repo_root
+        label = "[wrap-up]"
+
+        # 1. Anything to do?
+        try:
+            items = worklist(self.slice_dir)
+        except ReportError as e:
+            raise WrapUpLeftOut(f"its work list could not be read ({e})") from None
+        if not items:
+            self.log(f"{label} nothing waits for the wrap-up — skipped")
+            self._wrap_up_decide(ds, wu, "skipped")
+            return
+        wu["entries"] = [entry["id"] for entry, _ in items]
+        self._save_state()
+
+        # 2. Where the store stood: whatever the report holds uncommitted is
+        # committed first, so that one commit is what a soft failure takes
+        # the store back to — with every entry the run's agents appended
+        # before the wrap-up in it.
+        wu["store"] = self._commit_report(
+            f"slice {self.slice_num}: close-out report before the wrap-up",
+            ctx["spec_home"])
+        self._save_state()
+
+        # 3. The branches. Every code repo's base and the doc branch are
+        # guarded — held repos too, since the wrap-up may not touch them
+        # either — and each tree's post-session branch noted; a repo the
+        # wrap-up would branch while it holds uncommitted work is not
+        # dispatched into at all, since the wrap-up would carry that work
+        # into its commits or the driver discard it after.
+        branch = self._wrap_up_branch()
+        repos = self._wrap_up_repos(self._held_roots())
+        has_doc = writes and bool(self.git("branch", "--list", doc_branch,
+                                           root=primary))
+        for root, base in self._touched_roots():
+            ctx["guard"][(str(root), base)] = self.git("rev-parse", base,
+                                                       root=root)
+        # With no doc branch yet, the landing below makes one; until the
+        # stage has decided, none may exist (a None guard).
+        ctx["guard"][(str(primary), doc_branch)] = (
+            self.git("rev-parse", doc_branch, root=primary) if has_doc
+            else None)
+        for root, base in repos:
+            home = (doc_branch if has_doc and self._is_primary(root)
+                    else base)
+            ctx["watch"][str(root)] = {"root": root, "expected": home,
+                                       "dirty": self._worktree_dirty(root)}
+        for root, _ in self._touched_roots():
+            ctx["watch"].setdefault(str(root), {
+                "root": root, "expected": self._current_branch(root),
+                "dirty": self._worktree_dirty(root)})
+        dirty = [root.name for root, _ in repos
+                 if ctx["watch"][str(root)]["dirty"]]
+        if dirty:
+            raise WrapUpLeftOut("uncommitted changes in " + ", ".join(dirty)
+                                + " before its dispatch")
+        for root, _ in repos:
+            home = ctx["watch"][str(root)]["expected"]
+            sha = self.git("rev-parse", home, root=root)
+            if self.git("branch", "--list", branch, root=root):
+                if self._current_branch(root) == branch:
+                    self.git("checkout", home, root=root)
+                self.git("branch", "-D", branch, root=root)
+            self.git("checkout", "-b", branch, sha, root=root)
+            wu["repos"][str(root)] = {"branch": branch, "base": sha,
+                                      "head": None}
+            self._save_state()
+            self.log(f"{label} {branch} cut in {root.name} from {home} "
+                     f"({sha[:12]})")
+
+        # 4. The dispatch. The spec tree stands where it stood, except where
+        # the primary repo IS the spec repo and the wrap-up branch is cut
+        # there: then that branch is what the session commits the store on.
+        verdict_path = self.slice_dir / "wrap_up_result.json"
+        spec_branch = (branch if any(self._is_spec_root(root)
+                                     for root, _ in repos)
+                       else ctx["spec_home"])
+        why = self._dispatch_wrap_up(
+            self._wrap_up_prompt(repos, branch, verdict_path), verdict_path,
+            spec_branch, wu)
+
+        # 5. After the session, whatever its outcome.
+        reasons = [r for r in (why, *self._wrap_up_settle(wu, ctx)) if r]
+        if reasons:
+            raise WrapUpLeftOut("; ".join(reasons))
+
+        # 6–7. The gate: every other repo it committed to with the gate a
+        # phase there gets, then the primary with the doc gate. Nothing has
+        # moved a base or the doc branch yet, so a red anywhere leaves it all
+        # out — the repos already green included.
+        carried: dict[str, int] = {}
+        for root, _ in repos:
+            info = wu["repos"][str(root)]
+            n = self.git("rev-list", "--count", f"{info['base']}..{branch}",
+                         root=root)
+            if n not in ("", "0"):
+                carried[str(root)] = int(n)
+        if not carried:
+            self.log(f"{label} no commit on any wrap-up branch — nothing to "
+                     "gate or land in a code repo")
+        for root, base in repos:
+            if self._is_primary(root) or str(root) not in carried:
+                continue
+            green, where = self._wrap_up_sibling_gate(root, branch, base)
+            if not green:
+                raise WrapUpLeftOut(f"the gate in {root.name} is red with its "
+                                    f"commits (output in {where})")
+        green_at = None
+        if str(primary) in carried:
+            green_at = self._wrap_up_primary_gate(ds, branch,
+                                                  ctx["watch"][str(primary)])
+
+        # 8. Green. The doc branch moves up to the wrap-up branch, so the
+        # doc landing carries both; with no doc phase the doc branch is made
+        # here, at the wrap-up branch, for the same landing to take. In every
+        # other repo the base fast-forwards, and `_push_doc_siblings` pushes
+        # it with the doc-writer's own commits there. Each tree stands on its
+        # home branch since the settle; a failure halfway is put back by the
+        # leave-out's guard.
+        for root, _ in repos:
+            if str(root) not in carried:
+                continue
+            if self._is_primary(root) and not has_doc:
+                self.git("checkout", "-b", doc_branch, branch, root=root)
+            else:
+                self.git("merge", "--ff-only", branch, root=root)
+            self.log(f"{label} {carried[str(root)]} commit(s) of {branch} "
+                     f"taken into {self._current_branch(root)} in {root.name}")
+        if green_at is not None:
+            ds["gate_last"] = green_at
+        self._wrap_up_decide(ds, wu, "landed")
+        self.announce("wrap-up landed")
+
+    def _is_primary(self, root: Path) -> bool:
+        return Path(root).resolve() == self.repo_root.resolve()
+
+    def _wrap_up_primary_gate(self, ds: dict, branch: str,
+                              watch: dict) -> dict:
+        """The doc gate on the wrap-up branch in the primary repo — the doc
+        phase's own sweep, run on its commits. Green: that run, for the gate
+        stage to take as its first (`gate_last`). Red: once more on the doc
+        branch without them, to tell whose red it is — green there, the
+        wrap-up is left out and the doc phase goes on from that green; red
+        there too, the wrap-up is left out all the same and the red is the
+        doc phase's, for the writer's nudge (with no writer nobody is
+        nudged and nothing stops: `_wrap_up_decide`)."""
+        primary = self.repo_root
+        home = watch["expected"]
+        self.log(f"[wrap-up] the doc gate on {branch}, with its commits")
+        self.git("checkout", branch, root=primary)
+        try:
+            green, log_path = self._run_doc_gate(ds)
+            head = self.git("rev-parse", "HEAD", root=primary)
+        finally:
+            self.git("checkout", home, root=primary)
+        if green:
+            return {"head": head, "green": True, "log": str(log_path)}
+        self.log(f"[wrap-up] the doc gate is red with its commits — once more "
+                 f"on {home} without them")
+        green_without, log_without = self._run_doc_gate(ds)
+        without = {"head": self.git("rev-parse", "HEAD", root=primary),
+                   "green": green_without, "log": str(log_without)}
+        if green_without:
+            raise WrapUpLeftOut("the doc gate is red with its commits and "
+                                f"green without them (output in {log_path})",
+                                without)
+        raise WrapUpLeftOut("the doc gate is red with its commits and without "
+                            "them — that red is the doc phase's (output in "
+                            f"{log_without})", without)
+
+    def _wrap_up_decide(self, ds: dict, wu: dict, outcome: str) -> None:
+        """The stage's outcome and the stage after it, saved together, so a
+        crash leaves the ladder either before the decision — and a resume
+        starts the stage over — or past it, never at a decided stage it
+        would run again.
+
+        The doc phase goes on to its gate whatever the wrap-up did. With no
+        writer there is a gate only where there is something to land: a
+        landing that ran the doc gate takes it to the gate stage, which
+        finds that run on the commit it stands at; a landing in other repos
+        alone goes straight to their pushes. Anything else ends the ladder —
+        nothing of the wrap-up is there to land. That holds for a wrap-up
+        left out on a red the base has without its commits too: this project
+        runs no doc gate, so without the wrap-up the run would have
+        completed over that red, and the wrap-up is never the reason it
+        does not. The red is in the log and in the left-out event."""
+        wu["outcome"] = outcome
+        last = ds.get("gate_last")
+        if ds.get("writer", True):
+            ds["stage"] = "gate"
+        elif outcome == "landed":
+            ds["stage"] = "gate" if last else "siblings"
+        else:
+            ds.pop("gate_last", None)
+            ds["stage"] = "done"
+        self._save_state()
+
+    def _phase_roots(self) -> list[Path]:
+        """The repos the slice's merged phases landed in, each once, in the
+        order the phases merged. A phase merged with no range on record
+        names its repo through its Target."""
+        ranged, unranged = self._landed()
+        roots = [Path(landed["root"]) for _, landed in ranged]
+        for pid in unranged:
+            target = (self.state["phases"].get(pid) or {}).get("target")
+            if not target:
+                continue
+            try:
+                roots.append(self._resolve_target(target).git_root)
+            except ValueError as e:
+                self.log(f"[wrap-up] P{pid}'s repo not resolved ({e})")
+        out: list[Path] = []
+        seen: set[Path] = set()
+        for root in roots:
+            if root.resolve() not in seen:
+                seen.add(root.resolve())
+                out.append(root)
+        return out
+
+    def _wrap_up_repos(self, held: dict[str, str]) -> list[tuple[Path, str]]:
+        """The code repos the wrap-up may change, primary first, each with
+        the base branch the run recorded there: the roots of the slice's
+        merged phases and the primary repo, less the repos the plan holds
+        and less the spec repo, which it commits into as every agent does,
+        on the branch checked out there. A primary repo that IS the spec
+        repo stays in: its code is the slice's, and without a branch of its
+        own every store commit the wrap-up made would move the doc branch
+        under it."""
+        held_roots = {Path(key).resolve() for key in held}
+        roots = [self.repo_root]
+        roots += [r for r in self._phase_roots() if not self._is_primary(r)]
+        out: list[tuple[Path, str]] = []
+        for root in roots:
+            if root.resolve() in held_roots:
+                continue
+            if self._is_spec_root(root) and not self._is_primary(root):
+                continue
+            out.append((root, self._base_branch(root)))
+        return out
+
+    def _wrap_up_gate_text(self, root: Path) -> str:
+        """A repo row's gate, as the wrap-up runs it on a fix: the command
+        the driver itself runs there afterwards, written for the component
+        the fix changed."""
+        if self._is_primary(root):
+            return ("`kc project lint`, `kc project build` and `kc project "
+                    f"test` from {root} (the doc phase's gate) — each with "
+                    "`--project <component>` for the component you changed")
+        target = self._repo_path_target(str(root), root)
+        ruling = self._gate_ruling(target)
+        if ruling is not None:
+            return ("none the driver runs — waived by plan.md's `## Driver "
+                    f"rulings` (substitute: {ruling.substitute_text})")
+        if target.gate_argv is None:
+            return (f"none the driver runs — {root} has no kc manifest; gate "
+                    "a fix there per that repo's own conventions")
+        return (f"`kc project test` from {root} — with `--project "
+                "<component>` for the component you changed")
+
+    def _wrap_up_prompt(self, repos: list[tuple[Path, str]], branch: str,
+                        verdict_path: Path) -> str:
+        rows = [f"  - {root} — branch {branch} — gate: "
+                f"{self._wrap_up_gate_text(root)}" for root, _ in repos]
+        spec_prose = (", prose of the spec repo"
+                      if any(self._is_spec_root(root)
+                             for root in self._phase_roots()) else "")
+        return WRAP_UP_PROMPT.format(
+            slice_name=self.slice_name,
+            close_out_line=dispatch_line(self.report_path),
+            close_out_verbs=textwrap.indent(
+                verb_usage("worklist", "list", "relabel", "request-card",
+                           "leave", "strike", "note"), "  "),
+            worklist=textwrap.indent(worklist_view(self.slice_dir), "  "),
+            repo_rows="\n".join(rows) or "  (none — the plan holds every code "
+                                         "repo this slice touched)",
+            spec_root=self.spec_root, spec_prose=spec_prose,
+            hold_block=self._hold_block(WRAP_UP_HOLD_BLOCK),
+            plan_path=self.plan_path, slice_dir=self.slice_dir,
+            verdict_path=verdict_path)
+
+    def _dispatch_wrap_up(self, prompt: str, verdict_path: Path,
+                          spec_branch: str | None, wu: dict) -> str | None:
+        """The wrap-up's session, through a path of its own: `_spawn` ends
+        in `_rule_on_round`, whose protocol failure bails the run, and the
+        wrap-up's may not. Kept from the ordinary dispatch: the session
+        mechanics (`run_kc_session`), the log lines, the in-flight record,
+        the spec tree's reader lease with the branch assertion it guards, the
+        account session-limit wait and redispatch, and one history row with
+        the session and its transcript whatever the outcome — the row
+        `slice_cost.py` prices the role from. Dropped: the verdict nudge, the
+        lost-wait recovery, the commit nudge, every bail, the salvage of a
+        verdict a timed-out session had written, and the reattach — a resume
+        into the stage starts it over. Returns None for a verdict the
+        landing may go on from, else the soft failure's reason."""
+        role, label, cwd = "wrap-up", "[wrap-up]", self.repo_root
+        model, effort = MODELS[role]
+
+        def _note_session(sid: str) -> None:
+            self.log(f"{label} session {sid} — transcript "
+                     f"{_transcript_path(cwd, sid)}")
+            wu["session"] = sid
+            in_flight = self.state.get("in_flight")
+            if in_flight and in_flight.get("session") != sid:
+                in_flight["session"] = sid
+            self._save_state()
+
+        while True:
+            self.log(f"{label} session starting")
+            self.announce("wrap-up")
+            verdict_path.unlink(missing_ok=True)
+            self.state["in_flight"] = {
+                "phase": None, "role": role, "round": 1,
+                "verdict_path": str(verdict_path), "session": None,
+                "started_at": _now_iso(),
+            }
+            self._save_state()
+            t0 = time.monotonic()
+            try:
+                with self.spec_lock.shared(label):
+                    self._assert_spec_on_base(spec_branch)
+                    self._assert_current()
+                    returncode, result = run_kc_session(
+                        prompt=prompt, cwd=str(cwd), timeout=TIMEOUTS[role],
+                        agent=role, model=model, effort=effort,
+                        extra_env=SPAWN_ENV, flags=spawn_flags(role, self.log),
+                        progress=lambda line: self._emit(f"    {label} {line}"),
+                        on_session=_note_session,
+                    )
+            except subprocess.TimeoutExpired:
+                sid = (self.state.get("in_flight") or {}).get("session")
+                self.state["in_flight"] = None
+                why = f"the session timed out after {TIMEOUTS[role]}s"
+                self._record(None, role, 1, "timeout", why, sid,
+                             TIMEOUTS[role],
+                             transcript=_transcript_path(cwd, sid))
+                self.log(f"{label} → timeout: {why}")
+                return why
+            except Exception:
+                # Never a session to reattach to: the resume starts over.
+                self.state["in_flight"] = None
+                self._save_state()
+                raise
+            duration_s = int(time.monotonic() - t0)
+            session_id = result.session_id
+            verdict = _read_json(verdict_path)
+            valid = isinstance(verdict, dict) and _verdict_valid(role, verdict)
+            notice = None if valid else session_limit_notice(result)
+            if notice is None:
+                break
+            self.state["in_flight"] = None
+            self._record(None, role, 1, "session_limit",
+                         notice.replace("\n", " ")[:200], session_id,
+                         duration_s, transcript=_transcript_path(cwd, session_id))
+            self._wait_out_session_limit(notice, label)
+
+        self.state["in_flight"] = None
+        transcript = _transcript_path(cwd, session_id)
+        if not valid:
+            if verdict is None:
+                why = "it wrote no verdict"
+            else:
+                outcome = verdict.get("outcome") if isinstance(verdict, dict) \
+                    else type(verdict).__name__
+                why = f"its verdict is invalid (outcome {outcome!r})"
+            summary = f"{why}; the session ended rc={returncode}"
+            self._record(None, role, 1, "invalid", summary, session_id,
+                         duration_s, transcript=transcript)
+            self.log(f"{label} → invalid: {summary}")
+            return why
+        if returncode != 0:
+            self.log(f"{label} session ended rc={returncode} but had written "
+                     f"{verdict_path.name} — taken")
+        outcome = verdict["outcome"]
+        summary = str(verdict.get("summary") or "")
+        lists = {key: [str(x) for x in verdict[key]] for key in WRAP_UP_LISTS
+                 if isinstance(verdict.get(key), list)}
+        self._record(None, role, 1, outcome, summary, session_id, duration_s,
+                     transcript=transcript, extra=lists)
+        self.log(f"{label} → {outcome}: {summary[:160]}")
+        if outcome == "blocked":
+            return "it answered blocked" + (f": {_clip(summary, 200)}"
+                                            if summary else "")
+        return None
+
+    def _wrap_up_settle(self, wu: dict, ctx: dict) -> list[str]:
+        """After the session, whatever its outcome: what it left uncommitted
+        discarded where it left it, the head of each wrap-up branch recorded,
+        every tree back on the branch the ladder expects, and a base or the
+        doc branch that moved put back where it stood. Returns what it found,
+        each a soft failure. Idempotent — the leave-out runs it again, over
+        whatever a later step left half done, and a second pass over a
+        settled tree finds nothing.
+
+        A tree that held uncommitted work before the dispatch (a held repo:
+        the wrap-up is not dispatched into a dirty repo it branches) is left
+        as it is — that work is not the wrap-up's to discard."""
+        problems: list[str] = []
+        branch = self._wrap_up_branch()
+        for key, watch in ctx["watch"].items():
+            root = watch["root"]
+            if not watch["dirty"] and self._worktree_dirty(root):
+                where = self._current_branch(root)
+                self._wrap_up_discard(root)
+                problems.append(f"it left uncommitted changes in {root.name} "
+                                f"(discarded on {where})")
+            info = wu["repos"].get(key)
+            if info is not None and self.git("branch", "--list", branch,
+                                             root=root):
+                info["head"] = self.git("rev-parse", branch, root=root)
+            current = self._current_branch(root)
+            if current != watch["expected"]:
+                # Where the tree holds the slice folder, the store an agent
+                # left uncommitted there would refuse the checkout.
+                self._commit_slice_edits(root, current, "[wrap-up]")
+                self.git("checkout", watch["expected"], root=root)
+        for (key, ref), sha in ctx["guard"].items():
+            root = Path(key)
+            if sha is None:
+                if self.git("branch", "--list", ref, root=root):
+                    if self._current_branch(root) == ref:
+                        self.git("checkout", self._base_branch(root),
+                                 root=root)
+                    self.git("branch", "-D", ref, root=root)
+                    self.log(f"[wrap-up] {ref} in {root.name} deleted — it "
+                             "did not exist before the stage")
+                continue
+            now = self.git("rev-parse", ref, root=root)
+            if now == sha:
+                continue
+            if self._current_branch(root) == ref:
+                self.git("reset", "--hard", sha, root=root)
+            else:
+                self.git("branch", "-f", ref, sha, root=root)
+            self.log(f"[wrap-up] {ref} in {root.name} was at {now[:12]} — put "
+                     f"back to {sha[:12]}")
+            problems.append(f"it committed outside its branches ({ref} in "
+                            f"{root.name} moved to {now[:12]})")
+        self._save_state()
+        return problems
+
+    def _wrap_up_discard(self, root: Path) -> None:
+        """Discard what the wrap-up left uncommitted in a tree — tracked and
+        untracked alike, the slice folder's bookkeeping held out where the
+        tree holds it."""
+        self._reset_tracked(root)
+        pathspec = self._bookkeeping_pathspec(root)
+        self.git("clean", "-fd", *(["--", *pathspec] if pathspec else []),
+                 root=root)
+
+    def _wrap_up_sibling_gate(self, root: Path, branch: str,
+                              base: str) -> tuple[bool, str]:
+        """The gate a phase whose Target is this whole repo gets, run by the
+        driver on the wrap-up branch: (passed, where its output is). A repo
+        with no manifest, or one a gate ruling waives, passes unrun, as such
+        a phase does. The run leaves a `wrap-up-gate` history row, and
+        nothing in it bails: a gate that times out is red."""
+        target = self._repo_path_target(str(root), root)
+        ruling = self._gate_ruling(target)
+        if ruling is not None:
+            self.log(f"[wrap-up] the gate in {root.name} is waived by plan.md's "
+                     f"`## Driver rulings` (substitute: "
+                     f"{ruling.substitute_text}) — not run")
+            self._report_ruling(ruling, "wrap-up gate")
+            return True, "waived"
+        if target.gate_argv is None:
+            self.log(f"[wrap-up] no deterministic gate in {root.name} — its "
+                     "commits pass unverified")
+            return True, "no gate"
+        n = 1 + sum(1 for row in self.state["history"]
+                    if row.get("role") == "wrap-up-gate")
+        log_path = self.slice_dir / f"wrap_up_gate_r{n}.log"
+        argv = target.gate_argv
+        self.log(f"[wrap-up] gate #{n} running in {root.name} on {branch} "
+                 f"({' '.join(argv)})")
+        self.git("checkout", branch, root=root)
+        t0 = time.monotonic()
+        try:
+            with open(log_path, "w") as log_file:
+                try:
+                    returncode = self._wrap_up_gate_exec(argv, target.gate_cwd,
+                                                         log_file)
+                except subprocess.TimeoutExpired:
+                    log_file.write(f"→ timed out after {GATE_TIMEOUT}s\n")
+                    returncode = None
+        finally:
+            self.git("checkout", base, root=root)
+        duration_s = int(time.monotonic() - t0)
+        outcome = "red" if returncode is None else kc_outcome(returncode)
+        try:
+            lines = [ln for ln in log_path.read_text().splitlines()
+                     if ln.strip()]
+        except OSError:
+            lines = []
+        tail = lines[-1] if lines else ""
+        self._record(None, "wrap-up-gate", n, outcome, tail, None, duration_s,
+                     extra={"repo": str(root)})
+        self.log(f"[wrap-up] gate #{n} → {GATE_OUTCOME_LABELS[outcome]} "
+                 f"({duration_s}s) {tail[:120]}")
+        return outcome != "red", str(log_path)
+
+    def _wrap_up_gate_exec(self, argv: list[str], cwd: Path, log_file) -> int:
+        """One wrap-up gate command — the seam the wrap-up's tests replace."""
+        return self._gate_exec(argv, cwd, log_file)
+
+    def _commit_report(self, message: str, expect: str | None) -> str:
+        """Commit the report — the store and the close-out.md rendered from
+        it — where either changed, staged and committed by name under the
+        spec tree's reader lease, as the driver's own report commit is;
+        return the spec repo's commit it now stands at. `expect` is the
+        branch the tree must be on (`_assert_spec_on_base`)."""
+        paths = [str(p) for p in (store_path(self.slice_dir), self.report_path)
+                 if p.exists()]
+        with self.spec_lock.shared("close-out report"):
+            self._assert_spec_on_base(expect)
+            if paths and self.specs_git("status", "--porcelain", "--", *paths):
+                self.specs_git("add", "--", *paths)
+                self.specs_git("commit", "-m", message, "--", *paths)
+                self.log(f"[wrap-up] committed {self.report_path.name}: "
+                         f"{message}")
+            return self.specs_git("rev-parse", "HEAD")
+
+    def _wrap_up_restore_store(self, sha: str, expect: str | None) -> None:
+        """The store as it is in the spec repo's commit `sha`, written over
+        the current one, rendered and committed: the entries the run's
+        agents appended before the wrap-up are in it, what the wrap-up wrote
+        is not."""
+        store = store_path(self.slice_dir)
+        text = self.specs_git("show", f"{sha}:./{store.name}")
+        tmp = store.with_name(store.name + ".tmp")
+        tmp.write_text(text if text.endswith("\n") else text + "\n")
+        os.replace(tmp, store)
+        self._render_report()
+        self._commit_report(f"slice {self.slice_num}: close-out report back to "
+                            f"where it stood before the wrap-up ({sha[:12]})",
+                            expect)
+        self.log(f"[wrap-up] the store is back to {sha[:12]}")
+
+    def _wrap_up_leave_out(self, ds: dict, wu: dict, ctx: dict, reason: str,
+                           without: dict | None) -> None:
+        """A soft failure, every time the same: the trees put back and every
+        guarded ref where it stood — so no commit of the wrap-up reaches a
+        base or the doc branch in any repo, the repos whose gate was green
+        included; the wrap-up branches stay, unmerged — the store taken
+        back, one event entered through the driver's own `_report`, and the
+        ladder moved on. Each step is best-effort: the leave-out is what
+        stands between the wrap-up and a stopped run, so it cannot be a stop
+        itself."""
+        reason = " ".join(str(reason).split()) or "an unknown failure"
+        self.log(f"[wrap-up] left out of the landing: {reason}")
+        try:
+            self._wrap_up_settle(wu, ctx)
+        except Exception as e:
+            why = e.details if isinstance(e, Bailout) else str(e)
+            self.log(f"[wrap-up] the trees could not all be put back ({why})")
+        if wu.get("store"):
+            try:
+                self._wrap_up_restore_store(wu["store"], ctx["spec_home"])
+            except Exception as e:
+                why = e.details if isinstance(e, Bailout) else str(e)
+                self.log(f"[wrap-up] the store could not be taken back ({why})")
+        ds.pop("gate_last", None)
+        if without is not None:
+            ds["gate_last"] = without
+        wu["reason"] = reason
+        try:
+            self._report(
+                "Notable events",
+                WRAP_UP_LEFT_OUT_HEADLINE.format(reason=_clip(reason, 300)),
+                self._wrap_up_event_body(wu),
+                consequence=WRAP_UP_LEFT_OUT_CONSEQUENCE,
+                provenance="witnessed — the driver's wrap-up stage")
+        except Exception as e:
+            self.log(f"[wrap-up] the event was not entered ({e})")
+        self._wrap_up_decide(ds, wu, "left_out")
+        self.announce("wrap-up left out")
+
+    def _wrap_up_event_body(self, wu: dict) -> str:
+        """The left-out event's body: where the wrap-up's work can be read."""
+        paras: list[str] = []
+        repos = wu.get("repos") or {}
+        if repos:
+            rows = []
+            for key, info in repos.items():
+                head = info.get("head") or info.get("base") or "?"
+                rows.append(f"- `{key}`: `{info.get('branch')}` at "
+                            f"`{head[:12]}`, cut from "
+                            f"`{(info.get('base') or '?')[:12]}`")
+            paras.append("What it committed stays on its branches, unmerged:\n"
+                         + "\n".join(rows))
+        else:
+            paras.append("It was left out before any branch was cut.")
+        sid = wu.get("session")
+        if sid:
+            paras.append(f"Its session: `{sid}`, transcript "
+                         f"`{_transcript_path(self.repo_root, sid)}`.")
+        if wu.get("store"):
+            paras.append("The store is back to where it stood in the spec "
+                         f"repo's `{wu['store'][:12]}`; what the wrap-up wrote "
+                         "there is in the history after that commit.")
+        return "\n\n".join(paras)
+
+    def _wrap_up_clean_slate(self, doc_branch: str) -> None:
+        """A resume into the wrap-up stage starts it again from nothing: each
+        tree an interrupted attempt left on its branch put back where the
+        ladder expects it (what it held uncommitted discarded), the wrap-up
+        branches deleted, a doc branch the attempt had begun to make for a
+        project with no doc phase deleted, and the store taken back to where
+        it stood before that attempt. Never a failure: what cannot be undone
+        is logged, and the stage's own steps meet it again."""
+        if self._reattach and self._reattach.get("role") == "wrap-up":
+            self._reattach = None
+        wu = self.state.get("wrap_up")
+        if not isinstance(wu, dict):
+            return
+        writes = (self.state.get("doc_phase") or {}).get("writer", True)
+        branch = self._wrap_up_branch()
+        self.log("[wrap-up] the stage starts again from a clean slate")
+        for key, info in (wu.get("repos") or {}).items():
+            root = Path(key)
+            try:
+                home = self._base_branch(root)
+                if (self._is_primary(root) and writes
+                        and self.git("branch", "--list", doc_branch, root=root)):
+                    home = doc_branch
+                if self._current_branch(root) == info.get("branch", branch):
+                    if self._worktree_dirty(root):
+                        self._wrap_up_discard(root)
+                    self._commit_slice_edits(root, branch, "[wrap-up]")
+                    self.git("checkout", home, root=root)
+                if self.git("branch", "--list", branch, root=root):
+                    self.git("branch", "-D", branch, root=root)
+            except Exception as e:
+                why = e.details if isinstance(e, Bailout) else str(e)
+                self.log(f"[wrap-up] {root.name} not put back ({why})")
+        if not writes:
+            root = self.repo_root
+            try:
+                if self.git("branch", "--list", doc_branch, root=root):
+                    if self._current_branch(root) == doc_branch:
+                        self.git("checkout", self._base_branch(root), root=root)
+                    self.git("branch", "-D", doc_branch, root=root)
+            except Exception as e:
+                why = e.details if isinstance(e, Bailout) else str(e)
+                self.log(f"[wrap-up] {doc_branch} not deleted ({why})")
+        if wu.get("store"):
+            try:
+                self._wrap_up_restore_store(
+                    wu["store"], self._wrap_up_spec_home(writes, doc_branch))
+            except Exception as e:
+                why = e.details if isinstance(e, Bailout) else str(e)
+                self.log(f"[wrap-up] the store could not be taken back ({why})")
 
     # -- top level -----------------------------------------------------------
 

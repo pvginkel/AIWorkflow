@@ -39,7 +39,15 @@ once however often the run resumes), `appended_phases`
 (the ids the plan gained after the run started — a consult's, the test phase's, or the
 operator's, as opposed to the phases it began with), `holds_reported` (the repos held by the
 plan's `## Push holds` section that the driver has already entered in the close-out report — one
-entry per repo per run), `phases`, and `history`.
+entry per repo per run), `wrap_up` (the wrap-up's record: `outcome` — `skipped` when nothing
+waited for it, `landed`, or `left_out` with its `reason`; its `session`; the `entries` its work
+list named at dispatch; `store`, the spec repo commit the store stood at before it; and per
+repo its `branch`, the `base` sha the branch was cut from and its `head`), `doc_phase` (the
+closing ladder's record: its `stage` — `writer` | `wrap-up` | `gate` | `landing` | `siblings` |
+`done` — the writer's `session`, `gate_runs`, `nudges`; `writer: false` in a project that runs
+no doc phase, where the ladder starts at the wrap-up; and `gate_last`, the doc gate's run the
+wrap-up stage made, which the gate stage takes instead of running the sweep again on the same
+commit), `phases`, and `history`.
 
 Per phase: `status` (`pending` | `in_progress` | `merged`), `stage` (`executor` | `gate` |
 `review` | `merging` | `null`), `branch`, `target`, `executor_rounds`, `gate_fix_rounds`,
@@ -56,9 +64,11 @@ phase's diff files read; a phase whose merge landed before its record did (the r
 has none, and the doc dispatch names it as missing from the files.
 
 `history` is append-only, one entry per agent run plus one per gate run (role `gate`), one per
-loop-tail sweep (role `sweep`), one per doc gate (role `doc-gate`) and one per consult: `ts`,
+loop-tail sweep (role `sweep`), one per doc gate (role `doc-gate`), one per gate on a wrap-up
+branch outside the primary repo (role `wrap-up-gate`) and one per consult: `ts`,
 `phase`, `role`, `round`, `outcome`, `summary`, `session`, `transcript`, `duration_s` (a gate,
-sweep or doc-gate row's outcome is `green`, `red` or `nothing_ran`). A
+sweep or doc-gate row's outcome is `green`, `red` or `nothing_ran`; a `wrap-up-gate` row names
+its `repo`). A wrap-up row carries the id lists of its verdict. A
 code-reviewer row additionally carries the verdict's `findings` list (id, severity, impact,
 category, anchor per finding — the review contract's telemetry) and a review-fix executor row
 its `refuted` list, exactly as the agent reported them. The
@@ -82,7 +92,8 @@ repositories the slice touched: the `root` of every phase. What goes in the repo
 [close-out.md](close-out.md).
 
 Session outputs live under `<slice>/phases/P<id>/` (review docs, gate logs, verdict files) and at
-the slice root for the consult/test/doc stages; the loop-tail sweep's logs live under
+the slice root for the consult/test/doc stages and the wrap-up (`wrap_up_result.json`,
+`wrap_up_gate_r<N>.log`); the loop-tail sweep's logs live under
 `<slice>/sweeps/r<N>/`; the doc phase's diff files under `<slice>/doc_phase/` (one `<repo>.diff`
 per repo a phase merged into, a section per merged phase over its `landed` range, rewritten at
 every doc-writer dispatch — git's answer written down, not an agent's copy). Executor inputs

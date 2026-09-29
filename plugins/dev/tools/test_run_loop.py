@@ -29,6 +29,9 @@ _spec = importlib.util.spec_from_file_location(
 )
 run_loop = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(run_loop)
+# What `run_loop.run_kc_session` is before any test patches it
+# (`ScriptedLoop.run` refuses to call it).
+REAL_KC_SESSION = run_loop.run_kc_session
 RunLoop = run_loop.RunLoop
 Bailout = run_loop.Bailout
 parse_plan = run_loop.parse_plan
@@ -86,6 +89,18 @@ class FakeGit:
         self.fails = set()       # argv tuples this git refuses, as git does
         self.not_in = set()      # (sha-or-ref, ref) ancestry answered no
         self.commits = 0         # pathspec commits made through `root=`
+        # A per-repo ref model, opt-in per root (the wrap-up's tests): the
+        # branches of that repo with their shas, and a commit graph that
+        # `rev-list --count` walks. A root not in `refs` answers as above.
+        self.refs = {}           # str(root) → {ref: sha}
+        self.parents = {}        # sha → its parent
+        # The spec repo as `git -C <slice dir>` sees it: its HEAD, the text
+        # each path had at the last commit through it, and the store as it
+        # stood each time HEAD was read — what `show <sha>:` answers.
+        self.spec_head = "spec0"
+        self.spec_committed = {}
+        self.spec_snapshots = {}
+        self.spec_commits = []   # the messages, in order
 
     def __call__(self, *args, root=None, check=True):
         self.calls.append((root, args))
@@ -94,6 +109,15 @@ class FakeGit:
                 raise Bailout("protocol_failure",
                               details=f"git {' '.join(args)} failed")
             return ""
+        if args and args[0] == "-C":
+            answer = self._spec(args[1], args[2:])
+            if answer is not None:
+                return answer
+        refs = self.refs.get(str(root))
+        if refs is not None:
+            answer = self._modelled(refs, args, str(root))
+            if answer is not None:
+                return answer
         if args[:3] == ("rev-parse", "--abbrev-ref", "HEAD"):
             return self.branch_at.get(str(root), self.branch)
         if args[:2] == ("rev-parse", "--show-toplevel"):
@@ -137,6 +161,88 @@ class FakeGit:
             self._commit_paths(args, root)
             return ""
         return ""
+
+    def _spec(self, where, args):
+        if args[:2] == ("rev-parse", "HEAD"):
+            store = Path(where) / "close-out.json"
+            if store.exists():
+                self.spec_snapshots[self.spec_head] = store.read_text()
+            return self.spec_head
+        if args[0] == "show":
+            sha = args[1].partition(":")[0]
+            return self.spec_snapshots.get(sha, "").strip()
+        if args[0] == "status" and "--" in args:
+            paths = args[args.index("--") + 1:]
+            return "\n".join(
+                f" M {path}" for path in paths if Path(path).exists()
+                and Path(path).read_text() != self.spec_committed.get(path))
+        if args[0] == "commit" and "--" in args:
+            for path in args[args.index("--") + 1:]:
+                if Path(path).exists():
+                    self.spec_committed[path] = Path(path).read_text()
+            self.spec_commits.append(args[args.index("-m") + 1])
+            self.spec_head = f"spec{len(self.spec_commits)}"
+            return ""
+        return None
+
+    def _ancestors(self, sha):
+        seen = set()
+        while sha and sha not in seen:
+            seen.add(sha)
+            sha = self.parents.get(sha)
+        return seen
+
+    def _modelled(self, refs, args, key):
+        cur = self.branch_at.get(key, self.branch)
+
+        def resolve(name):
+            return refs.get(cur if name == "HEAD" else name, name)
+
+        if args[0] == "rev-parse" and len(args) == 2 \
+                and not args[1].startswith("-"):
+            return resolve(args[1])
+        if args[:2] == ("branch", "--list"):
+            return args[2] if args[2] in refs else ""
+        if args[:2] == ("checkout", "-b"):
+            refs[args[2]] = resolve(args[3] if len(args) > 3 else "HEAD")
+            self.branch_at[key] = args[2]
+            return ""
+        if args[0] == "checkout" and len(args) == 2:
+            self.branch_at[key] = args[1]
+            return ""
+        if args[:2] == ("branch", "-D"):
+            refs.pop(args[2], None)
+            return ""
+        if args[:2] == ("branch", "-f"):
+            refs[args[2]] = resolve(args[3])
+            return ""
+        if args[:2] == ("merge", "--ff-only"):
+            refs[cur] = resolve(args[2])
+            return ""
+        if args[:2] == ("reset", "--hard"):
+            if len(args) > 2 and args[2] != "HEAD":
+                refs[cur] = resolve(args[2])
+            self.dirty_roots[key] = ""
+            return ""
+        if args[0] in ("clean", "restore"):
+            self.dirty_roots[key] = ""
+            return ""
+        if args[:2] == ("rev-list", "--count"):
+            low, _, high = args[2].partition("..")
+            return str(len(self._ancestors(resolve(high))
+                           - self._ancestors(resolve(low))))
+        if args[:2] == ("push", "origin"):
+            refs[f"origin/{args[2]}"] = resolve(args[2])
+            return ""
+        if args[0] in ("rebase", "fetch"):
+            return ""
+        return None
+
+    def commit_on(self, root, ref, sha):
+        """A commit `sha` on `ref` in a modelled repo."""
+        refs = self.refs[str(root)]
+        self.parents[sha] = refs[ref]
+        refs[ref] = sha
 
     @staticmethod
     def _under(path, spec):
@@ -212,7 +318,8 @@ class ScriptedLoop(RunLoop):
     the loop and stands in for what the session would have done on disk."""
 
     def __init__(self, slice_dir, script, resume=False, gates=None,
-                 doc_gates=None, repo_root=None, sweep_reds=None):
+                 doc_gates=None, repo_root=None, sweep_reds=None,
+                 wrap_ups=None, wrap_gates=None):
         super().__init__(Path(slice_dir), resume=resume)
         if repo_root is not None:
             self.repo_root = Path(repo_root)
@@ -230,6 +337,67 @@ class ScriptedLoop(RunLoop):
         self.git = self.fake_git
         self.git_ok = self.fake_git.ok
         self.sleeps = []
+        # The wrap-up is dispatched through a path of its own, straight to
+        # `run_kc_session` — never `_spawn` — so its sessions are faked at
+        # that seam (`run`): a script of (payload[, effect]) steps, and a
+        # wrap-up nobody scripted answers `done` having done nothing.
+        self.wrap_ups = list(wrap_ups or [])
+        self.wrap_up_sessions = []
+        self.wrap_gates = list(wrap_gates or [])   # the wrap-up gate: green?
+        self.wrap_gate_calls = []                  # (argv, cwd)
+
+    def run(self):
+        outer = run_loop.run_kc_session
+
+        def route(prompt, cwd, timeout, agent=None, **kw):
+            if agent == "wrap-up":
+                return self._wrap_up_session(prompt, cwd, timeout,
+                                             agent=agent, **kw)
+            # No loop under test reaches the real thing: a dispatch path
+            # that goes round `_spawn` and that no test faked would start an
+            # agent from the suite.
+            assert outer is not REAL_KC_SESSION, (
+                f"a test reached the real run_kc_session (agent {agent!r})")
+            return outer(prompt, cwd, timeout, agent=agent, **kw)
+
+        with patched(run_loop, run_kc_session=route):
+            return super().run()
+
+    def _wrap_up_session(self, prompt, cwd, timeout, agent=None, model=None,
+                         effort=None, resume_session=None, extra_env=None,
+                         flags=None, progress=None, on_session=None):
+        step = (self.wrap_ups.pop(0) if self.wrap_ups
+                else ({"outcome": "done", "summary": "nothing to do"},))
+        payload = step[0]
+        self.wrap_up_sessions.append({
+            "prompt": prompt, "cwd": cwd, "timeout": timeout, "agent": agent,
+            "model": model, "effort": effort, "flags": list(flags or ()),
+            "resume": resume_session})
+        result = run_loop.SessionResult()
+        result.session_id = f"sess-wrap-{len(self.wrap_up_sessions)}"
+        if on_session:
+            on_session(result.session_id)
+        # what the session did on disk, whatever it answered after
+        if len(step) > 1:
+            step[1](self)
+        verdict_path = self.slice_dir / "wrap_up_result.json"
+        if payload is TIMED_OUT:
+            raise subprocess.TimeoutExpired("kc", timeout)
+        if isinstance(payload, tuple) and payload[0] is TIMED_OUT:
+            verdict_path.write_text(json.dumps(payload[1]))
+            raise subprocess.TimeoutExpired("kc", timeout)
+        if isinstance(payload, str):
+            result.result_text = payload
+            return 1, result
+        verdict_path.write_text(json.dumps(payload))
+        result.result_text = payload.get("summary") or "verdict written"
+        return 0, result
+
+    def _wrap_up_gate_exec(self, argv, cwd, log_file):
+        green = self.wrap_gates.pop(0) if self.wrap_gates else True
+        self.wrap_gate_calls.append((list(argv), str(cwd)))
+        log_file.write("wrap-up gate output\n")
+        return 0 if green else 1
 
     def _sleep(self, seconds):
         self.sleeps.append(seconds)
@@ -1466,7 +1634,7 @@ def test_run_start_creates_and_commits_the_report_once():
         assert report.startswith("# Close-out — slice 074 test_slice\n")
         specs = r.fake_git.specs_ops()
         creates = [c for c in specs if c[2] == "commit"
-                   and "close-out report" in c[4]]
+                   and c[4] == "slice 074: close-out report"]
         assert len(creates) == 1
         # A run started with the plan loop's report in place leaves it be.
         (slice_dir / "state.json").unlink()
@@ -1479,7 +1647,7 @@ def test_run_start_creates_and_commits_the_report_once():
         assert run_to_exit(r2) == 0
         assert "### E1 — planning saw something" in load_report(slice_dir)
         assert not [c for c in r2.fake_git.specs_ops()
-                    if c[2] == "commit" and "close-out report" in c[4]]
+                    if c[2] == "commit" and c[4] == "slice 074: close-out report"]
         # A report written before the store existed is imported, and the
         # store committed beside it, by name.
         (slice_dir / "state.json").unlink()
@@ -1495,8 +1663,10 @@ def test_run_start_creates_and_commits_the_report_once():
                                       *TAIL], repo_root=repo)
         assert run_to_exit(r3) == 0
         assert "### N1 — planning saw something" in load_report(slice_dir)
+        # (the imported entry waits for the wrap-up, whose own report
+        # commits say so)
         imports = [c for c in r3.fake_git.specs_ops()
-                   if c[2] == "commit" and "close-out report" in c[4]]
+                   if c[2] == "commit" and c[4] == "slice 074: close-out report"]
         assert len(imports) == 1
         assert [Path(a).name for a in next(
             c for c in r3.fake_git.specs_ops() if c[2] == "add")[3:]] == \
@@ -1560,8 +1730,9 @@ def test_every_dispatch_carries_the_report_path():
 def test_report_is_rendered_before_the_doc_phase_and_at_completion():
     """A run that stalls in the doc phase leaves a report that can be read,
     so the driver renders before dispatching the doc-writer: sections by
-    route, graded entries first, struck entries folded in the Record. At
-    completion it renders again (idempotent) and then stamps."""
+    route, graded entries first, struck entries folded in the Record. The
+    wrap-up the unlabelled entries wait for renders once more when it is
+    over, and completion renders again (idempotent) and then stamps."""
     plant = {}
 
     def plant_entries(loop):
@@ -1612,8 +1783,9 @@ def test_report_is_rendered_before_the_doc_phase_and_at_completion():
         assert ("close-out report: to you 0 · card requests 0 · wrap-up 0 · "
                 "unlabelled 2 · closed 0 · record 0 — A 0 · D 0 · E 0 · B 2 · "
                 "P 0 · T 0 · I 0") in log
-        assert log.count("close-out rendered: ") == 2
+        assert log.count("close-out rendered: ") == 3
         assert "close-out rendered: Unlabelled 2 · Record 1" in log
+        assert len(r.wrap_up_sessions) == 1
 
 
 def test_bail_outs_and_appended_phases_are_recorded_for_the_header():
@@ -4584,6 +4756,515 @@ def test_a_diverged_sibling_blocks_and_the_resume_pushes_it_alone():
         for verb in ("rebase", "merge"):
             assert not r2.fake_git.mutations(verb)
         assert load_state(slice_dir)["doc_phase"]["stage"] == "done"
+
+
+# -- the wrap-up ----------------------------------------------------------------
+#
+# One `dev:wrap-up` session between the doc-writer and the gate sweep, on
+# branches of its own, landed with the doc phase or left out whole — and never
+# a reason to stop a run (run-loop.md § After the last phase). The session is
+# faked at `run_kc_session` (ScriptedLoop.run); from the hand-back before it on,
+# the repos run on FakeGit's ref model, so what reached which branch can be
+# read off the refs.
+
+WRAP = "phase/074-wrap-up"
+DOCS = "phase/074-docs"
+WRAP_DONE = {"outcome": "done", "summary": "fixed B1", "fixed": ["B1"],
+             "left": [], "unknown_key": "ignored"}
+
+
+def plant_waiting(slice_dir):
+    """An entry the table gives the wrap-up: an unlabelled defect, which it
+    labels from its text."""
+    close_out.init_report(slice_dir)
+    close_out.append_entry(slice_dir, "Bugs", "a page reads wrong", "body",
+                           consequence="the page misleads a reader",
+                           provenance="read P1")
+
+
+def model_repos(loop, repo, *siblings, docs=True):
+    """FakeGit's ref model for the repos the wrap-up works in, switched on
+    at the hand-back before it: the primary's base (and doc branch, one
+    commit up), each sibling's base, their origins level with them."""
+    g = loop.fake_git
+    g.refs[str(repo)] = {"main": "m0", "origin/main": "m0"}
+    if docs:
+        g.refs[str(repo)][DOCS] = "d0"
+        g.parents["d0"] = "m0"
+    g.dirty_roots[str(repo)] = ""
+    for sib in siblings:
+        g.refs[str(sib)] = {"main": "s0", "origin/main": "s0"}
+        g.dirty_roots[str(sib)] = ""
+        g.branch_at[str(sib)] = "main"
+
+
+def wrap_script(repo, *siblings):
+    """The run up to the wrap-up, the doc-writer's hand-back switching the
+    ref model on."""
+    return [V["exec_done"], V["review_signoff"], V["consult_complete"],
+            V["test_clean"],
+            ("doc-writer", {"outcome": "done", "summary": "docs"},
+             lambda loop: model_repos(loop, repo, *siblings))]
+
+
+def wrap_up_fixes(repo=None, sib=None, then=None):
+    """The wrap-up's session on disk: a commit on its branch in each repo
+    given, B1 struck naming it — and `then`, whatever else it did."""
+    def effect(loop):
+        loop.store_at_dispatch = json.loads(
+            (loop.slice_dir / "close-out.json").read_text())
+        if repo:
+            loop.fake_git.commit_on(repo, WRAP, "w1")
+        if sib:
+            loop.fake_git.commit_on(sib, WRAP, "sw1")
+        close_out.strike_entry(loop.slice_dir, "B1", "fixed", by="wrap-up",
+                               commit="w1")
+        if then:
+            then(loop)
+    return effect
+
+
+def left_out_event(slice_dir):
+    return [e for e in json.loads((slice_dir / "close-out.json").read_text())
+            ["entries"] if e["headline"].startswith(
+                "The wrap-up was left out of the landing: ")]
+
+
+def test_the_wrap_up_is_skipped_when_nothing_waits():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, wrap_script(repo), repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert not r.wrap_up_sessions
+        state = load_state(slice_dir)
+        assert state["wrap_up"]["outcome"] == "skipped"
+        assert "nothing waits for the wrap-up — skipped" \
+            in (slice_dir / "log.txt").read_text()
+        # the ladder goes on: the doc gate, the landing
+        assert r.doc_gate_calls == [True]
+        assert r.fake_git.refs[str(repo)]["main"] == "d0"
+        assert state["doc_phase"]["stage"] == "done"
+        assert not r.fake_git.spec_commits
+        assert "wrap-up" not in load_report(slice_dir).split("\n## ")[0]
+
+
+def test_a_green_wrap_up_lands_with_the_doc_phase():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = sibling_phase_slice(tmp)
+        plant_waiting(slice_dir)
+        r = ScriptedLoop(slice_dir, wrap_script(repo, sib), repo_root=repo,
+                         wrap_ups=[(WRAP_DONE, wrap_up_fixes(repo, sib))])
+        assert run_to_exit(r) == 0
+        g = r.fake_git
+        # cut in the primary from the doc branch's head, in the sibling from
+        # its base
+        assert [(str(root), c) for root, c in g.calls
+                if c[:3] == ("checkout", "-b", WRAP)] == [
+            (str(repo), ("checkout", "-b", WRAP, "d0")),
+            (str(sib), ("checkout", "-b", WRAP, "s0"))]
+        # the dispatch: the role's model and timeout, the work list, a row
+        # per repo, the verbs, the spec repo and the verdict file
+        [session] = r.wrap_up_sessions
+        assert (session["agent"], session["model"], session["effort"],
+                session["timeout"]) == ("wrap-up", "opus", "xhigh", 7200)
+        prompt = session["prompt"]
+        assert prompt.startswith("Slice 074_test_slice is built")
+        assert ("- What waits for you, as `worklist` prints it now:\n"
+                "  1 entry waits for the wrap-up\n"
+                "  B1 · label — give it its labels from its text\n") in prompt
+        assert (f"  - {repo} — branch {WRAP} — gate: `kc project lint`, "
+                "`kc project build` and `kc project test`") in prompt
+        assert (f"  - {sib} — branch {WRAP} — gate: `kc project test` from "
+                f"{sib}") in prompt
+        verbs = "\n".join("  " + v for v in close_out.verb_usage(
+            "worklist", "list", "relabel", "request-card", "leave", "strike",
+            "note").splitlines())
+        assert ("  The other verbs the wrap-up uses, with their arguments:\n"
+                + verbs + "\n") in prompt
+        assert f"The spec repo is {r.spec_root}." in prompt
+        assert "a fold into another slice — goes on" in prompt
+        assert "The plan holds" not in prompt
+        assert f"Write your verdict to {slice_dir / 'wrap_up_result.json'}." \
+            in prompt
+        # gated: the sibling with a whole-repo phase's gate, the primary with
+        # the doc gate on the wrap-up branch — once; the gate stage took it
+        assert r.wrap_gate_calls == [(["kc", "project", "test"], str(sib))]
+        assert r.doc_gate_calls == [True]
+        # landed: the doc branch moved up and landed, the sibling's base
+        # fast-forwarded and pushed with the doc phase's siblings
+        assert g.refs[str(repo)]["main"] == "w1"
+        assert g.refs[str(sib)]["main"] == "sw1"
+        assert pushes(r) == [(str(repo), "main"), (str(sib), "main")]
+        state = load_state(slice_dir)
+        wu = state["wrap_up"]
+        assert (wu["outcome"], wu["entries"], wu["session"]) == \
+            ("landed", ["B1"], "sess-wrap-1")
+        assert wu["repos"] == {
+            str(repo): {"branch": WRAP, "base": "d0", "head": "w1"},
+            str(sib): {"branch": WRAP, "base": "s0", "head": "sw1"}}
+        assert wu["store"] == "spec1"
+        assert g.spec_commits[0] == \
+            "slice 074: close-out report before the wrap-up"
+        rows = [h for h in state["history"]
+                if h["role"] in ("wrap-up", "wrap-up-gate")]
+        assert [(h["role"], h["outcome"]) for h in rows] == \
+            [("wrap-up", "done"), ("wrap-up-gate", "green")]
+        assert rows[0]["fixed"] == ["B1"] and rows[0]["left"] == []
+        assert "unknown_key" not in rows[0]
+        assert rows[0]["session"] == "sess-wrap-1" and rows[0]["transcript"]
+        assert rows[1]["repo"] == str(sib)
+        # rendered and committed after it, with the strike
+        report = load_report(slice_dir)
+        assert "### ~~B1 — a page reads wrong~~" in report
+        assert "slice 074: close-out report after the wrap-up" \
+            in g.spec_commits
+        assert "doc phase done · wrap-up landed" in " ".join(report.split())
+        assert state["doc_phase"]["stage"] == "done"
+
+
+def left_out_run(tmp, step, reason, outcome, **kw):
+    """A slice with a sibling whose wrap-up is left out: `step(repo, sib)`
+    is the wrap-up's script step. Checks what every soft failure leaves —
+    exit 0, no wrap-up commit on any base or the doc branch, the store as
+    the wrap-up found it, the event in the record, the outcome and its
+    reason, the history row — and returns the loop and the slice."""
+    slice_dir, repo, sib = sibling_phase_slice(tmp)
+    plant_waiting(slice_dir)
+    r = ScriptedLoop(slice_dir, wrap_script(repo, sib), repo_root=repo,
+                     wrap_ups=[step(repo, sib)], **kw)
+    r._nudge = lambda *a, **k: None
+    assert run_to_exit(r) == 0
+    g = r.fake_git
+    assert g.refs[str(repo)]["main"] == "d0"
+    assert g.refs[str(sib)]["main"] == "s0"
+    assert pushes(r) == [(str(repo), "main")]
+    # the branches stay, unmerged
+    assert g.refs[str(sib)].get(WRAP) in ("sw1", "s0")
+    # the store as the wrap-up found it, the one event beside it
+    store = json.loads((slice_dir / "close-out.json").read_text())
+    [event] = left_out_event(slice_dir)
+    assert [e for e in store["entries"] if e["id"] != event["id"]] \
+        == r.store_at_dispatch["entries"]
+    assert event["headline"].startswith(
+        "The wrap-up was left out of the landing: " + reason)
+    assert event["consequence"].startswith("none in this run")
+    assert f"`{WRAP}` at" in "\n".join(event["body"])
+    # in the record, not on the wrap-up's own list
+    assert [e["id"] for e, _ in close_out.worklist(slice_dir)] == ["B1"]
+    report = load_report(slice_dir)
+    assert f"{event['id']} — The wrap-up was left out" in report
+    assert "wrap-up left out" in " ".join(report.split())
+    state = load_state(slice_dir)
+    assert state["wrap_up"]["outcome"] == "left_out"
+    assert state["wrap_up"]["reason"].startswith(reason)
+    assert [h["outcome"] for h in state["history"]
+            if h["role"] == "wrap-up"] == [outcome]
+    assert state["run_phase"] == "done"
+    assert not (slice_dir / "bailout.json").exists()
+    return r, slice_dir, repo, sib
+
+
+def test_a_wrap_up_that_times_out_is_left_out():
+    with tempfile.TemporaryDirectory() as tmp:
+        left_out_run(tmp, lambda repo, sib: (TIMED_OUT,
+                                             wrap_up_fixes(repo, sib)),
+                     "the session timed out after 7200s", "timeout")
+    # a verdict written before the wedge is not taken: a timeout is a timeout
+    with tempfile.TemporaryDirectory() as tmp:
+        left_out_run(tmp, lambda repo, sib: ((TIMED_OUT, WRAP_DONE),
+                                             wrap_up_fixes(repo, sib)),
+                     "the session timed out", "timeout")
+
+
+def test_a_wrap_up_without_a_verdict_is_left_out_without_a_nudge():
+    with tempfile.TemporaryDirectory() as tmp:
+        r, *_ = left_out_run(
+            tmp, lambda repo, sib: ("done, I think",
+                                    wrap_up_fixes(repo, sib)),
+            "it wrote no verdict", "invalid")
+        assert len(r.wrap_up_sessions) == 1
+
+
+def test_a_wrap_up_with_an_invalid_verdict_is_left_out():
+    with tempfile.TemporaryDirectory() as tmp:
+        left_out_run(tmp, lambda repo, sib: (
+            {"outcome": "question", "summary": "?"}, wrap_up_fixes(repo, sib)),
+            "its verdict is invalid (outcome 'question')", "invalid")
+
+
+def test_a_blocked_wrap_up_is_left_out():
+    with tempfile.TemporaryDirectory() as tmp:
+        left_out_run(tmp, lambda repo, sib: (
+            {"outcome": "blocked", "summary": "the gate cannot run"},
+            wrap_up_fixes(repo, sib)),
+            "it answered blocked: the gate cannot run", "blocked")
+
+
+def test_a_wrap_up_that_leaves_changes_uncommitted_is_left_out():
+    def dirt(loop):
+        loop.fake_git.dirty_roots[str(loop.sib)] = " M chart.yaml"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        def step(repo, sib):
+            def effect(loop):
+                loop.sib = sib
+                wrap_up_fixes(repo, sib, then=dirt)(loop)
+            return WRAP_DONE, effect
+        r, slice_dir, repo, sib = left_out_run(
+            tmp, step, "it left uncommitted changes in Sibling (discarded on "
+                       f"{WRAP})", "done")
+        # discarded where it left them, tracked and untracked
+        assert [c for root, c in r.fake_git.calls
+                if str(root) == str(sib) and c[0] == "clean"]
+        assert r.fake_git.dirty_roots[str(sib)] == ""
+
+
+def test_a_wrap_up_that_commits_outside_its_branches_is_left_out():
+    with tempfile.TemporaryDirectory() as tmp:
+        def step(repo, sib):
+            def outside(loop):
+                loop.fake_git.commit_on(repo, DOCS, "stray1")
+            return WRAP_DONE, wrap_up_fixes(repo, sib, then=outside)
+        r, *_ = left_out_run(
+            tmp, step, f"it committed outside its branches ({DOCS} in repo "
+                       "moved to stray1)", "done")
+        # the doc branch put back before the doc phase landed it
+        assert "stray1" not in r.fake_git.refs[str(Path(tmp) / "repo")].values()
+
+
+def test_a_red_sibling_gate_leaves_the_whole_wrap_up_out():
+    with tempfile.TemporaryDirectory() as tmp:
+        r, *_ = left_out_run(
+            tmp, lambda repo, sib: (WRAP_DONE, wrap_up_fixes(repo, sib)),
+            "the gate in Sibling is red with its commits", "done",
+            wrap_gates=[False])
+        # the primary's doc gate never ran on the wrap-up branch; the doc
+        # phase's own gate ran on the doc branch
+        assert r.doc_gate_calls == [True]
+        rows = [h for h in load_state(r.slice_dir)["history"]
+                if h["role"] == "wrap-up-gate"]
+        assert [h["outcome"] for h in rows] == ["red"]
+
+
+def test_a_primary_gate_red_with_its_commits_and_green_without():
+    with tempfile.TemporaryDirectory() as tmp:
+        r, *_ = left_out_run(
+            tmp, lambda repo, sib: (WRAP_DONE, wrap_up_fixes(repo, sib)),
+            "the doc gate is red with its commits and green without them",
+            "done", doc_gates=[False, True])
+        # the sibling's gate was green, and its commits are left out too;
+        # the doc phase went on from the green without them
+        assert r.wrap_gate_calls
+        assert r.doc_gate_calls == [False, True]
+
+
+def test_a_primary_gate_red_with_and_without_goes_to_the_writers_nudge():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = sibling_phase_slice(tmp)
+        plant_waiting(slice_dir)
+        r = ScriptedLoop(slice_dir, wrap_script(repo, sib), repo_root=repo,
+                         wrap_ups=[(WRAP_DONE, wrap_up_fixes(repo, sib))],
+                         doc_gates=[False, False, True])
+        nudges = []
+        r._nudge = lambda prompt, cwd, sid, label, role: nudges.append(
+            (sid, role, prompt))
+        assert run_to_exit(r) == 0
+        # red on the wrap-up branch, red on the doc branch without it: that
+        # red is the doc phase's, nudged to the writer, then green
+        assert r.doc_gate_calls == [False, False, True]
+        assert [(sid, role) for sid, role, _ in nudges] == \
+            [("sess-test", "doc-writer")]
+        assert "doc_gate_r2.log" in nudges[0][2]
+        assert r.fake_git.refs[str(repo)]["main"] == "d0"
+        assert r.fake_git.refs[str(sib)]["main"] == "s0"
+        wu = load_state(slice_dir)["wrap_up"]
+        assert wu["outcome"] == "left_out"
+        assert wu["reason"].startswith("the doc gate is red with its commits "
+                                       "and without them")
+
+
+def test_a_project_without_a_doc_phase_runs_the_wrap_up_and_lands_it():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc(doc=False))
+        plant_waiting(slice_dir)
+        script = [V["exec_done"], V["review_signoff"], V["consult_complete"],
+                  ("test-agent", {"outcome": "clean", "summary": "ok"},
+                   lambda loop: model_repos(loop, repo, docs=False))]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo,
+                         wrap_ups=[(WRAP_DONE, wrap_up_fixes(repo))])
+        assert run_to_exit(r) == 0
+        assert not [role for role, *_ in r.spawned if role == "doc-writer"]
+        g = r.fake_git
+        assert (str(repo), ("checkout", "-b", WRAP, "m0")) in [
+            (str(root), c) for root, c in g.calls]
+        assert r.doc_gate_calls == [True]
+        assert g.refs[str(repo)]["main"] == "w1"
+        assert (str(repo), "main") in pushes(r)
+        state = load_state(slice_dir)
+        assert state["doc_phase"]["writer"] is False
+        assert state["doc_phase"]["stage"] == "done"
+        assert state["wrap_up"]["outcome"] == "landed"
+        assert state["run_phase"] == "done"
+        report = " ".join(load_report(slice_dir).split())
+        header = report[report.index("Run:"):report.index("## ")]
+        assert "wrap-up landed" in header and "doc phase" not in header
+
+
+def test_without_a_doc_phase_a_left_out_wrap_up_lands_nothing():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc(doc=False))
+        plant_waiting(slice_dir)
+        script = [V["exec_done"], V["review_signoff"], V["consult_complete"],
+                  ("test-agent", {"outcome": "clean", "summary": "ok"},
+                   lambda loop: model_repos(loop, repo, docs=False))]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo,
+                         wrap_ups=[({"outcome": "blocked", "summary": "no"},
+                                    wrap_up_fixes(repo))])
+        assert run_to_exit(r) == 0
+        assert r.doc_gate_calls == []
+        assert r.fake_git.refs[str(repo)]["main"] == "m0"
+        assert DOCS not in r.fake_git.refs[str(repo)]
+        assert not pushes(r)
+        assert load_state(slice_dir)["doc_phase"]["stage"] == "done"
+    # red with its commits and without them: this project runs no doc gate,
+    # so without the wrap-up the run would have completed over that red —
+    # and the wrap-up is never the reason it does not
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc(doc=False))
+        plant_waiting(slice_dir)
+        script = [V["exec_done"], V["review_signoff"], V["consult_complete"],
+                  ("test-agent", {"outcome": "clean", "summary": "ok"},
+                   lambda loop: model_repos(loop, repo, docs=False))]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo,
+                         wrap_ups=[(WRAP_DONE, wrap_up_fixes(repo))],
+                         doc_gates=[False, False])
+        assert run_to_exit(r) == 0
+        assert not (slice_dir / "bailout.json").exists()
+        assert r.doc_gate_calls == [False, False]
+        assert r.fake_git.refs[str(repo)]["main"] == "m0"
+        assert not pushes(r)
+        state = load_state(slice_dir)
+        assert state["wrap_up"]["outcome"] == "left_out"
+        assert "red with its commits and without them" in state["wrap_up"]["reason"]
+        assert state["doc_phase"]["stage"] == "done"
+        assert "gate_last" not in state["doc_phase"]
+
+
+def test_a_held_repo_gets_no_wrap_up_branch_and_is_named_in_the_prompt():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = held_sibling_slice(tmp)
+        plant_waiting(slice_dir)
+        r = ScriptedLoop(slice_dir, wrap_script(repo, sib), repo_root=repo,
+                         wrap_ups=[(WRAP_DONE, wrap_up_fixes(repo))])
+        assert run_to_exit(r) == 0
+        assert not [c for root, c in r.fake_git.calls
+                    if str(root) == str(sib) and c[:3] == ("checkout", "-b",
+                                                           WRAP)]
+        prompt = r.wrap_up_sessions[0]["prompt"]
+        assert ("- The plan holds these repos (`## Push holds`): they are not "
+                "yours to\n  change, and the driver cut no branch in them:\n"
+                "  - ../Sibling — a push deploys dev and prd together\n") \
+            in prompt
+        assert "yours to push" not in prompt
+        assert f"  - {sib} — branch" not in prompt
+        assert list(load_state(slice_dir)["wrap_up"]["repos"]) == [str(repo)]
+        assert r.fake_git.refs[str(repo)]["main"] == "w1"
+
+
+def test_a_resume_into_the_wrap_up_starts_it_again_from_a_clean_slate():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = sibling_phase_slice(tmp)
+        plant_waiting(slice_dir)
+
+        def interrupted(loop):
+            loop.fake_git.dirty_roots[str(repo)] = " M half-done.py"
+            raise KeyboardInterrupt
+
+        r = ScriptedLoop(slice_dir, wrap_script(repo, sib), repo_root=repo,
+                         wrap_ups=[(WRAP_DONE, wrap_up_fixes(
+                             repo, sib, then=interrupted))])
+        assert run_to_exit(r) == 130
+        state = load_state(slice_dir)
+        assert state["doc_phase"]["stage"] == "wrap-up"
+        assert state["wrap_up"]["store"] == "spec1"
+        assert not close_out.worklist(slice_dir), "the attempt struck B1"
+
+        r2 = ScriptedLoop(slice_dir, [], resume=True, repo_root=repo,
+                          wrap_ups=[(WRAP_DONE, wrap_up_fixes(repo, sib))])
+        for name in ("refs", "parents", "branch_at", "dirty_roots",
+                     "spec_head", "spec_committed", "spec_snapshots"):
+            setattr(r2.fake_git, name, getattr(r.fake_git, name))
+        r2.fake_git.parents.pop("w1")
+        r2.fake_git.parents.pop("sw1")
+        assert run_to_exit(r2) == 0
+        g = r2.fake_git
+        calls = [(str(root), c) for root, c in g.calls]
+        # the tree it left put back, its changes discarded, its branches
+        # deleted before they are cut again
+        first_cut = calls.index((str(repo), ("checkout", "-b", WRAP, "d0")))
+        assert calls.index((str(repo), ("clean", "-fd"))) < first_cut
+        assert calls.index((str(repo), ("branch", "-D", WRAP))) < first_cut
+        assert calls.index((str(sib), ("branch", "-D", WRAP))) < first_cut
+        # the store back to where it stood: B1 waits again, and the second
+        # dispatch is told so
+        assert "B1 · label" in r2.wrap_up_sessions[0]["prompt"]
+        assert any("back to where it stood before the wrap-up (spec1)" in m
+                   for m in g.spec_commits)
+        assert load_state(slice_dir)["wrap_up"]["outcome"] == "landed"
+        assert g.refs[str(repo)]["main"] == "w1"
+
+
+def test_a_resume_past_the_wrap_up_never_dispatches_it():
+    for stage in ("gate", "landing", "siblings"):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp)
+            plant_waiting(slice_dir)
+            state = {
+                "slice": "074_test_slice", "created_at": "t",
+                "orchestrator": None, "run_phase": "docs",
+                "bases": {str(repo): "main"}, "known_phases": ["1"],
+                "phases": {"1": {"status": "merged", "stage": None,
+                                 "executor_rounds": 1, "review_rounds": 1,
+                                 "gate_runs": 1, "gate_fix_rounds": 0}},
+                "generation": 0, "test_rounds": 1, "consult_seq": 1,
+                "in_flight": None, "history": [],
+                "doc_phase": {"stage": stage, "gate_runs": 0, "nudges": 0,
+                              "session": "sess-old"},
+                "wrap_up": {"outcome": "left_out", "reason": "timeout",
+                            "session": None, "entries": ["B1"],
+                            "store": None, "repos": {}},
+            }
+            (slice_dir / "state.json").write_text(json.dumps(state))
+            r = ScriptedLoop(slice_dir, [], resume=True, repo_root=repo)
+            r.fake_git.branches.add(DOCS)
+            assert run_to_exit(r) == 0, stage
+            assert not r.wrap_up_sessions, stage
+            assert close_out.worklist(slice_dir), "B1 still waits"
+            assert load_state(slice_dir)["doc_phase"]["stage"] == "done"
+
+
+def test_the_wrap_up_is_a_required_agent_refused_when_missing():
+    assert "wrap-up" in run_loop.REQUIRED_AGENTS
+    assert run_loop.MODELS["wrap-up"] == ("opus", "xhigh")
+    assert run_loop.TIMEOUTS["wrap-up"] == 7200
+    assert run_loop.VERDICTS["wrap-up"] == {"done", "blocked"}
+    with tempfile.TemporaryDirectory() as tmp:
+        agents = Path(tmp) / "agents"
+        agents.mkdir()
+        for role in run_loop.REQUIRED_AGENTS:
+            if role != "wrap-up":
+                (agents / f"{role}.md").write_text("---\nname: x\n---\n")
+        loop = RunLoop.__new__(RunLoop)
+        err = io.StringIO()
+        with patched(run_loop, AGENTS_DIR=agents), \
+                contextlib.redirect_stderr(err):
+            try:
+                loop._assert_agents()
+            except SystemExit as e:
+                assert e.code == 2
+            else:
+                raise AssertionError("a missing wrap-up.md must exit 2")
+        assert "agent definition(s) not found: wrap-up" in err.getvalue()
 
 
 # -- optional phases (.aiworkflowrc) -----------------------------------------

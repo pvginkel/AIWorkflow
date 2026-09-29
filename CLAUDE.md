@@ -194,6 +194,15 @@ instead of reopening it.
   `kubecoder:file-editor` nets ≈ 0 against a $0.12 edit turn. The doc phase is the 0.9.13 single
   writer plus the reconcile step, the no-tool-call wait line and the unverified-claims
   self-report; batched page reads are the one open A/B, the operator's option.
+- **The close-out report is triaged at the source** (0.9.57–0.9.59, ruled 2026-09-29;
+  `docs/research/close-out-triage-plan-2026-09-29.md` § 5 has every decision): the author of an
+  entry labels it and a table in `close_out.py` routes it — no author and no agent picks a
+  disposition, and the policy is one for every project. **No Focus lines, no Summary, no sheet
+  or list over the entries** ("I don't read the summary"); **no switch for the wrap-up** ("I
+  don't need the switch"); **no reviewer for what the wrap-up fixes**; severity keeps an entry
+  from being closed and does nothing else ("I have no problem never knowing of an issue"). It
+  is the wrap-up, never a sweep. The tracker as the operator's queue (the plan's § 11) is an
+  idea, not ruled and not built.
 - **Cross-session messaging in headless sessions is kc's switch**, off by default
   (`crossSessionInbound: refuse` + deny `ListAgents` only; `SendMessage` kept for a session's own
   sub-agents). The plugin passes nothing — no agent-frontmatter `disallowedTools`, no kc

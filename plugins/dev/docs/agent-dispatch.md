@@ -14,7 +14,7 @@ tears the session down, always and best-effort, so no session outlives its dispa
 raw process and stream mechanics; the scripts keep only the loop, the caps, git, and verdict
 validation.
 
-- **`--agent dev:<role>`** for the dev, plan, test and doc agents — the definitions ship with the
+- **`--agent dev:<role>`** for the dev, plan, test, doc and wrap-up agents — the definitions ship with the
   plugin (`${CLAUDE_PLUGIN_ROOT}/agents/`) and are dispatched **namespaced**, so the lookup cannot
   land on a same-named agent the target repo happens to ship. Consults run bare: no
   agent definition, the prompt is the whole protocol. `create-headless` does **not** validate the
@@ -65,7 +65,8 @@ validation.
 
 **Everything runs Opus at `xhigh`**, set explicitly via `--model`/`--reasoning-effort` on every
 outer dispatch from a single config per script (`MODELS` in `run_loop.py` / `plan_loop.py`):
-code-writer, code-reviewer, doc-writer, plan-writer, plan-reviewer, and every consult. Sub-agents
+code-writer, code-reviewer, doc-writer, wrap-up, plan-writer, plan-reviewer, and every consult.
+Sub-agents
 inherit from the dispatching session — the intended mechanism; ambient inheritance is the
 *absence* of the explicit flags.
 
@@ -85,10 +86,11 @@ whenever mechanical turned out to mean judgment.
 
 ## Timeouts
 
-Run-loop sessions: code-writer and doc-writer 7200s, code-reviewer 3600s, consults 1800s,
-test-agent 14400s (it waits out a CI build). Plan-loop sessions: plan-writer 7200s, plan-reviewer
+Run-loop sessions: code-writer, doc-writer and wrap-up 7200s, code-reviewer 3600s, consults
+1800s, test-agent 14400s (it waits out a CI build). Plan-loop sessions: plan-writer 7200s, plan-reviewer
 3600s. Both scripts give a protocol nudge 900s, and the gate subprocess 3600s. A timeout is a
-bail, not a retry — a stuck agent is a problem to surface, not to mask. On timeout the dispatch
+bail, not a retry — a stuck agent is a problem to surface, not to mask; the wrap-up's is the one
+that does not stop the run ([run-loop.md](run-loop.md) § After the last phase). On timeout the dispatch
 interrupts the `send` (which posts a worker interrupt, so the turn is never stranded) and ends
 the session.
 
