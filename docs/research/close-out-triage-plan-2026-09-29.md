@@ -6,10 +6,10 @@ does not restate it) and successor to
 before that plan was ruled. It came out of the operator's discussion of the read on 2026-09-29;
 § 2 has their words, § 3 what was computed during it.
 
-**Status: for the operator's ruling.** Nothing in the plugin changed beyond 0.9.56. § 5 has the
-decisions that are the operator's, each with a default, so "go" builds the plan as written.
-§ 4.4, the treatment of potential improvements, was proposed to the operator in the discussion
-and has not had their answer; it is D10.
+**Status: ruled on 2026-09-29, but for how it is built and the word to build it.** The
+operator ruled D1 to D11 (§ 5); D9 went the other way than its default and the design follows
+their ruling. Open: D4, whether the whole is built in one go — their question, answered there
+— and with it the go. Nothing in the plugin changed beyond 0.9.56.
 
 **The plan in short.**
 
@@ -20,13 +20,14 @@ and has not had their answer; it is D10.
 2. **The policy is the operator's and lives in the tool.** A table routes every entry from its
    labels: to the operator, to the wrap-up phase, closed, or the record. No author chooses a
    disposition (§ 4.1, § 4.3).
-3. **An action, a decision and anything severe always come to the operator** — in full, first in
-   the report, their labels in words on the entry. There is no list to read before the entries.
-   In the replay that is a median 3 entries of the 11 a report hands over (§ 3.4).
+3. **An action and a decision always come to the operator, and nothing severe is closed on a
+   label's word** — in full, first in the report, their labels in words on the entry. There is
+   no list to read before the entries. In the replay that is a median 2 entries of the 11 a
+   report hands over (§ 3.9).
 4. **A wrap-up phase takes the rest**, after the doc phase: it fixes what is decided and safe,
    asks for a card where a likely problem is more than it can fix responsibly, and leaves closed
-   what the table closes. One agent, two callers — the close-out session first, the driver once
-   a replay has priced it (§ 4.6).
+   what the table closes. One agent, two callers — the driver at the end of the run, the
+   close-out session for a report no run wrapped up (§ 4.6).
 5. **A potential improvement has labels of its own**: who is better off, when that is felt,
    whether it adds, adjusts or removes. What adds something for a benefit nobody feels today is
    closed; what benefits the workflow is Fieldnotes'; a small adjustment is the wrap-up's; the
@@ -34,13 +35,13 @@ and has not had their answer; it is D10.
 6. **The text-only sorter goes.** Replayed against the rulings that are the operator's own, the
    labels and the table keep 92 % of their picks and close 20 % of the entries — 96 % and 21 %
    with the improvements on their own route, a rule chosen on the sample it is scored on; the
-   sorter of the superseded plan kept 83 % (§ 3.2, § 3.4, § 3.8).
+   sorter of the superseded plan kept 83 % (§ 3.2, § 3.4, § 3.9).
 7. **The record is data, the report a rendering of it.** Entries are kept in `close-out.json`
    for their whole life; `close-out.md` is written from it and never parsed for anything but
    the operator's own line (§ 4.11, D11).
-8. **Three versions, in this order**: 0.9.57 the labels, the routing and the report's shape;
-   0.9.58 the wrap-up agent with the close-out session as its caller; 0.9.59 the driver
-   dispatches it (§ 6).
+8. **Three commits, in this order**: the store, the labels, the routing and the report's
+   shape; the wrap-up agent with the close-out session as its caller; the driver dispatches
+   it. Whether they ship together is D4 (§ 6).
 
 ## 1. What changed since the superseded plan
 
@@ -144,6 +145,20 @@ On Suggestions:
 > category should get a different treatment. I want them labeled also, but of course with
 > different attributes.
 
+On the decisions of § 5, which they ruled one by one; the three they did not simply take:
+
+> D4: I don't know about this. I'm running the last planned slice as we speak. Can't we just
+> build the whole thing in one go? I'm not saying you should; I'm asking why not.
+
+> D6: Why would we want to make this optional? If we add this, the default is ON.
+
+> D9: Why would you want to bring these to me? I meant: high severity ones with low chance of
+> occurrence come to me instead of being closed. … I have no problem never knowing of an issue.
+
+And on where they write their rulings (D11): "Both are fine. In the beginning I sent most
+responses in session, but I do feel it's kind of nice to add them on the disposition lines.
+It's in-context for me."
+
 **Ruled by these words:**
 
 - The Focus lines go: they are not read.
@@ -152,13 +167,13 @@ On Suggestions:
 - The rulings that count are the operator's own — a session they ruled themselves, and the
   entries they named before handing over the rest. Rulings taken from a sheet do not.
 - The policy of the three bullets, for Bugs and for the Suggestions that should be fixed.
-- What is severe comes to the operator at any likelihood, whatever its subject.
+- What is severe is not closed for being unlikely, whatever its subject: it comes to the
+  operator in place of the close. Where the table would fix it or ask for a card, it does.
 - The author labels its entry, in a form a tool can parse, and the labels are in plain view.
 
-**Not ruled:** this plan; that the wrap-up may fix before the operator has ruled (D1 — their
-proposal implies it, the contract forbids it in words of 2026-08-17, so it is asked plainly);
-the other decisions of § 5, the labels and the route of a potential improvement among them
-(D10). They called the wrap-up phase "one of the options".
+- The decisions of § 5 as recorded there.
+
+**Not ruled:** D4, and the word to build.
 
 ## 3. The evidence
 
@@ -409,22 +424,56 @@ carded, 6 fixed, 27 closed.
 
 | route | entries | closed | fixed | carded |
 |---|--:|--:|--:|--:|
-| to the operator: it prevents something severe | 5 | 3 | 1 | 1 |
-| to the operator | 13 | 3 | 2 | 8 |
-| to the wrap-up | 13 | 7 | 3 | 3 |
-| to Fieldnotes | 4 | 1 | 0 | 3 |
-| closed | 13 | 13 | 0 | 0 |
-
-Both tables together, the 89 by § 4.4 and every other entry by § 3.4's last table, against the
-234 rulings of § 3.4: 107 of 112 picks kept (96 %), 51 of 55 cards and folds (93 %), 21 % of the
-entries closed. 61 entries come to the operator, of which they progressed 57 %. Over the 561
-handed over that is 162 (29 %), a median 2 a report and 14 at most; 31 of them are potential
-improvements, 0.7 a report where the reports hand over 1.9.
+| to Fieldnotes | 6 | 3 | 0 | 3 |
+| to the wrap-up | 15 | 9 | 3 | 3 |
+| to the operator: it prevents something severe, in place of a close | 2 | 0 | 1 | 1 |
+| closed | 11 | 11 | 0 | 0 |
+| to the operator | 14 | 4 | 2 | 8 |
 
 25. **These are the numbers of a rule chosen on its own sample.** Three rules were tried on the
     48 and the one that lost no pick was kept; the two labels it rests on were named from a
-    reading of the rulings before any entry was labelled. 96 % is an upper bound, and what holds
-    of it is the readout's to say (§ 7).
+    reading of the rulings before any entry was labelled. § 3.9's 96 % is an upper bound, and
+    what holds of it is the readout's to say (§ 7).
+
+### 3.9 The tables as ruled
+
+§ 3.4's last table put what is severe before the easy fix. The operator ruled the other way
+(D9): severity keeps an entry from being closed and changes nothing else. Both tables as § 4.3
+and § 4.4 now have them — the 89 potential improvements by § 4.4, every other entry by § 4.3 —
+against the 234 rulings of § 3.4:
+
+| route | entries | | closed | fixed | carded | folded |
+|---|--:|--:|--:|--:|--:|--:|
+| to the operator: an action | 14 | 6 % | 11 | 0 | 3 | 0 |
+| to the operator: a decision | 11 | 5 % | 3 | 4 | 3 | 1 |
+| to the operator: severe or graded major, in place of a close | 8 | 3 % | 4 | 1 | 3 | 0 |
+| to the operator: a potential improvement | 10 | 4 % | 3 | 2 | 5 | 0 |
+| to the wrap-up: fix | 89 | 38 % | 32 | 40 | 16 | 1 |
+| to the wrap-up: a potential improvement | 13 | 6 % | 8 | 3 | 2 | 0 |
+| to the wrap-up: fix, or ask for a card | 11 | 5 % | 5 | 2 | 4 | 0 |
+| to the wrap-up: look | 3 | 1 % | 1 | 0 | 2 | 0 |
+| input for a later slice | 22 | 9 % | 9 | 4 | 3 | 6 |
+| to Fieldnotes | 4 | 2 % | 2 | 0 | 2 | 0 |
+| closed | 37 | 16 % | 32 | 1 | 4 | 0 |
+| the record | 12 | 5 % | 12 | 0 | 0 | 0 |
+
+107 of 112 picks kept (96 %), 51 of 55 cards and folds (93 %), 21 % of the entries closed. Over
+everything the 47 reports handed over:
+
+| | entries | | a report, median | max |
+|---|--:|--:|--:|--:|
+| comes to the operator | 124 | 22 % | 2 | 8 |
+| goes to the wrap-up | 279 | 50 % | 5 | 24 |
+| input for a later slice | 43 | 8 % | 0 | 8 |
+| to Fieldnotes | 13 | 2 % | 0 | 2 |
+| closed | 67 | 12 % | 1 | 6 |
+| the record | 35 | 6 % | 0 | 4 |
+
+26. **The ruling takes 38 entries off the operator's page** — 162 came to them with what is
+    severe first, 124 as ruled — and gives the wrap-up 28 entries that are severe or graded
+    major: 19 to fix, 9 to fix or ask for a card.
+27. **Half of what a report hands over is the wrap-up's.** Of the 116 such entries among the
+    operator's own rulings they had 45 fixed, 25 carded or folded and 46 closed.
 
 ### Sources
 
@@ -516,22 +565,23 @@ The first row that fits.
 |--:|---|---|
 | 1 | an action | to the operator |
 | 2 | a decision | to the operator |
-| 3 | `severe`, or graded major — whatever its trigger, however easy its fix | to the operator, as a risk |
-| 4 | an event that describes no problem | to the record |
-| 5 | input for a slice that exists | to that slice (D8) |
-| 6 | fixable only in a repository the slice did not touch | to a card request when it shows in normal use or on an ordinary condition and has an impact; closed otherwise |
-| 7 | prose; or fixed by one edit or in several known places, outside a sensitive area | to the wrap-up, to fix |
-| 8 | anything else, with a trigger or an impact `unknown` | to the wrap-up, to look |
-| 9 | anything else that shows in normal use or on an ordinary condition and has an impact | to the wrap-up, to fix within its bar or to ask for a card |
+| 3 | an event that describes no problem | to the record |
+| 4 | input for a slice that exists | to that slice (D8) |
+| 5 | fixable only in a repository the slice did not touch | to a card request when it shows in normal use or on an ordinary condition and has an impact, or is `severe` or graded major; closed otherwise |
+| 6 | prose; or fixed by one edit or in several known places, outside a sensitive area | to the wrap-up, to fix |
+| 7 | anything else, with a trigger or an impact `unknown` | to the wrap-up, to look |
+| 8 | anything else that shows in normal use or on an ordinary condition and has an impact | to the wrap-up, to fix within its bar or to ask for a card |
+| 9 | anything else that is `severe`, or graded major | to the operator, as a risk |
 | 10 | anything else: it needs a fault or a future change, or has no impact | closed |
 
-Rows 1–3 are the operator's first tier and their ruling on severity. Row 7 is their first two
-bullets, rows 9 and 10 the third. Rows 5 and 6 rest on labels the replay did not have; § 3.4 is
-the table without them.
+Rows 1 and 2 are the operator's first tier. Row 6 is their first two bullets, rows 8 and 10 the
+third, and row 9 their ruling on severity: it stands where the close would have been, and
+nowhere else (D9). Rows 4 and 5 rest on labels the replay did not have; § 3.9 is the table
+without them.
 
 The table is for what should be fixed: Bugs, and the Suggestions that are "kind of in the bug
 category" — a defect, prose or a test gap entered as a Suggestion takes the same rows as one
-entered as a Bug. A potential improvement takes § 4.4's rows in their place; rows 5 and 6
+entered as a Bug. A potential improvement takes § 4.4's rows in their place; rows 4 and 5
 here hold for it as well.
 
 ### 4.4 Potential improvements
@@ -566,21 +616,22 @@ Its route, the first row that fits:
 
 | | a potential improvement that | goes |
 |--:|---|---|
-| 1 | prevents something severe | to the operator, as a risk |
-| 2 | adds something, for a benefit that is not felt in use | closed |
-| 3 | benefits the workflow | to Fieldnotes, as an `idea` — it is not an entry |
-| 4 | adjusts or removes, in one edit or in several known places, and is no product call | to the wrap-up, within its bar |
+| 1 | benefits the workflow | to Fieldnotes, as an `idea` — it is not an entry |
+| 2 | adjusts or removes, in one edit or in several known places, and is no product call | to the wrap-up, within its bar |
+| 3 | adds something, for a benefit that is not felt in use, and prevents something severe | to the operator, as a risk |
+| 4 | adds something, for a benefit that is not felt in use | closed |
 | 5 | is anything else — a product call, a change that needs design or a look first, an addition felt in use | to the operator |
 
-- **Row 2 is the operator's "I can think up suggestions till the cows come home"** as a rule
-  the tool can apply: a gate, an alarm or a check for an event that may never come. In the
-  replay it closes 13 of their 48 rulings and none they progressed (§ 3.8).
-- **Row 3 is the line the contract draws already**: the report is about the work, Fieldnotes
+- **Row 1 is the line the contract draws already**: the report is about the work, Fieldnotes
   about working. An improvement to the workflow is posted there by its author and reaches the
   operator curated across projects; the tool refuses it as an entry and says where it goes.
-- **Row 4 is the first tier of the operator's policy**, for what is not a defect: a small known
-  change is made because it costs less than deciding about it. § 4.6's bar holds, and rows 5 and
-  6 of § 4.3 stand before it — input for a slice that exists, a fix that lives elsewhere.
+- **Row 2 is the first tier of the operator's policy**, for what is not a defect: a small known
+  change is made because it costs less than deciding about it. § 4.6's bar holds, and rows 4 and
+  5 of § 4.3 stand before it — input for a slice that exists, a fix that lives elsewhere.
+- **Row 4 is the operator's "I can think up suggestions till the cows come home"** as a rule
+  the tool can apply: a gate, an alarm or a check for an event that may never come. In the
+  replay it closes 11 of their 48 rulings and none they progressed (§ 3.8). Row 3 is D9 for
+  this table: severity stands where the close would have been.
 - **Where the entry came from is not a label.** Nearly every Suggestion comes out of the slice's
   own work (§ 3.8), so the label would say the same of all of them.
 
@@ -669,7 +720,7 @@ taken back on its own. It is what the operator's "fix inline please" gets today.
   the report back to where it stood, and is logged; the close-out session then finds the
   entries waiting. It needs a dispatch path of its own — `_spawn` ends in a ruling that bails
   the run — that still leaves the `history` row `slice_cost.py` prices a role from. The phase
-  is optional per project, like the test and the doc phase.
+  is on in every project (D6).
 
 **An entry without labels** — a report an older plugin wrote, an author that drifted — is
 labelled by the wrap-up from its text before anything is routed. § 3.3 is that case, measured.
@@ -677,8 +728,8 @@ labelled by the wrap-up from its text before anything is routed. § 3.3 is that 
 ### 4.7 Card requests
 
 A card request is an entry that comes to the operator, with what the wrap-up found under it. The
-table makes one where the fix lives elsewhere (row 6), the wrap-up where a likely problem is
-beyond its bar (row 9). Nothing is filed before the operator's word; "go" files them as
+table makes one where the fix lives elsewhere (row 5), the wrap-up where a likely problem is
+beyond its bar (row 8). Nothing is filed before the operator's word; "go" files them as
 requested, entries that are one fix as one card.
 
 ### 4.8 The report after
@@ -762,77 +813,67 @@ What it costs: the 99 reports that exist stay Markdown and keep their reader in 
 tool; a report in flight at the upgrade is imported once, by the parser the tool has today; and
 two files can disagree when somebody edits the rendered one by hand.
 
-## 5. Yours to rule
+## 5. The decisions, as ruled
 
-**D1 — The wrap-up may fix before you have ruled.** *Default: yes.* The contract says that
-reading the report is never a license to act, and the constraint of 2026-08-17 that nothing is
-struck, filed or fixed before your ruling. Your proposal lifts that for the entries the table
-sends to the wrap-up, and for fixing alone: what the table closes stays live until you close the
-report, and no card is filed without your word. It has not been said in so many words, so it is
-asked here.
+Put to the operator on 2026-09-29 with a default each; ruled the same day. D4 is open.
 
-**D2 — In doubt, the label is `unknown` and the wrap-up looks.** *Default: yes.* An author that
-cannot tell does not guess toward you: the wrap-up has the code and a second look, a first tier
-that is inflated has neither. *The other way:* in doubt, to you — nothing is missed, and the
-first tier grows with every author's caution.
+| | decision | ruling |
+|---|---|---|
+| D1 | the wrap-up may fix before the operator has ruled | **yes** — "that was happening already, and that's fine" |
+| D2 | in doubt the label is `unknown`, and the wrap-up looks | **yes** |
+| D3 | the wrap-up runs after the doc phase | **yes** |
+| D4 | the close-out session first, the driver after a priced replay | **open** — below |
+| D5 | the wrap-up notes what it found under a risk that comes to the operator | **yes** |
+| D6 | the table lives in the tool, one policy for every project | **yes, and the phase is on**: "If we add this, the default is ON" |
+| D7 | before a close stands on an entry that breaks a flow, the wrap-up checks its trigger in the code | **yes**, on the recommendation |
+| D8 | input for a slice that exists is folded into that slice by the wrap-up | **yes** |
+| D9 | what is severe comes to the operator unfixed, however easy the fix | **no** — below |
+| D10 | a potential improvement is labelled and routed as § 4.4 says | **yes** |
+| D11 | the record is `close-out.json` for the entry's whole life, the report rendered from it | **yes**; rulings in the session and on the `Disposition:` lines, both |
 
-**D3 — The wrap-up runs after the doc phase.** *Default: yes.* It is the only place that sees
-every entry. Its fixes are then gated and not verified live, which the bar allows for: a fix
-that needs a deploy to prove is a card request. *The other way:* between the completion consult
-and the test phase — its fixes are verified and documented, and it never sees the entries of the
-test-agent and the doc-writer, 13 % of what is handed over and in the doc-writer's case the most
-progressed of any author (62 %).
+**D1** lifts, for the entries the table sends to the wrap-up and for fixing alone, the
+constraint of 2026-08-17 and the contract's "reading the report is never a license to act".
+What the table closes stays live until the operator closes the report, and no card is filed
+without their word.
 
-**D4 — The close-out session first, the driver after the replay.** *Default: as written.*
-0.9.58 runs the wrap-up with you in the session, at today's risk. 0.9.59 is built once the
-replay of § 7 has priced it and compared its fixes with your rulings. *The other way:* both at
-once; the price is then first read from live runs.
+**D9, as ruled.** The default had row 3 of the first table bring everything severe to the
+operator. They meant less: what is severe and unlikely comes to them *instead of being
+closed*; they have "no problem never knowing of an issue". So severity stands where the close
+would have been and nowhere else (§ 4.3 row 9, § 4.4 row 3): a severe defect with an obvious
+fix is fixed by the wrap-up, one that is likely and beyond its bar becomes a card request. The
+default's reason was the fix, not the knowing — a fix no reviewer reads weighs most where the
+harm is worst. The wrap-up's bar answers that: it touches nothing on timing, stored data, wire
+contracts or secrets, which is where most of what is severe lives, and those entries reach the
+operator as card requests.
 
-**D5 — The wrap-up notes what it found under a risk.** *Default: yes, for risks only.* What you
-ask about a risk is whether it can happen and what the fix takes (49 exchanges in the read); you
-followed 35 of 41 recommendations. The note is dated and signed, changes no label, and costs one
-look per risk — about one entry a report. *The other way:* it never touches what comes to you.
+**D7** is the one place where the wrap-up doubts a label that closes an entry: 0.7 entries a
+report in the replay, and four of the seven cards the first table lost (§ 3.5).
 
-**D6 — The table lives in the tool.** *Default: yes.* One policy for every project; a project
-switches the phase on or off, not the rows. A per-project table waits for a project that needs
-one.
+**D11.** `close_out.py rule` records what the operator says in the session; before the
+session executes anything it reads the `Disposition:` lines of `close-out.md` back by entry id.
+Nothing else changed in that file survives a render.
 
-**D7 — A close is checked where the impact breaks a flow.** *Default: yes.* Row 10 closes on the
-author's word. Where that word says `broken`, the wrap-up checks the trigger in the code before
-the close stands: 0.7 entries a report in the replay, and four of the seven cards the table
-lost. *The other ways:* check nothing — the price of the table is § 3.5; or check every close,
-1.5 entries a report.
+**D4 — open: why not the whole in one go.** The operator's question, with the last planned
+slice running as they asked it. The staging had three reasons: the wrap-up's price is not
+measured; its fixes land unattended where the close-out session has the operator present; and
+the driver is the largest and riskiest code of the build. Against them:
 
-**D8 — Input for a slice that exists is folded by the wrap-up.** *Default: yes.* It is appended
-to that slice's `slice.md` with its provenance, and the planning of that slice rules on it with
-you. On your own reading you closed 8 of 18. *The other way:* they are listed for you, one line
-each, and "go" folds them.
+- **Nothing is in flight.** With no slice planned after the one that runs, no slice meets two
+  plugin versions and no open report has to be imported. That window closes with the next
+  `/dev:plan-slice`.
+- **The driver's wrap-up cannot fail a run** (§ 4.6), and its work is one commit per entry.
+- **Live slices price it for nothing.** `slice_cost.py` prices the role from the first run; the
+  replay costs an environment of the product and six sessions to learn the same.
+- **The close-out session as the only caller is a wait** at the start of every close-out, which
+  is when the operator has the least patience for one.
+- **Two builds cost more than one**: the first would ship a report with a section for a wrap-up
+  that nothing runs.
 
-**D9 — What is severe comes to you unfixed, however easy the fix.** *Default: yes.* Your second
-bullet has an obvious fix made whatever the likelihood; your ruling on severity has what is
-severe come to you. Where both hold — 25 of the 561 entries handed over in the replay, 13 among
-your own rulings, of which you carded 6, closed 4 and had 3 fixed — row 3 stands before row 7:
-nothing severe gets a fix no reviewer reads, and the fix costs you one word. *The other way:*
-the wrap-up makes the fix and the entry still comes to you, with the commit under it.
-
-**D10 — A potential improvement is labelled and routed as § 4.4 says.** *Default: yes.* It
-closes what adds something for a benefit nobody feels today, sends a small adjustment to the
-wrap-up and an improvement of the workflow to Fieldnotes, and brings you the rest: 0.7 entries a
-report in the replay, of which you progressed two in three, where the reports hand over 1.9.
-The rule was chosen on the 48 rulings it is scored on, so the first readout is its test.
-*The other ways:* every potential improvement comes to you; or they take § 4.3's table as the
-first pass of the replay had it, which closed three that you carded (§ 3.5).
-
-**D11 — The record is `close-out.json`, for the entry's whole life; the report is rendered
-from it.** *Default: yes, and you rule in the session.* Your suggestion, taken one step
-further: the store stays the record after the report is written, because the wrap-up, the
-close-out session and every readout still write and read entries then. What is yours in it is
-where you write your rulings. *In the session* (the default): you say them, the session records
-them with `close_out.py rule` and renders. *In the file:* you write on the `Disposition:` lines
-of `close-out.md` as today, and the session reads them back by entry id before it executes
-them; nothing else you change in that file survives a render. Both can hold at once.
-*The other way, as you put it:* structured until the report is written, Markdown from there —
-the tool then keeps its parser for everything that happens to an entry after the hand-over.
+*Recommended: one go.* The three commits of § 6 are built in their order and pushed together;
+the priced replay of § 7 gives way to a readout after the first five live slices instead of
+ten; and the phase gets an off switch in `.aiworkflowrc`, on by default as the test and the doc
+phase have theirs — not an option a project weighs, a brake for the first runs. The switch is
+the operator's to strike.
 
 ## 6. The build
 
@@ -922,8 +963,8 @@ with the verify commands of § 7; its diff is read before the commit. Versions a
 - **A session per slice that re-orients on the repositories.** It works on a median 5 entries a
   report, 17 at most. Its price is not known; the nearest figures are § 3.6's $2–10 for a small
   fix phase with its review, and the 20 k tokens of the text-only sort.
-- **More inline fixes than you asked for** — 37 % of the entries against the quarter you had
-  fixed — in code that no reviewer reads.
+- **More inline fixes than you asked for** — half of the entries go to the wrap-up, where you
+  had a quarter fixed — in code that no reviewer reads, what is severe included (finding 26).
 - **Every author writes five labels more per entry.** The facts are in its prose already; the
   refusal costs a turn when it drifts.
 - **Two plugin versions on one slice.** An older `close_out.py` cannot append to a report in
