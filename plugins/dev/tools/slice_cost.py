@@ -67,6 +67,7 @@ import turn_profile  # noqa: E402
 # per model: CACHE_READ_MULT unless the entry carries its own `cache_read` —
 # the Fable/Mythos 5.1 tier reads cache at 0.025× base ($0.25/MTok), Opus 5.5
 # at 0.05× ($0.20/MTok; its $4/$20 rates from the claude-api skill, 2026-09-22).
+# Sonnet 5.5's $2/$10 are from the same skill, 2026-09-30.
 PRICES: dict[str, dict[str, float]] = {
     "claude-fable-5-1":          {"input": 10.0, "output": 50.0, "cache_read": 0.025},
     "claude-mythos-5-1":         {"input": 10.0, "output": 50.0, "cache_read": 0.025},
@@ -76,6 +77,7 @@ PRICES: dict[str, dict[str, float]] = {
     "claude-opus-4-8":           {"input": 5.0,  "output": 25.0},
     "claude-opus-4-7":           {"input": 5.0,  "output": 25.0},
     "claude-opus-4-6":           {"input": 5.0,  "output": 25.0},
+    "claude-sonnet-5-5":         {"input": 2.0,  "output": 10.0},
     "claude-sonnet-5":           {"input": 2.0,  "output": 10.0},
     "claude-sonnet-4-6":         {"input": 3.0,  "output": 15.0},
     "claude-haiku-4-5":          {"input": 1.0,  "output": 5.0},

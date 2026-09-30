@@ -4,6 +4,12 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-30 — `slice_cost.py` prices Claude Sonnet 5.5 (v0.9.61)
+
+- `PRICES` gains `claude-sonnet-5-5`: $2 input / $10 output per MTok, cache reads $0.20 (the
+  default 0.10×), cache writes at the usual 1.25×. Sessions on it — the `sonnet` alias the
+  always-Sonnet agents pin now resolves to it — priced $0 and were flagged unpriced before.
+
 ## 2026-09-30 — the triage status document is one chat message (v0.9.60)
 
 The status document `/dev:triage` wrote for the operator's pass — one block per item with its
