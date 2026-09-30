@@ -60,7 +60,11 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   that followed, from the committed label data, `table-check` holds the plugin's policy tables
   against them and `corpus-check` imports and renders every hand-over snapshot with the
   plugin's tool (`docs/research/close-out-triage-plan-2026-09-29.md`, built as 0.9.57–0.9.59;
-  its § 12 is what the build decided and what to look at in the first live slices). Run 1's
+  its § 12 is what the build decided and what to look at in the first live slices);
+  `triage_readout.py runs|rulings|sessions|cost <spec-repo>...` reads the `/dev:triage` runs
+  a spec repo's history holds — the status documents as presented and as ruled, every ruling
+  classified from committed data, the operator's side of each session, the price — (the
+  2026-09-29 triage read, `docs/research/triage-read-2026-09-29.md`). Run 1's
   corpus is frozen under `docs/research/archive/run-1/`.
 - **Reading a run:** a slice's record is its folder in the project's spec repo
   (`slices/completed/NNN_slug/`): `log.txt` is the driver's narration, `state.json` is per
