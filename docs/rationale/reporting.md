@@ -216,6 +216,19 @@ never carried one, and intake cards are closed at dispose. The operator's ruling
 verdict is cheap to give twice, so the tracker carries none, and a later session resumes from the
 committed document alone.
 
+The document went the same way on 2026-09-30 (0.9.60). Read across the last twenty runs
+([`../research/triage-read-2026-09-29.md`](../research/triage-read-2026-09-29.md)), it decided
+almost nothing: of 181 items the operator wrote a bare "Agree" or nothing on 89 of the 109 that
+carried no question, every substantive ruling answered a question or moved an item between fates,
+the label predicted nothing about what was culled, and the slice scheme — the one thing the
+operator steered in half the runs — was never in the document at all. The operator's own read:
+"I hardly read them." What the document held is now one chat message: every item on one line
+under its proposed fate, the questions numbered, the proposed slices with a phase estimate.
+The rubric, the justification quotes, the `Note:` lines, the ruling vocabulary for labels and
+`triage_verbatim.py` (which repaired what the operator's editor did to the document) went with
+it; the collection, the standing-decisions check, the routes, the grouping rule, the sweep and
+the filing are unchanged. The verbatim dump stays, as the archive `slice.md` quotes from.
+
 ## A report, read
 
 Slice 190 (`/work/KubeCoderSpecs/slices/completed/190_fleet_state_under_faults/close-out.md`,

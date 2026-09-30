@@ -1,35 +1,32 @@
 ---
 name: triage
-description: File a batch of findings, bugs, or requests with a filtering pass — mechanically categorize every item (nit pick → major) for the operator to adjudicate, each verdict recorded in a committed working document, so cruft dies before planning spends on it; then record the survivors' asks verbatim as slice folders (slice.md under slices/backlog/NNN_slug/), the required input to /dev:plan-slice. Runs whole or as either half — adjudicate now, dispose later from the committed record — over the intake queue or a selection of it. Comprehension, categorization, and routing only; grounding, design, and planning happen in /dev:plan-slice.
+description: File a batch of findings, bugs, or requests — read every ask as the operator wrote it, check it against the project's standing decisions, and put the batch to the operator in one chat message (every item on a line under its proposed fate, the questions only they can answer, the proposed slices); then record the survivors' asks verbatim as slice folders (slice.md under slices/backlog/NNN_slug/), the required input to /dev:plan-slice. Runs over the intake queue or a selection of it, in one sitting. Comprehension, questions, and routing only; grounding, design, and planning happen in /dev:plan-slice.
 argument-hint: "[findings-document] [card ids to scope the run]"
 ---
 
 # Triage
 
 Turn a batch of raw asks — tracker intake cards, a findings document, chat discussion — into
-adjudicated work: the cruft closed by the operator *before* planning can spend on it, the rest
-filed as change requests — one slice folder per subject under `<spec-repo>/slices/backlog/NNN_slug/`,
-the required input to `/dev:plan-slice`. Argument (optional): path to a findings document (e.g.,
-`tmp/uat_testing.md`).
+filed work: what should not be built closed by the operator *before* planning can spend on it,
+the rest filed as change requests — one slice folder per subject under
+`<spec-repo>/slices/backlog/NNN_slug/`, the required input to `/dev:plan-slice`. Argument
+(optional): path to a findings document (e.g., `tmp/uat_testing.md`).
 
-The work has two halves with a durable seam between them. **Adjudicate** (steps 1–5): what is
-each item, and does it deserve to live — one item at a time, blind to the rest, ending with every
-verdict ruled and committed. **Dispose** (steps 6–9): what becomes a slice and what
-dies — the batch as a set. The operator chooses per run: both halves in one sitting, adjudicate
-now and dispose in a later session from the committed record, or dispose cards an earlier session
-prepared — and any run may be scoped to a selection of cards. The seam holds because nothing of
-the record lives only in a session, and none of it on the tracker: the verdicts and their reasons
-are in a committed working document.
+The run is one sitting: collect, sort, one message to the operator, their answers, file. The
+operator reads nothing but that message — every item on one line under the fate you propose for
+it, the questions only they can answer, the slices you propose — and answers in chat, in their
+own words. Those words are the record: they ride into `slice.md` verbatim, and nothing on the
+tracker or under `slices/` moves until they are given.
 
 **You are the intake clerk, not the analyst.** The job is to understand each ask *as the operator
-wrote it*, label it so the operator can decide what progresses, and file what survives where it
-belongs. Reading the code, judging feasibility, and designing the solution belong to
+wrote it*, put it to the operator so they can decide what progresses, and file what survives
+where it belongs. Reading the code, judging feasibility, and designing the solution belong to
 `/dev:plan-slice` — the refinement session that grounds each requirement and bottoms the ask out
-with the operator. This session never opens application code: when a label genuinely can't be
-settled from the text (step 4), a dispatched read-only sub-agent fetches the one fact it turns on —
-the judgment still happens here. Two rules carry the design: **no item is ever closed by machine
-judgment alone** — you recommend, the operator closes — and your product is a faithful record:
-there is no planning without a `slice.md`.
+with the operator. This session never opens application code: when a fate genuinely can't be
+proposed from the text (step 4), a dispatched read-only sub-agent fetches the one fact it turns
+on — the judgment still happens here. Two rules carry the design: **no item is ever closed by
+machine judgment alone** — you recommend, the operator closes — and your product is a faithful
+record: there is no planning without a `slice.md`.
 
 **Preflight (step 0):** run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage`; relay
 its message verbatim on a non-zero exit. `<spec-repo>` is the path in your
@@ -39,9 +36,9 @@ disposition named here is written — and the notification wiring come from your
 first tracker call** — where the host ships it as a skill, invoke the skill: nothing in the
 pipeline loads it for you, and a convention that is not in context gets guessed at.
 
-Steps that don't apply are skipped silently: no questions and clean labels → present and move on;
-nothing flagged for research → no research round and no second pass; the document is re-presented
-only when it changed; a run over cards an earlier session adjudicated begins at step 6.
+Steps that don't apply are skipped silently: no questions → the message is the scheme alone;
+nothing to check → no research round; a card whose ruling an open dump under `handovers/`
+already holds is not asked about twice.
 
 ## Procedure
 
@@ -60,10 +57,10 @@ the report brings the operator — the entries under **Comes to you** and **Card
 verbatim as the source. What the report closed, what waits for the wrap-up and the record are
 not items, and the card itself is never itemized.
 
-A card that an open status document under `handovers/` holds, ruled, is adjudicated: its verdict
-is not re-derived, and its rulings and research are read from there. Such cards wait for step 6.
-Every other card is adjudicated afresh, one pulled back from a deferral included — the tracker
-carries no verdict, and ruling a card twice costs little.
+A card that an open dump under `handovers/` holds ruled — a sitting that stopped before filing
+wrote its rulings there (step 6) — brings its ruling along: it is read from the dump, not asked
+again. Every other card is read afresh, one pulled back from a deferral included — the tracker
+carries no verdict, and reading a card twice costs little.
 
 Before anything else, the raw material lands verbatim in
 `<spec-repo>/handovers/triage_YYYY-MM-DD_raw.md` — full card contents, the chat passages being
@@ -78,264 +75,88 @@ tells an operator's ask from a session-authored card); and that broken markup in
 literal `&gt;`, a stray entity) is reproduced as found — it renders wrong at the source too, and
 "fixing" it is a transcription error.
 
-Both working files — this dump and the status document below — live in the spec repo, are
-committed at every pass boundary (staged by name), and are the record between sessions until
-step 9 deletes them.
+The dump lives in the spec repo, committed when written (staged by name), and is the archive
+`slice.md` quotes from until step 9 deletes it. The operator never reads it.
 
-### 2. Itemize and categorize
+### 2. Itemize, and check the standing decisions
 
 **Itemize mechanically** from the dump, no research: one item per distinct ask. A card is
 generally one item; a card that is itself a list of independent asks (a residuals card) becomes
 several. When it is unclear whether something is one task or many, keep it as one — the planner
 splits cheaply. Ids are assigned once and never change — the card's id as the tracker writes it,
 suffixed `a`, `b`… when a card yields several items (`KC-472b`), the findings-document section, a
-running number for chat passages — so an item that changes group keeps its handle. Open the **status document**,
-`<spec-repo>/handovers/triage_YYYY-MM-DD.md`, one block per item:
+running number for chat passages — so an item that changes fate keeps its handle. For each item
+hold its id, its ask — the title and the stated symptom and consequence, in the source's words —
+its question when one exists (below), and what the decisions check finds. None of this is
+written anywhere but the message (step 5) and, for what survives, `slice.md` (step 7).
 
-```
-### <id> — <short title>
-- Source: <card id — the card's title as filed — and/or findings-document section>
-- Ask: "<the ask, quoted verbatim — the stated symptom and the stated consequence>"
-- Question: <only when one exists — see below>
-- Category: <label> — "<justifying quote>"
-- Collides: <only when one exists — the standing decision the ask contradicts, id and ruling>
-- Note: <only when the label hides stakes the operator should see — rule 2>
-- Research: <only when flagged — the one named question that settles the label>
-- Ruling: —
+You judge from the ask; the dump stays the archive. A source's diagnosis, cause, or line
+reference is an attributed claim ("the card claims…") — you can't verify it here and don't try.
+A source's own severity claim stands as it is: a card stating a major issue *is* major until
+the operator or a research verdict says otherwise, and your own instinct about how bad or how
+likely something is is not an input.
 
-**Card text:** <the source, whole and verbatim from the dump>
-```
-
-The document is grouped by verdict — one section per category, most severe first,
-`undetermined` last — because a verdict group is the view the operator acts on: the nit picks
-together *are* the cull list. An item whose label changes moves to its new group and nothing else
-moves. Never write a count into the document — counts go stale as items re-home; derive them at
-the notify line. `**Card text:**` inlines the source whole, so the operator reads without looking
-anything up — length is not the enemy, lookups are — with headings inside it demoted (depth only,
-said once at the head of the document) so a source's own `##` doesn't collide with the outline.
-The document opens with that note and the ruling vocabulary (step 3).
-
-You judge from the `Ask` extract; the dump stays the archive. A source's diagnosis, cause, or
-line reference is an attributed claim ("the card claims…") — you can't verify it here and don't
-try.
-
-At scale — dozens of items — composition is delegated too: once every item is labelled, one
-sub-agent per verdict group writes that group's section (blocks plus card text) to its own
-fragment, no two agents on one file, and the session assembles them. Each brief says **never
-alter a verdict line**, and the check is mechanical, not an eyeball: every `Ask:` / `Category:` /
-`Question:` / `Note:` / `Research:` / `Ruling:` line in the assembled document is extracted and
-diffed against the labelled source before the document is presented. That check is all that
-stands between a sub-agent and a silently rewritten judgement.
-
-**Check every ask against the standing decisions before labelling.** A project's decision
-record lives in its spec repo, where it keeps one — an index of `DNNN` rows, a log, a set of
-design docs; the spec repo's own `README` or `CLAUDE.md` says where, and a project without one
-skips the check. One read-only sub-agent per batch reads it with every item's `Ask:` and
+**Check every ask against the standing decisions before proposing anything.** A project's
+decision record lives in its spec repo, where it keeps one — an index of `DNNN` rows, a log, a
+set of design docs; the spec repo's own `README` or `CLAUDE.md` says where, and a project without
+one skips the check. One read-only sub-agent per batch reads it with every item's ask and
 reports, per item, each current decision the ask's stated shape contradicts — the id and the
 ruling quoted, nothing on whether the ask is a good idea. This is not the code reading the
 clerk is barred from: the record is the operator's own rulings, and an ask that contradicts one
-is not decided, however settled its card reads. A hit goes on the item's block as
-`Collides: <id> — "<the ruling, quoted>"` and puts a question the operator answers from memory
-on the `Question:` line — overrule the record, or close the card on it. The label is unaffected
-(the consequence still decides it), and the collision travels: unresolved, it bars the item from
-every route that takes a card as decided (steps 6 and 8); an overrule rides into the slice as a
-ruling, with the record's id (step 7).
+is not decided, however settled its card reads. A hit becomes one of the message's questions
+(step 5) — the record's id and ruling quoted, and the choice the operator answers from memory:
+overrule the record, or close the card on it. The collision travels: unresolved, it bars the
+item from every route that takes a card as decided (steps 3 and 8); an overrule rides into the
+slice as a ruling, with the record's id (step 7).
 
-**Label each item independently** — one item, one verdict against the rubric, blind to the rest
-of the batch. The justification is **a verbatim quote from the source and nothing else** — no
-reasoning sentence, no restated evidence. If no quote supports the label, the label isn't
-supported. Rules, in order:
+**Questions** are only ones **the operator can answer from memory**: "you want a Cancel button:
+on which screen?" qualifies; where that screen lives in the code does not. A source may state
+one itself ("the card asks whether…"); you need one when the item is vague *as a request*. A
+question only the code can answer waits for the planner — unless the item's fate turns on it,
+which is step 4.
 
-1. **Determinability first.** Before reasoning toward a category, decide whether the text
-   supports one. Too vague for a decent determination → `undetermined` (parenthesize a suspected
-   label if it helps the operator) plus the `Research:` line.
-2. **The stated consequence decides** — not the claimed cause, and not the tone. A calmly-written
-   card describing data corruption is Major; an alarmed card about log wording is a nit pick. If
-   the source claims a severity, take the claim: a card stating a major issue *is* Major until
-   the operator or a research verdict says otherwise. Your own severity instinct is not an input.
-   When the source's own framing and its described consequence disagree — an outage-shaped
-   consequence under a card that calls itself accepted behaviour, not a regression, a decision to
-   make — the explicit framing wins, being the more specific claim, and the stakes go on the
-   `Note:` line so the operator sees what they are ruling on.
-3. **Severity dominance.** When two categories *genuinely both apply*, the more severe wins — a
-   corner case with data-corruption potential is Major. This is not a tie-break for uncertainty:
-   uncertain is the source's claim standing, or `undetermined`.
-4. **Borderline is a legal label.** `Minor/Corner case — borderline` routes the call to the
-   operator; don't force a resolution the text doesn't support.
-5. **Invalid and Corner case are guarded.** They are the two labels reachable by pure assumption,
-   so neither may rest on your belief about the system — only on the source saying so (quote it),
-   an operator ruling, or a research verdict naming what was checked. Absent all three:
-   `undetermined` with the `Research:` line.
+### 3. Sort — a fate for every item
 
-The rubric — the examples are part of the definition:
+Give every item one fate. Outside the slices:
 
-- **Nit pick** (`user-visible` or `internal` — the sub-split is recorded in the block beside the
-  category; it matters at step 6) — a remark on wording: a code comment, a log line, screen
-  text. Impactful wording still counts. *"the failure toast says 'unexpected error' even when the
-  server names the cause"* → Nit pick, user-visible; *"the retry log line prints the attempt
-  number twice"* → Nit pick, internal.
-- **Corner case** — can't happen in practice, or takes the user doing something that makes no
-  sense; hand-editing a URL's query parameters counts. *"pasting a step-5 wizard URL before
-  completing step 1 renders a blank panel"* → Corner case. The same ask with corruption
-  potential is Major (rule 3).
-- **Minor** — a real defect with debatable user impact, including quirks the user immediately
-  understands. *"the list shows the stale name until you switch tabs and back"* → Minor.
-- **Major** — data corruption, data loss, outage, security. *"saving from two tabs silently
-  drops the first tab's edit"* → Major.
-- **Improvement** — an optional betterment, not a defect. *"remember the last-used filter across
-  sessions"*.
-- **Feature** — new capability. *"add CSV export to the report screen"*.
-- **Test gap** — a guarantee no test pins, with no observed failure: not a defect and no user
-  impact, but not wording either. *"nothing covers the exporter's empty-list branch"* → Test gap.
-  A *failing* test is a defect and takes its consequence's rung.
-- **Decision** — nothing is broken; the source asks the operator to rule. *"nothing to build —
-  confirm the deviation is acceptable"* → Decision. The cheapest class in the rubric: a minute of
-  thought, not a planning session — the ruling is the disposition (step 6).
-- **Invalid** (guarded — rule 5) — no longer applies, or doesn't reproduce. *"the card targets
-  the legacy import screen"* where the source itself notes that screen was removed.
-
-Outside the rubric: an **operator chore** — a maintenance task addressed to the operator, not an
-ask about the system (*"full-sync these three environments"*) — takes no category. It is
-operator-owned work (step 6), marked the way the host convention marks chores.
-
-**Questions** ride the same document. The `Question:` line takes both kinds — one the source
-itself states ("the card asks whether…") and one you need because the item is vague *as a
-request* — but only questions **the operator can answer from memory**: "you want a Cancel
-button: on which screen?" qualifies; where that screen lives in the code does not. A question
-only the code can answer either waits for the planner or, when the *label* turns on it, becomes
-the item's `Research:` line.
-
-### 3. The operator pass
-
-Present the status document — one consolidated pass: questions, labels, and research flags
-together. Its header states the ruling vocabulary, so the operator needn't invent one and this
-session needn't guess at one; the operator rules per item on the `Ruling:` line, in their own
-words, and these forms have fixed behaviour.
-
-Label rulings — the verdict:
-
-- **answer: …** — a new fact. Re-derive the label from source-plus-fact; the updated `Category:`
-  line quotes what changed the call.
-- **override: \<category\>** — the operator's label, recorded as theirs. Not re-derived.
-- **remark: …** — recorded verbatim, and it moves nothing unless it contains a fact (then it's
-  an answer). A label never shifts because the operator sounded unconvinced — an honest override
-  beats a re-judged label.
-
-Dispositions — the item's fate, actioned at the seam and in steps 6–9:
-
-- **close** — binding. The item dies with a tracker disposition (step 5); no re-derivation, no
-  argument. **later** parks it (the tracker's deferred disposition).
-- **agreed** — the card as written *and* any recommendation this document made on it, to the
-  normal route.
-- **apply the suggested edit** — a ceiling: the literal change the card names and nothing beyond
-  it. Recorded verbatim as a ruling the slice or sweep carries; work past the words is out of
-  scope.
-- **conditional: \<ruling\> if \<fact\>** — a ruling contingent on something the operator doesn't
-  have. Not an approval: the fact becomes the item's `Research:` line, and the item comes back
-  with the verdict for a final ruling.
-- **split: …** — the named part becomes its own item (and its own card, step 9); the remainder
-  takes its own ruling.
-- **superseded by …** — the ruling replaces the ask: work already done, a broader change, an
-  answer that made the card moot. The card closes naming what supersedes it — or, when the ruling
-  *rewrites* the ask, is retitled and rewritten in the operator's words (step 9).
-
-The operator may also add or strike `Research:` lines directly — a ruling round asks questions of
-its own, and each becomes one. One caution while you talk: a proposed default is only settled by
-an explicit answer. If the operator doesn't answer, the point stays open for the planner — don't
-record your proposal as their decision. One machine pass per operator pass, and edits are
-item-local: action the rulings, don't re-polish the document — a re-format the operator asks for
-is not polishing.
-
-Before acting on a pass, `git diff` the document and run
-`python3 ${CLAUDE_PLUGIN_ROOT}/tools/triage_verbatim.py check <status.md> <raw.md>`. The
-operator's editor escapes markdown on save — `_is_stuck` becomes `\_is_stuck`, and
-`KUBECODER_CLIENT_TOKEN_<NAME>` becomes `KUBECODER*CLIENT_TOKEN*<NAME>`, paired underscores
-eaten as emphasis — and an inlined card text and an `Ask:` quote are what a slice later quotes,
-so a corrupted identifier propagates into `slice.md` and then into code. `restore` rewrites the
-differing card-text blocks and `Ask:` quotes from the dump and touches nothing else — an `Ask:`
-it reports unrestorable is yours to re-quote from the dump — and the operator's own lines stay
-as written. Run `check` once on the document as you composed it, too, before presenting it: an
-`ASK` line there is a quote of yours that is not the card's words, and fixed then, the same line
-after an operator pass can only mean their editor. An eyeball does not catch this; the check is
-cheap.
-
-### 4. Research — only what's still open, until nothing is
-
-For each item that carries a `Research:` line after the rulings — flagged at labelling, added by
-the operator, or produced by a conditional ruling — dispatch one **read-only sub-agent**, in
-parallel across items. The brief is the item's one named question — the fact the label or the
-ruling turns on, quoting the source: "does *'\<claim\>'* reproduce on \<the named screen/path\>?",
-"is \<the path the card calls impossible\> actually reachable?" — and nothing else: never "assess
-this item", never "how would we fix it". The sub-agent may read across the repo and take the
-turns it needs; **"cannot determine" is an allowed verdict** and leaves the source's claim
-standing — it goes onto the item's `Question:` line, since the operator may know from memory what
-the repo cannot show, rather than stranding the item.
-
-The sub-agent reports the fact; the label call stays here. Fold each verdict in — `Category:`
-updated, the verdict kept to one line in the document ("research: reproduces on \<path\>") — and
-record it on the card as a comment, dated and marked as triage research: durable, visible to the
-next session, and source material a slice quotes attributed like any other card claim (step 7).
-None of it becomes this session's own design: this research settles labels and rulings, it is
-not planning groundwork.
-
-Rulings raise questions of their own, so this is a loop, not a terminus: changed items and
-answered questions go back for one more operator pass, and the round repeats until no
-`Research:` line is open — one machine pass per operator pass throughout.
-
-### 5. Action the rulings — the seam
-
-When the round settles, every item's final category stands in the status document — the
-operator-ruled one — and that is where it stays: no verdict is written to the tracker. Action
-`close` and `later`, adjudication's own outcomes: `close` closes the card as rejected, with a one-line comment carrying
-the ruling ("closed at triage: corner case"), and `later` takes the deferred disposition.
-
-Delegated tracker work runs on **disjoint card sets** — each brief names the cards that are its
-and the cards it must not touch — and is verified on the tracker itself, by spot check, never from
-the agent's report.
-
-Commit both working documents (staged by name). This is the seam: the documents carry the
-verdicts and their reasons, so a session may stop here — notify "N items adjudicated, K closed at
-the filter; record under `handovers/`; run /dev:triage again to dispose" — and a later session
-starts at step 6 from the committed status document. Or carry on.
-
-### 6. Sort
-
-Separate what shouldn't become a slice, and confirm the separation with the operator:
-
-- **Duplicates** — within this triage set, or of a card a plain tracker query surfaces →
-  close as rejected, with a short comment naming the card it duplicates. (Whether something is already *implemented* is a code question;
-  the planner discovers that cheaply.)
-- **Pure discussion**, nothing actionable → flag for the operator.
-- **Decisions** — a `Decision` item ends at its ruling: the answer closes the card, or rides as a
-  ruling into the slice it bears on. Nothing is filed for it alone.
+- **Duplicates** — within this batch, or of a card a plain tracker query surfaces → close as
+  rejected, naming the card it duplicates. (Whether something is already *implemented* is a code
+  question; the planner discovers that cheaply.)
+- **Pure discussion**, nothing actionable → say so.
+- **Decisions** — nothing is broken; the source asks the operator to rule. The answer closes the
+  card, or rides as a ruling into the slice it bears on; nothing is filed for it alone. It is a
+  question in the message, and the cheapest kind: a minute of thought, not a planning session.
 - **Operator-owned work** — infrastructure or tooling outside the dev-agent slice workflow, an
-  operator chore, or an action only the operator can take → move the card to the **operator's
-  action queue**, with a one-line comment saying what is theirs to do.
+  operator chore (*"full-sync these three environments"* — a task addressed to the operator, not
+  an ask about the system), or an action only the operator can take → the **operator's action
+  queue**, with a one-line comment saying what is theirs to do.
 - **Findings against the workflow itself** — the driver, a skill, an agent definition, the
   plugin's docs — never become a slice: a run-slice session editing the driver edits the process
   executing it (the running loop holds the old code while the phase gate runs the new tests).
   They go to the operator's action queue too, marked as the host convention marks work for the
   orchestrating session, and are worked from there; a slice that reaches `/dev:plan-slice` for
   one is cancelled.
+- **No longer applies, or doesn't reproduce** → close. **Guarded:** a proposed close rests on the
+  source saying so (quote it), an operator ruling, or a research verdict naming what was
+  checked — never on your belief about the system. Absent all three, check (step 4) or ask.
 - **Solution Known** — a senior dev could deliver quality work from the card alone, and it
   passes the litmus in step 8 → write the acceptance criteria into the card, per step 8. These
   skip filing (step 7) and planning both: step 8 batches them straight into a run-ready slice.
-  **Every surviving card is run through the litmus here, and the confirmation reports each
-  verdict** — qualifies; a near miss on one named point; the normal route, with the one thing
-  the card leaves open — so the operator sees what was considered and overrules a verdict in
-  the same message. The verdict turns on the card's text alone: a card without an
+  **Every surviving card is run through the litmus here**, and the message shows the verdict by
+  where the card's line sits — under **Solution Known** when it qualifies; in its slice, with
+  its one open point as a question, when it is a near miss; in its slice with nothing said when
+  it goes the normal route. The verdict turns on the card's text alone: a card without an
   `## Acceptance criteria` section is not thereby disqualified — the criteria are what this
   step writes, and a card that is already fully specified qualifies without them. A surviving
-  **user-visible nit pick** is the archetypal candidate — decided change, plain impact; a card
-  that arrives already
-  marked from an earlier session is re-checked there too. A **near miss** — a card that fails
-  on one open point the operator can settle from memory: which of two names, whether the old
-  flag stays, the exact message — is put to them with the point named: rule it and the card
-  passes. The answer goes on the card as a ruling (a comment, and into the criteria) and the
-  card takes the mark; unanswered, it goes the normal route. A point only the code can settle
-  is not a near miss. An item with an unresolved `Collides:` line (step 2) is on no decided
-  route — not this one, not a "needs no decision" grouping — until the operator has ruled on
-  the record.
+  ask for a wording change with plain impact — screen text, a message, a name — is the
+  archetypal candidate; a card that arrives already marked from an earlier session is re-checked
+  here too. A **near miss** — a card that fails on one open point the operator can settle from
+  memory: which of two names, whether the old flag stays, the exact message — is put to them
+  with the point named: rule it and the card passes. The answer goes on the card as a ruling (a
+  comment, and into the criteria) and the card takes the mark; unanswered, it goes the normal
+  route. A point only the code can settle is not a near miss. An item with an unresolved
+  collision (step 2) is on no decided route — not this one, not a slice — until the operator
+  has ruled on the record.
 
 Group the rest **by subject, on the asks as written**. Favor larger groups — a slice plans into
 project-local, independently testable, PR-sized phases, and **about seven is the sweet spot**,
@@ -343,10 +164,95 @@ measured on overhead: every slice pays its planning session, its consult and its
 phases once, whatever its size, so a two- or three-phase slice pays all of that on little work
 and a slice near seven spreads it thin. Aim there where the subject allows it — a group well
 short of seven looks for a neighbouring subject before it is filed alone; unrelated asks are
-never bundled to reach a number. Ten is the ceiling: a group that would clearly blow past it is split
-with the operator now. Don't count API surfaces or applications touched: delivering a feature
-end-to-end beats limiting development complexity. Bundling mistakes are fine; the planner
-splits, merges, and kicks items back cheaply during refinement. When in doubt, group together.
+never bundled to reach a number. Ten is the ceiling: a group that would clearly blow past it is
+split with the operator now. Don't count API surfaces or applications touched: delivering a
+feature end-to-end beats limiting development complexity. Bundling mistakes are fine; the
+planner splits, merges, and kicks items back cheaply during refinement. When in doubt, group
+together.
+
+### 4. Research — only what a fate turns on
+
+For an item whose proposed fate turns on a fact the repo can show — whether *"\<claim\>"* still
+reproduces on the named screen or path, whether the path the card calls impossible is reachable,
+whether the work is already done — dispatch one **read-only sub-agent**, in parallel across
+items, before the message. The brief is the item's one named question, quoting the source, and
+nothing else: never "assess this item", never "how would we fix it". The sub-agent may read
+across the repo and take the turns it needs; **"cannot determine" is an allowed verdict** and
+leaves the source's claim standing — the item then goes to the operator as a question, since
+they may know from memory what the repo cannot show, rather than being stranded.
+
+The sub-agent reports the fact; the call stays here. Fold each verdict into the item's line
+("close — checked: …") and record it on the card as a comment, dated and marked as triage
+research: durable, visible to the next session, and source material a slice quotes attributed
+like any other card claim (step 7). None of it becomes this session's own design: this research
+settles fates and rulings, it is not planning groundwork.
+
+The operator's answers raise checks of their own ("is this something you can check yourself?",
+a `conditional:` ruling), and each is a round of this step: the verdict goes back to them with
+the line that moved, and the round repeats until nothing is open.
+
+### 5. The message
+
+Present the batch in one chat message, however long the queue — never a dialog, never a
+document:
+
+```
+Slice A: <title> (~N phases)
+  <id>  <the ask, on one line>                                    (Q1)
+  <id>  <the ask, on one line>
+Slice B: <title> (~N phases)
+  …
+Solution Known: <id>  <the ask> — criteria written to the card; swept now / waits for the floor
+Operator actions: <id>  <the ask> — <why it is theirs>
+Close: <id>  <the ask> — <the reason: the source's words, or a research verdict>
+Later: <id>  <the ask> — <why>
+
+Q1 (<id>). <What the card asks.> <What it collides with, the ruling quoted.> <The question?>
+I'd <recommendation>.
+Q2 …
+```
+
+- **Every item appears exactly once**, on one line: its id and the ask in the card's words,
+  shortened to a line — the title is part of the ask. No card text, no label, no note: the
+  operator opens a card when they want it. A ruling the card already carries is on its line
+  ("— you ruled yes on 2026-09-25").
+- **The slices carry a phase estimate**, a guess from the cards alone — say so once in the
+  message; the planner sets the number.
+- **The questions are numbered**, each with the fact it turns on and your recommendation,
+  answerable from memory. An item's line cites its question.
+- **Nothing is asked twice.** An answer folded in, only what moved is re-presented — the lines
+  that changed fate, the questions still open.
+
+The operator answers in chat, in their own words. "Go" approves the scheme as it stands. These
+forms have fixed behaviour when they use them: **close** and **later** are binding — the item
+dies with a tracker disposition (rejected; deferred), no re-derivation, no argument; **agreed**
+takes the card as written and any recommendation on it, to the normal route; **apply the
+suggested edit** is a ceiling — the literal change the card names and nothing beyond it,
+recorded verbatim, bounding the slice or sweep that carries it; **conditional: \<ruling\> if
+\<fact\>** is not an approval — the fact goes to step 4 and the item comes back; **split: …**
+makes the named part its own item (and its own card, step 9), the remainder taking its own
+ruling; **superseded by …** closes the card naming what supersedes it — work already done, a
+broader change, an answer that made the card moot — or, when the ruling *rewrites* the ask, has
+it retitled and rewritten in the operator's words (step 9). A question the operator does not
+answer stays open for the planner: a proposed default is settled only by an explicit answer, so
+don't record your proposal as their decision. One pass per operator message: action the words,
+don't re-polish the scheme.
+
+### 6. Action the rulings
+
+When nothing is open, every item's fate is the operator's, given in the chat and carried into
+`slice.md` from there — the tracker holds no fate beyond the dispositions themselves. Action
+`close` and `later`: `close` closes the card as rejected, with a one-line comment carrying the
+ruling ("closed at triage: duplicate of KC-12"), and `later` takes the deferred disposition.
+
+Delegated tracker work runs on **disjoint card sets** — each brief names the cards that are its
+and the cards it must not touch — and is verified on the tracker itself, by spot check, never from
+the agent's report.
+
+A run that has to stop before filing appends the rulings given so far to the dump, under a
+`## Rulings` heading — one line per item id, the operator's words, dated — commits it, and says
+so in the notify line; the dump is the record between sittings, and the next run reads them
+from it (step 1). The tracker carries none of it.
 
 ### 7. File
 
@@ -364,12 +270,11 @@ slice ids (`087b`) are not supported; `close_slice.py` rejects them.
 this conversation. Step 9 puts the slice card's id above its title as frontmatter; the body
 holds:
 
-- A one-line summary carrying the slice's **headline category** — the most severe among its
-  items — then what is being requested and why, as the sources give it.
-- **The numbered requirements list** — every input item, in the operator's words, each tagged
-  with its final category. Quote: a paraphrase can silently invert an ask; a quote cannot. Your
-  own phrasing appears only where no operator wording exists, marked as yours. The planner seeds
-  acceptance criteria from this list 1:1, so an ask that isn't on it is lost.
+- A one-line summary of what is being requested and why, as the sources give it.
+- **The numbered requirements list** — every input item, in the operator's words. Quote: a
+  paraphrase can silently invert an ask; a quote cannot. Your own phrasing appears only where no
+  operator wording exists, marked as yours. The planner seeds acceptance criteria from this list
+  1:1, so an ask that isn't on it is lost.
 - The relevant source material, quoted in (not just linked) — triage's dated research comments on
   the cards included, attributed as such. A source's diagnosis, cause, or line reference stays
   attributed — "the card claims…" — you have no way to verify it and don't try.
@@ -377,7 +282,7 @@ holds:
   named operations, parameters and defaults, return shapes, enums. Don't restate a definition as
   high-level intent; the definition itself is the record. If the conversation evolved it, carry
   the final agreed version and let the Q&A show the evolution.
-- The **Q&A and operator rulings** from the passes — a ceiling (`apply the suggested edit`)
+- The **Q&A and operator rulings** from the chat — a ceiling (`apply the suggested edit`)
   verbatim, it bounds the planner too; an overrule of a standing decision with the record's id,
   so the plan moves the record as the project's decision discipline says — and the ids of the
   cards this slice subsumes.
@@ -388,13 +293,13 @@ proposal — including anything already in `handovers/`) move into the slice fol
 unvalidated; you author none of your own.
 
 Add each slice to the **Pending** section of `<spec-repo>/README.md` — one line matching the
-existing entries, `- **NNN** — <short title>: <one-clause summary> (<headline category>)`,
-placed inside that section, above the heading that ends it. The line names no card: a README
-outlives its cards as handles, and `slice.md` holds the ids. The file's end is `## Completed`, whose
-bullets have the same shape, and an entry landed there is one the close-out refuses. Verify before
-you commit: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_slice.py --check <slice-dir>...` runs the
-close-out's preconditions over each new folder and moves nothing. Then commit the slice folders to
-the specs repo, staging files by name.
+existing entries, `- **NNN** — <short title>: <one-clause summary>`, placed inside that section,
+above the heading that ends it. The line names no card: a README outlives its cards as handles,
+and `slice.md` holds the ids. The file's end is `## Completed`, whose bullets have the same
+shape, and an entry landed there is one the close-out refuses. Verify before you commit:
+`python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_slice.py --check <slice-dir>...` runs the close-out's
+preconditions over each new folder and moves nothing. Then commit the slice folders to the specs
+repo, staging files by name.
 
 ### 8. Sweep the Solution Known cards
 
@@ -409,7 +314,7 @@ never open code here, so if the criteria would need grounding, the card goes the
 
 Never label: concurrency or timing behaviour; storage-layout or wire-contract changes; a card
 that leaves anything open ("investigate", "decide", "confirm"); an ask that collides with a
-standing decision (step 2's `Collides:` line) until the operator's overrule is on the card; or
+standing decision (step 2) until the operator's overrule is on the card; or
 a fix that **adds behaviour** — a new code path, process, or piece of state — rather than
 correcting what exists in place. Added behaviour carries design surface (failure policy,
 bounds, collisions with documented rulings) that a card cannot prove is settled, however
@@ -425,9 +330,9 @@ the litmus's right to move: a card carrying the section from an earlier session 
 against the litmus as it stands before it is swept — an earlier revision's mark vouches for
 nothing — and one that fails loses the section, with a comment saying why, and is filed as its
 own backlog slice now (step 7): its grounding is already written and would only rot, and the
-survivors keep their marks. The Solution Known set is part of step 6's confirmation with the
-operator. A criterion for a prose nit says the duplicate or false clause is gone — culled, not
-reworded — so the writer does not negotiate with it.
+survivors keep their marks. The Solution Known set is part of the message (step 5), like every
+other fate. A criterion for a prose nit says the duplicate or false clause is gone — culled,
+not reworded — so the writer does not negotiate with it.
 
 The floor is **five or more** qualifying cards of this project. Fewer accumulate —
 say so in the close-out: waiting cards cost nothing, and a sweep amortises the loop's fixed
@@ -435,7 +340,7 @@ consult, test and doc overhead across the batch, so forcing it at three pays ful
 three one-line fixes. `--force` is never the proposal. When the operator wants a short batch
 moved, the move is **widening**: re-run the litmus over the project's other open intake cards —
 cards routed the normal route in an earlier pass are fair game, and the litmus reads a card's
-text alone, never a category; the usual qualifiers are renames, test-only fixes and other
+text alone; the usual qualifiers are renames, test-only fixes and other
 in-place corrections — and report the verdict for every card, the failures included, so the
 widened batch is auditable. Widening is owed to a batch the operator
 wants moved, not to one that merely shrank by a withdrawal; still short after it, the cards
@@ -471,17 +376,17 @@ Rules and rationale: `${CLAUDE_PLUGIN_ROOT}/docs/residual-sweep.md`.
   two `---` lines — and is committed (staged by name): `/dev:plan-slice` and `/dev:run-slice` move
   the card by that id, never by looking for its title.
 - **Intake queue:** close the cards the slices subsume as **absorbed**, each under its slice's
-  card, and the duplicates from step 6 as rejected, each with a short comment (`close` and `later`
-  were actioned at the seam). A **split** ruling makes one new card per split-off part, in the
+  card, and the duplicates from step 3 as rejected, each with a short comment (`close` and `later`
+  were actioned in step 6). A **split** ruling makes one new card per split-off part, in the
   operator's words — their ruling as the body, the parent cited — and the parent is closed or
   trimmed as the ruling says. A **superseded** card closes
   with a comment naming what supersedes it; when the ruling rewrites the ask, the card is retitled
   and rewritten in the operator's words with its original text kept below a rule, so its history
   stays legible.
-- **The working documents are deleted when nothing in them is still open** — every item filed,
-  swept, closed, or parked. A partial disposition (a selection of the cards) leaves them in place,
-  committed, each disposed item's `Ruling:` line saying where it went (`→ slice NNN`,
-  `closed`). If deleting them would lose a fact, it isn't absorbed yet.
+- **The dump is deleted when nothing in it is still open** — every item filed, swept, closed, or
+  parked. A partial disposition (a selection of the cards, a run that stopped) leaves it in
+  place, committed, with the rulings given so far under its `## Rulings` heading (step 6). If
+  deleting it would lose a fact, it isn't absorbed yet.
 - **Notify the operator** per the host convention — "N items triaged: K closed at the filter,
   M slices under `<spec-repo>/slices/backlog/`. Run /dev:plan-slice on a slice when ready." —
   plus, when step 8 ran, "J cards swept into slice NNN — run /dev:run-slice on it when ready"

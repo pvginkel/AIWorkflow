@@ -36,7 +36,7 @@ executes.
 
 - **`plugins/dev/`** — the plugin: 7 skills, 11 agents, the tools (`run_loop.py`,
   `plan_loop.py`, `close_out.py`, `sweep_slice.py`, `close_slice.py`, `slice_cost.py`,
-  `turn_profile.py`, `preflight.py`, `project_config.py`, `triage_verbatim.py`, and
+  `turn_profile.py`, `preflight.py`, `project_config.py`, and
   `allocate-next-slice.sh`, with their suites), and the
   contract docs
   (`run-loop.md` / `runner-state.md` / `plan-loop.md` / `plan-template.md` / `refinement.md` /

@@ -270,7 +270,8 @@ Triage recommends and the operator closes; requirements land in `slice.md` and r
 `plan.md` in the operator's own words; dispositions are written as said, never paraphrased or
 completed.
 *Origin:* triage's rubric was honed against the research corpus's judge-mode bias and sycophancy
-findings (v0.4.4); the plan reviewer names a dropped, softened or substituted requirement "the
+findings (v0.4.4) — the rubric went in 0.9.60, the rule stayed: a proposed close rests on the
+source, an operator ruling or a research verdict, never on the session's belief; the plan reviewer names a dropped, softened or substituted requirement "the
 worst defect this review exists to catch", because nobody downstream reads `slice.md` again
 (**ruled**).
 *Stated in:* `skills/triage/SKILL.md`, `skills/plan-slice/SKILL.md` § Your role,

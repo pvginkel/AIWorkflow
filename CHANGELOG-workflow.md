@@ -4,6 +4,40 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-09-30 — the triage status document is one chat message (v0.9.60)
+
+The status document `/dev:triage` wrote for the operator's pass — one block per item with its
+label, the justifying quote, a `Note:`, the card's text inlined, a `Ruling:` line to write on,
+grouped by verdict — is gone. Read across the last twenty runs
+(`docs/research/triage-read-2026-09-29.md`): of 181 items the operator wrote a bare "Agree" or
+nothing on 89 of the 109 that carried no question; every substantive ruling answered a question
+or moved an item between fates; the labels predicted nothing about what was culled (2 of 12 nit
+picks, 2 of 12 majors); the 12.7k-word document was ruled within 28 minutes of its commit; the
+slice scheme, the one thing the operator steered in half the runs, was never in the document.
+Their own read: "I hardly read them."
+
+- **One chat message carries what the document held**, however long the queue: every item on
+  one line under its proposed fate (a slice, Solution Known, operator actions, close, later —
+  the fates the skill already had), the questions numbered with the fact each turns on and a
+  recommendation, the proposed slices with a phase estimate. No card text, no label, no note:
+  the operator opens a card when they want it. "Go" approves the scheme; the rest is answered in
+  their own words, and those words ride into `slice.md` verbatim as before.
+- **Gone with the document:** the rubric and its five rules, the justification quotes, the
+  `Note:` lines, the label half of the ruling vocabulary (`answer` / `override` / `remark`), the
+  two-half seam with its pass-boundary commits, the per-group composition sub-agents and the
+  verdict-line diff, and `triage_verbatim.py` with its suite — it repaired what the operator's
+  editor did to the document on save, and nothing is edited now. A run that stops before filing
+  appends the rulings it has to the dump, under a `## Rulings` heading; the next run reads them
+  there, and the tracker still carries no verdict.
+- **Unchanged, at the operator's scoping** ("the only thing that changes is the format"): the
+  collection and the verbatim dump (the archive `slice.md` quotes from), the standing-decisions
+  check (now a numbered question), the questions-from-memory rule, the research sub-agents, the
+  routes, the seven-phase grouping rule, the Solution Known litmus and the sweep floor, the
+  filing and the close-out. The guard on `Invalid` survives as a guard on a proposed close: the
+  source's words, an operator ruling or a research verdict, never the session's belief.
+- The read's tool is `docs/research/tools/triage_readout.py`, its classification
+  `docs/research/data/triage-rulings-2026-09-29.json`.
+
 ## 2026-09-29 — the driver dispatches the wrap-up, and it never fails a run (v0.9.59)
 
 The third of the three versions of `docs/research/close-out-triage-plan-2026-09-29.md`. With

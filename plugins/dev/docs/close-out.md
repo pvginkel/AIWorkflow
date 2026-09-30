@@ -353,7 +353,7 @@ lands.
 - **`Consequence:` is a line of its own, written for triage.** What an operator or user actually
   experiences if the entry stays as it is — unfixed, undone, unanswered — in the deployed shape,
   in plain words, with what has to happen for it to be reached; or `none`, said plainly. It is the
-  stated consequence `/dev:triage` rules on, and the operator reads it the same way, so it is not
+  stated consequence `/dev:triage` puts to the operator, who reads it the same way, so it is not
   "better than before", not "none to behaviour" when a human would notice something, and not a
   restatement of the mechanism the body already gave. A body that leaves the reader asking "what
   is the risk in a real environment?" has an entry without a consequence, however long it is.

@@ -17,7 +17,7 @@ the implementer — and **the impact** is plain from the card — what the chang
 breaks if it goes wrong. Moderate size is fine; an open decision is not. Operationally: the
 card's acceptance criteria can be written from its text alone — outcome-level, no code opened.
 Triage grounds nothing itself — its only code reads are dispatched fact-checks that settle a
-category label, never acceptance criteria — and this litmus is what makes the lane safe anyway:
+card's fate, never acceptance criteria — and this litmus is what makes the lane safe anyway:
 the cards that qualify are close-out entries the run loop's own agents wrote, which already did
 the grounding (file:line, expected behaviour, the review's advisory marker), carded verbatim at
 the operator's disposition. If the criteria would need research, the card goes the normal

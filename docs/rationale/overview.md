@@ -65,7 +65,7 @@ close-out.md ◄── /dev:close-out ◄── close-out.md ◄── /dev:run-
 
 | Stage | Who acts | Reads | Writes | Stops for the operator when |
 |---|---|---|---|---|
-| **Triage** (`/dev:triage`) | The interactive session as intake clerk; the operator rules | Tracker cards, findings docs, chat; the close-out reports waiting under `[NNN] close-out:` cards | A verbatim raw dump and a labelled working doc under `handovers/`, which holds every verdict; one `slice.md` per surviving subject under `slices/backlog/` | Every label — no item is ever closed by machine judgment alone |
+| **Triage** (`/dev:triage`) | The interactive session as intake clerk; the operator rules | Tracker cards, findings docs, chat; the close-out reports waiting under `[NNN] close-out:` cards | A verbatim raw dump under `handovers/` (the archive `slice.md` quotes from); one `slice.md` per surviving subject under `slices/backlog/` | Once, on one chat message — every item on a line under its proposed fate, the questions only the operator can answer, the proposed slices; no item is ever closed by machine judgment alone |
 | **Plan** (`/dev:plan-slice`) | The interactive session pins requirements and seeds the plan header; `plan_loop.py` runs one plan-writer pass and one plan-reviewer pass | `slice.md` — the only thing planning reads, and the last time anything reads it | `plan.md` (header in the operator's words, then the writer's phases and task shape), `verification.json`, `close-out.md` (created here), `plan_review_r1.md` | Writer questions; a review with blocking or operator-decidable findings (exit 4); never auto-starts the run |
 | **Run** (`/dev:run-slice`) | `run_loop.py` drives; fresh code-writer, code-reviewer, consult, test-agent, doc-writer sessions per job; the launching session has four jobs and never drives | `plan.md` (re-parsed before every phase), `verification.json`, the target repo | Phase branches merged into the base, done-records in `plan.md`, `✅ DONE` stamps, `state.json` history, review files, `close-out.md` entries, pushes (test phase; the doc landing) | An executor's `question`, a generation-bar exhaustion, an unpushed repo, a broken plan nobody can fix (exit 4); errors (exit 3) |
 | **Close out** (`/dev:close-out`) | The operator reads and decides; the session records dispositions verbatim and executes them | `close-out.md` | `Disposition:` lines, tracker cards (`card`), `slice.md` asks (`fold into`), strikes (`close`) | Every disposition is the operator's own words |
@@ -82,8 +82,9 @@ project deploys or documents; the project's own doc does, and the phase is optio
 
 The operator's touch points, in order, and nothing else:
 
-- **Adjudicates at triage** — rules on each item's label (nit pick → major, or invalid) and on
-  what becomes a slice. Reasons are recorded in the working doc; verdicts persist on the cards.
+- **Rules at triage** — on one chat message: the fate proposed for each item, the questions
+  only they can answer, the slices proposed. Their words ride into `slice.md` verbatim; the
+  message replaced a labelled status document on 2026-09-30 ([`reporting.md`](reporting.md)).
 - **Rules at refinement** — the `/dev:plan-slice` session pins every requirement and open choice
   with the operator, and the rulings land in `plan.md`'s header in the operator's words. At
   0.9.13 this is a Q&A; the dialog form was read in September and is being replaced by a

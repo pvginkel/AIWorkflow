@@ -140,7 +140,9 @@ further upstream each time.
   card; the operator pass got a stated vocabulary of rulings and dispositions instead of one
   invented per run; a conditional ruling was declared "not an approval" and routed back as a
   research line (v0.5.2). The label was withdrawn on 2026-09-17: the committed status document
-  holds the verdict, and nothing read the label ([`reporting.md`](reporting.md)).
+  holds the verdict, and nothing read the label; the document itself went on 2026-09-30, read
+  as unread — one chat message carries the fates, the questions and the slices
+  ([`reporting.md`](reporting.md)).
 - **Refinement (0.9.19, reshaped 0.9.21).** The session's recommendation becomes a document the
   operator reads, agrees with or comments on in chat, and that survives as the record the header's
   rulings point back to; its grounds stay with the session and reach the plan through the header.

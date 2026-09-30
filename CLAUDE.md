@@ -210,6 +210,12 @@ instead of reopening it.
   from being closed and does nothing else ("I have no problem never knowing of an issue"). It
   is the wrap-up, never a sweep. The tracker as the operator's queue (the plan's § 11) is an
   idea, not ruled and not built.
+- **No triage status document, rubric or labels** (0.9.60, ruled 2026-09-29/30;
+  `docs/research/triage-read-2026-09-29.md`): the operator rules on one chat message — every
+  item on a line under its proposed fate, the questions numbered, the proposed slices — and
+  nothing else in the process changed at their scoping ("the only thing that changes is the
+  format"). The document decided almost nothing across twenty runs ("I hardly read them").
+  The routes, the grouping rule and the sweep floor were not reopened by it.
 - **Cross-session messaging in headless sessions is kc's switch**, off by default
   (`crossSessionInbound: refuse` + deny `ListAgents` only; `SendMessage` kept for a session's own
   sub-agents). The plugin passes nothing — no agent-frontmatter `disallowedTools`, no kc
