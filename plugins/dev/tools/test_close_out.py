@@ -1619,7 +1619,7 @@ def test_verb_usage_renders_append_compactly_with_its_help_strings():
             ("--kind", "what the entry is — it decides which of the labels below the "
                        "entry carries"),
             ("--headline", "one line, the claim itself; a defect names its repo or "
-                           "component"),
+                           "component, a decision asks its question"),
             ("--body", "entry body, or - for stdin"),
             ("--consequence", "what an operator or user experiences if this stays as it "
                               "is, or none — the line the operator triages on"),

@@ -4,6 +4,19 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-01 — a close-out decision entry asks its question (v0.9.63)
+
+- `docs/close-out.md` § The labels: the one rule a decision had, "a decision states its
+  choice", let three entries in one report be written as accounts of what the writer did, with
+  the alternatives somewhere in a paragraph and `Consequence: none` under each — the operator
+  had to ask "what's the decision?" on each (AIWF-31). The rule now gives the shape: the
+  headline is the question; the body opens with what was chosen and whether it has shipped,
+  then the options one line each, the one in effect marked, each with what switching to it
+  would cost; `Consequence:` stays what is experienced while the choice in effect stands. A
+  ratification says so and offers keep or revert. `close_out.py labels` prints the section, so
+  every author reads it before their first append; `append --headline`'s help says the same in
+  a clause, and `docs/close-out-template.md` § The entry shows a decision in full.
+
 ## 2026-10-01 — planning-time `file:line` citations go in the criterion's description (v0.9.62)
 
 - `agents/plan-writer.md` and `docs/plan-template.md` § verification.json now say where a

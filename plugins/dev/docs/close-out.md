@@ -67,7 +67,7 @@ does not rename the entry.
 | kind | id | |
 |---|---|---|
 | `action` | A | only the operator can do it. It reads as an imperative ("Create the `IaC/ArgoCDTools` Jenkins job") |
-| `decision` | D | the entry states a choice that is the product owner's: options to pick from, a convention to rule on |
+| `decision` | D | the entry puts a choice that is the product owner's as a question: options to pick from, a convention to rule on |
 | `event` | E | something happened to the run that an uneventful one would not have had: a bail-out, an appended phase, a blocked proof re-routed, a live run that exposed what the suite hid. A phase or a round that went right is not an event — the run header counts them |
 | `defect` | B | the code, the configuration or the deployed system does something wrong today, however rarely |
 | `prose` | P | text is wrong, stale or missing — a document, a comment, help text, a message — and the behaviour is not in question |
@@ -135,8 +135,15 @@ bring and what it would take:
 - **Wrong today, or better tomorrow.** A defect, prose and a test gap say that something should
   be fixed; an improvement says that something could be better, safer or simpler. A hardening
   against what cannot occur with the code as it is, and a cleanup, are improvements.
-- **A decision states its choice.** An entry that ends in "the operator's call" is what it was
-  before that sentence.
+- **A decision asks its question.** Its headline is the question; its body opens with what was
+  chosen and whether it has shipped, then lists the options, one line each, the one in effect
+  marked, each with what switching to it would cost — a revert, a migration, a changed contract,
+  work redone. `Consequence:` is what is experienced while the choice in effect stands, as for
+  every kind; the costs of the other options are on their lines. An account of what the writer
+  did, with the alternatives somewhere in a paragraph, is not a decision — the operator reads
+  it and has to ask "what's the decision?" — and an entry that ends in "the operator's call" is
+  what it was before that sentence. A ratification — a change already shipped, with no
+  alternative but undoing it — says so in its first line, and its options are keep and revert.
 - **A limit the plan chose is not a defect.** An entry that proposes to lift it is an
   improvement; one that only records it restates the plan and is not an entry.
 - **Input for a later slice is `for`, beside the kind**: a defect that a later slice should
@@ -351,7 +358,8 @@ lands.
   (`P3 r1 F3`, `V10`) belong on the `Provenance:` line, not in the body as load-bearing
   references.
 - **`Consequence:` is a line of its own, written for triage.** What an operator or user actually
-  experiences if the entry stays as it is — unfixed, undone, unanswered — in the deployed shape,
+  experiences if the entry stays as it is — unfixed, undone, unanswered; for a decision, while
+  the choice in effect stands — in the deployed shape,
   in plain words, with what has to happen for it to be reached; or `none`, said plainly. It is the
   stated consequence `/dev:triage` puts to the operator, who reads it the same way, so it is not
   "better than before", not "none to behaviour" when a human would notice something, and not a

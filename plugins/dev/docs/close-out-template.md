@@ -125,6 +125,30 @@ design · a product call · in KubeCoder
 **Route:** to you — an improvement
 ```
 
+A decision is the question it puts: what is in effect and whether it has shipped, then the
+options, the one in effect marked, each with what switching to it would cost:
+
+```markdown
+### D1 — a component that declares no tests: keep kc's exit 3 for its gate, or add an exit 8?
+
+Shipped in P3 (4f1c2a9): `kc project test --project <component>` on a component without
+`test:` statements exits 3, kc's "nothing ran" — the status a missing component gives too. The
+gate scripts read 3 as not red, so a component whose `test:` was removed by mistake keeps a
+green gate.
+
+- **Exit 3 — in effect.** Keep: nothing changes; a lost `test:` is noticed at review, if at all.
+- **A new exit 8, "no tests declared".** Switching costs a kc release, the gate scripts in the
+  plugin, and every caller that matches on 3 today.
+
+**Consequence:** a component whose tests were removed by mistake passes its gate until a
+reviewer notices.
+
+**Triage:** decision · shows on an ordinary condition · degrades · silent
+**Provenance:** read — code-writer, P3
+**Route:** to you — a decision
+**Disposition:**
+```
+
 With its body folded, the lines the operator triages on stay in view:
 
 ```markdown

@@ -1939,7 +1939,8 @@ def build_parser() -> tuple[argparse.ArgumentParser,
                         "below the entry carries")
     p.add_argument("--section", help=argparse.SUPPRESS)
     p.add_argument("--headline", required=True,
-                   help="one line, the claim itself; a defect names its repo or component")
+                   help="one line, the claim itself; a defect names its repo or component, "
+                        "a decision asks its question")
     p.add_argument("--body", required=True, help="entry body, or - for stdin")
     p.add_argument("--consequence", required=True,
                    help="what an operator or user experiences if this stays as it is, "
