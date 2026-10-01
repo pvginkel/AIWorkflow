@@ -26,7 +26,16 @@ path (`../SiblingRepo`) — from which the driver roots its git operations (bran
 dirty-checks in that repo) and picks the gate: `kc project test --project <name>` for a
 component, run from the root of the repo that lists it; `kc project test` from the sibling's own
 root when it carries a manifest; no
-deterministic gate otherwise (the reviewer is told the state is unverified). A component is the
+deterministic gate otherwise (the reviewer is told the state is unverified). **`Target: root` is
+the repo as a whole**: its gate is `--project root` first, and when that ran nothing — kc's exit
+3, a root that declares no `test:` — bare `kc project test`, every component once. Root's own
+`test:` is what a manifest's author made the whole-repo gate (KubeCoder's `root` is the uv
+workspace; the Go and TypeScript components are disjoint suites, and running bare there would
+run them all for a Python-only phase), and a root without one (FieldnotesApp, on purpose — its
+CI runner would run both suites again) was never gated at all; either way no suite runs twice.
+Every dispatch that names a `kc project … --project <component>` gate says that exit 3 is kc's
+"nothing ran", not red — the component declares no statement for the verb — and the agent says
+what it checked instead. A component is the
 invoking repo's first. A name it lacks resolves in the one sibling repo whose `kc project list`
 has it (read lazily, only for such a name), and several owners ask for the repo path; the
 environment's repos sit side by side, the layout `../` Targets already assume. The component

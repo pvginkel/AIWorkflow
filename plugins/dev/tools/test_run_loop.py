@@ -1207,6 +1207,7 @@ class KcExitLoop(ScriptedLoop):
         self.gate_rcs = list(gate_rcs)
         self.sweep_rcs = dict(sweep_rcs or {})
         self.kc_runs = []    # (argv, cwd, rc)
+        self.phase_gate_runs = []   # kc_runs' phase-gate rows, sweep apart
         self._sweeping = False
 
     def _run_gate_sweep(self, targets, heads):
@@ -1222,6 +1223,8 @@ class KcExitLoop(ScriptedLoop):
         else:
             rc_ = self.gate_rcs.pop(0) if self.gate_rcs else 0
         self.kc_runs.append((list(argv), Path(cwd), rc_))
+        if not self._sweeping:
+            self.phase_gate_runs.append(self.kc_runs[-1])
         log_file.write(f"{' '.join(argv)}: exit {rc_}\n")
         return rc_
 
@@ -1294,6 +1297,130 @@ def test_the_nothing_ran_line_is_stated_only_about_the_commit_it_ran_on():
                                           None, Path(repo))
         assert r._gate_line(ps, "deadbeefcafe0", no_gate) \
             == run_loop.GATE_UNVERIFIED_LINE
+
+
+# -- `Target: root`: root's own tests, else the whole repo (AIWF-26) ----------
+#
+# FieldnotesApp's root declares no `test:` on purpose, so `--project root`
+# exited 3 and every root phase passed unverified; KubeCoder's root owns the
+# whole Python gate, where bare `kc project test` would run every component's
+# suite as well. The gate runs root's own first and bare only when it ran
+# nothing.
+
+def root_components(cwd):
+    return {PROJECT: Path(cwd), "root": Path(cwd)}
+
+
+def root_gate_run(tmp, script, gate_rcs):
+    slice_dir, repo = make_slice(tmp, phases=[("1", "First phase", "root")])
+    r = KcExitLoop(slice_dir, script, repo_root=repo, gate_rcs=gate_rcs)
+    with patched(run_loop, load_project_dirs=root_components):
+        code = run_to_exit(r)
+    return slice_dir, repo, r, code
+
+
+ROOT_ARGV = ["kc", "project", "test", "--project", "root"]
+BARE_ARGV = ["kc", "project", "test"]
+
+
+def test_a_root_gate_that_ran_nothing_falls_back_to_the_whole_repo():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r, code = root_gate_run(
+            tmp, [V["exec_done"], V["review_signoff"], *TAIL], [3, 0])
+        assert code == 0 and not r.script
+        assert [(argv, cwd) for argv, cwd, _ in r.phase_gate_runs] == [
+            (ROOT_ARGV, repo), (BARE_ARGV, repo)]
+        state = load_state(slice_dir)
+        ps = state["phases"]["1"]
+        assert ps["gate_green_commit"] == r.fake_git.head
+        assert ps["gate_cmd"] == "kc project test"
+        # one gate run, one history row, one log holding both commands
+        assert [h["outcome"] for h in state["history"]
+                if h["role"] == "gate"] == ["green"]
+        log = Path(ps["gate_green_log"]).read_text()
+        assert log.index("--project root: exit 3") \
+            < log.index("kc project test: exit 0")
+        prompt = next(p for role, p in r.prompts
+                      if role == "code-reviewer").replace("\n", " ")
+        assert "`kc project test` — with full output in" in prompt
+        assert "--project root` —" not in prompt
+        narration = (slice_dir / "log.txt").read_text()
+        assert ("`kc project test --project root` ran nothing — root "
+                "declares no tests, so the gate is the whole repo") \
+            in narration
+
+
+def test_a_red_whole_repo_gate_after_an_empty_root_is_a_red_gate():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r, code = root_gate_run(
+            tmp, [V["exec_done"], V["exec_done"], V["review_signoff"], *TAIL],
+            [3, 1, 3, 0])
+        assert code == 0 and not r.script
+        state = load_state(slice_dir)
+        assert state["phases"]["1"]["gate_fix_rounds"] == 1
+        assert [h["outcome"] for h in state["history"]
+                if h["role"] == "gate"] == ["red", "green"]
+        writers = [p for role, p in r.prompts if role == "code-writer"]
+        assert "The gate command was `kc project test`;" in writers[1]
+        # the one review came after the fix round's green, never the red
+        reviews = [p for role, p in r.prompts if role == "code-reviewer"]
+        assert len(reviews) == 1
+        assert [argv for argv, _, _ in r.phase_gate_runs] == [
+            ROOT_ARGV, BARE_ARGV, ROOT_ARGV, BARE_ARGV]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r, code = root_gate_run(
+            tmp, [V["exec_done"]] * (run_loop.GATE_FIX_CAP + 1),
+            [3, 1] * (run_loop.GATE_FIX_CAP + 1))
+        assert code == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "gate_red"
+        assert not any(role == "code-reviewer" for role, _ in r.prompts)
+        assert load_state(slice_dir)["phases"]["1"]["gate_green_commit"] \
+            is None
+
+
+def test_a_root_gate_with_tests_of_its_own_never_runs_the_whole_repo():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r, code = root_gate_run(
+            tmp, [V["exec_done"], V["review_signoff"], *TAIL], [0])
+        assert code == 0
+        assert [argv for argv, _, _ in r.phase_gate_runs] == [ROOT_ARGV]
+        prompt = next(p for role, p in r.prompts
+                      if role == "code-reviewer").replace("\n", " ")
+        assert "`kc project test --project root` — with full output" \
+            in prompt
+
+
+def test_a_component_gate_that_ran_nothing_never_falls_back():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = KcExitLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                   *TAIL],
+                       repo_root=repo, gate_rcs=[3, 3])
+        assert run_to_exit(r) == 0
+        assert [argv for argv, _, _ in r.phase_gate_runs] == [
+            ["kc", "project", "test", "--project", PROJECT]] * 2
+        prompt = next(p for role, p in r.prompts
+                      if role == "code-reviewer").replace("\n", " ")
+        assert (f"`kc project test --project {PROJECT}` ran nothing on this "
+                "exact commit") in prompt
+        assert "whole repo" not in (slice_dir / "log.txt").read_text()
+
+
+def test_every_component_gate_hint_says_what_exit_3_means():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r.project_dirs = root_components(repo)
+        component = r._gate_hint(r._resolve_target(PROJECT))
+        root = r._gate_hint(r._resolve_target("root"))
+        assert component == (f" (`kc project test --project {PROJECT}`). "
+                             + run_loop.NOTHING_RAN_HINT)
+        assert root == (" (`kc project test --project root`; when that runs "
+                        "nothing — exit 3 — the gate is bare `kc project "
+                        "test`, every component once). "
+                        + run_loop.NOTHING_RAN_HINT)
+        assert "Exit 3 is kc's \"nothing ran\"" in run_loop.NOTHING_RAN_HINT
 
 
 def test_red_gate_spawns_fresh_executor_fix_round():
@@ -2444,7 +2571,8 @@ def test_a_sibling_repos_component_resolves_in_that_repo():
                                     "--project", "aac-tools"]
         assert r._executor_where(target) == f" in the sibling repo {sib}"
         assert r._gate_hint(target) == (
-            f" (`kc project test --project aac-tools` from {sib})")
+            f" (`kc project test --project aac-tools` from {sib}). "
+            + run_loop.NOTHING_RAN_HINT)
         # a checkout without a manifest has no components to ask for, and
         # the spec repo beside it has none either
         assert lists.asked == ["repo", "ArgoCDTools"]
@@ -2464,7 +2592,8 @@ def test_the_invoking_repos_components_shadow_a_siblings():
             target = r._resolve_target("root")
         assert target.git_root == repo and target.gate_cwd == repo
         assert r._executor_where(target) == ""
-        assert r._gate_hint(target) == " (`kc project test --project root`)"
+        assert r._gate_hint(target).startswith(
+            " (`kc project test --project root`; when that runs nothing")
         assert lists.asked == ["repo"]
 
 
@@ -5057,6 +5186,8 @@ def test_a_green_wrap_up_lands_with_the_doc_phase():
                 "`kc project build` and `kc project test`") in prompt
         assert (f"  - {sib} — branch {WRAP} — gate: `kc project test` from "
                 f"{sib}") in prompt
+        # every row naming a `--project <component>` gate says what exit 3 is
+        assert prompt.count(run_loop.NOTHING_RAN_HINT) == 2
         verbs = "\n".join("  " + v for v in close_out.verb_usage(
             "worklist", "list", "relabel", "request-card", "leave", "strike",
             "note").splitlines())

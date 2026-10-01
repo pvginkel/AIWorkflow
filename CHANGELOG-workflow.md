@@ -4,6 +4,21 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-01 — `Target: root` gates the whole repo, once; dispatches say what kc's exit 3 means (v0.9.67)
+
+- **A root phase's gate is two steps**: `kc project test --project root`, and when that ran
+  nothing (exit 3, a root that declares no `test:`) bare `kc project test` from the same repo
+  root — every component once — whose outcome stands. Root's own `test:` is what a manifest's
+  author made the whole-repo gate (KubeCoder's `root` is the uv workspace; bare there would also
+  run the Go and TypeScript suites for a Python-only phase); a root without one (FieldnotesApp,
+  on purpose — its CI runner runs both component suites itself) passed every root phase
+  unverified. No suite runs twice either way (AIWF-26). `state.json`'s phase record gains
+  `gate_cmd`, the command whose outcome stands; the reviewer's gate line and a fix round's
+  prompt name it; the second run appends to the same `gate_r<n>.log`.
+- **Every dispatch that names a `kc project … --project <component>` gate** — the executor's
+  gate hint, the wrap-up's repo rows — says that exit 3 is kc's "nothing ran", not red: the
+  component declares no statement for the verb, and the agent says what it checked instead.
+
 ## 2026-10-01 — pushing to production is the slice's; running a promotion pipeline is the operator's (v0.9.66)
 
 The test-phase dispatch carried a fixed `prd stays operator-gated; nothing here touches it`,

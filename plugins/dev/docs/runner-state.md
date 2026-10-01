@@ -54,6 +54,8 @@ Per phase: `status` (`pending` | `in_progress` | `merged`), `stage` (`executor` 
 `review_rounds`, `reviewed_head`, `gate_runs`, the gate's evidence pair `gate_green_commit` /
 `gate_green_log`, `gate_nothing_ran_commit` (the head the gate last ran nothing on — the
 reviewer is told the target defines no tests only when it is the commit under review),
+`gate_cmd` (the command whose outcome stands — bare `kc project test` when a root phase's
+`--project root` ran nothing; what the reviewer's gate line and a fix round's prompt name),
 `rebase_requested` (set when a merge-time rebase bails `blocked` and hands the
 rebase to the operator — `base`, `from` (the branch head it asked to rebase), `ts`; cleared when
 the resume takes the rebased branch, and at the merge), and `landed` — set at the ff-merge: the

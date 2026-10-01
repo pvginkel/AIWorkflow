@@ -189,6 +189,19 @@ SWEEP_VERBS = ("lint", "build", "test")
 # neither green nor red: there is nothing to fix, and nothing was proved.
 KC_NOTHING_RAN = 3
 
+# Every dispatch that names a `kc project … --project <component>` gate says
+# what exit 3 means there, so a session never spends turns fixing a "failure"
+# that is a component with no statement for the verb. No closing period: the
+# executor templates close the sentence `{gate_hint}` ends.
+NOTHING_RAN_HINT = ("Exit 3 is kc's \"nothing ran\" — not red, nothing to "
+                    "fix: the component declares no statement for the verb; "
+                    "say what you checked instead")
+
+# The component `Target: root` names — the repo as a whole to a plan's
+# authors — and the gate it falls back to when root declares no tests.
+ROOT_COMPONENT = "root"
+REPO_GATE_ARGV = ["kc", "project", "test"]
+
 GATE_FIX_CAP = 3       # executor fix rounds against a red gate, per phase
 # Nudges at the test session over a repo it committed to but never pushed.
 # The driver checks rather than pushes: a slice touching several repos may
@@ -2596,7 +2609,7 @@ class RunLoop:
             "target": None, "executor_rounds": 0, "gate_fix_rounds": 0,
             "review_rounds": 0, "gate_runs": 0,
             "gate_green_commit": None, "gate_green_log": None,
-            "gate_nothing_ran_commit": None,
+            "gate_nothing_ran_commit": None, "gate_cmd": None,
             "reviewed_head": None, "landed": None,
         }
         ps = self.state["phases"].setdefault(phase_id, dict(defaults))
@@ -3909,7 +3922,19 @@ class RunLoop:
         the fix cap and bail `gate_red` — at the gate stage and at the
         merge's re-gate alike. No green commit is recorded; the head it ran
         nothing on is, so the reviewer's line can say why the state is
-        unverified. The history row says `nothing_ran`, never green."""
+        unverified. The history row says `nothing_ran`, never green.
+
+        `Target: root` is the repo as a whole, and its gate is two steps:
+        root's own `test:` first, the bare `kc project test` — every
+        component once — only when that ran nothing. Root's own statement is
+        what the manifest's author made the whole-repo gate (KubeCoder's is
+        the uv workspace's one pytest run; bare there would also run every
+        component's disjoint suite for a Python-only phase); where root
+        declares none (FieldnotesApp, on purpose: its CI runner runs both
+        component suites itself), the whole repo is the gate instead of an
+        unverified pass. Either way no suite runs twice. The second run
+        appends to the same log, and `gate_cmd` records the command whose
+        outcome stands, for the reviewer's line and the fix round's."""
         if target.gate_argv is None:
             self.log(f"[P{phase_id}] no deterministic gate for "
                      f"{target.name} — proceeding (reviewer told unverified)")
@@ -3921,26 +3946,23 @@ class RunLoop:
         argv = target.gate_argv
         self.log(f"[P{phase_id}] gate #{n} running ({' '.join(argv)})")
         t0 = time.monotonic()
-        try:
-            with open(log_path, "w") as log_file:
-                returncode = self._gate_exec(argv, target.gate_cwd, log_file)
-        except subprocess.TimeoutExpired:
-            raise Bailout(
-                "timeout", phase=phase_id,
-                details=f"gate `{' '.join(argv)}` exceeded {GATE_TIMEOUT}s "
-                        f"(output in {log_path})",
-            ) from None
+        with open(log_path, "w") as log_file:
+            outcome = self._gate_cmd_outcome(phase_id, argv, target, log_file,
+                                             log_path)
+            if outcome == "nothing_ran" and self._is_root(target):
+                self.log(f"[P{phase_id}] `{' '.join(argv)}` ran nothing — "
+                         "root declares no tests, so the gate is the whole "
+                         f"repo: `{' '.join(REPO_GATE_ARGV)}`")
+                argv = REPO_GATE_ARGV
+                log_file.write(f"\n=== `{' '.join(target.gate_argv)}` ran "
+                               "nothing (exit 3) — the gate is the whole repo:"
+                               f" `{' '.join(argv)}` ===\n")
+                log_file.flush()
+                outcome = self._gate_cmd_outcome(phase_id, argv, target,
+                                                 log_file, log_path)
         duration_s = int(time.monotonic() - t0)
-        # rc 2 is kc's usage error — an unknown --project. The name came
-        # from kc's own project list, so that is a driver bug, not a red
-        # suite.
-        if returncode == 2:
-            raise Bailout(
-                "protocol_failure", phase=phase_id,
-                details=f"`{' '.join(argv)}` rejected its arguments "
-                        f"(output in {log_path})",
-            )
-        outcome = kc_outcome(returncode)
+        gate_cmd = " ".join(argv)
+        ps["gate_cmd"] = gate_cmd
         tail = ""
         try:
             lines = [ln for ln in log_path.read_text().splitlines()
@@ -3957,12 +3979,42 @@ class RunLoop:
                                                      root=target.git_root)
         self._record(phase_id, "gate", n, outcome, tail, None, duration_s)
         self.log(f"[P{phase_id}] gate #{n} → "
-                 f"{GATE_OUTCOME_LABELS[outcome]} ({duration_s}s) "
-                 f"{tail[:120]}")
+                 f"{GATE_OUTCOME_LABELS[outcome]} ({duration_s}s, "
+                 f"{gate_cmd}) {tail[:120]}")
         if outcome == "nothing_ran":
-            self.log(f"[P{phase_id}] {target.name} defines no tests — "
+            what = "the repo" if self._is_root(target) else target.name
+            self.log(f"[P{phase_id}] {what} defines no tests — "
                      "proceeding as with no gate (reviewer told unverified)")
         return outcome != "red", log_path
+
+    def _gate_cmd_outcome(self, phase_id: str, argv: list[str],
+                          target: ResolvedTarget, log_file,
+                          log_path: Path) -> str:
+        """One phase-gate command run into `log_file`, as a gate outcome. A
+        timeout bails; so does rc 2, kc's usage error — an unknown
+        --project, and the name came from kc's own project list, so that is
+        a driver bug, not a red suite."""
+        try:
+            returncode = self._gate_exec(argv, target.gate_cwd, log_file)
+        except subprocess.TimeoutExpired:
+            raise Bailout(
+                "timeout", phase=phase_id,
+                details=f"gate `{' '.join(argv)}` exceeded {GATE_TIMEOUT}s "
+                        f"(output in {log_path})",
+            ) from None
+        if returncode == 2:
+            raise Bailout(
+                "protocol_failure", phase=phase_id,
+                details=f"`{' '.join(argv)}` rejected its arguments "
+                        f"(output in {log_path})",
+            )
+        return kc_outcome(returncode)
+
+    @staticmethod
+    def _is_root(target: ResolvedTarget) -> bool:
+        """`Target: root` — the component the plan's authors mean as the
+        repo as a whole, gated in two steps (`_run_gate`)."""
+        return target.kind == "project" and target.name == ROOT_COMPONENT
 
     def _gate_exec(self, argv: list[str], cwd: Path, log_file) -> int:
         """One gate command's exit code, its output into `log_file` — the
@@ -3979,7 +4031,7 @@ class RunLoop:
         nothing-ran reason only when the gate ran nothing on it. Every other
         case — no gate, a green or an empty run on an earlier commit — is
         plainly unverified."""
-        gate_cmd = " ".join(target.gate_argv or [])
+        gate_cmd = ps.get("gate_cmd") or " ".join(target.gate_argv or [])
         green_at = ps.get("gate_green_commit")
         gate_log = ps.get("gate_green_log")
         if green_at and gate_log and green_at == head:
@@ -4091,10 +4143,15 @@ class RunLoop:
         return PHILOSOPHY_LINE.format(philosophy=self.cfg.design_philosophy)
 
     def _gate_hint(self, target: ResolvedTarget) -> str:
+        if self._is_root(target):
+            return (" (`kc project test --project root`; when that runs "
+                    "nothing — exit 3 — the gate is bare `kc project test`, "
+                    f"every component once). {NOTHING_RAN_HINT}")
         if target.kind == "project":
             where = ("" if target.git_root == self.repo_root
                      else f" from {target.git_root}")
-            return f" (`kc project test --project {target.name}`{where})"
+            return (f" (`kc project test --project {target.name}`{where}). "
+                    f"{NOTHING_RAN_HINT}")
         if target.gate_argv:
             return (f" (`kc project test` from {target.git_root})")
         return (f" ({target.git_root} has no kc manifest — gate per that "
@@ -4599,7 +4656,8 @@ class RunLoop:
                                phase_id=phase.id, slice_name=self.slice_name,
                                branch=branch, round=_r,
                                plan_path=self.plan_path,
-                               gate_cmd=" ".join(target.gate_argv or []),
+                               gate_cmd=(ps.get("gate_cmd") or " ".join(
+                                   target.gate_argv or [])),
                                gate_log=_log, merge_base=merge_base,
                                where=where, verdict_path=vp,
                                pointers=self._pointers(target)))
@@ -6223,7 +6281,8 @@ class RunLoop:
         if self._is_primary(root):
             return ("`kc project lint`, `kc project build` and `kc project "
                     f"test` from {root} (the doc phase's gate) — each with "
-                    "`--project <component>` for the component you changed")
+                    "`--project <component>` for the component you changed. "
+                    f"{NOTHING_RAN_HINT}.")
         target = self._repo_path_target(str(root), root)
         ruling = self._gate_ruling(target)
         if ruling is not None:
@@ -6233,7 +6292,8 @@ class RunLoop:
             return (f"none the driver runs — {root} has no kc manifest; gate "
                     "a fix there per that repo's own conventions")
         return (f"`kc project test` from {root} — with `--project "
-                "<component>` for the component you changed")
+                "<component>` for the component you changed. "
+                f"{NOTHING_RAN_HINT}.")
 
     def _wrap_up_prompt(self, repos: list[tuple[Path, str]], branch: str,
                         verdict_path: Path) -> str:
@@ -7114,6 +7174,8 @@ def cmd_dry_run(loop: RunLoop) -> None:
             target = loop._resolve_target(phase.target or "")
             gate = " ".join(target.gate_argv) if target.gate_argv \
                 else "(no deterministic gate)"
+            if loop._is_root(target):
+                gate += f" (else {' '.join(REPO_GATE_ARGV)} when it runs nothing)"
             print(f"{line}\n        target={target.name} [{target.kind}]  "
                   f"root={target.git_root}  gate: {gate}")
             problem = loop._github_gate_problem(target)
