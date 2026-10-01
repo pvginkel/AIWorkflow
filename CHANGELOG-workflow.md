@@ -4,6 +4,22 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-01 — pushing to production is the slice's; running a promotion pipeline is the operator's (v0.9.66)
+
+The test-phase dispatch carried a fixed `prd stays operator-gated; nothing here touches it`,
+which contradicted every project whose only deployment is production (FieldnotesApp slices 001
+and 002 met it, AIWF-28). The operator's rule, written down as they put it: a slice is expected
+to push to production wherever the project's deploy path is a push; what is operator-gated is
+running a promotion pipeline — assume a project has one wherever it has more than one stage,
+unless its deploy-operations doc says the stages are separate environments with nothing
+promoted between them (Keycloak's two are two environments, not a promotion).
+
+- `run_loop.py`'s `PRD_LINE`/`PRD_RULINGS_LINE` state that rule; a `- prd <target> — <why>`
+  driver ruling now authorizes the test phase to run the promotion pipeline for the target — a
+  push never needed one. `docs/run-loop.md`, `docs/plan-template.md`, the run-slice skill's
+  note and the plan-slice skill say the same; the doc-writer's "prd is never yours" is gone
+  (it never pushes anything, which rule 8 already says).
+
 ## 2026-10-01 — `close_out.py`'s usage lines lead with the report (v0.9.65)
 
 - The usage lines every dispatch carries (`close_out.verb_usage`, rendered from the parser) put

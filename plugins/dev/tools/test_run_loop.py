@@ -3760,7 +3760,7 @@ def test_test_phase_prompt_states_devlock_and_procedure_doc():
         prompt = next(p for role, p in r.prompts if role == "test-agent")
         assert "test-plan.md" in prompt
         assert "devlock" in prompt and "pre-authorized" in prompt
-        assert "prd stays operator-gated" in prompt
+        assert "Running a promotion pipeline is operator-gated" in prompt
         assert "verification.json" in prompt
 
 
@@ -7583,7 +7583,11 @@ def test_doc_gate_ignores_rulings_on_another_repo():
 
 def test_prd_is_authorized_only_by_a_prd_ruling():
     unchanged = ("pre-authorized — do not ask for permission.\n"
-                 "  prd stays operator-gated; nothing here touches it.\n"
+                 "  Pushing is this phase's, production included, wherever the project's\n"
+                 "  deploy path is a push. Running a promotion pipeline is operator-gated —\n"
+                 "  assume one wherever the project has more than one stage, unless its\n"
+                 "  deploy-operations doc says the stages are separate environments with\n"
+                 "  nothing promoted between them; nothing here runs it.\n"
                  "- The slice folder")
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
@@ -7602,11 +7606,11 @@ def test_prd_is_authorized_only_by_a_prd_ruling():
         r1 = ScriptedLoop(slice_dir, script, repo_root=repo)
         assert run_to_exit(r1) == 3
         prompt = next(p for rl, p in r1.prompts if rl == "test-agent")
-        assert "nothing here touches it" not in prompt
+        assert "nothing here runs it" not in prompt
         flat = " ".join(prompt.split())
-        assert ("prd stays operator-gated except for these targets, which "
-                "plan.md's `## Driver rulings` authorize — pushing and "
-                "rolling prd for them is part of this test phase:") in flat
+        assert ("nothing promoted between them — except for these targets, which "
+                "plan.md's `## Driver rulings` authorize: running their promotion "
+                "pipeline is part of this test phase:") in flat
         assert "  - app — roll prd once dev verifies\n- The slice" in prompt
         # the resume dispatches the test phase again; the entry stays one
         r2 = ScriptedLoop(slice_dir, [V["test_clean"], V["doc_done"]],

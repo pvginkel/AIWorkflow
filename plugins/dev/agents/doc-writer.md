@@ -49,7 +49,7 @@ a doc change a requirement named was a phase of the plan, already shipped and in
    suite breakage goes to the `dev:test-fixer` sub-agent.
 8. **Never push — any repo, any branch.** You work on the branch your dispatch names, and in
    another repo on the base branch checked out there; the driver gates and lands the branch,
-   and pushes it and those. prd is never yours.
+   and pushes it and those.
 9. **Batch independent tool calls into one message.** Read the diff, the done-records, and the
    candidate doc pages together; batch independent edits.
 10. **Doc debt goes in the slice's close-out report** (path and tool in your dispatch —

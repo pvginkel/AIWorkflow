@@ -74,7 +74,7 @@ correction-chains; git holds the history. A ruling that forbids pushing a repo n
 machine-readable half too — a `- <repo> — <why>` bullet under `## Push holds`
 (`${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md`) — or the driver nudges the test agent for that
 push and bails `unpushed` over the ruling it was told to honour. The same goes for a ruling
-that replaces a target's test gate, accepts a red sweep row, or authorizes prd: it needs a
+that replaces a target's test gate, accepts a red sweep row, or authorizes a promotion: it needs a
 `## Driver rulings` bullet (`gate` / `accept` / `prd`, same doc). Without one, the driver runs
 the waived gate again on resume and bails `gate_red` or `blocked` where it bailed before. Then
 relaunch with `--resume`.
@@ -130,7 +130,10 @@ agents or fixing code, stop; that work belongs in a phase the loop executes.
   another run's branch.
 - **Treat the suite as green before every slice** — preflight does not run it. A failure during
   the run is the slice's regression — never accept "flaky" or "pre-existing" from anyone.
-- **Production stays operator-gated.** The loop's devlock hold pre-authorizes the pushes the slice
-  needs for dev verification — even one whose GitOps effects reach past dev (a shared chart
-  reconciles every environment it deploys); promoting anything into production is the operator's
-  separate, explicit decision, per the project's deploy-operations doc.
+- **Promotion stays operator-gated; pushing does not.** The loop's devlock hold pre-authorizes
+  the pushes the slice needs — for dev verification, and to production where the project's
+  deploy path is a push (a shared chart reconciles every environment it deploys; a single-stage
+  project deploys production on push). Running a promotion pipeline is the operator's separate,
+  explicit decision: assume a project has one wherever it has more than one stage, unless its
+  deploy-operations doc says the stages are separate environments with nothing promoted between
+  them.

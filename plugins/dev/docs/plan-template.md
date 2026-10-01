@@ -95,9 +95,9 @@ The mechanical rules the parser holds every author to:
   target written as in `Target:`, with em-dash-separated fields: `- gate <target> —
   <substitute> — <why>` waives the driver's test gate for that target (`none` for no
   substitute); `- accept <target> <verb> — <why>` makes that red sweep row non-blocking (verb
-  `lint`, `build` or `test`); `- prd <target> — <why>` authorizes the test phase to push and
-  roll prd for it. A sibling path or a `github:` target covers every component of that repo; a
-  component name covers that component. What each does in the run is [run-loop.md](run-loop.md) § After the last phase.
+  `lint`, `build` or `test`); `- prd <target> — <why>` authorizes the test phase to run the
+  promotion pipeline for it (a push needs no ruling, production included). A sibling path or a
+  `github:` target covers every component of that repo; a component name covers that component. What each does in the run is [run-loop.md](run-loop.md) § After the last phase.
   A bullet the parser can't read (unknown kind, missing field, duplicate) or whose target
   doesn't resolve is a structure error, as with holds: a ruling missed silently is a gate the
   driver runs anyway. The prose ruling still goes in Requirements / rulings, in the operator's

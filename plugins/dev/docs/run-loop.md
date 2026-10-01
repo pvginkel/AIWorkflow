@@ -229,8 +229,12 @@ whole plan is a feature of the review, not a cost. Then:
   for this phase (a `flock` on the inode `devlock.lease` names; it releases on crash): taken
   before the session, kept across a findings re-loop while the slice converges, released once the
   phase is clean and the push check below has passed. Under that hold pushing and rolling dev for
-  verification is pre-authorized — the lock *is* the coordination. prd stays operator-gated,
-  except for a target a `prd` ruling names (below).
+  verification is pre-authorized — the lock *is* the coordination — and so is pushing to
+  production where the project's deploy path is a push: a slice is expected to reach production.
+  What is operator-gated is running a promotion pipeline — assume a project has one wherever it
+  has more than one stage, unless its deploy-operations doc says the stages are separate
+  environments with nothing promoted between them — except for a target a `prd` ruling names
+  (below).
   Blocking findings come back as appended phases; sub-bar findings go in the close-out report;
   `verification.json` is checked off.
 - **The phase is optional** (`test_phase.enabled = false`), as is the doc phase below and the
@@ -277,8 +281,9 @@ whole plan is a feature of the review, not a cost. Then:
   - An **`accept`** ruling turns one red sweep row (target plus verb) non-blocking. It is
     rendered as accepted and drops out of the stances' red, and the doc gate honours it too. It
     never covers the per-phase gate: a gate the environment can't pass needs a `gate` ruling.
-  - A **`prd`** ruling authorizes the test phase to push and roll prd for that target. Every
-    target it doesn't name stays operator-gated.
+  - A **`prd`** ruling authorizes the test phase to run the promotion pipeline for that target.
+    Every target it doesn't name keeps its promotion operator-gated; a push needs no ruling,
+    production included.
 
   The sweep's red is worked out when a dispatch renders it, against the rulings as they stand
   then, so a ruling added after the sweep ran still counts. The test phase's dispatch lists the

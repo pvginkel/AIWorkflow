@@ -863,7 +863,8 @@ class Ruling:
     of the loop for one target. `gate` waives the phase gate and the sweep's
     `test` row (`substitute` names what proves it instead, None for none);
     `accept` lets a red sweep/doc-gate row through for one verb; `prd`
-    authorizes the test phase to push and roll prd."""
+    authorizes the test phase to run the promotion pipeline for the target
+    (a push needs no ruling, production included)."""
 
     def __init__(self, kind: str, target: str, why: str,
                  verb: str | None = None, substitute: str | None = None,
@@ -2352,10 +2353,20 @@ WRAP_UP_LEFT_OUT_CONSEQUENCE = (
 
 # The test-phase dispatch's prd line: fixed, unless plan.md's `## Driver
 # rulings` authorize prd for named targets.
-PRD_LINE = "  prd stays operator-gated; nothing here touches it."
+PRD_LINE = """\
+  Pushing is this phase's, production included, wherever the project's
+  deploy path is a push. Running a promotion pipeline is operator-gated —
+  assume one wherever the project has more than one stage, unless its
+  deploy-operations doc says the stages are separate environments with
+  nothing promoted between them; nothing here runs it.\
+"""
 PRD_RULINGS_LINE = """\
-  prd stays operator-gated except for these targets, which plan.md's
-  `## Driver rulings` authorize — pushing and rolling prd for them is part
+  Pushing is this phase's, production included, wherever the project's
+  deploy path is a push. Running a promotion pipeline is operator-gated —
+  assume one wherever the project has more than one stage, unless its
+  deploy-operations doc says the stages are separate environments with
+  nothing promoted between them — except for these targets, which plan.md's
+  `## Driver rulings` authorize: running their promotion pipeline is part
   of this test phase:
 {rows}\
 """
