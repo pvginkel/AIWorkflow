@@ -53,7 +53,8 @@ plan.md.
 **`verification.json`** — the slice's acceptance criteria, outcome-level, **complete against
 slice.md's numbered requirements 1:1** in the operator's wording (add criteria freely; never drop
 or re-word a requirement without a ruling recorded in plan.md's rulings section). Where a
-criterion rests on a code fact, cite `file:line` evidence you verified this pass.
+criterion rests on a code fact, cite `file:line` evidence you verified this pass — in the
+criterion's `description`; `evidence` stays `[]` for the test phase.
 Coverage-preservation criteria are allowed ("no coverage is lost; every deleted test has a named
 successor" — phrased as an outcome, never an inventory of paths). Doc-truth universals are
 banned. Shape: `{"items": [{"id": "V01", "area": "…", "description": "…", "verdict": null,

@@ -4,6 +4,14 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-01 — planning-time `file:line` citations go in the criterion's description (v0.9.62)
+
+- `agents/plan-writer.md` and `docs/plan-template.md` § verification.json now say where a
+  `file:line` citation the plan-writer verified goes: the criterion's `description`, with
+  `evidence: []` left for the test phase. The contract asked for the citation and shaped an
+  `evidence` array while saying `evidence` stays empty at planning time; one plan-writer
+  rewrote verification.json over it (AIWF-25).
+
 ## 2026-09-30 — `slice_cost.py` prices Claude Sonnet 5.5 (v0.9.61)
 
 - `PRICES` gains `claude-sonnet-5-5`: $2 input / $10 output per MTok, cache reads $0.20 (the
