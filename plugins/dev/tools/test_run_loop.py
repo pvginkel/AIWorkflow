@@ -1724,7 +1724,7 @@ def test_every_dispatch_carries_the_report_path():
             assert f"`python3 {CLOSE_OUT_TOOL} <verb> {report} …`" in prompt
             assert f"`python3 {CLOSE_OUT_TOOL} labels` prints" in prompt
             assert "never edit either file by hand" in prompt
-            assert prompt.count("close_out.py append --kind") == 1
+            assert prompt.count("close_out.py append <close-out.md> --kind") == 1
         # and no prompt still speaks of cards
         assert not any("card" in p for _, p in r.prompts)
 
@@ -3655,7 +3655,7 @@ def test_consults_get_the_report_path_and_a_cards_list_is_ignored():
         # names the phase/commit, note for anything else — never a hand
         # edit of another agent's entry.
         flat = " ".join(completion.split())
-        assert ('`strike <id> --reason "absorbed by P<x> (<commit>)" --by '
+        assert ('`strike <close-out.md> <id> --reason "absorbed by P<x> (<commit>)" --by '
                 '"consult <n>"`') in flat
         assert '"resolved by P<x> (<commit>): <what was re-run>"' in flat
         assert "observation about an entry with `note`" in flat
@@ -4574,15 +4574,15 @@ def test_doc_phase_prompt_states_diff_files_digest_verbs_and_doc():
         assert "slice.md is not your input" in prompt
         # the close-out verbs' argument shapes, from the tool's own parser:
         # `append`'s in the dispatch line, the other three under it
-        assert prompt.count("close_out.py append --kind {") == 1
+        assert prompt.count("close_out.py append <close-out.md> --kind {") == 1
         assert "--consequence: what an operator or user experiences" in prompt
         line = close_out.dispatch_line(slice_dir / "close-out.md")
         verbs = "\n".join("  " + v for v in close_out.verb_usage(
             "list", "note", "strike").splitlines())
         assert (f"- {line}\n  The other verbs this phase uses, with their "
                 f"arguments:\n{verbs}\n- Work on branch") in prompt
-        assert "close_out.py note --by BY" in prompt
-        assert "close_out.py strike --reason REASON" in prompt
+        assert "close_out.py note <close-out.md> <id> --by BY" in prompt
+        assert "close_out.py strike <close-out.md> <id> --reason REASON" in prompt
         assert ("--reason: why — resolved/refuted names the commit and the "
                 "re-run") in prompt
         # the report is rendered, never written by hand: no Summary, no Focus

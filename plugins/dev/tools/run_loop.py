@@ -2146,12 +2146,12 @@ between P3 and P4 — document order is authoritative) and answer `appended`.
 Record everything that does not clear the bar as entries in the close-out
 report — and you are the one pass that reconciles that report, through
 close_out.py (its path is in this prompt) and never by editing the file:
-strike what you absorbed into an appended phase (`strike <id> --reason
-"absorbed by P<x> (<commit>)" --by "consult <n>"`), duplicates you are sure
-of (`--reason "duplicate of B3"`), and what a phase resolved (`--reason
-"resolved by P<x> (<commit>): <what was re-run>"`); record any other
-observation about an entry with `note`. If nothing is outstanding, answer
-`complete`.\
+strike what you absorbed into an appended phase (`strike <close-out.md>
+<id> --reason "absorbed by P<x> (<commit>)" --by "consult <n>"`), duplicates
+you are sure of (`--reason "duplicate of B3"`), and what a phase resolved
+(`--reason "resolved by P<x> (<commit>): <what was re-run>"`); record any
+other observation about an entry with `note`. If nothing is outstanding,
+answer `complete`.\
 """
 
 # The loop-tail sweep's report, as it rides the completion-consult and

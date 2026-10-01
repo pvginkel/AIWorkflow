@@ -1609,8 +1609,9 @@ def test_dispatch_line_is_the_text_with_the_append_usage_in_it():
 def test_verb_usage_renders_append_compactly_with_its_help_strings():
     block = close_out.verb_usage("append")
     lines = block.splitlines()
-    assert lines[0].startswith("close_out.py append --kind {action,decision,event,defect,"
-                               "prose,test-gap,improvement} --headline HEADLINE")
+    assert lines[0].startswith("close_out.py append <close-out.md> --kind {action,decision,"
+                               "event,defect,prose,test-gap,improvement} --headline HEADLINE")
+    assert " [-h]" not in block
     assert "--section" not in block
     assert "[--repo NAME]" in lines[0] and "[--for SLICE]" in lines[0]
     assert "[--product-call {yes,no}]" in lines[0]
@@ -1643,8 +1644,26 @@ def test_verb_usage_renders_append_compactly_with_its_help_strings():
             ("--prevents", "improvement: the worst it would prevent")):
         assert f"    {flag}: {help_}" in lines, flag
     notes = close_out.verb_usage("list", "note", "strike")
-    assert notes.splitlines()[0] == "close_out.py list slice"
-    assert "    id: the entry's id, like B3" in notes and "slice:" not in notes
+    assert notes.splitlines()[0] == "close_out.py list <close-out.md>"
+    assert "    <id>: the entry's id, like B3" in notes
+    assert "slice:" not in notes and "<close-out.md>:" not in notes
+
+
+def test_verb_usage_puts_the_positionals_right_after_the_verb():
+    # argparse renders positionals last; agents read the line as the call's
+    # shape and typed a trailing `slice` literally or put the id first.
+    strike = close_out.verb_usage("strike").splitlines()
+    assert strike[0] == ("close_out.py strike <close-out.md> <id> --reason REASON "
+                         "[--by BY] [--commit COMMIT] [--date DATE]")
+    assert strike[1] == "    <id>: the entry's id, like B3"
+    rule = close_out.verb_usage("rule").splitlines()[0]
+    assert rule.startswith("close_out.py rule <close-out.md> [<id>] [--words WORDS]")
+    assert close_out.verb_usage("note").splitlines()[0].startswith(
+        "close_out.py note <close-out.md> <id> --by BY --text TEXT")
+    # The CLI's own usage — what an argument error prints — has the same shape.
+    _, subs = close_out.build_parser()
+    assert subs["strike"].format_usage().startswith(
+        "usage: close_out.py strike <close-out.md> <id> [-h] --reason REASON")
 
 
 def test_labels_prints_the_contracts_labels_section():

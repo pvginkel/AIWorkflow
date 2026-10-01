@@ -4,6 +4,18 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-01 — `close_out.py`'s usage lines lead with the report (v0.9.65)
+
+- The usage lines every dispatch carries (`close_out.verb_usage`, rendered from the parser) put
+  the positionals right after the verb, by their metavars: `close_out.py append <close-out.md>
+  --kind {…} --headline …`, `close_out.py strike <close-out.md> <id> --reason …`. argparse's
+  positionals-last order ended every line in a bare `slice`, and five reports from four roles
+  on 2026-09-30 had agents type `slice` or a trailing `033` literally (`error: unrecognized
+  arguments`) or put the id first (`Error: slice directory not found: P1`) (AIWF-27). The
+  reordering is the parser's own usage, so `--help` and argument errors read the same way.
+- The completion consult's prompt spells its strike example out in full — `strike <close-out.md>
+  <id> --reason … --by …` — and `docs/close-out.md`'s `note` example names the report too.
+
 ## 2026-10-01 — a spec-repo phase survives the reviewer's `git add -A` and its own resume (v0.9.64)
 
 KubeCoder slice 238 P5 and Ansible slice 035 P5, both with the spec repo as `Target:`, bailed

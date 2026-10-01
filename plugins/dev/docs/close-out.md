@@ -377,7 +377,8 @@ lands.
   restated symptom, a boilerplate section or a summary of the entries costs them the entries.
 - **One entry per thing, not per turn.** A later observation about an entry that already exists —
   its premise moved, its symptom was re-tested, a phase resolved it, a reviewer refuted it — is
-  `close_out.py note <id>`: a dated paragraph at the end of that entry's body, never a new entry.
+  `close_out.py note <close-out.md> <id>`: a dated paragraph at the end of that entry's body,
+  never a new entry.
   The reader who decides on B1 finds everything about B1 under B1.
 - **In doubt, add it.** Nobody pre-dedups: every agent runs `list` before it writes, the
   completion consult strikes duplicates it is sure of, the operator merges the rest by reading.

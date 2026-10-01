@@ -1914,7 +1914,9 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     """The CLI, plus its verbs by name — the second is what `verb_usage`
     renders a dispatch's verb block from, so the block and the CLI are one
     definition. `prog` is fixed: an importing script's argv[0] must not
-    leak into the usage lines."""
+    leak into the usage lines. Every verb's usage leads with its
+    positionals (`_positionals_first`), in `--help` and error messages as
+    in the dispatch block."""
     parser = argparse.ArgumentParser(prog="close_out.py",
                                      description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1924,9 +1926,9 @@ def build_parser() -> tuple[argparse.ArgumentParser,
 
     def verb(name: str, help_: str, entry: bool = False) -> argparse.ArgumentParser:
         p = sub.add_parser(name, help=help_)
-        p.add_argument("slice", help=slice_help)
+        p.add_argument("slice", metavar="<close-out.md>", help=slice_help)
         if entry:
-            p.add_argument("id", help=id_help)
+            p.add_argument("id", metavar="<id>", help=id_help)
         return p
 
     verb("init", "create the store and render it, if absent")
@@ -1995,7 +1997,7 @@ def build_parser() -> tuple[argparse.ArgumentParser,
 
     p = verb("rule", "the operator's words on an entry; without an id, read the "
                      "Disposition lines back")
-    p.add_argument("id", nargs="?", help=id_help)
+    p.add_argument("id", nargs="?", metavar="<id>", help=id_help)
     p.add_argument("--words", help="the operator's words, verbatim")
     p.add_argument("--did", help="what was done on them — strikes the entry")
     p.add_argument("--commit", help="the commit of what was done")
@@ -2009,15 +2011,36 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     verb("stamp", "render, printing the run header from state.json")
     verb("counts", "live entries per section and per id letter, one line")
     verb("import", "read a close-out.md of the old shape into a new store")
+    for p in sub.choices.values():
+        _positionals_first(p)
     return parser, sub.choices
+
+
+def _positionals_first(p: argparse.ArgumentParser) -> None:
+    """Set `p`'s usage to argparse's own line with the positionals moved
+    from its tail to right after the verb, in their order — `strike
+    <close-out.md> <id> --reason REASON …`. A custom usage already set
+    (append's required `--kind`) is reordered the same way."""
+    usage = " ".join(p.format_usage().removeprefix("usage:").split())
+    tokens = [(f"[{a.metavar}]" if a.nargs == "?" else a.metavar)
+              for a in p._actions if not a.option_strings]
+    if not tokens:
+        return
+    tail = " " + " ".join(tokens)
+    assert usage.startswith(p.prog) and usage.endswith(tail), usage
+    rest = usage.removeprefix(p.prog).removesuffix(tail)
+    p.usage = "%(prog)s" + tail + rest
 
 
 def verb_usage(*verbs: str) -> str:
     """The named verbs as a dispatch carries them: each verb's usage line
     (one line, `-h` dropped) followed by one indented line per argument
-    with its help. Rendered from the parser, so an agent handed this block
-    has the argument shapes without a `--help` round trip and the block
-    cannot say something the CLI does not."""
+    with its help, a positional labelled by its metavar. Rendered from the
+    parser, so an agent handed this block has the argument shapes without a
+    `--help` round trip and the block cannot say something the CLI does
+    not. The positionals lead the line: an agent reads it as the call's
+    shape, and argparse's positionals-last order had agents type a
+    trailing `slice` literally and put the id before the report."""
     _, subs = build_parser()
     out: list[str] = []
     for verb in verbs:
@@ -2029,7 +2052,7 @@ def verb_usage(*verbs: str) -> str:
             if action.dest in ("help", "slice") or not action.help \
                     or action.help == argparse.SUPPRESS:
                 continue
-            name = ", ".join(action.option_strings) or action.dest
+            name = ", ".join(action.option_strings) or action.metavar or action.dest
             out.append(f"    {name}: {action.help}")
     return "\n".join(out)
 
