@@ -73,13 +73,35 @@ transition (each job start, each phase merged, the close-out summary) so a
 watching caller can follow progress cheaply; -v/--verbose echoes the full
 log there too.
 
+`run --detach` takes the driver out of the launching shell — double fork,
+new session — because a caller's background task is killed at its own cap
+and a slice outlives it. The parent returns once the driver holds run.lock
+and is past its refusals (a refusal comes back as the parent's own exit 2,
+with the message), printing the driver's pid and the `wait` command that
+follows it; from then on the driver's stdout is gone and its stderr goes to
+log.txt. Its exit code goes to disk instead: every run that got that far
+records `exit: {code, ts}` in state.json as its last write, and a --resume
+clears it — so a run with no `exit` and no live driver was killed from
+outside. `wait` blocks on the run.lock flock (liveness is the lock, never
+the pid) for at most --for seconds and reports the run's state with the
+driver's log lines since --from; `stop` SIGINTs the driver — its
+KeyboardInterrupt path, the same as Ctrl-C on an attached run.
+
 Usage:
-    run_loop.py run <slice-dir> [--resume] [--verbose] [--dry-run]
+    run_loop.py run <slice-dir> [--resume] [--detach] [--verbose] [--dry-run]
+    run_loop.py wait <slice-dir> [--for SECONDS] [--from OFFSET]
+    run_loop.py stop <slice-dir>
     run_loop.py status <slice-dir>
 
-Exit codes: 0 slice complete · 3 bailed on an error (bailout.json written) ·
-4 bailed with an operator question (bailout.json written) ·
-2 usage/precondition error · 1 unexpected error.
+Exit codes of run: 0 slice complete · 3 bailed on an error (bailout.json
+written) · 4 bailed with an operator question (bailout.json written) ·
+2 usage/precondition error · 130 interrupted · 1 unexpected error.
+`run --detach` exits 0 once the driver started, else with its refusal's code.
+
+Exit codes of wait, its own and not the run's: 0 the run ended (its code is
+in the output) · 5 still running at --for · 6 the driver is gone and left no
+exit record · 2 no run to wait on. Of stop: 0 stopped · 1 no driver running,
+or still running after the wait · 2 the driver is on another host.
 """
 
 import argparse
@@ -96,6 +118,7 @@ import sys
 import tempfile
 import textwrap
 import time
+import traceback
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -447,6 +470,27 @@ def _now_hms() -> str:
 def _clip(text: str, limit: int) -> str:
     text = (text or "").strip()
     return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+
+
+def _write_state(path: Path, state: dict) -> None:
+    """state.json, written atomically: a reader — `wait`, `status`, a
+    resume — never sees it half-written."""
+    tmp = path.with_suffix(".json.tmp")
+    with open(tmp, "w") as f:
+        json.dump(state, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, path)
+
+
+def _exit_status(exc: BaseException) -> int:
+    """The process exit code an exception leaving `run` turns into."""
+    if isinstance(exc, SystemExit):
+        if exc.code is None:
+            return 0
+        return exc.code if isinstance(exc.code, int) else 1
+    if isinstance(exc, KeyboardInterrupt):
+        return 130
+    return 1
 
 
 def _read_json(path: Path) -> dict | None:
@@ -1790,6 +1834,10 @@ class SliceLock:
     def __init__(self, lock_path: Path):
         self.lock_path = lock_path
         self._fd = None
+        # The note the lock file held when this driver took it. A clean
+        # release truncates the note, so one left on a free lock is a driver
+        # that died holding it — what the resume logs as a kill.
+        self.previous_note = ""
 
     def acquire(self) -> str | None:
         """None when the lock is ours, the holder's note when it is not."""
@@ -1806,7 +1854,13 @@ class SliceLock:
                 pass
             os.close(fd)
             return note or "(no holder note)"
+        try:
+            self.previous_note = os.read(fd, 4096).decode(
+                errors="replace").strip()
+        except OSError:
+            self.previous_note = ""
         os.ftruncate(fd, 0)
+        os.lseek(fd, 0, os.SEEK_SET)
         os.write(fd, (f"host: {socket.gethostname()}\npid: {os.getpid()}\n"
                       f"started: {_now_iso()}\n").encode())
         self._fd = fd
@@ -1818,6 +1872,43 @@ class SliceLock:
         os.ftruncate(self._fd, 0)
         os.close(self._fd)
         self._fd = None
+
+
+def lock_held(lock_path: Path) -> bool:
+    """Whether a driver holds `lock_path` now — taken non-blocking and let go
+    at once. The flock is the liveness test, not the note's pid: the kernel
+    drops it with the process, and no other process inherits it the way a
+    pid is reused."""
+    try:
+        fd = os.open(lock_path, os.O_RDONLY)
+    except FileNotFoundError:
+        return False
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return True
+    else:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return False
+    finally:
+        os.close(fd)
+
+
+def holder_note(lock_path: Path) -> str:
+    try:
+        return lock_path.read_text(errors="replace").strip()
+    except OSError:
+        return ""
+
+
+def note_fields(note: str) -> dict[str, str]:
+    """A holder note's `key: value` lines (host, pid, started)."""
+    fields = {}
+    for line in note.splitlines():
+        key, sep, value = line.partition(":")
+        if sep:
+            fields[key.strip()] = value.strip()
+    return fields
 
 
 # ---------------------------------------------------------------------------
@@ -2476,9 +2567,12 @@ that should not be kept). Do not start new work.
 
 REATTACH_PROMPT = """\
 Your session was interrupted mid-run (the driver process died — host
-restart, quota stop, or similar). The working tree is exactly as you left
-it. Reassess where you were (git status, git log, the plan), finish your
-work, commit it, then write your verdict to {verdict_path}.
+restart, quota stop, or similar). The interruption came from outside and
+is not an outcome of your work: what your transcript and the working tree
+already hold stands — carry on from it, and never report `blocked` for
+having been stopped. The working tree is exactly as you left it. Reassess
+where you were (git status, git log, the plan), finish your work, commit
+it, then write your verdict to {verdict_path}.
 """
 
 
@@ -2755,6 +2849,12 @@ class RunLoop:
         self._devlock: DevLock | None = None
         self._spec_lock: SpecTreeLock | None = None
         self._slice_lock = SliceLock(self.slice_dir / "run.lock")
+        # Called once the run is past its refusals (`_run`) — the detached
+        # driver's word to the parent that it has started.
+        self.on_start = None
+        # Set once state.json is this run's: from then on every exit goes on
+        # record in it (`_record_exit`).
+        self._owns_state = False
         # name → effective cwd, from `kc project list --output=json`; loaded
         # in run() (both fresh and resume need it before any dispatch).
         self.project_dirs: dict[str, Path] = {}
@@ -2839,11 +2939,28 @@ class RunLoop:
 
     def _save_state(self) -> None:
         self.state["updated_at"] = _now_iso()
-        tmp = self.state_path.with_suffix(".json.tmp")
-        with open(tmp, "w") as f:
-            json.dump(self.state, f, indent=2)
-            f.write("\n")
-        os.replace(tmp, self.state_path)
+        _write_state(self.state_path, self.state)
+
+    def _record_exit(self, code: int) -> None:
+        """The run's exit code, on disk — written last, after bailout.json,
+        whatever the exit. A detached driver's code reaches nobody else.
+        Added to state.json as the run last saved it rather than to memory:
+        what the run never saved, a resume must not find either (an
+        interrupted resume's cleared `in_flight` is the reattach it still
+        owes). Nothing is written for a fresh run refused before it wrote a
+        state.json — that would make the next attempt a --resume — and
+        nothing here may mask the exit."""
+        if not self._owns_state:
+            return
+        state = _read_json(self.state_path)
+        if state is None:
+            return
+        state["exit"] = self.state["exit"] = {"code": code, "ts": _now_iso()}
+        try:
+            _write_state(self.state_path, state)
+        except OSError as e:
+            print(f"warning: the exit record was not written: {e}",
+                  file=sys.stderr)
 
     def _phase_state(self, phase_id: str) -> dict:
         defaults = {
@@ -7089,6 +7206,9 @@ class RunLoop:
             sys.exit(2)
         try:
             self._run()
+        except BaseException as e:
+            self._record_exit(_exit_status(e))
+            raise
         finally:
             self._slice_lock.release()
 
@@ -7099,9 +7219,21 @@ class RunLoop:
                       "continue, or delete state.json to restart.",
                       file=sys.stderr)
                 sys.exit(2)
+            self._owns_state = True
             self.state = _read_json(self.state_path) or {}
+            previous = note_fields(self._slice_lock.previous_note)
+            if self.state.get("exit") is None and previous:
+                self.log(f"the previous driver (pid {previous.get('pid', '?')}"
+                         f", started {previous.get('started', '?')}) left no "
+                         "exit record: killed from outside")
+            # Cleared on disk before anything else, `in_flight` still in it:
+            # a stale exit under a live run would read as the run's end, and
+            # this one may yet be killed before it reattaches.
+            if self.state.pop("exit", None) is not None:
+                self._save_state()
             self._reattach = self.state.get("in_flight") or None
             self.state["in_flight"] = None
+        self._owns_state = True
         if not self.state:
             self.state = {
                 "slice": self.slice_name,
@@ -7137,6 +7269,15 @@ class RunLoop:
             self._assert_agents()
             if not self.resume:
                 self.preflight()
+            # On disk before the start is reported: the `wait` that follows
+            # a detached start at once must find the run.
+            if not self.state_path.exists():
+                self._save_state()
+            # The start point: every refusal is behind it. A detached driver
+            # reports here, and its parent hands the caller back the run.
+            if self.on_start is not None:
+                self.on_start()
+            if not self.resume:
                 self._base_branch(self.repo_root)
             # After preflight and the base, so the relaunch this bail asks
             # for is an ordinary --resume.
@@ -7431,18 +7572,370 @@ class RunLoop:
 # CLI
 # ---------------------------------------------------------------------------
 
+SCRIPT = Path(__file__).resolve()
+
+# The detached driver's control records on the handshake pipe, after
+# whatever it wrote to stderr: started (its pid) or the code it exited with
+# before it got there. NUL-led, so no message a refusal prints can be one.
+DETACH_MARK = b"\0run_loop: "
+
+
+def detach(body, log_path: Path) -> tuple[int | None, int, str]:
+    """Run `body(started)` in a detached grandchild — double fork, its own
+    session, stdin and stdout on /dev/null — and return in the parent
+    (pid, 0, text) once it has called `started()`, or (None, code, text)
+    when it exited before that. `text` is what it wrote to stderr until
+    then: until `started()` its stderr is the handshake pipe, so a refusal
+    reaches the caller as it does an attached run; after it, stderr is
+    log.txt, appended to, so no traceback is lost. The grandchild never
+    returns into the caller's stack."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+    read_fd, write_fd = os.pipe()
+    first = os.fork()
+    if first == 0:
+        try:
+            os.close(read_fd)
+            os.setsid()
+            if os.fork() == 0:
+                _detached_child(body, log_path, write_fd)
+        finally:
+            os._exit(0)
+    os.close(write_fd)
+    data = b""
+    with os.fdopen(read_fd, "rb") as pipe:
+        while True:
+            chunk = pipe.read1(65536)
+            if not chunk:
+                break
+            data += chunk
+            mark = data.find(DETACH_MARK)
+            if mark >= 0 and b"\n" in data[mark:]:
+                break
+    os.waitpid(first, 0)
+    mark = data.find(DETACH_MARK)
+    if mark < 0:
+        return None, 1, (data.decode(errors="replace")
+                         + "Error: the detached driver died before it "
+                           "started\n")
+    text = data[:mark].decode(errors="replace")
+    verb, _, value = data[mark + len(DETACH_MARK):].decode(
+        errors="replace").partition(" ")
+    if verb == "started":
+        return int(value), 0, text
+    return None, int(value), text
+
+
+def _detached_child(body, log_path: Path, pipe_fd: int) -> None:
+    # A shell's background job may start with SIGINT ignored, and a driver
+    # that ignores it is one `stop` cannot interrupt.
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    null = os.open(os.devnull, os.O_RDWR)
+    os.dup2(null, 0)
+    os.dup2(null, 1)
+    os.dup2(pipe_fd, 2)
+    os.close(null)
+    # Fresh writers on fds 1 and 2: whatever sys.stdout and sys.stderr were
+    # in the parent (a test runner's capture), the driver's are these.
+    sys.stdout = open(1, "w", buffering=1, closefd=False)
+    sys.stderr = open(2, "w", buffering=1, closefd=False,
+                      errors="backslashreplace")
+    started = False
+
+    def start() -> None:
+        nonlocal started
+        sys.stderr.flush()
+        os.write(pipe_fd, DETACH_MARK + f"started {os.getpid()}\n".encode())
+        log = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+        os.dup2(log, 2)
+        os.close(log)
+        os.close(pipe_fd)
+        started = True
+
+    try:
+        body(start)
+        code = 0
+    except SystemExit as e:
+        if e.code is not None and not isinstance(e.code, int):
+            print(e.code, file=sys.stderr)
+        code = _exit_status(e)
+    except BaseException as e:
+        traceback.print_exc()
+        code = _exit_status(e)
+    with contextlib.suppress(Exception):
+        sys.stdout.flush()
+        sys.stderr.flush()
+    if not started:
+        os.write(pipe_fd, DETACH_MARK + f"exit {code}\n".encode())
+    os._exit(code)
+
+
 def cmd_run(args) -> None:
     slice_dir = Path(args.slice_dir)
     if not slice_dir.is_dir():
         print(f"Error: slice directory not found: {slice_dir}",
               file=sys.stderr)
         sys.exit(2)
+    if args.detach and args.dry_run:
+        print("Error: --detach and --dry-run do not combine — a dry run "
+              "dispatches nothing and is over in seconds.", file=sys.stderr)
+        sys.exit(2)
     loop = RunLoop(slice_dir, resume=args.resume, verbose=args.verbose)
     if args.dry_run:
         cmd_dry_run(loop)
         return
     print(f"run loop log: {loop.log_path}", flush=True)
+    if args.detach:
+        run_detached(loop, Path(args.slice_dir))
+        return
     loop.run()
+
+
+def run_detached(loop: RunLoop, slice_arg: Path) -> None:
+    """`run --detach`: the driver goes on in its own session, and this
+    process says how to wait on it. `--from` is log.txt's end before the
+    driver wrote to it, so the first `wait` reports the run from its first
+    line."""
+    offset = _file_size(loop.log_path)
+
+    def body(started) -> None:
+        loop.on_start = started
+        loop.run()
+
+    pid, code, text = detach(body, loop.log_path)
+    if text:
+        sys.stderr.write(text)
+        sys.stderr.flush()
+    if pid is None:
+        sys.exit(code)
+    print(f"driver detached: pid {pid} — it outlives this shell; "
+          f"`{SCRIPT.name} stop` interrupts it", flush=True)
+    print(f"next: python3 {SCRIPT} wait {os.path.abspath(slice_arg)} "
+          f"--from {offset}", flush=True)
+
+
+# `wait` — what the launching session re-arms on. Its cadence sits under the
+# harness's 3 600 000 ms timeout on the call, so it always exits by itself.
+WAIT_DEFAULT = 3300
+WAIT_POLL = 10              # seconds between lock probes
+WAIT_RUNNING = 5            # wait's own exit codes, not the run's
+WAIT_KILLED = 6
+WAIT_LOG_LINES = 40         # the driver lines a check shows at most
+WAIT_LINE_CHARS = 200
+NARRATION_TAIL = 256 * 1024     # how far back to look for the agent's words
+TRANSCRIPT_LINE_RE = re.compile(r"\] session \S+ — transcript ")
+SESSION_START_RE = re.compile(r"\] session starting(?: \(resume\))?$")
+NARRATION_MARK = "] [text] "
+STOP_WAIT = 120
+STOP_POLL = 1
+
+
+def _span(seconds: float) -> str:
+    s = int(max(seconds, 0))
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m"
+    return f"{s // 3600}h{s % 3600 // 60:02d}m"
+
+
+def _age(iso: str | None) -> float | None:
+    try:
+        then = datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return None
+    if then.tzinfo is None:
+        then = then.astimezone()
+    return (datetime.now().astimezone() - then).total_seconds()
+
+
+def log_digest(log_path: Path, offset: int) -> tuple[list[str], int]:
+    """The driver's own lines in log.txt from byte `offset`, and the offset
+    read up to. Agent activity (indented) and the transcript locators are
+    left out, each line is clipped, and only the last WAIT_LOG_LINES are
+    kept. Complete lines only: a line still being written is the next
+    check's. An offset past the end means the log was rewritten under it,
+    and reading starts over."""
+    try:
+        with open(log_path, "rb") as f:
+            size = os.fstat(f.fileno()).st_size
+            if offset > size:
+                offset = 0
+            f.seek(offset)
+            data = f.read(size - offset)
+    except OSError:
+        return [], 0
+    end = data.rfind(b"\n") + 1
+    lines = [_clip(line, WAIT_LINE_CHARS)
+             for line in data[:end].decode(errors="replace").splitlines()
+             if line.strip() and not line[0].isspace()
+             and not TRANSCRIPT_LINE_RE.search(line)]
+    if len(lines) > WAIT_LOG_LINES:
+        omitted = len(lines) - WAIT_LOG_LINES
+        lines = [f"({omitted} earlier lines omitted)"] + lines[-WAIT_LOG_LINES:]
+    return lines, offset + end
+
+
+def latest_narration(log_path: Path, upto: int) -> str | None:
+    """The in-flight session's latest words — its last `[text]` activity
+    line before `upto`, looking no further back than the session's start."""
+    try:
+        with open(log_path, "rb") as f:
+            start = max(upto - NARRATION_TAIL, 0)
+            f.seek(start)
+            data = f.read(upto - start)
+    except OSError:
+        return None
+    for line in reversed(data.decode(errors="replace").splitlines()):
+        if line[:1].isspace():
+            if NARRATION_MARK in line:
+                return line.split(NARRATION_MARK, 1)[1]
+        elif SESSION_START_RE.search(line):
+            break
+    return None
+
+
+def _running_line(state: dict, log_path: Path) -> str:
+    parts = [state.get("run_phase") or "?"]
+    flight = state.get("in_flight") or {}
+    where = []
+    pid = flight.get("phase")
+    if pid:
+        where.append(f"P{pid}")
+        stage = (state.get("phases", {}).get(pid) or {}).get("stage")
+        if stage:
+            where.append(stage)
+    if flight.get("round"):
+        where.append(f"r{flight['round']}")
+    if where:
+        parts.append(" ".join(where))
+    role = flight.get("role")
+    if role:
+        seg = f"{role} in flight"
+        age = _age(flight.get("started_at"))
+        if age is not None:
+            seg += f" {_span(age)}"
+        if role in TIMEOUTS:
+            seg += f" (cap {_span(TIMEOUTS[role])})"
+        parts.append(seg)
+    with contextlib.suppress(OSError):
+        parts.append("last log line "
+                     f"{_span(time.time() - log_path.stat().st_mtime)} ago")
+    return "running: " + " · ".join(parts)
+
+
+def _ended_lines(code: int, slice_dir: Path) -> list[str]:
+    lines = [f"ended: exit {code}"]
+    if code not in (3, 4):
+        return lines
+    bail = _read_json(slice_dir / "bailout.json") or {}
+    lines.append(f"reason: {bail.get('reason')}"
+                 + (f" (P{bail['phase']})" if bail.get("phase") else ""))
+    if bail.get("question"):
+        lines.append(f"question: {bail['question']}")
+    if bail.get("details"):
+        lines.append("details: " + "\n  ".join(
+            str(bail["details"]).splitlines()))
+    return lines
+
+
+def cmd_wait(args) -> None:
+    """Block until the run ends or `--for` seconds pass, then report it:
+    a status line, the driver's log lines since `--from`, the in-flight
+    session's latest words, and the next command."""
+    slice_dir = Path(args.slice_dir)
+    state_path = slice_dir / "state.json"
+    if not slice_dir.is_dir():
+        print(f"Error: slice directory not found: {slice_dir}",
+              file=sys.stderr)
+        sys.exit(2)
+    if not state_path.exists():
+        print(f"Error: {state_path} does not exist — the run never started",
+              file=sys.stderr)
+        sys.exit(2)
+    lock_path = slice_dir / "run.lock"
+    log_path = slice_dir / "log.txt"
+    offset = (args.from_offset if args.from_offset is not None
+              else _file_size(log_path))
+    deadline = time.monotonic() + args.for_seconds
+    while lock_held(lock_path):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(WAIT_POLL, remaining))
+
+    alive = lock_held(lock_path)
+    state = _read_json(state_path) or {}
+    record = state.get("exit")
+    if alive:
+        code, lines = WAIT_RUNNING, [_running_line(state, log_path)]
+    elif record is not None:
+        code, lines = 0, _ended_lines(record.get("code"), slice_dir)
+    else:
+        code = WAIT_KILLED
+        lines = ["killed: the driver is gone and left no exit record"]
+        note = holder_note(lock_path) or "(no holder note)"
+        lines += [f"  {line}" for line in note.splitlines()]
+    digest, read_to = log_digest(log_path, offset)
+    lines += digest
+    flight = state.get("in_flight") or {}
+    if alive and flight.get("role"):
+        words = latest_narration(log_path, read_to)
+        if words:
+            lines.append(_clip(f"latest from {flight['role']}: {words}",
+                               WAIT_LINE_CHARS))
+    where = os.path.abspath(slice_dir)
+    if code == WAIT_RUNNING:
+        lines.append(f"next: python3 {SCRIPT} wait {where} --from {read_to}")
+    elif code == WAIT_KILLED:
+        lines.append(f"next: python3 {SCRIPT} run {where} --resume --detach")
+    print("\n".join(lines), flush=True)
+    sys.exit(code)
+
+
+def cmd_stop(args) -> None:
+    """SIGINT the slice's driver — its KeyboardInterrupt path: leases given
+    back, state current, the in-flight session left for the resume to
+    reattach, exit 130 — and wait for it to let the lock go. Only the
+    driver's own pid: the session it runs is the resume's to pick up."""
+    slice_dir = Path(args.slice_dir)
+    lock_path = slice_dir / "run.lock"
+    if not lock_held(lock_path):
+        print(f"no driver is running {slice_dir}: {lock_path.name} is free")
+        sys.exit(1)
+    fields = note_fields(holder_note(lock_path))
+    here = socket.gethostname()
+    if fields.get("host") != here:
+        print(f"Error: the driver holding {lock_path} runs on host "
+              f"{fields.get('host') or '(unknown)'}, not on {here} — its pid "
+              "means nothing here.", file=sys.stderr)
+        sys.exit(2)
+    try:
+        pid = int(fields.get("pid", ""))
+    except ValueError:
+        print(f"Error: {lock_path} names no driver pid.", file=sys.stderr)
+        sys.exit(2)
+    try:
+        os.kill(pid, signal.SIGINT)
+    except ProcessLookupError:
+        print(f"Error: pid {pid} from {lock_path} is not running, yet the "
+              "lock is held.", file=sys.stderr)
+        sys.exit(1)
+    print(f"sent SIGINT to the driver (pid {pid}); waiting up to "
+          f"{STOP_WAIT}s for it to stop", flush=True)
+    deadline = time.monotonic() + STOP_WAIT
+    while lock_held(lock_path):
+        if time.monotonic() >= deadline:
+            print(f"the driver (pid {pid}) still holds {lock_path.name} "
+                  f"after {STOP_WAIT}s")
+            sys.exit(1)
+        time.sleep(STOP_POLL)
+    record = (_read_json(slice_dir / "state.json") or {}).get("exit")
+    if record is None:
+        print("stopped, but it left no exit record")
+    else:
+        print(f"stopped: exit {record.get('code')}")
+    sys.exit(0)
 
 
 def code_repos_for(spec_root: Path) -> list[Path]:
@@ -7621,7 +8114,30 @@ def main() -> None:
                        help="echo the log to stdout as well as log.txt")
     run_p.add_argument("--dry-run", action="store_true",
                        help="parse the plan, resolve targets, and exit")
+    run_p.add_argument("--detach", action="store_true",
+                       help="run the driver in its own session, outliving "
+                            "this shell; exits once it started and prints "
+                            "the `wait` command to follow it with")
     run_p.set_defaults(func=cmd_run)
+
+    wait_p = sub.add_parser(
+        "wait", help="wait on a slice's driver; exit 0 when the run ended, "
+                     "5 still running at --for, 6 killed (no exit record)")
+    wait_p.add_argument("slice_dir")
+    wait_p.add_argument("--for", dest="for_seconds", type=float,
+                        default=WAIT_DEFAULT, metavar="SECONDS",
+                        help=f"give up waiting after this long "
+                             f"(default {WAIT_DEFAULT})")
+    wait_p.add_argument("--from", dest="from_offset", type=int,
+                        metavar="OFFSET",
+                        help="report log.txt from this byte (default: its "
+                             "end when the wait starts)")
+    wait_p.set_defaults(func=cmd_wait)
+
+    stop_p = sub.add_parser(
+        "stop", help="interrupt a slice's driver (SIGINT) and wait for it")
+    stop_p.add_argument("slice_dir")
+    stop_p.set_defaults(func=cmd_stop)
 
     status_p = sub.add_parser("status", help="print a slice's run state")
     status_p.add_argument("slice_dir")

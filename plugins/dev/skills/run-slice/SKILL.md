@@ -1,6 +1,6 @@
 ---
 name: run-slice
-description: Execute a planned slice — launch ${CLAUDE_PLUGIN_ROOT}/tools/run_loop.py in the background, correct errors, relay operator questions into plan.md, close out. The loop drives; this session has exactly four jobs.
+description: Execute a planned slice — launch ${CLAUDE_PLUGIN_ROOT}/tools/run_loop.py detached and wait on it, correct errors, relay operator questions into plan.md, close out. The loop drives; this session has exactly four jobs.
 argument-hint: <slice-number-or-path>
 ---
 
@@ -32,17 +32,33 @@ nothing from you between launch and close-out.
    never yours to clean up.
 2. Advance the slice's tracker card — the id in `slice.md`'s `issue:` frontmatter; it is
    **planned** — to **in progress**.
-3. Launch, in the background (`run_in_background: true`):
+3. Launch it **detached** — not with `run_in_background`, whose 2 h cap a run outlasts:
 
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/tools/run_loop.py run <spec-repo>/slices/<SLICE_DIR>
+   python3 ${CLAUDE_PLUGIN_ROOT}/tools/run_loop.py run <spec-repo>/slices/<SLICE_DIR> --detach
    ```
 
-   All output goes to `<slice_dir>/log.txt` — do **not** read or tail it; the outcome lives in
-   the exit code, `state.json`, and `bailout.json`. The loop's stdout is a deliberately terse
-   progress feed — one timestamped line per job start and phase merge; it is all the mid-run
-   visibility you need. Grep the log only when diagnosing a specific bail.
-   (`--resume` continues after any bail; `--dry-run` validates the plan without running.)
+   It returns once the run holds the slice, printing the driver's pid and, on its last line, the
+   `wait` command to run next. A non-zero exit is a refusal — another driver holds the slice, or
+   a precondition failed: relay it verbatim, as with preflight. (`--dry-run` validates the plan
+   without running.)
+4. **Wait on it**: run the `next:` line's command with `run_in_background: true` and
+   `timeout: 3600000`, and end your turn. It returns within 55 minutes — inside the hour this
+   conversation's prompt cache lives — and its exit code says what to do:
+   - **0** — the run ended. The run's own exit code is printed first; go to Job 2, 3 or 4 by it.
+   - **5** — still running. Give the operator a small status update in chat, a few lines from
+     what `wait` printed: what landed since the last check, what is in flight, anything that
+     looks off. Then run the new `next:` line the same way. That is the whole check — the loop
+     bounds every session and every wait with a cap that turns a hang into a bail. The one case
+     to look further is a log silent for over an hour with nothing in flight, a driver wedged
+     where its caps do not reach: read `log.txt`'s tail and tell the operator what it shows.
+   - **6** — the driver is gone and recorded no exit (a host restart, a quota stop, a kill).
+     Relaunch with the `next:` line, then wait again.
+
+   Do **not** read or tail `log.txt` otherwise: `wait` prints the driver's own lines, and the
+   outcome lives in the run's exit code, `state.json`, and `bailout.json`. Grep the log only
+   when diagnosing a specific bail. **Every relaunch below** is `run … --resume --detach`
+   followed by this step's wait.
 
 ## Job 2 — errors (exit 3)
 
@@ -126,7 +142,12 @@ agents or fixing code, stop; that work belongs in a phase the loop executes.
 ## Notes
 
 - **Notifications:** notify on completion, on anything you defer to the operator, and on nothing
-  else.
+  else — Job 1's status updates are chat, never notifications.
+- **The loop outlives this session.** Closing the session does not stop the slice; a later
+  session on it meets the `run.lock` refusal while the run lives, and picks it up with
+  `run_loop.py wait <slice_dir>`. Stopping the `wait` command stops the wait, not the loop:
+  `run_loop.py stop <slice_dir>` interrupts the run as Ctrl-C would — `state.json` current, the
+  in-flight session left for `--resume` to reattach.
 - **Shared spec tree:** commits from other sessions appearing in `<spec-repo>` for your slice
   usually mean a parallel session accidentally swept your files into its commit. Stage by name;
   build on the latest state. A bail leaves every repo the run touched back on its base branch

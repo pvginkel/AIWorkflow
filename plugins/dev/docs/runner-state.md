@@ -31,7 +31,9 @@ order, as last parsed), `generation` (follow-up generations spent), `test_rounds
 sweep's own `outcome` (red on any red row, else green on any green row, else `nothing_ran`) and
 `green`, and the exact `commits` it ran on — reused while every swept HEAD matches, re-run
 otherwise),
-`consult_seq`, `in_flight`, `bailouts` (every stop this run made — `reason`, `phase`,
+`consult_seq`, `in_flight`, `exit` (how the run ended — its exit `code` and `ts`, the driver's last
+write, after `bailout.json`; cleared when a `--resume` starts, so a run that is not running and
+has none was killed from outside), `bailouts` (every stop this run made — `reason`, `phase`,
 `question`, `ts`, the `run_phase` it stopped in and its `details` clipped to 600 characters —
 kept here because `bailout.json` is unlinked on resume; the resume that follows a stop writes it
 into the close-out report as an event and marks the row `reported`, so each stop is entered
@@ -134,6 +136,18 @@ precondition — a `state.json` that exists without `--resume`, a slice another 
 running (`run.lock` held), a missing/unparseable `plan.md` or missing `verification.json`, a dirty
 tree at preflight, or a missing agent definition · **130** interrupted · **1** unexpected error.
 
+**Detached.** `run … --detach`, what `/dev:run-slice` launches, puts the driver in a session of
+its own, off any terminal, so no caller's cap on one command can kill it — the harness's
+background cap is 2 h, and on 2026-09-30 it killed three runs mid-flight. It returns once the
+driver holds `run.lock`, or with the driver's own refusal and exit 2; the run is unchanged, its
+exit code on disk as `exit`. `run_loop.py wait <slice-dir> [--for S] [--from OFFSET]` waits on
+it, 3 300 s by default, and answers **0** the run ended (its code, and for a bail the reason,
+question and details), **5** still running (the stage, the session in flight against its role's
+cap, the age of the last log line) or **6** gone with no `exit` recorded — each time with the
+driver's own `log.txt` lines since `--from`, the in-flight session's latest narration, and the
+command to run next. Liveness is the `flock`, never the pid. `run_loop.py stop <slice-dir>`
+sends the driver SIGINT: the 130 path, as Ctrl-C.
+
 ## Resume and crash recovery
 
 `run_loop.py run <slice-dir> --resume` continues from `state.json`: stamped phases are skipped
@@ -146,7 +160,9 @@ that). Resume skips preflight entirely — the caller owns the state it resumes 
 When a run dies mid-agent (host restart, quota stop, Ctrl-C), the `in_flight` record — phase,
 role, round, verdict path, session id, start time — lets `--resume` **reattach**: the worktree is
 left exactly as the crash left it, and the interrupted session is resumed with a recovery prompt
-instead of a fresh dispatch. The session id is in the record from the turn's first seconds: the
+instead of a fresh dispatch — one that says the interruption came from outside and is no outcome
+of its own: Ansible 034's doc-writer, reattached after a kill, read its cut transcript as one and
+handed back `blocked` within 18 seconds. The session id is in the record from the turn's first seconds: the
 driver polls `kc session status` while the send runs rather than reading it after, because a
 send that hangs once the turn has ended never returns (slice 222's test agent) —
 the same read logs the id and the transcript path. A reattached round keeps the round number its
@@ -180,7 +196,9 @@ than joining in. The folder is on the spec repo — the mount every environment 
 code repo each driver branches is its own: two drivers therefore write one `log.txt`, one
 `state.json` and one `phases/**` while working two different checkouts, and the second finds no
 phase branch where the record says work is committed. Held in-process, so a driver that dies
-releases it and a `--resume` walks straight in.
+releases it and a `--resume` walks straight in. A clean exit empties the holder note, so a note
+on a free lock is a driver that died: the `--resume` that takes the lock logs it as killed from
+outside before writing its own.
 
 **A phase's branch is reconciled against its record** before the driver resets or recreates it, and
 again after every executor round. Every commit the driver recorded on that branch — the head the

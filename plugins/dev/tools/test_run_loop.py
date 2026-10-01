@@ -16,10 +16,13 @@ import io
 import json
 import os
 import re
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -8283,6 +8286,617 @@ def test_a_doc_gate_command_that_meets_a_missing_tool_is_unrunnable():
         passed, _ = loop._run_doc_gate({"gate_runs": 1})
         assert passed and calls == ["lint", "build", "test"]
         assert loop.state["history"][-1]["outcome"] == "green"
+
+
+# -- the detached driver: the exit record, wait, stop, the handshake ---------
+#
+# `run --detach` leaves no process to report an exit code to, so the run puts
+# it in state.json; `wait` reads that against the run.lock flock, and `stop`
+# interrupts the driver the lock's note names. Tested against real files, a
+# real flock and real child processes — never a real run's sessions.
+
+def exit_record(slice_dir):
+    return load_state(slice_dir).get("exit")
+
+
+def test_every_exit_goes_on_record_in_state_json_last():
+    def interrupt(loop):
+        raise KeyboardInterrupt
+
+    def crash(loop):
+        raise RuntimeError("unexpected")
+
+    cases = [
+        ([V["exec_done"], V["review_signoff"], *TAIL], 0),
+        ([("code-writer", {"outcome": "blocked", "summary": "broken"})], 3),
+        ([("code-writer", {"outcome": "question", "summary": "which?"})], 4),
+        ([(*V["exec_done"], interrupt)], 130),
+    ]
+    for script, code in cases:
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp)
+            r = ScriptedLoop(slice_dir, script, repo_root=repo)
+            with contextlib.redirect_stderr(io.StringIO()), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                assert run_to_exit(r) == code
+            record = exit_record(slice_dir)
+            assert record["code"] == code, (code, record)
+            assert datetime.fromisoformat(record["ts"])
+            if code in (3, 4):
+                # written after bailout.json, never before it
+                bail = slice_dir / "bailout.json"
+                assert bail.stat().st_mtime_ns <= \
+                    (slice_dir / "state.json").stat().st_mtime_ns
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [(*V["exec_done"], crash)],
+                         repo_root=repo)
+        try:
+            r.run()
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("the crash did not propagate")
+        assert exit_record(slice_dir)["code"] == 1
+        # the lock is let go whatever the exit
+        assert not run_loop.lock_held(slice_dir / "run.lock")
+
+
+def test_a_fresh_run_refused_at_preflight_writes_no_state():
+    """A refused fresh run that wrote a state.json would make the next
+    attempt a --resume of a run that never started."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r.fake_git.dirty = " M src/app.py"
+        started = []
+        r.on_start = lambda: started.append(True)
+        with contextlib.redirect_stderr(io.StringIO()):
+            assert run_to_exit(r) == 2
+        assert not (slice_dir / "state.json").exists()
+        assert not started
+
+
+def test_a_second_fresh_run_is_refused_before_the_start_and_off_the_record():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [("code-writer", {"outcome": "blocked", "summary": "x"})]
+        with contextlib.redirect_stderr(io.StringIO()):
+            assert run_to_exit(ScriptedLoop(slice_dir, script,
+                                            repo_root=repo)) == 3
+        before = (slice_dir / "state.json").read_text()
+        again = ScriptedLoop(slice_dir, [], repo_root=repo)
+        started = []
+        again.on_start = lambda: started.append(True)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            assert run_to_exit(again) == 2
+        assert "Pass --resume" in err.getvalue()
+        assert not started
+        # the refusal is not this state's run: its exit record stands
+        assert (slice_dir / "state.json").read_text() == before
+
+
+def test_the_start_point_is_reached_once_before_the_first_dispatch():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        seen = []
+
+        def check(loop):
+            seen.append("dispatched")
+
+        r = ScriptedLoop(slice_dir, [(*V["exec_done"], check),
+                                     V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        r.on_start = lambda: seen.append("started")
+        assert run_to_exit(r) == 0
+        assert seen == ["started", "dispatched"]
+
+
+def test_a_resume_clears_the_exit_record_before_anything_else():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [("code-writer", {"outcome": "blocked", "summary": "x"})]
+        with contextlib.redirect_stderr(io.StringIO()):
+            assert run_to_exit(ScriptedLoop(slice_dir, script,
+                                            repo_root=repo)) == 3
+        assert exit_record(slice_dir)["code"] == 3
+        on_disk = []
+
+        def look(loop):
+            on_disk.append(load_state(slice_dir).get("exit"))
+
+        r = ScriptedLoop(slice_dir, [], resume=True, repo_root=repo)
+        r.on_start = lambda: look(r)
+        r.script = [(*V["exec_done"], look), V["review_signoff"], *TAIL]
+        assert run_to_exit(r) == 0
+        assert on_disk == [None, None]
+        assert exit_record(slice_dir)["code"] == 0
+        assert "killed from outside" not in (slice_dir / "log.txt").read_text()
+
+
+def test_a_resume_logs_a_driver_killed_from_outside():
+    """A clean release truncates the holder note, so a note on a free lock
+    with no exit record is a driver that died holding the lock."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [("code-writer", {"outcome": "blocked", "summary": "x"})]
+        with contextlib.redirect_stderr(io.StringIO()):
+            assert run_to_exit(ScriptedLoop(slice_dir, script,
+                                            repo_root=repo)) == 3
+        assert (slice_dir / "run.lock").read_text() == ""
+        state = load_state(slice_dir)
+        del state["exit"]
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        (slice_dir / "run.lock").write_text(
+            "host: pod\npid: 4242\nstarted: 2026-10-01T03:00:00+00:00\n")
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], resume=True, repo_root=repo)
+        assert run_to_exit(r) == 0
+        log = (slice_dir / "log.txt").read_text()
+        assert ("the previous driver (pid 4242, started "
+                "2026-10-01T03:00:00+00:00) left no exit record: killed "
+                "from outside") in log
+        # the note is this driver's now, and released clean
+        assert (slice_dir / "run.lock").read_text() == ""
+
+
+def test_the_slice_lock_keeps_the_note_it_found():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "run.lock"
+        path.write_text("host: h\npid: 7\nstarted: then\n" + "x" * 200)
+        lock = run_loop.SliceLock(path)
+        assert lock.acquire() is None
+        assert lock.previous_note.startswith("host: h\npid: 7")
+        # the new note starts at byte 0 — no hole where the old one was
+        assert path.read_text().startswith(f"host: {run_loop.socket.gethostname()}")
+        assert f"pid: {os.getpid()}" in path.read_text()
+        assert "\0" not in path.read_text()
+        lock.release()
+        assert path.read_text() == ""
+
+
+def test_the_reattach_prompt_says_the_stop_is_not_an_outcome():
+    text = run_loop.REATTACH_PROMPT.format(verdict_path="/v.json")
+    assert "is not an outcome of your work" in text
+    assert "never report `blocked`" in text
+    assert text.rstrip().endswith("write your verdict to /v.json.")
+
+
+# `wait` and `stop` against a hand-built run record.
+
+def run_record(tmp, state=None, log="", note=None, bail=None):
+    slice_dir = Path(tmp) / "slices" / "075_waited"
+    slice_dir.mkdir(parents=True)
+    if state is not None:
+        (slice_dir / "state.json").write_text(json.dumps(state))
+    if log is not None:
+        (slice_dir / "log.txt").write_text(log)
+    if note is not None:
+        (slice_dir / "run.lock").write_text(note)
+    if bail is not None:
+        (slice_dir / "bailout.json").write_text(json.dumps(bail))
+    return slice_dir
+
+
+@contextlib.contextmanager
+def holding(slice_dir, note=None):
+    """The run.lock held as a live driver holds it — on an open file
+    description of its own, so the probe `wait` and `stop` make fails."""
+    fd = os.open(slice_dir / "run.lock", os.O_RDWR | os.O_CREAT, 0o644)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    if note is not None:
+        os.ftruncate(fd, 0)
+        os.write(fd, note.encode())
+    try:
+        yield
+    finally:
+        os.close(fd)
+
+
+def call(cmd, **args):
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            cmd(type("Args", (), args)())
+        except SystemExit as e:
+            return e.code, out.getvalue(), err.getvalue()
+    raise AssertionError(f"{cmd.__name__} did not exit")
+
+
+def wait(slice_dir, for_seconds=0, from_offset=None):
+    return call(run_loop.cmd_wait, slice_dir=str(slice_dir),
+                for_seconds=for_seconds, from_offset=from_offset)
+
+
+RUNNING_STATE = {
+    "run_phase": "phases",
+    "phases": {"2": {"stage": "review"}},
+    "in_flight": {"phase": "2", "role": "code-reviewer", "round": 2,
+                  "started_at": "2026-10-01T03:00:00+00:00"},
+}
+
+
+def test_wait_answers_2_when_there_is_no_run_to_wait_on():
+    with tempfile.TemporaryDirectory() as tmp:
+        code, _, err = wait(Path(tmp) / "nope")
+        assert code == 2 and "not found" in err
+        slice_dir = run_record(tmp)
+        code, _, err = wait(slice_dir)
+        assert code == 2 and "never started" in err
+
+
+def test_wait_answers_0_with_the_exit_and_the_bail():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(
+            tmp, state={"run_phase": "test", "exit": {"code": 4, "ts": "t"}},
+            bail={"reason": "operator_question", "phase": "3",
+                  "question": True, "details": "which auth?\nline two"},
+            log="[10:00:00] [P3] [code-writer] → question: which auth?\n")
+        code, out, _ = wait(slice_dir, from_offset=0)
+        assert code == 0
+        lines = out.splitlines()
+        assert lines[0] == "ended: exit 4"
+        assert "reason: operator_question (P3)" in lines
+        assert "question: True" in lines
+        assert "details: which auth?" in lines and "  line two" in lines
+        assert "[10:00:00] [P3] [code-writer] → question: which auth?" in lines
+        assert not any(line.startswith("next:") for line in lines)
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(
+            tmp, state={"run_phase": "done", "exit": {"code": 0, "ts": "t"}})
+        code, out, _ = wait(slice_dir)
+        assert (code, out) == (0, "ended: exit 0\n")
+
+
+def test_wait_answers_5_with_the_status_and_the_next_wait():
+    log = ("[03:00:00] [P2] [code-reviewer] session starting\n"
+           "    [P2] [code-reviewer] [1s] [text] Reading the diff.\n"
+           "    [P2] [code-reviewer] [9s] [tool] Bash git diff\n"
+           "    [P2] [code-reviewer] [20s] [text] Now the tests.\n"
+           "    [P2] [code-reviewer] [30s] [tool] Read x.py\n")
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp, state=RUNNING_STATE, log=log)
+        size = (slice_dir / "log.txt").stat().st_size
+        with holding(slice_dir):
+            code, out, _ = wait(slice_dir)
+        assert code == run_loop.WAIT_RUNNING == 5
+        lines = out.splitlines()
+        assert re.fullmatch(
+            r"running: phases · P2 review r2 · code-reviewer in flight "
+            r"\S+ \(cap 1h00m\) · last log line \d+s ago", lines[0]), lines[0]
+        assert lines[1] == "latest from code-reviewer: Now the tests."
+        assert lines[-1] == (f"next: python3 {run_loop.SCRIPT} wait "
+                             f"{os.path.abspath(slice_dir)} --from {size}")
+        assert len(lines) == 3
+
+
+def test_wait_answers_6_for_a_driver_gone_without_an_exit_record():
+    note = "host: pod\npid: 4242\nstarted: 2026-10-01T03:00:00+00:00\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp, state=RUNNING_STATE, note=note,
+                               log="[03:00:00] [P2] start\n")
+        code, out, _ = wait(slice_dir, from_offset=0)
+        assert code == run_loop.WAIT_KILLED == 6
+        lines = out.splitlines()
+        assert lines[0] == "killed: the driver is gone and left no exit record"
+        assert lines[1:4] == ["  host: pod", "  pid: 4242",
+                              "  started: 2026-10-01T03:00:00+00:00"]
+        assert "[03:00:00] [P2] start" in lines
+        # nothing in flight is narrated for a dead driver
+        assert not any(line.startswith("latest from") for line in lines)
+        assert lines[-1] == (f"next: python3 {run_loop.SCRIPT} run "
+                             f"{os.path.abspath(slice_dir)} --resume --detach")
+
+
+def test_wait_returns_when_the_driver_lets_the_lock_go():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp, state=RUNNING_STATE)
+        fd = os.open(slice_dir / "run.lock", os.O_RDWR | os.O_CREAT, 0o644)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+
+        def finish():
+            state = dict(RUNNING_STATE, exit={"code": 0, "ts": "t"})
+            (slice_dir / "state.json").write_text(json.dumps(state))
+            os.close(fd)
+
+        timer = threading.Timer(0.2, finish)
+        timer.start()
+        try:
+            with patched(run_loop, WAIT_POLL=0.02):
+                code, out, _ = wait(slice_dir, for_seconds=30)
+        finally:
+            timer.join()
+        assert code == 0 and out.startswith("ended: exit 0")
+
+
+def test_wait_shows_the_drivers_own_lines_since_the_offset():
+    driver = [f"[10:00:{i:02d}] [P1] line {i}" for i in range(45)]
+    lines = []
+    for i, line in enumerate(driver):
+        lines.append(line)
+        lines.append(f"    [P1] [code-writer] [{i}s] [tool] Bash ls")
+    lines.insert(3, "[10:00:01] [P1] [code-writer] session "
+                    "0f0e-11 — transcript /home/x/.claude/0f0e-11.jsonl")
+    lines.insert(5, "")
+    lines.append("[10:01:00] " + "y" * 300)
+    text = "\n".join(lines) + "\n" + "[10:02:00] half a li"
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "log.txt"
+        data = text.encode()     # offsets are bytes, and "—" is three
+        path.write_bytes(data)
+        out, read_to = run_loop.log_digest(path, 0)
+        # complete lines only: the offset stops at the last newline
+        assert read_to == data.rindex(b"\n") + 1
+        assert out[0] == "(6 earlier lines omitted)"
+        assert len(out) == 41
+        assert out[1:-1] == driver[6:]
+        assert len(out[-1]) == 200 and out[-1].endswith("…")
+        assert not any("transcript" in line or line.startswith(" ")
+                       for line in out)
+        # from an offset: only what came after it
+        offset = data.index(driver[44].encode())
+        assert run_loop.log_digest(path, offset)[0] == \
+            [driver[44], out[-1]]
+        # an offset past the end is a rewritten log: start over
+        assert run_loop.log_digest(path, len(data) + 100)[1] == read_to
+        # the partial line is the next check's, once it is whole
+        with open(path, "ab") as f:
+            f.write(b"ne\n")
+        assert run_loop.log_digest(path, read_to)[0] == \
+            ["[10:02:00] half a line"]
+        assert run_loop.log_digest(Path(tmp) / "absent.txt", 7) == ([], 0)
+        # bytes that are not UTF-8 are read, not fatal
+        path.write_bytes(b"[10:00:00] caf\xe9\n")
+        assert run_loop.log_digest(path, 0)[0] == ["[10:00:00] caf�"]
+
+
+def test_wait_reads_from_its_own_start_by_default():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp, state={"exit": {"code": 0, "ts": "t"}},
+                               log="[10:00:00] old line\n")
+        code, out, _ = wait(slice_dir)
+        assert out == "ended: exit 0\n"
+        code, out, _ = wait(slice_dir, from_offset=0)
+        assert "[10:00:00] old line" in out.splitlines()
+
+
+def test_the_narration_is_the_in_flight_sessions_own():
+    log = ("[03:00:00] [P1] [code-writer] session starting\n"
+           "    [P1] [code-writer] [1s] [text] The writer's words.\n"
+           "[03:10:00] [P1] [code-reviewer] session starting\n"
+           "    [P1] [code-reviewer] [1s] [tool] Bash git diff\n")
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "log.txt"
+        path.write_text(log)
+        assert run_loop.latest_narration(path, len(log)) is None
+        path.write_text(log + "    [P1] [code-reviewer] [5s] [text] Mine.\n")
+        assert run_loop.latest_narration(path, path.stat().st_size) == "Mine."
+
+
+def stop(slice_dir):
+    return call(run_loop.cmd_stop, slice_dir=str(slice_dir))
+
+
+def test_stop_on_a_free_lock_says_nothing_runs():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp, state={}, note="host: h\npid: 1\n")
+        code, out, _ = stop(slice_dir)
+        assert code == 1 and "no driver is running" in out
+
+
+def test_stop_refuses_a_driver_on_another_host():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp, state={})
+        with holding(slice_dir, note="host: elsewhere\npid: 1\n"):
+            code, _, err = stop(slice_dir)
+        assert code == 2 and "runs on host elsewhere" in err
+
+
+# A driver in miniature: holds run.lock with the real note's shape, and on
+# SIGINT records its exit and lets the lock go, as RunLoop.run does. With
+# `ignore` it starts the way a background job may — SIGINT ignored, which is
+# why the detached driver resets it.
+DRIVER_CHILD = """\
+import fcntl, json, os, signal, socket, sys, time
+slice_dir, mode = sys.argv[1], sys.argv[2]
+signal.signal(signal.SIGINT, signal.SIG_IGN if mode == "ignore"
+              else signal.default_int_handler)
+fd = os.open(os.path.join(slice_dir, "run.lock"), os.O_RDWR | os.O_CREAT)
+fcntl.flock(fd, fcntl.LOCK_EX)
+os.write(fd, f"host: {socket.gethostname()}\\npid: {os.getpid()}\\n".encode())
+print("ready", flush=True)
+try:
+    while True:
+        time.sleep(0.02)
+except KeyboardInterrupt:
+    with open(os.path.join(slice_dir, "state.json"), "w") as f:
+        json.dump({"exit": {"code": 130, "ts": "t"}}, f)
+    os.ftruncate(fd, 0)
+    sys.exit(130)
+"""
+
+
+def driver_child(slice_dir, mode="default"):
+    child = subprocess.Popen(
+        [sys.executable, "-c", DRIVER_CHILD, str(slice_dir), mode],
+        stdout=subprocess.PIPE, text=True)
+    assert child.stdout.readline() == "ready\n"
+    return child
+
+
+def test_stop_interrupts_the_driver_and_waits_for_the_lock():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp, state={})
+        child = driver_child(slice_dir)
+        try:
+            with patched(run_loop, STOP_POLL=0.02):
+                code, out, _ = stop(slice_dir)
+            assert child.wait(timeout=10) == 130
+        finally:
+            child.kill()
+            child.wait()
+        assert code == 0, out
+        assert f"sent SIGINT to the driver (pid {child.pid})" in out
+        assert out.splitlines()[-1] == "stopped: exit 130"
+        assert not run_loop.lock_held(slice_dir / "run.lock")
+
+
+def test_stop_gives_up_on_a_driver_that_keeps_the_lock():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp, state={})
+        child = driver_child(slice_dir, "ignore")
+        try:
+            with patched(run_loop, STOP_POLL=0.02, STOP_WAIT=0.2):
+                code, out, _ = stop(slice_dir)
+            assert child.poll() is None
+        finally:
+            child.kill()
+            child.wait()
+        assert code == 1 and "still holds run.lock" in out
+
+
+# The handshake, around bodies that stand in for the run.
+
+def await_file(path, seconds=5.0):
+    deadline = time.monotonic() + seconds
+    while not path.exists():
+        assert time.monotonic() < deadline, f"{path} never appeared"
+        time.sleep(0.01)
+    time.sleep(0.05)   # written whole: the child renames it into place
+    return path.read_text()
+
+
+def test_detach_relays_a_refusal_with_its_code():
+    def refuse(started):
+        print("Error: state.json exists. Pass --resume", file=sys.stderr)
+        sys.exit(2)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        log = Path(tmp) / "log.txt"
+        assert run_loop.detach(refuse, log) == (
+            None, 2, "Error: state.json exists. Pass --resume\n")
+        assert not log.exists()
+
+
+def test_detach_relays_a_crash_and_a_death_before_the_start():
+    def crash(started):
+        raise ValueError("boom")
+
+    def die(started):
+        os._exit(9)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        log = Path(tmp) / "log.txt"
+        pid, code, text = run_loop.detach(crash, log)
+        assert (pid, code) == (None, 1) and "ValueError: boom" in text
+        pid, code, text = run_loop.detach(die, log)
+        assert (pid, code) == (None, 1) and "died before it started" in text
+
+
+def test_detach_returns_the_started_drivers_pid_and_leaves_it_running():
+    """The driver runs on in a session of its own with SIGINT live — even
+    where it was launched with SIGINT ignored — and after the start its
+    stderr is log.txt."""
+    def body(started):
+        print("before the start", file=sys.stderr)
+        started()
+        print("after the start", file=sys.stderr)
+        print("stdout goes nowhere")
+        facts = {"pid": os.getpid(), "sid": os.getsid(0),
+                 "sigint": signal.getsignal(signal.SIGINT)
+                 is signal.default_int_handler}
+        tmp_path = done.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps(facts))
+        os.replace(tmp_path, done)
+        raise RuntimeError("a traceback after the start")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        log = Path(tmp) / "log.txt"
+        log.write_text("earlier run\n")
+        done = Path(tmp) / "facts.json"
+        saved = signal.signal(signal.SIGINT, signal.SIG_IGN)
+        try:
+            pid, code, text = run_loop.detach(body, log)
+        finally:
+            signal.signal(signal.SIGINT, saved)
+        assert code == 0 and text == "before the start\n"
+        facts = json.loads(await_file(done))
+        assert facts["pid"] == pid != os.getpid()
+        assert facts["sid"] != os.getsid(0)
+        assert facts["sigint"] is True
+        deadline = time.monotonic() + 5
+        while "RuntimeError" not in log.read_text():
+            assert time.monotonic() < deadline, log.read_text()
+            time.sleep(0.01)
+        written = log.read_text()
+        assert written.startswith("earlier run\nafter the start\n")
+        assert "stdout goes nowhere" not in written
+
+
+def test_run_detach_prints_the_pid_and_the_wait_to_follow():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = Path(tmp) / "074_x"
+        slice_dir.mkdir()
+        (slice_dir / "log.txt").write_text("12345\n")
+        loop = type("Loop", (), {"log_path": slice_dir / "log.txt"})()
+        out = io.StringIO()
+        with patched(run_loop, detach=lambda body, log: (4242, 0, "")), \
+                contextlib.redirect_stdout(out):
+            run_loop.run_detached(loop, slice_dir)
+        lines = out.getvalue().splitlines()
+        assert "pid 4242" in lines[0]
+        assert lines[-1] == (f"next: python3 {run_loop.SCRIPT} wait "
+                             f"{os.path.abspath(slice_dir)} --from 6")
+        err = io.StringIO()
+        with patched(run_loop, detach=lambda body, log: (None, 2, "Error: x\n")), \
+                contextlib.redirect_stderr(err):
+            try:
+                run_loop.run_detached(loop, slice_dir)
+            except SystemExit as e:
+                assert e.code == 2
+            else:
+                raise AssertionError("a refusal did not exit")
+        assert err.getvalue() == "Error: x\n"
+
+
+def test_detach_with_a_dry_run_is_a_usage_error():
+    with tempfile.TemporaryDirectory() as tmp:
+        code, _, err = call(run_loop.cmd_run, slice_dir=tmp, resume=False,
+                            verbose=False, dry_run=True, detach=True)
+        assert code == 2 and "--detach" in err
+
+
+def test_a_detached_run_refuses_and_runs_through_the_real_handshake():
+    """The run itself under `detach`: a resume-less second start comes back
+    as the parent's exit 2, and a run that starts is waited on to its exit
+    record."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+
+        def body(started):
+            r.on_start = started
+            r.run()
+
+        pid, code, text = run_loop.detach(body, r.log_path)
+        assert code == 0 and pid, text
+        with patched(run_loop, WAIT_POLL=0.02):
+            code, out, _ = wait(slice_dir, for_seconds=30, from_offset=0)
+        assert code == 0, out
+        assert out.splitlines()[0] == "ended: exit 0"
+        assert any("merged" in line for line in out.splitlines())
+
+        again = ScriptedLoop(slice_dir, [], repo_root=repo)
+
+        def body2(started):
+            again.on_start = started
+            again.run()
+
+        pid, code, text = run_loop.detach(body2, again.log_path)
+        assert (pid, code) == (None, 2) and "Pass --resume" in text
+        assert exit_record(slice_dir)["code"] == 0
 
 
 if __name__ == "__main__":

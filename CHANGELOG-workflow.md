@@ -4,6 +4,39 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-01 — the run loop runs detached; the session checks on it every 55 minutes (v0.9.69)
+
+`/dev:run-slice` launched `run_loop.py` with the Bash tool's `run_in_background`, which the
+harness kills at 2 h whatever the session asks. Three runs met it on 2026-09-30: Ansible 034 mid
+doc phase, KubeCoder 237 ten seconds into its test phase after 28 minutes on the devlock, Ansible
+035. A kill left no exit code and no `bailout.json`, a `run.lock` note naming a dead pid, and an
+in-flight session for the resume to reattach — Ansible 034's doc-writer read its cut transcript
+as its outcome and handed back `blocked` within 18 seconds, losing ten minutes of survey to an
+extra bail (AIWF-29; the plan and its rulings are
+`docs/research/detached-loop-plan-2026-10-01.md`).
+
+- **`run … --detach`**: the driver detaches itself and returns once it holds the slice, with its
+  pid and the `wait` command to run next — or with the driver's own refusal and exit 2. The run
+  is unchanged.
+- **The exit lands on disk**: every exit writes `state.json`'s `exit` (`code`, `ts`) last, after
+  `bailout.json`; a `--resume` clears it. A run gone without one was killed from outside, and the
+  resume logs that, with the dead driver's pid and start, before it takes the lock.
+- **`wait <slice> [--for S] [--from OFFSET]`**: blocks up to 3 300 s — inside the hour the
+  session's prompt cache lives — and answers 0 ended (the run's code; the bail's reason,
+  question and details), 5 still running (stage, the session in flight against its cap, the
+  log's last-line age) or 6 gone with no exit. Each answer carries the driver's own log lines
+  since the previous check, at most 40, the in-flight session's latest narration, and the next
+  command. Liveness is the `flock`, never the pid.
+- **The session gives the operator a status update at every check** — a few lines in chat, not a
+  notification — and re-arms; it reads `log.txt` only when the log has been silent for over an
+  hour with nothing in flight. Exit 6 relaunches `--resume --detach`.
+- **`stop <slice>`** sends the detached driver SIGINT — exit 130, leases released, the in-flight
+  session left for the resume. The loop outlives the session that launched it; stopping the
+  `wait` stops only the wait.
+- **The reattach prompt** says the interruption came from outside and is not an outcome: what the
+  transcript and the tree hold stands, and `blocked` is never the answer to having been stopped.
+  A driver-side guard against a fast `blocked` after a reattach waits until the pattern returns.
+
 ## 2026-10-01 — a run refuses to start without the tool containers its Targets' manifests call (v0.9.68)
 
 FieldnotesApp slice 001's P6 (a FieldnotesDeploy chart change) ran in an environment without
