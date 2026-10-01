@@ -630,6 +630,47 @@ class PlanLoop:
             raise Bailout("plan_doc",
                           details="the GO'd plan contains no "
                                   "`### P<id> — <title>` phases")
+        self._verify_tools(phases, text)
+
+    def _verify_tools(self, phases: list, text: str) -> None:
+        """The GO'd plan's Target repos must not call a tool container this
+        pod does not run (`run_loop.tools_check`, the run loop's own startup
+        check) — asked now, while the slice is with the operator, rather
+        than when the run loop starts it. A Target maps to its repo as
+        `_held_repo_name` maps it, without kc; a GitHub target not cloned
+        yet is skipped (the run loop checks its clone)."""
+        roots = [root for phase in phases
+                 if not phase.done and phase.target
+                 and (root := self._target_root(phase.target)) is not None]
+        rulings, _ = run_loop.parse_rulings(text)
+        resolved = []
+        for ruling in rulings:
+            root = self._target_root(ruling.target)
+            if root is not None:
+                kind = ("sibling" if run_loop.is_repo_path(ruling.target)
+                        else "project")
+                resolved.append((ruling, run_loop.ResolvedTarget(
+                    ruling.target, kind, root, None, root)))
+        details = run_loop.tools_check(
+            roots, resolved, self.repo_root, self.log,
+            relaunch="rerun the plan loop once the environment runs them")
+        if details:
+            raise Bailout("missing_tools", details=details)
+
+    def _target_root(self, target: str) -> Path | None:
+        """The repo a Target lands in, as `_held_repo_name` reads it — None
+        for a GitHub target whose clone is not on disk."""
+        if github_target.is_github(target):
+            try:
+                path = github_target.clone_path(target)
+            except ValueError:
+                return None
+            return path if path.is_dir() else None
+        if target.startswith("/"):
+            return Path(target)
+        if target.startswith("../"):
+            return (self.repo_root / target).resolve()
+        return self.repo_root
 
     # -- terminal exits ------------------------------------------------------
 

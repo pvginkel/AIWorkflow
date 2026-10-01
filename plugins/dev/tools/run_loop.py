@@ -1283,7 +1283,11 @@ def load_project_dirs(cwd: Path) -> dict[str, Path]:
 GATE_OUTCOME_LABELS = {"green": "GREEN", "red": "RED",
                        "nothing_ran": "nothing ran",
                        # a sweep `test` row a gate ruling covers: not run
-                       "waived": "WAIVED"}
+                       "waived": "WAIVED",
+                       # red only because a `cexec` tool container is not in
+                       # this pod (CEXEC_MISSING_RE): no suite ran, nothing
+                       # for a session to fix — neither green nor red
+                       "unrunnable": "UNRUNNABLE (tool missing)"}
 
 
 def kc_outcome(returncode: int) -> str:
@@ -2232,6 +2236,15 @@ test gate's substitute is the evidence the test phase cites for it — the
 driver never verified those tests.\
 """
 
+# Appended to the stance when a row is UNRUNNABLE, so the consult and the
+# test phase neither read it as a red to fix nor try to add the tool.
+SWEEP_UNRUNNABLE_NOTE = """\
+An UNRUNNABLE row did not run: its statement calls a `cexec` tool container
+this environment does not run. That gate is unverified, not red, and adding
+the tool (a `.kubecoder/config.yaml` line and `kc env restart`, which ends
+every session here) is the operator's — never this session's.\
+"""
+
 SWEEP_STANCE_NONE = """\
 Nothing ran — no swept repo carries a kc manifest, or no swept component
 defines a lint, build or test statement — so treat the tree's
@@ -2486,6 +2499,235 @@ class ResolvedTarget:
         self.git_root = git_root    # where branches/merges happen
         self.gate_argv = gate_argv  # None → no deterministic gate
         self.gate_cwd = gate_cwd
+
+
+# ---------------------------------------------------------------------------
+# Tool containers — a manifest's `cexec <tool>` against the pod's sidecars
+# (AIWF-24). A Target repo's `kc project` statements run in the sidecars
+# *this* environment declares, and a repo planned from another environment
+# may call one it lacks: FieldnotesApp slice 001's P6 gated FieldnotesDeploy
+# from the AIWorkflow environment, which has no `aac-tools`, and the
+# code-writer spent ten minutes before it handed back `blocked` — on a fix
+# (a config.yaml line and `kc env restart`) that ends the very session that
+# would resume the run. So it is the operator's, asked before any dispatch.
+# ---------------------------------------------------------------------------
+
+# A `cexec <tool>` call in a manifest line. The tool name starts with a
+# letter or digit, so a flag (`cexec --help`) is never read as one.
+CEXEC_CALL_RE = re.compile(r"\bcexec\s+([A-Za-z0-9][A-Za-z0-9_.-]*)")
+# The token before a `cexec` that makes it a guarded probe, not a call the
+# statement needs: `! cexec <tool> true || …` and `if cexec <tool> …; then`
+# are a manifest asking whether the tool is there, and fine without it.
+CEXEC_GUARDS = ("!", "if", "elif")
+# A `- use: <tool>` item of the environment config's `tools:` list.
+TOOL_USE_RE = re.compile(r"(?:-\s*)?use:\s*[\"']?([A-Za-z0-9][A-Za-z0-9_.-]*)")
+# What cexec prints when the sidecar it is asked for does not exist — the
+# line a gate log carries when a statement met a missing tool mid-run.
+CEXEC_MISSING_RE = re.compile(r'cexec: tool "([^"]+)" is not available')
+
+MANIFEST_REL = Path(".kubecoder") / "project.yaml"
+ENV_CONFIG_REL = Path(".kubecoder") / "config.yaml"
+RUN_RELAUNCH = "relaunch with --resume once the environment runs them"
+
+
+class MissingTool:
+    """A tool a manifest calls and the pod does not run: who calls it (the
+    manifests, repo-relative), and whether the host environment's config
+    already declares it — then only the restart is owed."""
+
+    def __init__(self, tool: str, callers: list[str], declared: bool):
+        self.tool = tool
+        self.callers = callers
+        self.declared = declared
+
+
+def manifest_tools(text: str) -> set[str]:
+    """The tools a `.kubecoder/project.yaml` calls through `cexec`, from its
+    text. A line scan, never a YAML parse: the plugin does not read a
+    manifest's structure (only kc does), and a `cexec <tool>` token is a
+    call wherever it sits in a statement. Comment lines are skipped, and so
+    is a guarded call (CEXEC_GUARDS)."""
+    tools: set[str] = set()
+    for line in text.splitlines():
+        if line.lstrip().startswith("#"):
+            continue
+        for match in CEXEC_CALL_RE.finditer(line):
+            before = line[:match.start()].split()
+            prev = before[-1].lstrip(";&|(") if before else ""
+            if prev not in CEXEC_GUARDS:
+                tools.add(match.group(1))
+    return tools
+
+
+def declared_tools(text: str) -> set[str]:
+    """The tools an environment's `.kubecoder/config.yaml` declares — its
+    `tools:` list's `- use: <tool>` items, by the same kind of line scan:
+    comments skipped, the list ending at the next top-level key."""
+    declared: set[str] = set()
+    in_tools = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not line[0].isspace() and not stripped.startswith("-"):
+            in_tools = stripped.split("#")[0].strip() == "tools:"
+            continue
+        match = TOOL_USE_RE.match(stripped) if in_tools else None
+        if match:
+            declared.add(match.group(1))
+    return declared
+
+
+def _read_text(path: Path) -> str:
+    try:
+        return path.read_text()
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
+def running_tools() -> set[str]:
+    """The tool containers this pod runs: `kc env describe --output=json`'s
+    `sections`, one per sidecar, `name` the tool. ValueError with the cause
+    when kc does not answer that — the caller passes the check with a
+    warning, since a check never holds a loop up on its own bookkeeping."""
+    argv = ["kc", "env", "describe", "--output=json"]
+    try:
+        result = subprocess.run(argv, capture_output=True, text=True,
+                                timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise ValueError(f"`{' '.join(argv)}` did not run: {e}") from None
+    if result.returncode != 0:
+        raise ValueError(f"`{' '.join(argv)}` failed (rc="
+                         f"{result.returncode}): "
+                         f"{(result.stderr or result.stdout).strip()[:200]}")
+    try:
+        data = json.loads(result.stdout)
+    except ValueError as e:
+        raise ValueError(f"`{' '.join(argv)}` emitted invalid JSON: "
+                         f"{e}") from None
+    sections = data.get("sections") if isinstance(data, dict) else None
+    if not isinstance(sections, list):
+        raise ValueError(f"`{' '.join(argv)}` carries no `sections` list")
+    return {s["name"] for s in sections
+            if isinstance(s, dict) and isinstance(s.get("name"), str)}
+
+
+def missing_tools(roots: Sequence[Path], host_root: Path,
+                  running: set[str]) -> list[MissingTool]:
+    """Every tool the manifests of `roots` call (`manifest_tools`) that is
+    not in `running`, with the manifests that call it and whether the host
+    environment's config (`host_root`'s, the invoking repo's) declares it.
+    A root without a manifest calls nothing."""
+    callers: dict[str, list[str]] = {}
+    for root in roots:
+        root = Path(root)
+        rel = f"{root.name}/{MANIFEST_REL}"
+        for tool in sorted(manifest_tools(_read_text(root / MANIFEST_REL))
+                           - running):
+            if rel not in callers.setdefault(tool, []):
+                callers[tool].append(rel)
+    declared = declared_tools(_read_text(Path(host_root) / ENV_CONFIG_REL))
+    return [MissingTool(tool, callers[tool], tool in declared)
+            for tool in sorted(callers)]
+
+
+def missing_tools_details(missing: list[MissingTool], host_root: Path,
+                          relaunch: str = RUN_RELAUNCH) -> str:
+    """The bail's `details`: one line per tool with what fixes it, then why
+    the fix is the operator's."""
+    config = Path(host_root) / ENV_CONFIG_REL
+    lines = ["the run needs tool containers this environment does not run:"]
+    for m in missing:
+        fix = (f"declared in {config} but not running in this pod (it "
+               "predates that commit) — `kc env restart` applies it"
+               if m.declared else
+               f"add `- use: {m.tool}` under `tools:` in {config}, then "
+               "`kc env restart`")
+        lines.append(f"- {m.tool} — called by {', '.join(m.callers)}; {fix}")
+    lines.append("The restart ends every session in the environment, so this "
+                 f"is the operator's; {relaunch}. To run without them "
+                 "instead, waive the repo's gates in plan.md's `## Driver "
+                 "rulings` (`gate`, and `accept` for lint and build).")
+    return "\n".join(lines)
+
+
+def tools_waived(root: Path,
+                 rulings: list[tuple[Ruling, ResolvedTarget]]) -> bool:
+    """Whether plan.md's `## Driver rulings` waive every sweep verb for all
+    of the repo at `root` — a gate ruling (test) and accept rulings for lint
+    and for build covering each component kc lists, a repo-level ruling
+    counting for every component. Then nothing the run must pass needs the
+    repo's tools. The repo is the unit, not the component: the scan reads a
+    manifest file, not a component's statements, and the loop-tail sweep
+    runs every component of a repo the run touched anyway. A repo kc cannot
+    list is held to its tools."""
+    if RunLoop._covering(rulings, root, None) is None:
+        return False
+    try:
+        components = load_project_dirs(Path(root))
+    except Bailout:
+        return False
+
+    def covered(kind: str, verb: str, component: str) -> bool:
+        of_kind = [(r, t) for r, t in rulings
+                   if r.kind == kind and r.verb == verb]
+        return RunLoop._covering(of_kind, root, component) is not None
+
+    return all(covered("gate", "test", c) and covered("accept", "lint", c)
+               and covered("accept", "build", c) for c in components)
+
+
+def tools_check(roots: Sequence[Path],
+                rulings: list[tuple[Ruling, ResolvedTarget]],
+                host_root: Path, log, relaunch: str = RUN_RELAUNCH
+                ) -> str | None:
+    """The missing-tools message for `roots` (a bail's `details`), None
+    when the pod runs every tool their manifests call — or when it cannot
+    say which it runs (logged as a warning, and the check passes). A repo
+    the rulings waive whole (`tools_waived`) is not held to its tools."""
+    seen: set[Path] = set()
+    held = []
+    for root in roots:
+        key = Path(root).resolve()
+        if key not in seen and (key / MANIFEST_REL).is_file():
+            seen.add(key)
+            held.append(key)
+    if not held:
+        return None
+    try:
+        running = running_tools()
+    except ValueError as e:
+        log(f"warning: tool check skipped — {e}")
+        return None
+    held = [root for root in held
+            if not (missing_tools([root], host_root, running)
+                    and tools_waived(root, rulings))]
+    missing = missing_tools(held, host_root, running)
+    return (missing_tools_details(missing, host_root, relaunch)
+            if missing else None)
+
+
+def unavailable_tool(log_path: Path, start: int = 0) -> str | None:
+    """The tool a gate log says cexec could not find (CEXEC_MISSING_RE),
+    reading from byte `start` on — a log shared by several commands is read
+    from where this one began."""
+    try:
+        with open(log_path, "rb") as f:
+            f.seek(start)
+            text = f.read().decode(errors="replace")
+    except OSError:
+        return None
+    match = CEXEC_MISSING_RE.search(text)
+    return match.group(1) if match else None
+
+
+def _file_size(path: Path) -> int:
+    """Where a gate log ends now — the offset its next command's output
+    starts at, for `unavailable_tool`."""
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
 
 
 # ---------------------------------------------------------------------------
@@ -3241,6 +3483,48 @@ class RunLoop:
             errors.append(f"phase P{phase.id}: {false_claim or why}")
         return errors
 
+    def _tool_roots(self) -> list[Path]:
+        """The repos whose tools the run needs: each pending phase's Target
+        repo, resolved as `_target_errors` resolves it (a target a phase
+        still has to create, or one that does not resolve — a plan problem
+        `_load_plan` reports — is skipped), plus the code repos of the run's
+        `bases`, which the loop-tail sweep covers (a resume's are on disk).
+        A dry run holds no state of its own and reads the run's."""
+        try:
+            phases, _ = parse_plan(self.plan_path.read_text())
+        except OSError:
+            phases = []
+        roots: list[Path] = []
+        for phase in phases:
+            if phase.done or not phase.target:
+                continue
+            try:
+                roots.append(self._resolve_target(
+                    phase.target, creates=phase.creates).git_root)
+            except ValueError:
+                continue
+        state = self.state or _read_json(self.state_path)
+        bases = state.get("bases") if isinstance(state, dict) else None
+        roots.extend(Path(key) for key in sorted(bases or {})
+                     if not self._is_spec_root(Path(key)))
+        return roots
+
+    def _missing_tools(self) -> str | None:
+        """The missing-tools message for this run's repos (`tools_check`),
+        None when the pod runs every tool they call."""
+        return tools_check(self._tool_roots(), self._current_rulings(),
+                           self.repo_root, self.log)
+
+    def _assert_tools(self) -> None:
+        """Bail `missing_tools` (an operator question) while a repo the run
+        needs calls a tool container this pod does not run. Asked here, not
+        met at the gate: a code-writer handed a gate that cannot run spends
+        its session finding that out, and the fix restarts the
+        environment."""
+        details = self._missing_tools()
+        if details:
+            raise Bailout("missing_tools", question=True, details=details)
+
     def _track_phases(self, phases: list[Phase]) -> None:
         known = [p.id for p in phases]
         if known != self.state.get("known_phases"):
@@ -3993,7 +4277,11 @@ class RunLoop:
         """One phase-gate command run into `log_file`, as a gate outcome. A
         timeout bails; so does rc 2, kc's usage error — an unknown
         --project, and the name came from kc's own project list, so that is
-        a driver bug, not a red suite."""
+        a driver bug, not a red suite. A red whose output is cexec's
+        missing-tool line bails `missing_tools` instead (an operator
+        question): no fix round can add a tool container to the pod."""
+        log_file.flush()
+        start = _file_size(log_path)
         try:
             returncode = self._gate_exec(argv, target.gate_cwd, log_file)
         except subprocess.TimeoutExpired:
@@ -4008,7 +4296,31 @@ class RunLoop:
                 details=f"`{' '.join(argv)}` rejected its arguments "
                         f"(output in {log_path})",
             )
-        return kc_outcome(returncode)
+        outcome = kc_outcome(returncode)
+        if outcome == "red":
+            log_file.flush()
+            tool = unavailable_tool(log_path, start)
+            if tool is not None:
+                raise Bailout(
+                    "missing_tools", phase=phase_id, question=True,
+                    details=self._missing_tool_details(
+                        tool, target.git_root, argv, log_path))
+        return outcome
+
+    def _missing_tool_details(self, tool: str, root: Path,
+                              argv: list[str], log_path: Path) -> str:
+        """The missing-tools message for one tool a gate log met mid-run —
+        called by the repo's manifest where the scan finds it there, else
+        by the command (a script the statement runs may make the call)."""
+        manifest = Path(root) / MANIFEST_REL
+        caller = (f"{Path(root).name}/{MANIFEST_REL}"
+                  if tool in manifest_tools(_read_text(manifest)) else
+                  f"`{' '.join(argv)}` in {Path(root).name} "
+                  f"(output in {log_path})")
+        declared = tool in declared_tools(
+            _read_text(self.repo_root / ENV_CONFIG_REL))
+        return missing_tools_details([MissingTool(tool, [caller], declared)],
+                                     self.repo_root)
 
     @staticmethod
     def _is_root(target: ResolvedTarget) -> bool:
@@ -5011,11 +5323,14 @@ class RunLoop:
                 for r, o in zip(results, outcomes, strict=True) if o == "red"]
         empty = outcomes.count("nothing_ran")
         waived = outcomes.count("waived")
+        unrunnable = outcomes.count("unrunnable")
         summary = "; ".join(reds) or (
             f"{len(results)} command(s)"
             + (f", {empty} of them ran nothing" if empty else ""))
         if waived:
             summary += f" ({waived} waived by ruling)"
+        if unrunnable:
+            summary += f" ({unrunnable} unrunnable — tool missing)"
         self._record(None, "sweep", n, outcome, summary, None, duration_s)
         self.announce(f"gate sweep r{n} → "
                       + ("RED (" + ", ".join(reds) + ")" if reds
@@ -5040,8 +5355,12 @@ class RunLoop:
         """One sweep command, per component so a red in one suite never
         hides a red in the next (the kc verbs are fail-fast across their
         selection). A component with no statement for the verb makes a
-        `nothing_ran` row — neither green nor red. `green` stays on the row
-        beside `outcome`, true for a green row only."""
+        `nothing_ran` row — neither green nor red. So does a red that is
+        only cexec's missing-tool line: an `unrunnable` row, the tool on it,
+        proving nothing and asking no session to fix it (the tool check at
+        startup names it to the operator; this is a repo that slipped past
+        it, or a call a script makes). `green` stays on the row beside
+        `outcome`, true for a green row only."""
         argv = ["kc", "project", verb, "--project", component]
         log_path = out_dir / f"{root.name}_{component}_{verb}.log"
         t0 = time.monotonic()
@@ -5062,12 +5381,20 @@ class RunLoop:
                 details=f"sweep `{' '.join(argv)}` in {root} rejected its "
                         f"arguments (output in {log_path})")
         outcome = kc_outcome(returncode)
+        tool = unavailable_tool(log_path) if outcome == "red" else None
+        if tool is not None:
+            outcome = "unrunnable"
         duration_s = int(time.monotonic() - t0)
         self.log(f"[sweep] {root.name}/{component} {verb} → "
-                 f"{GATE_OUTCOME_LABELS[outcome]} ({duration_s}s)")
-        return {"repo": str(root), "component": component, "verb": verb,
-                "outcome": outcome, "green": outcome == "green",
-                "log": str(log_path), "duration_s": duration_s}
+                 f"{GATE_OUTCOME_LABELS[outcome]} ({duration_s}s)"
+                 + (f" — cexec tool `{tool}` is not in this environment"
+                    if tool else ""))
+        row = {"repo": str(root), "component": component, "verb": verb,
+               "outcome": outcome, "green": outcome == "green",
+               "log": str(log_path), "duration_s": duration_s}
+        if tool is not None:
+            row["tool"] = tool
+        return row
 
     def _ruled_rows(self, results: list[dict]
                     ) -> list[tuple[str, Ruling | None]]:
@@ -5102,6 +5429,9 @@ class RunLoop:
     def _row_label(row: dict, outcome: str, ruling: Ruling | None) -> str:
         if outcome == "accepted":
             return f"RED, accepted by ruling ({ruling.why})"
+        if outcome == "unrunnable":
+            return (f"{GATE_OUTCOME_LABELS[outcome]} — cexec tool "
+                    f"`{row.get('tool')}` is not in this environment")
         if outcome != "waived":
             return GATE_OUTCOME_LABELS[outcome]
         substitute = (ruling.substitute_text if ruling is not None
@@ -5144,6 +5474,8 @@ class RunLoop:
                       "nothing_ran": SWEEP_STANCE_NONE}[outcome]
             if ruled_any:
                 stance += "\n\n" + SWEEP_RULINGS_NOTE
+            if "unrunnable" in outcomes:
+                stance += "\n\n" + SWEEP_UNRUNNABLE_NOTE
             for o, ruling in ruled:
                 if ruling is not None and o in ("waived", "accepted"):
                     self._report_ruling(ruling, "sweep")
@@ -5813,9 +6145,13 @@ class RunLoop:
             pass
         self._record(None, "doc-gate", n, outcome, tail, None, duration_s)
         empty = [verb for verb, o in outcomes.items() if o == "nothing_ran"]
+        unrunnable = [verb for verb, o in outcomes.items()
+                      if o == "unrunnable"]
         self.log(f"[doc-phase] gate #{n} → {GATE_OUTCOME_LABELS[outcome]} "
                  f"({duration_s}s) {tail[:120]}"
-                 + (f" — {', '.join(empty)} ran nothing" if empty else ""))
+                 + (f" — {', '.join(empty)} ran nothing" if empty else "")
+                 + (f" — {', '.join(unrunnable)} unrunnable (tool missing)"
+                    if unrunnable else ""))
         return outcome != "red", log_path
 
     def _doc_gate_cmd(self, argv: list[str], verb: str,
@@ -5823,7 +6159,9 @@ class RunLoop:
                       rulings: list[tuple[Ruling, ResolvedTarget]],
                       log_file, log_path: Path) -> str:
         """One doc-gate command's outcome, the rulings applied: `waived`
-        (not run) or `accepted` (ran red) where a ruling covers it."""
+        (not run) or `accepted` (ran red) where a ruling covers it. A red
+        that is cexec's missing-tool line is `unrunnable` — logged, not red,
+        so the gate goes on: nothing a doc writer changed can fix it."""
         if component is not None and verb == "test":
             waiver = self._covering([(r, t) for r, t in rulings
                                      if r.kind == "gate"],
@@ -5836,6 +6174,7 @@ class RunLoop:
                 return "waived"
         log_file.write(f"$ {' '.join(argv)}\n")
         log_file.flush()
+        start = _file_size(log_path)
         try:
             rc = self._doc_gate_exec(argv, log_file)
         except subprocess.TimeoutExpired:
@@ -5845,6 +6184,15 @@ class RunLoop:
                         f"{GATE_TIMEOUT}s (output in {log_path})",
             ) from None
         outcome = kc_outcome(rc)
+        if outcome == "red":
+            log_file.flush()
+            tool = unavailable_tool(log_path, start)
+            if tool is not None:
+                log_file.write(f"→ UNRUNNABLE: cexec tool `{tool}` is not in "
+                               "this environment — unverified, not red\n")
+                self.log(f"[doc-phase] `{' '.join(argv)}` unrunnable — cexec "
+                         f"tool `{tool}` is not in this environment")
+                return "unrunnable"
         if outcome == "nothing_ran":
             log_file.write("→ nothing ran: "
                            + (f"{component} defines no" if component
@@ -6799,6 +7147,10 @@ class RunLoop:
             # earlier stops at its first dispatch, not here, while the spec
             # tree still stands on its base (`_report_bailouts`).
             assert_no_prerun_actions(self.slice_dir)
+            # Before the first dispatch, fresh and resumed alike: a repo
+            # whose manifest calls a tool container this pod lacks is a
+            # restart only the operator can make.
+            self._assert_tools()
 
             if resume_at != "docs":
                 while True:
@@ -7220,6 +7572,9 @@ def cmd_dry_run(loop: RunLoop) -> None:
         except ValueError as e:
             errors.append(f"driver ruling `{ruling.key}`: {e}")
             print(f"  ruling  {ruling.key}  INVALID: {e}")
+    tools = loop._missing_tools()
+    if tools:
+        errors.append(tools.replace("\n", "\n    "))
     if errors:
         print("\nplan problems:", file=sys.stderr)
         for e in errors:

@@ -4,6 +4,33 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-01 — a run refuses to start without the tool containers its Targets' manifests call (v0.9.68)
+
+FieldnotesApp slice 001's P6 (a FieldnotesDeploy chart change) ran in an environment without
+`aac-tools`: `kc project test` failed at `cexec aac-tools gen-architecture` after ten minutes of
+writer work, the phase handed back `blocked`, and the fix — a `- use:` line in the host's
+`.kubecoder/config.yaml` and `kc env restart` — ended the session that would have resumed the run.
+Ansible slice 033 bailed at the loop-tail sweep on KubeCoder's lint and build rows for missing
+`python`/`frontend` and needed `accept` rulings; slice 034 met the same at plan time (AIWF-24,
+six reports).
+
+- **Both loops check before they start**: the run loop at startup, fresh or `--resume`, once
+  the plan's Targets resolve and before any dispatch (the repos in `state.json`'s `bases`
+  included on a resume); the plan loop at GO; `--dry-run` lists it as a problem. Each Target
+  repo's `.kubecoder/project.yaml` is scanned for `cexec <tool>` calls — a text scan, never a
+  parse of the manifest; a call guarded by `! cexec … ||` or `if cexec …` does not count — and
+  held against the tool containers `kc env describe` says the environment runs. A tool missing
+  bails `missing_tools` (exit 4 — the operator's, since the restart ends the session), naming
+  each tool, the manifest that calls it and the `- use: <tool>` line to add — or, where the host's
+  config.yaml already declares it, that the pod predates that commit and `kc env restart`
+  applies it. A `kc env describe` that fails passes with a warning: the check never holds a loop
+  up on its own bookkeeping.
+- **Waivers hold**: a repo whose gate the plan's `## Driver rulings` waive for every sweep verb
+  on every component — `gate` for test, `accept` for lint and build — is not held to its tools.
+- **Met mid-run anyway** (`cexec: tool "X" is not available` in a log): a sweep row or a
+  doc-gate verb is `unrunnable` — not red, like a row that ran nothing — and a phase gate bails
+  `missing_tools` instead of spending fix rounds against a tool that is not there.
+
 ## 2026-10-01 — `Target: root` gates the whole repo, once; dispatches say what kc's exit 3 means (v0.9.67)
 
 - **A root phase's gate is two steps**: `kc project test --project root`, and when that ran

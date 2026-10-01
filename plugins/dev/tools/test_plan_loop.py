@@ -40,6 +40,10 @@ run_loop._user_home = lambda: Path(tempfile.gettempdir()) / "planloop-no-home"
 run_loop.INSTALLED_PLUGINS = (Path(tempfile.gettempdir()) / "planloop-no-home"
                               / "installed_plugins.json")
 
+# The GO check's tool scan reads the pod's tool containers from `kc env
+# describe`; stubbed as running `python` alone.
+run_loop.running_tools = lambda: {"python"}
+
 PLAN_HEADER = """\
 # Test slice — plan
 
@@ -1210,6 +1214,55 @@ def test_the_full_verification_schema_proceeds():
             ("plan-writer", {"outcome": "done", "summary": "w"},
              writes_items(item)), R_GO])
         assert run_to_exit(loop) == 0
+
+
+# -- the GO check's tool scan (AIWF-24) -----------------------------------------
+
+def tool_plan(tmp, *rulings):
+    """A GO'd plan whose one phase targets a repo (by absolute path) whose
+    manifest calls `aac-tools`, a tool the stubbed pod does not run."""
+    deploy = Path(tmp) / "Deploy"
+    (deploy / ".kubecoder").mkdir(parents=True)
+    (deploy / ".kubecoder" / "project.yaml").write_text(
+        "projects:\n  - name: root\n    test: cexec aac-tools check\n")
+    block = PHASE_BLOCK.replace("Target: app", f"Target: {deploy}")
+    ruled = ("\n## Driver rulings\n\n" + "".join(f"- {r}\n" for r in rulings)
+             if rulings else "")
+
+    def write(loop):
+        loop.plan_path.write_text(PLAN_HEADER + ruled + block)
+        (loop.slice_dir / "verification.json").write_text('{"items": []}\n')
+
+    return ("plan-writer", {"outcome": "done", "summary": "written"}, write)
+
+
+def test_go_with_a_target_calling_a_missing_tool_bails():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [tool_plan(tmp), R_GO])
+        assert run_to_exit(loop) == 3
+        bail = json.loads((slice_dir / "plan_bailout.json").read_text())
+        assert bail["reason"] == "missing_tools"
+        assert "- aac-tools — called by Deploy/.kubecoder/project.yaml" \
+            in bail["details"]
+        assert "rerun the plan loop once the environment runs them" \
+            in bail["details"]
+
+
+def test_go_proceeds_past_a_repo_the_rulings_waive_whole():
+    with tempfile.TemporaryDirectory() as tmp:
+        deploy = Path(tmp) / "Deploy"
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [tool_plan(
+            tmp, f"gate {deploy} — none — no aac-tools here",
+            f"accept {deploy} lint — no aac-tools here",
+            f"accept {deploy} build — no aac-tools here"), R_GO])
+        saved = run_loop.load_project_dirs
+        run_loop.load_project_dirs = lambda cwd: {"root": Path(cwd)}
+        try:
+            assert run_to_exit(loop) == 0
+        finally:
+            run_loop.load_project_dirs = saved
 
 
 if __name__ == "__main__":

@@ -28,9 +28,11 @@ sanity-check with `run_loop.py run <slice-dir> --dry-run`.
 Exits: **0** plan complete (a reviewer verdict is on file and the plan parses as a phase
 queue) · **4** operator input needed (writer questions, or a review pending adjudication;
 handle it, rerun — the loop resumes where it paused) · **3** bailed (`plan_bailout.json`:
-`blocked`, `timeout`, `protocol_failure`, `plugin_version` — the installed plugin is not the
-loop's own version, checked with `verification.json`'s keys at startup, before every dispatch
-and, for the keys, before exit 0; [run-loop.md](run-loop.md) § Protocol invariants).
+`blocked`, `timeout`, `protocol_failure`, `missing_tools` — a plan Target's manifest calls a
+`cexec` tool this environment does not run, checked at GO as the run loop checks it at start
+([run-loop.md](run-loop.md) § Protocol invariants), `plugin_version` — the installed plugin is
+not the loop's own version, checked with `verification.json`'s keys at startup, before every
+dispatch and, for the keys, before exit 0; [run-loop.md](run-loop.md) § Protocol invariants).
 
 Every pass is a fresh context reading its inputs from the slice folder; rulings reach agents
 through plan.md only — dispatch prompts carry pointers, never relayed content. Agents must leave

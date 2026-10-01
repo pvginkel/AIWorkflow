@@ -456,3 +456,24 @@ while its A1 — push two toolchain commits, restart the pod — was still open,
 `cexec` and handed back `blocked`. The after-run actions the plan loop seeds (a held push, a
 criterion owed after it) do not stop a run; they are what the run leaves behind. `--dry-run` lists
 the open entries without failing.
+
+**The loop does not start without the tool containers its Targets' manifests call.** At
+startup, fresh or `--resume`, once the plan's Targets resolve and before any dispatch, the run
+loop scans each Target repo's `.kubecoder/project.yaml` for `cexec <tool>` calls — a text scan,
+never a parse of the manifest, and a call guarded by `! cexec … ||` or `if cexec …` does not
+count — and holds them against the tool containers the environment runs (`kc env describe`). A
+tool missing bails `missing_tools` (exit 4), naming each tool, the manifest that calls it and the
+`- use: <tool>` line to add under `tools:` in the host's `.kubecoder/config.yaml` — or, where that
+line is already there, that the pod predates it and `kc env restart` applies it. The run-slice
+session can fix neither (the restart ends it), so the bail is the operator's. A repo whose gate
+the plan's `## Driver rulings` waive for every verb the loop-tail sweep runs — `gate` for test,
+`accept` for lint and build, on every component — is not held to it. The plan loop runs the same
+check at GO ([plan-loop.md](plan-loop.md)), `--dry-run` lists it as a problem, and a run that
+meets `cexec: tool "X" is not available` mid-run anyway — a component a phase registered, an
+environment that changed — reads it the same way: a sweep row or a doc-gate verb is `unrunnable`,
+not red, like a row that ran nothing; a phase gate bails `missing_tools` instead of spending fix
+rounds against a tool that is not there. FieldnotesApp slice 001's P6 ran in an environment
+without `aac-tools`: `kc project test` failed at `cexec aac-tools gen-architecture` after ten
+minutes of writer work and handed back `blocked`, and the fix ended the session that would have
+resumed it; Ansible slice 033 bailed at the sweep on KubeCoder's lint and build rows for the
+same reason and needed `accept` rulings to get past them.

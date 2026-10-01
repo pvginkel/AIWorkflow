@@ -85,6 +85,13 @@ on their word — strike it (`close_out.py strike <slice_dir> <id> --reason "<wh
 "run-slice session"`), render (`close_out.py render <slice_dir>`), commit `close-out.json` and
 `close-out.md`, and relaunch with `--resume`.
 
+A `missing_tools` bail is the environment's: a Target repo's manifest calls a `cexec <tool>` this
+environment does not run. `bailout.json` names each tool, the repo whose manifest calls it, and
+the `- use: <tool>` line for the host's `.kubecoder/config.yaml` — or, where that line is already
+there, that the pod predates it and `kc env restart` applies it. Neither is yours: the restart
+ends this session. Put it to the operator; the relaunch is `--resume`, in the environment that
+has the tool.
+
 ## Job 4 — close out (exit 0)
 
 1. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/slice_cost.py <slice_dir> --write-state` — it appends

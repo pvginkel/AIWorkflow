@@ -44,6 +44,13 @@ stamp_phase = run_loop.stamp_phase
 PROJECT = "app"
 run_loop.load_project_dirs = lambda cwd: {PROJECT: Path(cwd)}
 
+# The tool check reads the pod's running tool containers from `kc env
+# describe`. The suite's pod is stubbed as running `python` alone; the tests
+# of the check script their own (`running`).
+RUNNING = {"python"}
+REAL_RUNNING_TOOLS = run_loop.running_tools
+run_loop.running_tools = lambda: set(RUNNING)
+
 # spawn_flags copies the promoted MCP servers out of the user-level
 # ~/.claude.json. That seam is stubbed with a home that does not exist, so no
 # test reads or writes the operator's own files; nothing is promoted and the
@@ -7953,6 +7960,329 @@ def test_a_dry_run_passes_a_github_target_a_ruling_or_a_manifest_gates():
     assert f"  ruling  gate {GITHUB}" in ruled[1]
     assert manifest[0] is None, manifest[2]
     assert "gate: kc project test" in manifest[1]
+
+
+# -- tool containers: a Target repo's `cexec <tool>` against the pod (AIWF-24)
+#
+# FieldnotesApp slice 001's P6 gated FieldnotesDeploy from an environment
+# without `aac-tools`: the code-writer handed back `blocked` after ten
+# minutes, on a fix (config.yaml + `kc env restart`) that ends the session
+# resuming the run. Ansible 033 bailed at the sweep on KubeCoder's missing
+# `python`/`frontend`. The check asks the operator before any dispatch, and a
+# gate that meets cexec's missing-tool line mid-run is never a red to fix.
+
+CEXEC_MISSING = ('cexec: tool "aac-tools" is not available in this '
+                 "environment; the tools it has are: python; if you just "
+                 "added it to .kubecoder/config.yaml, run `kc env restart` "
+                 "to apply it\n")
+DEPLOY_MANIFEST = """\
+projects:
+  - name: root
+    test: cexec aac-tools gen-architecture && cexec python pytest
+"""
+HOST_CONFIG = """\
+repos:
+  - url: https://example.invalid/Specs
+tools:
+  # the suites
+  - use: python
+{extra}
+preamble:
+  instructions: |
+    use: not-a-tool
+"""
+
+
+def deploy_repo(tmp, manifest=DEPLOY_MANIFEST, name="Deploy"):
+    """A sibling repo whose manifest calls `aac-tools`, a tool the suite's
+    pod (RUNNING) does not run."""
+    sib = make_sibling(tmp, name=name)
+    (sib / ".kubecoder" / "project.yaml").write_text(manifest)
+    return sib
+
+
+def host_config(repo, *declared):
+    (repo / ".kubecoder").mkdir(parents=True, exist_ok=True)
+    (repo / ".kubecoder" / "config.yaml").write_text(HOST_CONFIG.format(
+        extra="".join(f"  - use: {t}\n" for t in declared)))
+
+
+def test_the_tool_scan_reads_calls_and_skips_guards_and_comments():
+    text = """\
+# test: cexec commented-out pytest
+projects:
+  - name: root
+    test: cexec python uv run pytest
+    build: ! cexec probe true || echo "no probe, skipped"
+    lint: if cexec optional true; then cexec needed lint; fi
+    deploy: if false; then :; elif cexec elsewhere true; then :; fi
+    setup: true && cexec frontend npm ci; ! cexec probe2 true
+    help: cexec --help
+"""
+    assert run_loop.manifest_tools(text) == {"python", "needed", "frontend"}
+
+
+def test_the_config_scan_reads_the_tools_list_alone():
+    config = HOST_CONFIG.format(extra="  # comment\n  - use: \"aac-tools\"\n")
+    assert run_loop.declared_tools(config) == {"python", "aac-tools"}
+    assert run_loop.declared_tools("tools:\n- use: x\nother:\n- use: y\n") \
+        == {"x"}
+
+
+def test_missing_tools_name_each_tool_its_manifests_and_the_fix():
+    with tempfile.TemporaryDirectory() as tmp:
+        a = deploy_repo(tmp, name="Deploy")
+        b = deploy_repo(tmp, name="KubeCoder", manifest=(
+            "lint: cexec frontend npm run lint\n"
+            "test: cexec aac-tools check\n"))
+        host = Path(tmp) / "host"
+        host_config(host, "frontend")
+        missing = run_loop.missing_tools([a, b, Path(tmp) / "nomanifest"],
+                                         host, {"python"})
+        assert [(m.tool, m.callers, m.declared) for m in missing] == [
+            ("aac-tools", ["Deploy/.kubecoder/project.yaml",
+                           "KubeCoder/.kubecoder/project.yaml"], False),
+            ("frontend", ["KubeCoder/.kubecoder/project.yaml"], True)]
+        details = run_loop.missing_tools_details(missing, host)
+        config = host / ".kubecoder" / "config.yaml"
+        assert details.startswith("the run needs tool containers this "
+                                  "environment does not run:\n")
+        assert (f"- aac-tools — called by Deploy/.kubecoder/project.yaml, "
+                f"KubeCoder/.kubecoder/project.yaml; add `- use: aac-tools` "
+                f"under `tools:` in {config}, then `kc env restart`") \
+            in details
+        assert (f"- frontend — called by KubeCoder/.kubecoder/project.yaml; "
+                f"declared in {config} but not running in this pod (it "
+                "predates that commit) — `kc env restart` applies it") \
+            in details
+        assert "relaunch with --resume" in details
+
+
+def test_a_describe_that_fails_passes_the_check_with_a_warning():
+    with tempfile.TemporaryDirectory() as tmp:
+        sib = deploy_repo(tmp)
+
+        def broken():
+            raise ValueError("`kc env describe --output=json` failed (rc=1)")
+
+        logged = []
+        with patched(run_loop, running_tools=broken):
+            assert run_loop.tools_check([sib], [], Path(tmp),
+                                        logged.append) is None
+        assert logged and logged[0].startswith("warning: tool check skipped")
+        # and the seam itself turns a kc that answers nonsense into the error
+        bad = subprocess.CompletedProcess([], 0, stdout='{"name": "x"}',
+                                          stderr="")
+        with patched(run_loop.subprocess, run=lambda *a, **kw: bad):
+            try:
+                REAL_RUNNING_TOOLS()
+            except ValueError as e:
+                assert "no `sections` list" in str(e)
+            else:
+                raise AssertionError("no sections must be a ValueError")
+        good = subprocess.CompletedProcess(
+            [], 0, stdout=json.dumps({"sections": [
+                {"name": "python", "instructions": "", "ports": []}]}),
+            stderr="")
+        with patched(run_loop.subprocess, run=lambda *a, **kw: good):
+            assert REAL_RUNNING_TOOLS() == {"python"}
+
+
+def tools_run(tmp, *, rulings=(), declared=(), resume=False, script=None):
+    """A run whose one phase targets `../Deploy` (whose manifest calls
+    `aac-tools`), from a host repo whose config declares `declared`."""
+    deploy_repo(tmp)
+    slice_dir, repo = make_slice(tmp)
+    host_config(repo, *declared)
+    body = phase_section("1", "Deploy change", "../Deploy")
+    if rulings:
+        ruled_plan(slice_dir, *rulings, body=body)
+    else:
+        (slice_dir / "plan.md").write_text("# plan\n\n" + body)
+    r = ScriptedLoop(slice_dir, script or [], repo_root=repo, resume=resume)
+    return slice_dir, repo, r
+
+
+def test_a_target_calling_a_missing_tool_bails_before_any_dispatch():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r = tools_run(tmp)
+        assert run_to_exit(r) == 4
+        assert not r.spawned
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "missing_tools" and bail["question"] is True
+        details = bail["details"]
+        assert "- aac-tools — called by Deploy/.kubecoder/project.yaml" \
+            in details
+        assert "add `- use: aac-tools` under `tools:` in " \
+            f"{repo / '.kubecoder' / 'config.yaml'}" in details
+        assert "python" not in details.split("\n")[1]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r = tools_run(tmp, declared=["aac-tools"])
+        assert run_to_exit(r) == 4
+        details = json.loads((slice_dir / "bailout.json").read_text())[
+            "details"]
+        assert "declared in" in details and "not running in this pod" \
+            in details
+        assert "`kc env restart` applies it" in details
+        assert "add `- use:" not in details
+
+
+def test_a_resume_runs_the_tool_check_too():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r = tools_run(tmp)
+        assert run_to_exit(r) == 4
+        r2 = ScriptedLoop(slice_dir, [], repo_root=repo, resume=True)
+        assert run_to_exit(r2) == 4 and not r2.spawned
+        assert json.loads((slice_dir / "bailout.json").read_text())[
+            "reason"] == "missing_tools"
+        # once the pod runs it, the resume proceeds
+        r3 = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                      *TAIL], repo_root=repo, resume=True)
+        with patched(run_loop, running_tools=lambda: {"python",
+                                                      "aac-tools"}):
+            assert run_to_exit(r3) == 0
+        assert not r3.script
+
+
+def test_a_resume_checks_the_repos_the_run_already_touched():
+    """No pending phase targets the repo any more, but the run's `bases`
+    hold it — the loop-tail sweep would run its gates."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sib = deploy_repo(tmp)
+        slice_dir, repo = make_slice(tmp)
+        (slice_dir / "plan.md").write_text(
+            "# plan\n\n" + phase_section("1", "Done", "../Deploy", done=True)
+            + "\n" + phase_section("2", "App change"))
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r.state = {"bases": {str(sib): "main"}}
+        assert sib.resolve() in [Path(p).resolve() for p in r._tool_roots()]
+        assert "aac-tools" in (r._missing_tools() or "")
+
+
+def test_rulings_waiving_every_gate_of_the_repo_let_the_run_proceed():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r = tools_run(tmp, rulings=(
+            "gate ../Deploy — none — no aac-tools in this environment",
+            "accept ../Deploy lint — no aac-tools in this environment",
+            "accept ../Deploy build — no aac-tools in this environment"),
+            script=[V["exec_done"], V["review_signoff"], *TAIL])
+        assert run_to_exit(r) == 0
+        assert not r.script
+    # one verb left unwaived still holds the repo to its tools
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r = tools_run(tmp, rulings=(
+            "gate ../Deploy — none — no aac-tools in this environment",
+            "accept ../Deploy lint — no aac-tools in this environment"))
+        assert run_to_exit(r) == 4
+        assert json.loads((slice_dir / "bailout.json").read_text())[
+            "reason"] == "missing_tools"
+
+
+def test_a_dry_run_lists_the_missing_tools_as_a_plan_problem():
+    with tempfile.TemporaryDirectory() as tmp:
+        deploy_repo(tmp)
+        root = dry_run_repo(tmp)
+        slice_dir, _ = make_slice(tmp, repo=False)
+        (slice_dir / "plan.md").write_text(
+            "# plan\n\n" + phase_section("1", "Deploy change", "../Deploy"))
+        code, out, err = dry_run_from(RunLoop(slice_dir, resume=False), root)
+        assert code == 2
+        assert "plan problems:" in err
+        assert "the run needs tool containers this environment does not run"\
+            in err
+        assert "- aac-tools — called by Deploy/.kubecoder/project.yaml" in err
+
+
+class MissingToolLoop(KcExitLoop):
+    """KcExitLoop whose red kc runs print cexec's missing-tool line."""
+
+    def _gate_exec(self, argv, cwd, log_file):
+        rc_ = super()._gate_exec(argv, cwd, log_file)
+        if rc_ == 1:
+            log_file.write(CEXEC_MISSING)
+        return rc_
+
+
+def test_a_sweep_row_that_meets_a_missing_tool_is_unrunnable_not_red():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = MissingToolLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                        *TAIL],
+                            repo_root=repo,
+                            sweep_rcs={(PROJECT, "build"): 1})
+        assert run_to_exit(r) == 0
+        sweep = load_state(slice_dir)["gate_sweep"]
+        build = next(row for row in sweep["results"]
+                     if row["verb"] == "build")
+        assert build["outcome"] == "unrunnable" and build["green"] is False
+        assert build["tool"] == "aac-tools"
+        assert sweep["outcome"] == "green"
+        # nothing else ran green: the sweep proved nothing, never red
+        block = r._sweep_block(
+            {**sweep, "results": [build]}, "GREEN-STANCE", "RED-STANCE")
+        assert run_loop.SWEEP_STANCE_NONE in block
+        assert "RED-STANCE" not in block
+        consult = next(p for role, p in r.prompts if role == "consult")
+        assert (f"{PROJECT} build → UNRUNNABLE (tool missing) — cexec tool "
+                "`aac-tools` is not in this environment") in consult
+        assert "An UNRUNNABLE row did not run" in consult
+        row = next(h for h in load_state(slice_dir)["history"]
+                   if h["role"] == "sweep")
+        assert "1 unrunnable — tool missing" in row["summary"]
+
+
+def test_a_phase_gate_that_meets_a_missing_tool_bails_without_a_fix_round():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = MissingToolLoop(slice_dir, [V["exec_done"]], repo_root=repo,
+                            gate_rcs=[1])
+        assert run_to_exit(r) == 4
+        assert not r.script and len(r.spawned) == 1, "no fix round"
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "missing_tools" and bail["question"]
+        assert bail["phase"] == "1"
+        assert "- aac-tools — called by `kc project test --project app` in " \
+            "repo" in bail["details"]
+        assert "add `- use: aac-tools`" in bail["details"]
+        assert load_state(slice_dir)["phases"]["1"]["gate_fix_rounds"] == 0
+
+
+def test_a_doc_gate_command_that_meets_a_missing_tool_is_unrunnable():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        loop = RunLoop(slice_dir, resume=False)
+        loop.repo_root = repo
+        loop.state = {"history": []}
+        calls = []
+
+        def fake_exec(argv, log_file):
+            calls.append(argv[2])
+            if argv[2] == "lint":
+                log_file.write(CEXEC_MISSING)
+                return 1
+            # a later red that is not the tool's is still red
+            log_file.write("ordinary failure\n")
+            return 1 if argv[2] == "test" else 0
+
+        loop._doc_gate_exec = fake_exec
+        passed, log_path = loop._run_doc_gate({"gate_runs": 0})
+        assert calls == ["lint", "build", "test"], "lint was not fail-fast"
+        assert not passed
+        text = log_path.read_text()
+        assert "→ UNRUNNABLE: cexec tool `aac-tools`" in text
+        calls.clear()
+
+        def only_the_tool(argv, log_file):
+            calls.append(argv[2])
+            if argv[2] != "lint":
+                return 0
+            log_file.write(CEXEC_MISSING)
+            return 1
+
+        loop._doc_gate_exec = only_the_tool
+        passed, _ = loop._run_doc_gate({"gate_runs": 1})
+        assert passed and calls == ["lint", "build", "test"]
+        assert loop.state["history"][-1]["outcome"] == "green"
 
 
 if __name__ == "__main__":
