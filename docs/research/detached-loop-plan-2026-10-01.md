@@ -169,3 +169,30 @@ minutes and keeps `run_in_background`.
    if the pattern returns.
 7. **One build**, one version, skill and docs with it; the first slices run on it are the
    readout — nothing to measure beyond "no kill at 2 h, no lost doc phase".
+
+## 7. Rulings (2026-10-01)
+
+1. **The tool** — agreed.
+2. **55 minutes**: `wait --for 3300` by default, under the same 3 600 000 ms harness timeout. The
+   session wakes inside the hour its conversation's prompt cache lives, so every check reads a warm
+   cache.
+3. **`state.json`'s `exit`** — agreed.
+4. **A small status update at every check**, replacing § 4.3's "re-arm without reading anything".
+   The operator: "the logs are terse … I would actually quite appreciate a small status update
+   whenever it checks." Built as: `wait` prints, besides its status line, the driver's own log
+   lines written since the previous check — the unindented lines, without the
+   `session <id> — transcript <path>` ones, the last 40 at most — and the in-flight session's
+   latest `[text]` line; it ends with the next `wait` command, `--from` the log offset it read
+   up to, so consecutive checks cover the log without a gap. The session turns that into a few
+   lines in chat: what landed since the last check, what is in flight, anything that looks off.
+   An hour of driver lines measured about 7 KB (slice 236: 15 KB of driver lines in 2 h beside
+   87 KB of agent activity), so the check stays a short turn. § 4.3's one exception stands: a
+   log silent for over an hour with nothing in flight is when the session reads `log.txt`'s
+   tail.
+5. **`stop`: built** (left to me). It is the only handle on a loop that outlives its session
+   besides `kill` with a pid read off a file, and it is small.
+6. **The reattach prompt now, the guard only if the pattern returns** (left to me), as § 4.6
+   proposes.
+7. **One build** — not a question: the whole of § 4 ships as one version (0.9.69) with the skill
+   and the contract docs, and the first slices run on it are judged on "no kill at 2 h, no lost
+   doc phase".
