@@ -62,9 +62,15 @@ dirty-checks (after every session, at merge), and the resume reset, which become
 much as the existing rule stated: the workflow's bookkeeping — this run's `log.txt`,
 `state.json` and `phases/**`, and every parallel session's — is never a phase's deliverable, and
 the driver has never checked it when the target was a code repo. Two guards keep the record
-intact: every executor prompt fences it off (stage by name, never `git add -A`), and a run
-record found *committed* onto the phase branch bails before the merge's `git checkout <base>`
-would unlink the file the live log handle is writing to. The same exclusion lets an edit to this
+intact: every dispatch that commits into that tree — executor, reviewer, consult — carries the
+fence (stage by name, never `git add -A`), and a run record found *committed* onto the phase
+branch is taken back out by the driver before any `git checkout <base>` — at the merge and at a
+bail — that would unlink the file the live log handle is writing to: `git rm --cached` of those
+paths and one commit by pathspec on the branch, so every commit already there keeps its sha (a
+rewrite orphans `reviewed_head`, and the next resume bails `lost_work` on it; slice 238 P5 paid
+four bails and a hand rewrite for the reviewer's `git add -A`). The spec repo's history then
+carries a snapshot of the record under that phase's merge, which is harmless — the folder is
+committed whole when the slice closes. The same exclusion lets an edit to this
 slice's own tracked files pass the dirty-checks uncommitted — a reviewer's `close_out.py append`
 it did not commit — and `git checkout <base>` then refuses to overwrite it, leaving the shared tree
 stranded on the phase branch. So before the driver checks the base out of that branch, at the
@@ -379,7 +385,10 @@ loop did not act on is in the slice's close-out report — who writes what there
 run start when planning left none, names the report and `close_out.py` (the only way to write to
 it) in every dispatch, with `append`'s arguments, enters refuted findings, funding-consult
 merges and every stop of the run (written by the resume that follows the stop, from
-`state.json`'s `bailouts`), dispatches the wrap-up, and renders the report — before the doc
+`state.json`'s `bailouts`, at that resume's first dispatch — once the spec tree is on the branch
+the dispatch works on, so that in a phase targeting the spec repo the entry rides the phase
+branch; written at startup it sat uncommitted on the base and refused the checkout of a branch
+whose own `close-out.json` had moved, on every resume), dispatches the wrap-up, and renders the report — before the doc
 phase, after the wrap-up, whenever the run stops, and when it completes, the run header from
 `state.json` with it; the launching session
 renders once more when the cost block has landed and files **one** tracker card pointing at the

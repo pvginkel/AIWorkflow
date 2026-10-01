@@ -4,6 +4,30 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-01 — a spec-repo phase survives the reviewer's `git add -A` and its own resume (v0.9.64)
+
+KubeCoder slice 238 P5 and Ansible slice 035 P5, both with the spec repo as `Target:`, bailed
+`protocol_failure` four and two times over one cascade (AIWF-30): the code-reviewer's commit
+swept the driver's run record (`phases/P5/code_review_r1.md`, `review_result_r1.json`) onto the
+phase branch with its close-out entry, the driver bailed on finding it there and told the
+operator to rewrite the branch, the bail's `git checkout <base>` unlinked the live record, and
+then every `--resume` appended its stop event to the base's working-tree `close-out.json` before
+checking the phase branch out — refused by git while the branch's copy differed. Recovering took
+hand `commit-tree`/`update-ref` rewrites, and a rewrite moved the content commit's sha so the
+next resume bailed `lost_work` on `reviewed_head`.
+
+- **The fence rides every dispatch that commits into the tree holding the record**: the
+  reviewer prompts and the consult prompt carry the executor's bookkeeping note (stage by name,
+  never `git add -A`) when the phase branches the spec repo.
+- **A record found committed on the phase branch is taken back out, not bailed on**: `git rm
+  --cached` of the swept paths and one removal commit by pathspec, before the checkout at the
+  merge and at a bail — the branch's commits keep their shas, the untracked files survive the
+  checkout, and history carries a snapshot of the record under the merge, which is harmless.
+- **The stop events are entered at the resume's first dispatch**, once the spec tree is on the
+  branch that dispatch works on (and once more at completion for a resume that dispatches
+  nothing), so in a spec-repo phase they ride the phase branch and `_commit_slice_edits` commits
+  them with the phase; appended at startup they refused the branch's checkout.
+
 ## 2026-10-01 — a close-out decision entry asks its question (v0.9.63)
 
 - `docs/close-out.md` § The labels: the one rule a decision had, "a decision states its

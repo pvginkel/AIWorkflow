@@ -79,7 +79,7 @@ class FakeGit:
         self.merge_bases = []    # `merge-base` answers, consumed in order
         self.dirty = ""          # what `status --porcelain` reports
         self.dirty_roots = {}    # str(root) → porcelain, overriding `dirty`
-        self.branch_files = ""   # what `log --name-only` reports
+        self.branch_files = ""   # what `log --name-only` and `ls-tree` report
         self.unpushed = {}       # str(root) → `rev-list --count` answer
         self.no_origin = set()   # roots where `origin/<base>` does not exist
         self.ahead = {}          # "<base>..<branch>" → commits it is ahead by
@@ -138,7 +138,7 @@ class FakeGit:
             return self.revs.get(args[-1], self.head)
         if args[0] == "merge-base":
             return self.merge_bases.pop(0) if self.merge_bases else "base123"
-        if args[0] == "log":
+        if args[0] in ("log", "ls-tree"):
             return self.branch_files
         if args[0] == "status":
             return self._status(args, root)
@@ -442,8 +442,10 @@ class ScriptedLoop(RunLoop):
     def _spawn(self, role, prompt, cwd, verdict_path, phase_id, round_,
                agent=None, display=None, spec_branch=None):
         # The real _spawn's preamble, kept in step so the scripted loop
-        # exercises the salvage of an interrupted round, the spec tree's
-        # reader lease, and the branch the dispatch expects that repo on.
+        # exercises the resume's stop entries, the salvage of an interrupted
+        # round, the spec tree's reader lease, and the branch the dispatch
+        # expects that repo on.
+        self._report_bailouts()
         verdict_path = Path(verdict_path)
         salvaged = self._salvage_reattach(role, phase_id, verdict_path, "[t]")
         if salvaged is not None:
@@ -1917,6 +1919,63 @@ def test_every_stop_becomes_one_notable_event_written_by_the_resume():
         assert all(b["reported"] for b in load_state(slice_dir)["bailouts"])
 
 
+def test_a_resumed_spec_repo_phase_enters_the_stop_on_its_branch():
+    """Slice 238 P5: the resume wrote the stop's entry at startup, with the
+    spec tree on its base — and the phase branch's own close-out.json had
+    moved (the reviewer's entry), so `git checkout phase/<n>-P<x>` refused
+    the uncommitted store, and every resume bailed again. The entry is
+    written at the first dispatch, on the branch that dispatch works on."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        specs = specs_phase(slice_dir, tmp)
+        r1 = ScriptedLoop(slice_dir, [("code-writer", {
+            "outcome": "blocked", "summary": "no creds for the registry"})],
+            repo_root=repo)
+        assert run_to_exit(r1) == 3
+
+        r2 = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                      *TAIL], resume=True, repo_root=repo)
+        r2.fake_git.branches.add("phase/074-P1")
+        written = []
+        real = r2._report
+
+        def spy(section, headline, *args, **kw):
+            if headline.startswith("Run stopped"):
+                written.append(r2.fake_git.branch_at.get(str(specs), "main"))
+            return real(section, headline, *args, **kw)
+
+        r2._report = spy
+        assert run_to_exit(r2) == 0
+        assert written == ["phase/074-P1"]
+        calls = spec_calls(r2, specs)
+        assert calls.index(("checkout", "phase/074-P1")) \
+            < calls.index(("checkout", "main"))
+        assert "### E1 — Run stopped (blocked) in P1\n" \
+            in notable_events(slice_dir)
+        assert load_state(slice_dir)["bailouts"][0]["reported"] is True
+
+
+def test_a_resume_that_dispatches_nothing_reports_the_stop_at_completion():
+    """A stop in the doc stage of a project that runs no doc phase, with
+    nothing waiting for the wrap-up: the resume completes without a single
+    dispatch, and the stop is still entered — once the run is over."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(
+            tmp, phases=[("1", "First", PROJECT, True)],
+            config=rc(doc=False))
+        state = merged_state(repo, "docs")
+        state["bailouts"] = [
+            {"reason": "blocked", "phase": None, "question": False,
+             "ts": "2026-09-21T08:00:00.000000+02:00", "run_phase": "docs",
+             "details": "the cluster was down"}]
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        r = ScriptedLoop(slice_dir, [], resume=True, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert not r.spawned and not r.wrap_up_sessions
+        assert "### E1 — Run stopped (blocked)" in notable_events(slice_dir)
+        assert load_state(slice_dir)["bailouts"][0]["reported"] is True
+
+
 def test_a_stop_outside_a_phase_and_a_row_without_details_are_reported():
     """No phase named: the stage the run stopped in heads the entry. A row an
     earlier driver wrote has no details, and says where they are."""
@@ -2611,23 +2670,145 @@ def test_executor_prompts_fence_off_the_run_record():
         assert "git add -A" not in prompt
 
 
-def test_committed_run_record_bails_before_the_merge_checkout():
+def test_reviewer_and_consult_prompts_fence_off_the_run_record():
+    """Slice 238 P5: the reviewer — not the executor — swept its review and
+    the run record with its close-out entry into one `git add -A`. Every
+    dispatch that commits into the tree holding the record carries the
+    fence: the reviewer's rounds and a consult inside the phase; the
+    completion consult, after the merge, and a code-repo phase's reviewer
+    do not."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            V["exec_done"],
+            V["review_issues"], V["exec_done"],        # round 1 + auto fix
+            V["review_issues"],                        # r2 → the consult
+            ("consult", {"outcome": "merge", "summary": "advisory only"}),
+            *TAIL,
+        ]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        specs_phase(slice_dir, tmp)
+        assert run_to_exit(r) == 0
+        reviews = [p for role, p in r.prompts if role == "code-reviewer"]
+        assert len(reviews) == 2
+        for prompt in reviews:
+            assert "git add -A" in prompt and str(slice_dir) in prompt
+            # beside the report's instructions, before the review's own
+            assert prompt.index("git add -A") \
+                < prompt.index("Write your review to")
+        funding, completion = [p for role, p in r.prompts if role == "consult"]
+        assert "git add -A" in funding and str(slice_dir) in funding
+        assert "git add -A" not in completion
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        assert run_to_exit(r) == 0
+        prompt = next(p for role, p in r.prompts if role == "code-reviewer")
+        assert "git add -A" not in prompt
+
+
+# The run record a session swept into a commit on the phase branch, as
+# `git log --name-only` and `git ls-tree` name it.
+SWEPT = ("slices/074_test_slice/log.txt",
+         "slices/074_test_slice/phases/P1/x.json")
+
+
+def spec_calls(loop, specs):
+    return [c for root, c in loop.fake_git.calls if str(root) == str(specs)]
+
+
+def record_removal(calls):
+    """The index of the repair's `rm` and of its commit in `calls`."""
+    rm = next(i for i, c in enumerate(calls) if c[0] == "rm")
+    commit = next(i for i, c in enumerate(calls)
+                  if c[0].startswith("--work-tree=") and c[1] == "commit")
+    return rm, commit
+
+
+def test_a_committed_run_record_is_taken_back_out_before_the_merge_checkout():
     """`git checkout <base>` would unlink the file the open log handle is
-    writing to. An agent that swept the record into a commit is caught while
-    the branch is still intact."""
+    writing to. The old answer was a bail asking for the branch to be
+    rewritten — and the rewrite orphaned `reviewed_head`, so the next resume
+    bailed `lost_work` (slice 238 P5). The record is untracked again by a
+    commit of its own: index only, the branch's commits untouched."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        specs = specs_phase(slice_dir, tmp)
+        r.fake_git.branch_files = "\n".join(SWEPT) + "\n"
+        assert run_to_exit(r) == 0
+        calls = spec_calls(r, specs)
+        rm, commit = record_removal(calls)
+        assert calls[rm] == ("rm", "-r", "--cached", "--quiet",
+                             "--ignore-unmatch", "--", *SWEPT)
+        removal = calls[commit]
+        assert removal[2:4] == ("-m", "slice 074: the driver's run record "
+                                      "taken back out of phase/074-P1 (a git "
+                                      "add -A)")
+        assert removal[4:] == ("--", *SWEPT)
+        # Against an empty work tree of its own, gone again after: the
+        # files on disk commit as absent and are never read.
+        empty = Path(removal[0].partition("=")[2])
+        assert empty != specs and not empty.exists()
+        checkout = calls.index(("checkout", "main"))
+        merge = calls.index(("merge", "--ff-only", "phase/074-P1"))
+        assert rm < commit < checkout < merge
+        assert not [c for c in calls if c[0] in ("rebase", "filter-branch")
+                    or c[:2] == ("reset", "--hard")]
+        assert not load_state(slice_dir).get("bailouts")
+        assert load_state(slice_dir)["phases"]["1"]["status"] == "merged"
+        assert "[P1] the run record was committed onto phase/074-P1" \
+            in (slice_dir / "log.txt").read_text()
+
+    # A repair whose own git fails is the one stop left, and says what was
+    # attempted; the checkout never runs with the record still tracked.
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"]],
                          repo_root=repo)
         specs = specs_phase(slice_dir, tmp)
-        r.fake_git.branch_files = ("slices/074_test_slice/log.txt\n"
-                                   "slices/074_test_slice/phases/P1/x.json\n")
+        r.fake_git.branch_files = "\n".join(SWEPT) + "\n"
+        r.fake_git.fails.add(("rm", "-r", "--cached", "--quiet",
+                              "--ignore-unmatch", "--", *SWEPT))
         assert run_to_exit(r) == 3
         bail = json.loads((slice_dir / "bailout.json").read_text())
         assert bail["reason"] == "protocol_failure"
         assert "log.txt" in bail["details"]
+        assert "git rm -r --cached" in bail["details"]
+        assert r.fake_git.branch_at[str(specs)] == "phase/074-P1"
+        assert ("checkout", "main") not in spec_calls(r, specs)
         assert not [c for root, c in r.fake_git.mutations("merge")
                     if str(root) == str(specs)]
+        assert "the tree stays on phase/074-P1" \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_a_bail_takes_a_committed_run_record_out_before_checking_the_base_out():
+    """At a bail the tree goes back to its base too — and with the record
+    tracked on the branch, that checkout unlinked the live log (slice 238
+    P5's hand recovery). The bail path repairs first, as the merge does."""
+    blocked = ("code-reviewer", {"outcome": "blocked", "summary": "no creds"})
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], blocked], repo_root=repo)
+        specs = specs_phase(slice_dir, tmp)
+        r.fake_git.branch_files = "\n".join(SWEPT) + "\n"
+        assert run_to_exit(r) == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "blocked", "the repair never masks the bail"
+        calls = spec_calls(r, specs)
+        rm, commit = record_removal(calls)
+        assert rm < commit < calls.index(("checkout", "main"))
+        assert r.fake_git.branch_at[str(specs)] == "main"
+        log = (slice_dir / "log.txt").read_text()
+        assert "[bail] the run record was committed onto phase/074-P1" in log
+        assert "[bail] specs: left on phase/074-P1, checked main back out" \
+            in log
 
 
 # The pathspec the driver commits a spec-repo phase's slice-folder edits by:

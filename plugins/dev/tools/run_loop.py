@@ -1849,10 +1849,12 @@ CLOSE_OUT_LINE = """
 {dispatch_line}
 """
 
-# Carried by every executor dispatch whose target repo holds the slice
-# folder — the specs repo as a `Target:`. The driver's run record is written
-# into that tree while the session works; an agent that sweeps it into a
-# commit takes the live log with it at the merge's `git checkout <base>`.
+# Carried by every dispatch that commits into the tree holding the slice
+# folder — executor, reviewer and consult alike, inside a phase whose
+# `Target:` is the specs repo. The driver's run record is written into that
+# tree while the session works; an agent that sweeps it into a commit takes
+# the live log with it at the merge's `git checkout <base>` (slice 238 P5:
+# the reviewer's `git add -A` of its review with its close-out entry).
 BOOKKEEPING_NOTE = """
 The slice folder {slice_dir} sits inside this phase's target repo, and
 everything the driver writes there — log.txt, state.json, phases/ — is the
@@ -1958,7 +1960,7 @@ phase's scope is under review; end-to-end testing and prose docs have their
 own later phases, so their absence here is not a finding.
 
 {gate_line}
-{philosophy_line}{close_out_line}
+{philosophy_line}{close_out_line}{bookkeeping_note}
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
 
@@ -1984,7 +1986,7 @@ touches it. The requirements are unchanged: the phase's section in
 {plan_path} and the acceptance criteria in {verification_path}.
 
 {gate_line}
-{philosophy_line}{close_out_line}
+{philosophy_line}{close_out_line}{bookkeeping_note}
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
 
@@ -2384,7 +2386,7 @@ Situation: {situation}
 {phase_line}Slice folder: {slice_dir} (state.json holds the run history)
 {close_out_line} Out-of-scope findings and sub-bar leftovers go there as
 entries; `list` before you write, add if in doubt.
-
+{bookkeeping_note}
 Investigate as needed — read the material below, the plan, git log/diff.
 {material}
 
@@ -2760,28 +2762,75 @@ class RunLoop:
         self.git("restore", "--source=HEAD", "--staged", "--worktree", "--",
                  *pathspec, root=root)
 
-    def _assert_record_untracked(self, phase_id: str, root: Path, base: str,
-                                 branch: str) -> None:
-        """The driver's run record must stay untracked while the run is in
-        flight. Committed onto the phase branch, the merge's `git checkout
-        <base>` unlinks the file the open log handle is still writing to and
-        the rest of the run's log goes nowhere. Caught here, before the
-        checkout, with the branch still intact."""
+    def _untrack_committed_record(self, phase_id: str | None, root: Path,
+                                  base: str, branch: str) -> None:
+        """Take the driver's run record back out of `branch` when a session
+        committed it there — run on the branch, right before the driver
+        checks `base` out of it (the merge, and `_restore_bases` at a bail).
+        A no-op unless `root` holds the slice folder.
+
+        The record must stay untracked while the run is in flight: tracked
+        on the branch and not on the base, `git checkout <base>` unlinks it
+        from the working tree — the log the open handle is still writing to,
+        the state, the phase outputs (slice 238 P5, a reviewer's `git add
+        -A`). It is taken out by a commit of its own, not by rewriting the
+        branch: the branch's commits keep their shas, so the `reviewed_head`
+        and the gate's green that name them stay true, where the rewrite the
+        old bail asked for orphaned them and the next resume bailed
+        `lost_work`. `git rm --cached` touches the index only, and the commit
+        is made by pathspec against an empty work tree — so the paths commit
+        as absent, the files on disk (the live log among them) are never
+        read or touched, and nothing else staged comes along. Neither the
+        branch's tip nor the base tracks them after that, so the checkout
+        leaves them where they are. The spec repo's history then carries a
+        snapshot of the record under the phase's merge, which is harmless:
+        the folder is committed whole when the slice closes anyway.
+
+        Only a repair that itself fails is a stop, and the stop says what
+        was attempted."""
         if not self._bookkeeping_pathspec(root):
             return
         rel = self.slice_dir.relative_to(Path(root).resolve())
         paths = [str(rel / name) for name in RUN_RECORD]
         swept = self.git("log", "--name-only", "--pretty=format:",
                          f"{base}..{branch}", "--", *paths, root=root)
-        if swept:
+        if not swept:
+            return
+        label = f"[P{phase_id}]" if phase_id else "[bail]"
+        # What the tip tracks, not every path the log names: a file a later
+        # commit already removed is not there to take out, and a pathspec
+        # naming it would fail the commit.
+        tracked = sorted(set(self.git("ls-tree", "-r", "--name-only", branch,
+                                      "--", *paths, root=root).split()))
+        if not tracked:
+            self.log(f"{label} the run record was committed onto {branch} "
+                     "and removed again there — nothing to take out")
+            return
+        try:
+            self.git("rm", "-r", "--cached", "--quiet", "--ignore-unmatch",
+                     "--", *tracked, root=root)
+            with tempfile.TemporaryDirectory() as empty:
+                self.git(f"--work-tree={empty}", "commit", "-m",
+                         f"slice {self.slice_num}: the driver's run record "
+                         f"taken back out of {branch} (a git add -A)",
+                         "--", *tracked, root=root)
+            sha = self.git("rev-parse", "HEAD", root=root)
+        except Bailout as e:
             raise Bailout(
                 "protocol_failure", phase=phase_id,
                 details="the driver's own run record was committed onto "
                         f"{branch} (a `git add -A` in {root}): "
-                        + ", ".join(sorted(set(swept.split())))
-                        + ". Rewrite the branch without those paths, then "
+                        + ", ".join(tracked)
+                        + ". Taking it back out — `git rm -r --cached` of "
+                          "those paths, then a commit of their removal on "
+                          f"{branch} — failed ({e.details}). The files on "
+                          "disk are the live record: commit their removal "
+                          f"on {branch} without touching them, then "
                           "resume.",
-            )
+            ) from None
+        self.log(f"{label} the run record was committed onto {branch} (a "
+                 f"`git add -A`) — taken back out in {sha[:12]}, the files "
+                 "left untracked: " + ", ".join(tracked))
 
     def _commit_slice_edits(self, root: Path, branch: str,
                             label: str) -> bool:
@@ -2800,7 +2849,7 @@ class RunLoop:
         the hand recovery did. Tracked paths only and this slice's folder
         only, committed by pathspec so nothing else staged comes along: a
         parallel slice's folder is its own session's business, and the live
-        run record — untracked by design (`_assert_record_untracked`) — is
+        run record — untracked by design (`_untrack_committed_record`) — is
         excluded outright, so not even an agent's stray `git add` of it
         reaches a commit the driver makes. The report's store is the one
         untracked file taken, by name: an agent's append creates it on a
@@ -3058,7 +3107,11 @@ class RunLoop:
         the exception, in the spec repo: they are this run's, the dirty
         check does not see them, and left uncommitted they refuse the
         checkout — so they are committed onto the phase branch first, as the
-        merge does (`_commit_slice_edits`). Nothing here may mask the bail,
+        merge does (`_commit_slice_edits`). And a run record a session
+        committed there is taken back out before the checkout, as the merge
+        does too (`_untrack_committed_record`): checked out with it tracked,
+        the base would unlink the live log. A repair that fails leaves the
+        tree on the branch for that reason. Nothing here may mask the bail,
         so a git failure is logged and swallowed — naming the branch the
         tree stays on, since that is then not its base."""
         mine = f"phase/{self.slice_num}-"
@@ -3078,6 +3131,7 @@ class RunLoop:
                              "uncommitted work — not touched")
                     continue
                 self._commit_slice_edits(root, cur, "[bail]")
+                self._untrack_committed_record(None, root, base, cur)
                 self.git("checkout", base, root=root)
                 self.log(f"[bail] {root.name}: left on {cur}, checked {base} "
                          "back out")
@@ -3471,7 +3525,12 @@ class RunLoop:
         `_salvage_reattach` takes it and no session is dispatched at all.
         `spec_branch` is the branch this dispatch expects the shared specs
         tree on — the phase or doc branch when it is that repo being
-        branched, otherwise None for the base branch."""
+        branched, otherwise None for the base branch.
+
+        Every dispatch enters the stops a resume has not reported yet
+        (`_report_bailouts`) before anything else: this is the first moment
+        the tree stands on the branch the dispatch works on."""
+        self._report_bailouts()
         shown = display or role
         label = f"[P{phase_id}] [{shown}]" if phase_id else f"[{shown}]"
         salvaged = self._salvage_reattach(role, phase_id, verdict_path, label)
@@ -3782,6 +3841,8 @@ class RunLoop:
             phase_line=phase_line,
             slice_dir=self.slice_dir,
             close_out_line=dispatch_line(self.report_path),
+            bookkeeping_note=(BOOKKEEPING_NOTE.format(slice_dir=self.slice_dir)
+                              if spec_branch is not None else ""),
             material="\n".join(f"- {p}" for p in material) or "- (state.json only)",
             actions="\n".join(f"- `{a}` — {why}" for a, why in actions.items()),
             verdict_path=verdict_path,
@@ -3948,10 +4009,12 @@ class RunLoop:
         return f" in the sibling repo {target.git_root}"
 
     def _bookkeeping_note(self, target: ResolvedTarget) -> str:
-        """The paragraph fencing the driver's run record off from an
-        executor working in the tree that holds it — empty otherwise. Every
-        executor round is a fresh session, so every executor prompt carries
-        it."""
+        """The paragraph fencing the driver's run record off from a session
+        that commits into the tree holding it — empty otherwise. Every round
+        is a fresh session, so every executor and reviewer prompt in such a
+        phase carries it (the consult's, keyed on its `spec_branch`, too):
+        the reviewer writes its review into that record and appends its
+        close-out entry beside it, and one `git add -A` commits both."""
         if not self._bookkeeping_pathspec(target.git_root):
             return ""
         return BOOKKEEPING_NOTE.format(slice_dir=self.slice_dir)
@@ -4363,7 +4426,7 @@ class RunLoop:
                         "gate_red", phase=phase_id,
                         details=f"cannot merge a red test gate ({gate_log})",
                     )
-            self._assert_record_untracked(phase_id, root, base, branch)
+            self._untrack_committed_record(phase_id, root, base, branch)
             self.git("checkout", base, root=root)
             self.git("merge", "--ff-only", branch, root=root)
             self.git("branch", "-D", branch, root=root)
@@ -4561,6 +4624,7 @@ class RunLoop:
                     gate_line=gate_line,
                     philosophy_line=self._philosophy_line(),
                     close_out_line=self._close_out_line(),
+                    bookkeeping_note=self._bookkeeping_note(target),
                 )
             else:
                 prompt = REVIEWER_PROMPT.format(
@@ -4572,6 +4636,7 @@ class RunLoop:
                     gate_line=gate_line,
                     philosophy_line=self._philosophy_line(),
                     close_out_line=self._close_out_line(),
+                    bookkeeping_note=self._bookkeeping_note(target),
                 )
             verdict, _ = self._spawn(
                 "code-reviewer", prompt, self.repo_root, verdict_path,
@@ -6658,9 +6723,10 @@ class RunLoop:
             # for is an ordinary --resume.
             self._assert_current()
             self._ensure_report()
-            self._report_bailouts()
             # The report exists from here, and nothing is dispatched yet —
-            # on a fresh run and on every resume alike.
+            # on a fresh run and on every resume alike. A resume enters the
+            # earlier stops at its first dispatch, not here, while the spec
+            # tree still stands on its base (`_report_bailouts`).
             assert_no_prerun_actions(self.slice_dir)
 
             if resume_at != "docs":
@@ -6702,6 +6768,9 @@ class RunLoop:
 
         self.state["run_phase"] = "done"
         self._save_state()
+        # A resume that completed without dispatching anything enters its
+        # stops here, with the tree on its base and the run over.
+        self._report_bailouts()
         self._stamp_report()
         self._summary()
         sys.exit(0)
@@ -6732,14 +6801,25 @@ class RunLoop:
                          f"{store.name} beside {self.report_path.name}")
 
     def _report_bailouts(self) -> None:
-        """Every stop of this run becomes an event entry, written by
-        the resume that follows it — the first moment the report exists and
-        the spec tree is on its base again, and the one moment the stop is
-        known to be over. A stop the report did not carry left its Events
-        saying the run recorded no bail-out beneath a header counting one.
-        Each `bailouts` row is marked `reported` once its entry is in, so a
-        stop is written exactly once across any number of resumes; a row
-        whose entry could not be written is tried again next time."""
+        """Every stop of this run becomes an event entry, written by the
+        resume that follows it, at its first dispatch (`_spawn`) — the
+        first moment the report exists, the stop is known to be over, and
+        the spec tree stands on the branch that dispatch works on: the
+        phase branch inside a phase that branches the spec repo, where the
+        entry rides the branch and `_commit_slice_edits` commits it at the
+        merge or at a bail; the base otherwise. A resume that dispatches
+        nothing writes it at completion. Written at startup, on the base,
+        the entry sat uncommitted there and refused the checkout of a
+        spec-repo phase's branch whose own close-out.json had moved (slice
+        238 P5, four bails) — and never at a bail either, for the same
+        reason: the tree is on its base again by then.
+
+        A stop the report did not carry left its Events saying the run
+        recorded no bail-out beneath a header counting one. Each `bailouts`
+        row is marked `reported` once its entry is in, so a stop is written
+        exactly once across any number of resumes and every later call
+        costs one list filter; a row whose entry could not be written is
+        tried again next time."""
         rows = [row for row in self.state.get("bailouts") or []
                 if isinstance(row, dict) and not row.get("reported")]
         for row in rows:
