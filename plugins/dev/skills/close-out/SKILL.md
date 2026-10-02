@@ -54,16 +54,22 @@ slice directory.
    that may since have been fixed — check it before you present, and put what you found under
    the entry (`close_out.py note`). An entry already fixed is presented as that, with the
    commit. That is the whole of the checking: whether the claim still holds today, never whether
-   it was right.
+   it was right. An entry that comes to them with no `Proposal:` gets one from you
+   (`close_out.py propose <slice> <id> --by "close-out session" --text "…"`): what you would do
+   about it and why, in a ruling's words, from the entry and what you found. The same pass
+   removes what the run left behind: the record's events name a scratch clone the driver left
+   for a `github:` Target — when its tree is clean and level with its origin, delete it and say
+   so under the event (`note`); otherwise say what you found and leave it.
 5. **Present what comes to the operator — ask nothing yet.** Show the `Run:` header, then the
    entries under **Comes to you** and **Card requests** as the rendered report has them: in its
-   order, each in full — heading, body, `Consequence:`, `Triage:`, `Route:` — with the ruling
-   the operator already wrote on it, if any. Entries that still stand under **Unlabelled** or
-   **For the wrap-up** come with them: nobody routed or handled those, so they are the
-   operator's to see. Then one line for the rest, from `close_out.py counts <slice>`: how many
-   entries the table closed, how many the wrap-up settled, how many are in the record. They are
-   in the report under their headings; nothing is asked about them. The operator reads; you
-   wait.
+   order, each as its ask — heading, `Proposal:`, `Consequence:`, `Route:` — with the ruling the
+   operator already wrote on it, if any. Nothing else: not the body, not the notes, not the labels.
+   They rule from the three lines, or ask; when they ask about an entry, `close_out.py show <slice>
+   <id>` is what you answer from. Entries that still stand under **Unlabelled** or **For the
+   wrap-up** come with them: nobody routed or handled those, so they are the operator's to see. Then
+   one line for the rest, from `close_out.py counts <slice>`: how many entries the table closed, how
+   many the wrap-up settled, how many are in the record. They are in the report under their
+   headings; nothing is asked about them. The operator reads; you wait.
 6. **Take the rulings.** The operator rules in the session ("card B1, close D2, fold I1 into
    009") or on the `Disposition:` lines of `close-out.md`, as it suits them, and both in one
    report. What they say you record at once, `close_out.py rule <slice> <id> --words "<their
@@ -73,21 +79,23 @@ slice directory.
    `fix now` · `fold into <slice>` · `close` · `defer`. A blanket ruling ("close the rest", "I'm
    not progressing anything else") is a `close` on every entry that came to them and has no
    ruling yet, each carrying those words. A ruling may name any entry of the report: "card B7"
-   on an entry the table closed pulls it back, and is a ruling like any other. When they ask
-   what you would do with an entry, say it in a clause, with the reason and from the entry's own
-   text, and wait — the ruling stays theirs, and what you record as done on it opens
-   `suggested <disposition>`.
+   on an entry the table closed pulls it back, and is a ruling like any other. A word of assent
+   on an entry — "agreed", "ok", "do it" — is a ruling for its `Proposal:`: record their word,
+   execute what the proposal says, and what you record as done names it. When they ask what
+   you would do with an entry beyond its proposal, say it in a clause, with the reason and from
+   the entry's own text, and wait — the ruling stays theirs, and what you record as done on it
+   opens `suggested <disposition>`.
 7. **Execute each ruling**, then record what you did, `close_out.py rule <slice> <id> --did
    "<what was done>"` (`--commit <sha>` where there is one) — "carded as <card id>", "fixed in
    <commit>", "folded into <slice>", "closed by the operator, <date>". Recording it strikes the
    entry.
-   - `card [project]` — one tracker card per entry (in the named project's intake queue, else
-     this project's, per the host convention): title = the entry's headline without its
-     ` · <grade>` — the grade ranks a finding inside its report, and on a card's title it reads
-     as a claim about the card — body = the entry verbatim, what the wrap-up found under it, and
-     the report's path. Entries that are one fix are one card. Actions the operator wants
-     carded go together, on **one** card in their action queue: a list they work from, not a
-     card each. A card request they say yes to is filed the same way.
+   - `card [project]` — one tracker card per entry (in the named project's intake queue, else this
+     project's, per the host convention): title = the entry's headline without its ` · <grade>` —
+     the grade ranks a finding inside its report, and on a card's title it reads as a claim about
+     the card — body = the entry in full as `close_out.py show <slice> <id>` prints it, and the
+     report's path. Entries that are one fix are one card. Actions the operator wants carded go
+     together, on **one** card in their action queue: a list they work from, not a card each. A card
+     request they say yes to is filed the same way.
    - `fix now` — do it here only if the project's `CLAUDE.md` classes the change as ad hoc
      work; otherwise say so and offer `fold into`.
    - `fold into <slice>` — append the entry verbatim as an ask to that slice's `slice.md` under
@@ -123,9 +131,9 @@ slice directory.
   present it; you do not relabel it to move it.
 - Never edit an operator's words, and never re-derive an entry's claim — the run's records are
   in the slice folder if the operator wants to look, and `/dev:triage` grounds what it takes on.
-- When a ruling asks about the claim ("this says we built the wrong thing, right?"), answer
-  from the entry's own body and `Provenance:` — quote what supports or fails to support the
-  operator's reading, and say plainly when the entry does not settle it. Agreeing is not an
+- When a ruling asks about the claim ("this says we built the wrong thing, right?"), answer from the
+  entry's own body and `Provenance:` (`close_out.py show`) — quote what supports or fails to support
+  the operator's reading, and say plainly when the entry does not settle it. Agreeing is not an
   answer; neither is re-deriving.
 - Present, record, file, edit — no planning, no design here; that is `/dev:triage` →
   `/dev:plan-slice`.

@@ -823,9 +823,9 @@ class PlanLoop:
             return []
         return [item for item in items if isinstance(item, dict)]
 
-    def _owed_entries(self) -> list[tuple[str, str, str, str]]:
-        """(headline, body, consequence, provenance) per Outstanding action
-        the plan owes the operator, as it stands at exit 0: one per `## Push
+    def _owed_entries(self) -> list[tuple[str, str, str, str, str]]:
+        """(headline, body, consequence, provenance, proposal) per
+        Outstanding action the plan owes the operator, as it stands at exit 0: one per `## Push
         holds` repo, naming the criteria verification.json marks `owed_after`
         that target; one per criterion whose `owed_after` names anything
         else — an operator action the run cannot take either."""
@@ -848,7 +848,7 @@ class PlanLoop:
                                      placeholder=" …")
             return f"- {vid} — {short}" if desc else f"- {vid}"
 
-        entries: list[tuple[str, str, str, str]] = []
+        entries: list[tuple[str, str, str, str, str]] = []
         for target, why in holds:
             name = self._held_repo_name(target)
             after = [o for o in owed if _target_key(o[2]) == _target_key(target)]
@@ -856,6 +856,7 @@ class PlanLoop:
             consequence = (f"until you push it, nothing {name} deploys "
                            "carries the slice")
             provenance = "read — `plan.md`'s `## Push holds`"
+            proposal = "Push it when the hold lifts."
             if after:
                 ids = ", ".join(vid for vid, _, _ in after)
                 body += (
@@ -867,9 +868,11 @@ class PlanLoop:
                                 + ("stays" if len(after) == 1 else "stay")
                                 + " unproven")
                 provenance += " and `verification.json`'s `owed_after`"
+                proposal = ("Push it when the hold lifts, then say so: the "
+                            f"session settles {ids} after the push.")
             entries.append((f"Push {name} by hand when its hold lifts", body,
                             consequence + ".",
-                            provenance + ", seeded by the plan loop"))
+                            provenance + ", seeded by the plan loop", proposal))
 
         held = {_target_key(target) for target, _ in holds}
         for vid, desc, after in owed:
@@ -885,7 +888,9 @@ class PlanLoop:
                 f"{vid} stays unproven until then; the test phase does not "
                 "settle it.",
                 "read — `verification.json`'s `owed_after`, seeded by the "
-                "plan loop"))
+                "plan loop",
+                f"When that has happened, say so: the session settles {vid} "
+                "in verification.json."))
         return entries
 
     def _seed_outstanding(self) -> None:
@@ -902,7 +907,7 @@ class PlanLoop:
         with self._spec_tree("close-out outstanding actions"):
             self._assert_on_base()
             seeded = 0
-            for headline, body, consequence, provenance in entries:
+            for headline, body, consequence, provenance, proposal in entries:
                 try:
                     eid = find_by_headline(self.slice_dir, OUTSTANDING,
                                            headline)
@@ -911,7 +916,8 @@ class PlanLoop:
                         continue
                     eid = append_entry(self.slice_dir, OUTSTANDING, headline,
                                        body, consequence=consequence,
-                                       provenance=provenance)
+                                       provenance=provenance,
+                                       proposal=proposal)
                 except ReportError as e:
                     self.log(f"close-out entry not written ({e}): {headline}")
                     continue

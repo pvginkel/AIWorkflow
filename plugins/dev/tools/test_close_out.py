@@ -76,7 +76,8 @@ IMPROVEMENT = ["--kind", "improvement", "--headline", "drop the duplicate helper
                "--body", "b", "--consequence", "none", "--provenance", "read — P2 r1",
                "--benefit", "code", "--felt", "not-observable", "--change", "remove",
                "--size", "one-edit", "--product-call", "no", "--prevents", "nothing",
-               "--area", "plain", "--repo", "KubeCoder"]
+               "--area", "plain", "--repo", "KubeCoder",
+               "--proposal", "Drop it now: one caller, one edit."]
 
 
 def with_flags(base, **flags):
@@ -90,6 +91,13 @@ def with_flags(base, **flags):
         if value is not None:
             out += [flag, value]
     return out
+
+
+# An action and a decision: the defect's text, the three labels, a proposal.
+ACTION = with_flags(DEFECT, kind="action", fix=None, area=None, repo=None,
+                    proposal="Do it before the next run: one command.")
+DECISION = with_flags(ACTION, kind="decision",
+                      proposal="Keep it as it is; the other way costs a release.")
 
 
 STATE = {
@@ -397,8 +405,7 @@ def test_append_refuses_a_missing_label_naming_every_flag_and_the_kind():
         _refused(slice_dir, with_flags(IMPROVEMENT, felt=None), "an improvement carries",
                  "missing: --felt")
         # an action needs trigger, impact and signal only
-        code, out, _ = run_cli("append", slice_dir, *with_flags(
-            DEFECT, kind="action", fix=None, area=None, repo=None))
+        code, out, _ = run_cli("append", slice_dir, *ACTION)
         assert code == 0 and out.strip() == "A1"
         # an event that describes no problem needs no fix
         code, out, _ = run_cli("append", slice_dir, *with_flags(
@@ -517,7 +524,8 @@ def test_append_stores_the_entry_in_the_store_shape():
         close_out.init_report(slice_dir)
         code, out, _ = run_cli("append", slice_dir, *with_flags(
             DEFECT, body="-", severity="minor",
-            consequence="an operator  reads\na wrong status"),
+            consequence="an operator  reads\na wrong status",
+            proposal="Card it:\n  the fix  needs a design."),
                                stdin="\n  first line\n\nsecond paragraph  \n\n")
         assert code == 0 and out.strip() == "B1"
         data = store(slice_dir)
@@ -528,17 +536,53 @@ def test_append_stores_the_entry_in_the_store_shape():
             "headline": "controller: the status line is wrong",
             "body": ["  first line", "", "second paragraph"],
             "consequence": "an operator reads a wrong status",
+            "proposal": "Card it: the fix needs a design.",
             "evidence": "witnessed", "author": "code-reviewer, P3 r1",
             "labels": {"trigger": "ordinary-condition", "impact": "broken",
                        "signal": "silent", "fix": "design", "area": "sensitive",
                        "repo": "KubeCoder"},
             "notes": [], "wrap_up": None, "strike": None, "ruling": None}]
+        # the proposal stands right after the Consequence
+        assert list(data["entries"][0])[5:7] == ["consequence", "proposal"]
         raw = (slice_dir / "close-out.json").read_text()
         assert raw.endswith("}\n") and raw == json.dumps(data, indent=2,
                                                          ensure_ascii=False) + "\n"
         # no temp file left beside it
         assert sorted(p.name for p in slice_dir.iterdir()) == ["close-out.json",
                                                                "close-out.md"]
+        # without --proposal, a defect stores none
+        code, out, _ = run_cli("append", slice_dir, *DEFECT)
+        assert entry_of(slice_dir, out.strip())["proposal"] is None
+
+
+def test_append_asks_a_proposal_of_an_action_a_decision_and_an_improvement():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        for base, article in ((ACTION, "an action"), (DECISION, "a decision"),
+                              (IMPROVEMENT, "an improvement")):
+            for missing in (None, " \n "):
+                _refused(slice_dir, with_flags(base, proposal=missing),
+                         f"Error: {article} needs --proposal: what you would do about "
+                         "it and why, in a sentence or two")
+        # said with the label refusals, in one error
+        err = _refused(slice_dir, with_flags(IMPROVEMENT, proposal=None, felt=None),
+                       "missing: --felt", "an improvement needs --proposal")
+        assert err.count("Error:") == 1
+        # a defect, prose, a test gap and an event owe none
+        for argv in (DEFECT, with_flags(DEFECT, kind="prose", area=None),
+                     with_flags(DEFECT, kind="test-gap"),
+                     with_flags(ACTION, kind="event", proposal=None, consequence="none",
+                                trigger="none", impact="none", signal="none")):
+            code, _, err = run_cli("append", slice_dir, *argv)
+            assert code == 0, err
+        # the loops' path refuses nothing
+        assert close_out.append_entry(slice_dir, "action", "Do X", "b",
+                                      consequence="none") == "A1"
+        assert entry_of(slice_dir, "A1")["proposal"] is None
+        assert close_out.append_entry(slice_dir, "action", "Do Y", "b", consequence="none",
+                                      proposal=" Do it\n now. ") == "A2"
+        assert entry_of(slice_dir, "A2")["proposal"] == "Do it now."
 
 
 def test_provenance_splits_the_evidence_class_off():
@@ -777,38 +821,106 @@ def test_relabel_gives_an_unlabelled_entry_its_first_labels():
 
 # -- the wrap-up: marks and worklist ---------------------------------------------
 
-def test_request_card_and_leave_mark_the_entry_and_render_among_the_notes():
+def test_request_card_and_leave_mark_the_entry_and_the_card_is_its_proposal():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         close_out.init_report(slice_dir)
         run_cli("append", slice_dir, *DEFECT)                                  # B1
         run_cli("append", slice_dir, *with_flags(DEFECT, fix="one-edit",
                                                  area="plain"))                 # B2
+        close_out.propose_entry(slice_dir, "B1", "code-reviewer, P3 r1",
+                                "Close it: it needs a fault.", date="2026-09-30")
         code, out, _ = run_cli("request-card", slice_dir, "B1", "--by", "wrap-up",
-                               "--text", "reached on every restart; needs a design",
+                               "--text", "reached on every restart;\nneeds a design",
                                "--date", "2026-09-30")
         assert code == 0
         assert out.strip() == ("wrap-up, 2026-09-30 — asks for a card: reached on every "
-                               "restart; needs a design")
-        assert entry_of(slice_dir, "B1")["wrap_up"] == {
+                               "restart;\nneeds a design")
+        b1 = entry_of(slice_dir, "B1")
+        assert b1["wrap_up"] == {
             "outcome": "card", "by": "wrap-up", "date": "2026-09-30",
-            "text": ["reached on every restart; needs a design"]}
+            "text": ["reached on every restart;", "needs a design"]}
+        # the card request is the entry's proposal; the one it replaced is a note
+        assert b1["proposal"] == "reached on every restart; needs a design"
+        assert b1["notes"] == [{"by": "wrap-up", "date": "2026-09-30",
+                                "text": ["proposal replaced — was: Close it: it needs a "
+                                         "fault."]}]
         code, _, _ = run_cli("leave", slice_dir, "B2", "--by", "wrap-up", "--text",
                              "the path is dead code", "--date", "2026-09-30")
         assert code == 0
+        assert entry_of(slice_dir, "B2")["proposal"] is None
         close_out.render_report(slice_dir)
         text = report(slice_dir)
-        cards = text[text.index("## Card requests"):text.index("## Closed")]
-        assert "### B1 — " in cards
-        assert "wrap-up, 2026-09-30 — asks for a card: reached on every restart" in cards
-        assert "**Route:** card request — the wrap-up asks for a card" in cards
-        closed = text[text.index("## Closed"):]
-        assert "wrap-up, 2026-09-30 — looked and left it: the path is dead code" in closed
-        assert "**Route:** closed — the wrap-up looked and left it" in closed
+        assert _section(text, "Card requests") == (
+            "\n## Card requests\n\n### B1 — controller: the status line is wrong\n\n"
+            "**Proposal:** reached on every restart; needs a design\n\n"
+            "**Consequence:** an operator reads a wrong status\n\n"
+            "**Route:** card request — the wrap-up asks for a card\n**Disposition:**\n")
+        assert _section(text, "Closed") == (
+            "\n## Closed\n\n### B2 — controller: the status line is wrong\n\n"
+            "**Route:** closed — the wrap-up looked and left it\n**Disposition:**\n")
+        # the marks are among the notes of the full view
+        shown = close_out.show_view(slice_dir, ["B1", "B2"])
+        assert ("wrap-up, 2026-09-30 — proposal replaced — was: Close it: it needs a "
+                "fault.\n\nwrap-up, 2026-09-30 — asks for a card: reached on every "
+                "restart;\nneeds a design\n\n**Proposal:** ") in shown
+        assert "wrap-up, 2026-09-30 — looked and left it: the path is dead code" in shown
         # a struck entry takes no mark
         close_out.strike_entry(slice_dir, "B2", "gone")
         code, _, err = run_cli("leave", slice_dir, "B2", "--by", "w", "--text", "t")
         assert code == 2 and "struck" in err
+
+
+def test_propose_sets_the_proposal_and_keeps_the_one_it_replaces():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)                                   # B1
+        code, out, err = run_cli("propose", slice_dir, "B1", "--by", "code-reviewer",
+                                 "--text", "-", "--date", "2026-10-02",
+                                 stdin="Card it:\n  the fix needs a design.\n")
+        assert code == 0, err
+        assert out.strip() == "**Proposal:** Card it: the fix needs a design."
+        b1 = entry_of(slice_dir, "B1")
+        assert b1["proposal"] == "Card it: the fix needs a design." and b1["notes"] == []
+        line = close_out.propose_entry(slice_dir, "B1", " wrap-up ", "Fix now: one edit.",
+                                       date="2026-10-02")
+        assert line == "**Proposal:** Fix now: one edit."
+        b1 = entry_of(slice_dir, "B1")
+        assert b1["proposal"] == "Fix now: one edit."
+        assert b1["notes"] == [{"by": "wrap-up", "date": "2026-10-02",
+                                "text": ["proposal replaced — was: Card it: the fix needs "
+                                         "a design."]}]
+        # the same proposal again replaces nothing
+        close_out.propose_entry(slice_dir, "B1", "wrap-up", "Fix now:  one edit.")
+        assert len(entry_of(slice_dir, "B1")["notes"]) == 1
+        for eid, by, text, needle in (("B1", "w", " ", "a proposal needs --text"),
+                                      ("B1", " ", "t", "a proposal needs --by"),
+                                      ("B9", "w", "t", "no entry B9")):
+            code, _, err = run_cli("propose", slice_dir, eid, "--by", by, "--text", text)
+            assert code == 2 and needle in err, err
+        close_out.strike_entry(slice_dir, "B1", "fixed")
+        code, _, err = run_cli("propose", slice_dir, "B1", "--by", "w", "--text", "t")
+        assert code == 2 and "B1 is struck — a struck entry is settled" in err
+        assert entry_of(slice_dir, "B1")["proposal"] == "Fix now: one edit."
+
+
+def test_a_store_written_before_the_proposal_reads_as_without_one():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *ACTION)
+        data = store(slice_dir)
+        del data["entries"][0]["proposal"]
+        (slice_dir / "close-out.json").write_text(json.dumps(data))
+        close_out.render_report(slice_dir)
+        assert "### A1 — " in report(slice_dir)
+        assert "**Proposal:**" not in report(slice_dir)
+        assert "**Proposal:**" not in close_out.show_view(slice_dir, ["A1"])
+        assert close_out.entry_counts(slice_dir)[close_out.NO_PROPOSAL] == 1
+        close_out.propose_entry(slice_dir, "A1", "the operator", "Do it.")
+        assert entry_of(slice_dir, "A1")["proposal"] == "Do it."
+        assert entry_of(slice_dir, "A1")["notes"] == []
 
 
 def test_worklist_names_what_waits_and_what_is_asked():
@@ -831,8 +943,7 @@ def test_worklist_names_what_waits_and_what_is_asked():
                                                  impact="severe"))                      # B8
         run_cli("append", slice_dir, *with_flags(DEFECT, trigger="fault",
                                                  impact="degraded"))                    # B9
-        run_cli("append", slice_dir, *with_flags(DEFECT, kind="action", fix=None,
-                                                 area=None, repo=None))                 # A1
+        run_cli("append", slice_dir, *ACTION)                                          # A1
         asked = {e["id"]: a.split(" — ")[0] for e, a in close_out.worklist(slice_dir)}
         assert asked == {"B1": "label", "B2": "fold", "B3": "fix", "B4": "look",
                          "B5": "fix or card", "I1": "improve", "B6": "check",
@@ -848,6 +959,11 @@ def test_worklist_names_what_waits_and_what_is_asked():
         assert lines[i + 1] == "    controller: the status line is wrong · minor"
         assert lines[i + 2].startswith("    Triage: defect · shows on an ordinary condition")
         assert lines[i + 3] == "    Consequence: an operator reads a wrong status"
+        assert lines[i + 4] == "B4 · look — give the label the author could not"
+        # the proposal, where the entry has one, after the Consequence
+        i = lines.index("I1 · improve — a small change, within the bar")
+        assert lines[i + 3:i + 5] == ["    Consequence: none",
+                                      "    Proposal: Drop it now: one caller, one edit."]
         # a mark takes the entry off the list; a struck one is off it too
         close_out.leave_entry(slice_dir, "B6", "wrap-up", "the fault cannot occur")
         close_out.request_card(slice_dir, "B5", "wrap-up", "more than the bar")
@@ -921,34 +1037,74 @@ def test_the_disposition_lines_are_read_back_into_the_store():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         close_out.init_report(slice_dir)
-        for _ in range(4):
-            run_cli("append", slice_dir, *DEFECT)
-        close_out.strike_entry(slice_dir, "B4", "dup of B1")
-        close_out.rule_entry(slice_dir, "B3", words="fold into 012", date="2026-09-29")
-        close_out.rule_entry(slice_dir, "B3", did="folded", date="2026-09-29")
+        run_cli("append", slice_dir, *ACTION)                                    # A1
+        for _ in range(2):
+            run_cli("append", slice_dir, *DEFECT)                                # B1, B2
+        run_cli("append", slice_dir, *with_flags(DEFECT, trigger="fault"))       # B3
         close_out.render_report(slice_dir)
         code, out, _ = run_cli("rule", slice_dir)
         assert code == 0 and out.strip() == "nothing to take from the Disposition lines"
-        # one line; several lines; inside the fold of a struck entry; the
-        # operator's words beside an existing `did`
+        # one line; several lines; under an ask, under a closed entry
+        _write_disposition(slice_dir, "A1", "done")
         _write_disposition(slice_dir, "B1", "card KC")
         _write_disposition(slice_dir, "B2", "close —\nit is fixed upstream")
-        _write_disposition(slice_dir, "B4", "agreed")
-        _write_disposition(slice_dir, "B3", "fold into 031 — folded")
+        _write_disposition(slice_dir, "B3", "agreed")
         code, out, _ = run_cli("rule", slice_dir)
         assert code == 0
-        assert out.splitlines() == ["B1: card KC", "B2: close — it is fixed upstream",
-                                    "B3: fold into 031", "B4: agreed"]
-        assert entry_of(slice_dir, "B1")["ruling"]["words"] == "card KC"
+        assert out.splitlines() == ["A1: done", "B1: card KC",
+                                    "B2: close — it is fixed upstream", "B3: agreed"]
         assert entry_of(slice_dir, "B2")["ruling"]["words"] == \
             "close —\nit is fixed upstream"
-        assert entry_of(slice_dir, "B4")["ruling"]["words"] == "agreed"
-        b3 = entry_of(slice_dir, "B3")
-        assert b3["ruling"]["words"] == "fold into 031" and b3["ruling"]["did"] == "folded"
-        assert b3["notes"][-1]["text"] == ["ruled earlier: fold into 012"]
+        assert entry_of(slice_dir, "B3")["ruling"]["words"] == "agreed"
         # a second read-back takes nothing: the file says what the store does
         code, out, _ = run_cli("rule", slice_dir)
         assert out.strip() == "nothing to take from the Disposition lines"
+        close_out.render_report(slice_dir)
+        assert "**Disposition:** close —\nit is fixed upstream\n" in report(slice_dir)
+
+
+def test_a_report_rendered_with_folds_is_read_back_before_its_first_re_render():
+    """A close-out.md as 0.9.57–0.9.69 rendered it — bodies folded in
+    `<details>`, the record folded whole with its Disposition line inside —
+    still gives up what the operator wrote, and the next render drops the
+    folds."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        for _ in range(2):
+            run_cli("append", slice_dir, *with_flags(DEFECT, fix="one-edit",
+                                                     area="plain"))              # B1, B2
+        close_out.rule_entry(slice_dir, "B2", words="fold into 012", date="2026-09-29")
+        close_out.rule_entry(slice_dir, "B2", did="folded", date="2026-09-29")
+        triage = ("**Triage:** defect · shows on an ordinary condition · breaks a flow · "
+                  "silent · fix is one edit · in\nKubeCoder")
+        (slice_dir / "close-out.md").write_text(
+            "# Close-out — slice 007 argocd_tools_presync_hook\n\n"
+            "<!-- Generated by `close_out.py render` from close-out.json, the record. "
+            "The `Disposition:`\n     lines are yours to write; everything else is "
+            "overwritten by the next render. -->\n\nRun: <not yet stamped>\n\n"
+            "## For the wrap-up\n\n"
+            "### B1 — controller: the status line is wrong\n\n"
+            "<details><summary>body</summary>\n\nthe body\n\n</details>\n\n"
+            "**Consequence:** an operator reads a wrong status\n\n"
+            f"{triage}\n**Provenance:** witnessed — code-reviewer, P3 r1\n"
+            "**Route:** the wrap-up — fix\n**Disposition:** card KC,\nin KubeCoder\n\n"
+            "## Record\n\n"
+            "### ~~B2 — controller: the status line is wrong~~ — folded; struck by the "
+            "operator's ruling\n\n"
+            "<details><summary>struck — kept for the record</summary>\n\nthe body\n\n"
+            "**Consequence:** an operator reads a wrong status\n\n"
+            f"{triage}\n**Provenance:** witnessed — code-reviewer, P3 r1\n"
+            "**Disposition:** fold into 031 — folded\n\n</details>\n")
+        close_out.render_report(slice_dir)
+        assert entry_of(slice_dir, "B1")["ruling"]["words"] == "card KC,\nin KubeCoder"
+        b2 = entry_of(slice_dir, "B2")
+        assert b2["ruling"]["words"] == "fold into 031" and b2["ruling"]["did"] == "folded"
+        assert b2["notes"][-1]["text"] == ["ruled earlier: fold into 012"]
+        text = report(slice_dir)
+        assert "<details>" not in text and "</details>" not in text
+        assert "**Disposition:** card KC,\nin KubeCoder\n" in text
+        assert close_out.read_back(slice_dir) == []
 
 
 def test_render_keeps_what_the_operator_wrote():
@@ -1040,8 +1196,7 @@ def test_render_writes_the_sections_in_order_and_the_entries_in_their_forms():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         close_out.init_report(slice_dir)
-        run_cli("append", slice_dir, *with_flags(DEFECT, kind="action", fix=None,
-                                                 area=None, repo=None))          # A1
+        run_cli("append", slice_dir, *ACTION)                                    # A1
         run_cli("append", slice_dir, *with_flags(DEFECT, trigger="fault",
                                                  impact="severe"))                # B1
         run_cli("append", slice_dir, *DEFECT)                                    # B2
@@ -1057,6 +1212,8 @@ def test_render_writes_the_sections_in_order_and_the_entries_in_their_forms():
         run_cli("append", slice_dir, *DEFECT)                                    # B6
         close_out.strike_entry(slice_dir, "B6", "dup of B2", by="consult 1",
                                commit="19640d9")
+        for eid in ("A1", "B1", "B3", "B5", "E1", "B6"):
+            close_out.add_note(slice_dir, eid, "consult 1", "a note for the record")
         line = close_out.render_report(slice_dir)
         assert line == ("Comes to you 2 · Card requests 1 · For the wrap-up 1 · "
                         "Unlabelled 1 · Closed 1 · Record 2")
@@ -1064,56 +1221,62 @@ def test_render_writes_the_sections_in_order_and_the_entries_in_their_forms():
         assert text.startswith("# Close-out — slice 007 argocd_tools_presync_hook\n\n"
                                "<!-- Generated by `close_out.py render` from "
                                "close-out.json")
+        assert "\n     `close_out.py show <id>` prints an entry in full. -->\n" in text
         assert "\nRun: <not yet stamped>\n" in text
         titles = re.findall(r"^## (.+)$", text, re.M)
         assert titles == list(close_out.REPORT_SECTIONS)
-        # in full: the body in view
-        comes = _section(text, "Comes to you")
-        assert _heads(comes) == ["### A1 — controller: the status line is wrong",
-                                 "### B1 — controller: the status line is wrong"]
-        assert "the body\n\n**Consequence:** an operator reads a wrong status\n\n" \
-               "**Triage:** defect · needs a fault · severe · silent · fix needs design · " \
-               "sensitive area · in\nKubeCoder\n**Provenance:** witnessed — code-reviewer, " \
-               "P3 r1\n**Route:** to you — a risk: severe, in place of a close\n" \
-               "**Disposition:**\n" in comes
-        assert "<details>" not in comes
-        # body folded: the triage lines stay in view
-        wrap = _section(text, "For the wrap-up")
-        assert ("### B3 — controller: the status line is wrong\n\n"
-                "<details><summary>body</summary>\n\nthe body\n\n</details>\n\n"
-                "**Consequence:** an operator reads a wrong status\n\n**Triage:** ") in wrap
-        assert "**Route:** the wrap-up — fix\n**Disposition:**\n" in wrap
-        closed = _section(text, "Closed")
-        assert "### B5 — controller: the status line is wrong · nit\n\n<details>" in closed
-        assert "**Route:** closed — it needs a fault" in closed
-        # unlabelled: in full, without a Triage line
-        unl = _section(text, "Unlabelled")
-        assert "### B4 — old\n\nold body\n\n**Consequence:** c\n\n" \
-               "**Route:** none yet — the entry has no labels\n" in unl
-        assert "**Triage:**" not in unl
-        # folded whole: the record's event first, then what was struck
-        record = _section(text, "Record")
-        assert _heads(record) == [
-            "### E1 — resumed",
+        # the ask: the headline, the Proposal, the Consequence — and what the
+        # operator writes on; the Proposal line only where there is one
+        assert _section(text, "Comes to you") == (
+            "\n## Comes to you\n\n"
+            "### A1 — controller: the status line is wrong\n\n"
+            "**Proposal:** Do it before the next run: one command.\n\n"
+            "**Consequence:** an operator reads a wrong status\n\n"
+            "**Route:** to you — an action\n**Disposition:**\n\n"
+            "### B1 — controller: the status line is wrong\n\n"
+            "**Consequence:** an operator reads a wrong status\n\n"
+            "**Route:** to you — a risk: severe, in place of a close\n"
+            "**Disposition:**\n")
+        assert "**Proposal:** needs design\n\n**Consequence:**" in \
+            _section(text, "Card requests")
+        assert _section(text, "For the wrap-up") == (
+            "\n## For the wrap-up\n\n"
+            "### B3 — controller: the status line is wrong\n\n"
+            "**Consequence:** an operator reads a wrong status\n\n"
+            "**Route:** the wrap-up — fix\n**Disposition:**\n")
+        assert _section(text, "Unlabelled") == (
+            "\n## Unlabelled\n\n### B4 — old\n\n**Consequence:** c\n\n"
+            "**Route:** none yet — the entry has no labels\n**Disposition:**\n")
+        # closed: the heading, the route, the Disposition line
+        assert _section(text, "Closed") == (
+            "\n## Closed\n\n### B5 — controller: the status line is wrong · nit\n\n"
+            "**Route:** closed — it needs a fault\n**Disposition:**\n")
+        # the record: headings alone, the events first, then what was struck
+        assert _section(text, "Record") == (
+            "\n## Record\n\n### E1 — resumed\n\n"
             "### ~~B6 — controller: the status line is wrong~~ — dup of B2 (19640d9); "
-            "struck by consult 1"]
-        assert ("~~ — dup of B2 (19640d9); struck by consult 1\n\n"
-                "<details><summary>struck — kept for the record</summary>\n\nthe body\n\n"
-                "**Consequence:** an operator reads a wrong status\n\n**Triage:** defect") \
-            in record
-        assert record.rstrip().endswith("**Disposition:**\n\n</details>")
-        assert "### E1 — resumed\n\n<details><summary>kept for the record</summary>\n\n" \
-               "ok\n\n**Consequence:** none\n\n**Triage:** event · nothing that could " \
-               "show · no impact\n**Route:** the record\n**Disposition:**\n\n</details>" \
-            in record
-        # a card request is in full, with the wrap-up's word among the notes
-        cards = _section(text, "Card requests")
-        assert re.search(r"the body\n\nwrap-up, \d{4}-\d{2}-\d{2} — asks for a card: "
-                         r"needs design\n\n\*\*Consequence:\*\*", cards)
+            "struck by consult 1\n")
+        # the evidence stays in the store
+        for absent in ("the body", "old body", "a note for the record",
+                       "asks for a card: needs design",
+                       "**Triage:**", "**Provenance:**", "<details>"):
+            assert absent not in text, absent
         # a render twice in a row writes the same bytes
         before = (slice_dir / "close-out.md").read_bytes()
         assert close_out.render_report(slice_dir) == line
         assert (slice_dir / "close-out.md").read_bytes() == before
+        # a long proposal wraps at the report's width
+        close_out.propose_entry(slice_dir, "B1", "wrap-up", " ".join(["a word"] * 30))
+        close_out.render_report(slice_dir)
+        comes = _section(report(slice_dir), "Comes to you")
+        block = comes[comes.index("**Proposal:** a word"):comes.index("\n\n**Consequence:** "
+                                                                      "an operator reads a "
+                                                                      "wrong status\n\n"
+                                                                      "**Route:** to you — a "
+                                                                      "risk")]
+        assert len(block.splitlines()) > 1
+        assert all(len(row) <= close_out.HEADER_WIDTH for row in block.splitlines())
+        assert " ".join(block.split()) == "**Proposal:** " + " ".join(["a word"] * 30)
 
 
 def test_render_orders_a_section_by_grade_then_kind_then_id():
@@ -1127,10 +1290,8 @@ def test_render_orders_a_section_by_grade_then_kind_then_id():
                       with_flags(risky, severity="cosmetic"),
                       with_flags(risky, kind="test-gap", severity="major")):
             run_cli("append", slice_dir, *flags)
-        run_cli("append", slice_dir, *with_flags(DEFECT, kind="decision", fix=None,
-                                                 area=None, repo=None, severity="major"))
-        run_cli("append", slice_dir, *with_flags(DEFECT, kind="action", fix=None,
-                                                 area=None, repo=None))
+        run_cli("append", slice_dir, *with_flags(DECISION, severity="major"))
+        run_cli("append", slice_dir, *ACTION)
         close_out.render_report(slice_dir)
         heads = [h.split(" — ")[0][4:] for h in _heads(_section(report(slice_dir),
                                                                 "Comes to you"))]
@@ -1248,8 +1409,7 @@ def test_counts_live_entries_per_section_and_per_letter_on_one_line():
         assert close_out.counts_line(close_out.entry_counts(slice_dir)) == (
             "to you 0 · card requests 0 · wrap-up 0 · unlabelled 0 · closed 0 · record 0 "
             "— A 0 · D 0 · E 0 · B 0 · P 0 · T 0 · I 0")
-        run_cli("append", slice_dir, *with_flags(DEFECT, kind="action", fix=None,
-                                                 area=None, repo=None))
+        run_cli("append", slice_dir, *ACTION)
         run_cli("append", slice_dir, *DEFECT)
         run_cli("append", slice_dir, *DEFECT)
         run_cli("append", slice_dir, *with_flags(DEFECT, trigger="fault"))
@@ -1263,6 +1423,19 @@ def test_counts_live_entries_per_section_and_per_letter_on_one_line():
             "to you 1 · card requests 0 · wrap-up 1 · unlabelled 1 · closed 1 · record 1 "
             "— A 1 · D 0 · E 1 · B 3 · P 0 · T 0 · I 0 · 1 entry without a Consequence "
             "line · 2 entries without a Provenance line")
+        # what comes to the operator without a proposal: an action entered
+        # without one, a risk; a card request has the wrap-up's words as its own
+        close_out.append_entry(slice_dir, "action", "Do X", "b", consequence="none",
+                               provenance="witnessed — the driver")            # A2
+        line = close_out.counts_line(close_out.entry_counts(slice_dir))
+        assert line.endswith("line · 1 entry that comes to you without a Proposal line")
+        run_cli("append", slice_dir, *with_flags(DEFECT, trigger="fault",
+                                                 impact="severe"))              # B5
+        close_out.request_card(slice_dir, "B1", "wrap-up", "needs a design")
+        counts = close_out.entry_counts(slice_dir)
+        assert counts[close_out.NO_PROPOSAL] == 2
+        assert close_out.counts_line(counts).endswith(
+            " · 2 entries that come to you without a Proposal line")
 
 
 def test_list_groups_by_kind_with_consequence_lines_and_struck_entries_marked():
@@ -1284,6 +1457,54 @@ def test_list_groups_by_kind_with_consequence_lines_and_struck_entries_marked():
             "## prose\n(none)\n## test-gap\n(none)\n## improvement\n"
             "I1 — drop the duplicate helper\n    Consequence: none")
         assert "the body" not in out
+
+
+def test_show_prints_entries_in_full_by_id_or_every_live_one():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *ACTION)                                    # A1
+        run_cli("append", slice_dir, *with_flags(DEFECT, severity="minor"))      # B1
+        close_out.add_note(slice_dir, "B1", "consult 1", "still true after P4",
+                           date="2026-10-01")
+        close_out.leave_entry(slice_dir, "B1", "wrap-up", "the path is dead code",
+                              date="2026-10-01")
+        close_out.append_entry(slice_dir, "event", "resumed", "ok", consequence="none")
+        run_cli("append", slice_dir, *DEFECT)                                    # B2
+        close_out.strike_entry(slice_dir, "B2", "dup of B1", by="consult 1")
+        close_out.rule_entry(slice_dir, "A1", words="do it")
+        code, out, err = run_cli("show", slice_dir / "close-out.md", "B1", "A1")
+        assert code == 0, err
+        b1, a1 = out.rstrip("\n").split("\n\n### A1 — ")
+        assert b1.startswith(
+            "### B1 — controller: the status line is wrong · minor\n\nthe body\n\n"
+            "consult 1, 2026-10-01 — still true after P4\n\n"
+            "wrap-up, 2026-10-01 — looked and left it: the path is dead code\n\n"
+            "**Consequence:** an operator reads a wrong status\n\n**Triage:** defect · ")
+        assert b1.endswith(
+            "\n**Provenance:** witnessed — code-reviewer, P3 r1\n"
+            "**Route:** closed — the wrap-up looked and left it\n**Disposition:**")
+        assert "**Proposal:**" not in b1
+        assert a1.startswith(
+            "controller: the status line is wrong\n\nthe body\n\n"
+            "**Proposal:** Do it before the next run: one command.\n\n"
+            "**Consequence:** an operator reads a wrong status\n\n"
+            "**Triage:** action · shows on an ordinary condition · breaks a flow · silent\n"
+            "**Provenance:** witnessed — code-reviewer, P3 r1\n"
+            "**Route:** to you — an action\n**Disposition:** do it")
+        # a struck entry by its id: its struck heading, no Route
+        code, out, _ = run_cli("show", slice_dir, "B2")
+        assert out.startswith("### ~~B2 — controller: the status line is wrong~~ — dup "
+                              "of B1; struck by consult 1\n\nthe body\n\n")
+        assert "**Route:**" not in out and "**Triage:** defect" in out
+        # without an id: every live entry, under its section, in the report's order
+        code, out, _ = run_cli("show", slice_dir)
+        assert code == 0
+        assert re.findall(r"^#{2,3} .*?(?= —|$)", out, re.M) == [
+            "## Comes to you", "### A1", "## Closed", "### B1", "## Record", "### E1"]
+        assert "ok\n\n**Consequence:** none" in out and "B2" not in out
+        code, _, err = run_cli("show", slice_dir, "B9")
+        assert code == 2 and "no entry B9" in err
 
 
 # -- find_by_headline, live_entries ------------------------------------------------
@@ -1483,7 +1704,10 @@ def test_import_reads_an_old_report_losing_nothing():
         for eid in by_id:
             assert len([h for h in unfenced
                         if re.match(rf"### (~~)?{eid} — ", h)]) == 1, eid
-        assert "### B3 — not an entry" in text     # quoted, in its fence
+        # a body is the store's: the quoted heading in its fence is N2's
+        assert "### B3 — not an entry" not in text
+        assert "### B3 — not an entry" in close_out.show_view(slice_dir, ["N2"])
+        assert all(e["proposal"] is None for e in data["entries"])
         assert "**Disposition:** card KC\n" in text
         assert "Focus:" not in text and "## Summary" not in text
         assert close_out.read_back(slice_dir) == []
@@ -1615,15 +1839,23 @@ def test_verb_usage_renders_append_compactly_with_its_help_strings():
     assert "--section" not in block
     assert "[--repo NAME]" in lines[0] and "[--for SLICE]" in lines[0]
     assert "[--product-call {yes,no}]" in lines[0]
-    assert len(lines) == 1 + 19
+    assert "--consequence CONSEQUENCE [--proposal PROPOSAL] [--provenance" in lines[0]
+    assert len(lines) == 1 + 20
     for flag, help_ in (
             ("--kind", "what the entry is — it decides which of the labels below the "
                        "entry carries"),
-            ("--headline", "one line, the claim itself; a defect names its repo or "
-                           "component, a decision asks its question"),
+            ("--headline", "one line, the claim itself — the ask, as the operator reads "
+                           "it: a defect names its repo or component, an action is an "
+                           "imperative, a decision asks its question, an improvement "
+                           "says what it proposes"),
             ("--body", "entry body, or - for stdin"),
             ("--consequence", "what an operator or user experiences if this stays as it "
                               "is, or none — the line the operator triages on"),
+            ("--proposal", "what you would do about it and why, in a sentence or two, in "
+                           "a ruling's words (card · fix now · fold into <slice> · close · "
+                           "do it) — the operator reads it with the headline and the "
+                           "Consequence and nothing else; required for an action, a "
+                           "decision and an improvement"),
             ("--provenance", "witnessed | read, then role, phase, round, and the "
                              "artifact with the full record"),
             ("--severity", "the grade, where the entry has one"),
@@ -1643,6 +1875,15 @@ def test_verb_usage_renders_append_compactly_with_its_help_strings():
                                "product sees or can do"),
             ("--prevents", "improvement: the worst it would prevent")):
         assert f"    {flag}: {help_}" in lines, flag
+    wrap_up = close_out.verb_usage("show", "propose", "request-card").splitlines()
+    assert wrap_up[0] == "close_out.py show <close-out.md> [<id> ...]"
+    assert ("close_out.py propose <close-out.md> <id> --by BY --text TEXT "
+            "[--date DATE]") in wrap_up
+    for help_ in ("    --by: who proposes",
+                  "    --text: what you would do about it and why, or - for stdin",
+                  "    --text: how it is reached and what the fix takes — it becomes the "
+                  "entry's proposal; or - for stdin"):
+        assert help_ in wrap_up, help_
     notes = close_out.verb_usage("list", "note", "strike")
     assert notes.splitlines()[0] == "close_out.py list <close-out.md>"
     assert "    <id>: the entry's id, like B3" in notes

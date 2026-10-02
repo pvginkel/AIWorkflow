@@ -1499,7 +1499,7 @@ def test_review_funding_consult_merges_and_reports():
         # The merge is a Notable event in the close-out report, standing on
         # its own: the consult's reasoning, the findings as tagged, the
         # review file.
-        report = load_report(slice_dir)
+        report = entries_in_full(slice_dir)
         assert ("### E1 — P1 merged with unresolved review findings after r2"
                 in report)
         assert "advisory only" in report
@@ -1661,7 +1661,7 @@ def test_all_blocking_refuted_without_code_change_settles_review():
         assert "F1: ran the repro; output correct" in review
         # The refutation is a Notable event carrying the reviewer's claim,
         # the writer's evidence, and the review file — nothing to chase.
-        report = load_report(slice_dir)
+        report = entries_in_full(slice_dir)
         assert "### E1 — Fix round after review r1 of P1 refuted F1" in report
         assert '"wrong branch on empty input"' in report
         assert "ran the repro; output correct" in report
@@ -1862,14 +1862,16 @@ def test_every_dispatch_carries_the_report_path():
             assert f"`python3 {CLOSE_OUT_TOOL} labels` prints" in prompt
             assert "never edit either file by hand" in prompt
             assert prompt.count("close_out.py append <close-out.md> --kind") == 1
-        # and no prompt still speaks of cards
-        assert not any("card" in p for _, p in r.prompts)
+        # and no prompt still speaks of cards — but for the ruling words
+        # `append`'s --proposal names
+        append = close_out.verb_usage("append")
+        assert not any("card" in p.replace(append, "") for _, p in r.prompts)
 
 
 def test_report_is_rendered_before_the_doc_phase_and_at_completion():
     """A run that stalls in the doc phase leaves a report that can be read,
     so the driver renders before dispatching the doc-writer: sections by
-    route, graded entries first, struck entries folded in the Record. The
+    route, graded entries first, struck entries' headings in the Record. The
     wrap-up the unlabelled entries wait for renders once more when it is
     over, and completion renders again (idempotent) and then stamps."""
     plant = {}
@@ -1903,16 +1905,15 @@ def test_report_is_rendered_before_the_doc_phase_and_at_completion():
         assert "## " not in plant["planted"], "appends do not render"
         seen = plant["at_doc_dispatch"]
         # Rendered when the doc-writer was dispatched: the unlabelled
-        # defects in full, major before minor; the struck nit folded whole
-        # in the Record, its body kept.
+        # defects, major before minor; the struck nit's heading in the
+        # Record, its body in the store.
         body = seen[seen.index("\n## "):]
         assert (body.index("## Unlabelled")
                 < body.index("### B2 — the major one · major")
                 < body.index("### B3 — a minor · minor")
                 < body.index("## Record")
-                < body.index("### ~~B1 — a nit · nit~~ — dup of B3")
-                < body.index("<details><summary>struck — kept for the record")
-                < body.index("b1\n") < body.index("</details>"))
+                < body.index("### ~~B1 — a nit · nit~~ — dup of B3"))
+        assert "<details>" not in body and "b1\n" not in body
         # Completion rendered again and stamped: byte-identical sections,
         # header stamped, counts unchanged.
         final = load_report(slice_dir)
@@ -2006,12 +2007,17 @@ def test_a_bail_renders_the_report_and_commits_nothing():
         assert "close-out not rendered: " in (slice_dir / "log.txt").read_text()
 
 
-def notable_events(slice_dir):
-    """The rendered report's entries — the driver's events stand in the
-    Record or with the wrap-up, as their labels route them."""
-    report = load_report(slice_dir)
-    start = report.find("\n## ")
-    return report[start:] if start != -1 else ""
+def entries_in_full(slice_dir):
+    """Every entry of the report, struck ones too, in full as `close_out.py
+    show` prints it: the rendered report carries the ask alone, so what the
+    driver wrote under an entry — body, notes, Provenance — is read from
+    the store. Empty before the store holds an entry."""
+    try:
+        data = json.loads((slice_dir / "close-out.json").read_text())
+    except FileNotFoundError:
+        return ""
+    ids = [e["id"] for e in data["entries"]]
+    return close_out.show_view(slice_dir, ids) if ids else ""
 
 
 def test_every_stop_becomes_one_notable_event_written_by_the_resume():
@@ -2027,13 +2033,13 @@ def test_every_stop_becomes_one_notable_event_written_by_the_resume():
         row, = load_state(slice_dir)["bailouts"]
         assert row["details"] == "no creds for the registry"
         assert row["run_phase"] == "phases" and "reported" not in row
-        assert "### E" not in notable_events(slice_dir), "not while stopped"
+        assert "### E" not in entries_in_full(slice_dir), "not while stopped"
 
         r2 = ScriptedLoop(slice_dir, [("code-writer", {
             "outcome": "question", "summary": "which registry, prod or dev?"})],
             resume=True, repo_root=repo)
         assert run_to_exit(r2) == 4
-        events = notable_events(slice_dir)
+        events = entries_in_full(slice_dir)
         assert "### E1 — Run stopped (blocked) in P1\n" in events
         assert "> no creds for the registry" in events
         assert "resumed" in events
@@ -2047,7 +2053,7 @@ def test_every_stop_becomes_one_notable_event_written_by_the_resume():
         r3 = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
                                       *TAIL], resume=True, repo_root=repo)
         assert run_to_exit(r3) == 0
-        events = notable_events(slice_dir)
+        events = entries_in_full(slice_dir)
         assert events.count("Run stopped (blocked) in P1") == 1
         assert "### E2 — Run paused for an operator question in P1\n" \
             in events
@@ -2088,7 +2094,7 @@ def test_a_resumed_spec_repo_phase_enters_the_stop_on_its_branch():
         assert calls.index(("checkout", "phase/074-P1")) \
             < calls.index(("checkout", "main"))
         assert "### E1 — Run stopped (blocked) in P1\n" \
-            in notable_events(slice_dir)
+            in entries_in_full(slice_dir)
         assert load_state(slice_dir)["bailouts"][0]["reported"] is True
 
 
@@ -2109,7 +2115,7 @@ def test_a_resume_that_dispatches_nothing_reports_the_stop_at_completion():
         r = ScriptedLoop(slice_dir, [], resume=True, repo_root=repo)
         assert run_to_exit(r) == 0
         assert not r.spawned and not r.wrap_up_sessions
-        assert "### E1 — Run stopped (blocked)" in notable_events(slice_dir)
+        assert "### E1 — Run stopped (blocked)" in entries_in_full(slice_dir)
         assert load_state(slice_dir)["bailouts"][0]["reported"] is True
 
 
@@ -2130,7 +2136,7 @@ def test_a_stop_outside_a_phase_and_a_row_without_details_are_reported():
         r = ScriptedLoop(slice_dir, [V["test_clean"], V["doc_done"]],
                          resume=True, repo_root=repo)
         assert run_to_exit(r) == 0
-        events = notable_events(slice_dir)
+        events = entries_in_full(slice_dir)
         assert "### E1 — Run stopped (unpushed) outside any phase" in events
         assert "the stop is in full in log.txt" in events
         assert "Stopped 2026-09-20 10:11; resumed" in events
@@ -4358,9 +4364,10 @@ def test_a_held_sibling_is_reported_not_nudged():
         r.fake_git.unpushed[str(sib)] = "2"
         r._nudge = _never_nudge
         assert run_to_exit(r) == 0
-        report = load_report(slice_dir)
+        report = entries_in_full(slice_dir)
         assert "Push Sibling by hand when its hold lifts" in report
         assert "a push deploys dev and prd together" in report
+        assert "**Proposal:** Push it when the hold lifts." in report
         assert load_state(slice_dir)["holds_reported"] == [str(sib)]
         # the invoking repo is not held, so the doc phase still pushes it
         pushes = r.fake_git.mutations("push")
@@ -4383,7 +4390,9 @@ def test_a_hold_the_plan_loop_seeded_is_noted_not_entered_twice():
         r.fake_git.unpushed[str(sib)] = "2"
         r._nudge = _never_nudge
         assert run_to_exit(r) == 0
-        report = load_report(slice_dir)
+        assert load_report(slice_dir).count(
+            "Push Sibling by hand when its hold lifts") == 1
+        report = entries_in_full(slice_dir)
         assert report.count("Push Sibling by hand when its hold lifts") == 1
         assert "seeded at planning" in report
         assert "driver, push check" in report and "held as planned" in report
@@ -5199,8 +5208,8 @@ def test_a_green_wrap_up_lands_with_the_doc_phase():
         # every row naming a `--project <component>` gate says what exit 3 is
         assert prompt.count(run_loop.NOTHING_RAN_HINT) == 2
         verbs = "\n".join("  " + v for v in close_out.verb_usage(
-            "worklist", "list", "relabel", "request-card", "leave", "strike",
-            "note").splitlines())
+            "worklist", "show", "list", "relabel", "propose", "request-card",
+            "leave", "strike", "note").splitlines())
         assert ("  The other verbs the wrap-up uses, with their arguments:\n"
                 + verbs + "\n") in prompt
         assert f"The spec repo is {r.spec_root}." in prompt
@@ -7522,7 +7531,7 @@ def test_a_waived_phase_gate_runs_nothing_and_says_why():
         assert "ran GREEN" not in reviewer
         assert "waived by plan.md's `## Driver rulings`" \
             in (slice_dir / "log.txt").read_text()
-        events = notable_events(slice_dir)
+        events = entries_in_full(slice_dir)
         assert events.count("Gate waived by ruling") == 1
         assert "Gate waived by ruling: app — Jenkins validation build" \
             in events
@@ -7577,7 +7586,7 @@ def test_a_waived_sweep_test_row_is_not_run_and_lint_build_still_are():
         assert ("  - app — substitute: Jenkins validation build — suites "
                 "need Postgres") in test_prompt
         # the phase gate reported it first; the sweep adds no second entry
-        assert notable_events(slice_dir).count("Gate waived by ruling") == 1
+        assert entries_in_full(slice_dir).count("Gate waived by ruling") == 1
 
 
 def test_an_accepted_red_row_does_not_block():
@@ -7612,7 +7621,7 @@ def test_an_accepted_red_row_does_not_block():
             assert "A WAIVED or accepted row is the operator's ruling" in flat
             assert "append a phase that fixes it" not in flat
             assert "does not leave the machine" not in flat
-        events = notable_events(slice_dir)
+        events = entries_in_full(slice_dir)
         assert events.count("Red row accepted by ruling: app lint") == 1
         assert "the driver's sweep" in events
 
@@ -7645,7 +7654,7 @@ def test_a_ruling_added_after_the_sweep_is_honoured_when_it_renders():
         assert (f"{PROJECT} test → WAIVED by ruling (ran RED) — substitute: "
                 "Jenkins validation build") in prompt
         assert "does not leave the machine" not in prompt.replace("\n", " ")
-        events = notable_events(slice_dir)
+        events = entries_in_full(slice_dir)
         assert events.count("Gate waived by ruling: app") == 1
         assert "the driver's sweep" in events
 
@@ -7757,7 +7766,7 @@ def test_prd_is_authorized_only_by_a_prd_ruling():
         r2 = ScriptedLoop(slice_dir, [V["test_clean"], V["doc_done"]],
                           resume=True, repo_root=repo)
         assert run_to_exit(r2) == 0
-        events = notable_events(slice_dir)
+        events = entries_in_full(slice_dir)
         assert events.count("prd authorized by ruling: app") == 1
         assert "the driver's test-phase dispatch" in events
 
@@ -7817,7 +7826,8 @@ def fake_clone(tmp, manifest=True):
 
 
 def clone_headline(clone):
-    return f"Delete the scratch clone {clone.resolve()} once the slice is done"
+    return (f"The driver left a scratch clone at {clone.resolve()} "
+            f"(`Target: {GITHUB}`)")
 
 
 def test_a_github_target_resolves_as_a_sibling_at_its_clone():
@@ -7887,12 +7897,25 @@ def test_a_github_phase_runs_in_its_clone_and_reports_it_once():
                                       for root in branch_ops)
             report = load_report(slice_dir)
             assert report.count(clone_headline(clone)) == 1
-            assert f"`Target: {GITHUB}`" in report
-            assert ("**Provenance:** witnessed — the driver's target "
-                    "resolution") in report
+            # an event that describes no problem: the record, nothing asked
+            record = report[report.index("\n## Record\n"):]
+            assert f"### E1 — {clone_headline(clone)}\n" in record
+            entry = next(e for e in json.loads(
+                (slice_dir / "close-out.json").read_text())["entries"]
+                if e["headline"] == clone_headline(clone))
+            assert entry["kind"] == "event" and entry["proposal"] is None
+            assert entry["labels"] == dict.fromkeys(
+                ("trigger", "impact", "signal"), "none")
+            assert entry["consequence"].startswith("none — the clone is where")
+            assert (entry["evidence"], entry["author"]) == (
+                "witnessed", "the driver's target resolution")
+            body = " ".join(entry["body"])
+            assert f"`Target: {GITHUB}`" in body
+            assert ("The close-out session removes it then and says so under "
+                    "this entry; nothing is asked of the operator.") in body
             assert load_state(slice_dir)["scratch_clones_reported"] == [
                 str(clone.resolve())]
-            # an Outstanding action for after the slice, never a pre-run one
+            assert run_loop.live_entries(slice_dir, "Outstanding actions") == []
             assert run_loop.open_prerun_actions(slice_dir) == []
             # a later run whose state lost the record finds the entry
             again = ScriptedLoop(slice_dir, [], repo_root=repo)

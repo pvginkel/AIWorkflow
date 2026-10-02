@@ -4,6 +4,41 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-02 — what reaches the operator is the ask, the proposal and the consequence (v0.9.70)
+
+A close-out entry that came to the operator was shown in full — body, every note, `Triage:`,
+`Provenance:` — and the ask was buried: FieldnotesApp slice 003's I1 reached them under four
+paragraphs from three authors with its question in none of them, and its A1 was an action with
+`Consequence: none` and nothing to do. Across the eight reports since 0.9.57, 11 of the 23
+actions that reached them ended with nothing for them to do (AIWF-34;
+`docs/rationale/reporting.md` § Triage at the source has the read). The operator's direction:
+drop the evidence and the prose and get to the point, as the Fieldnotes triage card does; the
+evidence stays in the store.
+
+- **An entry carries a `proposal`**: what its author would do about it and why, in a sentence
+  or two, in a ruling's words — `append --proposal`, required for an action, a decision and an
+  improvement (the tool refuses them without). `propose` gives or replaces one, the one before
+  kept as a note; `request-card`'s text becomes the entry's proposal. The wrap-up gives a risk
+  its proposal where the author gave none or the code says otherwise; the close-out session
+  gives one to whatever comes to the operator without.
+- **The report shows three lines.** What comes to the operator is its heading (the ask), its
+  `Proposal:`, its `Consequence:`, the `Route:` and the `Disposition:` line — no body, no notes,
+  no `Triage:`, no `Provenance:`, no folds. A closed entry is its heading and the ground of the
+  close; the record is headings. `/dev:close-out` presents the same three lines and nothing
+  else, and a word of assent on an entry is a ruling for its proposal.
+- **`show <id>` prints an entry in full** — body, notes, labels, marks — and is how the wrap-up,
+  the close-out session and a card filing read one. The report is written for the operator
+  alone; the store is the record, as it was.
+- **The headline is the ask for every kind**: an action is one imperative that something waits
+  on — an "if" is a decision, a fact nobody has to act on is not an entry; an improvement's
+  headline says what it proposes, not the symptom (`docs/close-out.md` § The labels, which
+  `close_out.py labels` prints to every author).
+- **The driver's scratch-clone entry is an event in the record**, not an action: the close-out
+  session removes a clean, level clone itself. The plan loop's seeded actions carry proposals.
+- Ratifications — a decision with no consequence either way, nine of the fourteen decisions in
+  those reports — keep coming to the operator, on their word: "Bring them to me. I'll come back
+  if it bothers me."
+
 ## 2026-10-01 — the run loop runs detached; the session checks on it every 55 minutes (v0.9.69)
 
 `/dev:run-slice` launched `run_loop.py` with the Bash tool's `run_in_background`, which the

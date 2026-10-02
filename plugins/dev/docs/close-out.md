@@ -12,10 +12,12 @@ pointing at the report.
 **The record is `<slice>/close-out.json`; `<slice>/close-out.md` is rendered from it**
 ([close-out-template.md](close-out-template.md) has both shapes). An entry is data for its
 whole life, from the plan loop's first append to the operator's last ruling, and the report is
-what a reader is shown of it. `${CLAUDE_PLUGIN_ROOT}/tools/close_out.py` is the one pen: it
-writes every author's entries (`append`), notes (`note`) and strikes (`strike`), the corrections
-of a label (`relabel`), what the wrap-up asked for and left (`request-card`, `leave`), the
-operator's rulings (`rule`), renders the report and counts it. Both
+what the operator is shown of it: each entry's ask, its proposal and its consequence, and no
+more — the evidence is the store's. `${CLAUDE_PLUGIN_ROOT}/tools/close_out.py` is the one pen:
+it writes every author's entries (`append`), notes (`note`) and strikes (`strike`), the
+corrections of a label (`relabel`) and of a proposal (`propose`), what the wrap-up asked for and
+left (`request-card`, `leave`), the operator's rulings (`rule`), prints an entry in full
+(`show`), renders the report and counts it. Both
 loops import it, and every dispatch names it beside the report's path — which the tool takes as
 its positional, the slice directory or the report itself, so the first call works — with
 `append`'s arguments, rendered from the tool's own parser (`close_out.verb_usage`), so no
@@ -66,13 +68,13 @@ does not rename the entry.
 
 | kind | id | |
 |---|---|---|
-| `action` | A | only the operator can do it. It reads as an imperative ("Create the `IaC/ArgoCDTools` Jenkins job") |
+| `action` | A | one thing only the operator can do, that something waits on — a criterion, a push, a run. It reads as an imperative ("Create the `IaC/ArgoCDTools` Jenkins job") |
 | `decision` | D | the entry puts a choice that is the product owner's as a question: options to pick from, a convention to rule on |
 | `event` | E | something happened to the run that an uneventful one would not have had: a bail-out, an appended phase, a blocked proof re-routed, a live run that exposed what the suite hid. A phase or a round that went right is not an event — the run header counts them |
 | `defect` | B | the code, the configuration or the deployed system does something wrong today, however rarely |
 | `prose` | P | text is wrong, stale or missing — a document, a comment, help text, a message — and the behaviour is not in question |
 | `test-gap` | T | a test is missing, pins nothing or cannot fail, and the code it would guard is right today |
-| `improvement` | I | nothing is wrong today: a guard against what does not occur with the code as it is, a cleanup, behaviour the product could have or have otherwise |
+| `improvement` | I | nothing is wrong today: a guard against what does not occur with the code as it is, a cleanup, behaviour the product could have or have otherwise. Its headline is what it proposes, not the symptom |
 
 **What is wrong, or could go wrong** — the labels of every kind but `improvement`:
 
@@ -144,6 +146,14 @@ bring and what it would take:
   it and has to ask "what's the decision?" — and an entry that ends in "the operator's call" is
   what it was before that sentence. A ratification — a change already shipped, with no
   alternative but undoing it — says so in its first line, and its options are keep and revert.
+- **An action is one thing to do, and nothing waits on a notice.** Its headline is the
+  imperative, and its author can say who waits on it — a criterion, a push, the run. An "if"
+  makes it a decision. A fact nobody has to act on — a surface that changed, a step that was
+  taken, a convention the slice kept — is not an entry: what an owner might want to rule on is
+  a decision put to them, the rest is nothing. An action whose `Consequence:` is none is a sign
+  the kind is wrong.
+- **An improvement asks for its change.** "Quiet the MCP SDK's INFO lines in the mcp log?" is
+  the headline; "the SDK's lines outnumber ours" is the body's first sentence.
 - **A limit the plan chose is not a defect.** An entry that proposes to lift it is an
   improvement; one that only records it restates the plan and is not an entry.
 - **Input for a later slice is `for`, beside the kind**: a defect that a later slice should
@@ -167,8 +177,20 @@ bring and what it would take:
 - **What you fixed yourself is not an entry**; what is entered already and you fixed, you
   strike.
 
+**The proposal.** Beside its labels an entry says what its author would do about it and why,
+in a sentence or two, in a ruling's words — card · fix now · fold into <slice> · close · do it
+(`append --proposal`). The operator reads it with the headline and the `Consequence:` line and
+nothing else, so that one word back is a complete ruling: it is the reasoning they would
+otherwise redo. An action, a decision and an improvement carry one from their author, and the
+tool refuses them without. A defect, a test gap or prose may carry one, and gets the wrap-up's
+where the table brings it to the operator — a card request is the proposal (`request-card`); a
+risk gets one where its author gave none or the code says otherwise (`propose`). A proposal is
+a recommendation, never a route: the table decides who sees the entry, the operator what
+happens to it.
+
 **The tool refuses**, naming the flag, so that the author corrects in one turn:
 
+- an action, a decision or an improvement without a proposal;
 - an entry without the labels its kind carries;
 - an impact other than `none` over a `Consequence:` that opens with "none", and the reverse;
 - a `for` that names no slice that is still to run;
@@ -228,22 +250,26 @@ can fix responsibly (row 8). Nothing is filed before the operator's word.
 
 ## The report
 
-`close-out.md` is written for the operator, in the order of what is asked of them
-([the template](close-out-template.md#the-report) has the sections). What comes to them — the
-actions, the decisions, the risks, the improvements that are theirs to weigh — and the card
-requests stand first and in full. What the table closed follows with its body folded: the
-heading, the `Consequence:` line, the labels and the route stay in view, so a close they do not
-agree with can be pulled back from one line. The record is last.
+`close-out.md` is written for the operator and for nobody else, in the order of what is asked
+of them ([the template](close-out-template.md#the-report) has the sections). An entry that
+comes to them — the actions, the decisions, the risks, the improvements that are theirs to
+weigh, the card requests — is shown as its ask: the heading, what is proposed
+(`**Proposal:**`), what it costs (`**Consequence:**`), where the table sent it and why
+(`**Route:**`), and the line they write on (`**Disposition:**`). Nothing else: the body, the
+notes, the labels in words and the provenance are the store's, and nothing of them is on the
+page. What the table closed follows as its heading and the ground of the close, so a close
+they do not agree with can be pulled back from one line; the record is headings. An id on
+every entry lets a ruling name it in one line ("card B1, close B6, fold I1 into 009"), and the
+run's shape is stamped at the top.
 
 There is no list at the head of the report and none in the body of the close-out card: the
-report is its entries. Every entry shows, under its body, what it costs (`**Consequence:**`),
-what its author says it is (`**Triage:**`, the labels in words), where it came from
-(`**Provenance:**`), where the table sent it and why (`**Route:**`), and where the operator
-writes (`**Disposition:**`). An id on every entry lets a ruling name it in one line ("card B1,
-close B6, fold I1 into 009"), and the run's shape is stamped at the top.
+report is its entries. The operator reads an entry's three lines and rules, or sends a session
+to dig; they do not read the evidence, and a report that puts it in front of them costs them
+the entries.
 
-`close_out.py list` is the view an agent takes before it appends: ids, headlines and
-Consequence lines, without the bodies.
+`close_out.py show <id>` prints an entry in full — body, notes, labels, marks — and is how the
+wrap-up, the close-out session and a card filing read one. `close_out.py list` is the view an
+agent takes before it appends: ids, headlines and Consequence lines, without the bodies.
 
 ## Who writes what, when
 
@@ -280,22 +306,22 @@ it.
   otherwise reach the operator as open work.
 - **the driver and the plan loop** — deterministic entries only, and no labels of their own
   choosing: the tool labels what a loop enters, an action as an action and an event as one that
-  describes no problem, unless its `Consequence:` says otherwise — then its trigger and impact
-  are `unknown`. A refuted finding, a funding-consult merge and every stop of the run (entered
-  by the resume that follows it) each become an event, as does each `## Driver rulings` bullet,
-  once, the first time it takes effect ([run-loop.md](run-loop.md)); on a phase that targets
-  the spec repo, an agent's append left uncommitted is committed onto the phase branch before
-  the driver leaves it. **Each loop renders when it stops, for whatever reason, and when it
-  completes**, and the driver once more before it dispatches the doc phase, so that a run that
-  stalls there leaves a report that can be read, and once after the wrap-up. The run header is
-written by `render` from
-  `state.json` (run window, phases planned/appended, bail-outs, test rounds, doc phase
-  outcome); `/dev:run-slice` renders again once `slice_cost.py --write-state` has added the
-  `cost` block.
-- **the wrap-up** — strikes for what it fixed, corrected labels, card requests, and what it
-  left ([below](#the-wrap-up)).
-- **the close-out session** — the operator's rulings, in their words (`rule`), what it did on
-  them, and the closing of the report ([the lifecycle](#lifecycle)).
+  describes no problem, unless its `Consequence:` says otherwise — then its trigger and impact are
+  `unknown`. A refuted finding, a funding-consult merge and every stop of the run (entered by the
+  resume that follows it) each become an event, as does each `## Driver rulings` bullet, once, the
+  first time it takes effect ([run-loop.md](run-loop.md)), and a scratch clone the driver left for a
+  `github:` Target — the close-out session removes it, nobody is asked; on a phase that targets the
+  spec repo, an agent's append left uncommitted is committed onto the phase branch before the driver
+  leaves it. **Each loop renders when it stops, for whatever reason, and when it completes**, and
+  the driver once more before it dispatches the doc phase, so that a run that stalls there leaves a
+  report that can be read, and once after the wrap-up. The run header is written by `render` from
+  `state.json` (run window, phases planned/appended, bail-outs, test rounds, doc phase outcome);
+  `/dev:run-slice` renders again once `slice_cost.py --write-state` has added the `cost` block.
+- **the wrap-up** — strikes for what it fixed, corrected labels, card requests, the proposal
+  of a risk that has none, and what it left ([below](#the-wrap-up)).
+- **the close-out session** — the proposal of an entry that comes to the operator with none,
+  the operator's rulings, in their words (`rule`), what it did on them, and the closing of the
+  report ([the lifecycle](#lifecycle)).
 
 **Reading the report is never a license to act on it.** Phase agents append only — otherwise
 the report becomes a new source of scope bleed, a writer "fixing while here" what an earlier
@@ -322,12 +348,12 @@ operator is theirs, and no card is filed without their word.
 | a dated note says the run fixed the entry, and the commit is there | a strike naming that commit |
 | the change is within its bar | the edit, the gate, one commit for the entry, a strike naming it |
 | the label said one edit and the code says otherwise | the label corrected, with a note of what it found (`relabel`) |
-| a likely problem it cannot fix within its bar | a card request: how it is reached, what the fix takes (`request-card`) |
+| a likely problem it cannot fix within its bar | a card request: how it is reached, what the fix takes (`request-card`) — it becomes the entry's proposal |
 | a trigger or an impact the author could not tell | the label, from the code |
 | an entry without labels | its labels, from its text |
 | input for a slice that is still to run | the entry appended to that slice's `slice.md`, and a strike naming the slice |
 | a close that rests on one label, on an entry that breaks a flow | that label checked in the code — its trigger, or its signal — and corrected where the code says otherwise |
-| a risk that comes to the operator | what the code shows, under the entry; the entry stays theirs |
+| a risk that comes to the operator | a proposal, where its author gave none or the code says otherwise (`propose`), and what the code shows under it (`leave`); the entry stays theirs |
 | a gate that goes red on its fix | the fix taken back, and a card request or a note that says so |
 | anything else it looked at and does not change | that it left it, and why (`leave`) |
 
@@ -352,8 +378,11 @@ lands.
 
 ## Entry rules
 
-- **Write for a reader who has only this document.** The operator must be able to make sense of
-  an entry — at least at a high level — without chasing anything down. Quote liberally: the
+- **Three lines are the operator's; the body is the session's.** The operator reads the
+  headline, the proposal and the `Consequence:` line, and rules from them — write the three so
+  that one word back is a complete ruling, and so that none of them needs the body to be
+  understood. The body is written for the session they send to dig, for the wrap-up, and for
+  the card an entry may become; those have only the store, so quote liberally there: the
   sentence that is wrong, the command and its output, the file and lines. Provenance ids
   (`P3 r1 F3`, `V10`) belong on the `Provenance:` line, not in the body as load-bearing
   references.
@@ -373,8 +402,9 @@ lands.
   not, and a reader deciding what to trust needs the class before the body. The same holds for
   a strike — resolved, refuted, does-not-reproduce names the commit and what was re-run.
 - **No limit on prose, no limit on count — and no filler.** Long sections are fine; a cap produces
-  more, not less. Length is what the entry needs: the operator reads the report cold, and a
-  restated symptom, a boilerplate section or a summary of the entries costs them the entries.
+  more, not less. Length is what the body needs, and the operator never reads it. What they
+  read is three lines: a proposal that restates the headline, or a consequence that restates
+  the mechanism, costs them the entry.
 - **One entry per thing, not per turn.** A later observation about an entry that already exists —
   its premise moved, its symptom was re-tested, a phase resolved it, a reviewer refuted it — is
   `close_out.py note <close-out.md> <id>`: a dated paragraph at the end of that entry's body,
@@ -408,18 +438,16 @@ lands.
    report's path and its entry counts. That card is the "a report is waiting" marker, never an
    ask (`/dev:triage` reads the report it names, not the card); nothing else from the run is
    carded.
-4. The close-out session dispatches the wrap-up when entries still wait for it. The operator
-   reads
-   what comes to them and rules. The `close-out` skill (or an ad hoc session following it)
-   executes: `card` files a tracker card with the entry as its body, `fix now`
-   does the small thing and strikes the entry with the commit, or bails to a slice, `fold into`
-   appends the entry to that slice's `slice.md`, `close` strikes, `defer` leaves it — then
-   renders. Git in the spec repo holds the history. **The card's closure is the report's.** The
-   operator does not treat a blank `Disposition:` as pending work, and a report is never a queue
-   they work from: when they are done with it the report is closed (`close_out.py close`), the
-   close-out card with it, and every entry still live is closed by that act — what the table
-   closed among it, which stays live until then. `defer` is the one word that keeps the card
-   open.
+4. The close-out session dispatches the wrap-up when entries still wait for it. The operator reads
+   what comes to them and rules. The `close-out` skill (or an ad hoc session following it) executes:
+   `card` files a tracker card with the entry in full (`show`) as its body, `fix now` does the small
+   thing and strikes the entry with the commit, or bails to a slice, `fold into` appends the entry
+   to that slice's `slice.md`, `close` strikes, `defer` leaves it — then renders. Git in the spec
+   repo holds the history. **The card's closure is the report's.** The operator does not treat a
+   blank `Disposition:` as pending work, and a report is never a queue they work from: when they are
+   done with it the report is closed (`close_out.py close`), the close-out card with it, and every
+   entry still live is closed by that act — what the table closed among it, which stays live until
+   then. `defer` is the one word that keeps the card open.
 5. While the card is open, `/dev:triage` reads the report it names — the `defer` entries and
    what came to the operator and is not ruled — one item per entry. A finding that deserves a
    life of its own gets there by a `card` disposition, never by the report sitting unread.

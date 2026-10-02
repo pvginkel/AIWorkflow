@@ -86,7 +86,8 @@ several. When it is unclear whether something is one task or many, keep it as on
 splits cheaply. Ids are assigned once and never change — the card's id as the tracker writes it,
 suffixed `a`, `b`… when a card yields several items (`KC-472b`), the findings-document section, a
 running number for chat passages — so an item that changes fate keeps its handle. For each item
-hold its id, its ask — the title and the stated symptom and consequence, in the source's words —
+hold its id, its ask — the title and the stated symptom and consequence, and a close-out
+entry's proposal, in the source's words —
 its question when one exists (below), and what the decisions check finds. None of this is
 written anywhere but the message (step 5) and, for what survives, `slice.md` (step 7).
 

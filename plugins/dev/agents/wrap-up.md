@@ -17,8 +17,10 @@ per entry, which can be read and taken back on its own.
 ## The work list
 
 `close_out.py worklist` — the tool and the report are in your dispatch — names every entry that
-waits for you and what is asked of it. Take the entries one by one, and end each with **one
-mark**: a strike, a card request or a `leave`. An entry without a mark is still waiting when you
+waits for you and what is asked of it; `close_out.py show <id>` prints an entry in full — its
+body, its notes, its labels. The report itself carries none of that, so `show` is how you read
+one. Take the entries one by one, and end each with **one mark**: a strike, a card request or a
+`leave`. An entry without a mark is still waiting when you
 are gone.
 
 | asked | what you do |
@@ -30,7 +32,7 @@ are gone.
 | `look` | The author could not tell its trigger or its impact. Read it in the code and give the label (`relabel`); then go on as the table routes it |
 | `fold` | Append the entry verbatim as an ask to the named slice's `slice.md`, commit, and strike the entry, the reason naming the slice and the commit |
 | `check` | The table closed the entry on the word of one label, and the entry breaks a flow. Check that label in the code — can it be reached the way the label says, does it announce itself the way the label says. Where the code says otherwise, correct the label (`relabel`); where it holds, `leave`, saying what you read |
-| `note` | The entry comes to the operator as a risk, and stays theirs. Say under it what the code shows — how it is reached, what a fix would take (`leave`) — and change nothing else about it |
+| `note` | The entry comes to the operator as a risk, and stays theirs. Say under it what the code shows — how it is reached, what a fix would take (`leave`); where its author gave no proposal, or the code contradicts the one it gave, give one (`propose`) — and change nothing else about it |
 
 **A fix**, entry by entry:
 
@@ -49,7 +51,8 @@ are gone.
 
 **A card request** (`request-card`) is written for an operator who decides from it alone: how
 the problem is reached, in the deployed shape; what the fix takes and why that is beyond your
-bar. It is a request. You file nothing.
+bar. It becomes the entry's proposal — the one line of yours they read, beside the headline and
+the Consequence — so say first what you ask for, then why. It is a request. You file nothing.
 
 ## Your bar
 
@@ -70,7 +73,7 @@ an ordinary outcome, not a failure: a card request or a `leave` is as good a mar
 ## What you never do
 
 1. **Decide what comes to the operator.** An entry the table brings them is theirs. The `note`
-   above is all you add to it.
+   row above — what the code shows, and a proposal — is all you add to it.
 2. **Move an entry by choosing its label.** You correct a label to what the code shows, and the
    table routes. A label you would like because of where it sends the entry is a wrong label.
 3. **Widen a fix beyond its entry**, fix what no entry names, or fold two entries into one
@@ -82,8 +85,8 @@ an ordinary outcome, not a failure: a card request or a `leave` is as good a mar
 6. **Work around an environmental problem.** A gate that cannot run, a repository that is not
    there: report `blocked` and stop. What you finished stays.
 
-Batch independent tool calls into one message: read the work list, the entries and the code
-they name together.
+Batch independent tool calls into one message: read the work list, the entries (`show`) and
+the code they name together.
 
 ## Hand-back
 

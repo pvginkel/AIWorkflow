@@ -714,6 +714,14 @@ def outstanding(slice_dir):
     return view.split("## decision")[0]
 
 
+def entries_in_full(slice_dir):
+    """Every entry in full, as `close_out.py show` prints it — the rendered
+    report carries the ask alone; the body and the Provenance are the
+    store's."""
+    ids = [eid for eid, _ in close_out.live_entries(slice_dir, "action")]
+    return close_out.show_view(slice_dir, ids)
+
+
 def commits(loop):
     return [c for c in loop.git_calls if c[:1] == ("commit",)]
 
@@ -746,16 +754,19 @@ def test_a_push_hold_is_seeded_once_naming_the_criteria_owed_after_it():
             "    Consequence: until you push it, nothing HelmCharts deploys "
             "carries the slice, and V02, V13 stay unproven.\n")
         text = report.read_text()
+        assert ("**Proposal:** Push it when the hold lifts, then say so: the "
+                "session settles V02, V13 after the push.") in " ".join(text.split())
+        full = entries_in_full(slice_dir)
         assert ("`plan.md`'s `## Push holds` section holds `../HelmCharts`: "
                 "Ruling Q1: the chart bump rides the operator's own "
-                "release.") in text
-        assert "stay open until the push lands" in text
-        assert "- V02 — The dev cluster runs the new chart." in text
-        assert "- V13 — Rolling back the chart" in text
-        assert "V01" not in text
+                "release.") in full
+        assert "stay open until the push lands" in full
+        assert "- V02 — The dev cluster runs the new chart." in full
+        assert "- V13 — Rolling back the chart" in full
+        assert "V01" not in full
         assert ("**Provenance:** read — `plan.md`'s `## Push holds` and "
                 "`verification.json`'s `owed_after`, seeded by the plan "
-                "loop") in text
+                "loop") in full
         assert ("add", str(slice_dir / "close-out.json"), str(report)) \
             in fix.git_calls
         assert commits(fix) == [SEED_COMMIT]
@@ -818,11 +829,16 @@ def test_an_owed_criterion_no_hold_covers_gets_its_own_settle_entry():
         a3 = view.split("A3 — ")[1].split("\n")[0]
         assert len(a3) <= plan_loop.SEED_HEADLINE_WIDTH and a3.endswith(" …")
         text = (slice_dir / "close-out.md").read_text()
-        assert "V05 — Pods resolve the new internal zone." in text
-        assert "marks V05 owed after: the operator's DNS cutover." in text
-        assert f"marks V07 owed after: {long_wait}." in text
+        assert "**Proposal:** Push it when the hold lifts.\n" in text
+        for vid in ("V05", "V07"):
+            assert (f"**Proposal:** When that has happened, say so: the session "
+                    f"settles {vid} in verification.json.") in text
+        full = entries_in_full(slice_dir)
+        assert "V05 — Pods resolve the new internal zone." in full
+        assert "marks V05 owed after: the operator's DNS cutover." in full
+        assert f"marks V07 owed after: {long_wait}." in full
         assert ("**Provenance:** read — `plan.md`'s `## Push holds`, seeded "
-                "by the plan loop") in text
+                "by the plan loop") in full
         assert commits(loop)[-1] == SEED_COMMIT
         # The shortened headline is the one the rerun looks up.
         again = ScriptedLoop(slice_dir, [])

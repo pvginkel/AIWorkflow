@@ -377,11 +377,11 @@ it and names Fieldnotes.
 
 **The constraint of v0.5.4 — a triage pass "ranks and pre-fills, never closes" — was set for an
 agent that filters by judgment**, the class where an agentic filter suppresses 50–85 % of true
-findings. What closes here is a rule of the operator's applied to facts the author stated, and
-it closes in view: a closed entry keeps its heading, its Consequence, its labels and its route
-on the page, stays live until the operator closes the report, and is pulled back by a ruling
-that names it. Where a close rests on a label and the entry breaks a flow, the wrap-up checks
-that label in the code first.
+findings. What closes here is a rule of the operator's applied to facts the author stated, and it
+closes in view: a closed entry keeps its heading and the ground of the close on the page (its
+Consequence and its labels too, until 0.9.70), stays live until the operator closes the report, and
+is pulled back by a ruling that names it. Where a close rests on a label and the entry breaks a
+flow, the wrap-up checks that label in the code first.
 
 **The store.** With labels an entry is a record of a dozen fields, the route is computed from
 them, and the wrap-up corrects them. Kept in Markdown, each of those is a line the tool writes
@@ -404,6 +404,35 @@ work; more inline fixes than the operator asked for, in code no reviewer reads; 
 more per entry. Every number above rests on labels a reader gave — an author knows more than
 its entry says, and has a stake a reader has not — and the wrap-up was never simulated. The
 first live slice is looked at before the second runs, and the readout comes after five.
+
+**The three lines (0.9.70, 2026-10-02).** The first eight reports under the tables showed the
+entry itself in the way. Of the 23 actions that reached the operator, 11 ended with nothing
+for them to do (**measured**): four "delete the scratch clone" entries the driver seeded — the
+close-out session removes a clean, level clone itself — six restarts of environments that were
+not running, and one notice of a changed surface, written as an action because a project's doc
+plan asked for the surface to be named. An improvement reached them with its question in none
+of its lines and four paragraphs under the headline — the body, a consult's note, the wrap-up's
+relabel with a 250-line log count, the session's "still holds" — each one the contract asked
+for; another came with six notes. The operator's direction (AIWF-34, **ruled**): "drop the
+evidence and the prose from the report and get to the point … I trust the requests a session
+makes. Evidence stays in close-out.json, where a session the operator asks to dig into an
+entry finds it" — modelled on the Fieldnotes triage card, which opens each item with the ask
+and the recommendation and is read past them "maybe one item in twenty". So an entry that
+comes to them is three lines: the headline, which is the ask (0.9.63 had made a decision's
+headline its question; an improvement's is now what it proposes, and an action is one
+imperative that something waits on — an "if" is a decision, a fact nobody acts on is not an
+entry); a `Proposal:` its author gives in a ruling's words, required of an action, a decision
+and an improvement, the wrap-up's card request on the rest; and the `Consequence:`. The body,
+the notes, the labels in words and the provenance left the page for the store, where `show`
+prints them; a closed entry is its heading and the ground of the close, the record is
+headings. Nine of the fourteen decisions that reached them were ratifications of a shipped
+choice with no consequence either way; asked whether those should go to the record instead,
+the operator kept them (**ruled**): "Bring them to me. I'll come back if it bothers me." Two
+of the design's own words moved with it. The session that "asks nothing yet" now presents a
+proposal on every entry — the rulings showed that is how the operator ruled anyway: "Perform
+the rest of your suggested actions please", "I'll follow your recommendation", "Agreed on the
+actions" — and "write for a reader who has only this document" is now said of the body and
+the store, not of the page.
 
 ## Deliberately absent
 

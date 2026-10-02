@@ -5240,8 +5240,8 @@ class RunLoop:
         return None
 
     def _report(self, section: str, headline: str, body: str,
-                consequence: str, provenance: str | None = None
-                ) -> str | None:
+                consequence: str, provenance: str | None = None,
+                proposal: str | None = None) -> str | None:
         """The driver's own close-out entries — deterministic events the
         operator should see without reading the log, each with the stock
         consequence line its event carries. A report an agent removed is
@@ -5249,7 +5249,8 @@ class RunLoop:
         narrative. Returns the entry's id, None when it was not written."""
         try:
             eid = append_entry(self.slice_dir, section, headline, body,
-                               consequence=consequence, provenance=provenance)
+                               consequence=consequence, provenance=provenance,
+                               proposal=proposal)
         except ReportError as e:
             self.log(f"close-out entry not written ({e}): {headline}")
             return None
@@ -5796,7 +5797,8 @@ class RunLoop:
                         "ruling it is; nothing this repo deploys carries the "
                         "slice until you push it.",
             provenance="witnessed — the driver's push check, against "
-                       "`plan.md`'s `## Push holds` section")
+                       "`plan.md`'s `## Push holds` section",
+            proposal="Push it when the hold lifts.")
 
     def _github_gate_problem(self, target: ResolvedTarget) -> str | None:
         """Why a GitHub target cannot run as planned, None when it can. Its
@@ -5817,8 +5819,10 @@ class RunLoop:
 
     def _report_scratch_clone(self, target: ResolvedTarget) -> None:
         """A GitHub target's clone, entered in the close-out report once per
-        clone per run: the driver made (or adopted) it, and only the operator
-        can say when the slice no longer needs it."""
+        clone per run, as an event that describes no problem — the record:
+        the driver made (or adopted) it, and the close-out session removes it
+        once the slice's commits are on origin. Nothing is asked of the
+        operator."""
         if not github_target.is_github(target.name):
             return
         clone = target.git_root
@@ -5828,26 +5832,30 @@ class RunLoop:
             return
         reported.append(key)
         self._save_state()
-        headline = f"Delete the scratch clone {clone} once the slice is done"
+        headline = (f"The driver left a scratch clone at {clone} "
+                    f"(`Target: {target.name}`)")
         try:
-            if find_by_headline(self.slice_dir, "Outstanding actions",
+            if find_by_headline(self.slice_dir, "Notable events",
                                 headline) is not None:
                 self.log(f"close-out already holds: {headline}")
                 return
         except ReportError as e:
             self.log(f"close-out not searched for the scratch clone ({e})")
         self._report(
-            "Outstanding actions", headline,
+            "Notable events", headline,
             f"The driver cloned (or adopted) `{clone}` for `Target: "
             f"{target.name}`; the slice's phases for that repo are branched, "
             "merged and pushed there.\n\n"
             "Deleting it is safe once the slice's commits are on origin — "
-            "the push check before the doc phase confirms that. A clone left "
-            "in place is synced by every later preflight in this environment "
-            "and adopted by the next `github:` target naming that repo.",
-            consequence="none in this run — the clone is where the run "
-                        "works; left behind, it only takes disk space and a "
-                        "sync in every later preflight.",
+            "the push check before the doc phase confirms that. The close-out "
+            "session removes it then and says so under this entry; nothing is "
+            "asked of the operator. A clone left in place is synced by every "
+            "later preflight in this environment and adopted by the next "
+            "`github:` target naming that repo.",
+            consequence="none — the clone is where the run works; left "
+                        "behind, it takes disk space and a sync in every "
+                        "later preflight, until the close-out session "
+                        "removes it.",
             provenance="witnessed — the driver's target resolution")
 
     def _assert_pushed(self, session: str | None) -> None:
@@ -6771,8 +6779,8 @@ class RunLoop:
             slice_name=self.slice_name,
             close_out_line=dispatch_line(self.report_path),
             close_out_verbs=textwrap.indent(
-                verb_usage("worklist", "list", "relabel", "request-card",
-                           "leave", "strike", "note"), "  "),
+                verb_usage("worklist", "show", "list", "relabel", "propose",
+                           "request-card", "leave", "strike", "note"), "  "),
             worklist=textwrap.indent(worklist_view(self.slice_dir), "  "),
             repo_rows="\n".join(rows) or "  (none — the plan holds every code "
                                          "repo this slice touched)",
