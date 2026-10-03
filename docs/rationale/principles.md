@@ -214,13 +214,14 @@ the doc-phase rework: every survey report landed 18–49 turns after dispatch, p
 first edit, at 15–21 % of the session (`docs/research/doc-phase-plan.md` § 1; **measured**).
 *Stated in:* [`agent-dispatch.md`](../../plugins/dev/docs/agent-dispatch.md) § Nested delegation.
 
-**No per-task model routing: Opus at `xhigh` everywhere, three roles pinned to Sonnet.**
+**No per-task model routing: Opus at `high` everywhere, three roles pinned to Sonnet.**
 *Origin:* two measured failures. The graded writer lane of v0.3.0, retired with the task folders in
 v0.4.0, "bought nothing on an inflated base, and 'mechanical' routing produced Opus redos whenever
 mechanical turned out to mean judgment" (`agent-dispatch.md`). The plugin's own trial — stepping the code-writer's first round
 down to `high` on small-shape plans — moved only output tokens, about 20 % of a round's cost, for
 a saving of at most 1 % of a slice against one witnessed 4 % rework strike, and was withdrawn
-(v0.7.0 → v0.7.3; **measured**, then **ruled**).
+(v0.7.0 → v0.7.3; **measured**, then **ruled**). The uniform effort was `xhigh` until v0.9.71,
+when the operator moved every Opus role to `high` (2026-10-03, **ruled**).
 *Stated in:* `agent-dispatch.md` § Models.
 
 **A timeout is a bail, not a retry; a session-limit kill is not an agent outcome.** A stuck agent

@@ -5195,7 +5195,7 @@ def test_a_green_wrap_up_lands_with_the_doc_phase():
         # per repo, the verbs, the spec repo and the verdict file
         [session] = r.wrap_up_sessions
         assert (session["agent"], session["model"], session["effort"],
-                session["timeout"]) == ("wrap-up", "opus", "xhigh", 7200)
+                session["timeout"]) == ("wrap-up", "opus", "high", 7200)
         prompt = session["prompt"]
         assert prompt.startswith("Slice 074_test_slice is built")
         assert ("- What waits for you, as `worklist` prints it now:\n"
@@ -5576,7 +5576,7 @@ def test_a_resume_past_the_wrap_up_never_dispatches_it():
 
 def test_the_wrap_up_is_a_required_agent_refused_when_missing():
     assert "wrap-up" in run_loop.REQUIRED_AGENTS
-    assert run_loop.MODELS["wrap-up"] == ("opus", "xhigh")
+    assert run_loop.MODELS["wrap-up"] == ("opus", "high")
     assert run_loop.TIMEOUTS["wrap-up"] == 7200
     assert run_loop.VERDICTS["wrap-up"] == {"done", "blocked"}
     with tempfile.TemporaryDirectory() as tmp:
@@ -6150,10 +6150,10 @@ def test_dispatch_passes_model_and_effort_explicitly():
             assert run_to_exit(r) == 0
         by_role = {role: (model, effort)
                    for role, _, model, effort in r.sessions}
-        assert by_role["code-writer"] == ("opus", "xhigh")
-        assert by_role["code-reviewer"] == ("opus", "xhigh")
-        assert by_role["consult"] == ("opus", "xhigh")
-        assert by_role["doc-writer"] == ("opus", "xhigh")
+        assert by_role["code-writer"] == ("opus", "high")
+        assert by_role["code-reviewer"] == ("opus", "high")
+        assert by_role["consult"] == ("opus", "high")
+        assert by_role["doc-writer"] == ("opus", "high")
         assert by_role["test-agent"] == ("sonnet", None)
 
 

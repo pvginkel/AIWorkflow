@@ -115,8 +115,8 @@ NUDGE_TIMEOUT = 900
 # Model/effort per role, passed explicitly on every dispatch (sub-agents
 # inherit from the dispatching session).
 MODELS: dict[str, tuple[str, str | None]] = {
-    "plan-writer": ("opus", "xhigh"),
-    "plan-reviewer": ("opus", "xhigh"),
+    "plan-writer": ("opus", "high"),
+    "plan-reviewer": ("opus", "high"),
 }
 
 VERDICTS = {

@@ -40,7 +40,7 @@ incidents behind each are in [`principles.md`](principles.md)):
    with a bounded job and a machine-readable verdict. Detecting a green test suite needs no model;
    only fixing a red one does.
 3. **Every agent is a headless session** spawned by the driver (`kc session create-headless
-   --agent dev:<role>`), Opus at `xhigh` everywhere via explicit flags, except three always-Sonnet
+   --agent dev:<role>`), Opus at `high` everywhere via explicit flags, except three always-Sonnet
    roles (test-agent, test-fixer, rebase-agent). No per-task model routing — the graded lane
    was measured and withdrawn ([`agent-dispatch.md`](../../plugins/dev/docs/agent-dispatch.md)).
 4. **The loops bail, they don't chat.** Exit 3 is an error, exit 4 is a question only the operator

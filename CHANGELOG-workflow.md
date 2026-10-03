@@ -4,6 +4,15 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-03 — every Opus role runs at `high` effort (v0.9.71)
+
+The operator's ruling: the dispatched Opus roles — plan-writer and plan-reviewer in the plan
+loop; code-writer, code-reviewer, doc-writer, wrap-up and every consult in the run loop — run
+at `high` instead of `xhigh`. One uniform effort still, set explicitly on every dispatch from
+the `MODELS` tables in `plan_loop.py` and `run_loop.py`; no tiering by round, phase or shape.
+The test-agent is unchanged (Sonnet, no effort passed), and sub-agents still inherit from the
+session that dispatches them.
+
 ## 2026-10-02 — what reaches the operator is the ask, the proposal and the consequence (v0.9.70)
 
 A close-out entry that came to the operator was shown in full — body, every note, `Triage:`,
