@@ -4,6 +4,15 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-03 — every Opus role runs at `xhigh` again (v0.9.72)
+
+0.9.71 is withdrawn: the dispatched Opus roles — plan-writer, plan-reviewer, code-writer,
+code-reviewer, doc-writer, wrap-up and every consult — run at `xhigh` again, set explicitly
+from the `MODELS` tables in `plan_loop.py` and `run_loop.py`. `high` ran four slices (Ansible
+038, 040, 041, KubeCoder 240) and the operator's tests of the results were not positive: "top
+model + xhigh is the sweet spot" (`docs/research/model-effort-read-2026-10-03.md`). The effort
+stays uniform; nothing else changes.
+
 ## 2026-10-03 — every Opus role runs at `high` effort (v0.9.71)
 
 The operator's ruling: the dispatched Opus roles — plan-writer and plan-reviewer in the plan

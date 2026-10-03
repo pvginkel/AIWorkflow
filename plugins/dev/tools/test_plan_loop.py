@@ -632,8 +632,8 @@ def test_dispatch_passes_model_and_effort_explicitly():
             "fieldnotes": {"type": "http", "url": "https://fn.invalid/mcp"}}}
         trim = ["--disable-slash-commands", "--strict-mcp-config",
                 "--mcp-config", str(promoted)]
-        assert calls == [("plan-writer", "opus", "high", trim),
-                         ("plan-reviewer", "opus", "high", trim)]
+        assert calls == [("plan-writer", "opus", "xhigh", trim),
+                         ("plan-reviewer", "opus", "xhigh", trim)]
 
 
 def test_dispatches_carry_the_change_discipline_pointer():

@@ -63,7 +63,7 @@ validation.
 
 ## Models — one config, explicit flags, no grading
 
-**Everything runs Opus at `high`**, set explicitly via `--model`/`--reasoning-effort` on every
+**Everything runs Opus at `xhigh`**, set explicitly via `--model`/`--reasoning-effort` on every
 outer dispatch from a single config per script (`MODELS` in `run_loop.py` / `plan_loop.py`):
 code-writer, code-reviewer, doc-writer, wrap-up, plan-writer, plan-reviewer, and every consult.
 Sub-agents

@@ -108,7 +108,7 @@ Four ideas span the files and explain most design choices:
    gates, git, caps, stamping, parsing — stays in Python; judgment goes to a dispatched agent.
    Detecting a green suite needs no model, only fixing red does.
 3. **Every agent is a headless `kc session`,** spawned through `run_loop.run_kc_session` (the plan
-   loop calls it too). Opus at `high` everywhere via explicit flags, except the always-Sonnet
+   loop calls it too). Opus at `xhigh` everywhere via explicit flags, except the always-Sonnet
    agents (`test-agent`, `test-fixer`, `rebase-agent`) which pin `model:` in their own definitions.
 4. **The loops bail, they don't chat:** exit 3 = error, exit 4 = operator question. `state.json`,
    `bailout.json` and the exit code are the entire interface to the launching session — loop stdout
@@ -167,9 +167,10 @@ instead of reopening it.
 - **No effort tiering, weaker model or Sonnet writer for the main roles** (plan-writer,
   plan-reviewer, code-writer, code-reviewer): the 0.7.0–0.7.2 step-down was withdrawn as "dead
   weight" (`docs/research/status.md` § A3, reverted in 0.7.3). Every Opus role runs one uniform
-  effort, `high` since 0.9.71 (operator ruling 2026-10-03; `xhigh` before). A lower effort for
-  the test-agent was rejected too (2026-09-09). Sub-agents and sub-sub-agents stay tunable
-  (`docs/research/turns-plan.md` § T7) — except Explore: **no Sonnet or Haiku pin for Explore and
+  effort, `xhigh`: 0.9.71's move to `high` was withdrawn the same day in 0.9.72 ("every time I
+  try this, I get bitten", 2026-10-03, `docs/research/model-effort-read-2026-10-03.md`). A lower
+  effort for the test-agent was rejected too (2026-09-09). Sub-agents and sub-sub-agents stay
+  tunable (`docs/research/turns-plan.md` § T7) — except Explore: **no Sonnet or Haiku pin for Explore and
   no plugin-owned Explore agent**; the ≈ 2–3 % saving does not weigh against the quality risk
   (rejected 2026-09-09, `docs/research/platform-cost-read-2026-09-09.md` § 4).
 - **No Fable for any role beyond the refinement-writer** while Fable has its own quota: "once

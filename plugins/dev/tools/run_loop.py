@@ -157,11 +157,11 @@ from close_out import (  # noqa: E402
 # ---------------------------------------------------------------------------
 
 MODELS: dict[str, tuple[str, str | None]] = {
-    "code-writer": ("opus", "high"),
-    "code-reviewer": ("opus", "high"),
-    "doc-writer": ("opus", "high"),
-    "wrap-up": ("opus", "high"),
-    "consult": ("opus", "high"),
+    "code-writer": ("opus", "xhigh"),
+    "code-reviewer": ("opus", "xhigh"),
+    "doc-writer": ("opus", "xhigh"),
+    "wrap-up": ("opus", "xhigh"),
+    "consult": ("opus", "xhigh"),
     "test-agent": ("sonnet", None),
 }
 
