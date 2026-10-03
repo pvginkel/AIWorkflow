@@ -4,6 +4,27 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-03 — an entry that comes to the operator carries its body, its newest note and its evidence (v0.9.73)
+
+0.9.70's three lines were too few to rule from: on Ansible slice 036 the operator could not
+tell what "A4 — Settle V25 after each job's next scheduled run" was, its Consequence and
+Proposal were the plan loop's boilerplate, and the note saying A3 was already settled was not
+on the page. Rendering only; nothing changes in what authors write
+(`docs/rationale/reporting.md` § Triage at the source).
+
+- **The ask form** (Comes to you, Card requests, For the wrap-up, Unlabelled) shows, under the
+  heading, the body whole, the Proposal, the Consequence, the newest note as `**Latest**` (who,
+  when, how many notes), then `**Triage:**` and `**Provenance:**` again, the Route and the
+  Disposition line.
+- **An owed-after action** is headed `Settle <Vnn> (<area>) after <owed_after>` from
+  `verification.json`, the wait in full; its Consequence and Proposal, the same on every one,
+  stay in the store.
+- **A Route that only names the kind** (`to you — an action`, `— a decision`, `— an
+  improvement`) leaves the page; a risk's, which says why it came, stays.
+- **A closed entry** shows its Consequence unless it says none, and its Triage and Provenance.
+- **A struck entry** in the Record shows its reason up to the first `; `, at most a couple of
+  lines; `show` prints it whole.
+
 ## 2026-10-03 — every Opus role runs at `xhigh` again (v0.9.72)
 
 0.9.71 is withdrawn: the dispatched Opus roles — plan-writer, plan-reviewer, code-writer,

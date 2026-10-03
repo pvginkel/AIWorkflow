@@ -853,11 +853,21 @@ def test_request_card_and_leave_mark_the_entry_and_the_card_is_its_proposal():
         text = report(slice_dir)
         assert _section(text, "Card requests") == (
             "\n## Card requests\n\n### B1 — controller: the status line is wrong\n\n"
+            "the body\n\n"
             "**Proposal:** reached on every restart; needs a design\n\n"
             "**Consequence:** an operator reads a wrong status\n\n"
+            "**Latest** (wrap-up, 2026-09-30 · 2 notes): asks for a card: reached on every "
+            "restart;\nneeds a design\n\n"
+            "**Triage:** defect · shows on an ordinary condition · breaks a flow · silent · "
+            "fix needs\ndesign · sensitive area · in KubeCoder\n"
+            "**Provenance:** witnessed — code-reviewer, P3 r1\n"
             "**Route:** card request — the wrap-up asks for a card\n**Disposition:**\n")
         assert _section(text, "Closed") == (
             "\n## Closed\n\n### B2 — controller: the status line is wrong\n\n"
+            "**Consequence:** an operator reads a wrong status\n\n"
+            "**Triage:** defect · shows on an ordinary condition · breaks a flow · silent · "
+            "fix is one edit ·\nin KubeCoder\n"
+            "**Provenance:** witnessed — code-reviewer, P3 r1\n"
             "**Route:** closed — the wrap-up looked and left it\n**Disposition:**\n")
         # the marks are among the notes of the full view
         shown = close_out.show_view(slice_dir, ["B1", "B2"])
@@ -1225,42 +1235,64 @@ def test_render_writes_the_sections_in_order_and_the_entries_in_their_forms():
         assert "\nRun: <not yet stamped>\n" in text
         titles = re.findall(r"^## (.+)$", text, re.M)
         assert titles == list(close_out.REPORT_SECTIONS)
-        # the ask: the headline, the Proposal, the Consequence — and what the
-        # operator writes on; the Proposal line only where there is one
+        # the ask: the headline, the body, the Proposal, the Consequence, the
+        # newest note, Triage and Provenance — and what the operator writes on;
+        # the Proposal line only where there is one, the Route only where it
+        # says more than the kind
+        triage_b1 = ("**Triage:** defect · needs a fault · severe · silent · fix needs "
+                     "design · sensitive area · in\nKubeCoder\n")
         assert _section(text, "Comes to you") == (
             "\n## Comes to you\n\n"
             "### A1 — controller: the status line is wrong\n\n"
+            "the body\n\n"
             "**Proposal:** Do it before the next run: one command.\n\n"
             "**Consequence:** an operator reads a wrong status\n\n"
-            "**Route:** to you — an action\n**Disposition:**\n\n"
+            "**Latest** (consult 1, " + close_out._today() + "): a note for the record\n\n"
+            "**Triage:** action · shows on an ordinary condition · breaks a flow · silent\n"
+            "**Provenance:** witnessed — code-reviewer, P3 r1\n"
+            "**Disposition:**\n\n"
             "### B1 — controller: the status line is wrong\n\n"
+            "the body\n\n"
             "**Consequence:** an operator reads a wrong status\n\n"
+            "**Latest** (consult 1, " + close_out._today() + "): a note for the record\n\n"
+            + triage_b1 +
+            "**Provenance:** witnessed — code-reviewer, P3 r1\n"
             "**Route:** to you — a risk: severe, in place of a close\n"
             "**Disposition:**\n")
         assert "**Proposal:** needs design\n\n**Consequence:**" in \
             _section(text, "Card requests")
+        assert ("**Latest** (wrap-up, " + close_out._today() + "): asks for a card: "
+                "needs design\n\n") in _section(text, "Card requests")
         assert _section(text, "For the wrap-up") == (
             "\n## For the wrap-up\n\n"
             "### B3 — controller: the status line is wrong\n\n"
+            "the body\n\n"
             "**Consequence:** an operator reads a wrong status\n\n"
+            "**Latest** (consult 1, " + close_out._today() + "): a note for the record\n\n"
+            "**Triage:** defect · shows on an ordinary condition · breaks a flow · silent "
+            "· fix is one edit ·\nin KubeCoder\n"
+            "**Provenance:** witnessed — code-reviewer, P3 r1\n"
             "**Route:** the wrap-up — fix\n**Disposition:**\n")
         assert _section(text, "Unlabelled") == (
-            "\n## Unlabelled\n\n### B4 — old\n\n**Consequence:** c\n\n"
+            "\n## Unlabelled\n\n### B4 — old\n\nold body\n\n**Consequence:** c\n\n"
             "**Route:** none yet — the entry has no labels\n**Disposition:**\n")
-        # closed: the heading, the route, the Disposition line
+        # closed: the heading, the Consequence unless it says none, Triage,
+        # Provenance, the route, the Disposition line — not the body or a note
         assert _section(text, "Closed") == (
             "\n## Closed\n\n### B5 — controller: the status line is wrong · nit\n\n"
+            "**Consequence:** an operator reads a wrong status\n\n"
+            "**Triage:** defect · needs a fault · breaks a flow · silent · fix needs design "
+            "· sensitive\narea · in KubeCoder\n"
+            "**Provenance:** witnessed — code-reviewer, P3 r1\n"
             "**Route:** closed — it needs a fault\n**Disposition:**\n")
         # the record: headings alone, the events first, then what was struck
         assert _section(text, "Record") == (
             "\n## Record\n\n### E1 — resumed\n\n"
             "### ~~B6 — controller: the status line is wrong~~ — dup of B2 (19640d9); "
             "struck by consult 1\n")
-        # the evidence stays in the store
-        for absent in ("the body", "old body", "a note for the record",
-                       "asks for a card: needs design",
-                       "**Triage:**", "**Provenance:**", "<details>"):
-            assert absent not in text, absent
+        # an event's body and a struck entry's notes stay in the store
+        assert "\nok\n" not in text and text.count("a note for the record") == 3
+        assert "<details>" not in text
         # a render twice in a row writes the same bytes
         before = (slice_dir / "close-out.md").read_bytes()
         assert close_out.render_report(slice_dir) == line
@@ -1269,11 +1301,8 @@ def test_render_writes_the_sections_in_order_and_the_entries_in_their_forms():
         close_out.propose_entry(slice_dir, "B1", "wrap-up", " ".join(["a word"] * 30))
         close_out.render_report(slice_dir)
         comes = _section(report(slice_dir), "Comes to you")
-        block = comes[comes.index("**Proposal:** a word"):comes.index("\n\n**Consequence:** "
-                                                                      "an operator reads a "
-                                                                      "wrong status\n\n"
-                                                                      "**Route:** to you — a "
-                                                                      "risk")]
+        start = comes.index("**Proposal:** a word")
+        block = comes[start:comes.index("\n\n**Consequence:** ", start)]
         assert len(block.splitlines()) > 1
         assert all(len(row) <= close_out.HEADER_WIDTH for row in block.splitlines())
         assert " ".join(block.split()) == "**Proposal:** " + " ".join(["a word"] * 30)
@@ -1704,8 +1733,8 @@ def test_import_reads_an_old_report_losing_nothing():
         for eid in by_id:
             assert len([h for h in unfenced
                         if re.match(rf"### (~~)?{eid} — ", h)]) == 1, eid
-        # a body is the store's: the quoted heading in its fence is N2's
-        assert "### B3 — not an entry" not in text
+        # a body is the store's: the quoted heading in its fence is N2's, on the
+        # page only where N2 is shown with its body
         assert "### B3 — not an entry" in close_out.show_view(slice_dir, ["N2"])
         assert all(e["proposal"] is None for e in data["entries"])
         assert "**Disposition:** card KC\n" in text

@@ -434,6 +434,26 @@ the rest of your suggested actions please", "I'll follow your recommendation", "
 actions" — and "write for a reader who has only this document" is now said of the body and
 the store, not of the page.
 
+**The body back on the page (0.9.73, 2026-10-03).** Three lines turned out too few to rule from.
+On Ansible slice 036 the operator met two actions headed "Settle V24 after the operator's next
+IaC/Apply run" and "Settle V25 after each job's next scheduled run", and "I don't know what A4
+is": V25 named a criterion in `verification.json`, and the two lines under the headline — the
+plan loop's Consequence and Proposal — are the same on every owed-after action. A3's newest note
+ended "V24 is settled green", and nothing on the page said so. Closed entries hid their
+consequence, so a test that cannot fail was closed without its "nothing failing" in sight, while
+the Record carried struck reasons ten lines long. The store held every answer (**witnessed**
+across the six reports of 036–043): the body, the notes, the criterion's `area`. What it did not
+hold is a one-line digest of a note or a body, which only their authors could write; the
+operator chose rendering over a change to what authors write: "Right now I want to stick to a
+change in the way the data is rendered. If that means part of it is verbose, I'll live." So an
+entry that comes to them carries its body whole — a decision's options are its substance, and of
+the 118 findings an author wrote in Ansible's ten stores 114 bodies are a single paragraph
+anyway (**measured**) — its newest note, and the `Triage:` and `Provenance:` lines (**ruled**:
+"I would like those back in"); the boilerplate every owed-after action carries leaves the page,
+as does a Route that only names the kind. 0.9.70's ask stays first: the headline and the
+proposal are where they were. A closed entry shows its consequence where it says more than none,
+and a struck one's reason stops at its first `; `.
+
 ## Deliberately absent
 
 From the contract's own closing section (`plugins/dev/docs/close-out.md`): no dedup tooling —

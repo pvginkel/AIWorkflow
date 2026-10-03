@@ -263,13 +263,14 @@ every entry lets a ruling name it in one line ("card B1, close B6, fold I1 into 
 run's shape is stamped at the top.
 
 There is no list at the head of the report and none in the body of the close-out card: the
-report is its entries. The operator reads an entry's three lines and rules, or sends a session
-to dig; they do not read the evidence, and a report that puts it in front of them costs them
-the entries.
+report is its entries. The operator reads an entry — its ask, its body, the proposal, the
+consequence, its newest note, who found it on what evidence — and rules, or sends a session to
+dig; an entry has to stand without the store behind it, and the page carries what that takes,
+never a summary written over it.
 
-`close_out.py show <id>` prints an entry in full — body, notes, labels, marks — and is how the
-wrap-up, the close-out session and a card filing read one. `close_out.py list` is the view an
-agent takes before it appends: ids, headlines and Consequence lines, without the bodies.
+`close_out.py show <id>` prints an entry in full — body, every note, labels, marks — and is how
+the wrap-up, the close-out session and a card filing read one. `close_out.py list` is the view
+an agent takes before it appends: ids, headlines and Consequence lines, without the bodies.
 
 ## Who writes what, when
 

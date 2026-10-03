@@ -85,12 +85,12 @@ Run: <not yet stamped>
 
 | section | holds | shown |
 |---|---|---|
-| Comes to you | actions, decisions, risks, and the improvements that are the operator's to weigh | as its ask: heading, `Proposal:`, `Consequence:`, `Route:` |
+| Comes to you | actions, decisions, risks, and the improvements that are the operator's to weigh | as its ask: heading, body, `Proposal:`, `Consequence:`, the newest note, `Triage:`, `Provenance:`, `Route:` |
 | Card requests | what the table or the wrap-up asks a card for | as its ask; the `Proposal:` is the card request |
 | For the wrap-up | what waits for the wrap-up; empty once it has run | as its ask |
 | Unlabelled | entries without labels, until they have them | as its ask |
-| Closed | what the table closed, and what the wrap-up looked at and left | heading and `Route:` |
-| Record | the run's events that describe no problem; then what was struck — by the run, by the wrap-up, on the operator's word | heading only |
+| Closed | what the table closed, and what the wrap-up looked at and left | heading, `Consequence:` unless it says none, `Triage:`, `Provenance:`, `Route:` |
+| Record | the run's events that describe no problem; then what was struck — by the run, by the wrap-up, on the operator's word | heading only; a struck one's reason up to its first `; ` |
 
 `render` writes the sections that hold something, in this order. Inside a section the order is
 the grade (`major`, `minor`, ungraded, `nit`, `cosmetic`), then the kind in the order of
@@ -100,29 +100,9 @@ struck entries after them, each by id.
 ## The entry
 
 What the operator reads — an entry under **Comes to you**, **Card requests**, **For the
-wrap-up** or **Unlabelled** — is its ask, its proposal and its consequence, and nothing else:
-
-```markdown
-### D1 — a component that declares no tests: keep kc's exit 3 for its gate, or add an exit 8?
-
-**Proposal:** Keep exit 3; a lost `test:` is a review's to catch, and an exit 8 costs a kc
-release and every caller that matches on 3.
-
-**Consequence:** a component whose tests were removed by mistake passes its gate until a
-reviewer notices.
-
-**Route:** to you — a decision
-**Disposition:**
-```
-
-The heading is `### <id> — <headline>`, with ` · <grade>` appended where the entry has one;
-the headline is the ask — an action's imperative, a decision's question, what an improvement
-proposes, a defect's claim. `**Proposal:**` is what its author, or the wrap-up, would do about
-it and why; an entry without one shows no line. `**Route:**` is where the table sent it and
-on which ground, `render`'s from the store. `**Disposition:**` carries the operator's words,
-then ` — ` and what was done on them; blank until they rule. The body, the notes, the labels in
-words and the provenance are the store's, and nothing of them is on the page: `show` prints
-them —
+wrap-up** or **Unlabelled** — is its ask and what they need to rule on it without opening the
+store: the body as its author wrote it, the proposal, the consequence, where the entry stands
+now, and who found it on what evidence:
 
 ```markdown
 ### D1 — a component that declares no tests: keep kc's exit 3 for its gate, or add an exit 8?
@@ -136,37 +116,54 @@ green gate.
 - **A new exit 8, "no tests declared".** Switching costs a kc release, the gate scripts in the
   plugin, and every caller that matches on 3 today.
 
-wrap-up, 2026-09-30 — <a note: a dated paragraph, `<who>, <date> — <text>`; what the wrap-up
-did with the entry and every correction of a label stand among the notes>
-
 **Proposal:** Keep exit 3; a lost `test:` is a review's to catch, and an exit 8 costs a kc
 release and every caller that matches on 3.
 
 **Consequence:** a component whose tests were removed by mistake passes its gate until a
 reviewer notices.
 
+**Latest** (wrap-up, 2026-09-30 · 2 notes): <the newest note's text, in full>
+
 **Triage:** decision · shows on an ordinary condition · degrades · silent
 **Provenance:** read — code-writer, P3
-**Route:** to you — a decision
 **Disposition:**
 ```
 
-`**Triage:**` is the entry's labels in words; an improvement's read `improvement · a user is
-better off · felt in use · adjusts what exists · needs design · a product call · in KubeCoder`.
-`**Provenance:**` opens with the evidence class.
+The heading is `### <id> — <headline>`, with ` · <grade>` appended where the entry has one;
+the headline is the ask — an action's imperative, a decision's question, what an improvement
+proposes, a defect's claim. An action the plan loop seeded for a criterion owed after an
+operator's step is headed `Settle <Vnn> (<its area>) after <owed_after>`, both from
+`verification.json`, the wait in full. The body follows as its author wrote it.
+`**Proposal:**` is what its author, or the wrap-up, would do about it and why; an entry without
+one shows no line, and neither does the one the plan loop gives every owed-after action, nor
+that action's Consequence — both are the same on every one. `**Latest**` is the newest note —
+the wrap-up's mark counts as one — with the number of notes where there are more; the rest are
+the store's. `**Triage:**` is the entry's labels in words; an improvement's read `improvement · a
+user is better off · felt in use · adjusts what exists · needs design · a product call · in
+KubeCoder`. `**Provenance:**` opens with the evidence class. `**Route:**` is where the table sent
+it and on which ground, `render`'s from the store; it is left out where it only names the kind
+(`to you — an action`, `— a decision`, `— an improvement`), which the Triage line already says,
+and kept where it says why (`to you — a risk: severe, in place of a close`). `**Disposition:**`
+carries the operator's words, then ` — ` and what was done on them; blank until they rule.
+`show` prints an entry with every note.
 
-An entry the table closed keeps its heading and the ground of the close on the page, so a
-ruling can pull it back from one line:
+An entry the table closed keeps its heading, its consequence where it says more than none, and
+the ground of the close on the page, so a ruling can pull it back:
 
 ```markdown
 ### B7 — <headline> · nit
 
+**Consequence:** <what goes wrong, and for whom>
+
+**Triage:** defect · needs a fault · degrades · silent · fix is one edit · in KubeCoder
+**Provenance:** witnessed — code-reviewer, P5 r1
 **Route:** closed — it needs a fault
 **Disposition:**
 ```
 
 And the Record is headings alone — an event under its plain heading, a struck entry under its
-struck one, the reason on it:
+struck one, its reason up to the first `; ` and at most a couple of lines (`show` has it
+whole):
 
 ```markdown
 ### E2 — The run stopped at P4 r2: the session hit its cap

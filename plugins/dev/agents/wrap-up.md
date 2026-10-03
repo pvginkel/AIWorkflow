@@ -18,10 +18,9 @@ per entry, which can be read and taken back on its own.
 
 `close_out.py worklist` — the tool and the report are in your dispatch — names every entry that
 waits for you and what is asked of it; `close_out.py show <id>` prints an entry in full — its
-body, its notes, its labels. The report itself carries none of that, so `show` is how you read
-one. Take the entries one by one, and end each with **one mark**: a strike, a card request or a
-`leave`. An entry without a mark is still waiting when you
-are gone.
+body, every note, its labels. The report carries only the newest note, so `show` is how you
+read one. Take the entries one by one, and end each with **one mark**: a strike, a card request
+or a `leave`. An entry without a mark is still waiting when you are gone.
 
 | asked | what you do |
 |---|---|

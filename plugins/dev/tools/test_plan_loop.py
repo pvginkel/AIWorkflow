@@ -830,10 +830,15 @@ def test_an_owed_criterion_no_hold_covers_gets_its_own_settle_entry():
         assert len(a3) <= plan_loop.SEED_HEADLINE_WIDTH and a3.endswith(" …")
         text = (slice_dir / "close-out.md").read_text()
         assert "**Proposal:** Push it when the hold lifts.\n" in text
-        for vid in ("V05", "V07"):
-            assert (f"**Proposal:** When that has happened, say so: the session "
-                    f"settles {vid} in verification.json.") in text
         full = entries_in_full(slice_dir)
+        for vid in ("V05", "V07"):
+            # the same on every owed-after action: the store's, not the page's
+            proposal = (f"**Proposal:** When that has happened, say so: the session "
+                        f"settles {vid} in verification.json.")
+            assert proposal in full and proposal not in text
+        # the page names the criterion by its area, with what it waits on in full
+        assert "### A2 — Settle V05 (deploy) after the operator's DNS cutover\n" in text
+        assert f"### A3 — Settle V07 (deploy) after {long_wait}\n" in text
         assert "V05 — Pods resolve the new internal zone." in full
         assert "marks V05 owed after: the operator's DNS cutover." in full
         assert f"marks V07 owed after: {long_wait}." in full

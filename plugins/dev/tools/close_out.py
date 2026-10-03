@@ -1444,29 +1444,122 @@ def _tail(entry: dict, route_words: str | None) -> list[str]:
     return out
 
 
-def _render_entry(entry: dict, form: str, route_words: str | None) -> str:
+# What plan_loop.py writes into every owed-after action: true of each one,
+# so the report leaves it out (`show` keeps it).
+_OWED_HEADLINE_RE = re.compile(r"^Settle (?P<vid>V\d+) after\b")
+_OWED_CONSEQUENCE_RE = re.compile(r"^V\d+ stays unproven until then; the test phase "
+                                  r"does not settle it\.?$")
+_OWED_PROPOSAL_RE = re.compile(r"^When that has happened, say so: the session settles V\d+")
+# A Route that only says the kind, which the Triage line names already; a
+# risk's says why it came, and stays.
+_KIND_ONLY_ROUTES = ("to you — an action", "to you — a decision", "to you — an improvement")
+
+
+def _verification(slice_dir: Path | str) -> dict[str, dict]:
+    """verification.json's items by id; empty when it is missing or unreadable."""
+    try:
+        data = json.loads((Path(slice_dir) / "verification.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    items = data.get("items") if isinstance(data, dict) else None
+    return {i["id"]: i for i in items or [] if isinstance(i, dict) and i.get("id")}
+
+
+def _ask_heading(entry: dict, vmap: dict[str, dict]) -> str:
+    """The heading, with an owed-after action's criterion named by its area
+    and its owed-after in full, where plan_loop.py shortened them."""
+    m = _OWED_HEADLINE_RE.match(entry.get("headline") or "")
+    item = vmap.get(m.group("vid")) if m else None
+    if entry.get("strike") or not item or not item.get("owed_after"):
+        return _heading(entry)
+    area = f" ({item['area']})" if item.get("area") else ""
+    return f"### {entry['id']} — Settle {m.group('vid')}{area} after {item['owed_after']}"
+
+
+def _latest(entry: dict) -> list[str]:
+    """The newest note (a wrap-up mark counts as one) in full, and how many
+    there are; nothing without one."""
+    notes = list(entry.get("notes") or [])
+    if entry.get("wrap_up"):
+        mark = entry["wrap_up"]
+        notes.append({"by": mark["by"], "date": mark["date"], "text": _wrap_up_lines(mark)})
+    if not notes:
+        return []
+    last = notes[-1]
+    count = f" · {len(notes)} notes" if len(notes) > 1 else ""
+    text = "\n".join(last.get("text") or [])
+    return [f"**Latest** ({last['by']}, {last['date']}{count}): {text}", ""]
+
+
+def _short_strike_tail(strike: dict) -> str:
+    """The struck heading's tail as the report gives it: the reason up to its
+    first `; `, at most a couple of lines, then the striker. `show` keeps the
+    whole reason."""
+    reason = strike["reason"].split("; ", 1)[0].strip()
+    reason = textwrap.shorten(reason, width=220, placeholder=" …")
+    commit = strike.get("commit")
+    if commit and commit not in reason:
+        reason += f" ({commit})"
+    if strike.get("by"):
+        reason += f"; struck by {strike['by']}"
+    return reason
+
+
+def _triage_lines(entry: dict) -> list[str]:
+    """The Triage and Provenance lines, each only when the entry has it."""
+    out: list[str] = []
+    triage = _triage_words(entry)
+    if triage:
+        out += _wrap(f"**Triage:** {triage}")
+    provenance = _provenance(entry)
+    if provenance:
+        out.append(f"**Provenance:** {provenance}")
+    return out
+
+
+def _render_entry(entry: dict, form: str, route_words: str | None,
+                  vmap: dict[str, dict] | None = None) -> str:
     """One entry in one of its forms. The report's three: `ask` (the
-    headline, the Proposal, the Consequence — what the operator rules on —
-    then Route and Disposition), `closed` (the heading, Route and
-    Disposition) and `record` (the heading alone). And `show`'s: `full`,
-    the body, the notes, the proposal and every label line — the evidence
-    the report leaves in the store."""
-    heading = _heading(entry)
+    headline, the body, the Proposal and the Consequence where they say
+    more than every entry of their kind, the newest note, then Triage,
+    Provenance, Route unless it only names the kind, and Disposition),
+    `closed` (the heading, the Consequence unless it says none, Triage,
+    Provenance, Route and Disposition) and `record` (the heading alone, a
+    struck one's reason cut short). And `show`'s: `full`, the body, every
+    note, the proposal and every label line."""
     if form == "record":
-        return heading
-    lines = [heading, ""]
+        if entry.get("strike"):
+            return (f"### ~~{entry['id']} — {_headline_with_grade(entry)}~~ — "
+                    + _short_strike_tail(entry["strike"]))
+        return _heading(entry)
     if form == "full":
+        lines = [_heading(entry), ""]
         body = _body_and_notes(entry)
         if body:
             lines += [body, ""]
         lines += _proposal_lines(entry)
         struck = bool(entry.get("strike"))
         return "\n".join(lines + _tail(entry, None if struck else route_words))
-    if form == "ask":
+    consequence = entry.get("consequence")
+    if form == "closed":
+        lines = [_heading(entry), ""]
+        if consequence and not opens_with_none(consequence):
+            lines += [f"**Consequence:** {consequence}", ""]
+        return "\n".join([*lines, *_triage_lines(entry), f"**Route:** {route_words}",
+                          _disposition_line(entry)])
+    lines = [_ask_heading(entry, vmap or {}), ""]
+    body = "\n".join(entry.get("body") or []).strip()
+    if body:
+        lines += [body, ""]
+    if entry.get("proposal") and not _OWED_PROPOSAL_RE.match(entry["proposal"]):
         lines += _proposal_lines(entry)
-        if entry.get("consequence"):
-            lines += [f"**Consequence:** {entry['consequence']}", ""]
-    return "\n".join([*lines, f"**Route:** {route_words}", _disposition_line(entry)])
+    if consequence and not _OWED_CONSEQUENCE_RE.match(consequence):
+        lines += [f"**Consequence:** {consequence}", ""]
+    lines += _latest(entry)
+    lines += _triage_lines(entry)
+    if route_words and route_words not in _KIND_ONLY_ROUTES:
+        lines.append(f"**Route:** {route_words}")
+    return "\n".join([*lines, _disposition_line(entry)])
 
 
 def _sort_key(entry: dict) -> tuple:
@@ -1529,21 +1622,22 @@ def _render(store: dict, slice_dir: Path | str) -> tuple[str, dict[str, int]]:
         closed = store["closed"]
         out += ["", *_wrap(f"Closed: {closed['date']} — {_collapse(closed['words'])}")]
     tally: dict[str, int] = {}
+    vmap = _verification(slice_dir)
     for section, items in _placed(store, slice_dir):
         if not items:
             continue
         form = {"Record": "record", "Closed": "closed"}.get(section, "ask")
         out += ["", f"## {section}"]
         for entry, words in items:
-            out += ["", _render_entry(entry, form, words)]
+            out += ["", _render_entry(entry, form, words, vmap)]
         tally[section] = len(items)
     return "\n".join(out) + "\n", tally
 
 
 def show_view(slice_dir: Path | str, ids: list[str] | None = None) -> str:
-    """Entries in full — body, notes, Proposal, Consequence, Triage,
-    Provenance, Route, Disposition: what the report leaves in the store,
-    for the wrap-up, the close-out session and a card filing to read. The
+    """Entries in full — body, every note, Proposal, Consequence, Triage,
+    Provenance, Route, Disposition: what the report cuts short, for the
+    wrap-up, the close-out session and a card filing to read. The
     named ids in the order given, struck ones too; without ids every live
     entry, under its section's `## ` line, in the report's order."""
     store = _read_store(slice_dir)
