@@ -4,6 +4,19 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-04 — preflight names the installed loop when the session's plugin copy is stale (v0.9.75)
+
+AIWF-33. `preflight.py --for plan` and `--for run` compare the plugin copy they run from with the
+installed one, as the loops' own guard does (`run_loop.stale_plugin`, shared now). On a
+difference they still pass, and print last one line naming the installed `plan_loop.py` or
+`run_loop.py`; `/dev:plan-slice` and `/dev:run-slice` launch and relaunch from that path for the
+rest of the session. Unknown versions print nothing. Two Ansible launches had passed preflight
+from 0.9.60 and bailed `plugin_version` at once against 0.9.61 and 0.9.62, each a wasted launch
+and a notification round-trip. The plan loop's relaunch needs no hand cleanup: it already
+clears `plan_bailout.json` at startup and passes it in its cleanliness checks — a suite test
+now holds that, and plan-slice says so (`plugins/dev/docs/preflight.md` § Notes on the plugin
+check).
+
 ## 2026-10-04 — the run loop sets up each Target repo before the first dispatch (v0.9.74)
 
 AIWF-32. At startup, fresh or `--resume`, right after the tool check, the run loop runs a bare

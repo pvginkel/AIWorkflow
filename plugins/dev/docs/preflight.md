@@ -6,10 +6,11 @@ plus the repo's `.aiworkflowrc` contract from [`project-contract.md`](project-co
 one step that acts rather than checks: the sync that brings the environment's repos up to their
 origins (§ Notes on the sync).
 
-**Silent on success.** On failure it prints **one** actionable message — what is missing, the exact
-line/fix, and a pointer to `project-contract.md` — so a new repo self-onboards from the error text.
-Each skill relays that message verbatim on a non-zero exit and stops; the run loop does **not**
-re-run preflight, so `/dev:run-slice` is the gate.
+**Silent on success** — but for one line, on a pass, when the session's plugin copy is stale
+(§ Notes on the plugin check). On failure it prints **one** actionable message — what is missing,
+the exact line/fix, and a pointer to `project-contract.md` — so a new repo self-onboards from the
+error text. Each skill relays that message verbatim on a non-zero exit and stops; the run loop
+does **not** re-run preflight, so `/dev:run-slice` is the gate.
 
 ## Exit codes
 
@@ -35,6 +36,7 @@ re-run preflight, so `/dev:run-slice` is the gate.
 | Clean working tree | – | – | ✓ |
 | Synced with origin: fetch, then fast-forward or rebase the checked-out branch — the target repo, every checkout beside it, the spec repo | – | ✓ | ✓ |
 | Baseline: `kc project build` (all components) | – | – | ✓ |
+| The session's plugin is the installed one — else a line naming the installed loop, still a pass | – | ✓ | ✓ |
 
 Checks run in that order (cheapest first, the baseline build last). `kc` is checked before anything
 that shells out to it, and the two environment checks run before the repo is resolved — neither
@@ -108,3 +110,20 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   step in its manifest's `build` list. A manifest with no `build` statement passes: kc exits 3
   (nothing ran), and there is no baseline to break. Full `kc project test` is **not** a preflight
   step — it is the per-phase gate the run loop owns.
+
+## Notes on the plugin check
+
+- **Why it exists.** A session keeps the plugin copy it started with, while the loop it launches
+  bails `plugin_version` at once unless it runs the installed version
+  ([run-loop.md](run-loop.md) § Protocol invariants). So a marketplace update after the session
+  started made the first launch from `${CLAUDE_PLUGIN_ROOT}` a wasted one, and preflight, run
+  from the same stale copy, had passed green (AIWF-33).
+- **What it prints.** When the two versions differ, preflight exits 0 and prints, after every
+  other check has passed, one line naming the installed copy of the profile's loop —
+  `plan_loop.py` for `--for plan`, `run_loop.py` for `--for run`. The session launches that path
+  instead of `${CLAUDE_PLUGIN_ROOT}`'s, for every launch and relaunch it makes. A pass, not a
+  failure: a non-zero exit stops the skill and costs the round-trip the line saves.
+- **Fail open, like the loop.** An unreadable manifest, or no entry in
+  `~/.claude/plugins/installed_plugins.json`, is no evidence of a mismatch: nothing is printed.
+- **It helps from the copy that carries it.** A session whose own copy predates the check gets
+  no line, and the loop's bail names the path as before.

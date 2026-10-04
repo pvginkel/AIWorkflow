@@ -562,19 +562,30 @@ def installed_plugin(tools_dir: Path | None = None) -> tuple[str, str] | None:
     return version, path if isinstance(path, str) else ""
 
 
-def assert_plugin_current(script: str, rerun: str) -> None:
-    """Bail (`plugin_version`, an error) when this loop runs another plugin
-    version than the one its agents load: a newer agent writes what this
-    driver ignores, an older one misses what it expects. Fail open — an
-    unknown version on either side is no evidence of a mismatch. `script` is
-    the launching loop's filename, `rerun` how a relaunch picks the run up."""
+def stale_plugin(script: str) -> tuple[str, str, str] | None:
+    """(this plugin's version, the installed one's, where the installed copy
+    of `script` is) when the two versions differ, else None. Fail open — an
+    unknown version on either side is no evidence of a mismatch. Shared by
+    the loops' guard and preflight, which names the path before a launch."""
     ours = plugin_version()
     installed = installed_plugin()
     if not ours or installed is None or installed[0] == ours:
-        return
+        return None
     version, path = installed
-    relaunch = (str(Path(path) / "tools" / script) if path
-                else f"the installed plugin's tools/{script}")
+    loop = (str(Path(path) / "tools" / script) if path
+            else f"the installed plugin's tools/{script}")
+    return ours, version, loop
+
+
+def assert_plugin_current(script: str, rerun: str) -> None:
+    """Bail (`plugin_version`, an error) when this loop runs another plugin
+    version than the one its agents load: a newer agent writes what this
+    driver ignores, an older one misses what it expects. `script` is the
+    launching loop's filename, `rerun` how a relaunch picks the run up."""
+    stale = stale_plugin(script)
+    if stale is None:
+        return
+    ours, version, relaunch = stale
     raise Bailout(
         "plugin_version",
         details=f"this loop runs plugin {ours} from {TOOLS_DIR}; the "

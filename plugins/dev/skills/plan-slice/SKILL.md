@@ -22,7 +22,9 @@ before the first tracker call** — where the host ships it as a skill, invoke t
 in the pipeline loads it for you, and a convention that is not in context gets guessed at.
 
 **Preflight (step 0).** Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for plan` and relay its
-message verbatim if it exits non-zero. A silent exit 0 means every gate passed.
+message verbatim if it exits non-zero. A silent exit 0 means every gate passed; a line on exit 0
+names the installed `plan_loop.py` — this session's plugin copy is stale, so launch and rerun
+the loop from that path wherever this skill says `${CLAUDE_PLUGIN_ROOT}/tools/plan_loop.py`.
 
 ## Your role
 
@@ -156,7 +158,7 @@ slice.md — there is no fix-verify loop behind it. Handle the exit:
 - **Exit 3 — bailed** (`blocked` / `timeout` / `protocol_failure` / `plugin_version`): diagnose;
   fix only what is genuinely environmental, otherwise defer to the operator. `plugin_version`
   means this session's `${CLAUDE_PLUGIN_ROOT}` is stale: rerun from the installed path
-  `plan_bailout.json` names.
+  `plan_bailout.json` names, as it stands — the rerun clears the bail record itself.
 
 ### 4. Promote and present
 

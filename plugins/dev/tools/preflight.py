@@ -23,6 +23,7 @@ schema):
 | Clean working tree                              |        |      |  x  |
 | Synced with origin (ff / rebase; refuse dirty)  |        |  x   |  x  |
 | Baseline `kc project build` (all components)    |        |      |  x  |
+| Session plugin = installed (else print loop)    |        |  x   |  x  |
 
 A phase the project switched off is not checked: its pointer is absent by
 contract, and checking it would make an optional phase mandatory again.
@@ -31,9 +32,11 @@ The sync is the one step that *acts* rather than checks: pulling a clean base
 onto its own origin destroys nothing, while a repo with uncommitted work is
 refused, never pulled over (docs/preflight.md, "Notes on the sync").
 
-**Silent on success** (exit 0). On failure, prints ONE actionable message —
-what is missing, the exact line/fix, and a pointer to the project contract — so
-a new repo self-onboards from the error text. Exit codes:
+**Silent on success** (exit 0) — but for one line, printed last, when the plugin
+this session runs from is not the installed one: the installed copy of the loop
+the command launches, which the session launches instead. On failure, prints ONE
+actionable message — what is missing, the exact line/fix, and a pointer to the
+project contract — so a new repo self-onboards from the error text. Exit codes:
 
     0  pass
     1  contract violation (the project must fix something)
@@ -59,6 +62,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import github_target  # noqa: E402
 import project_config  # noqa: E402
+import run_loop  # noqa: E402
 
 # The project contract, for the pointer in every failure message. Resolved from
 # this script's location (<plugin>/tools/preflight.py), not the cwd.
@@ -514,12 +518,37 @@ def check_baseline_build(root: Path) -> None:
 # Triage deliberately has no `kc_status`: it dispatches nothing and touches no
 # kc surface — it is intake, doable without the repo. Gating it on live
 # controller reachability would fail work that needs none of it.
+# The loop each launching profile's command starts, for check_plugin_current.
+LOOPS = {"plan": "plan_loop.py", "run": "run_loop.py"}
+
+
+def check_plugin_current(profile: str) -> None:
+    """Print the installed copy of the profile's loop when this session's
+    plugin is another version. Launched from the session's
+    ${CLAUDE_PLUGIN_ROOT}, that loop would bail at once with `plugin_version`
+    (run_loop.assert_plugin_current); named here, the first launch is the
+    right one. A pass, not a failure — a non-zero exit stops the skill and
+    costs the operator the round-trip this line saves. Silent when the
+    versions match or either is unknown, as the loop's own guard is."""
+    script = LOOPS[profile]
+    stale = run_loop.stale_plugin(script)
+    if stale is None:
+        return
+    ours, version, loop = stale
+    print(f"Launch the loop from {loop} — for every launch and relaunch this "
+          f"session, not from ${{CLAUDE_PLUGIN_ROOT}}: this session's plugin "
+          f"is {ours} ({run_loop.TOOLS_DIR.parent}), the installed one is "
+          f"{version}, and a loop run from the session's copy bails at once "
+          "with plugin_version.")
+
+
 PROFILES = {
     "triage": ["kc", "config", "spec_repo"],
-    "plan": ["kc", "kc_status", "manifest", "config", "spec_repo", "synced"],
+    "plan": ["kc", "kc_status", "manifest", "config", "spec_repo", "synced",
+             "plugin_current"],
     "run": ["kc", "kc_status", "manifest", "config", "spec_repo",
             "design_philosophy", "phase_pointers", "devlock", "clean_tree",
-            "synced", "baseline_build"],
+            "synced", "baseline_build", "plugin_current"],
 }
 
 
@@ -554,7 +583,10 @@ def main() -> None:
         check_synced(root, cfg)
     if "baseline_build" in checks:
         check_baseline_build(root)
-    # Silent on success.
+    # Last, so it is printed only on a pass, never beside a failure's message.
+    if "plugin_current" in checks:
+        check_plugin_current(args.profile)
+    # Silent on success, but for that line.
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ import contextlib
 import fcntl
 import importlib.util
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -36,6 +37,11 @@ _spec.loader.exec_module(preflight)
 # the pod's own clones; the tests about them patch in a root of their own.
 preflight.github_target.SCRATCH_ROOT = (Path(tempfile.gettempdir())
                                         / "preflight-suite-no-scratch")
+# The plugin check reads Claude Code's installed_plugins.json, which on the
+# operator's machine names a real install; no test but its own may see it.
+preflight.run_loop.INSTALLED_PLUGINS = (Path(tempfile.gettempdir())
+                                        / "preflight-suite-no-home"
+                                        / "installed_plugins.json")
 
 
 class patched:
@@ -735,6 +741,78 @@ def test_against_the_real_kc_status():
     if subprocess.run(["kc", "status"], capture_output=True).returncode != 0:
         return
     preflight.check_kc_status()
+
+
+# -- check_plugin_current ----------------------------------------------------
+
+OURS = preflight.run_loop.plugin_version()
+
+
+def installed_plugins(tmp, version):
+    """installed_plugins.json in `tmp` naming `version` for this plugin (None:
+    no entry for it), and the install root its paths sit under."""
+    path = Path(tmp) / "installed_plugins.json"
+    root = Path(tmp) / "cache" / "aiworkflow" / "dev"
+    plugins = {"kubecoder@kubecoder-config": [
+        {"scope": "user", "installPath": "/elsewhere", "version": "0.8"}]}
+    if version is not None:
+        plugins["dev@aiworkflow"] = [{
+            "scope": "user", "version": version,
+            "installPath": str(root / version)}]
+    path.write_text(json.dumps({"version": 2, "plugins": plugins}))
+    return path, root
+
+
+def plugin_line(profile):
+    stdout = io.StringIO()
+    with contextlib.redirect_stdout(stdout):
+        preflight.check_plugin_current(profile)
+    return stdout.getvalue()
+
+
+def test_a_stale_session_plugin_names_the_installed_loop():
+    """The session runs another version than the installed one: the line
+    names the installed copy of the loop the profile's command launches."""
+    for profile, script in (("plan", "plan_loop.py"), ("run", "run_loop.py")):
+        with tempfile.TemporaryDirectory() as tmp:
+            path, root = installed_plugins(tmp, "0.0.1")
+            with patched(preflight.run_loop, INSTALLED_PLUGINS=path):
+                line = plugin_line(profile)
+        assert str(root / "0.0.1" / "tools" / script) in line, line
+        assert f"this session's plugin is {OURS}" in line
+        assert "the installed one is 0.0.1" in line
+        assert "every launch and relaunch" in line
+        assert line.count("\n") == 1, "one line"
+
+
+def test_a_matching_or_unknown_installed_plugin_prints_nothing():
+    for version in (OURS, None, "absent"):
+        with tempfile.TemporaryDirectory() as tmp:
+            path, _ = installed_plugins(tmp, version)
+            if version == "absent":
+                path.unlink()
+            with patched(preflight.run_loop, INSTALLED_PLUGINS=path):
+                assert plugin_line("run") == "", version
+
+
+def test_the_plugin_line_comes_last_and_only_for_plan_and_run():
+    """Printed after every other check, so a failing check's message is
+    never joined by it; triage launches no loop and never checks."""
+    stubs = ["check_kc", "check_kc_status", "repo_root", "check_manifest",
+             "load_config", "check_pointer", "check_phase_pointers",
+             "check_devlock", "check_clean_tree", "check_synced",
+             "check_baseline_build", "check_plugin_current"]
+    for profile in ("triage", "plan", "run"):
+        calls = []
+        recorders = {name: (lambda *a, _n=name, _c=calls, **k: _c.append(_n))
+                     for name in stubs}
+        with patched(preflight, **recorders):
+            code, _ = run_main(profile, fake_subprocess())
+        assert code is None, profile
+        if profile == "triage":
+            assert "check_plugin_current" not in calls
+        else:
+            assert calls[-1] == "check_plugin_current", (profile, calls)
 
 
 if __name__ == "__main__":

@@ -1132,6 +1132,30 @@ def test_a_plugin_version_mismatch_bails_before_the_first_dispatch():
             assert run_to_exit(loop) == 0, "the relaunch picks the run up"
 
 
+def test_the_relaunch_after_a_plugin_version_bail_needs_no_hand_cleanup():
+    """The bail leaves plan_bailout.json, plan_state.json and plan_log.txt
+    untracked in the slice folder; the relaunch from the installed path
+    starts on them as they are — the real cleanliness parse passes the
+    loop's own files — and clears the stale bail record itself."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        with installed(tmp, "0.0.1") as inst:
+            assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE, R_GO])) == 3
+            left = sorted(p.name for p in slice_dir.iterdir()
+                          if p.name in plan_loop.LOOP_OWNED_FILES)
+            assert left == ["plan_bailout.json", "plan_log.txt",
+                            "plan_state.json"]
+
+            inst.set(OURS)
+            porcelain = "".join(f"?? specs/099/{name}\0" for name in left)
+            loop = DirtyGitLoop(slice_dir, [W_DONE, R_GO],
+                                porcelain=porcelain)
+            assert run_to_exit(loop) == 0
+            assert [s[0] for s in loop.spawned] == ["plan-writer",
+                                                    "plan-reviewer"]
+            assert not (slice_dir / "plan_bailout.json").exists()
+
+
 def test_a_matching_or_unknown_installed_plugin_proceeds():
     for version in (OURS, None, "absent"):
         with tempfile.TemporaryDirectory() as tmp:

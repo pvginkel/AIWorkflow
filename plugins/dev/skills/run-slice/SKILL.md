@@ -29,7 +29,9 @@ nothing from you between launch and close-out.
 1. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for run`. On a non-zero exit, **relay
    its message verbatim** and stop — fix the root cause only if it is clearly environmental,
    otherwise notify the operator. A dirty working tree — or a repo preflight refused to pull — is
-   never yours to clean up.
+   never yours to clean up. A line it prints on exit 0 names the installed `run_loop.py`:
+   this session's plugin copy is stale, so launch and relaunch from that path wherever this
+   skill says `${CLAUDE_PLUGIN_ROOT}/tools/run_loop.py`.
 2. Advance the slice's tracker card — the id in `slice.md`'s `issue:` frontmatter; it is
    **planned** — to **in progress**.
 3. Launch it **detached** — not with `run_in_background`, whose 2 h cap a run outlasts:
