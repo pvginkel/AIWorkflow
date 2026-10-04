@@ -97,7 +97,8 @@ repositories the slice touched: the `root` of every phase. What goes in the repo
 
 Session outputs live under `<slice>/phases/P<id>/` (review docs, gate logs, verdict files) and at
 the slice root for the consult/test/doc stages and the wrap-up (`wrap_up_result.json`,
-`wrap_up_gate_r<N>.log`); the loop-tail sweep's logs live under
+`wrap_up_gate_r<N>.log`); the run-start `kc project setup` logs under `<slice>/setup/` (one
+`<repo>.log` per Target repo, rewritten at every start); the loop-tail sweep's logs live under
 `<slice>/sweeps/r<N>/`; the doc phase's diff files under `<slice>/doc_phase/` (one `<repo>.diff`
 per repo a phase merged into, a section per merged phase over its `landed` range, rewritten at
 every doc-writer dispatch — git's answer written down, not an agent's copy). Executor inputs

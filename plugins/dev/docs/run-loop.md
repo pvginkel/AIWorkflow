@@ -477,3 +477,15 @@ without `aac-tools`: `kc project test` failed at `cexec aac-tools gen-architectu
 minutes of writer work and handed back `blocked`, and the fix ended the session that would have
 resumed it; Ansible slice 033 bailed at the sweep on KubeCoder's lint and build rows for the
 same reason and needed `accept` rulings to get past them.
+
+**The loop sets up its Target repos before the first dispatch.** At startup, fresh or `--resume`,
+right after the tool check, the run loop runs a bare `kc project setup` once from the root of each
+repo the tool check holds — every pending phase's Target repo and the code repos the run has
+touched, each once, those with a `.kubecoder/project.yaml` only — with the output in the slice's
+`setup/<repo>.log` and a `[setup]` line per repo in `log.txt`. A repo that defines no setup (exit 3)
+passes. A red setup, or one still running after 900 s, is a warning and the run goes on: the gate
+decides, and meets what setup could not fix exactly as it would have without the step. A gate that
+fails on install state rather than on the change sends an executor into fix rounds on code that is
+fine: Architecture slice 034's P11 met `No module named 'click'` in a sibling Target never set up,
+KubeCoder slice 238's P1 `No module named 'croniter'` in a venv behind its lockfile, and `kc project
+setup` fixed both in about a minute. `--dry-run` runs no setup.

@@ -194,6 +194,10 @@ TIMEOUTS = {
 GATE_TIMEOUT = 3600
 NUDGE_TIMEOUT = 900
 
+# A run-start `kc project setup`, per repo (`_setup_targets`): an install
+# still going after 15 minutes is hung, and the run goes on without it.
+SETUP_TIMEOUT = 900
+
 # How often a running send is asked for its session id. The engine reports it
 # from the turn's first stream event, so the id is knowable seconds in — and a
 # round whose send hangs after the turn is reattachable only if the driver
@@ -3641,6 +3645,59 @@ class RunLoop:
         details = self._missing_tools()
         if details:
             raise Bailout("missing_tools", question=True, details=details)
+
+    def _setup_targets(self) -> None:
+        """`kc project setup` once in each repo the run needs
+        (`_tool_roots`) that carries a kc manifest, before the first
+        dispatch — fresh and resumed alike. A gate that fails on install
+        state rather than the change sends an executor into fix rounds on
+        code that is fine: Architecture slice 034 P11 met `No module named
+        'click'` (a sibling Target never set up), KubeCoder slice 238 P1 `No
+        module named 'croniter'` (a venv behind its lockfile), and `kc
+        project setup` fixed both in about a minute. A red or timed-out
+        setup warns and the run goes on — the phase gate decides; exit 3 is
+        a repo that defines no setup. SETUP_TIMEOUT bounds a hung setup to
+        15 minutes per repo."""
+        seen: set[Path] = set()
+        argv = ["kc", "project", "setup"]
+        for root in [Path(r).resolve() for r in self._tool_roots()]:
+            if root in seen or not (root / MANIFEST_REL).is_file():
+                continue
+            seen.add(root)
+            log_path = self.slice_dir / "setup" / f"{root.name}.log"
+            goes_on = "the run goes on; the gate decides"
+            t0 = time.monotonic()
+            try:
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(log_path, "w") as log_file:
+                    returncode = self._setup_exec(argv, root, log_file)
+            except subprocess.TimeoutExpired:
+                self.log(f"warning: [setup] {root.name} timed out after "
+                         f"{SETUP_TIMEOUT}s (output in {log_path}) — "
+                         f"{goes_on}")
+                continue
+            except OSError as e:
+                self.log(f"warning: [setup] {root.name}: `{' '.join(argv)}` "
+                         f"could not run ({e}) — {goes_on}")
+                continue
+            duration_s = int(time.monotonic() - t0)
+            outcome = kc_outcome(returncode)
+            if outcome == "red":
+                self.log(f"warning: [setup] {root.name} → RED (exit "
+                         f"{returncode}, {duration_s}s, output in "
+                         f"{log_path}) — {goes_on}")
+                continue
+            self.log(f"[setup] {root.name} → {GATE_OUTCOME_LABELS[outcome]} "
+                     f"({duration_s}s)"
+                     + (" — the repo defines no setup"
+                        if outcome == "nothing_ran" else ""))
+
+    def _setup_exec(self, argv: list[str], cwd: Path, log_file) -> int:
+        """One `kc project setup`'s exit code, its output into `log_file` —
+        the subprocess seam of `_setup_targets`, isolated for tests."""
+        return subprocess.run(
+            argv, cwd=cwd, stdout=log_file, stderr=subprocess.STDOUT,
+            timeout=SETUP_TIMEOUT).returncode
 
     def _track_phases(self, phases: list[Phase]) -> None:
         known = [p.id for p in phases]
@@ -7300,6 +7357,9 @@ class RunLoop:
             # whose manifest calls a tool container this pod lacks is a
             # restart only the operator can make.
             self._assert_tools()
+            # Then those repos' installs, so a gate fails on the change, not
+            # on install state.
+            self._setup_targets()
 
             if resume_at != "docs":
                 while True:

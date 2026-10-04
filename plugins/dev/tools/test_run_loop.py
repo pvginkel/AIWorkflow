@@ -329,7 +329,7 @@ class ScriptedLoop(RunLoop):
 
     def __init__(self, slice_dir, script, resume=False, gates=None,
                  doc_gates=None, repo_root=None, sweep_reds=None,
-                 wrap_ups=None, wrap_gates=None):
+                 wrap_ups=None, wrap_gates=None, setup_rcs=None):
         super().__init__(Path(slice_dir), resume=resume)
         if repo_root is not None:
             self.repo_root = Path(repo_root)
@@ -355,6 +355,10 @@ class ScriptedLoop(RunLoop):
         self.wrap_up_sessions = []
         self.wrap_gates = list(wrap_gates or [])   # the wrap-up gate: green?
         self.wrap_gate_calls = []                  # (argv, cwd)
+        # The run-start `kc project setup`: an exit code or an exception to
+        # raise per run, in order (0 once spent).
+        self.setup_rcs = list(setup_rcs or [])
+        self.setup_runs = []                       # (argv, cwd, spawns so far)
 
     def run(self):
         outer = run_loop.run_kc_session
@@ -408,6 +412,14 @@ class ScriptedLoop(RunLoop):
         self.wrap_gate_calls.append((list(argv), str(cwd)))
         log_file.write("wrap-up gate output\n")
         return 0 if green else 1
+
+    def _setup_exec(self, argv, cwd, log_file):
+        self.setup_runs.append((list(argv), Path(cwd), len(self.spawned)))
+        rc_ = self.setup_rcs.pop(0) if self.setup_rcs else 0
+        if isinstance(rc_, BaseException):
+            raise rc_
+        log_file.write(f"{' '.join(argv)}: exit {rc_}\n")
+        return rc_
 
     def _sleep(self, seconds):
         self.sleeps.append(seconds)
@@ -8309,6 +8321,83 @@ def test_a_doc_gate_command_that_meets_a_missing_tool_is_unrunnable():
         passed, _ = loop._run_doc_gate({"gate_runs": 1})
         assert passed and calls == ["lint", "build", "test"]
         assert loop.state["history"][-1]["outcome"] == "green"
+
+
+# -- the run-start setup -------------------------------------------------------
+#
+# A gate that fails on install state (a sibling never set up, a venv behind
+# its lockfile) sent executors into fix rounds on code that was fine; the
+# driver runs `kc project setup` in each repo the run needs before the first
+# dispatch, and the gate still decides.
+
+SETUP_ARGV = ["kc", "project", "setup"]
+
+
+def test_setup_runs_once_per_target_repo_with_a_manifest_before_any_dispatch():
+    """Two phases on one repo set it up once; a sibling without a manifest
+    has nothing to set up. Bare `kc project setup`, from each repo's root,
+    with the output under the slice's setup/."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sib = make_sibling(tmp)
+        make_sibling(tmp, name="Bare", manifest=False)
+        slice_dir, repo = make_slice(tmp, phases=[
+            ("1", "App change"), ("2", "Sibling change", "../Sibling"),
+            ("3", "More app"), ("4", "Bare change", "../Bare")])
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"]] * 4
+                         + TAIL, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert not r.script
+        assert r.setup_runs == [(SETUP_ARGV, repo.resolve(), 0),
+                                (SETUP_ARGV, sib.resolve(), 0)]
+        assert (slice_dir / "setup" / "Sibling.log").read_text() == \
+            "kc project setup: exit 0\n"
+        log = (slice_dir / "log.txt").read_text()
+        assert "[setup] repo → GREEN (" in log
+        assert "[setup] Sibling → GREEN (" in log
+
+
+def test_a_red_hung_or_unstartable_setup_warns_and_the_run_goes_on():
+    """The phase gate decides, so no setup outcome bails; exit 3 is a repo
+    that defines no setup, and passes without a warning."""
+    cases = [(1, "warning: [setup] repo → RED (exit 1, "),
+             (2, "warning: [setup] repo → RED (exit 2, "),
+             (subprocess.TimeoutExpired("kc", 900),
+              "warning: [setup] repo timed out after 900s (output in "),
+             (FileNotFoundError("no kc"),
+              "warning: [setup] repo: `kc project setup` could not run"),
+             (3, "[setup] repo → nothing ran (")]
+    for setup, line in cases:
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp)
+            r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                         *TAIL],
+                             repo_root=repo, setup_rcs=[setup])
+            assert run_to_exit(r) == 0, setup
+            assert not r.script and len(r.setup_runs) == 1
+            log = (slice_dir / "log.txt").read_text()
+            assert line in log, (setup, log)
+            assert ("warning: [setup]" in log) == (setup != 3)
+
+
+def test_a_resume_runs_setup_again():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [("code-writer", {"outcome": "blocked",
+                                                       "summary": "no creds"})],
+                         repo_root=repo)
+        assert run_to_exit(r) == 3
+        assert r.setup_runs == [(SETUP_ARGV, repo.resolve(), 0)]
+        r2 = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                      *TAIL], resume=True, repo_root=repo)
+        assert run_to_exit(r2) == 0
+        assert r2.setup_runs == [(SETUP_ARGV, repo.resolve(), 0)]
+
+
+def test_a_run_that_bails_on_missing_tools_runs_no_setup():
+    with tempfile.TemporaryDirectory() as tmp:
+        _, _, r = tools_run(tmp)
+        assert run_to_exit(r) == 4
+        assert r.setup_runs == []
 
 
 # -- the detached driver: the exit record, wait, stop, the handshake ---------

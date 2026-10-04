@@ -4,6 +4,17 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-04 — the run loop sets up each Target repo before the first dispatch (v0.9.74)
+
+AIWF-32. At startup, fresh or `--resume`, right after the tool check, the run loop runs a bare
+`kc project setup` once in each Target repo that carries a `.kubecoder/project.yaml` (the repos
+the tool check holds), output in the slice's `setup/<repo>.log`. A red setup, or one past its own
+900 s timeout, warns and the run goes on — the gate decides. Two runs had met a gate red on
+install state, not on the change: Architecture slice 034 P11 (`No module named 'click'`, a
+sibling Target never set up) and KubeCoder slice 238 P1 (`No module named 'croniter'`, a venv
+behind its lockfile); `kc project setup` fixed both in about a minute
+(`plugins/dev/docs/run-loop.md`).
+
 ## 2026-10-03 — an entry that comes to the operator carries its body, its newest note and its evidence (v0.9.73)
 
 0.9.70's three lines were too few to rule from: on Ansible slice 036 the operator could not
