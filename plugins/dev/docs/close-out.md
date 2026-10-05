@@ -12,8 +12,9 @@ pointing at the report.
 **The record is `<slice>/close-out.json`; `<slice>/close-out.md` is rendered from it**
 ([close-out-template.md](close-out-template.md) has both shapes). An entry is data for its
 whole life, from the plan loop's first append to the operator's last ruling, and the report is
-what the operator is shown of it: each entry's ask, its proposal and its consequence, and no
-more — the evidence is the store's. `${CLAUDE_PLUGIN_ROOT}/tools/close_out.py` is the one pen:
+what the operator is shown of it: each entry's ask — its headline, its proposal and its
+consequence — with the body, the newest note and the evidence they need to rule on it.
+`${CLAUDE_PLUGIN_ROOT}/tools/close_out.py` is the one pen:
 it writes every author's entries (`append`), notes (`note`) and strikes (`strike`), the
 corrections of a label (`relabel`) and of a proposal (`propose`), what the wrap-up asked for and
 left (`request-card`, `leave`), the operator's rulings (`rule`), prints an entry in full
@@ -253,19 +254,21 @@ can fix responsibly (row 8). Nothing is filed before the operator's word.
 `close-out.md` is written for the operator and for nobody else, in the order of what is asked
 of them ([the template](close-out-template.md#the-report) has the sections). An entry that
 comes to them — the actions, the decisions, the risks, the improvements that are theirs to
-weigh, the card requests — is shown as its ask: the heading, what is proposed
-(`**Proposal:**`), what it costs (`**Consequence:**`), where the table sent it and why
-(`**Route:**`), and the line they write on (`**Disposition:**`). Nothing else: the body, the
-notes, the labels in words and the provenance are the store's, and nothing of them is on the
-page. What the table closed follows as its heading and the ground of the close, so a close
-they do not agree with can be pulled back from one line; the record is headings. An id on
+weigh, the card requests — is shown as its ask and what they need to rule on it without the
+store: the heading, the body as its author wrote it, what is proposed (`**Proposal:**`), what
+it costs (`**Consequence:**`), the newest note (`**Latest**`), the labels in words
+(`**Triage:**`), who found it on what evidence (`**Provenance:**`), where the table sent it and
+why (`**Route:**`, where it says more than the kind), and the line they write on
+(`**Disposition:**`). The older notes are the store's. What the table closed follows as its
+heading, its consequence where it says more than none, its labels, its evidence and the ground
+of the close, so a close they do not agree with can be pulled back from one line; the record
+is headings, a struck entry's with its reason up to the first `; `. An id on
 every entry lets a ruling name it in one line ("card B1, close B6, fold I1 into 009"), and the
 run's shape is stamped at the top.
 
 There is no list at the head of the report and none in the body of the close-out card: the
-report is its entries. The operator reads an entry — its ask, its body, the proposal, the
-consequence, its newest note, who found it on what evidence — and rules, or sends a session to
-dig; an entry has to stand without the store behind it, and the page carries what that takes,
+report is its entries. The operator reads an entry and rules, or sends a session to dig; an
+entry has to stand without the store behind it, and the page carries what that takes,
 never a summary written over it.
 
 `close_out.py show <id>` prints an entry in full — body, every note, labels, marks — and is how
@@ -379,11 +382,11 @@ lands.
 
 ## Entry rules
 
-- **Three lines are the operator's; the body is the session's.** The operator reads the
-  headline, the proposal and the `Consequence:` line, and rules from them — write the three so
-  that one word back is a complete ruling, and so that none of them needs the body to be
-  understood. The body is written for the session they send to dig, for the wrap-up, and for
-  the card an entry may become; those have only the store, so quote liberally there: the
+- **The ask leads the entry and stands alone.** The headline, the proposal and the
+  `Consequence:` line are what the operator rules on — write the three so that one word back is
+  a complete ruling, and so that none of them needs the body to be understood. The body is on
+  the page with them, and it is what the session they send to dig, the wrap-up and the card
+  an entry may become work from; those have only the store, so quote liberally there: the
   sentence that is wrong, the command and its output, the file and lines. Provenance ids
   (`P3 r1 F3`, `V10`) belong on the `Provenance:` line, not in the body as load-bearing
   references.
@@ -403,9 +406,10 @@ lands.
   not, and a reader deciding what to trust needs the class before the body. The same holds for
   a strike — resolved, refuted, does-not-reproduce names the commit and what was re-run.
 - **No limit on prose, no limit on count — and no filler.** Long sections are fine; a cap produces
-  more, not less. Length is what the body needs, and the operator never reads it. What they
-  read is three lines: a proposal that restates the headline, or a consequence that restates
-  the mechanism, costs them the entry.
+  more, not less. Length is what the body needs, and the page shows it whole beside the ask. A
+  proposal that restates the headline, or a consequence that restates the mechanism, leaves the
+  ask nothing to rule from and sends the operator into the body for what that line should have
+  said.
 - **One entry per thing, not per turn.** A later observation about an entry that already exists —
   its premise moved, its symptom was re-tested, a phase resolved it, a reviewer refuted it — is
   `close_out.py note <close-out.md> <id>`: a dated paragraph at the end of that entry's body,

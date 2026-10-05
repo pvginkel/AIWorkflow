@@ -62,10 +62,11 @@ slice directory.
    so under the event (`note`); otherwise say what you found and leave it.
 5. **Present what comes to the operator — ask nothing yet.** Show the `Run:` header, then the
    entries under **Comes to you** and **Card requests** as the rendered report has them: in its
-   order, each as its ask — heading, `Proposal:`, `Consequence:`, `Route:` — with the ruling the
-   operator already wrote on it, if any. Nothing else: not the body, not the notes, not the labels.
-   They rule from the three lines, or ask; when they ask about an entry, `close_out.py show <slice>
-   <id>` is what you answer from. Entries that still stand under **Unlabelled** or **For the
+   order, each whole — its ask, its body, its newest note, its labels in words and its evidence
+   (the template's § The entry has the shape) — with the ruling the operator already wrote on
+   it, if any. Leave out nothing the report shows and summarise none of it. They rule from that,
+   or ask; when they ask about an entry, `close_out.py show <slice> <id>` — every note, every
+   mark — is what you answer from. Entries that still stand under **Unlabelled** or **For the
    wrap-up** come with them: nobody routed or handled those, so they are the operator's to see. Then
    one line for the rest, from `close_out.py counts <slice>`: how many entries the table closed, how
    many the wrap-up settled, how many are in the record. They are in the report under their

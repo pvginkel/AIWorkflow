@@ -4,6 +4,17 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-05 — the close-out skill and contract describe the page 0.9.73 renders (v0.9.78)
+
+AIWF-39. 0.9.73 put an entry's body, newest note, `Triage:` and `Provenance:` back on the page,
+and two places still described 0.9.70's three-line page. `/dev:close-out` step 5 now presents
+each entry that comes to the operator whole, as the report shows it, with nothing left out and
+nothing summarised; `close_out.py show` stays the answer for every note and mark.
+`plugins/dev/docs/close-out.md` says the same in its opening, in § The report (which also gives
+a closed entry its consequence, labels and evidence and a struck one its reason, as 0.9.73
+renders them) and in its entry rules, where the headline, the proposal and the consequence
+still lead the entry and must stand without the body. Prose only; the rendering is unchanged.
+
 ## 2026-10-05 — a run refuses to start without the services its Targets' environments declare (v0.9.77)
 
 AIWF-38. The same check as 0.9.68 carries over from tool containers to services. At startup, fresh
