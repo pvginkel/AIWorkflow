@@ -79,6 +79,10 @@ class FakeGit:
         self.branches = set()
         self.head = "abc123"
         self.revs = {}           # ref → its sha, overriding `head`
+        # `rev-parse <ref>^{tree}`: ref → its tree. A ref not in it has a
+        # tree of its own, so a phase's range is not empty unless a test
+        # gives its base and HEAD the same tree.
+        self.trees = {}
         self.spec_root = spec_root   # what `rev-parse --show-toplevel` says
         self.branch = "main"     # the branch every root is checked out on
         self.branch_at = {}      # str(root) → its branch, overriding `branch`
@@ -144,6 +148,9 @@ class FakeGit:
             return self.ahead.get(args[-1], "0")
         if args[:2] == ("rev-parse", "--verify"):
             return "" if str(root) in self.no_origin else self.head
+        if args[0] == "rev-parse" and args[-1].endswith("^{tree}"):
+            ref = args[-1].removesuffix("^{tree}")
+            return self.trees.get(ref, f"tree-{ref}")
         if args[0] == "rev-parse":
             return self.revs.get(args[-1], self.head)
         if args[0] == "merge-base":
@@ -1208,6 +1215,247 @@ def test_gate_line_never_claims_a_stale_green():
         assert "unverified" in r._gate_line({}, "abc123", target)
 
 
+def test_gate_line_names_its_repo_and_a_review_sets_untested_clones():
+    """The gate paragraph says where the gate ran; with a review set outside
+    the Target it closes on the driver having run no suite in its clones —
+    whichever paragraph it is (AIWF-37)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        target = run_loop.ResolvedTarget(
+            PROJECT, "project", Path(repo),
+            ["kc", "project", "test", "--project", PROJECT], Path(repo))
+        green = {"gate_green_commit": "deadbeefcafe0",
+                 "gate_green_log": "/g/gate_r1.log"}
+        line = r._gate_line(green, "deadbeefcafe0", target)
+        assert (f"`kc project test --project {PROJECT}` in {repo} — with "
+                "full output in /g/gate_r1.log") in line.replace("\n", " ")
+        assert "suite alone" not in line
+        clones = ["/work/scratch/A", "/work/scratch/B"]
+        line = r._gate_line(green, "deadbeefcafe0", target, clones)
+        assert "ran GREEN on this exact commit" in line
+        assert (f"That gate is {repo}'s suite alone: the driver ran no suite "
+                "in the review set's repos (/work/scratch/A, "
+                "/work/scratch/B)") in line.replace("\n", " ")
+        assert "unverified by the driver" in line.replace("\n", " ")
+        assert r._gate_line({}, "abc123", target, clones).startswith(
+            run_loop.GATE_UNVERIFIED_LINE + "\nThat gate is")
+        nothing = {"gate_nothing_ran_commit": "deadbeefcafe0"}
+        assert f"` in {repo} ran nothing" in r._gate_line(
+            nothing, "deadbeefcafe0", target)
+
+
+# -- the review set: a phase's work outside its Target (AIWF-37) ---------------
+#
+# Ansible slice 036 (Target: root) committed its work into thirteen
+# /work/scratch clones, listed in a ledger beside the plan; its reviewer was
+# handed root's empty range and a GREEN about a suite the phase never touched.
+
+SHA_A = "96ab9a82da98465b6f89cee67412a30e0349f7b9"
+SHA_B = "4e533de1d8e74481acc40f8b0f9a0f5c71cbcbf2"
+SHA_B2 = "2583334f61ee250bc55324a44ff0a671f0ee3afc"
+SHA_C = "b353012c2b5f597d8f711cacf7d4c3d27f9b3de9"
+
+
+def ledger(*rows):
+    """A ledger in slice 036's shape: prose, then a table row per file —
+    (repo, clone, sha)."""
+    lines = ["# Migration ledger", "",
+             "The push list for the repos the run does not track "
+             "([consumer files](attachments/consumer-files.md)).", "",
+             "| Repo | Job | Clone | Branch | File | Commit |",
+             "| --- | --- | --- | --- | --- | --- |"]
+    lines += [f"| {repo} | Jobs/{repo} | `{clone}` | `main` | `Jenkinsfile` "
+              f"| `{sha}` |" for repo, clone, sha in rows]
+    return "\n".join(lines) + "\n"
+
+
+def test_review_set_pairs_reads_clone_and_sha_off_any_line():
+    text = ledger(("A", "/work/scratch/A", SHA_A),
+                  ("B", "/work/scratch/B", SHA_B),
+                  # a second file in B's one commit: the same pair
+                  ("B", "/work/scratch/B", SHA_B)) + "\n".join([
+        "| D | Jobs/D | `/work/scratch/D` | `main` | `Jenkinsfile` | — |",
+        "Prose naming /work/scratch/E and no commit at all.",
+        "A commit alone: 1234abc, with no clone.",
+        "- /work/scratch/F (deadbeef, then f00d123),",
+        "|`/work/scratch/G`|`main`|`abc1234`|",
+    ])
+    assert run_loop.review_set_pairs(text) == [
+        ("/work/scratch/A", SHA_A), ("/work/scratch/B", SHA_B),
+        # the last sha on the line; a hex word with no digit is no sha
+        ("/work/scratch/F", "f00d123"),
+        # a table written without spaces
+        ("/work/scratch/G", "abc1234")]
+    assert run_loop.review_set_pairs("") == []
+
+
+def test_the_review_line_is_parsed_plain_or_bold():
+    phases, errors = parse_plan(
+        "### P1 — Plain\n\nTarget: app\n\nReview: migration-ledger.md\n"
+        "Review: second.md\n\n"
+        "### P2 — Bold\n\n**Target:** `root`\n**Review:** "
+        "`notes/ledger.md`\n\n"
+        "### P3 — None\n\nTarget: app\n\nReviewers read the ledger.\n")
+    assert not errors
+    assert [p.review for p in phases] == [
+        "migration-ledger.md", "notes/ledger.md", None]
+    assert phases[1].target == "root"
+
+
+def review_set_slice(tmp, review="Review: ledger.md\n"):
+    return make_slice(tmp, phases=[("1", "Migrate", PROJECT, False, review)])
+
+
+def writes(path, text):
+    """A script step's effect: the session wrote `text` to `path`."""
+    def effect(loop):
+        Path(path).write_text(text)
+    return effect
+
+
+def reviews_of(r):
+    return [p for role, p in r.prompts if role == "code-reviewer"]
+
+
+def test_the_reviewer_is_pointed_at_the_pairs_the_phase_added_or_changed():
+    """A pair already in the file when the phase began is not this phase's;
+    one whose sha changed is, and so is a new one — in a delta round too."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = review_set_slice(tmp)
+        path = slice_dir / "ledger.md"
+        path.write_text(ledger(("A", "/work/scratch/A", SHA_A),
+                               ("B", "/work/scratch/B", SHA_B)))
+        mine = ledger(("A", "/work/scratch/A", SHA_A),
+                      ("B", "/work/scratch/B", SHA_B2),
+                      ("C", "/work/scratch/C", SHA_C))
+
+        def fixes(loop):
+            path.write_text(mine.replace(SHA_C, "c0ffee1"))
+            loop.fake_git.head = "fixhead"
+
+        r = ScriptedLoop(slice_dir, [
+            (*V["exec_done"], writes(path, mine)), V["review_issues"],
+            (*V["exec_done"], fixes), V["review_signoff"], *TAIL],
+            repo_root=repo)
+        assert run_to_exit(r) == 0 and not r.script
+        assert load_state(slice_dir)["phases"]["1"]["review_set_start"] == [
+            ["/work/scratch/A", SHA_A], ["/work/scratch/B", SHA_B]]
+        first, delta = reviews_of(r)
+        assert (f"plan.md's `Review:` line for this phase names `{path}`"
+                in first.replace("\n", " "))
+        assert ("\n\n- `git -C /work/scratch/B show " + SHA_B2 + "`\n"
+                "- `git -C /work/scratch/C show " + SHA_C + "`\n\n") in first
+        assert SHA_A not in first and SHA_B not in first
+        assert "is empty" not in first
+        assert ("the review set's repos (/work/scratch/B, /work/scratch/C)"
+                in first.replace("\n", " "))
+        assert "ran GREEN on this exact commit" in first
+        assert "\n\n\n" not in first
+        assert "Re-review phase P1" in delta
+        assert "`git -C /work/scratch/C show c0ffee1`" in delta
+        assert SHA_C not in delta
+        log = (slice_dir / "log.txt").read_text()
+        assert "[P1] reviewer told: review set of 2 pair(s) from ledger.md" \
+            in log
+
+
+def test_a_review_set_over_an_empty_target_range_is_the_phases_work():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = review_set_slice(tmp)
+        path = slice_dir / "ledger.md"
+        r = ScriptedLoop(slice_dir, [
+            (*V["exec_done"], writes(path, ledger(
+                ("A", "/work/scratch/A", SHA_A)))),
+            V["review_signoff"], *TAIL], repo_root=repo)
+        r.fake_git.trees = {"base123": "tree0", "HEAD": "tree0"}
+        assert run_to_exit(r) == 0
+        assert load_state(slice_dir)["phases"]["1"]["review_set_start"] == []
+        prompt = reviews_of(r)[0]
+        assert f"- `git -C /work/scratch/A show {SHA_A}`" in prompt
+        assert (f"The Target's own range, `git diff base123..HEAD` in {repo}, "
+                "is empty: these pairs are the phase's work.") \
+            in prompt.replace("\n", " ")
+        assert "\n\n\n" not in prompt
+        assert ("[P1] reviewer told: review set of 1 pair(s) from ledger.md, "
+                "Target range empty") in (slice_dir / "log.txt").read_text()
+
+
+def test_a_declared_review_set_with_nothing_new_is_flagged():
+    # the file never written: it does not exist; the Target has work
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = review_set_slice(tmp, "**Review:** `ledger.md`\n")
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0
+        prompt = reviews_of(r)[0].replace("\n", " ")
+        assert (f"declares a review set outside its Target, "
+                f"`{slice_dir / 'ledger.md'}`, and that file does not exist; "
+                f"the Target's own range, `git diff base123..HEAD` in {repo}, "
+                "is not empty. Report it in your review") in prompt
+        assert "find it and name where" in prompt
+        assert "git -C" not in prompt and "suite alone" not in prompt
+        assert "[P1] reviewer told: review set ledger.md does not exist" \
+            in (slice_dir / "log.txt").read_text()
+    # the file holds only what it held before the phase; the range is empty
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = review_set_slice(tmp)
+        (slice_dir / "ledger.md").write_text(
+            ledger(("A", "/work/scratch/A", SHA_A)))
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        r.fake_git.trees = {"base123": "tree0", "HEAD": "tree0"}
+        assert run_to_exit(r) == 0
+        prompt = reviews_of(r)[0]
+        assert ("it holds no clone and commit pair this phase added or "
+                "changed; the Target's own range, `git diff base123..HEAD` "
+                f"in {repo}, is empty too.") in prompt.replace("\n", " ")
+        assert SHA_A not in prompt
+        assert "\n\n\n" not in prompt
+        assert ("[P1] reviewer told: review set ledger.md has no new pair, "
+                "Target range empty") in (slice_dir / "log.txt").read_text()
+
+
+def test_an_empty_target_range_with_no_review_set_is_flagged():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        r.fake_git.trees = {"base123": "tree0", "HEAD": "tree0"}
+        assert run_to_exit(r) == 0
+        assert load_state(slice_dir)["phases"]["1"]["review_set_start"] \
+            is None
+        prompt = reviews_of(r)[0]
+        assert (f"`git diff base123..HEAD` in {repo} is empty — the phase "
+                "committed nothing to its Target, and plan.md declares no "
+                "review set outside it") in prompt.replace("\n", " ")
+        assert "\n\n\n" not in prompt
+        assert "[P1] reviewer told: Target range empty, no review set " \
+            "declared" in (slice_dir / "log.txt").read_text()
+
+
+def test_target_work_and_no_review_set_leave_the_dispatch_as_it_was():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0
+        prompt = reviews_of(r)[0]
+        assert "review set" not in prompt and "is empty" not in prompt
+        assert "not a finding.\n\nThe deterministic test gate ran GREEN" \
+            in prompt
+        assert "reviewer told" not in (slice_dir / "log.txt").read_text()
+
+
+def test_a_snapshot_less_phase_state_counts_every_pair():
+    """A phase begun on a plugin that took no snapshot reads as an empty
+    baseline; an off-shape entry is skipped, never a crash."""
+    read = RunLoop._review_set_start
+    assert read({}) == set() and read({"review_set_start": None}) == set()
+    assert read({"review_set_start": [["/c", "abc1234"], ["/x"], "junk",
+                                      [1, 2]]}) == {("/c", "abc1234")}
+
+
 # -- kc's "nothing ran" exit code (KC-81) --------------------------------------
 #
 # `kc project test|build|lint` exits 3 when its selection holds no statement
@@ -1294,8 +1542,8 @@ def test_a_gate_that_ran_nothing_proceeds_unverified_without_a_fix_round():
                 if h["role"] == "gate"] == ["nothing_ran", "nothing_ran"]
         prompt = next(p for role, p in r.prompts
                       if role == "code-reviewer").replace("\n", " ")
-        assert (f"`kc project test --project {PROJECT}` ran nothing on this "
-                f"exact commit ({r.fake_git.head[:12]})") in prompt
+        assert (f"`kc project test --project {PROJECT}` in {repo} ran nothing "
+                f"on this exact commit ({r.fake_git.head[:12]})") in prompt
         assert "the target defines no tests" in prompt
         assert "GREEN" not in prompt
         assert f"{PROJECT} defines no tests — proceeding" \
@@ -1310,7 +1558,7 @@ def test_the_nothing_ran_line_is_stated_only_about_the_commit_it_ran_on():
             PROJECT, "project", Path(repo),
             ["kc", "project", "test", "--project", PROJECT], Path(repo))
         ps = {"gate_nothing_ran_commit": "deadbeefcafe0"}
-        assert "defines\nno tests" in r._gate_line(ps, "deadbeefcafe0",
+        assert "defines no tests" in r._gate_line(ps, "deadbeefcafe0",
                                                     target)
         # a later commit, or a target with no gate at all: plainly unverified
         assert r._gate_line(ps, "0ther000head0", target) \
@@ -1364,8 +1612,8 @@ def test_a_root_gate_that_ran_nothing_falls_back_to_the_whole_repo():
             < log.index("kc project test: exit 0")
         prompt = next(p for role, p in r.prompts
                       if role == "code-reviewer").replace("\n", " ")
-        assert "`kc project test` — with full output in" in prompt
-        assert "--project root` —" not in prompt
+        assert f"`kc project test` in {repo} — with full output in" in prompt
+        assert "--project root` in" not in prompt
         narration = (slice_dir / "log.txt").read_text()
         assert ("`kc project test --project root` ran nothing — root "
                 "declares no tests, so the gate is the whole repo") \
@@ -1409,8 +1657,8 @@ def test_a_root_gate_with_tests_of_its_own_never_runs_the_whole_repo():
         assert [argv for argv, _, _ in r.phase_gate_runs] == [ROOT_ARGV]
         prompt = next(p for role, p in r.prompts
                       if role == "code-reviewer").replace("\n", " ")
-        assert "`kc project test --project root` — with full output" \
-            in prompt
+        assert f"`kc project test --project root` in {repo} — with full " \
+            "output" in prompt
 
 
 def test_a_component_gate_that_ran_nothing_never_falls_back():
@@ -1424,8 +1672,8 @@ def test_a_component_gate_that_ran_nothing_never_falls_back():
             ["kc", "project", "test", "--project", PROJECT]] * 2
         prompt = next(p for role, p in r.prompts
                       if role == "code-reviewer").replace("\n", " ")
-        assert (f"`kc project test --project {PROJECT}` ran nothing on this "
-                "exact commit") in prompt
+        assert (f"`kc project test --project {PROJECT}` in {repo} ran nothing "
+                "on this exact commit") in prompt
         assert "whole repo" not in (slice_dir / "log.txt").read_text()
 
 

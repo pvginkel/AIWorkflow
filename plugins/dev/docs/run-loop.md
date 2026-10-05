@@ -181,7 +181,16 @@ whole plan is a feature of the review, not a cost. Then:
   phase, operator rulings).
 - **Review** — fresh **code-reviewer** per round against the phase's outcome, the acceptance
   criteria (`verification.json`) and repo conventions. Round 1 full branch diff; rounds 2+ are
-  delta-scoped to the fix range. A `blocking` tag needs an anchor from the closed list in the
+  delta-scoped to the fix range. A phase whose body declares `Review: <file>`
+  ([plan-template.md](plan-template.md)) also has its review set listed, one
+  `git -C <clone> show <sha>` per clone and commit pair the file gained or changed since the
+  phase began — the driver records the file's pairs when the phase starts. A Target range that
+  is empty with no `Review:` line, and a `Review:` file that yields no new or changed pair, are
+  each stated to the reviewer as such, never handed on as a range to read: one Ansible phase's
+  dispatch named an empty `git diff` in the Target repo while its work sat in 13 scratch clones,
+  and the reviewer found it only through `state.json`, the plan and its attachment. The gate
+  paragraph names the suite and the repo it ran in, and with a review set adds that no suite
+  ran in the review set's repos. A `blocking` tag needs an anchor from the closed list in the
   reviewer's contract (no anchor is advisory by construction), and the verdict reports every
   finding machine-readably — severity, impact, category, anchor — which the driver persists
   into `state.json`'s history. A fix round resolves the findings tagged **blocking** and

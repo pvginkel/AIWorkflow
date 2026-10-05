@@ -785,6 +785,7 @@ PHASE_RE = re.compile(r"^###\s+P([A-Za-z0-9]+)\s+—\s+(.+?)\s*$")
 DONE_STAMP_RE = re.compile(r"✅\s*DONE\b")
 TARGET_RE = re.compile(r"^\s*\**Target\**\s*:\**\s*`?([^`]+?)`?\s*$")
 CREATES_RE = re.compile(r"^\s*\**Creates\**\s*:\**\s*`?([^`]+?)`?\s*$")
+REVIEW_RE = re.compile(r"^\s*\**Review\**\s*:\**\s*`?([^`]+?)`?\s*$")
 PUSH_HOLDS_RE = re.compile(r"^##\s+Push holds\s*$", re.IGNORECASE)
 HOLD_RE = re.compile(r"^\s*[-*]\s+\**`?(\S+?)`?\**\s+—\s+(\S.*?)\s*$")
 DRIVER_RULINGS_RE = re.compile(r"^##\s+Driver rulings\s*$", re.IGNORECASE)
@@ -803,13 +804,18 @@ class Phase:
         self.done = bool(DONE_STAMP_RE.search(title))
         self.target: str | None = None
         self.creates: str | None = None
+        self.review: str | None = None
 
     def resolve_target(self) -> None:
-        """`Target:` and the optional `Creates:` — first line of each kind
-        wins, in the same styles a plan writes them. `Creates:` declares that
-        this phase REGISTERS that component in the manifest: the name cannot
-        be in `kc project list` until the phase has run, so resolution and
-        validation are told to expect it rather than calling it a typo."""
+        """`Target:` and the optional `Creates:` and `Review:` — first line
+        of each kind wins, in the same styles a plan writes them. `Creates:`
+        declares that this phase REGISTERS that component in the manifest:
+        the name cannot be in `kc project list` until the phase has run, so
+        resolution and validation are told to expect it rather than calling
+        it a typo. `Review:` names a file in the slice folder listing work
+        the phase commits outside its Target — clones it commits into and
+        leaves unpushed — which the reviewer is pointed at
+        (`review_set_pairs`)."""
         for line in self.body:
             if self.target is None:
                 match = TARGET_RE.match(line)
@@ -820,6 +826,38 @@ class Phase:
                 match = CREATES_RE.match(line)
                 if match:
                     self.creates = match.group(1).strip()
+                    continue
+            if self.review is None:
+                match = REVIEW_RE.match(line)
+                if match:
+                    self.review = match.group(1).strip()
+
+
+# A review-set file's clone/commit pairs (AIWF-37). Ansible slice 036 did its
+# work as unpushed commits in thirteen /work/scratch clones, listed in a
+# ledger beside the plan, and the reviewer was handed the Target's empty
+# range. The file's shape is its writer's: any line carrying an absolute path
+# and a commit sha is a pair, so a table row and a bullet both read, and a
+# header, separator or prose line carries at most one of the two. A sha is
+# 7–40 lowercase hex with a digit in it — a hex-spelled word is not one.
+REVIEW_SHA_RE = re.compile(r"(?=[a-f]*\d)[0-9a-f]{7,40}")
+
+
+def review_set_pairs(text: str) -> list[tuple[str, str]]:
+    """The (clone, sha) pairs in a `Review:` file, in order, each once: a
+    line's first absolute path with its last sha. Several rows sharing one
+    clone and commit are one pair; a clone whose commit was amended, listed
+    with its new sha, is a new one."""
+    pairs: list[tuple[str, str]] = []
+    for line in text.splitlines():
+        tokens = [token.lstrip("`'\"(<[").rstrip("`'\")>],.;:")
+                  for token in re.split(r"[\s|]+", line)]
+        clone = next((t for t in tokens
+                      if t.startswith("/") and len(t) > 1), None)
+        shas = [t for t in tokens if REVIEW_SHA_RE.fullmatch(t)]
+        if clone and shas and (clone, shas[-1]) not in pairs:
+            pairs.append((clone, shas[-1]))
+    return pairs
 
 
 def parse_plan(text: str) -> tuple[list[Phase], list[str]]:
@@ -2083,7 +2121,7 @@ Judge outcomes, not approach. The slice spans multiple phases — only this
 phase's scope is under review; end-to-end testing and prose docs have their
 own later phases, so their absence here is not a finding.
 
-{gate_line}
+{review_set}{gate_line}
 {philosophy_line}{close_out_line}{bookkeeping_note}
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
@@ -2109,9 +2147,48 @@ premise (live system state, another repo's behavior) only where a fix commit
 touches it. The requirements are unchanged: the phase's section in
 {plan_path} and the acceptance criteria in {verification_path}.
 
-{gate_line}
+{review_set}{gate_line}
 {philosophy_line}{close_out_line}{bookkeeping_note}
 Write your review to {review_path} and your verdict to {verdict_path}.
+"""
+
+# The review set (AIWF-37), between the requirements and the gate paragraph
+# of a reviewer dispatch, built by _review_set_paragraph. A phase may commit
+# its work outside its Target — slice 036 left it as unpushed commits in
+# thirteen /work/scratch clones — and plan.md's `Review:` line names the
+# slice-folder file listing those clones and commits. The reviewer is pointed
+# at the pairs the phase added or changed; a declared set with none, and an
+# empty Target range with no set declared, are stated for the reviewer to
+# report — handed an empty diff in silence, a review reads nothing and signs
+# it off.
+REVIEW_SET_NOTE = """\
+This phase's review set lies outside its Target: plan.md's `Review:` line
+for this phase names `{path}`, and these are the clone and commit pairs it
+added or changed since the phase began — review each as part of this
+phase's diff:
+
+{bullets}\
+"""
+
+REVIEW_SET_EMPTY_RANGE = """\
+The Target's own range, `git diff {merge_base}..HEAD` in {root}, is empty:
+these pairs are the phase's work.\
+"""
+
+REVIEW_SET_NONE_NOTE = """\
+plan.md's `Review:` line for this phase declares a review set outside its
+Target, `{path}`, and {state}; the Target's own range,
+`git diff {merge_base}..HEAD` in {root}, is {range_state}. Report it in your
+review: either the phase's work is somewhere else — find it and name where —
+or the phase delivered nothing toward its outcome.\
+"""
+
+REVIEW_EMPTY_RANGE_NOTE = """\
+`git diff {merge_base}..HEAD` in {root} is empty — the phase committed
+nothing to its Target, and plan.md declares no review set outside it (no
+`Review:` line on this phase). Report it in your review: either the phase's
+work is somewhere else — find it and name where — or the phase delivered
+nothing toward its outcome.\
 """
 
 # Stated in every reviewer dispatch so the review does not spend turns
@@ -2120,9 +2197,9 @@ Write your review to {review_path} and your verdict to {verdict_path}.
 # about a different commit would be worse than one told nothing.
 GATE_GREEN_LINE = """\
 The deterministic test gate ran GREEN on this exact commit ({green_at}):
-`{gate_cmd}` — with full output in {gate_log}. The tests pass; that is an
-established input to your review, not something to re-derive.
-Do not re-run the suite to confirm it. Targeted runs remain
+`{gate_cmd}` in {gate_repo} — with full output in {gate_log}. The tests
+pass; that is an established input to your review, not something to
+re-derive. Do not re-run the suite to confirm it. Targeted runs remain
 yours to make where they buy a finding: a single test you suspect is vacuous,
 a case the diff leaves uncovered, a mutation that proves a test actually
 catches the behavior it claims. The green says the tests pass, never that
@@ -2139,9 +2216,10 @@ run.\
 # The unverified line's reason, when kc itself said why: the gate ran on this
 # commit and found nothing to run (KC_NOTHING_RAN).
 GATE_NOTHING_RAN_LINE = """\
-`{gate_cmd}` ran nothing on this exact commit ({ran_at}): the target defines
-no tests, so the branch's test state is unverified — say so in your review
-where it bears on a finding, and probe it with targeted runs.\
+`{gate_cmd}` in {gate_repo} ran nothing on this exact commit ({ran_at}):
+the target defines no tests, so the branch's test state is unverified — say
+so in your review where it bears on a finding, and probe it with targeted
+runs.\
 """
 
 # The unverified line's reason, when the operator gave it: plan.md's
@@ -2152,6 +2230,19 @@ rulings` waives it for {target}, naming {substitute} as the gate — {why}.
 The branch's test state is unverified by the driver: say so in your review
 where it bears on a finding, and probe it with targeted runs; the suite is
 still not yours to run.\
+"""
+
+# Closes whichever gate paragraph a reviewer dispatch carries when the phase
+# has a review set outside its Target (AIWF-37): the gate ran in the Target's
+# repo alone. Slice 036's reviewer was told GREEN about Ansible's root suite,
+# which its phase never touched, and nothing about the thirteen clones it had
+# committed into. The driver runs no suite in a review set's clones — it only
+# says that it did not.
+GATE_REVIEW_SET_LINE = """\
+That gate is {gate_repo}'s suite alone: the driver ran no suite in the
+review set's repos ({clones}), so their test state is unverified by the
+driver — say so in your review where it bears on a finding, and probe it
+with targeted runs.\
 """
 
 # The review-funding bar: stated by the driver (which knows the round number
@@ -2984,7 +3075,7 @@ class RunLoop:
             "review_rounds": 0, "gate_runs": 0,
             "gate_green_commit": None, "gate_green_log": None,
             "gate_nothing_ran_commit": None, "gate_cmd": None,
-            "reviewed_head": None, "landed": None,
+            "reviewed_head": None, "landed": None, "review_set_start": None,
         }
         ps = self.state["phases"].setdefault(phase_id, dict(defaults))
         for key, value in defaults.items():
@@ -4521,29 +4612,120 @@ class RunLoop:
             argv, cwd=cwd, stdout=log_file, stderr=subprocess.STDOUT,
             timeout=GATE_TIMEOUT).returncode
 
-    def _gate_line(self, ps: dict, head: str, target: ResolvedTarget) -> str:
+    def _gate_line(self, ps: dict, head: str, target: ResolvedTarget,
+                   review_repos: list[str] | None = None) -> str:
         """The gate paragraph in a reviewer dispatch. The green claim is made
         ONLY when the recorded green commit is the commit under review; the
         waiver whenever plan.md's `## Driver rulings` waives the gate; the
         nothing-ran reason only when the gate ran nothing on it. Every other
         case — no gate, a green or an empty run on an earlier commit — is
-        plainly unverified."""
+        plainly unverified. A gate that ran names the repo it ran in; with a
+        review set outside the Target (`review_repos`, its distinct clones)
+        the paragraph closes on the gate being that repo's suite alone."""
         gate_cmd = ps.get("gate_cmd") or " ".join(target.gate_argv or [])
         green_at = ps.get("gate_green_commit")
         gate_log = ps.get("gate_green_log")
         if green_at and gate_log and green_at == head:
-            return GATE_GREEN_LINE.format(
-                green_at=green_at[:12], gate_cmd=gate_cmd, gate_log=gate_log)
-        ruling = self._gate_ruling(target)
-        if ruling is not None:
-            return GATE_WAIVED_LINE.format(
+            line = GATE_GREEN_LINE.format(
+                green_at=green_at[:12], gate_cmd=gate_cmd,
+                gate_repo=target.gate_cwd, gate_log=gate_log)
+        elif (ruling := self._gate_ruling(target)) is not None:
+            line = GATE_WAIVED_LINE.format(
                 target=target.name, why=ruling.why,
                 substitute=(f"`{ruling.substitute}`" if ruling.substitute
                             else "no substitute"))
-        if target.gate_argv and ps.get("gate_nothing_ran_commit") == head:
-            return GATE_NOTHING_RAN_LINE.format(gate_cmd=gate_cmd,
-                                                ran_at=head[:12])
-        return GATE_UNVERIFIED_LINE
+        elif target.gate_argv and ps.get("gate_nothing_ran_commit") == head:
+            line = GATE_NOTHING_RAN_LINE.format(
+                gate_cmd=gate_cmd, gate_repo=target.gate_cwd,
+                ran_at=head[:12])
+        else:
+            line = GATE_UNVERIFIED_LINE
+        if review_repos:
+            line += "\n" + GATE_REVIEW_SET_LINE.format(
+                gate_repo=target.gate_cwd, clones=", ".join(review_repos))
+        return line
+
+    def _review_set_now(self, phase: Phase) -> list[tuple[str, str]] | None:
+        """The pairs `phase`'s `Review:` file lists now — None when the phase
+        declares none or the file cannot be read (missing, mostly: the phase
+        writes it)."""
+        if phase.review is None:
+            return None
+        try:
+            text = (self.slice_dir / phase.review).read_text()
+        except (OSError, ValueError):
+            return None
+        return review_set_pairs(text)
+
+    @staticmethod
+    def _review_set_start(ps: dict) -> set[tuple[str, str]]:
+        """The pairs the phase's `Review:` file held when the phase began.
+        Read leniently: no snapshot (a phase begun on a plugin that took
+        none) or an entry off-shape is an empty baseline — every pair then
+        counts as the phase's, which over-reports rather than hides work."""
+        start = ps.get("review_set_start")
+        if not isinstance(start, list):
+            return set()
+        return {(p[0], p[1]) for p in start
+                if isinstance(p, list) and len(p) == 2
+                and all(isinstance(x, str) for x in p)}
+
+    def _range_empty(self, merge_base: str, root: Path) -> bool:
+        """Whether the phase's Target range changes nothing — trees compared,
+        not commits, so a range whose commits net to nothing is empty too.
+        A tree git cannot name reads as not empty: the flag is raised only
+        on evidence."""
+        base = self.git("rev-parse", f"{merge_base}^{{tree}}", root=root,
+                        check=False)
+        head = self.git("rev-parse", "HEAD^{tree}", root=root, check=False)
+        return bool(base) and base == head
+
+    def _review_set_paragraph(self, phase: Phase, ps: dict,
+                              target: ResolvedTarget,
+                              merge_base: str) -> tuple[str, list[str]]:
+        """The review-set paragraph of a reviewer dispatch — ending in its
+        blank line, or empty — and the review set's distinct clones, for the
+        gate line. A phase declaring `Review:` is pointed at the pairs its
+        file gained since the phase began (`review_set_start`); a declared
+        set with none, and an undeclared phase whose Target range is empty,
+        are stated for the reviewer to report. An undeclared phase with work
+        on its Target gets nothing: its dispatch is the one it always was."""
+        root = target.git_root
+        empty = self._range_empty(merge_base, root)
+        if phase.review is None:
+            if not empty:
+                return "", []
+            self.log(f"[P{phase.id}] reviewer told: Target range empty, no "
+                     "review set declared")
+            return REVIEW_EMPTY_RANGE_NOTE.format(
+                merge_base=merge_base, root=root) + "\n\n", []
+        path = self.slice_dir / phase.review
+        listed = self._review_set_now(phase)
+        start = self._review_set_start(ps)
+        pairs = [pair for pair in listed or [] if pair not in start]
+        range_note = ", Target range empty" if empty else ""
+        if not pairs:
+            missing = not path.exists()
+            self.log(f"[P{phase.id}] reviewer told: review set "
+                     f"{phase.review} "
+                     f"{'does not exist' if missing else 'has no new pair'}"
+                     f"{range_note}")
+            return REVIEW_SET_NONE_NOTE.format(
+                path=path, merge_base=merge_base, root=root,
+                state=("that file does not exist" if missing else
+                       "it holds no clone and commit pair this phase added "
+                       "or changed"),
+                range_state="empty too" if empty else "not empty",
+            ) + "\n\n", []
+        self.log(f"[P{phase.id}] reviewer told: review set of {len(pairs)} "
+                 f"pair(s) from {phase.review}{range_note}")
+        paragraph = REVIEW_SET_NOTE.format(
+            path=path, bullets="\n".join(
+                f"- `git -C {clone} show {sha}`" for clone, sha in pairs))
+        if empty:
+            paragraph += "\n\n" + REVIEW_SET_EMPTY_RANGE.format(
+                merge_base=merge_base, root=root)
+        return paragraph + "\n\n", list(dict.fromkeys(c for c, _ in pairs))
 
     # -- the phase loop ------------------------------------------------------
 
@@ -4867,6 +5049,11 @@ class RunLoop:
             self.git("checkout", "-b", branch, base, root=root)
             ps.update(status="in_progress", stage="executor", branch=branch,
                       target=phase.target)
+            # What the phase's review set held before the phase did anything:
+            # the reviewer is pointed at the pairs the phase adds or changes.
+            ps["review_set_start"] = (
+                None if phase.review is None
+                else [list(pair) for pair in self._review_set_now(phase) or []])
         else:
             self.git("checkout", branch, root=root)
             if self._reattach and self._reattach.get("session") \
@@ -5174,7 +5361,9 @@ class RunLoop:
             r = ps["review_rounds"] + 1 if pending is None else pending
             head = self.git("rev-parse", "HEAD", root=root)
             prev_head = ps.get("reviewed_head")
-            gate_line = self._gate_line(ps, head, target)
+            review_set, review_repos = self._review_set_paragraph(
+                phase, ps, target, merge_base)
+            gate_line = self._gate_line(ps, head, target, review_repos)
             delta = bool(r > 1 and prev_head and prev_head != head)
             review_path = outputs / f"code_review_r{r}.md"
             verdict_path = outputs / f"review_result_r{r}.json"
@@ -5187,7 +5376,7 @@ class RunLoop:
                     plan_path=self.plan_path,
                     verification_path=self.verification_path,
                     review_path=review_path, verdict_path=verdict_path,
-                    gate_line=gate_line,
+                    review_set=review_set, gate_line=gate_line,
                     philosophy_line=self._philosophy_line(),
                     close_out_line=self._close_out_line(),
                     bookkeeping_note=self._bookkeeping_note(target),
@@ -5199,7 +5388,7 @@ class RunLoop:
                     where=where, plan_path=self.plan_path,
                     verification_path=self.verification_path,
                     review_path=review_path, verdict_path=verdict_path,
-                    gate_line=gate_line,
+                    review_set=review_set, gate_line=gate_line,
                     philosophy_line=self._philosophy_line(),
                     close_out_line=self._close_out_line(),
                     bookkeeping_note=self._bookkeeping_note(target),

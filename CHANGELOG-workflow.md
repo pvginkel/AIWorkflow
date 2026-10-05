@@ -4,6 +4,21 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-05 — the reviewer dispatch lists a phase's declared review set, flags an empty one, and names where its gate ran (v0.9.76)
+
+AIWF-37. A phase may declare `Review: <file>` under its `Target:`: a slice-relative file of
+clone and commit pairs, one per line, for work its Target's diff cannot show. The driver records
+the file's pairs when the phase starts, and the code-reviewer dispatch lists those the phase
+added or changed as `git -C <clone> show <sha>`, one each. An empty Target range with no
+`Review:` line, and a `Review:` file that yields no new or changed pair, are stated to the
+reviewer as such rather than handed on as a range. The gate paragraph names the suite and the
+repo it ran in, and with a review set adds that no suite ran in the review set's repos. Ansible
+slice 036 (Target: root, the work unpushed commits in 13 `/work/scratch` clones kept in its
+`migration-ledger.md`) sent P4 and P8 the empty range `3f277a5..HEAD`; the reviewer found the
+work only through `state.json`, the plan and its attachment, and P8's dispatch said the gate
+"ran GREEN on this exact commit" about Ansible's root suite, which the phase did not touch
+(`plugins/dev/docs/plan-template.md`, `plugins/dev/docs/run-loop.md` § The per-phase round).
+
 ## 2026-10-04 — preflight names the installed loop when the session's plugin copy is stale (v0.9.75)
 
 AIWF-33. `preflight.py --for plan` and `--for run` compare the plugin copy they run from with the

@@ -125,6 +125,15 @@ The mechanical rules the parser holds every author to:
   declarer stamped done whose component never appeared in the manifest is a structure error. A
   component registered in a sibling repo is declared on the phase that targets that repo
   (`Target: ../Repo` + `Creates: <name>`); later phases may name it the same way.
+- **`Review: <file>` declares a phase's review set outside its Target** — an optional line
+  under `Target:` for a phase whose work lands where its Target's diff cannot show it, such as
+  unpushed commits in `/work/scratch/<Repo>` clones kept in a ledger. The value is a path
+  relative to the slice folder, to a file the phase writes as it commits: one clone and commit
+  pair per line, the clone's absolute path and the commit's sha on the same line (a Markdown
+  table row does), any other line ignored. The reviewer is handed the pairs the phase added or
+  changed as its review range, and is told that the driver gated the Target alone
+  ([run-loop.md](run-loop.md) § The per-phase round). The name is the plan's; the driver knows
+  no ledger file of its own.
 - **`✅ DONE <date>` on the heading is the driver's stamp.** Only the driver writes it, after
   review passes and the merge lands. No agent ever stamps, and a done phase is skipped on every
   re-parse.
