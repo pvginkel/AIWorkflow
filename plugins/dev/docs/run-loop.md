@@ -488,14 +488,31 @@ minutes of writer work and handed back `blocked`, and the fix ended the session 
 resumed it; Ansible slice 033 bailed at the sweep on KubeCoder's lint and build rows for the
 same reason and needed `accept` rulings to get past them.
 
+**Nor without the services its Targets' environments declare.** In the same place, the run loop
+reads the `services:` list of each Target repo's own `.kubecoder/config.yaml` — both entry forms,
+`- <service>` and `- use: <service>`, by a line scan as above — and holds it against the services
+`kc env describe` says the pod runs. A service missing bails `missing_services` (exit 4), naming
+each service, the config.yaml that declares it and the `- <service>` line to add under `services:`
+in the host's `.kubecoder/config.yaml`, or that the host already declares it and `kc env restart`
+applies it. The host stays responsible for declaring what the repos it pulls in need; the check
+only says so before the run instead of after a phase. Every declared service counts, one only
+`setup` uses included, and the same waiver exempts a repo. The plan loop checks it at GO,
+`--dry-run` lists it as a problem, and a phase gate that goes red in a repo whose declared services
+the pod does not run bails `missing_services` with no fix round. Unlike a tool, a missing service
+leaves no fixed line in the gate log, so the declaration is the test. Ansible slice 036's P14
+targeted ElectronicsInventory from an environment without its `postgres` and `s3storage`: setup and
+tests failed on `localhost:5432` and `:9000`, and after the executor handed back `done` saying the
+gate could not run there, the driver ran the gate again and dispatched a fix round that could only
+return `blocked`.
+
 **The loop sets up its Target repos before the first dispatch.** At startup, fresh or `--resume`,
-right after the tool check, the run loop runs a bare `kc project setup` once from the root of each
-repo the tool check holds — every pending phase's Target repo and the code repos the run has
-touched, each once, those with a `.kubecoder/project.yaml` only — with the output in the slice's
-`setup/<repo>.log` and a `[setup]` line per repo in `log.txt`. A repo that defines no setup (exit 3)
-passes. A red setup, or one still running after 900 s, is a warning and the run goes on: the gate
-decides, and meets what setup could not fix exactly as it would have without the step. A gate that
-fails on install state rather than on the change sends an executor into fix rounds on code that is
-fine: Architecture slice 034's P11 met `No module named 'click'` in a sibling Target never set up,
-KubeCoder slice 238's P1 `No module named 'croniter'` in a venv behind its lockfile, and `kc project
-setup` fixed both in about a minute. `--dry-run` runs no setup.
+right after the tool and service checks, the run loop runs a bare `kc project setup` once from the
+root of each repo the tool check holds — every pending phase's Target repo and the code repos the
+run has touched, each once, those with a `.kubecoder/project.yaml` only — with the output in the
+slice's `setup/<repo>.log` and a `[setup]` line per repo in `log.txt`. A repo that defines no setup
+(exit 3) passes. A red setup, or one still running after 900 s, is a warning and the run goes on:
+the gate decides, and meets what setup could not fix exactly as it would have without the step. A
+gate that fails on install state rather than on the change sends an executor into fix rounds on
+code that is fine: Architecture slice 034's P11 met `No module named 'click'` in a sibling Target
+never set up, KubeCoder slice 238's P1 `No module named 'croniter'` in a venv behind its lockfile,
+and `kc project setup` fixed both in about a minute. `--dry-run` runs no setup.

@@ -4,6 +4,24 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-05 — a run refuses to start without the services its Targets' environments declare (v0.9.77)
+
+AIWF-38. The same check as 0.9.68 carries over from tool containers to services. At startup, fresh
+or `--resume`, right after the tool check and before setup, the run loop reads the `services:`
+list of each Target repo's own `.kubecoder/config.yaml` (`- <service>` and `- use: <service>`,
+line-scanned). It holds those against the services `kc env describe` says the pod runs. A service
+missing bails `missing_services` (exit 4), naming each service, the config.yaml that declares it
+and the `- <service>` line to add under the host's `services:`, or, if the host already declares
+it, that `kc env restart` applies it. Every declared service counts, and the per-verb waiver
+exempts a repo as it does for tools. The plan loop checks at GO, `--dry-run` lists it as a problem,
+and a phase gate that goes red in a repo whose declared services the pod does not run bails with
+no fix round. A missing service leaves no fixed line in a gate log, so the declaration is the
+test. Ansible slice 036's P14 targeted ElectronicsInventory from an environment without its
+`postgres` and `s3storage`. Setup and tests failed on `localhost:5432` and `:9000`. The executor
+handed back `done` saying the gate could not run there, the driver ran it again, and it
+dispatched a fix round that could only return `blocked` (`plugins/dev/docs/run-loop.md` §
+Protocol invariants).
+
 ## 2026-10-05 — the reviewer dispatch lists a phase's declared review set, flags an empty one, and names where its gate ran (v0.9.76)
 
 AIWF-37. A phase may declare `Review: <file>` under its `Target:`: a slice-relative file of

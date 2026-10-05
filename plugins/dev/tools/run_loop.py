@@ -2785,31 +2785,38 @@ def _read_text(path: Path) -> str:
         return ""
 
 
-def running_tools() -> set[str]:
-    """The tool containers this pod runs: `kc env describe --output=json`'s
-    `sections`, one per sidecar, `name` the tool. ValueError with the cause
-    when kc does not answer that — the caller passes the check with a
-    warning, since a check never holds a loop up on its own bookkeeping."""
-    argv = ["kc", "env", "describe", "--output=json"]
+ENV_DESCRIBE_ARGV = ["kc", "env", "describe", "--output=json"]
+
+
+def _env_described(key: str) -> set[str]:
+    """The `name`s of `kc env describe --output=json`'s top-level `key`
+    list — what the pod was composed with. ValueError with the cause when
+    kc does not answer that — the caller passes its check with a warning,
+    since a check never holds a loop up on its own bookkeeping."""
+    cmd = " ".join(ENV_DESCRIBE_ARGV)
     try:
-        result = subprocess.run(argv, capture_output=True, text=True,
-                                timeout=120)
+        result = subprocess.run(ENV_DESCRIBE_ARGV, capture_output=True,
+                                text=True, timeout=120)
     except (OSError, subprocess.TimeoutExpired) as e:
-        raise ValueError(f"`{' '.join(argv)}` did not run: {e}") from None
+        raise ValueError(f"`{cmd}` did not run: {e}") from None
     if result.returncode != 0:
-        raise ValueError(f"`{' '.join(argv)}` failed (rc="
-                         f"{result.returncode}): "
+        raise ValueError(f"`{cmd}` failed (rc={result.returncode}): "
                          f"{(result.stderr or result.stdout).strip()[:200]}")
     try:
         data = json.loads(result.stdout)
     except ValueError as e:
-        raise ValueError(f"`{' '.join(argv)}` emitted invalid JSON: "
-                         f"{e}") from None
-    sections = data.get("sections") if isinstance(data, dict) else None
-    if not isinstance(sections, list):
-        raise ValueError(f"`{' '.join(argv)}` carries no `sections` list")
-    return {s["name"] for s in sections
-            if isinstance(s, dict) and isinstance(s.get("name"), str)}
+        raise ValueError(f"`{cmd}` emitted invalid JSON: {e}") from None
+    items = data.get(key) if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        raise ValueError(f"`{cmd}` carries no `{key}` list")
+    return {i["name"] for i in items
+            if isinstance(i, dict) and isinstance(i.get("name"), str)}
+
+
+def running_tools() -> set[str]:
+    """The tool containers this pod runs: `kc env describe`'s `sections`,
+    one per sidecar, `name` the tool (`_env_described`)."""
+    return _env_described("sections")
 
 
 def missing_tools(roots: Sequence[Path], host_root: Path,
@@ -2928,6 +2935,141 @@ def _file_size(path: Path) -> int:
         return path.stat().st_size
     except OSError:
         return 0
+
+
+# ---------------------------------------------------------------------------
+# Services — a Target repo's `.kubecoder/config.yaml` `services:` against the
+# pod's (AIWF-38). A repo's suites reach its backing services on localhost,
+# and those run only where the environment declares them: Ansible slice
+# 036's P14 targeted ElectronicsInventory from the Ansible environment, which
+# runs no postgres or s3storage; setup and tests failed on :5432 and :9000,
+# and the driver dispatched a fix round that could only hand back `blocked`.
+# The fix is the tools' fix — a config.yaml line and `kc env restart` — so it
+# is asked the same way, before any dispatch.
+# ---------------------------------------------------------------------------
+
+# An item of the environment config's `services:` list: the bare name
+# (`- postgres`, run it and expose nothing). The whole item is the name, so
+# a mapping item's key (`- expose: [9000]`) is never read as one; the
+# selector form (`- use: s3storage`) is TOOL_USE_RE's.
+SERVICE_ITEM_RE = re.compile(
+    r"-\s*[\"']?([A-Za-z0-9][A-Za-z0-9_.-]*)[\"']?\s*(?:#.*)?$")
+
+
+class MissingService:
+    """A service a repo's environment config declares and the pod does not
+    run: who declares it (the configs, repo-relative), and whether the host
+    environment's config already declares it — then only the restart is
+    owed."""
+
+    def __init__(self, service: str, callers: list[str], declared: bool):
+        self.service = service
+        self.callers = callers
+        self.declared = declared
+
+
+def config_services(text: str) -> set[str]:
+    """The services an environment's `.kubecoder/config.yaml` declares — its
+    `services:` list, a bare `- <name>` item or the selector form's
+    `use: <name>` (whose `expose:` is ports, not a service), by the line
+    scan `declared_tools` makes: comments skipped, the list ending at the
+    next top-level key."""
+    services: set[str] = set()
+    in_services = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not line[0].isspace() and not stripped.startswith("-"):
+            in_services = stripped.split("#")[0].strip() == "services:"
+            continue
+        if not in_services:
+            continue
+        match = TOOL_USE_RE.match(stripped) or SERVICE_ITEM_RE.match(stripped)
+        if match:
+            services.add(match.group(1))
+    return services
+
+
+def running_services() -> set[str]:
+    """The services this pod runs: `kc env describe`'s `services`, by
+    `name` (`_env_described`). Their `state` is not read — the list is what
+    the pod was composed with, and a service that is down is no config fix."""
+    return _env_described("services")
+
+
+def missing_services(roots: Sequence[Path], host_root: Path,
+                     running: set[str]) -> list[MissingService]:
+    """Every service the environment configs of `roots` declare
+    (`config_services`) that is not in `running`, with the configs that
+    declare it and whether the host environment's config (`host_root`'s, the
+    invoking repo's) does. A root without a config declares nothing; the
+    host's own is held like any other, its unrun services a restart owed."""
+    callers: dict[str, list[str]] = {}
+    for root in roots:
+        root = Path(root)
+        rel = f"{root.name}/{ENV_CONFIG_REL}"
+        for service in sorted(config_services(
+                _read_text(root / ENV_CONFIG_REL)) - running):
+            if rel not in callers.setdefault(service, []):
+                callers[service].append(rel)
+    declared = config_services(_read_text(Path(host_root) / ENV_CONFIG_REL))
+    return [MissingService(service, callers[service], service in declared)
+            for service in sorted(callers)]
+
+
+def missing_services_details(missing: list[MissingService], host_root: Path,
+                             relaunch: str = RUN_RELAUNCH) -> str:
+    """The bail's `details`: one line per service with what fixes it, then
+    why the fix is the operator's."""
+    config = Path(host_root) / ENV_CONFIG_REL
+    lines = ["the run needs services this environment does not run:"]
+    for m in missing:
+        fix = (f"declared in {config} but not running in this pod (it "
+               "predates that commit) — `kc env restart` applies it"
+               if m.declared else
+               f"add `- {m.service}` under `services:` in {config}, then "
+               "`kc env restart`")
+        lines.append(f"- {m.service} — declared by {', '.join(m.callers)}; "
+                     f"{fix}")
+    lines.append("The restart ends every session in the environment, so this "
+                 f"is the operator's; {relaunch}. To run without them "
+                 "instead, waive the repo's gates in plan.md's `## Driver "
+                 "rulings` (`gate`, and `accept` for lint and build).")
+    return "\n".join(lines)
+
+
+def services_check(roots: Sequence[Path],
+                   rulings: list[tuple[Ruling, ResolvedTarget]],
+                   host_root: Path, log, relaunch: str = RUN_RELAUNCH
+                   ) -> str | None:
+    """The missing-services message for `roots` (a bail's `details`), None
+    when the pod runs every service their environment configs declare — or
+    when it cannot say which it runs (logged as a warning, and the check
+    passes). Only a repo whose config declares a service is held, so kc is
+    not asked where there is nothing to hold; one the rulings waive whole
+    (`tools_waived`: no gate it must pass runs its suites) is not held."""
+    seen: set[Path] = set()
+    held = []
+    for root in roots:
+        key = Path(root).resolve()
+        if key not in seen and config_services(
+                _read_text(key / ENV_CONFIG_REL)):
+            seen.add(key)
+            held.append(key)
+    if not held:
+        return None
+    try:
+        running = running_services()
+    except ValueError as e:
+        log(f"warning: service check skipped — {e}")
+        return None
+    held = [root for root in held
+            if not (missing_services([root], host_root, running)
+                    and tools_waived(root, rulings))]
+    missing = missing_services(held, host_root, running)
+    return (missing_services_details(missing, host_root, relaunch)
+            if missing else None)
 
 
 # ---------------------------------------------------------------------------
@@ -3748,6 +3890,22 @@ class RunLoop:
         if details:
             raise Bailout("missing_tools", question=True, details=details)
 
+    def _missing_services(self) -> str | None:
+        """The missing-services message for this run's repos
+        (`services_check`, over `_tool_roots`), None when the pod runs every
+        service their environment configs declare."""
+        return services_check(self._tool_roots(), self._current_rulings(),
+                              self.repo_root, self.log)
+
+    def _assert_services(self) -> None:
+        """Bail `missing_services` (an operator question) while a repo the
+        run needs declares a service this pod does not run — `_assert_tools`'
+        reason, for a suite that reaches postgres on localhost instead of a
+        sidecar through cexec."""
+        details = self._missing_services()
+        if details:
+            raise Bailout("missing_services", question=True, details=details)
+
     def _setup_targets(self) -> None:
         """`kc project setup` once in each repo the run needs
         (`_tool_roots`) that carries a kc manifest, before the first
@@ -4555,7 +4713,12 @@ class RunLoop:
         --project, and the name came from kc's own project list, so that is
         a driver bug, not a red suite. A red whose output is cexec's
         missing-tool line bails `missing_tools` instead (an operator
-        question): no fix round can add a tool container to the pod."""
+        question): no fix round can add a tool container to the pod. So
+        does a red in a repo whose environment config declares a service
+        the pod does not run — `missing_services`, the gate and its log
+        named. A refused connection on localhost:5432 has no fixed line to
+        match, so it is the repo's declaration against `running_services`,
+        asked on a red alone; kc not answering leaves the red as it was."""
         log_file.flush()
         start = _file_size(log_path)
         try:
@@ -4581,7 +4744,38 @@ class RunLoop:
                     "missing_tools", phase=phase_id, question=True,
                     details=self._missing_tool_details(
                         tool, target.git_root, argv, log_path))
+            services = self._unrun_services(target.git_root)
+            if services:
+                raise Bailout(
+                    "missing_services", phase=phase_id, question=True,
+                    details=self._missing_service_details(
+                        services, target.git_root, argv, log_path))
         return outcome
+
+    def _unrun_services(self, root: Path) -> list[MissingService]:
+        """The services the repo at `root` declares and the pod does not
+        run, for a gate gone red there. kc is asked only when the repo's
+        config declares a service; when it cannot answer, a warning and
+        none — the red stands as an ordinary red."""
+        if not config_services(_read_text(Path(root) / ENV_CONFIG_REL)):
+            return []
+        try:
+            running = running_services()
+        except ValueError as e:
+            self.log(f"warning: service check of a red gate skipped — {e}")
+            return []
+        return missing_services([root], self.repo_root, running)
+
+    def _missing_service_details(self, missing: list[MissingService],
+                                 root: Path, argv: list[str],
+                                 log_path: Path) -> str:
+        """The missing-services message for a gate gone red mid-run in a
+        repo that declares services the pod does not run: the gate, its log,
+        and why that red is not a fix round's."""
+        return (f"`{' '.join(argv)}` in {Path(root).name} went red (output "
+                f"in {log_path}), and the repo declares services this pod "
+                "does not run — no fix round can start them.\n"
+                + missing_services_details(missing, self.repo_root))
 
     def _missing_tool_details(self, tool: str, root: Path,
                               argv: list[str], log_path: Path) -> str:
@@ -7554,9 +7748,11 @@ class RunLoop:
             # tree still stands on its base (`_report_bailouts`).
             assert_no_prerun_actions(self.slice_dir)
             # Before the first dispatch, fresh and resumed alike: a repo
-            # whose manifest calls a tool container this pod lacks is a
+            # whose manifest calls a tool container this pod lacks, or whose
+            # environment config declares a service it does not run, is a
             # restart only the operator can make.
             self._assert_tools()
+            self._assert_services()
             # Then those repos' installs, so a gate fails on the change, not
             # on install state.
             self._setup_targets()
@@ -8333,9 +8529,9 @@ def cmd_dry_run(loop: RunLoop) -> None:
         except ValueError as e:
             errors.append(f"driver ruling `{ruling.key}`: {e}")
             print(f"  ruling  {ruling.key}  INVALID: {e}")
-    tools = loop._missing_tools()
-    if tools:
-        errors.append(tools.replace("\n", "\n    "))
+    for missing in (loop._missing_tools(), loop._missing_services()):
+        if missing:
+            errors.append(missing.replace("\n", "\n    "))
     if errors:
         print("\nplan problems:", file=sys.stderr)
         for e in errors:

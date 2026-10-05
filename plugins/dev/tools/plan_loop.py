@@ -630,15 +630,16 @@ class PlanLoop:
             raise Bailout("plan_doc",
                           details="the GO'd plan contains no "
                                   "`### P<id> — <title>` phases")
-        self._verify_tools(phases, text)
+        self._verify_environment(phases, text)
 
-    def _verify_tools(self, phases: list, text: str) -> None:
+    def _verify_environment(self, phases: list, text: str) -> None:
         """The GO'd plan's Target repos must not call a tool container this
-        pod does not run (`run_loop.tools_check`, the run loop's own startup
-        check) — asked now, while the slice is with the operator, rather
-        than when the run loop starts it. A Target maps to its repo as
-        `_held_repo_name` maps it, without kc; a GitHub target not cloned
-        yet is skipped (the run loop checks its clone)."""
+        pod does not run, nor declare a service it does not run
+        (`run_loop.tools_check` and `run_loop.services_check`, the run
+        loop's own startup checks) — asked now, while the slice is with the
+        operator, rather than when the run loop starts it. A Target maps to
+        its repo as `_held_repo_name` maps it, without kc; a GitHub target
+        not cloned yet is skipped (the run loop checks its clone)."""
         roots = [root for phase in phases
                  if not phase.done and phase.target
                  and (root := self._target_root(phase.target)) is not None]
@@ -651,11 +652,15 @@ class PlanLoop:
                         else "project")
                 resolved.append((ruling, run_loop.ResolvedTarget(
                     ruling.target, kind, root, None, root)))
-        details = run_loop.tools_check(
-            roots, resolved, self.repo_root, self.log,
-            relaunch="rerun the plan loop once the environment runs them")
+        relaunch = "rerun the plan loop once the environment runs them"
+        details = run_loop.tools_check(roots, resolved, self.repo_root,
+                                       self.log, relaunch=relaunch)
         if details:
             raise Bailout("missing_tools", details=details)
+        details = run_loop.services_check(roots, resolved, self.repo_root,
+                                          self.log, relaunch=relaunch)
+        if details:
+            raise Bailout("missing_services", details=details)
 
     def _target_root(self, target: str) -> Path | None:
         """The repo a Target lands in, as `_held_repo_name` reads it — None

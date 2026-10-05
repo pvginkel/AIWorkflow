@@ -108,7 +108,8 @@ environment does not run. `bailout.json` names each tool, the repo whose manifes
 the `- use: <tool>` line for the host's `.kubecoder/config.yaml` — or, where that line is already
 there, that the pod predates it and `kc env restart` applies it. Neither is yours: the restart
 ends this session. Put it to the operator; the relaunch is `--resume`, in the environment that
-has the tool.
+has the tool. A `missing_services` bail is the same, for a service a Target repo's own
+`.kubecoder/config.yaml` declares: the line to add goes under the host's `services:`.
 
 ## Job 4 — close out (exit 0)
 

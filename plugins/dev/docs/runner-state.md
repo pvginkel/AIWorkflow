@@ -121,6 +121,7 @@ error the orchestrator diagnoses).
 | `generation_exhausted` | ✓ | a third follow-up generation of appended work is pending |
 | `prerun_action` | ✓ | at startup, fresh or `--resume`, the slice's close-out report holds a live `Before /dev:run-slice` action ([run-loop.md](run-loop.md) § Protocol invariants) |
 | `missing_tools` | ✓ | a Target repo's manifest calls a `cexec <tool>` this environment does not run — at startup, fresh or `--resume`, or at a phase gate that meets it mid-run; the details name the tools and the `- use:` lines ([run-loop.md](run-loop.md) § Protocol invariants) |
+| `missing_services` | ✓ | a Target repo's `.kubecoder/config.yaml` declares a service this environment does not run — at startup, fresh or `--resume`, or at a phase gate that goes red in that repo mid-run; the details name the services and the `services:` lines ([run-loop.md](run-loop.md) § Protocol invariants) |
 | `blocked` | – | an agent reported `blocked`, or a protocol failure after the nudge |
 | `gate_red` | – | the gate stayed red through the executor fix cap, or at merge |
 | `consult_bail` | – | any consult chose `bail` |

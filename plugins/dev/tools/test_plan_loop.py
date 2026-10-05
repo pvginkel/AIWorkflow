@@ -41,8 +41,10 @@ run_loop.INSTALLED_PLUGINS = (Path(tempfile.gettempdir()) / "planloop-no-home"
                               / "installed_plugins.json")
 
 # The GO check's tool scan reads the pod's tool containers from `kc env
-# describe`; stubbed as running `python` alone.
+# describe`; stubbed as running `python` alone. Its service scan reads the
+# pod's services from the same describe; stubbed as running none.
 run_loop.running_tools = lambda: {"python"}
+run_loop.running_services = lambda: set()
 
 PLAN_HEADER = """\
 # Test slice — plan
@@ -1302,6 +1304,51 @@ def test_go_proceeds_past_a_repo_the_rulings_waive_whole():
             tmp, f"gate {deploy} — none — no aac-tools here",
             f"accept {deploy} lint — no aac-tools here",
             f"accept {deploy} build — no aac-tools here"), R_GO])
+        saved = run_loop.load_project_dirs
+        run_loop.load_project_dirs = lambda cwd: {"root": Path(cwd)}
+        try:
+            assert run_to_exit(loop) == 0
+        finally:
+            run_loop.load_project_dirs = saved
+
+
+# -- the GO check's service scan (AIWF-38) --------------------------------------
+
+def service_plan(tmp, *rulings):
+    """`tool_plan`'s GO'd plan, its target repo calling no tool but
+    declaring `postgres` and `s3storage` in its environment config —
+    services the stubbed pod does not run."""
+    step = tool_plan(tmp, *rulings)
+    kubecoder = Path(tmp) / "Deploy" / ".kubecoder"
+    (kubecoder / "project.yaml").write_text("projects: []\n")
+    (kubecoder / "config.yaml").write_text(
+        "services:\n  - postgres\n  - use: s3storage\n    expose: [9000]\n")
+    return step
+
+
+def test_go_with_a_target_needing_a_missing_service_bails():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [service_plan(tmp), R_GO])
+        assert run_to_exit(loop) == 3
+        bail = json.loads((slice_dir / "plan_bailout.json").read_text())
+        assert bail["reason"] == "missing_services"
+        assert "- postgres — declared by Deploy/.kubecoder/config.yaml" \
+            in bail["details"]
+        assert "- s3storage — declared by Deploy/.kubecoder/config.yaml" \
+            in bail["details"]
+        assert "rerun the plan loop once the environment runs them" \
+            in bail["details"]
+
+
+def test_go_proceeds_past_a_service_repo_the_rulings_waive_whole():
+    with tempfile.TemporaryDirectory() as tmp:
+        deploy = Path(tmp) / "Deploy"
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [service_plan(
+            tmp, f"gate {deploy} — none — no postgres here",
+            f"accept {deploy} lint — no postgres here",
+            f"accept {deploy} build — no postgres here"), R_GO])
         saved = run_loop.load_project_dirs
         run_loop.load_project_dirs = lambda cwd: {"root": Path(cwd)}
         try:
