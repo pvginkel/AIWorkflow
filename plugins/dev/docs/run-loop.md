@@ -345,10 +345,17 @@ whole plan is a feature of the review, not a cost. Then:
   primary repo only**: a doc edit in another repo the slice touched is committed on that repo's
   checked-out base branch, and once the primary has landed, the driver pushes each such repo
   whose base is ahead of its origin (its own `siblings` stage, so a resume after the landing
-  pushes only these). A held repo is reported, not pushed; a base that has diverged from its
-  origin bails `blocked` rather than being rebased. **The devlock is taken again here, for the
-  pushes alone** — before the fetch, so nothing another driver pushes lands between the rebase
-  target and the push, and let go once the last push is out. The writer's session and the
+  pushes only these). A held repo is reported, not pushed. A base that has diverged from its
+  origin — CI committed there meanwhile, as an image-pin bot does to the deploy repo it pins into
+  — is rebased onto `origin/<base>` and pushed, without a second gate, when every commit only the
+  local base carries is the run's own: the ladder records each such repo's base when it begins
+  (`doc_phase.sibling_heads`), so the doc-writer's commits and the wrap-up's that landed there
+  are the run's, and origin carrying the recorded commit proves no other local commit is among
+  them. The base must also be checked out there, on a clean tree. Any other divergence, and a
+  rebase that conflicts (aborted first), bails `blocked`. A push that loses another race with CI
+  fails as git's own error, and a resume runs the stage again. **The devlock is taken again here,
+  for the pushes alone** — before the fetch, so nothing another driver pushes lands between the
+  rebase target and the push, and let go once the last push is out. The writer's session and the
   gate sweep, the slow part of the phase, run outside it: after test-complete the slice's dev
   occupancy is over, and another slice's verification proceeds while this one's docs are written.
   With a test phase, this landing is the only place the driver pushes the primary repo, so it

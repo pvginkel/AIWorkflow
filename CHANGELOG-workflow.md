@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-06 — the doc phase rebases its own sibling commits onto a moved origin before pushing (v0.9.79)
+
+AIWF-41. When the doc phase pushes the commits it left in the slice's other repos, a base that
+has diverged from its origin is now rebased onto `origin/<base>` and pushed, instead of bailing
+`blocked`, when every commit only the local base carries is the run's own. The ladder records
+each such repo's base when it begins (`doc_phase.sibling_heads`), so the doc-writer's commits and
+any the wrap-up landed there count as the run's. Origin carrying the recorded commit proves
+nothing else local is among them. The base must also be checked out there, on a clean tree, and
+nothing is gated again, the same as the primary's landing. Any other divergence, a run whose
+record predates this, and a rebase that conflicts (aborted first) still bail `blocked`. A push
+that loses another race with CI fails as git's own error, and `--resume` runs the stage again.
+The rebase sits at push time because CI's write can land after the writer starts. Ansible slice
+040 hit it: the test phase pushed DockerImages, the image-pin bot committed to
+ElasticsearchDeploy's main, and the docs commit on the stale local main needed a hand rebase and
+a resume. It recurs on every slice that pushes an image and documents the deploy repo it pins
+into.
+
 ## 2026-10-05 — the close-out skill and contract describe the page 0.9.73 renders (v0.9.78)
 
 AIWF-39. 0.9.73 put an entry's body, newest note, `Triage:` and `Provenance:` back on the page,

@@ -3524,7 +3524,9 @@ class RunLoop:
         sibling-repo commit that had been on `origin/main` for a day "absent
         from origin" and raised a Blocker over it. Refs only — no local branch
         moves: preflight pulled every base before the run, and a base that
-        moves on origin mid-run stays the operator's call."""
+        moves on origin mid-run stays the operator's call, save where the
+        doc phase's landing rebases onto it (`_land_doc_branch`,
+        `_rebase_doc_sibling`)."""
         self.git("fetch", "origin", root=root)
 
     def _touched_roots(self) -> list[tuple[Path, str]]:
@@ -6385,11 +6387,24 @@ class RunLoop:
             self.log(f"doc phase disabled in {self.cfg.path.name} — the "
                      "ladder starts at the wrap-up")
         self.state["run_phase"] = "docs"
-        ds = self.state.setdefault(
-            "doc_phase", {"stage": "writer", "gate_runs": 0, "nudges": 0,
-                          "session": None} if writes else
-            {"stage": "wrap-up", "gate_runs": 0, "nudges": 0,
-             "session": None, "writer": False})
+        if "doc_phase" not in self.state:
+            ds = {"stage": "writer" if writes else "wrap-up", "gate_runs": 0,
+                  "nudges": 0, "session": None}
+            if not writes:
+                ds["writer"] = False
+            # Where each other repo's base stood as the ladder began — on
+            # origin by now, since the test phase (or `_settle_push`) pushed
+            # it — so that `_push_doc_siblings` can tell the run's own
+            # commits there from a base origin moved under. Taken once: a
+            # resume keeps the first record, and a record from before this
+            # field has none.
+            primary = self.repo_root.resolve()
+            ds["sibling_heads"] = {
+                str(root): self.git("rev-parse", base, root=root)
+                for root, base in self._touched_roots()
+                if root.resolve() != primary}
+            self.state["doc_phase"] = ds
+        ds = self.state["doc_phase"]
         self._save_state()
         doc_plan_doc = self.cfg.doc_plan
         if writes and not doc_plan_doc:
@@ -6498,10 +6513,19 @@ class RunLoop:
         repo is not one) whose base is ahead of its origin is pushed, by the
         rules the driver's own pushes follow: a plan hold is reported, not
         pushed; a project that never pushes sends nothing; the devlock is
-        held over the pushes, as over the primary's. A base that is not a
-        fast-forward of its origin is the operator's to settle — never a
-        rebase of a branch the driver did not create. A repo already on its
-        origin owes nothing, so a resume just runs this again."""
+        held over the pushes, as over the primary's. A base that diverged
+        from its origin is rebased onto it, unre-gated as the primary's
+        landing is, when every commit only it carries is the run's own: the
+        ladder recorded each repo's base as it began
+        (`doc_phase.sibling_heads`), and origin carrying that sha proves
+        every commit only the base carries came after it. CI committing to a
+        sibling meanwhile — an image-pin bot after the test phase pushed —
+        is that case (AIWF-41). Any other divergence, a dirty tree, a base
+        not checked out or a rebase that conflicts is the operator's to
+        settle. A push that loses a race to the next such commit fails as
+        git's own error with the stage unmoved, so a resume fetches,
+        rebases and pushes again; a repo already on its origin owes
+        nothing, so a resume just runs this again."""
         primary = self.repo_root.resolve()
         roots = [(root, base) for root, base in self._touched_roots()
                  if root.resolve() != primary]
@@ -6531,18 +6555,50 @@ class RunLoop:
             behind = self.git("rev-list", "--count", f"{base}..origin/{base}",
                               root=root)
             if behind not in ("", "0"):
-                raise Bailout(
-                    "blocked",
-                    details=f"{base} in {root} has diverged from "
-                            f"origin/{base} ({ahead} local commit(s) origin "
-                            f"lacks, {behind} on origin that {base} lacks), "
-                            "so the doc phase's commits there cannot go out "
-                            f"as a fast-forward — bring {base} up to "
-                            f"origin/{base} there and push it by hand, then "
-                            "resume")
+                self._rebase_doc_sibling(root, base, ahead, behind)
             self.git("push", "origin", base, root=root)
             self.log(f"[doc-phase] pushed {base} in {root} ({ahead} "
                      "commit(s) the doc phase left there)")
+
+    def _rebase_doc_sibling(self, root: Path, base: str, ahead: str,
+                            behind: str) -> None:
+        """Rebase a sibling's diverged base onto its origin when every local
+        commit there is the run's own (`_push_doc_siblings` has the rule),
+        or bail `blocked` saying why the driver would not."""
+        began = (self.state.get("doc_phase", {}).get("sibling_heads", {})
+                 .get(str(root)))
+        if began is None:
+            why = "the run has no record of where the doc phase began there"
+        elif not self.git_ok("merge-base", "--is-ancestor", began,
+                             f"origin/{base}", root=root):
+            why = ("origin does not carry the commit the doc phase began "
+                   "from, so not every local commit is the run's own")
+        elif self._current_branch(root) != base:
+            why = f"{base} is not checked out there"
+        elif self._worktree_dirty(root):
+            why = "the worktree there is dirty"
+        else:
+            try:
+                self.git("rebase", f"origin/{base}", root=root)
+            except Bailout:
+                self.git("rebase", "--abort", root=root, check=False)
+                raise Bailout(
+                    "blocked",
+                    details=f"the doc phase's commits on {base} in {root} do "
+                            f"not rebase cleanly onto origin/{base} — "
+                            "resolve by hand, push, then resume") from None
+            self.log(f"[doc-phase] rebased {ahead} commit(s) of {base} in "
+                     f"{root} onto origin/{base} ({behind} commit(s) origin "
+                     "gained meanwhile)")
+            return
+        raise Bailout(
+            "blocked",
+            details=f"{base} in {root} has diverged from origin/{base} "
+                    f"({ahead} local commit(s) origin lacks, {behind} on "
+                    f"origin that {base} lacks), so the doc phase's commits "
+                    "there cannot go out as a fast-forward, and the driver "
+                    f"did not rebase them — {why}. Bring {base} up to "
+                    f"origin/{base} there and push it by hand, then resume")
 
     def _write_doc_diffs(self) -> list[str]:
         """The slice's shipped diff, one file per repo under

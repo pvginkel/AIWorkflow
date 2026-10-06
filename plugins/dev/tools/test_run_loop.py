@@ -5235,20 +5235,29 @@ def test_doc_landing_resume_with_merged_branch_only_pushes():
 # every other repo before the doc phase began — so a doc commit the writer
 # made in a sibling sat on its local base, unpushed and unreported (AIWF-11).
 
-def doc_writer_commits_in(sib, behind=None):
+def began_at(loop, sib):
+    """The sha the doc phase recorded for the sibling's base as it began."""
+    return loop.state["doc_phase"]["sibling_heads"][str(sib)]
+
+
+def doc_writer_commits_in(sib, behind=None, then=None):
     """The doc-writer's script step: done, having committed one doc commit
     on the sibling's base — whose origin has meanwhile gained `behind`
-    commits of its own, when given."""
+    commits of its own, when given, on top of the commit the doc phase
+    began from — and `then`, whatever else happened meanwhile."""
     def effect(loop):
         loop.fake_git.unpushed[str(sib)] = "1"
         if behind:
             loop.fake_git.ahead["main..origin/main"] = behind
+            loop.fake_git.merged.add(began_at(loop, sib))
+        if then:
+            then(loop)
     return ("doc-writer", {"outcome": "done", "summary": "docs"}, effect)
 
 
-def sibling_doc_script(sib, behind=None):
+def sibling_doc_script(sib, behind=None, then=None):
     return [V["exec_done"], V["review_signoff"], V["consult_complete"],
-            V["test_clean"], doc_writer_commits_in(sib, behind)]
+            V["test_clean"], doc_writer_commits_in(sib, behind, then)]
 
 
 def test_the_doc_landing_pushes_a_siblings_doc_commits_under_the_lease():
@@ -5324,22 +5333,100 @@ def test_a_project_that_never_pushes_leaves_sibling_doc_commits_local():
             in (slice_dir / "log.txt").read_text()
 
 
-def test_a_diverged_sibling_blocks_and_the_resume_pushes_it_alone():
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo, sib = sibling_phase_slice(tmp)
-        r = ScriptedLoop(slice_dir, sibling_doc_script(sib, behind="2"),
-                         repo_root=repo)
-        assert run_to_exit(r) == 3
-        bail = json.loads((slice_dir / "bailout.json").read_text())
-        assert bail["reason"] == "blocked" and not bail["question"]
-        assert str(sib) in bail["details"]
+# A sibling whose origin moved after the test phase pushed it — CI's image-pin
+# bot committing to a deploy repo's main — left the doc commit on a stale local
+# main that could not go out as a fast-forward (AIWF-41). The doc phase records
+# where each sibling's base began; when origin carries that commit, everything
+# only the local base holds is the run's own, and the driver rebases it.
+
+def diverged_sibling_run(tmp, then=None):
+    """A slice whose doc-writer committed in a sibling whose origin has
+    since gained two commits of its own — and `then`, whatever else."""
+    slice_dir, repo, sib = sibling_phase_slice(tmp)
+    r = ScriptedLoop(slice_dir, sibling_doc_script(sib, behind="2",
+                                                   then=then),
+                     repo_root=repo)
+    return slice_dir, repo, sib, r
+
+
+def calls_in(r, root):
+    return [c for at, c in r.fake_git.calls if str(at) == str(root)]
+
+
+def refuse_in(loop, where, argv):
+    """Make git refuse `argv` in the repo at `where` alone — `fails` refuses
+    it in every repo, and the primary's landing runs the same rebase."""
+    inner = loop.git
+
+    def git(*args, root=None, check=True):
+        if str(root) != str(where) or args != argv:
+            return inner(*args, root=root, check=check)
+        loop.fake_git.fails.add(argv)
+        try:
+            return inner(*args, root=root, check=check)
+        finally:
+            loop.fake_git.fails.discard(argv)
+
+    loop.git = git
+
+
+def assert_sibling_blocked(r, slice_dir, repo, sib, why, rebased=False):
+    """The run bailed `blocked` at the sibling, naming `why`: the primary
+    landed and went out, the sibling was never pushed — nor rebased, unless
+    the rebase is what failed — and the ladder waits at its pushes for the
+    resume."""
+    assert run_to_exit(r) == 3
+    bail = json.loads((slice_dir / "bailout.json").read_text())
+    assert bail["reason"] == "blocked" and not bail["question"]
+    assert str(sib) in bail["details"] and why in bail["details"]
+    assert pushes(r) == [(str(repo), "main")]
+    assert load_state(slice_dir)["doc_phase"]["stage"] == "siblings"
+    if not rebased:
         assert "push it by hand, then resume" in bail["details"]
-        # the primary landed and went out; the sibling was never pushed, and
-        # never rebased
-        assert pushes(r) == [(str(repo), "main")]
-        assert not [c for root, c in r.fake_git.calls
-                    if str(root) == str(sib) and c[0] == "rebase"]
-        assert load_state(slice_dir)["doc_phase"]["stage"] == "siblings"
+        assert not [c for c in calls_in(r, sib) if c[0] == "rebase"]
+
+
+def test_a_sibling_origin_moved_under_is_rebased_onto_it_and_pushed():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib, r = diverged_sibling_run(tmp)
+        assert run_to_exit(r) == 0
+        assert pushes(r) == [(str(repo), "main"), (str(sib), "main")]
+        # rebased in the sibling, after the fetch and before the push
+        calls = calls_in(r, sib)
+        rebase = calls.index(("rebase", "origin/main"))
+        assert max(i for i, c in enumerate(calls)
+                   if c == ("fetch", "origin")) < rebase
+        assert rebase < calls.index(("push", "origin", "main"))
+        assert ("rebase", "--abort") not in calls
+        ds = load_state(slice_dir)["doc_phase"]
+        assert list(ds["sibling_heads"]) == [str(sib)]
+        assert ds["stage"] == "done"
+        log = (slice_dir / "log.txt").read_text()
+        assert (f"rebased 1 commit(s) of main in {sib} onto origin/main "
+                "(2 commit(s) origin gained meanwhile)") in log
+        assert f"pushed main in {sib} (1 commit(s)" in log
+
+
+def test_a_diverged_sibling_with_no_record_of_its_start_blocks():
+    """A run whose doc phase began before the record existed cannot tell
+    the run's own commits from anyone else's — today's bail."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib, r = diverged_sibling_run(
+            tmp, then=lambda loop: loop.state["doc_phase"].pop(
+                "sibling_heads"))
+        assert_sibling_blocked(r, slice_dir, repo, sib,
+                               "the run has no record of where the doc "
+                               "phase began there")
+
+
+def test_a_sibling_whose_origin_lacks_its_start_blocks_and_the_resume_pushes_it_alone():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib, r = diverged_sibling_run(
+            tmp, then=lambda loop: loop.fake_git.not_in.add(
+                (began_at(loop, sib), "origin/main")))
+        assert_sibling_blocked(r, slice_dir, repo, sib,
+                               "origin does not carry the commit the doc "
+                               "phase began from")
 
         # the operator settles the sibling's base; the resume owes only its
         # push — no session, no second landing of the primary
@@ -5351,6 +5438,37 @@ def test_a_diverged_sibling_blocks_and_the_resume_pushes_it_alone():
         for verb in ("rebase", "merge"):
             assert not r2.fake_git.mutations(verb)
         assert load_state(slice_dir)["doc_phase"]["stage"] == "done"
+
+
+def test_a_diverged_sibling_on_another_branch_blocks():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib, r = diverged_sibling_run(
+            tmp, then=lambda loop: loop.fake_git.branch_at.update(
+                {str(sib): "hotfix"}))
+        assert_sibling_blocked(r, slice_dir, repo, sib,
+                               "main is not checked out there")
+
+
+def test_a_diverged_sibling_with_a_dirty_worktree_blocks():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib, r = diverged_sibling_run(
+            tmp, then=lambda loop: loop.fake_git.dirty_roots.update(
+                {str(sib): " M values.yaml"}))
+        assert_sibling_blocked(r, slice_dir, repo, sib,
+                               "the worktree there is dirty")
+
+
+def test_a_sibling_rebase_that_conflicts_is_aborted_and_blocks():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib, r = diverged_sibling_run(tmp)
+        refuse_in(r, sib, ("rebase", "origin/main"))
+        assert_sibling_blocked(r, slice_dir, repo, sib,
+                               "do not rebase cleanly onto origin/main",
+                               rebased=True)
+        assert "resolve by hand, push, then resume" in json.loads(
+            (slice_dir / "bailout.json").read_text())["details"]
+        assert [c for c in calls_in(r, sib) if c[0] == "rebase"] == [
+            ("rebase", "origin/main"), ("rebase", "--abort")]
 
 
 # -- the wrap-up ----------------------------------------------------------------

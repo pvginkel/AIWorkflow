@@ -47,9 +47,11 @@ list named at dispatch; `store`, the spec repo commit the store stood at before 
 repo its `branch`, the `base` sha the branch was cut from and its `head`), `doc_phase` (the
 closing ladder's record: its `stage` — `writer` | `wrap-up` | `gate` | `landing` | `siblings` |
 `done` — the writer's `session`, `gate_runs`, `nudges`; `writer: false` in a project that runs
-no doc phase, where the ladder starts at the wrap-up; and `gate_last`, the doc gate's run the
+no doc phase, where the ladder starts at the wrap-up; `gate_last`, the doc gate's run the
 wrap-up stage made, which the gate stage takes instead of running the sweep again on the same
-commit), `phases`, and `history`.
+commit; and `sibling_heads`, each other code repo's base sha as the ladder began, which tells the
+`siblings` stage whether a base that diverged from its origin carries only the run's own commits
+and may be rebased), `phases`, and `history`.
 
 Per phase: `status` (`pending` | `in_progress` | `merged`), `stage` (`executor` | `gate` |
 `review` | `merging` | `null`), `branch`, `target`, `executor_rounds`, `gate_fix_rounds`,
