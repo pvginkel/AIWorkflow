@@ -86,10 +86,10 @@ heading levels, the `Target:` line, done-record shape, the `verification.json` s
   content anywhere in the plan**: the doc phase derives its updates from the shipped diff and
   the requirements/rulings; the rulings are the only steering it gets. A doc *task* a
   requirement names is a phase like any other (the doc phase carries no slice task).
-- **Done-records** are appended under each phase's own heading (never a new `###`): what landed,
-  what settled beyond the plan's text, what changes for later phases — hard cap ~25 lines,
-  settlements not narration. Finds that affect later phases are edited into those phases, where
-  their reader will trip over them.
+- **Done-records** are appended under each phase's own heading (never a new `###`) in
+  [plan-template.md](plan-template.md)'s two-part shape: the `**Done (P<id>).**` paragraph and its
+  `Later phases:` list, then the record. Finds that affect later phases are edited into those
+  phases, where their reader will trip over them.
 
 **`attachments/`** — designs only where the executor genuinely cannot derive them, written at the
 altitude a smart dev would want handed to them: a functional description of success, never class

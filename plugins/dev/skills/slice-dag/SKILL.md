@@ -78,7 +78,7 @@ For each **new** slice capture exactly four fields. Keep the cost down:
 - **Gate** — an external blocker that must clear before the slice can run at all (e.g. 055's
   *vendor-sdk spike* ⛔ RUN GATE; an operator action; a secret to mint). Short text, or `—`.
 
-When several slices are new, dispatch **parallel `Explore` agents on Sonnet** — one tight brief
+When several slices are new, dispatch **parallel `Explore` agents** — one tight brief
 per slice that returns *only* `{subprojects, needs, gate, scope}` — so the overview reads stay
 out of this session's context. Record nothing you can recompute: **do not** store merge edges; they are derived
 from the subproject sets at plan time.
@@ -202,7 +202,7 @@ ever**:
 - **Subprojects from `ls`, never from file contents.** The merge analysis is free.
 - **Scope and most `needs` from the README `## Pending` block** — one read for all slices.
 - **Deep-read a `slice.md` only for a *new* slice**, only for `needs`/gate, and only where the
-  README is silent — via a parallel `Explore` agent on Sonnet that returns just the four fields,
+  README is silent — via a parallel `Explore` agent that returns just the four fields,
   so the read never enters this session's context.
 - **Carried-over slices are never re-read.** Their inventory rows are the cache.
 - **Re-packing (different lane count, a manual edit, a moved slice) is pure reasoning** over the

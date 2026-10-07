@@ -106,9 +106,10 @@ The slice's close-out report is {report}, rendered from its store,
 `append`, `note`, `strike`; `list` shows what is there (ids, headlines,
 Consequence lines) — never edit either file by hand, and commit the store
 with your own commit, staged by name. An entry carries labels that say
-what it is, and the tool routes it from them: you state what you know,
-never what should happen to the entry. `python3 {tool} labels` prints
-what each label means — read it before your first append. `append` takes:
+what it is, and the tool routes it from them: you state what you know
+and, where `append` asks for a proposal, what you would do — never where
+the entry goes. `python3 {tool} labels` prints what each label means —
+read it before your first append. `append` takes:
 {append_usage}
 The report is about the work; what got in your way while working, and any
 improvement of the workflow itself, goes to the `fieldnotes` MCP tool

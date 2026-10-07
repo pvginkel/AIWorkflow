@@ -52,8 +52,9 @@ tool refuses it as an entry and says where it goes.
 
 ## The labels
 
-An author says what it knows about the thing it reports, and is never asked what should happen
-to it: it does not know the operator's bar, and a bar written into every role cannot be moved.
+An author says what it knows about the thing it reports, and is never asked where it goes: it
+does not know the operator's bar, and a bar written into every role cannot be moved. What it
+would do about it is a recommendation, its proposal (below), never a route.
 The facts are the ones an entry states in prose already — what has to happen for the problem to
 show, what is then experienced, whether it then says so itself, what is decided about the fix,
 where the fix lives — given in a vocabulary the tool checks. `close_out.py labels` prints this

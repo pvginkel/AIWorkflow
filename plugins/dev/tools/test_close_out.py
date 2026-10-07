@@ -1853,7 +1853,8 @@ def test_dispatch_line_is_the_text_with_the_append_usage_in_it():
     assert line.startswith(f"The slice's close-out report is {report_md}, rendered from "
                            "its store,\nclose-out.json. Write to it only through "
                            f"`python3 {tool} <verb> {report_md} …` —\n")
-    assert f"never what should happen to the entry. `python3 {tool} labels` prints" in line
+    assert ("what you would do — never where\nthe entry goes. "
+            f"`python3 {tool} labels` prints what each label means —\n") in line
     assert "read it before your first append. `append` takes:\n" \
            + close_out.verb_usage("append") + "\nThe report is about the work;" in line
     assert line.endswith("goes to the `fieldnotes` MCP tool\n`post` instead.")

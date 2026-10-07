@@ -4,6 +4,32 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-07 — the prompt audit re-run on Opus 5.5 and Sonnet 5.5 (v0.9.80)
+
+AIWF-42. The `prompt-audit` re-run the model change owed: the `opus` alias now resolves to
+`claude-opus-5-5` (since 2026-09-22) and `sonnet` to `claude-sonnet-5-5` (since about
+2026-09-30); `fable` is `claude-fable-5-1`, unchanged since the 2026-09-09 run
+(`docs/research/platform-cost-read-2026-09-09.md` § 3.2, applied in 0.9.33). Nothing in the
+plugin was written for the old models' behaviour: no laziness or thoroughness boosters, no
+tool-discouraging text, no self-check scaffolding, and 0.9.33's length lines and delegation
+bound still hold on 5.5. What the audit found is drift since 0.9.33, five places where a
+prompt says something the contract no longer does:
+
+- the plan-reviewer's `Target:` rule and the plan-doc nudge list the Target forms without
+  `github:<owner>/<repo>` (0.9.54), so a literal reader could flag or "fix" a valid one;
+- the close-out dispatch line and `close-out.md` § The labels said an author never states what
+  should happen to an entry, while `append` requires a proposal from an action, a decision or
+  an improvement (0.9.70); they now say an author never says where an entry goes, and that
+  what it would do is its proposal;
+- the executor prompt and `plan-loop.md` described the done-record in its one-part form; both
+  now point at the plan template's two-part shape with the `Later phases:` list the digest
+  reads (0.9.17);
+- `/dev:slice-dag` dispatched its Explore agents "on Sonnet", against the standing ruling of no
+  model pin for Explore; the pin is gone.
+
+Not applied, by ruling: the incident stories in `run-loop.md`, `/dev:plan-slice`'s two leftover
+capitalised MUSTs, and the consult's `summary` field asking for "your reasoning".
+
 ## 2026-10-06 — the doc phase rebases its own sibling commits onto a moved origin before pushing (v0.9.79)
 
 AIWF-41. When the doc phase pushes the commits it left in the slice's other repos, a base that

@@ -1985,10 +1985,9 @@ Run the phase's test gate yourself before handing back{gate_hint}.
 
 When done:
 - Append the phase's done-record in the plan, under the phase's own heading
-  (never a new `###` heading), opening `**Done (P{phase_id}).**` — what
-  landed, what settled beyond the plan's text, what changes for later
-  phases; hard cap ~25 lines, settlements not narration. Edit later phases
-  your work changes, in place.
+  (never a new `###` heading), in the plan template's two-part shape: the
+  `**Done (P{phase_id}).**` paragraph and its `Later phases:` list first,
+  then the record. Edit later phases your work changes, in place.
 - Commit everything: code on the branch; the plan edit in the specs repo,
   staged by name (shared working tree).
 - Write your verdict to {verdict_path}.
@@ -2642,9 +2641,9 @@ name). Do not start other work. The problems:
 The rules: phases are `### P<id> — <title>` headings (id [A-Za-z0-9]+,
 unique; every other heading level is fine, but `###` is reserved for
 phases); every unfinished phase opens with a `Target:` line naming a
-`kc project list` component or a sibling repo path; done-records go under
-the phase's own heading without new `###`s; only the driver writes
-`✅ DONE` stamps.
+`kc project list` component, a sibling repo path or `github:<owner>/<repo>`;
+done-records go under the phase's own heading without new `###`s; only the
+driver writes `✅ DONE` stamps.
 """
 
 VERDICT_NUDGE_PROMPT = """\
