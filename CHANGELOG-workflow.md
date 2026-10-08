@@ -4,6 +4,26 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-08 — /dev:inbox reads the operator's new actions; /dev:triage takes the pre-filtered batch by default (v0.9.82)
+
+`/dev:inbox` pulls the operator's actions still in the intake queue's state, not every open
+action whatever its state; one in any other state is read only under a hand-back mark. A kept
+action is left as it is — it no longer moves into an accepted state — so the next sitting shows
+it again. `/dev:triage`'s default batch is the project's pre-filtered state; the whole intake
+queue is the batch only when the operator says so.
+
+Why: operator actions are filed into `New` like any card; the convention's "`Type: Operator
+Action` in State `Accepted`" was a rule nobody filed by. The operator moved every open action to
+`New` and asked that the inbox look only at those, "for now". The triage default follows the
+inbox: the intake queue is the card pass's, and what is slice-shaped reaches triage as the
+pre-filtered batch — the operator names the batch at every run anyway ("Everything in New",
+"Everything in Accepted").
+
+Companion change outside this repo: youtrack-usage 0.10.10 (KubeCoderConfig) gives the action
+queue no state, has `/triage` pull from `Accepted` by default, and drops `Type: -{Operator
+Action}` — which lets slices and epics through a pull by state — for the rule that such a pull
+names its type.
+
 ## 2026-10-08 — /dev:inbox: every project's tracker inbox sorted with the operator, ahead of triage (v0.9.81)
 
 A new skill, tracker-only and project-less: no preflight, no spec repo, runs from any

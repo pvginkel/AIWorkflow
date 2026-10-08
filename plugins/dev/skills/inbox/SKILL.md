@@ -1,6 +1,6 @@
 ---
 name: inbox
-description: Sort the tracker's inbox with the operator, across every project at once — the new cards nobody has judged, the cards the host's unattended pass handed back, and the operator's own action queue — and put them to the operator in one chat message, each on a line under where it goes next (left for the pass, pre-filtered for a slice, theirs, closed, deferred), with the one act or answer each held-back card waits on; then record their rulings on the cards. Tracker-only — no spec repo, no slices filed, no code opened; the project's /dev:triage takes the pre-filtered batch from here. Invoke it whenever the operator asks to go through, clean up or sort the inbox, the new cards, their action queue, or what the pass handed back — they will not necessarily name this skill.
+description: Sort the tracker's inbox with the operator, across every project at once — the new cards nobody has judged, the cards the host's unattended pass handed back, and the operator's own new actions — and put them to the operator in one chat message, each on a line under where it goes next (left for the pass, pre-filtered for a slice, theirs, closed, deferred), with the one act or answer each held-back card waits on; then record their rulings on the cards. Tracker-only — no spec repo, no slices filed, no code opened; the project's /dev:triage takes the pre-filtered batch from here. Invoke it whenever the operator asks to go through, clean up or sort the inbox, the new cards, their new actions, or what the pass handed back — they will not necessarily name this skill.
 argument-hint: "[project keys or card ids to scope the sitting]"
 ---
 
@@ -11,11 +11,11 @@ Two things empty a project's intake queue without the operator reading every car
 under a **hand-back mark** that stands until the operator acts, and `/dev:triage`, which takes
 one project's batch — pre-filtered by the operator when they have — and files slices. Between
 them the inbox fills: new cards neither has judged, and hand-backs waiting on something only the
-operator can give, named in a comment nobody re-reads. Beside it sits the operator's own action
-queue, where what they have delayed waits for a free hour. This sitting is how the operator reads
+operator can give, named in a comment nobody re-reads. Beside it, new actions arrive in the
+operator's own queue, things only they can do. This sitting is how the operator reads
 all of it — every project at once, from whatever environment they are in — with the cards sorted
 for them: where each goes next, what each held-back card needs from them before it can go
-anywhere, and their own actions in the same message, so the time they give the inbox is time
+anywhere, and their new actions in the same message, so the time they give the inbox is time
 they can action them. It writes rulings to the tracker and nothing else.
 
 **Nothing here needs a project.** No preflight, no spec repo, no `.aiworkflowrc`: the tracker is
@@ -42,7 +42,8 @@ sweep are triage's (its step 8), and the inbox leaves them alone.
 - **Pre-filtered for a slice** — the card moves to the pre-filtered state, its project's
   `/dev:triage` batch. The pass does not read that state; triage does, and reads the card afresh.
 - **The operator's** — the card waits on an act only they can perform, or is an action of theirs
-  they keep (*yours*, below). A kept action sits in their action queue.
+  they keep (*yours*, below). A kept action stays as it is, and the next sitting shows it
+  again.
 - **Closed** (resolved when they did it, rejected otherwise) and **deferred** — the dispositions
   the convention names.
 
@@ -52,8 +53,9 @@ sweep are triage's (its step 8), and the inbox leaves them alone.
 
 Pull, across every project — or the projects or cards the operator scoped the sitting to — the
 **intake queue**, **every open card carrying a hand-back mark**, whatever its state or type (a
-mark means *waits for the operator*, and this sitting is them), and **the operator's action
-queue**, every open card in it whatever its state. Read what you pull in full, project by
+mark means *waits for the operator*, and this sitting is them), and **the operator's new
+actions** — the cards in their action queue still in the intake queue's state; an action in any
+other state is not read unless a mark brings it. Read what you pull in full, project by
 project, in the batches the tracker tool allows. Two kinds of card are not items: the slice
 cards, and the close-out marker cards (`[NNN] close-out: …`), which say a report is waiting —
 count them per project for the message and leave them to `/dev:close-out`. Nothing is dumped to
@@ -149,8 +151,9 @@ as its move:
 - *pass* — the card stays in the intake queue; its hand-back mark, if any, comes off; an
   operator action is retyped to a task. The comment is what the pass reads as the settled ask.
 - *slice* — to the pre-filtered state, as a task; a mark comes off.
-- *yours* — to the operator's action queue when they said so, and a kept action stays there (a
-  new one moves into it); otherwise the mark stays, or goes on, and the comment names the act.
+- *yours* — to the operator's action queue when they said so, retyped and its state left as it
+  is, and a kept action is left as it is; otherwise the mark stays, or goes on, and the comment
+  names the act.
 - *done* — the result on the card (the path, the account, the answer), then the fate that
   follows; an action they performed closes resolved, the comment saying what they did.
 - *close* — the rejected disposition; *later* — deferred.

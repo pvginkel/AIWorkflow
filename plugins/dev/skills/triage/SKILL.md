@@ -1,6 +1,6 @@
 ---
 name: triage
-description: File a batch of findings, bugs, or requests — read every ask as the operator wrote it, check it against the project's standing decisions, and put the batch to the operator in one chat message (every item on a line under its proposed fate, the questions only they can answer, the proposed slices); then record the survivors' asks verbatim as slice folders (slice.md under slices/backlog/NNN_slug/), the required input to /dev:plan-slice. Runs over the intake queue or a selection of it, in one sitting. Comprehension, questions, and routing only; grounding, design, and planning happen in /dev:plan-slice.
+description: File a batch of findings, bugs, or requests — read every ask as the operator wrote it, check it against the project's standing decisions, and put the batch to the operator in one chat message (every item on a line under its proposed fate, the questions only they can answer, the proposed slices); then record the survivors' asks verbatim as slice folders (slice.md under slices/backlog/NNN_slug/), the required input to /dev:plan-slice. Runs over the project's pre-filtered batch — or its whole intake queue, or a selection, when the operator names it — in one sitting. Comprehension, questions, and routing only; grounding, design, and planning happen in /dev:plan-slice.
 argument-hint: "[findings-document] [card ids to scope the run]"
 ---
 
@@ -45,15 +45,15 @@ already holds is not asked about twice.
 ### 1. Collect — everything on disk first
 
 Gather the inputs: the findings document if one was passed, the relevant chat discussion, and
-**this project's** outstanding intake-queue cards — all of them, or the selection the operator
-scoped the run to (ids, a list; the rest stay untouched, and the close-out says so). When the
-operator has pre-filtered the batch — by hand, or with `/dev:inbox`, which sorts every project's
-inbox at once and moves what is slice-shaped to the pre-filtered state — the batch is that state,
-and the dated inbox ruling a card carries is shown on its line like any ruling (step 5). Other
-projects' cards stay: a card filed under another project whose substance is this project's is
-flagged by id — mine, misfiled? — never adopted; moving it is the operator's. A
-`[NNN] close-out: …` card is not an ask but the marker that a slice's close-out report is
-waiting (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`): render the report it names
+**this project's** cards: by default its **pre-filtered batch**, the cards the operator moved to
+the pre-filtered state — by hand, or with `/dev:inbox`, which sorts every project's inbox at once
+and moves what is slice-shaped there — with the dated inbox ruling a card carries shown on its
+line like any ruling (step 5). The whole intake queue is the batch only when the operator says
+so, and a selection they scope the run to (ids, a list) replaces either: the rest stay untouched,
+and the close-out says so. Other projects' cards stay: a card filed under another project whose
+substance is this project's is flagged by id — mine, misfiled? — never adopted; moving it is the
+operator's. A `[NNN] close-out: …` card is not an ask but the marker that a slice's close-out
+report is waiting (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`): render the report it names
 (`python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py render <slice_dir>`) and take as items what
 the report brings the operator — the entries under **Comes to you** and **Card requests** whose
 `Disposition:` line is blank, and every entry whose line says `defer` — one per entry, the entry
@@ -379,7 +379,7 @@ Rules and rationale: `${CLAUDE_PLUGIN_ROOT}/docs/residual-sweep.md`.
   id then goes into the slice's `slice.md` as frontmatter above the title — `issue: <id>` between
   two `---` lines — and is committed (staged by name): `/dev:plan-slice` and `/dev:run-slice` move
   the card by that id, never by looking for its title.
-- **Intake queue:** close the cards the slices subsume as **absorbed**, each under its slice's
+- **The batch's cards:** close the cards the slices subsume as **absorbed**, each under its slice's
   card, and the duplicates from step 3 as rejected, each with a short comment (`close` and `later`
   were actioned in step 6). A **split** ruling makes one new card per split-off part, in the
   operator's words — their ruling as the body, the parent cited — and the parent is closed or
