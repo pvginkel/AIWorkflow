@@ -46,7 +46,10 @@ already holds is not asked about twice.
 
 Gather the inputs: the findings document if one was passed, the relevant chat discussion, and
 **this project's** outstanding intake-queue cards — all of them, or the selection the operator
-scoped the run to (ids, a list; the rest stay untouched, and the close-out says so). Other
+scoped the run to (ids, a list; the rest stay untouched, and the close-out says so). When the
+operator has pre-filtered the batch — by hand, or with `/dev:inbox`, which sorts every project's
+inbox at once and moves what is slice-shaped to the pre-filtered state — the batch is that state,
+and the dated inbox ruling a card carries is shown on its line like any ruling (step 5). Other
 projects' cards stay: a card filed under another project whose substance is this project's is
 flagged by id — mine, misfiled? — never adopted; moving it is the operator's. A
 `[NNN] close-out: …` card is not an ask but the marker that a slice's close-out report is

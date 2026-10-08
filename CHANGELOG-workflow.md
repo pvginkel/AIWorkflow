@@ -4,6 +4,42 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-08 — /dev:inbox: every project's tracker inbox sorted with the operator, ahead of triage (v0.9.81)
+
+A new skill, tracker-only and project-less: no preflight, no spec repo, runs from any
+environment. It pulls every project's intake queue, every open card the host's unattended pass
+handed back under a mark, and the operator's own action queue; reads them as written; and puts
+them to the operator in one chat message in triage's shape — each card on a line under where it
+goes next: left for the pass, pre-filtered for a slice, theirs, closed, deferred — with the one
+act or answer each held-back card waits on. Their rulings go onto the cards as dated comments,
+and the moves with them; nothing else is written: no slices, no code, no Solution Known mark
+(ruled "forget about Solution Known for now" — the mark and the sweep stay triage's).
+
+Why: the nightly card pass (`pvginkel/Automation`) had tagged 22 cards `Requires Operator` in
+eleven nights, 10 still open, and the inbox held 50 `New` tasks across thirteen projects the pass
+had not judged. Read against their hand-back comments, the held-back cards were not mislabelled:
+one waited on a blocker that had since closed (FN-14), two on a token only the operator can mint
+(ANS-251, ICOMSRV-2), one on a word from the operator (ANS-196), the rest were slice-sized or
+theirs — but the mark is terminal by design ("the operator clears only to overrule the pass"),
+nothing names what would bring a card back, and nothing re-reads one. The operator's action queue
+(25 open, 23 of them `Accepted`) goes through the same sitting: "a lot in there is just stuff I've
+delayed; good chance it can be actioned if I have some time."
+
+The states after a sitting, settled with the operator: `New` is the pass's queue — a card the pass
+can take stays there, its mark off, the ruling on it; the pre-filtered state is slice input, the
+project's `/dev:triage` batch, which the pass does not read; a mark means *waits for the
+operator*, and the inbox sets or clears one on their ruling. No new tag: a card in `New` without a
+mark is the pass's already. Not Solution Known: none of the held-back cards failed on that
+litmus's axes — they failed the pass's (a secret, a blocker, two environments) — so writing
+criteria would have moved none of them.
+
+With it: `project-contract.md` § 3 gains the unattended pass and the hand-back mark as workflow
+words; `/dev:triage` step 1 names the inbox as how a batch gets pre-filtered. Companion changes
+outside this repo: the card pass's hand-back now ends with what has to happen before it can take
+the card (`in the lane once …` / `waits on <card>` / `not for this pass: …`) and reads an inbox
+ruling as part of the ask; youtrack-usage says who sets and clears a mark, where the pass's lane
+is written, and that the inbox is the one session that presents operator actions.
+
 ## 2026-10-07 — the prompt audit re-run on Opus 5.5 and Sonnet 5.5 (v0.9.80)
 
 AIWF-42. The `prompt-audit` re-run the model change owed: the `opus` alias now resolves to
