@@ -36,9 +36,12 @@ sweep are triage's (its step 8), and the inbox leaves them alone.
 
 ## Where a card goes
 
-- **Left for the pass** — the card stays in the intake queue, its mark (if any) off, the ruling
-  on it. The pass reads the queue nightly and takes what is in its lane; a card it hands back
-  comes back here under its mark, with the pass's reason.
+- **Night shift** — left for the pass: the card stays in the intake queue under the
+  **night-shift mark**, its hand-back mark (if any) off, the ruling on it. The pass reads the
+  whole queue nightly and takes a few cards a night of what is in its lane, so a card can wait
+  several nights; the night-shift mark is this sitting's own label, which the pass does not read,
+  and it keeps the next sitting from putting the card again. A card the pass hands back comes
+  back here under its hand-back mark, with the pass's reason.
 - **Pre-filtered for a slice** — the card moves to the pre-filtered state, its project's
   `/dev:triage` batch. The pass does not read that state; triage does, and reads the card afresh.
 - **The operator's** — the card waits on an act only they can perform, or is an action of theirs
