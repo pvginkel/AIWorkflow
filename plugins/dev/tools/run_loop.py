@@ -276,6 +276,12 @@ SPAWN_ENV = {
     "CLAUDE_CODE_DISABLE_BUNDLED_SKILLS": "1",
 }
 
+# The spec repo's pre-commit hook (spec-tree-guard.sh, installed by preflight)
+# refuses a commit on a `phase/*` branch unless this names it. The driver sets
+# it on what it dispatches onto a branch of its own in the spec tree, and on
+# its own commits there (`RunLoop._spawn_env`, `RunLoop.git`).
+PHASE_BRANCH_ENV = "DEV_PHASE_BRANCH"
+
 # The claude flags `create-headless` passes through to the spawned claude
 # (kc's own pass-through, under claude's flag names), finishing the prefix
 # trim SPAWN_ENV starts — agent-dispatch.md § Spawning has the why and the
@@ -1700,6 +1706,12 @@ class DevLock:
 # exclusively for as long as a writer waits, so new readers queue behind it
 # instead of starving it, while readers already out drain. flock throughout,
 # so a driver that dies releases by fd close.
+#
+# The lease holds the loops' own sessions apart. A session no loop dispatched
+# never takes it, so the spec repo's pre-commit hook (spec-tree-guard.sh,
+# installed by preflight) refuses its commit on a phase branch — and the driver
+# names its own branch in PHASE_BRANCH_ENV on what it dispatches and commits
+# there.
 # ---------------------------------------------------------------------------
 
 SPEC_TREE_POLL = 15
@@ -3256,10 +3268,15 @@ class RunLoop:
     # -- git -----------------------------------------------------------------
 
     def git(self, *args: str, root: Path | None = None,
-            check: bool = True) -> str:
+            check: bool = True, phase_branch: str | None = None) -> str:
+        """`phase_branch` names the branch of this run's own a commit lands
+        on in the spec tree, so the spec repo's pre-commit hook lets it
+        through (PHASE_BRANCH_ENV)."""
         result = subprocess.run(
             ["git", *args], cwd=root or self.repo_root,
             capture_output=True, text=True,
+            env=({**os.environ, PHASE_BRANCH_ENV: phase_branch}
+                 if phase_branch else None),
         )
         if check and result.returncode != 0:
             raise Bailout(
@@ -3278,11 +3295,12 @@ class RunLoop:
             capture_output=True, text=True,
         ).returncode == 0
 
-    def specs_git(self, *args: str) -> str:
+    def specs_git(self, *args: str, phase_branch: str | None = None) -> str:
         """Git in the specs repo (the slice folder's repo) — used only for
         the driver's own plan.md edits (stamps), staged by name: the specs
         repo is one working tree shared by several parallel sessions."""
-        return self.git("-C", str(self.slice_dir), *args)
+        return self.git("-C", str(self.slice_dir), *args,
+                        phase_branch=phase_branch)
 
     def _current_branch(self, root: Path) -> str:
         return self.git("rev-parse", "--abbrev-ref", "HEAD", root=root)
@@ -3441,7 +3459,7 @@ class RunLoop:
                 self.git(f"--work-tree={empty}", "commit", "-m",
                          f"slice {self.slice_num}: the driver's run record "
                          f"taken back out of {branch} (a git add -A)",
-                         "--", *tracked, root=root)
+                         "--", *tracked, root=root, phase_branch=branch)
             sha = self.git("rev-parse", "HEAD", root=root)
         except Bailout as e:
             raise Bailout(
@@ -3503,7 +3521,8 @@ class RunLoop:
         self.git("add", "-u", "--", *pathspec, root=root)
         self.git("commit", "-m",
                  f"slice {self.slice_num}: slice-folder edits left "
-                 f"uncommitted on {branch}", "--", *pathspec, root=root)
+                 f"uncommitted on {branch}", "--", *pathspec, root=root,
+                 phase_branch=branch)
         paths = sorted({line[3:] for line in changed.splitlines() if line})
         self.log(f"{label} committed this slice's uncommitted slice-folder "
                  f"edits onto {branch} before leaving it: " + ", ".join(paths))
@@ -4145,6 +4164,26 @@ class RunLoop:
                               "state.json)")
         assert_verification_keys(self.slice_dir)
 
+    def _spawn_env(self, spec_branch: str | None) -> dict[str, str]:
+        """The environment a session is dispatched with: SPAWN_ENV, plus
+        PHASE_BRANCH_ENV naming `spec_branch` — the branch of this run's own
+        the spec tree stands on for it — so the spec repo's pre-commit hook
+        lets its commits there through."""
+        if not spec_branch:
+            return SPAWN_ENV
+        return {**SPAWN_ENV, PHASE_BRANCH_ENV: spec_branch}
+
+    def _own_spec_branch(self) -> str | None:
+        """The spec tree's branch when it is one of this run's own, else
+        None — what a nudge names: it resumes a session of this run, and the
+        tree is where this run put it (the commit nudge asks a phase's writer
+        to commit on that branch). Never raises: a nudge never does."""
+        try:
+            cur = self._current_branch(self.spec_root)
+        except Exception:
+            return None
+        return cur if cur.startswith(f"phase/{self.slice_num}-") else None
+
     def _nudge(self, prompt: str, cwd: Path, session_id: str,
                label: str, role: str | None, retry: bool = True) -> bool:
         """One resume-shot at a session that missed part of its protocol;
@@ -4172,7 +4211,8 @@ class RunLoop:
                     self._assert_current()
                     _, result = run_kc_session(
                         prompt=prompt, cwd=str(cwd), timeout=NUDGE_TIMEOUT,
-                        resume_session=session_id, extra_env=SPAWN_ENV,
+                        resume_session=session_id,
+                        extra_env=self._spawn_env(self._own_spec_branch()),
                         flags=spawn_flags(role, self.log),
                         progress=lambda line: self._emit(
                             f"    {label} {line}"),
@@ -4349,7 +4389,7 @@ class RunLoop:
                         model=model,
                         effort=effort,
                         resume_session=resume_session,
-                        extra_env=SPAWN_ENV,
+                        extra_env=self._spawn_env(spec_branch),
                         flags=spawn_flags(role, self.log),
                         progress=lambda line: self._emit(
                             f"    {label} {line}"),
@@ -7335,7 +7375,8 @@ class RunLoop:
                     returncode, result = run_kc_session(
                         prompt=prompt, cwd=str(cwd), timeout=TIMEOUTS[role],
                         agent=role, model=model, effort=effort,
-                        extra_env=SPAWN_ENV, flags=spawn_flags(role, self.log),
+                        extra_env=self._spawn_env(spec_branch),
+                        flags=spawn_flags(role, self.log),
                         progress=lambda line: self._emit(f"    {label} {line}"),
                         on_session=_note_session,
                     )
@@ -7527,7 +7568,8 @@ class RunLoop:
             self._assert_spec_on_base(expect)
             if paths and self.specs_git("status", "--porcelain", "--", *paths):
                 self.specs_git("add", "--", *paths)
-                self.specs_git("commit", "-m", message, "--", *paths)
+                self.specs_git("commit", "-m", message, "--", *paths,
+                               phase_branch=expect)
                 self.log(f"[wrap-up] committed {self.report_path.name}: "
                          f"{message}")
             return self.specs_git("rev-parse", "HEAD")

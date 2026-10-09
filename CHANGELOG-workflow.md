@@ -4,6 +4,28 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-09 — A pre-commit hook in the spec repo refuses a commit onto a running phase's branch; preflight installs it (v0.9.86)
+
+Preflight installs `tools/spec-tree-guard.sh` as the spec repo's pre-commit hook in every profile,
+at `git rev-parse --git-path hooks/pre-commit`. Its version marker decides what happens: no hook
+is installed, an older guard is replaced, a same-or-newer one is left alone, and a hook without
+the marker fails preflight naming the file. The hook refuses a commit on a `phase/*` branch unless
+`DEV_PHASE_BRANCH` names that branch. The run loop sets the variable on every session it
+dispatches or nudges onto a branch of its own in the spec tree, and on its own commits there.
+A refused session is told to wait outside the hook while a phase holds the tree: unstage, then
+commit again in the background under `flock -s` on the spec-tree lease. When no run holds the
+tree, it is told to stop and tell the operator.
+
+Why: the lease covers only the loops' own sessions. In AnsibleSpecs, slice 050's review
+adjudication landed on `phase/053-P1` (2026-10-06), and a run-slice session for 050 in another
+environment committed twice onto `phase/054-P1` while 054's driver held it (2026-10-07)
+(AIWF-50).
+
+Upgrade: every environment that shares a spec repo needs 0.9.86 before any of them runs preflight
+on it. A run loop older than 0.9.86 sets no `DEV_PHASE_BRANCH`, so once the hook is in the shared
+git dir, that loop's spec-repo phase has its writer refused on its own branch and told to wait
+for the lease its own driver holds.
+
 ## 2026-10-09 — Every close_out.py write renders close-out.md, reading the Disposition lines back first (v0.9.85)
 
 Every verb that changes the store — `append`, `note`, `strike`, `relabel`, `propose`,

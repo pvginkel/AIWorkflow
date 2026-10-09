@@ -16,6 +16,7 @@ schema):
 | Manifest valid (kc project list >=1 component)  |        |  x   |  x  |
 | `.aiworkflowrc` present and valid               |   x    |  x   |  x  |
 | `spec_repo` set, directory exists               |   x    |  x   |  x  |
+| Spec-tree guard installed (spec repo's git dir) |   x    |  x   |  x  |
 | `design_philosophy` set, file exists            |        |      |  x  |
 | `test_phase.strategy` set + exists, when on     |        |      |  x  |
 | `doc_phase.plan` set + exists, when on          |        |      |  x  |
@@ -28,9 +29,12 @@ schema):
 A phase the project switched off is not checked: its pointer is absent by
 contract, and checking it would make an optional phase mandatory again.
 
-The sync is the one step that *acts* rather than checks: pulling a clean base
-onto its own origin destroys nothing, while a repo with uncommitted work is
-refused, never pulled over (docs/preflight.md, "Notes on the sync").
+Two steps *act* rather than check. The sync pulls a clean base onto its own
+origin, which destroys nothing, while a repo with uncommitted work is refused,
+never pulled over (docs/preflight.md, "Notes on the sync"). The guard install
+writes the plugin's pre-commit hook into the spec repo's git dir, which
+destroys nothing either: it replaces only an older guard, and a hook someone
+else wrote is never overwritten — preflight refuses instead.
 
 **Silent on success** (exit 0) — but for one line, printed last, when the plugin
 this session runs from is not the installed one: the installed copy of the loop
@@ -55,6 +59,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -212,6 +217,100 @@ def check_devlock(cfg: project_config.ProjectConfig) -> None:
              f"{cfg.devlock_lease}, whose directory does not exist. The lease "
              f"is relative to the spec repo and must sit where every "
              f"contending repo can see it (see {CONTRACT_DOC}).")
+
+
+# ---------------------------------------------------------------------------
+# The spec-tree guard. The spec repo is one working tree every session in every
+# environment commits into, and a run whose phase targets it checks the phase's
+# branch out there. The run loop's lease holds its own sessions apart; a session
+# no loop dispatched never takes it, and its commit lands in the phase's work.
+# So preflight installs the guard (spec-tree-guard.sh, beside this file) as the
+# spec repo's pre-commit hook in every profile: it refuses a commit on a
+# `phase/*` branch unless run_loop.PHASE_BRANCH_ENV names that branch. The git
+# dir is shared, and environments run different plugin versions — so a guard
+# is replaced only by a newer one, and a hook the plugin did not write never.
+# ---------------------------------------------------------------------------
+
+GUARD_SOURCE = Path(__file__).resolve().parent / "spec-tree-guard.sh"
+GUARD_MARKER = re.compile(r"^# aiworkflow spec-tree guard v(\d+)[ \t]*$", re.M)
+
+
+def guard_version(text: str) -> int | None:
+    """The guard version a hook's text carries; None for a hook that is not
+    the plugin's guard."""
+    match = GUARD_MARKER.search(text)
+    return int(match.group(1)) if match else None
+
+
+def _install_guard(target: Path, source: bytes) -> None:
+    """Write the guard over `target` atomically: a temp file beside it, made
+    executable, then renamed into place — a commit running meanwhile finds
+    the old hook or the new one, never half of one."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=".pre-commit.")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(source)
+        os.chmod(tmp, 0o755)
+        os.replace(tmp, target)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def check_spec_tree_guard(cfg: project_config.ProjectConfig) -> None:
+    """Install the spec-tree guard as the spec repo's pre-commit hook, where
+    git looks for it (`core.hooksPath` honoured): absent or an older guard,
+    it is written; a same-or-newer guard is left as it is; a hook that is not
+    the guard is refused (exit 1), never overwritten. A spec repo that is no
+    git repo has no tree to guard — silent, as the run loop's lease degrades
+    to a no-op there. A plugin whose own copy of the guard is unreadable or
+    unversioned is a broken install (exit 2)."""
+    try:
+        source = GUARD_SOURCE.read_bytes()
+    except OSError as e:
+        fail(2, f"The dev plugin's spec-tree guard {GUARD_SOURCE} could not "
+                f"be read ({e}): the plugin install is broken. Reinstall or "
+                f"update the plugin, then retry.")
+    ours = guard_version(source.decode(errors="replace"))
+    if ours is None:
+        fail(2, f"The dev plugin's spec-tree guard {GUARD_SOURCE} carries no "
+                f"`# aiworkflow spec-tree guard v<N>` line: the plugin install "
+                f"is broken. Reinstall or update the plugin, then retry.")
+    where = _git(["-C", str(cfg.spec_repo), "rev-parse", "--git-path",
+                  "hooks/pre-commit"])
+    if where.returncode != 0 or not where.stdout.strip():
+        return
+    target = Path(where.stdout.strip())
+    if not target.is_absolute():
+        target = cfg.spec_repo / target
+    try:
+        if target.exists() or target.is_symlink():
+            # A symlink to nowhere is someone's hook too, and not the guard.
+            text = (target.read_text(errors="replace") if target.exists()
+                    else "")
+            theirs = guard_version(text)
+            if theirs is None:
+                fail(1,
+                     f"The spec repo's pre-commit hook {target} is not the dev "
+                     f"plugin's spec-tree guard, which preflight installs "
+                     f"there: the guard refuses a commit onto a running "
+                     f"phase's branch in the shared spec tree, from any "
+                     f"session in any environment. Preflight never overwrites "
+                     f"a hook it did not write. Remove {target} or move it "
+                     f"aside, then retry.")
+            if theirs >= ours:
+                return
+        _install_guard(target, source)
+    except OSError as e:
+        fail(2,
+             f"Could not install the dev plugin's spec-tree guard at {target} "
+             f"({e}). Preflight installs it into the spec repo's git dir in "
+             f"every profile; check that this pod can write there, then "
+             f"retry.")
 
 
 def check_manifest(root: Path) -> None:
@@ -543,12 +642,13 @@ def check_plugin_current(profile: str) -> None:
 
 
 PROFILES = {
-    "triage": ["kc", "config", "spec_repo"],
-    "plan": ["kc", "kc_status", "manifest", "config", "spec_repo", "synced",
-             "plugin_current"],
+    "triage": ["kc", "config", "spec_repo", "spec_tree_guard"],
+    "plan": ["kc", "kc_status", "manifest", "config", "spec_repo",
+             "spec_tree_guard", "synced", "plugin_current"],
     "run": ["kc", "kc_status", "manifest", "config", "spec_repo",
-            "design_philosophy", "phase_pointers", "devlock", "clean_tree",
-            "synced", "baseline_build", "plugin_current"],
+            "spec_tree_guard", "design_philosophy", "phase_pointers",
+            "devlock", "clean_tree", "synced", "baseline_build",
+            "plugin_current"],
 }
 
 
@@ -571,6 +671,8 @@ def main() -> None:
     cfg = load_config(root) if "config" in checks else None
     if "spec_repo" in checks:
         check_pointer(cfg, "spec_repo")
+    if "spec_tree_guard" in checks:
+        check_spec_tree_guard(cfg)
     if "design_philosophy" in checks:
         check_pointer(cfg, "design_philosophy")
     if "phase_pointers" in checks:

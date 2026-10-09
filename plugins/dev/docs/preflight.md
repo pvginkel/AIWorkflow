@@ -3,7 +3,8 @@
 `${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage|plan|run` is one repo-shipped,
 **stdlib-only** script each pipeline skill runs as **step one**. The checks are `kc` primitives
 plus the repo's `.aiworkflowrc` contract from [`project-contract.md`](project-contract.md) — and
-one step that acts rather than checks: the sync that brings the environment's repos up to their
+two steps that act rather than check: installing the spec-tree guard in the spec repo
+(§ Notes on the spec-tree guard), and the sync that brings the environment's repos up to their
 origins (§ Notes on the sync).
 
 **Silent on success** — but for one line, on a pass, when the session's plugin copy is stale
@@ -17,8 +18,8 @@ does **not** re-run preflight, so `/dev:run-slice` is the gate.
 | Code | Meaning | Who fixes it |
 |:---:|---|---|
 | `0` | pass (silent) | — |
-| `1` | contract violation | the project (add a line, author the manifest, clean the tree, resolve a refused pull, fix the build) |
-| `2` | environment broken | the environment (`kc` not on PATH, the control plane down, not in a git repo, a fetch that fails) |
+| `1` | contract violation | the project (add a line, author the manifest, clean the tree, resolve a refused pull, fix the build, move a foreign pre-commit hook out of the spec repo) |
+| `2` | environment broken | the environment (`kc` not on PATH, the control plane down, not in a git repo, a fetch that fails, a spec repo git dir the pod cannot write) |
 
 ## Profiles
 
@@ -29,6 +30,7 @@ does **not** re-run preflight, so `/dev:run-slice` is the gate.
 | Manifest valid: `kc project list --output=json` returns ≥1 component | – | ✓ | ✓ |
 | `.aiworkflowrc` present, parses, names no unknown key | ✓ | ✓ | ✓ |
 | `spec_repo` set, path exists (directory) | ✓ | ✓ | ✓ |
+| The spec-tree guard installed: the spec repo's pre-commit hook | ✓ | ✓ | ✓ |
 | `design_philosophy` set, target doc exists | – | – | ✓ |
 | `test_phase.strategy` set + exists — only when the phase runs | – | – | ✓ |
 | `doc_phase.plan` set + exists — only when the phase runs | – | – | ✓ |
@@ -61,9 +63,29 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
 - Both probes are bounded by the CLI itself (5s daemon, 10s controller), so preflight adds no
   timeout of its own.
 
+## Notes on the spec-tree guard
+
+- **What it is.** The spec repo's pre-commit hook, `tools/spec-tree-guard.sh`. It refuses a commit
+  on a `phase/*` branch unless `DEV_PHASE_BRANCH` names that branch, so only the run that checked
+  a phase branch out in the shared spec tree commits onto it. [run-loop.md](run-loop.md) § The plan
+  is the queue says who sets the variable and what a refused session does.
+- **Every profile, because every session commits there.** Triage files slice folders, plan-slice
+  writes the plan, close-out records the rulings. The hook has to be in place before any of them
+  meets a running phase's branch, and installing it destroys nothing, so preflight installs it
+  rather than asking for it.
+- **Where.** `git rev-parse --git-path hooks/pre-commit` in the spec repo, so a `core.hooksPath`
+  is honoured. A spec repo that isn't a git repo has nothing to guard and is skipped, as the run
+  loop's lease is a no-op there.
+- **Which hook wins.** The hook carries `# aiworkflow spec-tree guard v<N>`, where N changes only
+  when the hook's text does. No hook: installed. Ours and older: replaced. Ours and the same or
+  newer: left alone, because the git dir is shared and environments run different plugin
+  versions. A hook without the marker is someone else's: left alone, and preflight fails (exit 1)
+  naming the file. The hook is written to a temporary file beside the target and renamed into
+  place, so a commit never runs half a hook. A git dir preflight cannot write is exit 2.
+
 ## Notes on the sync
 
-- **The one step that acts.** Every other check refuses and reports; this one pulls. What decides
+- **A step that acts.** The checks refuse and report; this one pulls. What decides
   is what a step could destroy: cleaning a dirty tree throws away the operator's work, so the
   clean-tree check refuses; fast-forwarding a clean checkout onto its origin throws away nothing
   (the reflog keeps the old tip), so the sync does it. It replaces the pull-every-repo the operator

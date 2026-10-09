@@ -29,7 +29,9 @@ validation.
   the operator's auto-memory and never invokes a bundled skill, so neither listing rides in its
   prefix (≈ 3 k tokens of every turn). Project knowledge reaches a role through the project's
   `CLAUDE.md` and procedure docs, never through the operator's memory. The set lives once, as
-  `SPAWN_ENV` in `run_loop.py`.
+  `SPAWN_ENV` in `run_loop.py`. A dispatch or nudge onto a branch of the run's own in the spec
+  tree adds **`-e DEV_PHASE_BRANCH=<branch>`**, which the spec repo's pre-commit hook requires
+  of a commit there ([run-loop.md](run-loop.md) § The plan is the queue).
 - **`--disable-slash-commands`** on every `create-headless`, and **`--strict-mcp-config`** on every
   one but the test-agent's — `kc` passes both through to the spawned claude, finishing the trim the
   env vars start. The first drops both plugins' skill listings from the prefix (a headless role

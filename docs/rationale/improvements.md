@@ -512,6 +512,23 @@ spec-repo phase holds it exclusive from checkout to stamp, writers are preferred
 the devlock's cap bails ([`run-loop.md`](../../plugins/dev/docs/run-loop.md) § The plan is the
 queue).
 
+### Commits from outside the loops are refused on a phase branch (v0.9.86)
+
+**Incident.** In AnsibleSpecs, slice 050's review adjudication landed on `phase/053-P1`
+(2026-10-06). The next day a run-slice session for 050, in another environment, committed twice
+onto `phase/054-P1` while 054's driver held it.
+
+**Evidence.** Only the loops take the lease, for their own commits and the sessions they
+dispatch. An interactive session, or any session in another environment, commits into the tree
+without it.
+
+**Change.** A pre-commit hook that preflight installs in the spec repo refuses a commit on a
+`phase/*` branch unless `DEV_PHASE_BRANCH` names that branch. The driver sets the variable on what
+it dispatches and commits there, and the refused session waits for the lease outside the hook
+([`run-loop.md`](../../plugins/dev/docs/run-loop.md) § The plan is the queue). The tracker's slice
+status was considered as the signal and dropped: it spans the whole run, not the checkout-to-stamp
+window, it is moved by hand, and a hook can't reach it.
+
 ### A hung send's round is counted from its file (v0.9.36)
 
 **Incident.** Slice 222's test agent wrote a valid `clean` verdict, then `kc session send` hung

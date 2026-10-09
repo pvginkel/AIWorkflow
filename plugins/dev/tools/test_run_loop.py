@@ -16,6 +16,7 @@ import io
 import json
 import os
 import re
+import shutil
 import signal
 import stat
 import subprocess
@@ -23,6 +24,7 @@ import sys
 import tempfile
 import threading
 import time
+import types
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -121,9 +123,14 @@ class FakeGit:
         self.spec_committed = {}
         self.spec_snapshots = {}
         self.spec_commits = []   # the messages, in order
+        # (root, args, branch) of every call made with `phase_branch=` — the
+        # driver's commits the spec repo's pre-commit hook must let through
+        self.phase_branch_calls = []
 
-    def __call__(self, *args, root=None, check=True):
+    def __call__(self, *args, root=None, check=True, phase_branch=None):
         self.calls.append((root, args))
+        if phase_branch is not None:
+            self.phase_branch_calls.append((root, args, phase_branch))
         if args in self.fails:
             if check:
                 raise Bailout("protocol_failure",
@@ -399,7 +406,7 @@ class ScriptedLoop(RunLoop):
         self.wrap_up_sessions.append({
             "prompt": prompt, "cwd": cwd, "timeout": timeout, "agent": agent,
             "model": model, "effort": effort, "flags": list(flags or ()),
-            "resume": resume_session})
+            "resume": resume_session, "env": dict(extra_env or {})})
         result = run_loop.SessionResult()
         result.session_id = f"sess-wrap-{len(self.wrap_up_sessions)}"
         if on_session:
@@ -527,6 +534,7 @@ class SpawningLoop(ScriptedLoop):
         self.session_prompts = []
         self.session_flags = []
         self.session_resumes = []   # (role, resume_session, timeout)
+        self.session_envs = []      # (role, extra_env)
         self._pending = None
 
     def _spawn(self, role, prompt, cwd, verdict_path, phase_id, round_,
@@ -553,6 +561,7 @@ class SpawningLoop(ScriptedLoop):
         self.session_prompts.append((role, prompt))
         self.session_flags.append((role, list(flags or ())))
         self.session_resumes.append((role, resume_session, timeout))
+        self.session_envs.append((role, dict(extra_env or {})))
         result = run_loop.SessionResult()
         result.session_id = f"sess-{len(self.sessions)}"
         if on_session:
@@ -2474,10 +2483,11 @@ def test_review_round2_gets_delta_prompt():
         r = ScriptedLoop(slice_dir, script, repo_root=repo)
         real_git = r.fake_git
 
-        def moving_git(*args, root=None, check=True):
+        def moving_git(*args, root=None, check=True, phase_branch=None):
             if args == ("rev-parse", "HEAD"):
                 return next(heads, "head2")
-            return real_git(*args, root=root, check=check)
+            return real_git(*args, root=root, check=check,
+                            phase_branch=phase_branch)
 
         r.git = moving_git
         assert run_to_exit(r) == 0
@@ -3163,6 +3173,10 @@ def test_a_committed_run_record_is_taken_back_out_before_the_merge_checkout():
                                       "taken back out of phase/074-P1 (a git "
                                       "add -A)")
         assert removal[4:] == ("--", *SWEPT)
+        # On the run's own phase branch, named for the spec repo's
+        # pre-commit hook, which refuses a commit there that does not.
+        assert (str(specs), removal, "phase/074-P1") in [
+            (str(root), c, b) for root, c, b in r.fake_git.phase_branch_calls]
         # Against an empty work tree of its own, gone again after: the
         # files on disk commit as absent and are never read.
         empty = Path(removal[0].partition("=")[2])
@@ -3303,6 +3317,9 @@ def test_a_spec_repo_phase_commits_its_own_slice_edits_before_the_merge():
                                      "uncommitted on phase/074-P1")
         assert commit[3:] == ("--", *SLICE_EDITS)
         assert ("add", "-u", "--", *SLICE_EDITS) in calls
+        # named for the spec repo's pre-commit hook
+        assert (str(specs), commit, "phase/074-P1") in [
+            (str(root), c, b) for root, c, b in r.fake_git.phase_branch_calls]
         # on the phase branch, and before the checkout that leaves it
         assert calls.index(("checkout", "-b", "phase/074-P1", "main")) \
             < calls.index(commit) < calls.index(("checkout", "main"))
@@ -3585,6 +3602,166 @@ def test_a_spec_repo_phases_funding_consult_expects_its_phase_branch():
         # writer ×2, reviewer ×2, and the funding consult
         assert seen.count(("phase/074-P1", "1", "phase/074-P1")) == 5
         assert (None, None, "main") in seen    # the completion consult
+
+
+# AIWF-50: the spec repo's pre-commit hook (spec-tree-guard.sh) refuses a
+# commit on a `phase/*` branch unless DEV_PHASE_BRANCH names that branch — so
+# the driver names it on every session it dispatches onto a branch of its own
+# in the spec tree, and on its own commits there.
+SPAWN_ENV = run_loop.SPAWN_ENV
+P1_ENV = {**SPAWN_ENV, run_loop.PHASE_BRANCH_ENV: "phase/074-P1"}
+
+
+def test_a_spec_repo_phases_sessions_name_its_branch_for_the_guard():
+    """The writer and the reviewer of the phase whose Target IS the spec repo
+    work on its branch there and carry the name, on top of the spawn env;
+    every dispatch after the merge — and every one of a code repo's phase —
+    carries the spawn env alone."""
+    script = [V["exec_done"], V["review_signoff"], *TAIL]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        specs_phase(slice_dir, tmp)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert r.session_envs == [
+            ("code-writer", P1_ENV), ("code-reviewer", P1_ENV),
+            ("consult", SPAWN_ENV), ("test-agent", SPAWN_ENV),
+            ("doc-writer", SPAWN_ENV)]
+    assert run_loop.PHASE_BRANCH_ENV not in SPAWN_ENV, "never mutated"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert [env for _, env in r.session_envs] == [SPAWN_ENV] * 5
+
+
+def test_a_nudge_names_the_spec_trees_branch_only_when_it_is_this_runs():
+    """A nudge resumes a session of this run, and the spec tree is where
+    this run put it: the commit nudge asks the spec repo phase's writer to
+    commit on that phase's branch, so it names the branch; with the tree on
+    its base it names nothing. Reading the branch never raises out of a
+    nudge."""
+    script = [(*V["exec_done"], dirties()),
+              ("code-writer", "committed the leftovers", commits),
+              V["review_signoff"], *TAIL]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        specs_phase(slice_dir, tmp)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert r.session_resumes[1][:2] == ("code-writer", "sess-1"), (
+            "the second session is the commit nudge")
+        assert r.session_envs[1] == ("code-writer", P1_ENV)
+
+        g = r.fake_git
+        g.branch_at[str(r.spec_root)] = "phase/074-docs"
+        assert r._own_spec_branch() == "phase/074-docs"
+        g.branch_at[str(r.spec_root)] = "phase/191-P3"
+        assert r._own_spec_branch() is None, "another run's branch"
+        g.fails.add(("rev-parse", "--abbrev-ref", "HEAD"))
+        assert r._own_spec_branch() is None
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert r.session_resumes[1][:2] == ("code-writer", "sess-1")
+        assert r.session_envs[1] == ("code-writer", SPAWN_ENV)
+
+
+def test_the_wrap_up_on_a_spec_repo_branch_names_it_for_the_guard():
+    """The wrap-up's own dispatch path: where its branch is cut in the spec
+    repo, the session commits the store there and carries the name."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r.state = {"bases": {str(r.spec_root): "main"}, "phases": {},
+                   "history": [], "in_flight": None}
+        verdict = slice_dir / "wrap_up_result.json"
+        with patched(run_loop, run_kc_session=r._wrap_up_session):
+            r.fake_git.branch_at[str(r.spec_root)] = "phase/074-wrap-up"
+            assert r._dispatch_wrap_up("p", verdict, "phase/074-wrap-up",
+                                       {}) is None
+            r.fake_git.branch_at[str(r.spec_root)] = "main"
+            assert r._dispatch_wrap_up("p", verdict, None, {}) is None
+        assert [s["env"] for s in r.wrap_up_sessions] == [
+            {**SPAWN_ENV, run_loop.PHASE_BRANCH_ENV: "phase/074-wrap-up"},
+            SPAWN_ENV]
+
+
+def test_the_report_committed_on_a_branch_of_this_runs_names_it():
+    """The report's commit lands where the tree is expected: on the doc
+    branch it names that branch for the hook, on the base nothing."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r.state = {"bases": {str(r.spec_root): "main"}, "phases": {}}
+        store = run_loop.store_path(slice_dir)
+        store.write_text("{}\n")
+        r.report_path.write_text("# report\n")
+        r.fake_git.branch_at[str(r.spec_root)] = "phase/074-docs"
+        r._commit_report("slice 074: on the doc branch", "phase/074-docs")
+        r.fake_git.branch_at[str(r.spec_root)] = "main"
+        store.write_text('{"entries": []}\n')
+        r._commit_report("slice 074: on the base", None)
+        assert r.fake_git.spec_commits == ["slice 074: on the doc branch",
+                                           "slice 074: on the base"]
+        named = [(c[c.index("-m") + 1], b)
+                 for _, c, b in r.fake_git.phase_branch_calls
+                 if "commit" in c]
+        assert named == [("slice 074: on the doc branch", "phase/074-docs")]
+
+
+def test_the_drivers_own_commit_on_its_phase_branch_passes_the_guard():
+    """Over real git, with the hook preflight installs: the driver's commit
+    on a phase branch of the spec tree goes through when it names the
+    branch, and is refused — a protocol failure — when it does not."""
+    if shutil.which("git") is None:
+        return
+    env = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "t@example.invalid",
+           "GIT_COMMITTER_NAME": "Test",
+           "GIT_COMMITTER_EMAIL": "t@example.invalid"}
+    saved = {k: os.environ.get(k) for k in (*env, run_loop.PHASE_BRANCH_ENV)}
+    os.environ.update(env)
+    os.environ.pop(run_loop.PHASE_BRANCH_ENV, None)
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            specs = Path(tmp) / "specs"
+            loop = types.SimpleNamespace(repo_root=specs)
+
+            def git(*args, **kw):
+                return RunLoop.git(loop, *args, root=specs, **kw)
+
+            subprocess.run(["git", "init", "-q", "-b", "main", str(specs)],
+                           check=True)
+            shutil.copy(run_loop.TOOLS_DIR / "spec-tree-guard.sh",
+                        specs / ".git" / "hooks" / "pre-commit")
+            (specs / "plan.md").write_text("one\n")
+            git("add", "plan.md")
+            git("commit", "-qm", "on the base")
+            git("checkout", "-qb", "phase/074-P1")
+            (specs / "plan.md").write_text("two\n")
+            git("add", "plan.md")
+            try:
+                git("commit", "-qm", "unnamed")
+                raise AssertionError("the guard let an unnamed commit through")
+            except Bailout as e:
+                assert e.reason == "protocol_failure"
+                assert "spec-tree guard: commit refused" in e.details
+            git("commit", "-qm", "named", phase_branch="phase/074-P1")
+            assert git("log", "-1", "--format=%s") == "named"
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 def test_a_spec_tree_on_this_runs_own_branch_is_not_blamed_on_a_parallel_run():
@@ -5365,12 +5542,14 @@ def refuse_in(loop, where, argv):
     it in every repo, and the primary's landing runs the same rebase."""
     inner = loop.git
 
-    def git(*args, root=None, check=True):
+    def git(*args, root=None, check=True, phase_branch=None):
         if str(root) != str(where) or args != argv:
-            return inner(*args, root=root, check=check)
+            return inner(*args, root=root, check=check,
+                         phase_branch=phase_branch)
         loop.fake_git.fails.add(argv)
         try:
-            return inner(*args, root=root, check=check)
+            return inner(*args, root=root, check=check,
+                         phase_branch=phase_branch)
         finally:
             loop.fake_git.fails.discard(argv)
 

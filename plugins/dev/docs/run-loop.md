@@ -103,6 +103,26 @@ P1 executor committed its done-record onto `phase/223-P1` seconds after slice 22
 checked that branch out, and the assertion below caught it only after the round:
 the assertion is the check, the lease is what makes it hold.
 
+**Everyone else is refused at the commit.** The lease holds only the loops' own sessions apart. A
+session no loop dispatched never takes it: the operator's run-slice, plan-slice or close-out
+session, or a session in another environment. So the spec repo carries a pre-commit hook,
+`tools/spec-tree-guard.sh`, which preflight installs in every profile ([preflight.md](preflight.md)
+§ Notes on the spec-tree guard). It refuses a commit on a `phase/*` branch unless
+`DEV_PHASE_BRANCH` names that branch. The driver sets that variable on every session it
+dispatches or nudges onto a branch of its own in the spec tree, and on its own commits there. The
+refused session waits outside the hook, never in it: a commit holds the index lock while its hooks
+run, so a hook that blocked would block the driver's checkout back to the base. While a phase
+holds the lease exclusively, the hook's message names that phase from the holder note and tells
+the session to unstage what it staged, since the phase's own commits would take it, and to commit
+again in the background under `flock -s` on the lease. When the lease is free and the tree is
+still on a phase branch, a stopped run left it there, so the session doesn't wait and tells the
+operator. One gap is accepted: an uncommitted edit outside `slices/` left in the tree while the
+session waits bails the phase at its merge (worktree dirty). Edits under `slices/` pass that check
+and go back to the base with the checkout, and each misplaced commit that prompted the guard
+touched only its own slice folder: slice 050's review adjudication on `phase/053-P1`, and two
+commits a run-slice session for 050 in another environment made onto `phase/054-P1` while 054's
+driver held it.
+
 A bail (either exit) checks every repo the run touched back out onto its base branch when the
 tree is clean and the branch is this run's own — a branch it did not create is a parallel
 session's business, and a checkout under it would be the very bug this guards against (a resume
