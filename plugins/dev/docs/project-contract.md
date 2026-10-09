@@ -107,9 +107,11 @@ The tracker holds no triage verdict. A host may also run an **unattended pass** 
 queues — a resolver that takes what is in its lane and leaves a **hand-back mark** on what is
 not, meaning *waits for the operator*; the convention names the marks, says where the pass's
 lane is written, and says who may set or clear a mark (`/dev:inbox` does, on the operator's
-ruling). The concrete wiring — which tracker, what realises each of
-those roles, states and dispositions, how a project is named there, the notification command — is
-environment-specific and lives in the host's own instructions: its `~/.claude/CLAUDE.md`, or a
+ruling). It also names the **night-shift mark** `/dev:inbox` puts on a card it leaves in the intake
+queue for the pass: the inbox's own label, which keeps a card from being put to the operator twice
+while it waits and which the pass does not read. The concrete wiring — which tracker, what realises
+each of those roles, states and dispositions, how a project is named there, the notification command
+— is environment-specific and lives in the host's own instructions: its `~/.claude/CLAUDE.md`, or a
 skill the host ships. The workflow neither ships nor duplicates it, and nothing in it loads a host
 skill: a skill that touches the tracker says to load the convention before its first tracker call.
 

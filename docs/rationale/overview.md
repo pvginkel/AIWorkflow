@@ -65,7 +65,7 @@ close-out.md ◄── /dev:close-out ◄── close-out.md ◄── /dev:run-
 
 | Stage | Who acts | Reads | Writes | Stops for the operator when |
 |---|---|---|---|---|
-| **Inbox** (`/dev:inbox`) | The interactive session as clerk over every project's inbox at once; the operator rules | Every project's new cards, the unattended pass's hand-backs, the operator's new actions | Dated ruling comments on the cards and the moves with them — left in the intake queue for the pass, the pre-filtered state for triage, the action queue, deferred, rejected — and hand-back marks on and off | Once, on one chat message — every card on a line under where it goes next, the one act or answer each held-back card waits on, the questions; tracker-only, no slice filed |
+| **Inbox** (`/dev:inbox`) | The interactive session as clerk over every project's inbox at once; the operator rules | Every project's new cards, the unattended pass's hand-backs, the operator's new actions | Dated ruling comments on the cards and the moves with them — left in the intake queue for the pass under the night-shift mark, the pre-filtered state for triage, the action queue, deferred, rejected — and hand-back marks on and off | Once, on one chat message — every card on a line under where it goes next, the one act or answer each held-back card waits on, the questions; tracker-only, no slice filed |
 | **Triage** (`/dev:triage`) | The interactive session as intake clerk; the operator rules | Tracker cards, findings docs, chat; the close-out reports waiting under `[NNN] close-out:` cards | A verbatim raw dump under `handovers/` (the archive `slice.md` quotes from); one `slice.md` per surviving subject under `slices/backlog/` | Once, on one chat message — every item on a line under its proposed fate, the questions only the operator can answer, the proposed slices; no item is ever closed by machine judgment alone |
 | **Plan** (`/dev:plan-slice`) | The interactive session pins requirements and seeds the plan header; `plan_loop.py` runs one plan-writer pass and one plan-reviewer pass | `slice.md` — the only thing planning reads, and the last time anything reads it | `plan.md` (header in the operator's words, then the writer's phases and task shape), `verification.json`, `close-out.md` (created here), `plan_review_r1.md` | Writer questions; a review with blocking or operator-decidable findings (exit 4); never auto-starts the run |
 | **Run** (`/dev:run-slice`) | `run_loop.py` drives; fresh code-writer, code-reviewer, consult, test-agent, doc-writer sessions per job; the launching session has four jobs and never drives | `plan.md` (re-parsed before every phase), `verification.json`, the target repo | Phase branches merged into the base, done-records in `plan.md`, `✅ DONE` stamps, `state.json` history, review files, `close-out.md` entries, pushes (test phase; the doc landing) | An executor's `question`, a generation-bar exhaustion, an unpushed repo, a broken plan nobody can fix (exit 4); errors (exit 3) |
@@ -84,9 +84,10 @@ project deploys or documents; the project's own doc does, and the phase is optio
 The operator's touch points, in order, and nothing else:
 
 - **Rules at the inbox** — on one chat message over every project at once: where each new card
-  goes next (the nightly pass, a slice, their own queue, closed, deferred) and the one act or
-  answer each held-back card waits on; their new actions are in the same message, so the time
-  they give the inbox is time they can action them (2026-10-08).
+  goes next (the nightly pass's night shift, a slice, their own queue, closed, deferred) and the
+  one act or answer each held-back card waits on; their new actions are in the same message, so
+  the time they give the inbox is time they can action them (2026-10-08). A card ruled for the
+  night shift is not put to them again while it waits (2026-10-09).
 - **Rules at triage** — on one chat message: the fate proposed for each item, the questions
   only they can answer, the slices proposed. Their words ride into `slice.md` verbatim; the
   message replaced a labelled status document on 2026-09-30 ([`reporting.md`](reporting.md)).

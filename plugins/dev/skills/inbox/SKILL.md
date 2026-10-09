@@ -1,6 +1,6 @@
 ---
 name: inbox
-description: Sort the tracker's inbox with the operator, across every project at once — the new cards nobody has judged, the cards the host's unattended pass handed back, and the operator's own new actions — and put them to the operator in one chat message, each on a line under where it goes next (left for the pass, pre-filtered for a slice, theirs, closed, deferred), with the one act or answer each held-back card waits on; then record their rulings on the cards. Tracker-only — no spec repo, no slices filed, no code opened; the project's /dev:triage takes the pre-filtered batch from here. Invoke it whenever the operator asks to go through, clean up or sort the inbox, the new cards, their new actions, or what the pass handed back — they will not necessarily name this skill.
+description: Sort the tracker's inbox with the operator, across every project at once — the new cards nobody has judged, the cards the host's unattended pass handed back, and the operator's own new actions — and put them to the operator in one chat message, each on a line under where it goes next (left for the pass's night shift, pre-filtered for a slice, theirs, closed, deferred), with the one act or answer each held-back card waits on; then record their rulings on the cards. Tracker-only — no spec repo, no slices filed, no code opened; the project's /dev:triage takes the pre-filtered batch from here. Invoke it whenever the operator asks to go through, clean up or sort the inbox, the new cards, their new actions, or what the pass handed back — they will not necessarily name this skill.
 argument-hint: "[project keys or card ids to scope the sitting]"
 ---
 
@@ -58,7 +58,11 @@ Pull, across every project — or the projects or cards the operator scoped the 
 **intake queue**, **every open card carrying a hand-back mark**, whatever its state or type (a
 mark means *waits for the operator*, and this sitting is them), and **the operator's new
 actions** — the cards in their action queue still in the intake queue's state; an action in any
-other state is not read unless a mark brings it. Read what you pull in full, project by
+other state is not read unless a mark brings it. The intake queue comes **without the cards
+under the night-shift mark**: those were ruled at an earlier sitting and wait for the pass. A
+hand-back mark on one still brings it back, and so does the operator naming it; the rest you
+only count per project for the message, with the date of the oldest ruling among them (the
+ruling comment on the one left untouched longest). Read what you pull in full, project by
 project, in the batches the tracker tool allows. Two kinds of card are not items: the slice
 cards, and the close-out marker cards (`[NNN] close-out: …`), which say a report is waiting —
 count them per project for the message and leave them to `/dev:close-out`. Nothing is dumped to
@@ -66,15 +70,15 @@ disk: the tracker is the record, a sitting that stops leaves what it did not rea
 and the next one reads it.
 
 Before judging, **read the pass's lane** from where the convention says it is written — what it
-takes, what it hands back, what it never touches — so that *pass* is proposed only for a card the
-pass will take. A hand-back comment names the item of that lane the card failed on and what has
+takes, what it hands back, what it never touches — so that *night shift* is proposed only for a card
+the pass will take. A hand-back comment names the item of that lane the card failed on and what has
 to happen first; on a held-back card that comment is the first thing you read.
 
 ### 2. Judge — where each card goes next
 
 One fate per card, from its text and comments alone:
 
-- **Pass** — in the pass's lane as written; or in it once the operator gives here what the
+- **Night shift** — in the pass's lane as written; or in it once the operator gives here what the
   hand-back asked for — an answer to the pass's question, a guess confirmed, a choice made —
   which becomes the ruling on the card; or in it already, because what it waited on has
   happened: a blocker card since closed (one tracker query — check it yourself), an act the
@@ -87,9 +91,9 @@ One fate per card, from its text and comments alone:
 - **Yours** — an act only the operator can perform before anything can take the card: a secret
   minted or vaulted, a production switch, a change on a repository no environment holds, a
   decision that is theirs alone. Its line names the act in one clause. The operator may do it in
-  the sitting and say so — the card then takes *pass* or *slice*, with the result written on it
-  — send it to their action queue, or leave it held: the mark stays, or goes on, with the act
-  named, and the next sitting asks again.
+  the sitting and say so — the card then takes *night shift* or *slice*, with the result written
+  on it — send it to their action queue, or leave it held: the mark stays, or goes on, with the
+  act named, and the next sitting asks again.
 - **Close** — a duplicate (name the card), moot, or ruled out. Guarded as triage guards it: the
   source's own words, an operator ruling, or a checked fact — never your belief about the system.
 - **Later** — deferred, with the reason.
@@ -103,9 +107,9 @@ what sends it back to the pass.
 
 An **operator action** is theirs by type, and its line says how long it has waited and what, if
 anything, a session could do of it. The words are the same: *done* when they do it in the sitting
-(it closes resolved); *pass* when it turns out a session can do it after all — the card becomes a
-task and is left for the pass; *slice*; *close* when it is no longer needed; *later*; and *yours*
-— kept, which for an action is the default and costs them a word.
+(it closes resolved); *night shift* when it turns out a session can do it after all — the card
+becomes a task and is left for the pass; *slice*; *close* when it is no longer needed; *later*; and
+*yours* — kept, which for an action is the default and costs them a word.
 
 ### 3. Check — only what a fate turns on
 
@@ -121,29 +125,30 @@ outlives the sitting.
 One chat message, however long the inbox — never a dialog, never a document — by project:
 
 ```
-<project> (N new, M held back, A of your actions; K close-out reports wait — /dev:close-out there)
-  Pass:   <id>  <the ask, on one line>
-          <id>  <the ask> — held back <date>, waited on <card>, closed since: mark off
-  Slice:  <id>  <the ask>                                                        (Q1)
-  Yours:  <id>  <the ask> — <the act: mint the token, name its path on the card>
-          <id>  <the ask> — your action since <date>; a session could <the mechanical part>
-  Close:  <id>  <the ask> — duplicate of <id>
-  Later:  <id>  <the ask> — <why>
+<project> (N new, M held back, A of your actions; S on the night shift since <date>;
+           K close-out reports wait — /dev:close-out there)
+  Night shift:  <id>  <the ask, on one line>
+                <id>  <the ask> — held back <date>, waited on <card>, closed since: mark off
+  Slice:        <id>  <the ask>                                                  (Q1)
+  Yours:        <id>  <the ask> — <the act: mint the token, name its path on the card>
+                <id>  <the ask> — your action since <date>; a session could <the mechanical part>
+  Close:        <id>  <the ask> — duplicate of <id>
+  Later:        <id>  <the ask> — <why>
 <project> (…)
   …
 
 Q1 (<id>). <What the card asks.> <The question?> I'd <recommendation>.
 ```
 
-Every card exactly once, on one line: its id, the ask in the card's words shortened to a line
-(the title is part of the ask), and for a held-back card what it waits on; no card text, no
-label, no note — the operator opens a card when they want it. The questions numbered, each with
-the fact it turns on and your recommendation. The operator answers in chat, in their own words:
-**go** approves the scheme as it stands; **pass**, **slice**, **close**, **later** and **yours** on
-a card move it; **done: <what they did>** on a *yours* card is the act performed, and the card
-takes the fate that follows — for an action of theirs, that is closed resolved; an answer to a
-question is the ruling as given, never your proposal. **close** and **later** are binding, as at
-triage. One pass per operator message; re-present only what moved.
+Every card exactly once, on one line: its id, the ask in the card's words shortened to a line (the
+title is part of the ask), and for a held-back card what it waits on; no card text, no label, no
+note — the operator opens a card when they want it. The questions numbered, each with the fact it
+turns on and your recommendation. The operator answers in chat, in their own words: **go** approves
+the scheme as it stands; **night shift**, **slice**, **close**, **later** and **yours** on a card
+move it; **done: <what they did>** on a *yours* card is the act performed, and the card takes the
+fate that follows — for an action of theirs, that is closed resolved; an answer to a question is the
+ruling as given, never your proposal. **close** and **later** are binding, as at triage. One pass
+per operator message; re-present only what moved.
 
 ### 5. Record
 
@@ -151,8 +156,9 @@ When nothing is open, write the rulings — to the tracker, and nowhere else. Ev
 gets one dated comment, `Inbox <date>: <the ruling, in the operator's words>`, in the same write
 as its move:
 
-- *pass* — the card stays in the intake queue; its hand-back mark, if any, comes off; an
-  operator action is retyped to a task. The comment is what the pass reads as the settled ask.
+- *night shift* — the card stays in the intake queue and the night-shift mark goes on; its
+  hand-back mark, if any, comes off; an operator action is retyped to a task. The comment is what
+  the pass reads as the settled ask.
 - *slice* — to the pre-filtered state, as a task; a mark comes off.
 - *yours* — to the operator's action queue when they said so, retyped and its state left as it
   is, and a kept action is left as it is; otherwise the mark stays, or goes on, and the comment
@@ -161,6 +167,8 @@ as its move:
   follows; an action they performed closes resolved, the comment saying what they did.
 - *close* — the rejected disposition; *later* — deferred.
 
+Every ruling but *night shift* takes the night-shift mark off a card that carries it.
+
 A card the operator filed is theirs in their words: never rewrite its description — the comment
 carries the ruling. A session-authored card's text is yours to tighten only where a ruling
 rewrote the ask, with the original kept below a rule, as triage does. Delegated writes run on
@@ -168,7 +176,7 @@ disjoint card sets and are verified on the tracker by spot check, never from the
 
 ### 6. Close the sitting
 
-Notify per the host convention — `Inbox <date>: N cards — K left for the pass, M pre-filtered
+Notify per the host convention — `Inbox <date>: N cards — K for the night shift, M pre-filtered
 for slices (<projects>), J closed, L deferred, P wait on you (<ids>), A actions kept.` — name
 each project whose pre-filtered batch grew ("run /dev:triage in <project> when ready"), and
 stop. The pass's next run, a project's triage and the operator's own acts are their moves, in

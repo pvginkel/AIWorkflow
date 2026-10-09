@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-09 — /dev:inbox marks a card it leaves for the pass and does not put it again; the *pass* fate is *night shift* (v0.9.87)
+
+A card the inbox rules *night shift* — the fate, the operator's word for it and the notification's
+count, all *pass* until now — stays in the intake queue under the **night-shift mark**, and any
+other ruling takes the mark off. Collect pulls the intake queue without the marked cards; a
+hand-back mark on one still brings it back, and so does the operator naming it. The message's
+project header counts the rest — `S on the night shift since <date>`, the date of the oldest
+ruling among them. The mark is the inbox's own label, not a gate: the pass reads the whole queue
+and needs no change. `project-contract.md` § 3 has the host convention name the mark.
+
+Why: a card ruled *pass* stayed in the queue Collect pulls in full, and the card pass takes at
+most ten cards a night, three per project. So the next sitting put already-ruled cards to the
+operator again as new, wrote a second `Inbox <date>:` comment on them and counted them twice in
+the notification (AIWF-59).
+
+Companion change outside this repo: youtrack-usage 0.10.12 (KubeCoderConfig) names
+`Night Shift Candidate` as the mark among the tags that carry meaning, with the queries for the
+marked cards and for the intake pull without them.
+
 ## 2026-10-09 — A pre-commit hook in the spec repo refuses a commit onto a running phase's branch; preflight installs it (v0.9.86)
 
 Preflight installs `tools/spec-tree-guard.sh` as the spec repo's pre-commit hook in every profile,
