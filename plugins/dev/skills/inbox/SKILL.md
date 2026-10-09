@@ -44,9 +44,11 @@ sweep are triage's (its step 8), and the inbox leaves them alone.
   back here under its hand-back mark, with the pass's reason.
 - **Pre-filtered for a slice** — the card moves to the pre-filtered state, its project's
   `/dev:triage` batch. The pass does not read that state; triage does, and reads the card afresh.
-- **The operator's** — the card waits on an act only they can perform, or is an action of theirs
-  they keep (*yours*, below). A kept action stays as it is, and the next sitting shows it
-  again.
+- **The operator's** (*yours*, below) — a task waiting on an act only they can perform stays a
+  task, held under the hand-back mark that says the pass cannot do it, and the next sitting asks
+  again. A card their act alone resolves goes to their action queue in the pre-filtered state,
+  out of the inbox's reach. An action of theirs they keep stays as it is, and the next sitting
+  shows it again.
 - **Closed** (resolved when they did it, rejected otherwise) and **deferred** — the dispositions
   the convention names.
 
@@ -90,10 +92,13 @@ One fate per card, from its text and comments alone:
   onboarded on says so on its line; the route is still the operator's.
 - **Yours** — an act only the operator can perform before anything can take the card: a secret
   minted or vaulted, a production switch, a change on a repository no environment holds, a
-  decision that is theirs alone. Its line names the act in one clause. The operator may do it in
-  the sitting and say so — the card then takes *night shift* or *slice*, with the result written
-  on it — send it to their action queue, or leave it held: the mark stays, or goes on, with the
-  act named, and the next sitting asks again.
+  decision that is theirs alone. Its line names the act in one clause. The card stays a task: the
+  act unblocks it, and the work after the act is still a session's. The operator may do it in the
+  sitting and say so — the card then takes *night shift* or *slice*, with the result written on
+  it — or leave it held, under the hand-back mark that says the pass cannot do it, with the act
+  named, and the next sitting asks again. A card whose whole ask *is* the act — it tells the
+  operator to do something, and nothing is left for a session after it — is no held task but an
+  action of theirs: its line says so, and *yours* moves it to their action queue.
 - **Close** — a duplicate (name the card), moot, or ruled out. Guarded as triage guards it: the
   source's own words, an operator ruling, or a checked fact — never your belief about the system.
 - **Later** — deferred, with the reason.
@@ -131,6 +136,7 @@ One chat message, however long the inbox — never a dialog, never a document �
                 <id>  <the ask> — held back <date>, waited on <card>, closed since: mark off
   Slice:        <id>  <the ask>                                                  (Q1)
   Yours:        <id>  <the ask> — <the act: mint the token, name its path on the card>
+                <id>  <the ask> — the act is the whole card: to your action queue
                 <id>  <the ask> — your action since <date>; a session could <the mechanical part>
   Close:        <id>  <the ask> — duplicate of <id>
   Later:        <id>  <the ask> — <why>
@@ -160,9 +166,11 @@ as its move:
   hand-back mark, if any, comes off; an operator action is retyped to a task. The comment is what
   the pass reads as the settled ask.
 - *slice* — to the pre-filtered state, as a task; a mark comes off.
-- *yours* — to the operator's action queue when they said so, retyped and its state left as it
-  is, and a kept action is left as it is; otherwise the mark stays, or goes on, and the comment
-  names the act.
+- *yours* — a held card stays where it is, a task: the hand-back mark that says the pass cannot
+  do it goes on, or stays; the needing-clarification mark, if any, comes off; the comment names
+  the act. A card whose whole ask is the act is retyped to the operator's action queue and moved
+  to the pre-filtered state, so the next sitting does not read it as a new action. A kept action
+  is left as it is.
 - *done* — the result on the card (the path, the account, the answer), then the fate that
   follows; an action they performed closes resolved, the comment saying what they did.
 - *close* — the rejected disposition; *later* — deferred.

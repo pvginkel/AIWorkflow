@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-09 — /dev:inbox holds a *yours* card as a task under the hand-back mark, and moves only a card the operator's act alone resolves to their action queue (v0.9.89)
+
+A card ruled *yours* waits on an act only the operator can perform before a session can take
+it, so it stays a task where it is: the hand-back mark that says the pass cannot do it goes on,
+or stays, and the needing-clarification mark, if it carried one, comes off. The option to send
+such a card to the operator's action queue is gone. A card whose whole ask *is* the act — it
+tells the operator to do something and leaves nothing for a session — is an action of theirs:
+*yours* retypes it to the action queue and moves it to the pre-filtered state, which the inbox
+does not read, and the message gives it its own line under *Yours*. A kept action of theirs is
+left as it is.
+
+Why: the skill said "the mark stays, or goes on" without saying which, and offered the action
+queue for a card that still has work after the operator's act. The action queue is for what the
+operator's act resolves on its own. A *yours* card that came in under the needing-clarification
+mark kept it, so a search for the cards waiting on the operator missed it. A card retyped to the
+action queue kept the intake queue's state, so the next sitting read it as a new action.
+
 ## 2026-10-09 — A spec-tree file outside your slice folder is committed through spec_commit.py, which commits your change and leaves another writer's uncommitted edit (v0.9.88)
 
 `tools/spec_commit.py` commits a session's own change to a file in the shared spec tree and
