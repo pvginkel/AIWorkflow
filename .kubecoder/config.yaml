@@ -11,6 +11,9 @@ repos:
   # append to the one working tree.
   - url: https://github.com/pvginkel/AIWorkflowSpecs
     shared: true
+  # The kubecoder plugin marketplace: the host conventions the dev plugin's
+  # skills load (youtrack-usage above all) change with the plugin often.
+  - url: https://github.com/pvginkel/KubeCoderConfig
 
 capabilities:
   github: rw
@@ -19,15 +22,19 @@ capabilities:
 tools:
   # The plugin's suites and ruff; the dev container has no uv.
   - use: python
+  # KubeCoderConfig's setup and Prettier gate run npm here (its project.yaml).
+  - use: frontend
 
 preamble:
   instructions: |
     The AI workflow's environment: the `dev` plugin marketplace
-    (/work/AIWorkflow, with its spec repo in /work/AIWorkflowSpecs).
+    (/work/AIWorkflow, with its spec repo in /work/AIWorkflowSpecs), and
+    the `kubecoder` plugin marketplace in /work/KubeCoderConfig.
 
-    One toolchain sidecar:
+    Two toolchain sidecars:
 
       cexec python    Python with uv. There is no uv in the dev container.
+      cexec frontend  Node with npm, for KubeCoderConfig's Prettier gate.
 
     `kc project` verbs are cwd-bound, so run them from the repo's root.
 

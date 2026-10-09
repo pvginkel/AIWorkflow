@@ -5,6 +5,9 @@
     },
     {
       "path": "../AIWorkflowSpecs"
+    },
+    {
+      "path": "../KubeCoderConfig"
     }
   ]
 }
