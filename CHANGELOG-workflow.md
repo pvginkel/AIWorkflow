@@ -4,6 +4,22 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-09 — /dev:plan-slice creates a slice's new repo with a seed manifest in its first commit (v0.9.83)
+
+A repo the slice creates is created by the planning session before the plan loop runs, on the
+operator's go: its first commit is built locally in `/work/scratch/<Repo>` — the README and a
+seed `.kubecoder/project.yaml` whose `test` needs no file in the repo, proven with `kc project
+test` — and pushed with `gh repo create <owner>/<repo> --private --source . --push`. The clean
+clone is the one the driver adopts; the phase that builds the repo replaces the seed.
+
+Why: a session that ran `gh repo create --private --add-readme` left a README-only repo, and
+`run_loop.py run --dry-run` refused its `github:` phases — "no deterministic gate, and no
+driver ruling waives one". Planning paid a question round or a pre-run operator action for
+the seed (AnsibleSpecs slices 034 and 053), and the other way out, a repo-wide `gate` ruling,
+drops the repo's tests from the run's sweep. 053's seed, a `helm template` of the pinned
+upstream chart, is the shape. A phase declaring the repo it creates, so the driver resolves it
+at phase start, is not part of this (AIWF-43).
+
 ## 2026-10-08 — /dev:inbox reads the operator's new actions; /dev:triage takes the pre-filtered batch by default (v0.9.82)
 
 `/dev:inbox` pulls the operator's actions still in the intake queue's state, not every open

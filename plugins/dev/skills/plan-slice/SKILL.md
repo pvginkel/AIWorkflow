@@ -106,6 +106,18 @@ absorbed as spec, not reopened.
 
 ### 3. Seed plan.md and run the loop
 
+**A repo the slice creates is created here, before the loop runs**, with a manifest in it: the
+plan loop's dry run clones every `github:` target, and one without a `.kubecoder/project.yaml`
+has no gate — a plan problem, or a `gate` ruling that drops the repo's tests from the run's
+sweep. Creating it is a push: put it to the operator and create it only on their go. Build its
+first commit locally in `/work/scratch/<Repo>` (`git init -b main`): the README and a seed
+`.kubecoder/project.yaml` whose `test` needs no file in the repo — for a deploy repo, a `helm
+template` of the pinned upstream chart. Prove the seed with `kc project test` from that
+directory, commit, and push with `gh repo create <owner>/<repo> --private --source . --push`,
+not `--add-readme`, which writes a README-only first commit on GitHub. Leave the clone clean:
+the driver adopts it. Record the seed and its commit in the requirements/rulings section — the
+phase that builds the repo replaces it with the real manifest.
+
 Write the plan's header yourself — this is the one artifact you author: the one-liner; a
 **requirements/rulings** section carrying every requirement and every ruling from §2 **in the
 operator's words**, and — as your own facts, with their evidence — the grounding that binds the
