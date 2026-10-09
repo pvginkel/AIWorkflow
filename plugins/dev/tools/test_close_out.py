@@ -1144,6 +1144,85 @@ def test_render_keeps_what_the_operator_wrote():
         assert entry_of(slice_dir, "B1")["ruling"]["words"] == "card it"
 
 
+def test_a_ruling_rule_replaces_stands_through_the_next_render():
+    """AIWF-45: `rule` left the page on the old words, and the next render
+    read them back as the ruling."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)
+        close_out.rule_entry(slice_dir, "B1", words="A", date="2026-10-09")
+        close_out.render_report(slice_dir)
+        code, out, _ = run_cli("rule", slice_dir, "B1", "--words", "B",
+                               "--date", "2026-10-09")
+        assert code == 0 and out.strip() == "B1: B"
+        assert "**Disposition:** B\n" in report(slice_dir)
+        close_out.render_report(slice_dir)
+        b1 = entry_of(slice_dir, "B1")
+        assert b1["ruling"]["words"] == "B"
+        assert b1["notes"] == [{"by": "the operator", "date": "2026-10-09",
+                                "text": ["ruled earlier: A"]}]
+        assert "**Disposition:** B\n" in report(slice_dir)
+
+
+def test_every_write_leaves_the_report_as_render_writes_it():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+
+        def as_rendered():
+            text = report(slice_dir)
+            close_out.render_report(slice_dir)
+            assert report(slice_dir) == text
+            return text
+
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        assert "### B1 — controller: the status line is wrong\n" in as_rendered()
+        run_cli("append", slice_dir, *DEFECT)                                    # B2
+        run_cli("append", slice_dir, *IMPROVEMENT)                               # I1
+        assert "### I1 — drop the duplicate helper\n" in as_rendered()
+        run_cli("note", slice_dir, "B1", "--by", "op", "--text", "the premise moved",
+                "--date", "2026-10-09")
+        assert "**Latest** (op, 2026-10-09): the premise moved\n" in as_rendered()
+        run_cli("propose", slice_dir, "I1", "--by", "w", "--text", "Keep both.")
+        assert "**Proposal:** Keep both.\n" in as_rendered()
+        run_cli("relabel", slice_dir, "B1", "--by", "w", "--note", "one call site",
+                "--fix", "one-edit", "--date", "2026-10-09")
+        assert "fix is one edit" in " ".join(as_rendered().split())
+        run_cli("strike", slice_dir, "B2", "--reason", "dup")
+        assert "### ~~B2 — controller: the status line is wrong~~ — dup\n" in as_rendered()
+
+
+def test_a_disposition_the_operator_wrote_is_taken_by_the_next_write_of_any_verb():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        run_cli("append", slice_dir, *IMPROVEMENT)                               # I1
+        _write_disposition(slice_dir, "B1", "card it")
+        code, _, err = run_cli("note", slice_dir, "I1", "--by", "op", "--text", "seen")
+        assert code == 0, err
+        assert entry_of(slice_dir, "B1")["ruling"]["words"] == "card it"
+        assert "**Disposition:** card it\n" in report(slice_dir)
+        code, out, _ = run_cli("rule", slice_dir)
+        assert out.strip() == "nothing to take from the Disposition lines"
+
+
+def test_a_write_that_fails_leaves_the_store_and_the_report_as_they_were():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        _write_disposition(slice_dir, "B1", "card it")
+        before = (store(slice_dir), report(slice_dir))
+        code, _, err = run_cli("note", slice_dir, "B9", "--by", "op", "--text", "t")
+        assert code == 2 and "no entry B9" in err
+        assert (store(slice_dir), report(slice_dir)) == before
+        # the words are still on the page for the next write to take
+        close_out.render_report(slice_dir)
+        assert entry_of(slice_dir, "B1")["ruling"]["words"] == "card it"
+
+
 def test_close_leaves_a_ruling_nobody_executed_live_and_the_report_open():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)

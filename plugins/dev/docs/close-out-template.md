@@ -1,11 +1,11 @@
 # The close-out template — the store and the report, mechanically
 
 The concrete shapes of a slice's close-out report: the store `close-out.json`, which is the
-record, and `close-out.md`, which `${CLAUDE_PLUGIN_ROOT}/tools/close_out.py render` writes from
-it. No author types either — the tool writes every entry, note, strike and ruling, and its
-verbs are listed [below](#the-verbs). Semantics — what the report is for, the labels and the
-routes, who writes what and when, the entry rules, the lifecycle — are
-[close-out.md](close-out.md); this doc is the shape.
+record, and `close-out.md`, which `${CLAUDE_PLUGIN_ROOT}/tools/close_out.py` writes from it at
+every change of the store and at every `render`. No author types either — the tool writes every
+entry, note, strike and ruling, and its verbs are listed [below](#the-verbs). Semantics — what
+the report is for, the labels and the routes, who writes what and when, the entry rules, the
+lifecycle — are [close-out.md](close-out.md); this doc is the shape.
 
 ## The store
 
@@ -208,5 +208,7 @@ Every verb takes the slice directory or the report's path as its first argument.
 | `counts` | the loops, `/dev:run-slice` | live entries per section of the report and per id letter, on one line |
 | `import` | the close-out session | reads a report in Markdown into a store, once |
 
-`render` never loses what the operator wrote: a `Disposition:` line that differs from what the
-store would render is taken into the store, by the entry's id, before the file is written.
+Every verb that changes the store writes `close-out.md` from it in the same step, under the
+same lock; `render` writes it whether or not anything changed. None loses what the operator
+wrote: a `Disposition:` line that differs from what the store would render is taken into the
+store, by the entry's id, before the change is made and the file is written.

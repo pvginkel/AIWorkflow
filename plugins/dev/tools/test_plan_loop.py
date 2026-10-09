@@ -255,13 +255,17 @@ def test_the_loop_renders_the_report_at_every_exit_and_commits_none_of_it():
         assert commits(loop) == [("commit", "-m", "slice 099: close-out report")]
         assert "close-out rendered: Record 1" in (slice_dir / "plan_log.txt").read_text()
 
+        before = report.read_text()
+
         def bails(loop):
             appends("the tree moved")(loop)
+            # The append renders E2 into the page; put the page back, so it
+            # lags the store by what only the exit's render would write.
+            report.write_text(before)
             loop.branch = "phase/191-P3"
 
         # A bail with the tree off its base leaves the report as it was: the
         # render would land on another session's branch.
-        before = report.read_text()
         loop = ScriptedLoop(slice_dir, [("plan-writer", {"outcome": "done"}, bails),
                                         R_GO])
         assert run_to_exit(loop) == 3

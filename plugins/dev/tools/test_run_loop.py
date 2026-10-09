@@ -2144,7 +2144,7 @@ def test_report_is_rendered_before_the_doc_phase_and_at_completion():
 
     def plant_entries(loop):
         # The test phase's session leaves entries in arrival order, one of
-        # them struck — the store changed, the report not yet rendered.
+        # them struck — each write renders the report from the store.
         d = loop.slice_dir
         run_loop.append_entry(d, "Bugs", "a nit", "b1", consequence="c1",
                               provenance="read P1 r1", severity="nit")
@@ -2168,7 +2168,8 @@ def test_report_is_rendered_before_the_doc_phase_and_at_completion():
         slice_dir, repo = make_slice(tmp)
         r = ScriptedLoop(slice_dir, script, repo_root=repo)
         assert run_to_exit(r) == 0
-        assert "## " not in plant["planted"], "appends do not render"
+        assert "### ~~B1 — a nit · nit~~ — dup of B3" in plant["planted"], \
+            "every write renders"
         seen = plant["at_doc_dispatch"]
         # Rendered when the doc-writer was dispatched: the unlabelled
         # defects, major before minor; the struck nit's heading in the

@@ -929,9 +929,6 @@ class PlanLoop:
                 seeded += 1
                 self.log(f"close-out {eid}: {headline}")
             if seeded:
-                # Rendered before the commit, so the report committed is the
-                # store's; the exit's own render then finds nothing to change.
-                self._render_report()
                 self.git("add", str(store_path(self.slice_dir)),
                          str(self.report_path))
                 self.git("commit", "-m",

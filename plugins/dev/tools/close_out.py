@@ -57,9 +57,12 @@ fence moves no boundary), struck headings, folds, the three bold label lines.
 Every read-modify-write of the store holds an exclusive flock on the slice
 directory itself (no lock file lands in the spec repo's tree): the close-out
 session rules while the wrap-up it dispatched strikes and relabels, and a
-write lost to an overlap can be the operator's ruling. The render writes
-close-out.md under the same lock. A filesystem that refuses the flock gets
-the write without it.
+write lost to an overlap can be the operator's ruling. Under the same lock,
+every write reads the `Disposition:` lines back first and, when the store
+changed, writes close-out.md from it after it saves, so the report never
+lags its store and no write loses what the operator wrote there; `render`
+writes it whether or not anything changed. A filesystem that refuses the
+flock gets the write without it.
 
 `<slice>` is the slice directory or its close-out.md — the dispatch names the
 report, so the report's path is what an agent has in hand; a `.md` or `.json`
@@ -505,15 +508,27 @@ def _read_store(slice_dir: Path | str) -> dict:
 
 
 @contextlib.contextmanager
-def _writing(slice_dir: Path | str):
-    """The one path every change takes: lock, load, change, save (only when
-    something changed), release. An exception inside writes nothing."""
+def _writing(slice_dir: Path | str, receipt: dict | None = None):
+    """The one path every change takes: lock, load, read the `Disposition:`
+    lines of close-out.md back, change, save and render close-out.md (only
+    when something changed), release. The read-back comes first, so a write
+    never overwrites words the operator wrote on the report and the store
+    has not taken yet. With `receipt`, close-out.md is rendered whether or
+    not anything changed, and the receipt gets the (id, words) taken
+    (`taken`) and the entries per section written (`tally`). An exception
+    inside writes nothing."""
     with _locked(slice_dir):
         store = _load(slice_dir)
         before = _dump(store)
+        taken = _read_back(slice_dir, store)
         yield store
-        if _dump(store) != before:
+        changed = _dump(store) != before
+        if changed:
             _save(slice_dir, store)
+        if changed or receipt is not None:
+            tally = _write_report(slice_dir, store)
+            if receipt is not None:
+                receipt.update(taken=taken, tally=tally)
 
 
 def _find(store: dict, eid: str) -> dict:
@@ -1768,27 +1783,44 @@ def _dispositions(text: str) -> dict[str, str]:
     return out
 
 
+def _write_report(slice_dir: Path | str, store: dict) -> dict[str, int]:
+    """Write close-out.md from the store, left alone when it already holds
+    those bytes. Returns the number of entries in each section written.
+    Called under the lock."""
+    text, tally = _render(store, slice_dir)
+    path = report_path(slice_dir)
+    try:
+        old = path.read_text(encoding="utf-8")
+    except OSError:
+        old = None
+    if old != text:
+        _write_atomic(path, text)
+    return tally
+
+
+def _rendered(slice_dir: Path | str) -> dict:
+    """A write with no change of its own: the read-back, and close-out.md
+    rendered even when the store stays as it was. Returns the receipt."""
+    receipt: dict = {}
+    with _writing(slice_dir, receipt):
+        pass
+    return receipt
+
+
 def read_back(slice_dir: Path | str) -> list[tuple[str, str]]:
     """`rule` without an id: the `Disposition:` lines of close-out.md into
-    the store. (id, words) per entry taken."""
-    with _writing(slice_dir) as store:
-        return _read_back(slice_dir, store)
+    the store, and close-out.md rendered from it. (id, words) per entry
+    taken."""
+    return _rendered(slice_dir)["taken"]
 
 
 def render_report(slice_dir: Path | str) -> str:
     """Read the `Disposition:` lines back, then write close-out.md from the
-    store, under the store's lock; the same bytes when nothing changed.
-    Returns a one-line tally of the sections written."""
-    with _writing(slice_dir) as store:
-        _read_back(slice_dir, store)
-        text, tally = _render(store, slice_dir)
-        path = report_path(slice_dir)
-        try:
-            old = path.read_text(encoding="utf-8")
-        except OSError:
-            old = None
-        if old != text:
-            _write_atomic(path, text)
+    store, under the store's lock — whether or not the store changed, so a
+    report that is missing or lags the run header is written; the same bytes
+    when nothing changed. Returns a one-line tally of the sections
+    written."""
+    tally = _rendered(slice_dir)["tally"]
     return " · ".join(f"{name} {n}" for name, n in tally.items()) or "no entries"
 
 

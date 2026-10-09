@@ -25,7 +25,10 @@ the labels each kind carries and how they pair, from the tables `append` refuses
 arguments of `append`, `note` and `strike`, rendered from the tool's own parser
 (`close_out.verb_usage`), so no `--help` turn or refused call is spent. No agent edits either
 file by hand. The `Disposition:` lines of `close-out.md` are the operator's, and the one thing
-in that file that is read back; everything else in it is overwritten by the next render.
+in that file that is read back; everything else in it is overwritten by the next render. Every
+verb that changes the store renders the report as it saves, under the same lock, and takes
+those lines back first: the report never lags its store, and no write loses what the operator
+typed there.
 
 ## What it is — and is not
 
@@ -282,8 +285,8 @@ an agent takes before it appends: ids, headlines and Consequence lines, without 
 Both loops create the store if it does not exist — the plan loop first, so planning can already
 write to it. All agents may append, through `close_out.py append` (`list` first shows what is
 already there); an agent commits the store with its own commit, staged by name like every other
-slice-folder artifact. The rendered report is committed by whoever rendered it, the store with
-it.
+slice-folder artifact. The `close-out.md` its write rendered is left for the next commit of the
+report; a render's own commit carries the store with it.
 
 - **plan-writer / plan-reviewer** — out-of-scope observations about the spec or the estate;
   events during planning. Their in-scope findings and questions keep their existing routes (the

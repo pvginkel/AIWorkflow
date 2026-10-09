@@ -90,12 +90,12 @@ local wall clock**, taken from the process's `TZ` (UTC when unset). The ISO stam
 offset-aware, so they remain unambiguous to anything that parses them back.
 
 **`close-out.json`** and the **`close-out.md`** rendered from it sit beside `state.json` and are
-not the driver's: created by the loops, written by every agent through `close_out.py`, rendered
-by the driver — the header of the rendered report is read off this state (`created_at` →
-`updated_at`, `known_phases` against `appended_phases`, `bailouts`, `test_rounds`,
-`doc_phase.stage`, and `cost` once `slice_cost.py --write-state` has run), and so is which
-repositories the slice touched: the `root` of every phase. What goes in the report is
-[close-out.md](close-out.md).
+not the driver's: created by the loops, written by every agent through `close_out.py`, which
+renders the report at every write, and rendered by the driver at its stages — the header of the
+rendered report is read off this state (`created_at` → `updated_at`, `known_phases` against
+`appended_phases`, `bailouts`, `test_rounds`, `doc_phase.stage`, and `cost` once
+`slice_cost.py --write-state` has run), and so is which repositories the slice touched: the
+`root` of every phase. What goes in the report is [close-out.md](close-out.md).
 
 Session outputs live under `<slice>/phases/P<id>/` (review docs, gate logs, verdict files) and at
 the slice root for the consult/test/doc stages and the wrap-up (`wrap_up_result.json`,

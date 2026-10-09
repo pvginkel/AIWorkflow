@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-09 — Every close_out.py write renders close-out.md, reading the Disposition lines back first (v0.9.85)
+
+Every verb that changes the store — `append`, `note`, `strike`, `relabel`, `propose`,
+`request-card`, `leave`, `rule`, `close`, and the loops' own appends — takes the report's
+`Disposition:` lines back into the store, makes its change, saves, and writes `close-out.md`
+from the result under the same lock. `render` and `rule` without an id are that write with the
+render forced. The plan loop's exit render keeps its base-branch check, the one render with no
+store write behind it; its exit-0 seed no longer renders before its commit, since the appends
+have. Dispatches are unchanged: an agent commits the store, and the `close-out.md` its write
+rendered waits for the next commit of the report.
+
+Why: no writing verb rendered, so the page lagged its store. After `rule <id> --words`, the
+next `render` read the stale `Disposition:` line back as the operator's and put the old ruling
+back on the entry; after `append` or `note`, a role committing the report committed a stale
+`close-out.md`. Two reports from AnsibleSpecs, 2026-10-04 to 06, the second from slice 050 on
+dev 0.9.79 (AIWF-45).
+
 ## 2026-10-09 — Every dispatch prints what close_out.py enforces: the labels each kind carries, how they pair, and note's and strike's arguments (v0.9.84)
 
 The close-out dispatch line every role gets — executor, reviewer, consult, test agent, doc
