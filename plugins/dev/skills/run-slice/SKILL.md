@@ -152,7 +152,8 @@ agents or fixing code, stop; that work belongs in a phase the loop executes.
   `run_loop.py stop <slice_dir>` interrupts the run as Ctrl-C would — `state.json` current, the
   in-flight session left for `--resume` to reattach.
 - **Shared spec tree:** commits from other sessions appearing in `<spec-repo>` for your slice
-  usually mean a parallel session accidentally swept your files into its commit. Stage by name;
+  usually mean a parallel session accidentally swept your files into its commit. Stage by name
+  (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`);
   build on the latest state. A bail leaves every repo the run touched back on its base branch
   (a tree still on a `phase/…` branch afterwards either had uncommitted work on it or is
   another run's branch — the log says which), and the loop refuses to dispatch or commit while

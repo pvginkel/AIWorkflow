@@ -78,8 +78,9 @@ tells an operator's ask from a session-authored card); and that broken markup in
 literal `&gt;`, a stray entity) is reproduced as found — it renders wrong at the source too, and
 "fixing" it is a transcription error.
 
-The dump lives in the spec repo, committed when written (staged by name), and is the archive
-`slice.md` quotes from until step 9 deletes it. The operator never reads it.
+The dump lives in the spec repo, committed when written (staged by name,
+`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`), and is the archive `slice.md` quotes from until step 9
+deletes it. The operator never reads it.
 
 ### 2. Itemize, and check the standing decisions
 
@@ -298,12 +299,14 @@ unvalidated; you author none of your own.
 
 Add each slice to the **Pending** section of `<spec-repo>/README.md` — one line matching the
 existing entries, `- **NNN** — <short title>: <one-clause summary>`, placed inside that section,
-above the heading that ends it. The line names no card: a README outlives its cards as handles,
+above the heading that ends it. Snapshot the README before you edit it
+(`python3 ${CLAUDE_PLUGIN_ROOT}/tools/spec_commit.py snap`): it is outside the slice folders you
+file, so it may hold another writer's uncommitted edit. The line names no card: a README outlives its cards as handles,
 and `slice.md` holds the ids. The file's end is `## Completed`, whose bullets have the same
 shape, and an entry landed there is one the close-out refuses. Verify before you commit:
 `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_slice.py --check <slice-dir>...` runs the close-out's
-preconditions over each new folder and moves nothing. Then commit the slice folders to the specs
-repo, staging files by name.
+preconditions over each new folder and moves nothing. Then commit the slice folders and the
+README's token in one `spec_commit.py commit`.
 
 ### 8. Sweep the Solution Known cards
 

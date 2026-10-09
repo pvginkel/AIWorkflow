@@ -93,7 +93,8 @@ action only the operator can take that the run needs before it starts is an entr
 
 ## Hand-back
 
-Commit everything to the spec repo (stage by name — shared working tree), then write the verdict
+Commit everything to the spec repo (stage by name; a file outside the slice folder is snapshotted
+before your first edit, `${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`), then write the verdict
 file named in your dispatch:
 
 ```json

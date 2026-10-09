@@ -100,7 +100,9 @@ slice directory.
    - `fix now` — do it here only if the project's `CLAUDE.md` classes the change as ad hoc
      work; otherwise say so and offer `fold into`.
    - `fold into <slice>` — append the entry verbatim as an ask to that slice's `slice.md` under
-     `slices/backlog/`; a slice that does not exist yet becomes a `/dev:triage` item instead.
+     `slices/backlog/`, snapshotted before you edit it
+     (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`); a slice that does not exist yet becomes a
+     `/dev:triage` item instead.
    - `close` — there is nothing to do but record it; the operator's reason, if given, is part
      of their words.
    - `defer` — leave it, with their words recorded and nothing recorded as done: it stays live,
@@ -117,9 +119,9 @@ slice directory.
    other, executed first. A no is a `defer` on each entry that came to them and has no ruling
    — the card stays open for `/dev:triage` — and ends the asking.
 9. **Render, commit and finish.** Run `close_out.py render <slice>`, then commit
-   `close-out.json` and `close-out.md` (staged by name — the spec repo is a shared tree). Close
-   the close-out card found in step 1 as resolved unless an entry is deferred or the question of
-   step 8 went unanswered: the card's closure closes the report
+   `close-out.json` and `close-out.md` (staged by name, `${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`).
+   Close the close-out card found in step 1 as resolved unless an entry is deferred or the
+   question of step 8 went unanswered: the card's closure closes the report
    (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`), so nothing under a closed card is owed a ruling.
    Report short: rulings by kind, cards filed, what the wrap-up did, anything owed.
 

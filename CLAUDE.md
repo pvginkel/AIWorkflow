@@ -86,15 +86,17 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   its labels, the rendering; imported by both loops), `github_target.py`
   (the `github:` Target's scratch clone), `preflight.py` (with `spec-tree-guard.sh`, the spec
   repo's pre-commit hook it installs),
-  `sweep_slice.py`, `close_slice.py`, `slice_cost.py` (with `turn_profile.py`, the transcript
-  replay behind its turn table), `allocate-next-slice.sh`.
+  `spec_commit.py` (a commit of one's own change to a spec-tree file another writer has an
+  uncommitted edit in), `sweep_slice.py`, `close_slice.py`, `slice_cost.py` (with
+  `turn_profile.py`, the transcript replay behind its turn table), `allocate-next-slice.sh`.
   Suites load their subject via `importlib.util.spec_from_file_location` (`tools/` is not a
   package) and fake sessions, git, `kc` and the gate — no agent is ever spawned by a test.
 - **`plugins/dev/agents/`** (11) and **`plugins/dev/skills/<name>/SKILL.md`** (7) — the dispatched
   roles and the operator-triggered workflows.
 - **`plugins/dev/docs/`** — the **canonical contract** for all of the above: `run-loop.md`,
   `plan-loop.md`, `runner-state.md`, `plan-template.md`, `refinement.md`, `agent-dispatch.md`, `close-out.md`,
-  `close-out-template.md`, `project-contract.md`, `preflight.md`, `residual-sweep.md`. Behaviour
+  `close-out-template.md`, `project-contract.md`, `preflight.md`, `residual-sweep.md`,
+  `spec-tree.md`. Behaviour
   changes here and in the code together; a doc that describes a loop the code no longer runs is a
   defect.
 

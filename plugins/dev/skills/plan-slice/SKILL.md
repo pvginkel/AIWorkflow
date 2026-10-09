@@ -133,7 +133,7 @@ gate the ruling waived and spends its fix rounds on a red it cannot fix. No phas
 plan-writer designs those, and **`###` is theirs
 alone**: sub-structure inside your sections is `####`, because every `###` the parser sees is a
 phase heading and a stray one is a structure error. Commit it with `refinement.md` (stage by
-name — shared working tree), then:
+name, `${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`), then:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/tools/plan_loop.py run <spec-repo>/slices/backlog/<SLICE_DIR>

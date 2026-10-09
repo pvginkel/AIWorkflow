@@ -353,8 +353,8 @@ In scope:
 Where a slice's *disposition* is genuinely unclear — is this backlog still wanted? — list them and
 ask. That is the operator's call, and it is about state, not format.
 
-Commit spec-repo changes as you go, staged **by name**: it is a shared working tree and parallel
-sessions live in it.
+Commit spec-repo changes as you go, as `${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md` says: it is a
+shared working tree and parallel sessions live in it.
 
 ### 6. Issue-tracker wiring
 

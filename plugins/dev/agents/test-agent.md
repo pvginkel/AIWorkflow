@@ -46,8 +46,8 @@ pre-authorize stays operator-gated.
 
 ## Hand-back
 
-Commit what you wrote (specs-repo files staged **by name** — shared working tree), then write the
-verdict file named in your dispatch:
+Commit what you wrote (specs-repo files staged **by name**,
+`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`), then write the verdict file named in your dispatch:
 
 ```json
 {"outcome": "clean | findings | blocked", "summary": "1-3 sentences: what ran, what was verified"}

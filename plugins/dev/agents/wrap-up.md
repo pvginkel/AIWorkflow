@@ -48,6 +48,11 @@ or a `leave`. An entry without a mark is still waiting when you are gone.
    request where the problem is likely, a `leave` where it is not — either says that the gate
    went red, and on what.
 
+**In the spec tree**, a file outside this slice's folder — a fix's or a `fold`'s — is snapshotted
+before your first edit and committed through `spec_commit.py`
+(`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`). When it commits nothing because your change meets
+another writer's uncommitted edit, take your change back out and `leave` the entry, saying so.
+
 **A card request** (`request-card`) is written for an operator who decides from it alone: how
 the problem is reached, in the deployed shape; what the fix takes and why that is beyond your
 bar. It becomes the entry's proposal — the one line of yours they read, beside the headline and

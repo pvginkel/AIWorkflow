@@ -93,8 +93,9 @@ the lane count in the argument, else **3**.
 Write `<spec-repo>/slices/DAG.md` in the format below. **Preserve every `[x]`** the operator
 had ticked for a carried-over slice, and keep carried-over slices in their existing cells where the
 constraints still allow (minimise churn — see the algorithm). Then commit it to the specs repo
-(stage only `slices/DAG.md`), per the commit-as-you-go convention. This is a quick skill; no push
-notification.
+(stage only `slices/DAG.md`: the operator's ticks it carried forward ride the commit,
+`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`), per the commit-as-you-go convention. This is a quick
+skill; no push notification.
 
 ## The DAG.md format
 

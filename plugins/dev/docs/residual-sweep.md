@@ -46,7 +46,7 @@ writes it, title, target, verbatim card body, criteria) it allocates a slice num
 record: every card quoted), `plan.md` (one phase per item, card bodies blockquoted — which is
 also what neutralises stray `###`/`Target:` lines for the parser), and `verification.json` (one
 item per criterion), validates with `run_loop.py run <dir> --dry-run`, appends the spec README's
-**Pending** line, and stages by name — never a commit, never `git add -A` in the shared tree. It
+**Pending** line, and stages by name ([spec-tree.md](spec-tree.md)), never a commit. It
 refuses fewer than five distinct cards without `--force` (a sweep amortises the run's fixed
 consult/test/doc overhead; small sets accumulate, and a short batch the operator wants moved is
 widened over the project's other open intake cards rather than forced — the triage skill), refuses

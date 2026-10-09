@@ -4,6 +4,34 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-09 — A spec-tree file outside your slice folder is committed through spec_commit.py, which commits your change and leaves another writer's uncommitted edit (v0.9.88)
+
+`tools/spec_commit.py` commits a session's own change to a file in the shared spec tree and
+leaves another writer's uncommitted edit in that file where it was. `snap <path>...` stores each
+file as a blob before the first edit and prints a `<path>@<snapshot>` token. `commit -m <msg>
+<path>@<snapshot>... [<path>...]` applies each file's change since its snapshot onto HEAD's
+version with `git merge-file`, and takes plain paths whole. It builds the commit in a temporary
+index and never writes the working tree, so neither what another session staged nor the other
+writer's edit comes along. It holds the spec tree's lease shared, runs the pre-commit guard, and
+moves HEAD by compare-and-swap, so a commit that lands meanwhile is merged against, never
+reverted. A change on the other edit's lines, or on the lines next to them, commits nothing
+(exit 3) and shows both edits.
+
+The rule has one home, the new `docs/spec-tree.md`. Stage by name and commit by pathspec. A file
+outside the slice folder your session works for is snapshotted before your first edit and
+committed through the helper. `/dev:slice-dag`, which carries the operator's ticks forward on
+purpose, and a spec-repo phase's writer stay on staging by name. Every "stage by name" statement
+in the agents, skills and contract docs points to the page. The wrap-up `leave`s an entry whose
+fix meets another writer's edit. Triage snapshots the README before adding its Pending lines, and
+close-out snapshots a backlog slice's `slice.md` before a fold.
+
+Why: staging by name keeps other files out of a commit, not another writer's hunks of the same
+file, and `git add -p` is interactive. The operator leaves `slices/DAG.md` lane ticks
+uncommitted. A wrap-up in AnsibleSpecs had to build a patch against `git show HEAD:` by hand to
+keep them out of its DAG fix, and a plan-writer had deferred the same fix for that reason
+(AIWF-53). A 3-way merge refuses only an edit on or next to the other writer's lines. The card's
+`git apply --cached` sketch would also have refused one within its three lines of context.
+
 ## 2026-10-09 — /dev:inbox marks a card it leaves for the pass and does not put it again; the *pass* fate is *night shift* (v0.9.87)
 
 A card the inbox rules *night shift* — the fate, the operator's word for it and the notification's

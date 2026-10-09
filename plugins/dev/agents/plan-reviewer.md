@@ -84,4 +84,5 @@ in your dispatch:
 - `issues` — blocking findings; the session adjudicates them with the operator.
 - `go` — the plan is executable as it stands (advisory notes may ride in the review file).
 
-Commit the review and verdict to the spec repo (stage by name — shared working tree).
+Commit the review and verdict to the spec repo (stage by name,
+`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`).

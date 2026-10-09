@@ -66,8 +66,9 @@ a doc change a requirement named was a phase of the plan, already shipped and in
 ## Hand-back
 
 Commit on your dispatch's branch after the gates — a late find is a further commit on the
-branch, never a second landing (specs-repo files, if any, staged **by name**) — then write the
-verdict file named in your dispatch:
+branch, never a second landing (specs-repo files, if any, staged **by name**; a file outside
+the slice folder is snapshotted before your first edit, `${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`)
+— then write the verdict file named in your dispatch:
 
 ```json
 {"outcome": "done | question | blocked", "summary": "1-3 sentences: surfaces updated, gates run, claims left unverified (each named, or none)"}

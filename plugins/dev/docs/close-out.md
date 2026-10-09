@@ -285,8 +285,8 @@ an agent takes before it appends: ids, headlines and Consequence lines, without 
 Both loops create the store if it does not exist — the plan loop first, so planning can already
 write to it. All agents may append, through `close_out.py append` (`list` first shows what is
 already there); an agent commits the store with its own commit, staged by name like every other
-slice-folder artifact. The `close-out.md` its write rendered is left for the next commit of the
-report; a render's own commit carries the store with it.
+slice-folder artifact ([spec-tree.md](spec-tree.md)). The `close-out.md` its write rendered is
+left for the next commit of the report; a render's own commit carries the store with it.
 
 - **plan-writer / plan-reviewer** — out-of-scope observations about the spec or the estate;
   events during planning. Their in-scope findings and questions keep their existing routes (the

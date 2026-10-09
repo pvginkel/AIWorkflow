@@ -63,7 +63,7 @@ author prose docs.
     when files have no dependency on each other, issue all the Write/Edit calls in one message.
     Read what a citation pins (±40 lines), not the whole file; let your own research be targeted.
 12. **Commit everything before handing back** — code on the phase branch; plan-doc edits in the
-    specs repo, staged **by name** (it is a shared working tree).
+    specs repo, staged **by name** (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`).
 
 ## Hand-back
 

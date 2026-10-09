@@ -72,12 +72,13 @@ much as the existing rule stated: the workflow's bookkeeping — this run's `log
 `state.json` and `phases/**`, and every parallel session's — is never a phase's deliverable, and
 the driver has never checked it when the target was a code repo. Two guards keep the record
 intact: every dispatch that commits into that tree — executor, reviewer, consult — carries the
-fence (stage by name, never `git add -A`), and a run record found *committed* onto the phase
-branch is taken back out by the driver before any `git checkout <base>` — at the merge and at a
-bail — that would unlink the file the live log handle is writing to: `git rm --cached` of those
-paths and one commit by pathspec on the branch, so every commit already there keeps its sha (a
-rewrite orphans `reviewed_head`, and the next resume bails `lost_work` on it; slice 238 P5 paid
-four bails and a hand rewrite for the reviewer's `git add -A`). The spec repo's history then
+fence (stage by name, never `git add -A`: [spec-tree.md](spec-tree.md)), and a run record found
+*committed* onto the phase branch is taken back out by the driver before any
+`git checkout <base>` — at the merge and at a bail — that would unlink the file the live log
+handle is writing to: `git rm --cached` of those paths and one commit by pathspec on the branch,
+so every commit already there keeps its sha (a rewrite orphans `reviewed_head`, and the next
+resume bails `lost_work` on it; slice 238 P5 paid four bails and a hand rewrite for the
+reviewer's `git add -A`). The spec repo's history then
 carries a snapshot of the record under that phase's merge, which is harmless — the folder is
 committed whole when the slice closes. The same exclusion lets an edit to this
 slice's own tracked files pass the dirty-checks uncommitted — a reviewer's `close_out.py append`

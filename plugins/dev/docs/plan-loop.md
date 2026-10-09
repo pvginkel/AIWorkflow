@@ -38,7 +38,7 @@ the run loop checks them at start ([run-loop.md](run-loop.md) § Protocol invari
 
 Every pass is a fresh context reading its inputs from the slice folder; rulings reach agents
 through plan.md only — dispatch prompts carry pointers, never relayed content. Agents must leave
-the slice folder committed (stage by name — the spec repo is a shared working tree); the loop
+the slice folder committed (staged by name, [spec-tree.md](spec-tree.md)); the loop
 nudges once, then bails. Round counts persist in `plan_state.json`, with `base` — the branch the
 loop found the spec repo on at its first run, never a `phase/…` branch; before every dispatch and
 every commit of its own the loop holds the spec tree's shared lease and, inside the hold, asserts

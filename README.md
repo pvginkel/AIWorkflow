@@ -91,8 +91,9 @@ contract and tells a new repo exactly what is missing. See **[`docs/ADOPTING.md`
   phase queue and the consult/test/doc ladder) with `runner-state.md`, `plan-loop.md`,
   `plan-template.md`, `agent-dispatch.md`, and `close-out.md` / `close-out-template.md` (the
   per-slice report every agent writes its out-of-scope observations to) beside it, plus
-  `project-contract.md`, `preflight.md`, and `residual-sweep.md` (the planning-free lane for
-  card-described residuals).
+  `project-contract.md`, `preflight.md`, `residual-sweep.md` (the planning-free lane for
+  card-described residuals), and `spec-tree.md` (the rule for every commit into the shared spec
+  tree).
 - **[Fieldnotes](https://github.com/pvginkel/FieldnotesApp)** — a cross-project observation store
   beside the workflow, in a repo of its own: agents post what they now leave in close-out reports,
   and a scheduled reconciler curates it into a triage doc. It is developed in a KubeCoder environment
