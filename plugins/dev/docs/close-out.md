@@ -21,10 +21,11 @@ left (`request-card`, `leave`), the operator's rulings (`rule`), prints an entry
 (`show`), renders the report and counts it. Both
 loops import it, and every dispatch names it beside the report's path — which the tool takes as
 its positional, the slice directory or the report itself, so the first call works — with
-`append`'s arguments, rendered from the tool's own parser (`close_out.verb_usage`), so no
-`--help` turn is spent. No agent edits either file by hand. The `Disposition:` lines of
-`close-out.md` are the operator's, and the one thing in that file that is read back; everything
-else in it is overwritten by the next render.
+the labels each kind carries and how they pair, from the tables `append` refuses by, and the
+arguments of `append`, `note` and `strike`, rendered from the tool's own parser
+(`close_out.verb_usage`), so no `--help` turn or refused call is spent. No agent edits either
+file by hand. The `Disposition:` lines of `close-out.md` are the operator's, and the one thing
+in that file that is read back; everything else in it is overwritten by the next render.
 
 ## What it is — and is not
 

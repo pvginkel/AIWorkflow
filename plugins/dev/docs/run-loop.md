@@ -331,10 +331,9 @@ whole plan is a feature of the review, not a cost. Then:
   merged with no range on record is named in the dispatch as missing from the files), read by
   path instead of re-running `git diff`, which past the tool's output limit round-trips through a
   persisted file; the plan **digested whole** — title, rulings sections, every phase's
-  done-record — so the plan is opened only where a record points and slice.md not at all; and
-  the close-out verbs the phase uses beside `append` (`list`, `note`, `strike`) with their
-  argument shapes, rendered from `close_out.py`'s own parser — the `--help` round trips go with
-  them. The driver then runs the
+  done-record — so the plan is opened only where a record points and slice.md not at all. The
+  close-out verbs it writes with (`append`, `note`, `strike`) come in the dispatch line every
+  role gets ([close-out.md](close-out.md)). The driver then runs the
   full gate sweep — `kc project lint` + `build` + `test`, fail-fast (red is nudged back to the
   writer's session; a verb that ran nothing is not red; a verb a ruling touches in this repo runs
   per component, leaving out what the rulings cover) — checks local `<base>` against
@@ -413,7 +412,8 @@ but never before a push the test phase's own procedure doc orders.
 loop did not act on is in the slice's close-out report — who writes what there is
 [close-out.md](close-out.md). The driver's own part is deterministic: it creates the report at
 run start when planning left none, names the report and `close_out.py` (the only way to write to
-it) in every dispatch, with `append`'s arguments, enters refuted findings, funding-consult
+it) in every dispatch, with the labels each kind carries and the arguments of `append`, `note`
+and `strike`, enters refuted findings, funding-consult
 merges and every stop of the run (written by the resume that follows the stop, from
 `state.json`'s `bailouts`, at that resume's first dispatch — once the spec tree is on the branch
 the dispatch works on, so that in a phase targeting the spec repo the entry rides the phase

@@ -474,10 +474,18 @@ def test_append_refuses_a_for_that_names_no_slice_still_to_run():
         slice_dir = make_slice(tmp)
         close_out.init_report(slice_dir)
         _refused(slice_dir, with_flags(DEFECT, **{"for": "99"}),
-                 "--for 99: no slice still to run")
-        # a completed slice is not still to run, and neither is the slice itself
-        _refused(slice_dir, with_flags(DEFECT, **{"for": "002"}), "--for 002")
-        _refused(slice_dir, with_flags(DEFECT, **{"for": "007"}), "--for 007")
+                 "--for 99: no other slice still to run has that number",
+                 "--for names another slice, still to run, that should take the "
+                 "entry, never the slice being run — leave it out for an entry "
+                 "about this one")
+        # a completed slice is not still to run, and neither is the slice
+        # itself — which the refusal names as the slice being run
+        _refused(slice_dir, with_flags(DEFECT, **{"for": "002"}), "--for 002",
+                 "no other slice still to run")
+        for own in ("007", "7", "007_argocd_tools_presync_hook"):
+            _refused(slice_dir, with_flags(DEFECT, **{"for": own}),
+                     f"--for {own} is the slice being run: --for names another "
+                     "slice")
         # 12, 012 and 012_slug all name 012; the backlog counts; the folder's
         # number is what the store keeps
         for given, kept in (("12", "012"), ("012", "012"), ("012_later_slice", "012"),
@@ -1846,7 +1854,7 @@ def test_a_filesystem_without_the_lock_still_takes_the_write():
 
 # -- the dispatch line, the verbs, and the docs --------------------------------------
 
-def test_dispatch_line_is_the_text_with_the_append_usage_in_it():
+def test_dispatch_line_is_the_text_with_the_labels_and_the_verbs_usage_in_it():
     report_md = "/specs/slices/007_x/close-out.md"
     line = close_out.dispatch_line(report_md)
     tool = str(Path(close_out.__file__).resolve())
@@ -1855,8 +1863,16 @@ def test_dispatch_line_is_the_text_with_the_append_usage_in_it():
                            f"`python3 {tool} <verb> {report_md} …` —\n")
     assert ("what you would do — never where\nthe entry goes. "
             f"`python3 {tool} labels` prints what each label means —\n") in line
-    assert "read it before your first append. `append` takes:\n" \
-           + close_out.verb_usage("append") + "\nThe report is about the work;" in line
+    assert ("read it before your first append. The labels each kind carries, every "
+            "one\nof them, `unknown` where you cannot tell:\n"
+            + close_out.kind_labels_text() + "\n" + close_out.LABEL_PAIRING
+            + "\nThe verbs take:\n" + close_out.verb_usage("append", "note", "strike")
+            + "\nThe report is about the work;") in line
+    # every verb the line names to write with has its arguments in it
+    for verb in ("append", "note", "strike"):
+        assert f"close_out.py {verb} <close-out.md>" in line, verb
+    assert "close_out.py note <close-out.md> <id> --by BY --text TEXT" in line
+    assert "--reason REASON [--by BY]" in line
     assert line.endswith("goes to the `fieldnotes` MCP tool\n`post` instead.")
 
 
@@ -1896,7 +1912,9 @@ def test_verb_usage_renders_append_compactly_with_its_help_strings():
             ("--area", "sensitive: concurrency or timing, stored data, a wire contract, "
                        "authentication or secrets"),
             ("--repo", "the repository the fix lives in, by its directory name"),
-            ("--for", "the number of the slice still to run that should take the entry"),
+            ("--for", "the number of another slice, still to run, that should take "
+                      "the entry — never the slice being run; leave it out for an "
+                      "entry about this one"),
             ("--benefit", "improvement: who is better off"),
             ("--felt", "improvement: when that is felt"),
             ("--change", "improvement: whether it removes, adjusts or adds"),
@@ -1918,6 +1936,25 @@ def test_verb_usage_renders_append_compactly_with_its_help_strings():
     assert notes.splitlines()[0] == "close_out.py list <close-out.md>"
     assert "    <id>: the entry's id, like B3" in notes
     assert "slice:" not in notes and "<close-out.md>:" not in notes
+
+
+def test_kind_labels_are_what_append_refuses_without():
+    # The block a dispatch carries is rendered from REQUIRED and
+    # EVENT_PROBLEM — the tables check_labels refuses from.
+    assert close_out.kind_labels_text().splitlines() == [
+        "  action, decision: --trigger, --impact and --signal",
+        "  event: --trigger, --impact and --signal; with an --impact other than "
+        "none also --fix, --area and --repo",
+        "  defect, test-gap: --trigger, --impact, --signal, --fix, --area and --repo",
+        "  prose: --trigger, --impact, --signal, --fix and --repo",
+        "  improvement: --benefit, --felt, --change, --size, --product-call, "
+        "--prevents, --area and --repo"]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        for kind, line in (("decision", "--trigger, --impact and --signal"),
+                           ("prose", "--fix and --repo")):
+            errors = close_out.check_labels(kind, {}, "none", slice_dir)
+            assert errors and line in errors[0], (kind, errors)
 
 
 def test_verb_usage_puts_the_positionals_right_after_the_verb():

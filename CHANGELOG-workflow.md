@@ -4,6 +4,24 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-09 — Every dispatch prints what close_out.py enforces: the labels each kind carries, how they pair, and note's and strike's arguments (v0.9.84)
+
+The close-out dispatch line every role gets — executor, reviewer, consult, test agent, doc
+writer, wrap-up, plan writer and plan reviewer — prints the labels each kind carries, rendered
+from the tables `append` refuses by, the one line on how `--consequence`, `--impact` and
+`--signal` pair, and the arguments of all three verbs it names (`append`, `note`, `strike`)
+from the tool's parser, where it printed `append`'s alone. The doc-phase and wrap-up prompts no
+longer repeat `note` and `strike` under it, and the completion consult keeps its `--reason`
+and `--by` words but no hand-typed command shape. `--for` says in its help and its refusal
+that it names another slice still to run, never the slice being run, and the refusal names the
+running slice as that.
+
+Why: four refusals in four runs, KubeCoder and AnsibleSpecs, 2026-10-03 to 06 (dev 0.9.78 and
+0.9.79 among them), each a call the printed usage made look fine — `--for` naming the slice
+being run, a decision without the labels its kind carries, `--signal none` over `--impact
+degraded`, and `note` without `--by` from both the executor dispatch and the consult prompt.
+`strike`'s `--by` stays optional; the line prints it as `[--by BY]` (AIWF-44).
+
 ## 2026-10-09 — /dev:plan-slice creates a slice's new repo with a seed manifest in its first commit (v0.9.83)
 
 A repo the slice creates is created by the planning session before the plan loop runs, on the

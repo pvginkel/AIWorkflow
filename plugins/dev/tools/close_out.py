@@ -109,8 +109,12 @@ with your own commit, staged by name. An entry carries labels that say
 what it is, and the tool routes it from them: you state what you know
 and, where `append` asks for a proposal, what you would do — never where
 the entry goes. `python3 {tool} labels` prints what each label means —
-read it before your first append. `append` takes:
-{append_usage}
+read it before your first append. The labels each kind carries, every one
+of them, `unknown` where you cannot tell:
+{kind_labels}
+{label_pairing}
+The verbs take:
+{verb_usage}
 The report is about the work; what got in your way while working, and any
 improvement of the workflow itself, goes to the `fieldnotes` MCP tool
 `post` instead.\
@@ -317,9 +321,13 @@ def slice_dir_of(arg: Path | str) -> Path:
 
 def dispatch_line(report: Path | str) -> str:
     """The report pointer a dispatch prompt carries — the path, the store,
-    the tool, and `append`'s arguments rendered from the parser."""
+    the tool, the labels each kind carries and how they pair, as
+    `check_labels` holds them, and the arguments of the three verbs it
+    names, rendered from the parser."""
     return DISPATCH_LINE.format(report=report, store=STORE_NAME, tool=TOOL_PATH,
-                                append_usage=verb_usage("append"))
+                                kind_labels=kind_labels_text(),
+                                label_pairing=LABEL_PAIRING,
+                                verb_usage=verb_usage("append", "note", "strike"))
 
 
 def _collapse(text: str | None) -> str:
@@ -932,6 +940,36 @@ def _flags(labels) -> str:
     return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
+def kind_labels_text() -> str:
+    """The labels each kind carries, one indented line per group of kinds
+    that carry the same, rendered from REQUIRED and EVENT_PROBLEM — what
+    `check_labels` refuses an append without."""
+    groups: dict[tuple, list[str]] = {}
+    for kind in KINDS:
+        groups.setdefault((REQUIRED[kind], kind == "event"), []).append(kind)
+    out = []
+    for (required, event), kinds in groups.items():
+        line = f"  {', '.join(kinds)}: {_flags(required)}"
+        if event:
+            line += f"; with an --impact other than none also {_flags(EVENT_PROBLEM)}"
+        out.append(line)
+    return "\n".join(out)
+
+
+# The pairings `check_labels` refuses an append without, in a dispatch's
+# words.
+LABEL_PAIRING = """\
+They pair on every kind but an improvement: a --consequence that opens
+with none takes --impact none or unknown, and only it takes --impact
+none; --impact none takes --signal none, and --signal none takes
+--impact none or unknown.\
+"""
+
+FOR_RULE = ("--for names another slice, still to run, that should take the "
+            "entry, never the slice being run — leave it out for an entry "
+            "about this one")
+
+
 def check_labels(kind: str, labels: dict, consequence: str | None,
                  slice_dir: Path | str, given: dict | None = None,
                  relabel: bool = False) -> list[str]:
@@ -987,9 +1025,13 @@ def check_labels(kind: str, labels: dict, consequence: str | None,
             errors.append(f"--for {target}: the slice folder has no `slices` "
                           "ancestor, so no slice still to run can be named")
         elif not m or int(m.group(1)) not in pending:
-            errors.append(f"--for {target}: no slice still to run has that "
-                          "number (a <number>_* folder in slices/ or "
-                          "slices/backlog/)")
+            own = re.match(r"(\d+)_", Path(slice_dir).resolve().name)
+            if m and own and int(m.group(1)) == int(own.group(1)):
+                errors.append(f"--for {target} is the slice being run: {FOR_RULE}")
+            else:
+                errors.append(f"--for {target}: no other slice still to run has "
+                              "that number (a <number>_* folder in slices/ or "
+                              f"slices/backlog/): {FOR_RULE}")
     return errors
 
 
@@ -2079,8 +2121,8 @@ def _label_value(value: str) -> str:
     return re.sub(r"[\s_]+", "-", value.strip().lower())
 
 
-# The help strings are prompt text: `verb_usage("append")` is rendered
-# into every dispatch.
+# The help strings are prompt text: `verb_usage("append", "note",
+# "strike")` is rendered into every dispatch.
 LABEL_HELP = {
     "trigger": "what has to happen for the problem to show",
     "impact": "what is then experienced",
@@ -2089,7 +2131,9 @@ LABEL_HELP = {
     "area": "sensitive: concurrency or timing, stored data, a wire contract, "
             "authentication or secrets",
     "repo": "the repository the fix lives in, by its directory name",
-    "for": "the number of the slice still to run that should take the entry",
+    "for": "the number of another slice, still to run, that should take the "
+           "entry — never the slice being run; leave it out for an entry about "
+           "this one",
     "benefit": "improvement: who is better off",
     "felt": "improvement: when that is felt",
     "change": "improvement: whether it removes, adjusts or adds",

@@ -2359,13 +2359,13 @@ If outstanding work clears that bar, append new phases to {plan_path}
 between P3 and P4 — document order is authoritative) and answer `appended`.
 Record everything that does not clear the bar as entries in the close-out
 report — and you are the one pass that reconciles that report, through
-close_out.py (its path is in this prompt) and never by editing the file:
-strike what you absorbed into an appended phase (`strike <close-out.md>
-<id> --reason "absorbed by P<x> (<commit>)" --by "consult <n>"`), duplicates
-you are sure of (`--reason "duplicate of B3"`), and what a phase resolved
-(`--reason "resolved by P<x> (<commit>): <what was re-run>"`); record any
-other observation about an entry with `note`. If nothing is outstanding,
-answer `complete`.\
+close_out.py (its path and its verbs' arguments are in this prompt) and
+never by editing the file: strike, `--by "consult <n>"`, what you absorbed
+into an appended phase (`--reason "absorbed by P<x> (<commit>)"`),
+duplicates you are sure of (`--reason "duplicate of B3"`), and what a phase
+resolved (`--reason "resolved by P<x> (<commit>): <what was re-run>"`);
+record any other observation about an entry with `note`. If nothing is
+outstanding, answer `complete`.\
 """
 
 # The loop-tail sweep's report, as it rides the completion-consult and
@@ -2497,8 +2497,6 @@ Deterministic facts from the driver:
   the steering.
 - The slice folder is {slice_dir}.
 - {close_out_line}
-  The other verbs this phase uses, with their arguments:
-{close_out_verbs}
 - Work on branch {branch}, which is checked out in {root} — the one repo
   that branch exists in. A doc edit in another code repo this slice touched
   (a diff row above names it) is committed on the base branch checked out
@@ -6462,8 +6460,6 @@ class RunLoop:
                     diff_rows="\n".join(diff_rows) or "  (no merged phase on record)",
                     slice_dir=self.slice_dir, plan_path=self.plan_path,
                     close_out_line=dispatch_line(self.report_path),
-                    close_out_verbs=textwrap.indent(
-                        verb_usage("list", "note", "strike"), "  "),
                     branch=branch, root=root, base_branch=base,
                     verdict_path=verdict_path)
                 + build_slice_digest(plan_text),
@@ -7286,7 +7282,7 @@ class RunLoop:
             close_out_line=dispatch_line(self.report_path),
             close_out_verbs=textwrap.indent(
                 verb_usage("worklist", "show", "list", "relabel", "propose",
-                           "request-card", "leave", "strike", "note"), "  "),
+                           "request-card", "leave"), "  "),
             worklist=textwrap.indent(worklist_view(self.slice_dir), "  "),
             repo_rows="\n".join(rows) or "  (none — the plan holds every code "
                                          "repo this slice touched)",

@@ -4066,8 +4066,15 @@ def test_consults_get_the_report_path_and_a_cards_list_is_ignored():
         # names the phase/commit, note for anything else — never a hand
         # edit of another agent's entry.
         flat = " ".join(completion.split())
-        assert ('`strike <close-out.md> <id> --reason "absorbed by P<x> (<commit>)" --by '
-                '"consult <n>"`') in flat
+        assert ('strike, `--by "consult <n>"`, what you absorbed into an appended '
+                'phase (`--reason "absorbed by P<x> (<commit>)"`)') in flat
+        # the verbs' shapes are the tool's, in the dispatch line — not typed
+        # by hand in the situation
+        assert "`strike <close-out.md>" not in flat
+        assert ("close_out.py strike <close-out.md> <id> --reason REASON "
+                "[--by BY]") in completion
+        assert ("close_out.py note <close-out.md> <id> --by BY --text TEXT"
+                in completion)
         assert '"resolved by P<x> (<commit>): <what was re-run>"' in flat
         assert "observation about an entry with `note`" in flat
         assert "never by editing the file" in flat
@@ -4986,16 +4993,15 @@ def test_doc_phase_prompt_states_diff_files_digest_verbs_and_doc():
         assert "**Done (P1).** Shipped the thing" in prompt
         assert "not the writer's" not in prompt
         assert "slice.md is not your input" in prompt
-        # the close-out verbs' argument shapes, from the tool's own parser:
-        # `append`'s in the dispatch line, the other three under it
+        # the close-out verbs' argument shapes, from the tool's own parser,
+        # once each — all in the dispatch line
         assert prompt.count("close_out.py append <close-out.md> --kind {") == 1
         assert "--consequence: what an operator or user experiences" in prompt
         line = close_out.dispatch_line(slice_dir / "close-out.md")
-        verbs = "\n".join("  " + v for v in close_out.verb_usage(
-            "list", "note", "strike").splitlines())
-        assert (f"- {line}\n  The other verbs this phase uses, with their "
-                f"arguments:\n{verbs}\n- Work on branch") in prompt
-        assert "close_out.py note <close-out.md> <id> --by BY" in prompt
+        assert f"- {line}\n- Work on branch" in prompt
+        assert "The other verbs" not in prompt
+        assert prompt.count("close_out.py note <close-out.md> <id> --by BY") == 1
+        assert prompt.count("close_out.py strike <close-out.md> <id>") == 1
         assert "close_out.py strike <close-out.md> <id> --reason REASON" in prompt
         assert ("--reason: why — resolved/refuted names the commit and the "
                 "re-run") in prompt
@@ -5593,9 +5599,12 @@ def test_a_green_wrap_up_lands_with_the_doc_phase():
         assert prompt.count(run_loop.NOTHING_RAN_HINT) == 2
         verbs = "\n".join("  " + v for v in close_out.verb_usage(
             "worklist", "show", "list", "relabel", "propose", "request-card",
-            "leave", "strike", "note").splitlines())
+            "leave").splitlines())
         assert ("  The other verbs the wrap-up uses, with their arguments:\n"
                 + verbs + "\n") in prompt
+        # note and strike are the dispatch line's, once
+        assert prompt.count("close_out.py note <close-out.md> <id>") == 1
+        assert prompt.count("close_out.py strike <close-out.md> <id>") == 1
         assert f"The spec repo is {r.spec_root}." in prompt
         assert "a fold into another slice — goes on" in prompt
         assert "The plan holds" not in prompt
