@@ -223,3 +223,6 @@ instead of reopening it.
   (`crossSessionInbound: refuse` + deny `ListAgents` only; `SendMessage` kept for a session's own
   sub-agents). The plugin passes nothing — no agent-frontmatter `disallowedTools`, no kc
   `--settings` pass-through.
+- **A project's primary repo is never its spec repo** (2026-10-09, AIWF-50). The run loop's
+  branches for that layout (`_wrap_up_spec_home`, a doc phase or wrap-up branching the spec tree)
+  serve no project. A gap that exists only in that layout is not a finding.
