@@ -46,7 +46,8 @@ is judgment — and nobody edits either file by hand; importable by both loops
 The route is computed at every render, never stored: `route()` reads an
 entry's kind and labels, and the repositories the slice touched, against the
 two tables of the contract (§ The routes) — the policy is the operator's and
-lives here only.
+lives here only. So does the run loop's trigger for what is owed before the
+push (`owed_before_push()`): the live entries it hands the completion consult.
 
 A report written before the store existed is imported by the first call that
 finds a `close-out.md` and no store beside it. The old parser stays as the
@@ -1237,6 +1238,40 @@ def report_section(key: str) -> str:
     return {"operator": "Comes to you", "card": "Card requests",
             "wrap-up": "For the wrap-up", "unlabelled": "Unlabelled",
             "closed": "Closed", "record": "Record"}[head]
+
+
+# What the slice's push must not carry. The report is worked after the doc
+# phase, the push follows the completion consult, and nothing reads the
+# report between them — so the run loop hands that consult these entries
+# (DHCPApp slice 001's B3: production addresses in a public repo's tests).
+BEFORE_PUSH_RE = re.compile(r"\bbefore (?:the|this|any) push", re.IGNORECASE)
+
+
+def owed_before_push(slice_dir: Path | str) -> list[tuple[dict, list[str]]]:
+    """(entry, the reasons) for every live entry that may describe what the
+    slice's push must not carry, in id order: one whose impact is `severe` —
+    what a push exposes is, by the labels — unless it is an improvement or
+    its fix lives in a repository the slice did not touch; and one whose
+    proposal asks for its fix before the push, whatever its kind. Reads the
+    store, never writes it."""
+    store = _read_store(slice_dir)
+    touched = touched_repos(slice_dir)
+    out = []
+    for entry in store["entries"]:
+        if entry.get("strike"):
+            continue
+        reasons = []
+        lab = effective_labels(entry) or {}
+        if (entry.get("kind") != "improvement" and lab.get("impact") == "severe"
+                and _elsewhere(lab, touched) in (None, "unknown")):
+            reasons.append("impact severe")
+        proposal = _collapse(entry.get("proposal"))
+        if BEFORE_PUSH_RE.search(proposal):
+            reasons.append("proposal: "
+                           + textwrap.shorten(proposal, 160, placeholder=" …"))
+        if reasons:
+            out.append((entry, reasons))
+    return sorted(out, key=lambda item: _id_key(item[0]))
 
 
 # -- worklist ----------------------------------------------------------------

@@ -4,6 +4,22 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-11 — What must not be pushed is fixed in the executor's own phase; the completion consult is handed what may have to land before the push (v0.9.90)
+
+The code-writer fixes a secret, or production data in a repository that is or may become public,
+found in what the slice has committed and not yet pushed, in its own phase — whichever phase put
+it there — and never leaves it to the close-out report. As a backstop, the driver hands the
+completion consult, as owed, every live entry that may describe what the push after it must not
+carry: an impact of `severe` in a repo the slice touched or that names none, or a proposal that
+lands its fix "before the push". Where the push would carry it, the consult appends a phase that
+removes it or bails, as for a red sweep row; where it would not, it says why in a note on the
+entry. The trigger is `close_out.owed_before_push()`; no label was added.
+
+Why: the report is worked by the wrap-up after the doc phase, and the push comes before that. In
+DHCPApp slice 001 a code-writer entered production IP addresses in a public repo's tests as B3,
+"fix now, before the push", and only the completion consult's own reading kept them from being
+published.
+
 ## 2026-10-09 — /dev:inbox holds a *yours* card as a task under the hand-back mark, and moves only a card the operator's act alone resolves to their action queue (v0.9.89)
 
 A card ruled *yours* waits on an act only the operator can perform before a session can take

@@ -306,7 +306,9 @@ left for the next commit of the report; a render's own commit carries the store 
   and only through `close_out.py strike` and `note`: it strikes an entry it absorbed into an
   appended phase (the reason names the phase and commit), duplicates it is sure of, and what a
   later phase resolved (the reason names the commit and what was re-run); anything else it has
-  to say about an entry is a `note`. It edits nobody's text.
+  to say about an entry is a `note`. It edits nobody's text. It is the one reader of the report
+  before the slice's push, and is handed what may have to land before it ([run-loop.md](run-loop.md)
+  § After the last phase).
 - **test-agent** — below-bar findings; live-check events — what its pass met that an uneventful
   one would not have, never the record of a round that passed.
 - **doc-writer** — doc debt, every claim it could not verify among it; a strike on an entry its

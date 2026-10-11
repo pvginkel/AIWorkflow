@@ -495,6 +495,27 @@ phase index, pre-edit plan reads on large plans, and the log's "carried whole" c
 
 ## 6. Git and safety incidents
 
+### What must not be pushed is fixed before the push (v0.9.90)
+
+**Incident.** In DHCPApp slice 001 (2026-10-09) a code-writer found production IP addresses in a
+public repo's tests, written by an earlier phase, and entered them as B3 — impact `severe`,
+proposal "fix now, before the push". The next phase's done-record said "Close-out B3 covers P1's
+test_reader.py". The completion consult happened to read the entry and appended a phase; without
+that, the test phase would have published the addresses into the repo's history for good.
+
+**Evidence.** The report is worked by the wrap-up, after the doc phase, and the push comes
+before it. An entry whose fix has to land before the push has nobody to act on it in time, and
+the label table has no "public" or "before the push"; severity and the proposal's words are what
+such an entry carries.
+
+**Change.** The code-writer fixes what must not be pushed in its own phase, whichever phase put
+it there ([`code-writer.md`](../../plugins/dev/agents/code-writer.md) rule 1). The backstop is the
+completion consult: the driver hands it every live entry graded `severe` in a repo the slice
+touched, or whose proposal says "before the push", as owed — remove it or bail, or say why the
+push does not carry it ([`run-loop.md`](../../plugins/dev/docs/run-loop.md) § After the last
+phase). A new label was considered and dropped: B3 carried `severe` already, and a label every
+author must state costs every append for a case this rare.
+
 ### The shared spec tree is leased (v0.9.36)
 
 **Incident.** Slice 224's P1 executor committed its spec-side done-record and close-out entry onto

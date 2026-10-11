@@ -42,9 +42,10 @@ the store, and the close-out.md rendered from it —
 ${CLAUDE_PLUGIN_ROOT}/docs/close-out.md): create it if the plan loop did
 not, name it and close_out.py (the only way to write to it) in every
 dispatch, enter refuted findings and funding-consult merges through that
-tool, dispatch the wrap-up, render it before the doc phase, after the
-wrap-up, at every bail and at completion, stamp the run header at
-completion.
+tool, hand the completion consult the live entries owed before the push
+(close_out.owed_before_push), dispatch the wrap-up, render it before the
+doc phase, after the wrap-up, at every bail and at completion, stamp the
+run header at completion.
 
 The plan doc is writable by every agent in the loop — deliberately. The
 driver's job is keeping the shared doc parseable: a parse error, a vanished
@@ -138,6 +139,7 @@ from close_out import (  # noqa: E402
     find_by_headline,
     init_report,
     live_entries,
+    owed_before_push,
     render_report,
     report_path,
     stamp_header,
@@ -2364,7 +2366,7 @@ edited to depend on something nothing produced.
 
 {sweep_block}
 
-{generation_bar}
+{push_owed_block}{generation_bar}
 
 If outstanding work clears that bar, append new phases to {plan_path}
 (`### P<id> — <title>` with a `Target:` line; a suffix like P3a inserts
@@ -2378,6 +2380,26 @@ duplicates you are sure of (`--reason "duplicate of B3"`), and what a phase
 resolved (`--reason "resolved by P<x> (<commit>): <what was re-run>"`);
 record any other observation about an entry with `note`. If nothing is
 outstanding, answer `complete`.\
+"""
+
+# The close-out entries close_out.owed_before_push picks, as they ride the
+# completion consult: the report is worked after the push, and nothing reads
+# it before (DHCPApp slice 001's B3 — production IPs in public tests).
+PUSH_OWED_BLOCK = """\
+Owed before the push. The push that follows this consult — the test
+phase's, or the driver's where the project runs none — publishes what this
+slice committed, and nothing reads the close-out report before it. These
+live entries may describe something that push must not carry:
+
+{rows}
+
+For each, judge what the push would carry. Where it carries what the entry
+describes — a secret, production data, anything a push exposes — that is
+outstanding work on this consult's table, as a RED row is: append a phase
+that removes it, or answer `bail` with the question; where a phase already
+removed it, strike the entry naming the commit. Where it carries none of it
+— the content is on origin already, or nothing in it is exposed by a push —
+say why in a `note` on the entry and leave it.\
 """
 
 # The loop-tail sweep's report, as it rides the completion-consult and
@@ -6117,10 +6139,32 @@ class RunLoop:
         phases = self._load_plan()
         return any(not p.done for p in phases)
 
+    def _push_owed_block(self) -> str:
+        """The close-out entries that may describe what the push after the
+        completion consult must not carry, as PUSH_OWED_BLOCK with its
+        trailing blank line — empty when there are none, so the situation
+        reads as it did without them. A report that cannot be read is
+        logged and carries no block: the consult never stops over it."""
+        try:
+            owed = owed_before_push(self.slice_dir)
+        except ReportError as e:
+            self.log(f"close-out not read for what is owed before the push ({e})")
+            return ""
+        if not owed:
+            return ""
+        ids = [entry["id"] for entry, _ in owed]
+        noun = "entry" if len(ids) == 1 else "entries"
+        self.log(f"completion consult: {len(ids)} close-out {noun} owed before "
+                 f"the push: {', '.join(ids)}")
+        rows = "\n".join(f"- {entry['id']} — {entry.get('headline', '')} "
+                         f"({'; '.join(reasons)})" for entry, reasons in owed)
+        return PUSH_OWED_BLOCK.format(rows=rows) + "\n\n"
+
     def _completion_consult(self) -> bool:
         """After all phases are done: one fresh consult — 'does the plan
-        describe outstanding work?'. True → phases were appended, loop
-        again."""
+        describe outstanding work?' — carrying the loop-tail sweep and the
+        close-out entries owed before the push. True → phases were
+        appended, loop again."""
         self.state["run_phase"] = "consult"
         self._save_state()
         sweep = self._ensure_gate_sweep()
@@ -6132,6 +6176,7 @@ class RunLoop:
                 sweep_block=self._sweep_block(sweep,
                                               SWEEP_STANCE_CONSULT_GREEN,
                                               SWEEP_STANCE_CONSULT_RED),
+                push_owed_block=self._push_owed_block(),
                 generation_bar=self._generation_bar()),
             {
                 "complete": "the plan describes no outstanding work",

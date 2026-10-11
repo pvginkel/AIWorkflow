@@ -4299,6 +4299,80 @@ def test_consult_appended_without_phases_treated_complete():
         assert load_state(slice_dir)["generation"] == 0
 
 
+# DHCPApp slice 001: a code-writer filed production addresses in a public
+# repo's tests as a `severe` defect proposing the fix "before the push" — and
+# the report is worked after the push. The completion consult, the last
+# reader before it, carries every live entry that may describe what the push
+# must not carry.
+
+B3_PROPOSAL = ("fix now, before the push: swap the 10.1.3.x addresses in "
+               "test_reader.py for documentation-range ones")
+GEN_BAR_OPENING = "This is the loop's first follow-up generation"
+
+
+def test_completion_consult_carries_the_entries_owed_before_the_push():
+    def files_b1(loop):
+        run_loop.append_entry(
+            loop.slice_dir, "defect", "test_reader.py carries production IPs",
+            "b", consequence="the push publishes them",
+            labels={"trigger": "normal-use", "impact": "severe",
+                    "signal": "silent", "fix": "one-edit", "area": "plain",
+                    "repo": "repo"},
+            proposal=B3_PROPOSAL)
+        run_loop.append_entry(loop.slice_dir, "defect", "a wrong log line", "b",
+                              consequence="c",
+                              labels={"trigger": "normal-use",
+                                      "impact": "degraded", "signal": "silent",
+                                      "fix": "one-edit", "area": "plain",
+                                      "repo": "repo"})
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [(*V["exec_done"], files_b1), V["review_signoff"], *TAIL]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        consult = next(p for role, p in r.prompts
+                       if role == "consult" and "stamped done" in p)
+        assert "about it.\n\nOwed before the push. The push that follows" in consult
+        assert (f"- B1 — test_reader.py carries production IPs (impact severe; "
+                f"proposal: {B3_PROPOSAL})") in consult
+        assert "B2" not in consult
+        assert ("say why in a `note` on the entry and leave it.\n\n"
+                + GEN_BAR_OPENING) in consult
+        log = (slice_dir / "log.txt").read_text()
+        assert "completion consult: 1 close-out entry owed before the push: B1" in log
+
+
+def test_completion_consult_without_entries_owed_reads_as_before():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        assert run_to_exit(r) == 0
+        consult = next(p for role, p in r.prompts if role == "consult")
+        assert "Owed before the push" not in consult
+        # the sweep's stance, one blank line, the generation bar — no stray
+        # blank line where the block would sit
+        assert "about it.\n\n" + GEN_BAR_OPENING in consult
+        assert "owed before the push" not in (slice_dir / "log.txt").read_text()
+
+    # A report that cannot be read is logged; the consult goes on without it.
+    def unreadable(slice_dir):
+        raise run_loop.ReportError("close-out.json is not valid JSON")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        with patched(run_loop, owed_before_push=unreadable):
+            assert run_to_exit(r) == 0
+        consult = next(p for role, p in r.prompts if role == "consult")
+        assert "Owed before the push" not in consult
+        assert ("close-out not read for what is owed before the push "
+                "(close-out.json is not valid JSON)"
+                in (slice_dir / "log.txt").read_text())
+
+
 def test_test_phase_findings_loop_with_rising_bar_then_third_generation_bails():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)

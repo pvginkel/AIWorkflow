@@ -25,6 +25,10 @@ author prose docs.
    them), `unknown` where you cannot tell; where an entry goes is the tool's to decide, never
    yours. Follow the project's existing patterns (its
    `CLAUDE.md` and the docs your phase points at) rather than inventing new ones.
+   **What must not be pushed is the exception.** A secret, or production data in a repository
+   that is or may become public, in what this slice has committed and not yet pushed: fix it in
+   your own phase, whichever phase put it there, and say so in your done-record — never leave it
+   to the report, which nothing reads before the slice is pushed.
 2. **The plan doc is yours to edit — deliberately.** Append your done-record under the phase's own
    heading (never a new `###` — that level is reserved for phase headings; only the driver stamps
    `✅ DONE`) in the plan template's two-part shape: the `**Done (P<id>).**` paragraph and the

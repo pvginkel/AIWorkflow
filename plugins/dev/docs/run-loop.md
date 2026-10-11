@@ -262,7 +262,14 @@ whole plan is a feature of the review, not a cost. Then:
   sweep runs before the devlock is taken, so its minute never extends the hold.
 - **Completion consult** — one fresh bare session: *"does the plan describe outstanding work?"*,
   judged against both the plan and the repo. It appends phases (or answers `complete`) through
-  the generation bar below.
+  the generation bar below. It is also handed, as owed, every live close-out entry that may
+  describe what the push after it must not carry — an impact of `severe` in a repo the slice
+  touched or that names none, or a proposal that lands its fix "before the push" — because
+  nothing reads the report before that push. Where the push would carry what the entry
+  describes, the consult appends a phase that removes it or bails, as for a red sweep row; where
+  it would not, it says why in a note on the entry. The code-writer fixes such a thing in its
+  own phase ([its definition](../agents/code-writer.md)); this is the backstop for one entered
+  anyway.
 - **Test phase** — a fresh `test-agent` session told to read the project's slice-testing-strategy
   doc (`.aiworkflowrc`'s `test_phase.strategy`) and execute it. **The driver holds the devlock**
   for this phase (a `flock` on the inode `devlock.lease` names; it releases on crash): taken

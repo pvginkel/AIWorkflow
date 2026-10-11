@@ -378,6 +378,92 @@ def test_touched_repos_are_the_roots_of_the_state():
         assert close_out.touched_repos(slice_dir) == {"KubeCoder", "KubeCoderSpecs"}
 
 
+# -- owed before the push ---------------------------------------------------------
+
+def _owed(slice_dir):
+    return {e["id"]: reasons for e, reasons in close_out.owed_before_push(slice_dir)}
+
+
+def test_owed_before_push_lists_a_severe_entry_the_push_may_carry():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+
+        def add(kind, labels, headline="h"):
+            return close_out.append_entry(slice_dir, kind, headline, "b",
+                                          consequence="c", labels=labels)
+
+        add("defect", fix_labels(impact="severe"))                          # B1
+        add("defect", fix_labels(impact="severe", repo="HelmCharts"))       # B2
+        add("defect", fix_labels(impact="severe", repo="unknown"))          # B3
+        add("defect", fix_labels(impact="severe"))                          # B4
+        close_out.strike_entry(slice_dir, "B4", "fixed", commit="abc123")
+        add("improvement", {**imp_labels(prevents="severe"), "impact": "severe"})  # I1
+        add("defect", fix_labels(impact="broken"))                          # B5
+        add("defect", None)                                                 # B6
+        add("action", {"trigger": "normal-use", "impact": "severe",
+                       "signal": "silent"})                                 # A1
+        add("event", None)                                                  # E1
+        # No state.json: every repository is the slice's own.
+        assert _owed(slice_dir) == {"A1": ["impact severe"], "B1": ["impact severe"],
+                                    "B2": ["impact severe"], "B3": ["impact severe"]}
+        (slice_dir / "state.json").write_text(json.dumps(STATE))
+        owed = close_out.owed_before_push(slice_dir)
+        # a severe entry in a repository the slice never touched is not this
+        # push's; an unknown repository may be; report id order
+        assert [e["id"] for e, _ in owed] == ["A1", "B1", "B3"]
+        assert owed[1][0]["headline"] == "h"
+
+
+def test_owed_before_push_reads_a_proposal_that_asks_for_the_fix_before_the_push():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        (slice_dir / "state.json").write_text(json.dumps(STATE))
+
+        def add(kind, labels, proposal):
+            return close_out.append_entry(slice_dir, kind, "h", "b", consequence="c",
+                                          labels=labels, proposal=proposal)
+
+        b3 = ("fix now, before the push: swap the 10.1.3.x addresses in "
+              "test_reader.py for documentation-range ones")
+        add("defect", fix_labels(impact="degraded"), b3)                    # B1
+        add("improvement", imp_labels(), "Before ANY push of this branch, "
+            "drop the fixture that copies the prd dump.")                   # I1
+        add("defect", fix_labels(impact="degraded"),
+            "fix now if P8's branch is touched again before its push")      # B2
+        add("defect", fix_labels(impact="severe", area="sensitive"), b3)    # B3
+        long = "Do it before this push: " + "the address list " * 20
+        add("decision", {"trigger": "normal-use", "impact": "degraded",
+                         "signal": "silent"}, long)                         # D1
+        add("defect", fix_labels(impact="degraded"), "push it after the release")  # B4
+        before = (slice_dir / "close-out.json").read_text()
+        rendered = report(slice_dir)
+        owed = _owed(slice_dir)
+        assert list(owed) == ["B1", "B3", "D1", "I1"]
+        assert owed["B1"] == [f"proposal: {b3}"]
+        # both reasons on one entry, severity first
+        assert owed["B3"] == ["impact severe", f"proposal: {b3}"]
+        assert owed["I1"] == ["proposal: Before ANY push of this branch, drop the "
+                              "fixture that copies the prd dump."]
+        (reason,) = owed["D1"]
+        assert reason.startswith("proposal: Do it before this push: the address list")
+        assert reason.endswith(" …") and len(reason) <= len("proposal: ") + 160
+        # it reads; it never writes
+        assert (slice_dir / "close-out.json").read_text() == before
+        assert report(slice_dir) == rendered
+
+
+def test_owed_before_push_without_a_store_is_a_report_error():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        try:
+            close_out.owed_before_push(slice_dir)
+            raise AssertionError("no store must raise")
+        except ReportError as e:
+            assert "close_out.py init" in str(e)
+
+
 # -- append: the refusals -------------------------------------------------------
 
 def _refused(slice_dir, argv, *needles):
