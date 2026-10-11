@@ -25,10 +25,17 @@ the labels each kind carries and how they pair, from the tables `append` refuses
 arguments of `append`, `note` and `strike`, rendered from the tool's own parser
 (`close_out.verb_usage`), so no `--help` turn or refused call is spent. No agent edits either
 file by hand. The `Disposition:` lines of `close-out.md` are the operator's, and the one thing
-in that file that is read back; everything else in it is overwritten by the next render. Every
-verb that changes the store renders the report as it saves, under the same lock, and takes
-those lines back first: the report never lags its store, and no write loses what the operator
-typed there.
+in that file that is read back. Every verb that changes the store renders the report as it
+saves, under the same lock, and takes those lines back first: the report never lags its store.
+**No write drops what the operator wrote anywhere else.** The store keeps the hash of the
+report as the tool last wrote it; a write that finds the file changed since, and would drop a
+line neither the store's render before it nor after it holds, writes nothing and prints those
+lines — with the `Disposition:` lines it takes — for the session to put to the operator. It
+goes through once repeated with `--overwrite`, which a role the run loop dispatched never
+passes; the driver bails `report_edited` instead ([run-loop.md](run-loop.md) § Protocol
+invariants). **Nor does a ruling replace one.** `rule --words` refuses an entry that holds other
+words already: `--append` adds the session's record of what the operator said after the words
+they wrote, `--replace` is for when they say the new words replace the old.
 
 ## What it is — and is not
 

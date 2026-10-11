@@ -502,6 +502,14 @@ while its A1 — push two toolchain commits, restart the pod — was still open,
 criterion owed after it) do not stop a run; they are what the run leaves behind. `--dry-run` lists
 the open entries without failing.
 
+**The loop does not write over an edited report.** Before every dispatch, and at each of its own
+writes to the close-out report, the run loop asks `close_out.py` whether `close-out.md` was
+edited since the tool last wrote it in a way the next write would drop ([close-out.md](close-out.md));
+it then bails `report_edited` (exit 4), the details holding the lines that would go. A role
+whose own write meets the refusal says what it meant to write in its verdict and carries on;
+the check before the next dispatch stops the run. The render at a bail and the stamp at
+completion only log the refusal: `/dev:run-slice` meets it there with the operator.
+
 **The loop does not start without the tool containers its Targets' manifests call.** At
 startup, fresh or `--resume`, once the plan's Targets resolve and before any dispatch, the run
 loop scans each Target repo's `.kubecoder/project.yaml` for `cexec <tool>` calls — a text scan,

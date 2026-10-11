@@ -6061,6 +6061,27 @@ def test_a_primary_gate_red_with_and_without_goes_to_the_writers_nudge():
                                        "and without them")
 
 
+def test_an_edit_of_the_report_stops_the_run_before_the_wrap_up_stage():
+    """The stage turns every stop inside it into a leave-out; the operator's
+    edit is asked about before it, so the resume still runs the wrap-up."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        plant_waiting(slice_dir)
+        script = wrap_script(repo)
+        role, verdict, effect = script[-1]
+        script[-1] = (role, verdict,
+                      lambda loop: (effect(loop), operator_edits(loop)))
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 4
+        assert not r.wrap_up_sessions
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "report_edited" and bail["question"] is True
+        state = load_state(slice_dir)
+        assert state["doc_phase"]["stage"] == "wrap-up"
+        assert (state.get("wrap_up") or {}).get("outcome") is None
+        assert "the operator's aside" in load_report(slice_dir)
+
+
 def test_a_project_without_a_doc_phase_runs_the_wrap_up_and_lands_it():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp, config=rc(doc=False))
@@ -7770,6 +7791,93 @@ def test_an_open_pre_run_action_refuses_the_run_until_struck():
                                      *TAIL], resume=True, repo_root=repo)
         assert run_to_exit(r) == 0
         assert r.spawned
+
+
+# -- the operator's edit of close-out.md -----------------------------------------
+#
+# AIWF-54: a write re-renders close-out.md from the store, and an edit the
+# operator made anywhere but a Disposition line was lost without a word. The
+# store keeps the hash of what it last wrote; the run stops before it writes
+# past an edit.
+
+def operator_edits(loop):
+    """The operator adds a line of their own to close-out.md."""
+    with open(loop.report_path, "a") as f:
+        f.write("\nthe operator's aside\n")
+
+
+def test_an_edit_of_the_report_between_dispatches_is_an_operator_question():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"] + (operator_edits,)],
+                         repo_root=repo)
+        assert run_to_exit(r) == 4
+        assert [s[0] for s in r.spawned] == ["code-writer"]
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "report_edited" and bail["question"] is True
+        assert bail["details"].startswith("close-out.md was edited since")
+        assert "  > the operator's aside\n" in bail["details"]
+        assert load_state(slice_dir)["bailouts"][-1]["reason"] == "report_edited"
+        # the bail's own render meets the same refusal: logged, no second
+        # bail, and the edit is where the operator left it
+        assert "the operator's aside" in load_report(slice_dir)
+        log = (slice_dir / "log.txt").read_text()
+        assert "close-out not rendered: close-out.md was edited since" in log
+        assert "OPERATOR QUESTION (report_edited)" in log
+
+        # the operator lets it go; the resume goes on where the run stopped
+        with close_out.overwriting():
+            close_out.render_report(slice_dir)
+        r = ScriptedLoop(slice_dir, [V["review_signoff"], *TAIL], resume=True,
+                         repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")    # where the writer left it
+        assert run_to_exit(r) == 0
+        assert "the operator's aside" not in load_report(slice_dir)
+        assert "Run paused for an operator question" in load_report(slice_dir)
+
+
+def test_a_driver_write_refused_for_an_edit_stops_the_run_unless_it_is_stopping():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        close_out.init_report(slice_dir)
+        operator_edits(r)
+        before = load_report(slice_dir)
+        writes = {
+            "_report": lambda: r._report("Notable events", "a thing happened",
+                                         "body", consequence="none"),
+            "_render_report": r._render_report,
+            "_assert_current": r._assert_current,
+        }
+        for name, write in writes.items():
+            try:
+                write()
+                raise AssertionError(f"{name} went past the edit")
+            except Bailout as bail:
+                assert bail.reason == "report_edited" and bail.question, name
+                assert "  > the operator's aside" in bail.details, name
+        # a ruling the write never entered is the resume's to enter
+        ruling = run_loop.Ruling("gate", "app", "no gate there", text="- gate app")
+        try:
+            r._report_ruling(ruling, "phase gate")
+            raise AssertionError("the ruling's entry went past the edit")
+        except Bailout:
+            pass
+        assert ruling.key not in r.state.get("rulings_reported", [])
+        # at a bail, in the wrap-up and at completion: logged
+        with r._report_logged():
+            assert r._report("Notable events", "a thing happened", "body",
+                             consequence="none") is None
+            r._render_report()
+        assert load_report(slice_dir) == before
+        log = (slice_dir / "log.txt").read_text()
+        assert "close-out entry not written (close-out.md was edited" in log
+        assert "close-out not rendered: close-out.md was edited" in log
+        # a report that cannot be read is no edit: the check logs it
+        (slice_dir / "close-out.json").write_text("{ not json\n")
+        r._assert_report_unedited()
+        assert "close-out not checked for an edit (" in \
+            (slice_dir / "log.txt").read_text()
 
 
 def test_an_after_run_action_alone_never_refuses_the_run():

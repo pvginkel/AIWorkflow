@@ -9,6 +9,7 @@ Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_close_out.py` or via pytest.
 """
 
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -40,6 +41,10 @@ def make_slice(tmp, name="007_argocd_tools_presync_hook", later=("012_later_slic
 
 def report(slice_dir):
     return (slice_dir / "close-out.md").read_text()
+
+
+def sha256(text):
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def store(slice_dir):
@@ -1098,8 +1103,9 @@ def test_rule_records_the_words_and_what_was_done_on_them():
         assert code == 0 and out.strip() == "B1: card it, KC"
         assert entry_of(slice_dir, "B1")["ruling"] == {"words": "card it, KC",
                                                        "did": None, "date": "2026-09-30"}
-        # a second ruling replaces the words and keeps the old ones in a note
-        run_cli("rule", slice_dir, "B1", "--words", "fix now", "--date", "2026-09-30")
+        # a second ruling replaces the words on --replace, the old ones in a note
+        run_cli("rule", slice_dir, "B1", "--words", "fix now", "--replace",
+                "--date", "2026-09-30")
         e = entry_of(slice_dir, "B1")
         assert e["ruling"]["words"] == "fix now"
         assert e["notes"][-1]["text"] == ["ruled earlier: card it, KC"]
@@ -1180,6 +1186,10 @@ def test_a_report_rendered_with_folds_is_read_back_before_its_first_re_render():
                                                      area="plain"))              # B1, B2
         close_out.rule_entry(slice_dir, "B2", words="fold into 012", date="2026-09-29")
         close_out.rule_entry(slice_dir, "B2", did="folded", date="2026-09-29")
+        # a store of then, written before it kept the hash of its render
+        data = store(slice_dir)
+        del data["rendered"]
+        close_out._save(slice_dir, data)
         triage = ("**Triage:** defect · shows on an ordinary condition · breaks a flow · "
                   "silent · fix is one edit · in\nKubeCoder")
         (slice_dir / "close-out.md").write_text(
@@ -1239,7 +1249,7 @@ def test_a_ruling_rule_replaces_stands_through_the_next_render():
         run_cli("append", slice_dir, *DEFECT)
         close_out.rule_entry(slice_dir, "B1", words="A", date="2026-10-09")
         close_out.render_report(slice_dir)
-        code, out, _ = run_cli("rule", slice_dir, "B1", "--words", "B",
+        code, out, _ = run_cli("rule", slice_dir, "B1", "--words", "B", "--replace",
                                "--date", "2026-10-09")
         assert code == 0 and out.strip() == "B1: B"
         assert "**Disposition:** B\n" in report(slice_dir)
@@ -1307,6 +1317,275 @@ def test_a_write_that_fails_leaves_the_store_and_the_report_as_they_were():
         # the words are still on the page for the next write to take
         close_out.render_report(slice_dir)
         assert entry_of(slice_dir, "B1")["ruling"]["words"] == "card it"
+
+
+def _edit(slice_dir, old, new):
+    """The operator edits close-out.md by hand: `old` becomes `new`."""
+    text = report(slice_dir)
+    assert old in text, old
+    (slice_dir / "close-out.md").write_text(text.replace(old, new, 1))
+
+
+def _files(slice_dir):
+    return ((slice_dir / "close-out.json").read_bytes(),
+            (slice_dir / "close-out.md").read_bytes())
+
+
+def test_the_store_keeps_the_hash_of_the_report_it_last_wrote():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        assert store(slice_dir)["rendered"] == sha256(report(slice_dir))
+        # every write moves it on with the report
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        assert store(slice_dir)["rendered"] == sha256(report(slice_dir))
+        run_cli("note", slice_dir, "B1", "--by", "op", "--text", "seen")
+        assert store(slice_dir)["rendered"] == sha256(report(slice_dir))
+        run_cli("strike", slice_dir, "B1", "--reason", "dup")
+        assert store(slice_dir)["rendered"] == sha256(report(slice_dir))
+        # a render that writes the same bytes leaves the store as it was
+        before = _files(slice_dir)
+        close_out.render_report(slice_dir)
+        assert _files(slice_dir) == before
+
+
+def test_a_store_without_the_hash_is_clean_once_and_gets_it():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        data = store(slice_dir)
+        del data["rendered"]
+        close_out._save(slice_dir, data)
+        _edit(slice_dir, "the body\n", "the body\nan aside\n")
+        code, _, err = run_cli("note", slice_dir, "B1", "--by", "op", "--text", "seen")
+        assert code == 0, err
+        assert "an aside" not in report(slice_dir)
+        assert store(slice_dir)["rendered"] == sha256(report(slice_dir))
+        # from here on it is compared
+        _edit(slice_dir, "the body\n", "the body\nan aside\n")
+        code, _, err = run_cli("note", slice_dir, "B1", "--by", "op", "--text", "again")
+        assert code == 2 and "> an aside" in err
+
+
+def test_an_edit_the_read_back_takes_stops_no_write():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        run_cli("append", slice_dir, *IMPROVEMENT)                               # I1
+        _write_disposition(slice_dir, "B1", "card it,\nin KubeCoder")
+        assert close_out.edited_report(slice_dir) is None
+        code, _, err = run_cli("note", slice_dir, "I1", "--by", "op", "--text", "seen")
+        assert code == 0, err
+        assert entry_of(slice_dir, "B1")["ruling"]["words"] == "card it,\nin KubeCoder"
+        assert store(slice_dir)["rendered"] == sha256(report(slice_dir))
+        # blank lines are nothing either
+        _edit(slice_dir, "## ", "\n\n## ")
+        code, _, err = run_cli("note", slice_dir, "I1", "--by", "op", "--text", "more")
+        assert code == 0, err
+
+
+def test_an_edit_a_render_would_drop_refuses_the_write_until_overwritten():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        run_cli("append", slice_dir, *IMPROVEMENT)                               # I1
+        _edit(slice_dir, "the body\n", "the body\nthe operator's aside\n")
+        _edit(slice_dir, "### I1 — drop the duplicate helper",
+              "### I1 — drop the duplicated helper")
+        _write_disposition(slice_dir, "B1", "keep it locked")
+        before = _files(slice_dir)
+        try:
+            close_out.add_note(slice_dir, "I1", "op", "seen")
+            raise AssertionError("the write went through")
+        except close_out.ReportEdited as e:
+            assert e.taken == [("B1", "keep it locked")]
+            assert e.dropped == ["the operator's aside",
+                                 "### I1 — drop the duplicated helper"]
+            assert str(e) == (
+                "close-out.md was edited since close_out.py last wrote it, and this "
+                "write would drop what was edited — nothing was written.\n"
+                "The Disposition lines it takes into the store:\n"
+                "  B1: keep it locked\n"
+                "The lines a re-render drops — an edit, or a line an older plugin "
+                "rendered otherwise:\n"
+                "  > the operator's aside\n"
+                "  > ### I1 — drop the duplicated helper\n" + close_out.EDITED_TAIL)
+        assert _files(slice_dir) == before
+        # the CLI says the same, exit 2
+        code, _, err = run_cli("note", slice_dir, "I1", "--by", "op", "--text", "seen")
+        assert code == 2 and err.startswith("Error: close-out.md was edited since")
+        assert "  > the operator's aside\n" in err
+        assert _files(slice_dir) == before
+        # with the permission it goes through: the Disposition is taken, the rest dropped
+        with close_out.overwriting():
+            with close_out.overwriting():       # re-entrant
+                pass
+            close_out.add_note(slice_dir, "I1", "op", "seen")
+        assert "the operator's aside" not in report(slice_dir)
+        assert "### I1 — drop the duplicate helper\n" in report(slice_dir)
+        assert entry_of(slice_dir, "B1")["ruling"]["words"] == "keep it locked"
+        assert store(slice_dir)["rendered"] == sha256(report(slice_dir))
+        # and the permission ends with the block
+        _edit(slice_dir, "the body\n", "the body\nonce more\n")
+        code, _, err = run_cli("note", slice_dir, "I1", "--by", "op", "--text", "x")
+        assert code == 2
+        code, _, err = run_cli("note", slice_dir, "I1", "--by", "op", "--text", "x",
+                               "--overwrite")
+        assert code == 0, err
+        assert "once more" not in report(slice_dir)
+
+
+def test_a_write_with_nothing_to_render_checks_nothing():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        close_out.rule_entry(slice_dir, "B1", words="card it")
+        _edit(slice_dir, "the body\n", "the body\nan aside\n")
+        before = _files(slice_dir)
+        # the same words again change nothing, so nothing is rendered
+        assert close_out.rule_entry(slice_dir, "B1", words="card it") == "B1: card it"
+        assert _files(slice_dir) == before
+
+
+def test_the_run_header_moving_on_is_not_an_edit():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        state = dict(STATE, run_phase="phases", doc_phase=None, test_rounds=0)
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        run_cli("append", slice_dir, *IMPROVEMENT)                               # I1
+        old_header = report(slice_dir)
+        state.update(updated_at="2026-08-15T09:12:00+02:00", test_rounds=2,
+                     known_phases=[*STATE["known_phases"], "12", "13"],
+                     appended_phases=[*STATE["appended_phases"], "12", "13"])
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        _write_disposition(slice_dir, "B1", "card it")
+        assert close_out.edited_report(slice_dir) is None
+        code, _, err = run_cli("note", slice_dir, "I1", "--by", "op", "--text", "seen")
+        assert code == 0, err
+        assert report(slice_dir).split("\n## ")[0] != old_header.split("\n## ")[0]
+        assert "2 test rounds" in " ".join(report(slice_dir).split())
+
+
+def test_what_the_write_itself_removes_is_not_the_edit():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *with_flags(DEFECT, body="the first body",
+                                                 consequence="a first consequence"))
+        run_cli("append", slice_dir, *with_flags(DEFECT, body="the second body"))
+        _edit(slice_dir, "the second body\n", "the second body\nthe operator's aside\n")
+        try:
+            close_out.strike_entry(slice_dir, "B1", "dup")
+            raise AssertionError("the strike went through")
+        except close_out.ReportEdited as e:
+            # the strike takes B1's ask off the page; only the aside is listed
+            assert e.dropped == ["the operator's aside"] and e.taken == []
+            assert "The Disposition lines it takes" not in str(e)
+        assert entry_of(slice_dir, "B1")["strike"] is None
+
+
+def test_edited_report_is_the_check_without_the_write():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        assert close_out.edited_report(slice_dir) is None                        # no store
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        assert close_out.edited_report(slice_dir) is None
+        _write_disposition(slice_dir, "B1", "card it")
+        _edit(slice_dir, "the body\n", "the body\nan aside\n")
+        before = _files(slice_dir)
+        found = close_out.edited_report(slice_dir)
+        assert isinstance(found, close_out.ReportEdited)
+        assert found.dropped == ["an aside"] and found.taken == [("B1", "card it")]
+        assert _files(slice_dir) == before
+        (slice_dir / "close-out.md").unlink()
+        assert close_out.edited_report(slice_dir) is None                        # missing
+
+
+def test_overwrite_is_on_every_writing_verb_and_never_in_the_dispatch():
+    _, subs = close_out.build_parser()
+    for name, sub in subs.items():
+        flags = {s for a in sub._actions for s in a.option_strings}
+        assert ("--overwrite" in flags) == (name in close_out.WRITING_VERBS), name
+    assert "--overwrite" in subs["note"].format_help()
+    assert "overwrite" not in close_out.dispatch_line("/s/close-out.md")
+    assert "overwrite" not in close_out.verb_usage(*close_out.WRITING_VERBS)
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        code, _, err = run_cli("append", slice_dir, *DEFECT, "--overwrite")
+        assert code == 0, err
+        for argv in (["note", "B1", "--by", "op", "--text", "t"],
+                     ["propose", "B1", "--by", "op", "--text", "t"],
+                     ["relabel", "B1", "--by", "op", "--note", "n", "--fix", "one-edit"],
+                     ["rule", "B1", "--words", "card it"],
+                     ["rule"],
+                     ["render"],
+                     ["strike", "B1", "--reason", "r"]):
+            code, _, err = run_cli(argv[0], slice_dir, *argv[1:], "--overwrite")
+            assert code == 0, (argv, err)
+
+
+def test_rule_never_replaces_words_the_entry_holds_unasked():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        for _ in range(4):
+            run_cli("append", slice_dir, *DECISION)                              # D1–D4
+        close_out.rule_entry(slice_dir, "D1", words="keep it locked", date="2026-10-10")
+        before = _files(slice_dir)
+        code, _, err = run_cli("rule", slice_dir, "D1", "--words", "The rest is agreed")
+        assert code == 2
+        assert ("D1 already holds the operator's words: \"keep it locked\". --append adds "
+                "these after them") in err
+        assert _files(slice_dir) == before
+        # the same words, whitespace aside: nothing to do
+        code, out, _ = run_cli("rule", slice_dir, "D1", "--words", " keep  it locked ")
+        assert code == 0 and out.strip() == "D1: keep it locked"
+        assert _files(slice_dir) == before
+        # --append joins them, no note
+        code, out, _ = run_cli("rule", slice_dir, "D1", "--words", "and say why",
+                               "--append", "--date", "2026-10-11")
+        assert code == 0 and out.strip() == "D1: keep it locked; and say why"
+        d1 = entry_of(slice_dir, "D1")
+        assert d1["ruling"] == {"words": "keep it locked; and say why", "did": None,
+                                "date": "2026-10-11"}
+        assert d1["notes"] == []
+        # --replace puts them in place, the old in a note
+        close_out.rule_entry(slice_dir, "D2", words="A", date="2026-10-10")
+        code, out, _ = run_cli("rule", slice_dir, "D2", "--words", "B", "--replace",
+                               "--date", "2026-10-11")
+        assert code == 0 and out.strip() == "D2: B"
+        assert entry_of(slice_dir, "D2")["notes"] == [
+            {"by": "the operator", "date": "2026-10-11", "text": ["ruled earlier: A"]}]
+        # on an entry without words either is plain --words
+        for eid, mode in (("D3", "--append"), ("D4", "--replace")):
+            code, out, _ = run_cli("rule", slice_dir, eid, "--words", "agreed", mode)
+            assert code == 0 and out.strip() == f"{eid}: agreed"
+            assert entry_of(slice_dir, eid)["ruling"]["words"] == "agreed"
+            assert entry_of(slice_dir, eid)["notes"] == []
+        # usage: either needs --words and an id; not both at once
+        code, _, err = run_cli("rule", slice_dir, "D1", "--append")
+        assert code == 2 and "--append needs --words" in err
+        code, _, err = run_cli("rule", slice_dir, "D1", "--did", "done", "--replace")
+        assert code == 2 and "--replace needs --words" in err
+        code, _, err = run_cli("rule", slice_dir, "--append")
+        assert code == 2 and "need an entry id" in err
+        code, _, _ = run_cli("rule", slice_dir, "D1", "--words", "x", "--append",
+                             "--replace")
+        assert code == 2
+        # the operator's own Disposition line still replaces, the old in a note
+        _write_disposition(slice_dir, "D3", "no, card it")
+        close_out.render_report(slice_dir)
+        d3 = entry_of(slice_dir, "D3")
+        assert d3["ruling"]["words"] == "no, card it"
+        assert d3["notes"][-1]["text"] == ["ruled earlier: agreed"]
 
 
 def test_close_leaves_a_ruling_nobody_executed_live_and_the_report_open():
@@ -1590,11 +1869,12 @@ def test_init_creates_the_store_once_and_renders_it():
         slice_dir = make_slice(tmp)
         code, out, _ = run_cli("init", slice_dir / "close-out.md")
         assert code == 0 and out.startswith("created ")
-        assert store(slice_dir) == {"store": 1, "slice": "007_argocd_tools_presync_hook",
-                                    "closed": None, "entries": []}
         assert report(slice_dir) == (
             "# Close-out — slice 007 argocd_tools_presync_hook\n\n"
             + close_out.HEAD_COMMENT + "\n\nRun: <not yet stamped>\n")
+        assert store(slice_dir) == {"store": 1, "slice": "007_argocd_tools_presync_hook",
+                                    "closed": None, "entries": [],
+                                    "rendered": sha256(report(slice_dir))}
         run_cli("append", slice_dir, *DEFECT)
         assert close_out.init_report(slice_dir) is False
         assert len(store(slice_dir)["entries"]) == 1

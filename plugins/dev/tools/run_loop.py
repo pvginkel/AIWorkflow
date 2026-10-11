@@ -45,7 +45,10 @@ dispatch, enter refuted findings and funding-consult merges through that
 tool, hand the completion consult the live entries owed before the push
 (close_out.owed_before_push), dispatch the wrap-up, render it before the
 doc phase, after the wrap-up, at every bail and at completion, stamp the
-run header at completion.
+run header at completion. A close-out.md edited by hand where a render would
+drop the edit stops the run with an operator question (`report_edited`) —
+checked before every dispatch, and met by any driver write mid-run; at a
+bail, in the wrap-up and at completion a refused write is logged.
 
 The plan doc is writable by every agent in the loop — deliberately. The
 driver's job is keeping the shared doc parseable: a parse error, a vanished
@@ -130,11 +133,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import github_target  # noqa: E402
 import project_config  # noqa: E402
 from close_out import (  # noqa: E402
+    ReportEdited,
     ReportError,
     add_note,
     append_entry,
     counts_line,
     dispatch_line,
+    edited_report,
     entry_counts,
     find_by_headline,
     init_report,
@@ -3108,6 +3113,10 @@ def services_check(roots: Sequence[Path],
 # ---------------------------------------------------------------------------
 
 class RunLoop:
+    # True where a driver write close-out.md refuses for an edit is logged
+    # rather than a stop (`_report_logged`).
+    _report_quiet = False
+
     def __init__(self, slice_dir: Path, resume: bool, verbose: bool = False):
         self.slice_dir = slice_dir.resolve()
         self.slice_name = self.slice_dir.name
@@ -3707,12 +3716,12 @@ class RunLoop:
     def _report_ruling(self, ruling: Ruling, where: str) -> None:
         """A ruling the run applied, entered in the close-out report once per
         run — the first time it changed what the driver did. Deduped across
-        resumes in state.json, as `_report_hold` dedupes holds."""
+        resumes in state.json, as `_report_hold` dedupes holds — marked once
+        the write is over, so a write an operator's edit stopped is the
+        resume's to make."""
         reported = self.state.setdefault("rulings_reported", [])
         if ruling.key in reported:
             return
-        reported.append(ruling.key)
-        self._save_state()
         body = f"`plan.md`'s `## Driver rulings` section: `{ruling.text}`"
         if ruling.kind == "gate":
             headline = (f"Gate waived by ruling: {ruling.target} — "
@@ -3738,6 +3747,8 @@ class RunLoop:
                       consequence=consequence,
                       provenance=f"witnessed — the driver's {where}, against "
                                  "`plan.md`'s `## Driver rulings`")
+        reported.append(ruling.key)
+        self._save_state()
 
     def _base_branch(self, root: Path) -> str:
         """The base branch of a target repo, recorded the first time the loop
@@ -4178,13 +4189,50 @@ class RunLoop:
 
     def _assert_current(self) -> None:
         """Before the run and before every dispatch: the installed plugin —
-        the one the agent about to run loads — is this loop's, and
-        verification.json holds no key this loop would ignore. Either can
-        change under a running loop (a marketplace update, a newer agent)."""
+        the one the agent about to run loads — is this loop's,
+        verification.json holds no key this loop would ignore, and
+        close-out.md holds no edit a write would drop. Each can change under
+        a running loop (a marketplace update, a newer agent, the operator)."""
         assert_plugin_current(Path(__file__).name,
                               " plus --resume (a run loop resumes from "
                               "state.json)")
         assert_verification_keys(self.slice_dir)
+        self._assert_report_unedited()
+
+    def _assert_report_unedited(self) -> None:
+        """Bail (`report_edited`, an operator question) while close-out.md
+        carries an edit the next write to it would drop: the agent about to
+        run writes to the report, and its write would be refused. A report
+        that cannot be read is logged — its writers meet that themselves."""
+        try:
+            edited = edited_report(self.slice_dir)
+        except ReportError as e:
+            self.log(f"close-out not checked for an edit ({e})")
+            return
+        if edited is not None:
+            raise Bailout("report_edited", question=True, details=str(edited))
+
+    def _report_refused(self, e: ReportError) -> None:
+        """A driver write close_out.py refused: mid-run, an edit the write
+        would drop is an operator question (`report_edited`) — the run stops
+        rather than write past it. Every other refusal, and this one where
+        the run is stopping or done (`_report_logged`), is the caller's to
+        log."""
+        if isinstance(e, ReportEdited) and not self._report_quiet:
+            raise Bailout("report_edited", question=True, details=str(e)) from None
+
+    @contextlib.contextmanager
+    def _report_logged(self):
+        """Driver writes to the report inside log a refusal for an edit,
+        never stop on it: at a bail (no second bail), in the wrap-up (never
+        a stop) and at completion (the run's work is done; /dev:run-slice
+        re-stamps and meets the refusal itself)."""
+        prior = self._report_quiet
+        self._report_quiet = True
+        try:
+            yield
+        finally:
+            self._report_quiet = prior
 
     def _spawn_env(self, spec_branch: str | None) -> dict[str, str]:
         """The environment a session is dispatched with: SPAWN_ENV, plus
@@ -5758,12 +5806,15 @@ class RunLoop:
         operator should see without reading the log, each with the stock
         consequence line its event carries. A report an agent removed is
         logged, never a bail: the run's outcome does not hang on its
-        narrative. Returns the entry's id, None when it was not written."""
+        narrative — an operator's edit the write would drop is the one stop
+        (`_report_refused`). Returns the entry's id, None when it was not
+        written."""
         try:
             eid = append_entry(self.slice_dir, section, headline, body,
                                consequence=consequence, provenance=provenance,
                                proposal=proposal)
         except ReportError as e:
+            self._report_refused(e)
             self.log(f"close-out entry not written ({e}): {headline}")
             return None
         self.log(f"close-out {eid}: {headline}")
@@ -6299,13 +6350,12 @@ class RunLoop:
     def _report_hold(self, root: Path, why: str) -> None:
         """A held repo, entered in the close-out report once per run: the
         slice's commits stay local, so the push is a keystroke only the
-        operator can make."""
+        operator can make. Marked in state.json once the write is over, so a
+        write an operator's edit stopped is the resume's to make."""
         key = str(root)
         reported = self.state.setdefault("holds_reported", [])
         if key in reported:
             return
-        reported.append(key)
-        self._save_state()
         self.log(f"[push-check] {root.name} is held by the plan ({why}) — "
                  "reported, not nudged")
         headline = f"Push {root.name} by hand when its hold lifts"
@@ -6321,8 +6371,11 @@ class RunLoop:
                 add_note(self.slice_dir, eid, "driver, push check",
                          f"held as planned. {where}")
                 self.log(f"close-out {eid} noted: {headline}")
+                reported.append(key)
+                self._save_state()
                 return
         except ReportError as e:
+            self._report_refused(e)
             self.log(f"close-out not searched for the seeded hold ({e})")
         self._report(
             "Outstanding actions", headline,
@@ -6334,6 +6387,8 @@ class RunLoop:
             provenance="witnessed — the driver's push check, against "
                        "`plan.md`'s `## Push holds` section",
             proposal="Push it when the hold lifts.")
+        reported.append(key)
+        self._save_state()
 
     def _github_gate_problem(self, target: ResolvedTarget) -> str | None:
         """Why a GitHub target cannot run as planned, None when it can. Its
@@ -6357,7 +6412,8 @@ class RunLoop:
         clone per run, as an event that describes no problem — the record:
         the driver made (or adopted) it, and the close-out session removes it
         once the slice's commits are on origin. Nothing is asked of the
-        operator."""
+        operator. Marked in state.json once the write is over, so a write an
+        operator's edit stopped is the resume's to make."""
         if not github_target.is_github(target.name):
             return
         clone = target.git_root
@@ -6365,14 +6421,14 @@ class RunLoop:
         reported = self.state.setdefault("scratch_clones_reported", [])
         if key in reported:
             return
-        reported.append(key)
-        self._save_state()
         headline = (f"The driver left a scratch clone at {clone} "
                     f"(`Target: {target.name}`)")
         try:
             if find_by_headline(self.slice_dir, "Notable events",
                                 headline) is not None:
                 self.log(f"close-out already holds: {headline}")
+                reported.append(key)
+                self._save_state()
                 return
         except ReportError as e:
             self.log(f"close-out not searched for the scratch clone ({e})")
@@ -6392,6 +6448,8 @@ class RunLoop:
                         "later preflight, until the close-out session "
                         "removes it.",
             provenance="witnessed — the driver's target resolution")
+        reported.append(key)
+        self._save_state()
 
     def _assert_pushed(self, session: str | None) -> None:
         """Before the doc phase: every repo the slice touched is on its
@@ -6560,9 +6618,14 @@ class RunLoop:
             self._save_state()
 
         if ds["stage"] == "wrap-up":
+            # Asked before the stage, which turns any stop into a leave-out:
+            # an operator's edit of the report is theirs to settle, and the
+            # resume re-enters the stage with the wrap-up still to run.
+            self._assert_report_unedited()
             # Never raises a Bailout: whatever goes wrong in it is left out
             # of the landing, and the stage moves on.
-            self._wrap_up(ds, branch)
+            with self._report_logged():
+                self._wrap_up(ds, branch)
 
         if ds["stage"] == "gate":
             self._doc_gate_until_green(ds, branch)
@@ -7626,10 +7689,20 @@ class RunLoop:
         is not."""
         store = store_path(self.slice_dir)
         text = self.specs_git("show", f"{sha}:./{store.name}")
+        # The hash of the close-out.md last written stays the current
+        # store's: the report on disk is that one, not the commit's, and an
+        # edit made to it since is still one.
+        try:
+            data = json.loads(text)
+            data["rendered"] = json.loads(store.read_text()).get("rendered")
+            text = json.dumps(data, indent=2, ensure_ascii=False)
+        except (OSError, ValueError, AttributeError, TypeError):
+            pass
         tmp = store.with_name(store.name + ".tmp")
         tmp.write_text(text if text.endswith("\n") else text + "\n")
         os.replace(tmp, store)
-        self._render_report()
+        with self._report_logged():
+            self._render_report()
         self._commit_report(f"slice {self.slice_num}: close-out report back to "
                             f"where it stood before the wrap-up ({sha[:12]})",
                             expect)
@@ -7936,8 +8009,9 @@ class RunLoop:
         self._save_state()
         # A resume that completed without dispatching anything enters its
         # stops here, with the tree on its base and the run over.
-        self._report_bailouts()
-        self._stamp_report()
+        with self._report_logged():
+            self._report_bailouts()
+            self._stamp_report()
         self._summary()
         sys.exit(0)
 
@@ -8030,10 +8104,12 @@ class RunLoop:
     def _render_report(self) -> None:
         """close-out.md rendered from the store — before the doc phase, at
         every bail and at completion. Idempotent, and never a failure: a
-        report an agent broke is logged, the run goes on."""
+        report an agent broke is logged, the run goes on — save, mid-run,
+        an operator's edit the render would drop (`_report_refused`)."""
         try:
             self.log("close-out rendered: " + render_report(self.slice_dir))
         except ReportError as e:
+            self._report_refused(e)
             self.log(f"close-out not rendered: {e}")
 
     def _stamp_report(self) -> None:
@@ -8137,7 +8213,8 @@ class RunLoop:
             if cur.startswith("phase/"):
                 self.log(f"close-out not rendered: the spec repo is on {cur}")
             else:
-                self._render_report()
+                with self._report_logged():
+                    self._render_report()
         except Exception as e:
             why = e.details if isinstance(e, Bailout) else str(e)
             self.log(f"close-out not rendered: {why}")

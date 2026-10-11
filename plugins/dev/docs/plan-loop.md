@@ -26,8 +26,9 @@ pass there is. Post-GO corrections are the same move without the loop: edit the 
 sanity-check with `run_loop.py run <slice-dir> --dry-run`.
 
 Exits: **0** plan complete (a reviewer verdict is on file and the plan parses as a phase
-queue) · **4** operator input needed (writer questions, or a review pending adjudication;
-handle it, rerun — the loop resumes where it paused) · **3** bailed (`plan_bailout.json`:
+queue) · **4** operator input needed (writer questions, a review pending adjudication, or a
+`close-out.md` edited by hand that refused the exit-0 seed below; handle it, rerun — the loop
+resumes where it paused) · **3** bailed (`plan_bailout.json`:
 `blocked`, `timeout`, `protocol_failure`, `missing_tools` — a plan Target's manifest calls a
 `cexec` tool this environment does not run, `missing_services` — a plan Target's
 `.kubecoder/config.yaml` declares a service this environment does not run, both checked at GO as
@@ -54,7 +55,9 @@ it; what the planning agents write there is [close-out.md](close-out.md)'s. At e
 seeds the report's actions from the plan: one entry per push-hold repo, listing the criteria
 owed after that push, and one per criterion owed after anything else. It commits them under the
 same lease and branch check, and a headline an action already carries, live or struck, is not
-entered again, however often the loop reruns. The loop renders the report when it stops,
+entered again, however often the loop reruns. A seed that `close_out.py` refuses because the
+operator edited the report where the write would drop it ([close-out.md](close-out.md)) stops
+the loop with exit 4 and the lines on stderr; the rerun seeds what is left. The loop renders the report when it stops,
 whatever its exit. Every dispatch also names the project's
 **change-discipline doc** (`.aiworkflowrc`'s `design_philosophy`) — the same pointer the run
 loop's dispatches carry, so the rules a plan's phases will be held to are in view while the plan

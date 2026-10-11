@@ -327,6 +327,22 @@ states a cause only where shown; a strike names the commit and what was re-run
 **Readout.** Not read as an instrument; the close-out skill's behaviour on a challenged claim (quote
 the entry's own evidence rather than agree) is the untested half.
 
+### No write drops what the operator wrote (v0.9.91)
+
+**Incident.** The operator rules on the report itself as well as in the session, and edits it
+after delivery. The sessions that run `close_out.py` copy those rulings into the store, but now
+and then forget, or miss the edit, and the next render overwrote it. In Ansible slice 051 a
+session had read the written rulings into the store, then recorded the chat line "The rest is
+agreed" with `rule --words` on D1, D3, B1 and B11 too, replacing what the operator had written
+there; only `show` still had the old words, as a note.
+
+**Change.** The store keeps the hash of the report as the tool last wrote it; a write that finds
+it edited, and would drop a line neither the store's render before nor after it holds, writes
+nothing and prints the lines, until it is repeated with `--overwrite`. Git was considered as the
+detector and dropped: what was last written is the reference, whatever was committed since. The
+run loop bails on it as an operator question. `rule --words` refuses an entry that holds other
+words, unless `--append` or `--replace` ([`close-out.md`](../../plugins/dev/docs/close-out.md)).
+
 ## 5. Cost and context
 
 ### The cost readout (v0.4.3, I2)

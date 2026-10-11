@@ -24,8 +24,9 @@ follows — the operator's read is the second look.
 
   exit 0 — plan complete: a reviewer verdict is on file and the plan parses
            as run_loop.py's phase queue.
-  exit 4 — operator input needed: writer questions, or a review pending
-           adjudication. Handle it, rerun — the loop continues where it
+  exit 4 — operator input needed: writer questions, a review pending
+           adjudication, or a close-out.md edited by hand that refused the
+           exit-0 seed. Handle it, rerun — the loop continues where it
            paused.
   exit 3 — bailed (plan_bailout.json): an agent reported blocked, or a
            protocol failure.
@@ -79,6 +80,7 @@ import github_target  # noqa: E402
 import project_config  # noqa: E402
 import run_loop  # noqa: E402
 from close_out import (  # noqa: E402
+    ReportEdited,
     ReportError,
     append_entry,
     dispatch_line,
@@ -686,6 +688,13 @@ class PlanLoop:
               file=sys.stderr)
         sys.exit(4)
 
+    def _exit_report_edited(self, refused: ReportEdited) -> None:
+        self.log(f"REPORT EDITED — {refused}")
+        print(f"REPORT EDITED — the plan is complete, but its close-out actions "
+              f"were not seeded:\n{refused}\nCommit the slice folder (stage by "
+              "name), then rerun: the rerun seeds them.", file=sys.stderr)
+        sys.exit(4)
+
     def _exit_adjudication(self, review_path: Path) -> None:
         self.log(f"REVIEW PENDING ADJUDICATION — {review_path}")
         print(f"REVIEW PENDING ADJUDICATION — read {review_path}, "
@@ -905,10 +914,14 @@ class PlanLoop:
         live or struck, is left be: the loop reruns after questions and
         adjudication, and a slice may be replanned. Appended entries are
         committed under the same lease and branch check as `_ensure_report`;
-        a report that refuses an entry is logged, never a failed plan."""
+        a report that refuses an entry is logged, never a failed plan — save
+        a close-out.md the operator edited where the write would drop the
+        edit: the loop stops there with the operator-input exit
+        (`_exit_report_edited`), and the rerun seeds what is left."""
         entries = self._owed_entries()
         if not entries:
             return
+        refused = None
         with self._spec_tree("close-out outstanding actions"):
             self._assert_on_base()
             seeded = 0
@@ -923,6 +936,9 @@ class PlanLoop:
                                        body, consequence=consequence,
                                        provenance=provenance,
                                        proposal=proposal)
+                except ReportEdited as e:
+                    refused = e
+                    break
                 except ReportError as e:
                     self.log(f"close-out entry not written ({e}): {headline}")
                     continue
@@ -934,6 +950,8 @@ class PlanLoop:
                 self.git("commit", "-m",
                          f"slice {self.slice_num}: seed close-out "
                          "outstanding actions")
+        if refused is not None:
+            self._exit_report_edited(refused)
 
     def run(self) -> None:
         if not (self.slice_dir / "slice.md").exists():

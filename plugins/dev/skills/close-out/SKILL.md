@@ -34,7 +34,11 @@ slice directory.
    report's `Disposition:` lines into the store and prints it; `close_out.py render <slice>`
    then writes the report as the table routes it today. A report from before the store existed
    is imported by the first call: its old Bugs and Suggestions carry no labels and stand under
-   **Unlabelled**.
+   **Unlabelled**. When the operator edited the report outside its `Disposition:` lines, the
+   read-back refuses and prints what a render would drop. Bring those lines to them first, take
+   what they want kept into the store (`note`, `propose`, `rule <slice> <id> --words`), the
+   first of those writes carrying `--overwrite`, or render with `--overwrite` on their word —
+   never on your own.
 3. **Dispatch the wrap-up when entries wait for it.** `close_out.py worklist <slice>` names what
    the table gave the wrap-up and no run wrapped up: a run that stopped before its end, a
    wrap-up that failed, a report an older plugin wrote. When it names any, say so in a line and
@@ -76,7 +80,9 @@ slice directory.
    report. What they say you record at once, `close_out.py rule <slice> <id> --words "<their
    words>"` — **in the operator's words**, never paraphrased, never completed. What they wrote
    in the file, `close_out.py rule <slice>` reads back: run it again before you execute anything
-   when they tell you they wrote there. Free form; the usual vocabulary is `card [project]` ·
+   when they tell you they wrote there. An entry that holds their words already refuses new
+   ones: what they add to it in the session goes on with `--append`, and `--replace` only when
+   they say the new words replace the old. Free form; the usual vocabulary is `card [project]` ·
    `fix now` · `fold into <slice>` · `close` · `defer`. A blanket ruling ("close the rest", "I'm
    not progressing anything else") is a `close` on every entry that came to them and has no
    ruling yet, each carrying those words. A ruling may name any entry of the report: "card B7"

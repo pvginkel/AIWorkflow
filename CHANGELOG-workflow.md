@@ -4,6 +4,29 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-11 — No write to the close-out report drops what the operator wrote there, and `rule --words` no longer replaces their words unasked (v0.9.91)
+
+The store keeps `rendered`, the sha256 of `close-out.md` as `close_out.py` last wrote it. A write
+that finds the file changed since, and would drop a line neither the store's render before it
+nor after it holds, writes nothing: it prints those lines and the `Disposition:` lines it takes,
+and goes through once repeated with `--overwrite`. An edit of the `Disposition:` lines alone is
+read back as before, and the run header, which follows `state.json`, is never counted. A store
+without the hash is clean once and takes one. `rule --words` refuses an entry that holds other
+words: `--append` adds the session's record of what the operator said after them, `--replace`
+puts the new words in their place, the old kept in a note. The read-back of the operator's own
+line still replaces.
+
+The run loop checks the report before every dispatch and at its own writes mid-run, and bails
+`report_edited` (exit 4) with the lines; the render at a bail, the wrap-up stage and the stamp at
+completion only log the refusal. A role whose write is refused never overwrites: it says what it
+meant to write in its verdict. The plan loop stops its exit-0 seed on the refusal with exit 4,
+and the rerun seeds what is left. The report's head comment says so.
+
+Why: the operator rules on the report as well as in the session, and edits it after delivery;
+the sessions copying those rulings into the store now and then forgot, and the next render
+overwrote them. In Ansible slice 051 a session recorded the chat line "The rest is agreed" with
+`rule --words` on four entries the operator had ruled on in the file, replacing their words.
+
 ## 2026-10-11 — What must not be pushed is fixed in the executor's own phase; the completion consult is handed what may have to land before the push (v0.9.90)
 
 The code-writer fixes a secret, or production data in a repository that is or may become public,

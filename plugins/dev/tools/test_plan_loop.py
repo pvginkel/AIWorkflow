@@ -8,8 +8,10 @@ is spawned.
 Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_plan_loop.py` or via pytest.
 """
 
+import contextlib
 import fcntl
 import importlib.util
+import io
 import json
 import os
 import re
@@ -914,6 +916,45 @@ def test_a_report_that_refuses_the_seed_is_logged_not_a_failed_plan():
         assert "is not valid JSON" in log
         # …and the exit's render, which cannot read it either, is logged too
         assert "close-out not rendered: " in log
+
+
+def test_an_edited_report_that_refuses_the_seed_is_the_operator_input_exit():
+    """AIWF-54: the operator edited close-out.md while the loop ran, and the
+    seed's write would drop the edit — the loop stops with exit 4, the
+    refusal on stderr, and the rerun seeds once it is dealt with."""
+    def operator_edits(loop):
+        with open(loop.report_path, "a") as f:
+            f.write("\nthe operator's aside\n")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [
+            ("plan-writer", {"outcome": "done"}, plans(HOLD_SECTION, [])),
+            R_GO + (operator_edits,)])
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            assert run_to_exit(loop) == 4
+        assert err.getvalue().startswith(
+            "REPORT EDITED — the plan is complete, but its close-out actions were "
+            "not seeded:\nclose-out.md was edited since")
+        assert "  > the operator's aside\n" in err.getvalue()
+        assert commits(loop) == [("commit", "-m", "slice 099: close-out report")]
+        assert not (slice_dir / "plan_bailout.json").exists()
+        text = (slice_dir / "close-out.md").read_text()
+        assert "### A1" not in text and "the operator's aside" in text
+        log = (slice_dir / "plan_log.txt").read_text()
+        assert "REPORT EDITED — close-out.md was edited" in log
+        # the exit's render meets the same refusal, and logs it
+        assert "close-out not rendered: close-out.md was edited" in log
+
+        # the operator lets it go; the rerun (phase done) seeds it
+        with close_out.overwriting():
+            close_out.render_report(slice_dir)
+        rerun = ScriptedLoop(slice_dir, [])
+        assert run_to_exit(rerun) == 0
+        assert "### A1 — Push HelmCharts by hand" in \
+            (slice_dir / "close-out.md").read_text()
+        assert commits(rerun) == [SEED_COMMIT]
 
 
 def test_the_seed_commits_on_the_base_branch_only():

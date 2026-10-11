@@ -103,6 +103,14 @@ on their word — strike it (`close_out.py strike <slice_dir> <id> --reason "<wh
 "run-slice session"`), render (`close_out.py render <slice_dir>`), commit `close-out.json` and
 `close-out.md`, and relaunch with `--resume`.
 
+A `report_edited` bail is the operator's edit of `close-out.md`, outside its `Disposition:`
+lines, that the next write would drop; `bailout.json` lists the lines. Put them to the operator.
+What they want kept goes into the store (`close_out.py note`, `propose`, `rule <slice_dir> <id>
+--words`), the first of those writes carrying `--overwrite`; when nothing is to be kept,
+`close_out.py render <slice_dir> --overwrite` on their word. Commit `close-out.json` and
+`close-out.md`, and relaunch with `--resume`. The same refusal from your own `stamp` is handled
+the same way.
+
 A `missing_tools` bail is the environment's: a Target repo's manifest calls a `cexec <tool>` this
 environment does not run. `bailout.json` names each tool, the repo whose manifest calls it, and
 the `- use: <tool>` line for the host's `.kubecoder/config.yaml` — or, where that line is already
