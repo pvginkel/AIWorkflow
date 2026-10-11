@@ -562,17 +562,62 @@ def installed_plugin(tools_dir: Path | None = None) -> tuple[str, str] | None:
         if len(keys) != 1:
             return None
         key = keys[0]
-    entries = plugins.get(key)
-    if not isinstance(entries, list):
-        return None
-    entries = [e for e in entries if isinstance(e, dict)]
-    user = [e for e in entries if e.get("scope") == "user"]
-    entry = user[0] if user else entries[0] if len(entries) == 1 else None
+    entry = _install_entry(plugins.get(key))
     version = entry.get("version") if entry else None
     if not isinstance(version, str) or not version:
         return None
     path = entry.get("installPath")
     return version, path if isinstance(path, str) else ""
+
+
+def _install_entry(entries) -> dict | None:
+    """The install an installed_plugins.json key stands for: its user-scope
+    entry, else a lone one; several and none of them the user's is None."""
+    if not isinstance(entries, list):
+        return None
+    entries = [e for e in entries if isinstance(e, dict)]
+    user = [e for e in entries if e.get("scope") == "user"]
+    return user[0] if user else entries[0] if len(entries) == 1 else None
+
+
+# A skill a plan names for its work, as `/dev:plan-slice` writes it: the
+# backticked `<plugin>:<skill>`. Every role is spawned without the Skill tool
+# (SPAWN_FLAGS), so the driver hands the role the skill's file instead.
+SKILL_REF_RE = re.compile(r"`([a-z0-9][a-z0-9-]*):([a-z0-9][a-z0-9-]*)`")
+
+
+def resolve_skills(text: str) -> list[tuple[str, Path | None]]:
+    """The skills `text` names, in order of first mention, each once:
+    (`<plugin>:<skill>`, its installed SKILL.md), the path None when the
+    installed plugin has no such skill. A name whose plugin is not installed
+    is no skill reference (`origin:main` in backticks), and this plugin's own
+    are its roles' already. The install is the one an interactive session
+    loads: a `<plugin>@*` key's user-scope entry, else its lone one, the
+    first such key in file order when several qualify. Nothing installed on
+    record is no skills at all."""
+    data = _read_json(INSTALLED_PLUGINS)
+    plugins = data.get("plugins") if isinstance(data, dict) else None
+    if not isinstance(plugins, dict):
+        return []
+    manifest = _read_json(PLUGIN_MANIFEST)
+    own = manifest.get("name") if isinstance(manifest, dict) else None
+    found: list[tuple[str, Path | None]] = []
+    for match in SKILL_REF_RE.finditer(text):
+        plugin, skill = match.groups()
+        name = f"{plugin}:{skill}"
+        if plugin == own or any(n == name for n, _ in found):
+            continue
+        keys = [k for k in plugins if k.split("@", 1)[0] == plugin]
+        if not keys:
+            continue
+        installs = [e for e in (_install_entry(plugins[k]) for k in keys) if e]
+        entry = next((e for e in installs if e.get("scope") == "user"),
+                     next(iter(installs), None))
+        root = entry.get("installPath") if entry else None
+        path = (Path(root) / "skills" / skill / "SKILL.md"
+                if isinstance(root, str) and root else None)
+        found.append((name, path if path and path.is_file() else None))
+    return found
 
 
 def stale_plugin(script: str) -> tuple[str, str, str] | None:
@@ -905,6 +950,29 @@ def parse_plan(text: str) -> tuple[list[Phase], list[str]]:
         if not phase.done and not phase.target:
             errors.append(f"phase P{phase.id} has no `Target:` line")
     return phases, errors
+
+
+# The headings that end a phase's section: any `#`–`###`. A `####` inside a
+# phase is its own, as parse_plan reads it.
+SECTION_HEADING_RE = re.compile(r"^#{1,3}\s")
+
+
+def phase_scope(plan_text: str, phase_id: str) -> str:
+    """The plan as phase `phase_id`'s own: its section, plus everything no
+    phase's section holds — the title, requirements/rulings, `## Driver
+    rulings`, a not-in-scope after the phases — with every other phase cut.
+    A section runs from its `###` heading to the next heading at `###` or
+    above, so a `##` after the last phase is the plan's again (parse_plan
+    carries it in that phase's body; it reads phases, not prose)."""
+    kept: list[str] = []
+    owner: str | None = None
+    for line in plan_text.splitlines():
+        if SECTION_HEADING_RE.match(line):
+            match = PHASE_RE.match(line)
+            owner = match.group(1) if match else None
+        if owner is None or owner == phase_id:
+            kept.append(line)
+    return "\n".join(kept)
 
 
 def is_repo_path(target: str) -> bool:
@@ -2029,6 +2097,36 @@ CLOSE_OUT_LINE = """
 {dispatch_line}
 """
 
+# Carried by a dispatch whose plan text names a skill (resolve_skills): the
+# role has no Skill tool, so it is pointed at the installed file — the
+# version an interactive session would load, never a search of the cache.
+# The plan loop's dispatches carry it for the slice, the run loop's for the
+# phase: its executor, fix rounds and reviewer.
+SKILL_LINE = """
+Skills {whose} names. This session has no Skill tool: each skill is the
+file named here — read it before the work it governs.
+{rows}
+"""
+
+
+def skill_line(skills: list[tuple[str, Path | None]], whose: str) -> str:
+    """SKILL_LINE over resolve_skills' answer — empty when it named none, so
+    a dispatch with no skill is the prompt it always was."""
+    if not skills:
+        return ""
+    rows = [f"- `{name}`: {path}" if path else
+            f"- `{name}`: the installed {name.split(':', 1)[0]} plugin has "
+            "no such skill — work without it, and do not search for it."
+            for name, path in skills]
+    return SKILL_LINE.format(whose=whose, rows="\n".join(rows))
+
+
+def skills_named(skills: list[tuple[str, Path | None]]) -> str:
+    """The driver's log line for the skills a dispatch was pointed at."""
+    return "skills named — " + ", ".join(
+        name if path else f"{name} (not installed)" for name, path in skills)
+
+
 # Carried by every dispatch that commits into the tree holding the slice
 # folder — executor, reviewer and consult alike, inside a phase whose
 # `Target:` is the specs repo. The driver's run record is written into that
@@ -2140,7 +2238,7 @@ phase's scope is under review; end-to-end testing and prose docs have their
 own later phases, so their absence here is not a finding.
 
 {review_set}{gate_line}
-{philosophy_line}{close_out_line}{bookkeeping_note}
+{philosophy_line}{skill_line}{close_out_line}{bookkeeping_note}
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
 
@@ -2166,7 +2264,7 @@ touches it. The requirements are unchanged: the phase's section in
 {plan_path} and the acceptance criteria in {verification_path}.
 
 {review_set}{gate_line}
-{philosophy_line}{close_out_line}{bookkeeping_note}
+{philosophy_line}{skill_line}{close_out_line}{bookkeeping_note}
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
 
@@ -5064,16 +5162,33 @@ class RunLoop:
             return ""
         return BOOKKEEPING_NOTE.format(slice_dir=self.slice_dir)
 
-    def _pointers(self, target: ResolvedTarget) -> str:
+    def _pointers(self, target: ResolvedTarget, phase_id: str) -> str:
         """What every executor dispatch carries at its tail: the close-out
         report's path and tool, the project's change-discipline doc, plus the
-        gate waiver and the bookkeeping fence where they apply."""
+        gate waiver, the skills the phase names and the bookkeeping fence
+        where they apply."""
         return (self._gate_waived_note(target) + self._philosophy_line()
-                + self._close_out_line() + self._bookkeeping_note(target))
+                + self._skill_line(phase_id) + self._close_out_line()
+                + self._bookkeeping_note(target))
 
     def _close_out_line(self) -> str:
         return CLOSE_OUT_LINE.format(
             dispatch_line=dispatch_line(self.report_path))
+
+    def _skill_line(self, phase_id: str) -> str:
+        """The skills the phase's executor, fix rounds and reviewer are
+        pointed at (SKILL_LINE): those named in the phase's own section of
+        the plan and in the plan's text outside every phase (phase_scope),
+        read from the plan as it stands at this dispatch — a round may have
+        edited it. Logged per dispatch that carries it."""
+        try:
+            plan_text = self.plan_path.read_text()
+        except OSError:
+            return ""
+        skills = resolve_skills(phase_scope(plan_text, phase_id))
+        if skills:
+            self.log(f"[P{phase_id}] {skills_named(skills)}")
+        return skill_line(skills, "this phase")
 
     def _phase_digest(self, phase_id: str) -> str:
         """The writer's orientation for this round (build_phase_digest): the
@@ -5407,7 +5522,7 @@ class RunLoop:
                 slice_name=self.slice_name, target=phase.target,
                 branch=branch, where=where, gate_hint=gate_hint,
                 verdict_path=vp,
-                pointers=self._pointers(target)))
+                pointers=self._pointers(target, phase_id)))
             self._after_session_plan_check()
             ps["stage"] = "gate"
             self._save_state()
@@ -5442,7 +5557,7 @@ class RunLoop:
                         merge_base=merge_base, where=where,
                         review_path=outputs / f"code_review_r{_r}.md",
                         gate_hint=gate_hint, verdict_path=vp,
-                        pointers=self._pointers(target)))
+                        pointers=self._pointers(target, phase_id)))
                 self._after_session_plan_check()
                 self._handle_refutations(outputs, phase_id, r, fix_verdict)
                 self._gate_until_green(phase, ps, outputs, target, branch,
@@ -5647,7 +5762,7 @@ class RunLoop:
                                    target.gate_argv or [])),
                                gate_log=_log, merge_base=merge_base,
                                where=where, verdict_path=vp,
-                               pointers=self._pointers(target)))
+                               pointers=self._pointers(target, phase.id)))
             self._after_session_plan_check()
 
     def _review_loop(self, phase: Phase, ps: dict, outputs: Path,
@@ -5681,6 +5796,7 @@ class RunLoop:
                     review_path=review_path, verdict_path=verdict_path,
                     review_set=review_set, gate_line=gate_line,
                     philosophy_line=self._philosophy_line(),
+                    skill_line=self._skill_line(phase_id),
                     close_out_line=self._close_out_line(),
                     bookkeeping_note=self._bookkeeping_note(target),
                 )
@@ -5693,6 +5809,7 @@ class RunLoop:
                     review_path=review_path, verdict_path=verdict_path,
                     review_set=review_set, gate_line=gate_line,
                     philosophy_line=self._philosophy_line(),
+                    skill_line=self._skill_line(phase_id),
                     close_out_line=self._close_out_line(),
                     bookkeeping_note=self._bookkeeping_note(target),
                 )
@@ -5729,7 +5846,7 @@ class RunLoop:
                     merge_base=merge_base, where=where,
                     review_path=outputs / f"code_review_r{_r}.md",
                     gate_hint=gate_hint, verdict_path=vp,
-                    pointers=self._pointers(target)))
+                    pointers=self._pointers(target, phase_id)))
             self._after_session_plan_check()
             refuted = self._handle_refutations(outputs, phase_id, r,
                                                fix_verdict)

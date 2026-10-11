@@ -107,7 +107,10 @@ from run_loop import (  # noqa: E402
     parse_plan,
     parse_push_holds,
     plugin_version,
+    resolve_skills,
     run_kc_session,
+    skill_line,
+    skills_named,
     spawn_flags,
 )
 
@@ -178,7 +181,7 @@ your contract: the task-shape declaration (before you investigate), the
 phases (each opening with its `Target:` line), ordering constraints,
 not-in-scope, attachments/ only where an executor genuinely cannot derive
 the design, and verification.json's outcome-level acceptance criteria.
-{philosophy_line}{close_out_line}
+{philosophy_line}{skill_line}{close_out_line}
 Commit to the spec repo (stage by name), then write your verdict
 to {verdict_path}. Blocking questions go to {questions_path} with verdict
 `questions`.
@@ -193,7 +196,7 @@ the review where they speak. Apply every ruling the plan does not yet
 reflect and resolve every blocking finding the rulings do not overrule —
 the reviewer and the operator state problems; the fix design is yours. This
 is the only fix pass: no review follows it, the operator's read does.
-{philosophy_line}{close_out_line}
+{philosophy_line}{skill_line}{close_out_line}
 Commit (stage by name), then write your verdict to {verdict_path}. A
 finding the rulings leave genuinely unresolved goes to {questions_path}
 with verdict `questions`.
@@ -208,7 +211,7 @@ REVIEWER_PROMPT = """\
 Review the plan for slice {slice_name} — the full plan, in your one and
 only round: no fix-verify loop follows; your findings go to the operator.
 Slice folder: {slice_dir}
-{philosophy_line}{close_out_line}
+{philosophy_line}{skill_line}{close_out_line}
 
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
@@ -451,6 +454,24 @@ class PlanLoop:
                 PHILOSOPHY_LINE.format(philosophy=doc) if doc else "")
         return self._philosophy
 
+    def _skill_line(self, label: str) -> str:
+        """The skills slice.md and plan.md name, resolved to their installed
+        files (SKILL_LINE, the run loop's) — the planners see no skill
+        listing either. Read at each dispatch: the writer may name one the
+        reviewer then needs. This loop's close-out line carries no newline of
+        its own, so a blank line closes the list before it."""
+        text = ""
+        for name in ("slice.md", "plan.md"):
+            try:
+                text += (self.slice_dir / name).read_text() + "\n"
+            except OSError:
+                pass
+        skills = resolve_skills(text)
+        if not skills:
+            return ""
+        self.log(f"{label} {skills_named(skills)}")
+        return skill_line(skills, "this slice") + "\n"
+
     def _spawn(self, role: str, prompt: str, verdict_path: Path,
                round_: int) -> dict:
         """Run one fresh session; return its validated verdict. A session
@@ -543,6 +564,7 @@ class PlanLoop:
             prompt = WRITER_INITIAL_PROMPT.format(
                 slice_name=self.slice_name, slice_dir=self.slice_dir,
                 philosophy_line=self._philosophy_line(),
+                skill_line=self._skill_line(f"[plan-writer r{w}]"),
                 close_out_line=dispatch_line(self.report_path),
                 verdict_path=verdict_path, questions_path=questions_path)
         else:
@@ -551,6 +573,7 @@ class PlanLoop:
             prompt = WRITER_FIX_PROMPT.format(
                 slice_name=self.slice_name, slice_dir=self.slice_dir,
                 philosophy_line=self._philosophy_line(),
+                skill_line=self._skill_line(f"[plan-writer r{w}]"),
                 close_out_line=dispatch_line(self.report_path),
                 review_path=review_path, verdict_path=verdict_path,
                 questions_path=questions_path)
@@ -583,6 +606,7 @@ class PlanLoop:
         prompt = REVIEWER_PROMPT.format(
             slice_name=self.slice_name, slice_dir=self.slice_dir,
             philosophy_line=self._philosophy_line(),
+            skill_line=self._skill_line(f"[plan-reviewer r{r}]"),
             close_out_line=dispatch_line(self.report_path),
             review_path=review_path, verdict_path=verdict_path)
 

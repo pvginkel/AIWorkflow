@@ -1132,17 +1132,23 @@ OURS = run_loop.plugin_version()
 
 class installed:
     """installed_plugins.json in `tmp`, naming `version` for this plugin
-    (None: no entry for it), with the loop's guard pointed at it for the
-    `with` block. `set` rewrites it — the marketplace updating mid-run."""
+    (None: no entry for it) beside a kubecoder install holding `skills`,
+    with the loop's guard pointed at it for the `with` block. `set` rewrites
+    it — the marketplace updating mid-run."""
 
-    def __init__(self, tmp, version):
+    def __init__(self, tmp, version, skills=()):
         self.path = Path(tmp) / "installed_plugins.json"
         self.install = Path(tmp) / "cache" / "aiworkflow" / "dev"
+        self.kubecoder = Path(tmp) / "cache" / "kubecoder-config" / "0.8"
+        for name in skills:
+            (self.kubecoder / "skills" / name).mkdir(parents=True)
+            (self.kubecoder / "skills" / name / "SKILL.md").write_text(name)
         self.set(version)
 
     def set(self, version):
         plugins = {"kubecoder@kubecoder-config": [
-            {"scope": "user", "installPath": "/elsewhere", "version": "0.8"}]}
+            {"scope": "user", "installPath": str(self.kubecoder),
+             "version": "0.8"}]}
         if version is not None:
             plugins["dev@aiworkflow"] = [{
                 "scope": "user", "version": version,
@@ -1260,6 +1266,51 @@ def test_an_install_mid_run_bails_before_the_next_dispatch_or_nudge():
         assert sessions == [("plan-writer", None)], writes_verdict
         assert bail["reason"] == "plugin_version"
         assert "installed plugin is 9.9.9" in bail["details"]
+
+
+# -- the skills the slice names (AIWF-56) -------------------------------------
+
+def test_a_skill_the_slice_names_reaches_the_planners():
+    """The planners have no Skill tool either: a skill slice.md or plan.md
+    names is handed over as its installed file — both writer passes and the
+    review — a blank line closing the list before the close-out line."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        (slice_dir / "slice.md").write_text(
+            "# test slice\n\nThe Jenkinsfile follows "
+            "`kubecoder:jenkins-pipelines`; mind `origin:main`.\n")
+        with installed(tmp, OURS, skills=("jenkins-pipelines",)) as inst:
+            loop = ScriptedLoop(slice_dir, [W_DONE, R_ISSUES])
+            assert run_to_exit(loop) == 4
+            loop2 = ScriptedLoop(slice_dir, [W_DONE])
+            assert run_to_exit(loop2) == 0
+        skill = inst.kubecoder / "skills" / "jenkins-pipelines" / "SKILL.md"
+        line = ("\nSkills this slice names. This session has no Skill tool: "
+                "each skill is the\nfile named here — read it before the "
+                "work it governs.\n"
+                f"- `kubecoder:jenkins-pipelines`: {skill}\n\n"
+                "The slice's close-out report is ")
+        prompts = loop.prompts + loop2.prompts
+        assert [role for role, _ in prompts] == [
+            "plan-writer", "plan-reviewer", "plan-writer"]
+        for role, prompt in prompts:
+            assert prompt.count(line) == 1, role
+        log = (slice_dir / "plan_log.txt").read_text()
+        for label in ("[plan-writer r1]", "[plan-reviewer r1]",
+                      "[plan-writer r2]"):
+            assert f"{label} skills named — kubecoder:jenkins-pipelines\n" \
+                in log, label
+
+
+def test_a_slice_naming_no_skill_dispatches_the_planners_as_before():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        with installed(tmp, OURS, skills=("jenkins-pipelines",)):
+            loop = ScriptedLoop(slice_dir, [W_DONE, R_GO])
+            assert run_to_exit(loop) == 0
+        for role, prompt in loop.prompts:
+            assert "Skills this slice names" not in prompt, role
+        assert "skills named" not in (slice_dir / "plan_log.txt").read_text()
 
 
 def writes_items(*items):

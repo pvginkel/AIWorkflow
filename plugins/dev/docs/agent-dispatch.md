@@ -36,7 +36,13 @@ validation.
   one but the test-agent's — `kc` passes both through to the spawned claude, finishing the trim the
   env vars start. The first drops both plugins' skill listings from the prefix (a headless role
   invokes no skill; the plugin's *agents* are not skills and still register — `--agent dev:<role>`
-  and the Agent tool's sub-agents are untouched). The second keeps the operator's `~/.claude.json`
+  and the Agent tool's sub-agents are untouched). A skill the plan names still reaches the
+  role that needs it, as a file: where a phase's section or the plan's text outside every phase
+  names `` `<plugin>:<skill>` ``, the driver resolves it through
+  `~/.claude/plugins/installed_plugins.json` and puts the installed `SKILL.md`'s path in that
+  phase's executor, fix-round and reviewer dispatches — and the plan loop, from `slice.md` and
+  `plan.md`, in the plan-writer's and the plan-reviewer's. A name no installed plugin carries is
+  said so, so the role does not search the disk for it. The second keeps the operator's `~/.claude.json`
   servers out of a role's session: their instructions leave the prefix (their tool schemas were
   never in it — Claude Code defers them since 2.1.212), and with them a reach no role's contract
   ever gave it — a finding about the work goes to the close-out report, never to a tracker; CI is

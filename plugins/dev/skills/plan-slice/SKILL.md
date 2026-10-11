@@ -122,7 +122,10 @@ Write the plan's header yourself — this is the one artifact you author: the on
 **requirements/rulings** section carrying every requirement and every ruling from §2 **in the
 operator's words**, and — as your own facts, with their evidence — the grounding that binds the
 plan: a premise correction with what it changes, a verified fact a ruling rests on. This section
-is the only place the plan-writer reads it; `refinement.md` carries none of it. Then any
+is the only place the plan-writer reads it; `refinement.md` carries none of it. A skill in your
+listing whose description says the slice's work follows it is named there as
+`` `<plugin>:<skill>` `` (`${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md`): the roles see no
+listing, and get the file only for a name the plan carries. Then any
 ordering constraints already known; not-in-scope. A ruling that forbids
 pushing a repo also gets its machine-readable half — a `## Push holds` bullet, shaped as the
 plan template above says; prose alone is invisible to the driver, which then nudges the test

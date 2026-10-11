@@ -8088,6 +8088,220 @@ def test_an_install_mid_run_bails_before_a_nudge():
         assert bail["reason"] == "plugin_version"
 
 
+# -- the skills a plan names (AIWF-56) ----------------------------------------
+#
+# Every role is spawned without the Skill tool, and the plans of Ansible 046
+# and 056 and DHCPApp 001 named `kubecoder:jenkins-pipelines` for the work:
+# their writers spent turns finding it on disk, among seven cached versions.
+
+def skills_installed(tmp, *skills):
+    """installed_plugins.json in `tmp`: kubecoder's install holding `skills`,
+    and this plugin's at this tree's version (the guard passes) holding one
+    of its own; returns (file, kubecoder's install)."""
+    kc = Path(tmp) / "cache" / "kubecoder-config" / "kubecoder" / "0.10.12"
+    ours = Path(tmp) / "cache" / "aiworkflow" / "dev" / str(OURS)
+    for root, names in ((kc, skills), (ours, ("run-slice",))):
+        for name in names:
+            (root / "skills" / name).mkdir(parents=True)
+            (root / "skills" / name / "SKILL.md").write_text(f"# {name}\n")
+    path = Path(tmp) / "installed_plugins.json"
+    path.write_text(json.dumps({"version": 2, "plugins": {
+        "kubecoder@kubecoder-config": [
+            {"scope": "user", "installPath": str(kc), "version": "0.10.12"}],
+        "dev@aiworkflow": [
+            {"scope": "user", "installPath": str(ours), "version": OURS}]}}))
+    return path, kc
+
+
+def skill_md(install, name):
+    return install / "skills" / name / "SKILL.md"
+
+
+SKILL_HEADER = ("\nSkills this phase names. This session has no Skill tool: "
+                "each skill is the\nfile named here — read it before the work "
+                "it governs.\n")
+
+
+def by_phase(loop):
+    """(role, phase id, prompt) per dispatch, in order."""
+    return [(s[0], s[1], p) for s, (_, p) in zip(loop.spawned, loop.prompts,
+                                                  strict=True)]
+
+
+def test_resolve_skills_takes_the_backticked_names_of_installed_plugins():
+    with tempfile.TemporaryDirectory() as tmp:
+        path, kc = skills_installed(tmp, "jenkins-pipelines")
+        text = ("Load the `kubecoder:jenkins-pipelines` skill before the "
+                "file, and `kubecoder:no-such`. `origin:main` is a ref, "
+                "`dev:run-slice` this plugin's own skill, and "
+                "`kubecoder:jenkins-pipelines` is named once.")
+        with patched(run_loop, INSTALLED_PLUGINS=path):
+            assert run_loop.resolve_skills(text) == [
+                ("kubecoder:jenkins-pipelines",
+                 skill_md(kc, "jenkins-pipelines")),
+                ("kubecoder:no-such", None)]
+            for bare in ("Load kubecoder:jenkins-pipelines first.",
+                         "`kubecoder:jenkins-pipelines/SKILL.md`",
+                         "`kubecoder:Jenkins`"):
+                assert run_loop.resolve_skills(bare) == [], bare
+        path.write_text("{not json")
+        with patched(run_loop, INSTALLED_PLUGINS=path):
+            assert run_loop.resolve_skills(text) == []
+        with patched(run_loop, INSTALLED_PLUGINS=Path(tmp) / "absent.json"):
+            assert run_loop.resolve_skills(text) == []
+
+
+def test_resolve_skills_reads_the_install_an_interactive_session_loads():
+    """The user-scope install of the plugin, whichever key holds it; with
+    none of them the user's, the first key in file order with a lone one."""
+    with tempfile.TemporaryDirectory() as tmp:
+        roots = {}
+        for version in ("old", "new", "proj"):
+            roots[version] = Path(tmp) / version
+            (roots[version] / "skills" / "s").mkdir(parents=True)
+            (roots[version] / "skills" / "s" / "SKILL.md").write_text("s\n")
+
+        def entry(scope, version):
+            return {"scope": scope, "installPath": str(roots[version]),
+                    "version": version}
+
+        cases = [
+            ({"kc@a": [entry("project", "proj")],
+              "kc@b": [entry("user", "new")]}, "new"),
+            ({"kc@a": [entry("project", "proj"), entry("user", "new")]},
+             "new"),
+            ({"kc@a": [entry("project", "old")],
+              "kc@b": [entry("project", "new")]}, "old"),
+            ({"kc@a": [entry("project", "old"), entry("project", "proj")],
+              "kc@b": [entry("project", "new")]}, "new"),
+        ]
+        path = Path(tmp) / "installed_plugins.json"
+        for plugins, want in cases:
+            path.write_text(json.dumps({"plugins": plugins}))
+            with patched(run_loop, INSTALLED_PLUGINS=path):
+                assert run_loop.resolve_skills("`kc:s`") == [
+                    ("kc:s", skill_md(roots[want], "s"))], plugins
+        path.write_text(json.dumps({"plugins": {
+            "kc@a": [entry("project", "old"), entry("project", "new")]}}))
+        with patched(run_loop, INSTALLED_PLUGINS=path):
+            assert run_loop.resolve_skills("`kc:s`") == [("kc:s", None)], \
+                "installed, but no install to read it from"
+
+
+def test_a_skill_the_phase_names_reaches_its_writer_and_reviewer_rounds():
+    """The executor, a gate-fix and a review-fix round, the full and the
+    delta review of the phase whose section names the skill each carry its
+    installed file; the next phase, which names none, and the slice's tail
+    are dispatched as they always were."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path, kc = skills_installed(tmp, "jenkins-pipelines")
+        slice_dir, repo = make_slice(tmp, phases=[
+            phase_section("1", "The Jenkinsfile",
+                          body="Load the `kubecoder:jenkins-pipelines` skill "
+                               "before writing the file.\n"),
+            ("2", "The rest")])
+
+        def fixes(loop):
+            loop.fake_git.head = "fixhead"
+
+        script = [V["exec_done"], V["exec_done"],         # executor, gate fix
+                  V["review_issues"], (*V["exec_done"], fixes),
+                  V["review_signoff"],                    # the delta round
+                  V["exec_done"], V["review_signoff"], *TAIL]
+        r = ScriptedLoop(slice_dir, script, gates=[False, True],
+                         repo_root=repo)
+        with patched(run_loop, INSTALLED_PLUGINS=path):
+            assert run_to_exit(r) == 0 and not r.script
+        line = (SKILL_HEADER + "- `kubecoder:jenkins-pipelines`: "
+                f"{skill_md(kc, 'jenkins-pipelines')}\n")
+        named = [(role, p) for role, pid, p in by_phase(r) if pid == "1"]
+        assert [role for role, _ in named] == ["code-writer"] * 2 + [
+            "code-reviewer", "code-writer", "code-reviewer"]
+        assert "Re-review phase P1" in named[-1][1]
+        for role, prompt in named:
+            assert prompt.count(line) == 1, role
+        for role, pid, prompt in by_phase(r):
+            if pid != "1":
+                assert "Skills this phase names" not in prompt, (role, pid)
+        log = (slice_dir / "log.txt").read_text()
+        assert log.count("[P1] skills named — kubecoder:jenkins-pipelines\n") \
+            == 5
+        assert "[P2] skills named" not in log
+
+
+def test_a_skill_the_plans_own_text_names_reaches_every_phase():
+    """Text outside every phase section — the rulings above the phases, a
+    not-in-scope below them — is every phase's; a phase's own section is its
+    alone, and a skill its plugin lacks is said once, not searched for."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path, kc = skills_installed(tmp, "jenkins-pipelines", "kubecoder-api")
+        slice_dir, repo = make_slice(tmp, phases=[
+            ("1", "First"),
+            phase_section("2", "Second",
+                          body="Mind `kubecoder:no-such` here.\n")])
+        plan = slice_dir / "plan.md"
+        plan.write_text(plan.read_text().replace(
+            "## Phases\n",
+            "## Requirements / rulings\n\n- R1. Every Jenkinsfile follows "
+            "`kubecoder:jenkins-pipelines`.\n\n## Phases\n")
+            + "\n## Not in scope\n\n- The `kubecoder:kubecoder-api` client.\n")
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        with patched(run_loop, INSTALLED_PLUGINS=path):
+            assert run_to_exit(r) == 0 and not r.script
+        jenkins = ("- `kubecoder:jenkins-pipelines`: "
+                   f"{skill_md(kc, 'jenkins-pipelines')}\n")
+        api = f"- `kubecoder:kubecoder-api`: {skill_md(kc, 'kubecoder-api')}\n"
+        missing = ("- `kubecoder:no-such`: the installed kubecoder plugin has "
+                   "no such skill — work without it, and do not search for "
+                   "it.\n")
+        want = {"1": SKILL_HEADER + jenkins + api,
+                "2": SKILL_HEADER + jenkins + missing + api}
+        dispatched = [(role, pid, p) for role, pid, p in by_phase(r)
+                      if role in ("code-writer", "code-reviewer")]
+        assert len(dispatched) == 4
+        for role, pid, prompt in dispatched:
+            assert want[pid] in prompt, (role, pid)
+        log = (slice_dir / "log.txt").read_text()
+        assert ("[P2] skills named — kubecoder:jenkins-pipelines, "
+                "kubecoder:no-such (not installed), kubecoder:kubecoder-api"
+                in log)
+
+
+def test_a_plan_naming_no_skill_dispatches_as_it_always_did():
+    """A backticked ref, this plugin's own skill and a bare name are no
+    skill to point at: no line, and nothing logged."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path, _ = skills_installed(tmp, "jenkins-pipelines")
+        slice_dir, repo = make_slice(tmp, phases=[phase_section(
+            "1", "First",
+            body="Rebase on `origin:main`, run `dev:run-slice`, and mind "
+                 "kubecoder:jenkins-pipelines.\n")])
+        script = [V["exec_done"], V["review_issues"], V["exec_done"],
+                  V["review_signoff"], *TAIL]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, INSTALLED_PLUGINS=path):
+            assert run_to_exit(r) == 0 and not r.script
+        assert len(r.prompts) == len(script)
+        for role, prompt in r.prompts:
+            assert "Skills this phase names" not in prompt, role
+        assert "skills named" not in (slice_dir / "log.txt").read_text()
+
+
+def test_phase_scope_cuts_every_other_phase():
+    plan = ("# Plan\n\n## Requirements / rulings\n\nR.\n\n## Phases\n\n"
+            "### P1 — One\n\nTarget: app\n\none\n\n#### Its own part\n\n"
+            "still one\n\n"
+            "### P2 — Two\n\nTarget: app\n\ntwo\n\n"
+            "## Not in scope\n\nnot this\n")
+    one = run_loop.phase_scope(plan, "1")
+    assert "R." in one and "still one" in one and "not this" in one
+    assert "### P2" not in one and "two" not in one
+    two = run_loop.phase_scope(plan, "2")
+    assert "two" in two and "not this" in two and "one" not in two
+
+
 FULL_ITEM = {"id": "V01", "area": "a", "description": "it works",
              "owed_after": "../HelmCharts", "verdict": None, "rationale": "",
              "evidence": []}

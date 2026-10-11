@@ -468,6 +468,25 @@ operator's and the plugin names no project's tooling.
 (doc-writer), 25,494 (consult) — another 2.8–4.4 k off v0.9.6, 7–8 k off the corpus's 31–34 k, on
 every turn (v0.9.8) — **measured**.
 
+### A skill the plan names reaches its roles as a file (v0.9.92)
+
+**Incident.** The premise "a headless role invokes no skill" stopped holding once host
+conventions began shipping as skills: plans in Ansible 046 and 056 and DHCPApp 001 said "load the
+`kubecoder:jenkins-pipelines` skill", and their code-writers and a plan-writer spent turns
+finding it on disk, in a cache holding seven kubecoder versions, one without the skill. No
+reviewer of those phases looked for it.
+
+**Evidence.** `--disable-slash-commands` alone removes the Skill tool; an agent definition's
+`skills:` preload never reaches an `--agent` session; the listing costs 4,972 tokens a turn today
+(witnessed on Haiku, [`role-skills-2026-10-11.md`](../research/role-skills-2026-10-11.md)).
+
+**Change.** The trim stays. The driver resolves a backticked `<plugin>:<skill>` in the phase's
+section or the plan's text outside every phase through `installed_plugins.json`, and puts the
+installed file's path in the phase's executor, fix-round and reviewer dispatches; the plan loop
+does the same for the planners from `slice.md` and `plan.md`
+([`agent-dispatch.md`](../../plugins/dev/docs/agent-dispatch.md) § Spawning). About 40 tokens on
+the dispatches that name one, none on the rest.
+
 ### The doc-writer's dispatch: diff on disk, plan digested whole, then yield (v0.9.9)
 
 **Incident.** Three doc-writer sessions read turn by turn (186: 65 turns / $7.65; 184: 78 / $8.40;

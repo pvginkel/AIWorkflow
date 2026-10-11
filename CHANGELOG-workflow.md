@@ -4,6 +4,24 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-11 — A skill the plan names reaches its roles as the installed file (v0.9.92)
+
+Where a phase's section of `plan.md`, or the plan's text outside every phase, names a skill as
+`` `<plugin>:<skill>` ``, the driver resolves it through `~/.claude/plugins/installed_plugins.json`
+and adds one line to that phase's executor, fix-round and reviewer dispatches: the session has no
+Skill tool, and the skill is this `SKILL.md`, to read before the work it governs. The plan loop
+does the same from `slice.md` and `plan.md` for the plan-writer and the plan-reviewer. A name
+whose plugin is installed but has no such skill is said so, so the role does not search for it;
+backticked text whose plugin is not installed, and the dev plugin's own names, are not skill
+references. The spawn trim stays: `--disable-slash-commands` still keeps the Skill tool and the
+≈ 5 k-token listing out of every role. `/dev:plan-slice` and the plan template say to name a skill
+the work keeps rather than restate it.
+
+Why: host conventions now ship as skills (`kubecoder:jenkins-pipelines`), and plans that named
+one sent their code-writers and a plan-writer searching a cache that holds several kubecoder
+versions side by side, one without the skill; no reviewer looked for it. The options and the
+operator's rulings are `docs/research/role-skills-2026-10-11.md` (AIWF-56).
+
 ## 2026-10-11 — No write to the close-out report drops what the operator wrote there, and `rule --words` no longer replaces their words unasked (v0.9.91)
 
 The store keeps `rendered`, the sha256 of `close-out.md` as `close_out.py` last wrote it. A write

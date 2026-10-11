@@ -4,6 +4,10 @@ issue: AIWF-56
 
 # Reaching a skill from a run-loop role — the options
 
+**Ruled 2026-10-11:** D1 (a), D2 executor + fix rounds + reviewer + plan-writer + plan-reviewer,
+D3 the backticked name in the plan's text, D4 left to `/dev:plan-slice` — every recommendation.
+Built as dev 0.9.92.
+
 **Recommendation.** Keep the trim, and have the driver hand a role the file. When the text a
 dispatch is built from names a skill as `<plugin>:<skill>`, the driver resolves the name against
 the installed plugins and adds one line to the dispatch: this session has no Skill tool, and the
