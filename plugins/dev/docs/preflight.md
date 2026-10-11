@@ -3,9 +3,9 @@
 `${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage|plan|run` is one repo-shipped,
 **stdlib-only** script each pipeline skill runs as **step one**. The checks are `kc` primitives
 plus the repo's `.aiworkflowrc` contract from [`project-contract.md`](project-contract.md) — and
-two steps that act rather than check: installing the spec-tree guard in the spec repo
-(§ Notes on the spec-tree guard), and the sync that brings the environment's repos up to their
-origins (§ Notes on the sync).
+two steps that act rather than check: removing the spec-tree guard an older plugin installed in
+the spec repo (§ Notes on the spec-tree guard), and the sync that brings the environment's repos
+up to their origins (§ Notes on the sync).
 
 **Silent on success** — but for one line, on a pass, when the session's plugin copy is stale
 (§ Notes on the plugin check). On failure it prints **one** actionable message — what is missing,
@@ -18,7 +18,7 @@ does **not** re-run preflight, so `/dev:run-slice` is the gate.
 | Code | Meaning | Who fixes it |
 |:---:|---|---|
 | `0` | pass (silent) | — |
-| `1` | contract violation | the project (add a line, author the manifest, clean the tree, resolve a refused pull, fix the build, move a foreign pre-commit hook out of the spec repo) |
+| `1` | contract violation | the project (add a line, author the manifest, clean the tree, resolve a refused pull, fix the build) |
 | `2` | environment broken | the environment (`kc` not on PATH, the control plane down, not in a git repo, a fetch that fails, a spec repo git dir the pod cannot write) |
 
 ## Profiles
@@ -30,7 +30,7 @@ does **not** re-run preflight, so `/dev:run-slice` is the gate.
 | Manifest valid: `kc project list --output=json` returns ≥1 component | – | ✓ | ✓ |
 | `.aiworkflowrc` present, parses, names no unknown key | ✓ | ✓ | ✓ |
 | `spec_repo` set, path exists (directory) | ✓ | ✓ | ✓ |
-| The spec-tree guard installed: the spec repo's pre-commit hook | ✓ | ✓ | ✓ |
+| The spec-tree guard removed: a pre-commit hook an older plugin installed in the spec repo | ✓ | ✓ | ✓ |
 | `design_philosophy` set, target doc exists | – | – | ✓ |
 | `test_phase.strategy` set + exists — only when the phase runs | – | – | ✓ |
 | `doc_phase.plan` set + exists — only when the phase runs | – | – | ✓ |
@@ -65,23 +65,17 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
 
 ## Notes on the spec-tree guard
 
-- **What it is.** The spec repo's pre-commit hook, `tools/spec-tree-guard.sh`. It refuses a commit
-  on a `phase/*` branch unless `DEV_PHASE_BRANCH` names that branch, so only the run that checked
-  a phase branch out in the shared spec tree commits onto it. [run-loop.md](run-loop.md) § The plan
-  is the queue says who sets the variable and what a refused session does.
-- **Every profile, because every session commits there.** Triage files slice folders, plan-slice
-  writes the plan, close-out records the rulings. The hook has to be in place before any of them
-  meets a running phase's branch, and installing it destroys nothing, so preflight installs it
-  rather than asking for it.
-- **Where.** `git rev-parse --git-path hooks/pre-commit` in the spec repo, so a `core.hooksPath`
-  is honoured. A spec repo that isn't a git repo has nothing to guard and is skipped, as the run
-  loop's lease is a no-op there.
-- **Which hook wins.** The hook carries `# aiworkflow spec-tree guard v<N>`, where N changes only
-  when the hook's text does. No hook: installed. Ours and older: replaced. Ours and the same or
-  newer: left alone, because the git dir is shared and environments run different plugin
-  versions. A hook without the marker is someone else's: left alone, and preflight fails (exit 1)
-  naming the file. The hook is written to a temporary file beside the target and renamed into
-  place, so a commit never runs half a hook. A git dir preflight cannot write is exit 2.
+- **What it was.** Until 0.9.93 a phase targeting the spec repo checked its branch out in the
+  shared tree, and `tools/spec-tree-guard.sh`, installed as the spec repo's pre-commit hook,
+  refused everyone else's commit on it. A phase now works in a worktree of its own
+  ([run-loop.md](run-loop.md) § The plan is the queue), and the hook would refuse that worktree's
+  commits: hooks in the shared git dir run for every worktree.
+- **The step.** At `git rev-parse --git-path hooks/pre-commit` in the spec repo (so a
+  `core.hooksPath` is honoured), a hook carrying `# aiworkflow spec-tree guard` is deleted, in
+  every profile, with one line saying so. Any other hook is left alone, and a spec repo that is no
+  git repo is skipped. A git dir preflight cannot write is exit 2.
+- **Why it stays.** The git dir is shared, and an environment still on an older plugin installs
+  the hook again at its own preflight until it is updated.
 
 ## Notes on the sync
 
@@ -102,9 +96,8 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   often another environment's: pushing it, tracking it or checking something else out would
   change that run's branch under it. So preflight never gives that advice for one. It looks the
   slice up in the spec repo (`slices/`, then `backlog/`, then `completed/`) and probes its
-  `run.lock` without taking it. A held lock names the run by its holder note (the spec tree's
-  lease holder as well, when the repo is the spec repo), and the message says to wait for the
-  phase to merge, since the run checks the base back out itself. A free lock says a bail left the
+  `run.lock` without taking it. A held lock names the run by its holder note, and the message
+  says to wait for the phase to merge, since the run checks the base back out itself. A free lock says a bail left the
   branch: commit any work on it, check the base back out, and retry. The clean-tree check refuses
   a phase branch the same way before it looks at the tree, because "commit or stash" must not
   reach a live run's writer. Any other branch with no upstream → refused (exit 1), naming the repo

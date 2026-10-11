@@ -1,6 +1,6 @@
 # Shared repos: a phase works in a worktree — plan, 2026-10-11
 
-*Status: proposal. The decisions the operator rules on are § 5; what is built follows § 6.*
+*Status: ruled 2026-10-11 (§ 7) and built as 0.9.93. § 2–6 are the proposal as put; § 7 is what changed at the ruling.*
 
 ## 1. The problem, and the decision
 
@@ -301,3 +301,19 @@ At the release: close AIWF-52, -69, -70 as superseded with a one-line comment; c
 AIWF-58, -61, -68, -47 with § 4's notes; comment on AIWF-50 and AIWF-53 that the worktree
 replaced their builds. Whether the build itself gets an AIWF card is the operator's: AIWorkflow is
 not on the pipeline, so the route is theirs (as it was for 0.9.86 and 0.9.88).
+
+## 7. Rulings (2026-10-11)
+
+- D1 yes. D2: **the merge is a merge, not a rebase and fast-forward** — `git merge <branch>` on
+  the base in the shared tree, a fast-forward when the base stood still and a merge commit when it
+  moved; `_rebase_onto_moved_base` is not run for a shared target, so the record's commits keep
+  their shas and a conflict is a hand merge the resume then stamps. The sweep of a dirty collision
+  stays. D3 yes, kept small. D4 yes. D5 one release, 0.9.93.
+- **The hook is kept in no form.** Preflight deletes it from the shared git dir; the run loop does
+  not touch hooks. The operator pushes the version in a quiet window with no slice running, so the
+  transition of § 6.4 is not expected to arise.
+- A correction to § 3.1 found while briefing the build: `_bookkeeping_pathspec` stays. The doc
+  phase's sibling push and the wrap-up watch read the shared tree, where every running slice's
+  untracked record lives; in a worktree the pathspec is empty by construction, so no scoping
+  happens there. Only its phase-side consumers — `BOOKKEEPING_NOTE`, `_green_covers`' clause,
+  `_commit_slice_edits`, `_untrack_committed_record` — go.

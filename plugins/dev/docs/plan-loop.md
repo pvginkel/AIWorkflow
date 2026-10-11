@@ -42,11 +42,9 @@ through plan.md only — dispatch prompts carry pointers, never relayed content.
 the slice folder committed (staged by name, [spec-tree.md](spec-tree.md)); the loop
 nudges once, then bails. Round counts persist in `plan_state.json`, with `base` — the branch the
 loop found the spec repo on at its first run, never a `phase/…` branch; before every dispatch and
-every commit of its own the loop holds the spec tree's shared lease and, inside the hold, asserts
-the tree is still on it and bails `blocked` otherwise, since a parallel run's bail may have left
-the shared tree elsewhere; a lease a parallel run's spec-repo phase holds exclusive is waited
-for, and a wait past the cap bails `blocked` naming the holder ([run-loop.md](run-loop.md) § The
-plan is the queue). A plan that already parses with phases (a reset re-plan) enters at review.
+every commit of its own the loop asserts the tree is still on it and bails `blocked` otherwise —
+no run moves the shared tree ([run-loop.md](run-loop.md) § The plan is the queue), so that is a
+hand checkout. A plan that already parses with phases (a reset re-plan) enters at review.
 
 The loop is the first thing to run on a slice, so it creates the slice's **close-out report**
 (its store `close-out.json`, and the `close-out.md` rendered from it) and commits it before its
@@ -54,7 +52,7 @@ first dispatch, and every dispatch names the report and `close_out.py`, the only
 it; what the planning agents write there is [close-out.md](close-out.md)'s. At exit 0 the loop
 seeds the report's actions from the plan: one entry per push-hold repo, listing the criteria
 owed after that push, and one per criterion owed after anything else. It commits them under the
-same lease and branch check, and a headline an action already carries, live or struck, is not
+same branch check, and a headline an action already carries, live or struck, is not
 entered again, however often the loop reruns. A seed that `close_out.py` refuses because the
 operator edited the report where the write would drop it ([close-out.md](close-out.md)) stops
 the loop with exit 4 and the lines on stderr; the rerun seeds what is left. The loop renders the report when it stops,

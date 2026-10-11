@@ -328,9 +328,7 @@ left for the next commit of the report; a render's own commit carries the store 
   `unknown`. A refuted finding, a funding-consult merge and every stop of the run (entered by the
   resume that follows it) each become an event, as does each `## Driver rulings` bullet, once, the
   first time it takes effect ([run-loop.md](run-loop.md)), and a scratch clone the driver left for a
-  `github:` Target — the close-out session removes it, nobody is asked; on a phase that targets the
-  spec repo, an agent's append left uncommitted is committed onto the phase branch before the driver
-  leaves it. **Each loop renders when it stops, for whatever reason, and when it completes**, and
+  `github:` Target — the close-out session removes it, nobody is asked. **Each loop renders when it stops, for whatever reason, and when it completes**, and
   the driver once more before it dispatches the doc phase, so that a run that stalls there leaves a
   report that can be read, and once after the wrap-up. The run header is written by `render` from
   `state.json` (run window, phases planned/appended, bail-outs, test rounds, doc phase outcome);

@@ -23,7 +23,10 @@ path, or `null` for a hand-run), `run_phase` (`phases` | `consult` | `test` | `d
 the stage the run is in; a bail leaves it at the stage it stopped in, which is what `--resume`
 re-enters, and records the stop in `bailouts` and `bailout.json`), `bases` (base branch per
 target repo — the branch the run found there, never a
-`phase/…` one; a bail checks each back out from the run's own branch), `known_phases` (the
+`phase/…` one; a bail checks each back out from the run's own branch), `shared_repos` (the repos
+kc marks shared — one clone mounted into every environment — whose phases work in a worktree, as
+the spec repo's do regardless; read from kc once and read back on a resume,
+[run-loop.md](run-loop.md) § The plan is the queue), `known_phases` (the
 plan's phase ids in document
 order, as last parsed), `generation` (follow-up generations spent), `test_rounds`, `sweep_runs`,
 `gate_sweep` (the loop-tail sweep's record: per-command `results` with log paths and an
@@ -54,7 +57,8 @@ commit; and `sibling_heads`, each other code repo's base sha as the ladder began
 and may be rebased), `phases`, and `history`.
 
 Per phase: `status` (`pending` | `in_progress` | `merged`), `stage` (`executor` | `gate` |
-`review` | `merging` | `null`), `branch`, `target`, `executor_rounds`, `gate_fix_rounds`,
+`review` | `merging` | `null`), `branch`, `target`, `worktree` (a shared target's linked
+worktree, from its creation to the merge that removes it), `executor_rounds`, `gate_fix_rounds`,
 `review_rounds`, `reviewed_head`, `gate_runs`, the gate's evidence pair `gate_green_commit` /
 `gate_green_log`, `gate_nothing_ran_commit` (the head the gate last ran nothing on — the
 reviewer is told the target defines no tests only when it is the commit under review),
@@ -62,9 +66,10 @@ reviewer is told the target defines no tests only when it is the commit under re
 `--project root` ran nothing; what the reviewer's gate line and a fix round's prompt name),
 `rebase_requested` (set when a merge-time rebase bails `blocked` and hands the
 rebase to the operator — `base`, `from` (the branch head it asked to rebase), `ts`; cleared when
-the resume takes the rebased branch, and at the merge), and `landed` — set at the ff-merge: the
-phase's `root`, the `base` sha its branch was cut from and the `head` that fast-forwarded the
-base branch. That range is the phase's
+the resume takes the rebased branch, and at the merge), and `landed` — set at the merge: the
+phase's `root` (the shared repo, for a worktree phase), the `base` sha its branch was cut from
+and the `head` of the branch that merged — fast-forwarded into the base, or taken by a merge
+commit for a shared target. That range is the phase's
 own commits and nothing else, which is what the executor digest's touched list and the doc
 phase's diff files read; a phase whose merge landed before its record did (the reconcile path)
 has none, and the doc dispatch names it as missing from the files.
@@ -129,11 +134,10 @@ error the orchestrator diagnoses).
 | `gate_red` | – | the gate stayed red through the executor fix cap, or at merge |
 | `consult_bail` | – | any consult chose `bail` |
 | `devlock_timeout` | – | the dev occupancy lease stayed held past the wait cap |
-| `spec_tree_timeout` | – | the shared spec tree's lease stayed held past the wait cap — a parallel run's spec-repo phase, or the sessions in flight such a phase waits for ([run-loop.md](run-loop.md) § The plan is the queue) |
 | `timeout` | – | a driver-run gate or sweep command exceeded its limit, or an agent session did with no usable verdict on disk |
 | `unpushed` | – | a repo the slice touched was still behind `origin/<base>` after the test phase and its push nudges |
 | `plugin_version` | – | the installed plugin's version differs from the loop's own, at startup or before a dispatch; the details name the installed `tools/` path to relaunch from ([run-loop.md](run-loop.md) § Protocol invariants) |
-| `protocol_failure` | – | a git command failed, an agent left uncommitted changes, a consult chose an unoffered action, the worktree was dirty at merge, an agent committed the driver's run record onto the phase branch, a `CLAUDE.md` procedure-doc pointer is missing, or a `verification.json` item carries a key outside the schema |
+| `protocol_failure` | – | a git command failed, an agent left uncommitted changes, a consult chose an unoffered action, the worktree was dirty at merge, a shared target's merge failed five times over, the primary repo is shared or `kc env describe` does not answer, a `CLAUDE.md` procedure-doc pointer is missing, or a `verification.json` item carries a key outside the schema |
 | `lost_work` | – | a commit the driver recorded on a phase branch is not on it any more (and the driver did not ask for the rebase that rewrote it), or a `pending` phase's branch carries commits the run has no record of |
 
 Exit codes: **0** slice complete · **3** error bail · **4** operator question · **2** usage or
@@ -208,14 +212,15 @@ outside before writing its own.
 **A phase's branch is reconciled against its record** before the driver resets or recreates it, and
 again after every executor round. Every commit the driver recorded on that branch — the head the
 last review read (`reviewed_head`), the gate's last green (`gate_green_commit`) — must still be on
-it. Where one is not, the base branch decides: carrying it means the ff-merge landed and the run
+it. Where one is not, the base branch decides: carrying it means the merge landed and the run
 died before the record caught up, so the resume stamps the phase and moves on; carrying it nowhere
 means the work is gone, and the run bails `lost_work` rather than rebuilding the branch from base
 and spending a round redoing a commit it cannot account for. A `pending` phase whose branch exists
 with commits the base has not got bails the same way — the `git branch -D` that would otherwise
 clear the name takes them with it. Rounds spent before the first gate or review are the one gap:
-they leave no commit on the record to check. A base that moved under the branch by merge time is
-the one case the driver rewrites the record itself: the branch is rebased onto it, the phase's
+they leave no commit on the record to check. A base that moved under an unshared target's branch
+by merge time is the one case the driver rewrites the record itself (a shared target merges
+instead, [run-loop.md](run-loop.md) § The plan is the queue): the branch is rebased onto it, the phase's
 diff proven identical before and after, `reviewed_head` repointed at the rebased commit and the
 gate's green cleared so it re-runs. When that rebase does not apply cleanly, or changes the
 phase's diff, the driver bails `blocked` and hands the rebase to the operator, marking the phase

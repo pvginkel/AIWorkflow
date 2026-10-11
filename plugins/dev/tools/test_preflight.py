@@ -8,9 +8,9 @@ checkouts the environment syncs, and what fast-forward, rebase, ahead-only,
 dirty, detached, no upstream and a dead remote each do. A repo on a run loop's
 phase branch — live run, bailed run, no slice folder — is refused before either
 the sync or the clean-tree check acts on it. The phase pointers and the devlock
-follow, and the spec-tree guard: its install into the spec repo's git dir, and
-the hook itself, end to end over real git. The kc/manifest/baseline checks and
-the rest of clean-tree are not covered here.
+follow, and the retired spec-tree guard: its removal from the spec repo's git
+dir, over real git. The kc/manifest/baseline checks and the rest of clean-tree
+are not covered here.
 
 Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_preflight.py` or via pytest.
 """
@@ -577,7 +577,7 @@ def held_run_lock(lock, note):
 
 def a_spec_repo(tmp, *slices):
     """A spec repo on disk with these slice folders (paths under `slices/`)
-    and a git dir for the spec-tree lease's files."""
+    and a git dir."""
     spec = Path(tmp) / "Specs"
     for rel in slices:
         (spec / "slices" / rel).mkdir(parents=True)
@@ -587,12 +587,10 @@ def a_spec_repo(tmp, *slices):
 
 
 def on_branch(branch, spec):
-    """Every repo answers `branch` to symbolic-ref, and the spec repo its git
-    dir; nothing else is scripted — an upstream included, so a check that
-    reached the sync would fetch."""
+    """Every repo answers `branch` to symbolic-ref; nothing else is scripted
+    — an upstream included, so a check that reached the sync would fetch."""
     return scripted_subprocess([
         ("symbolic-ref", (0, f"{branch}\n", "")),
-        (("rev-parse", "--absolute-git-dir"), (0, f"{spec / '.git'}\n", "")),
     ])
 
 
@@ -606,15 +604,12 @@ HOLDER = "host: env-b\npid: 4242\nstarted: 2026-09-24T10:00:00+00:00\n"
 def test_a_live_runs_phase_branch_names_the_run_and_says_wait():
     """KubeCoder slice 232: the shared spec tree sat on slice 231's phase
     branch while 231 ran, and preflight advised tracking or pushing it —
-    advice that changes a live run's branch. Now it names the run (its folder,
-    run.lock's holder, the spec tree's lease holder) and says to wait, and it
-    does so before the upstream check: this branch answers one, yet nothing
-    is fetched."""
+    advice that changes a live run's branch. Now it names the run (its folder
+    and run.lock's holder) and says to wait, and it does so before the
+    upstream check: this branch answers one, yet nothing is fetched."""
     with tempfile.TemporaryDirectory() as tmp:
-        spec = a_spec_repo(tmp, "231_spec_tree_lease")
-        (spec / ".git" / "dev-spec-tree.holder").write_text(
-            "slice 231 P1 (phase/231-P1)\npid: 4242\n")
-        lock = spec / "slices" / "231_spec_tree_lease" / "run.lock"
+        spec = a_spec_repo(tmp, "231_contract_slimming")
+        lock = spec / "slices" / "231_contract_slimming" / "run.lock"
         subproc = on_branch("phase/231-P1", spec)
         with held_run_lock(lock, HOLDER), synced(subproc, roots=(spec,)):
             code, message = refused(preflight.check_synced, spec,
@@ -623,9 +618,9 @@ def test_a_live_runs_phase_branch_names_the_run_and_says_wait():
             note_after = lock.read_text()
     assert code == 1
     assert "`Specs`" in message and "phase/231-P1" in message
-    assert "231_spec_tree_lease" in message
+    assert "231_contract_slimming" in message
     assert "host: env-b" in message and "pid: 4242" in message
-    assert "slice 231 P1 (phase/231-P1)" in message
+    assert "spec tree's lease" not in message
     assert "live" in message and "Wait" in message
     assert no_upstream_advice(message)
     assert not subproc.called("fetch")
@@ -638,8 +633,8 @@ def test_a_phase_branch_whose_run_is_gone_says_to_check_the_base_back_out():
     with the process). A code repo's doc-phase branch here: the slice folder
     is still found in the spec repo, and the stale note is left as it was."""
     with tempfile.TemporaryDirectory() as tmp:
-        spec = a_spec_repo(tmp, "231_spec_tree_lease")
-        lock = spec / "slices" / "231_spec_tree_lease" / "run.lock"
+        spec = a_spec_repo(tmp, "231_contract_slimming")
+        lock = spec / "slices" / "231_contract_slimming" / "run.lock"
         lock.write_text(HOLDER)
         subproc = on_branch("phase/231-docs", spec)
         with synced(subproc):
@@ -686,8 +681,8 @@ def test_a_dirty_target_on_a_live_phase_branch_hears_wait_not_stash():
     """The clean-tree check runs before the sync, and its "commit or stash"
     is exactly wrong for a live run's writer mid-phase in the target repo."""
     with tempfile.TemporaryDirectory() as tmp:
-        spec = a_spec_repo(tmp, "231_spec_tree_lease")
-        lock = spec / "slices" / "231_spec_tree_lease" / "run.lock"
+        spec = a_spec_repo(tmp, "231_contract_slimming")
+        lock = spec / "slices" / "231_contract_slimming" / "run.lock"
         subproc = scripted_subprocess([
             ("symbolic-ref", (0, "phase/231-P3\n", "")),
             (("status", "--porcelain"), (0, " M app.py\n", "")),
@@ -800,7 +795,7 @@ def test_the_plugin_line_comes_last_and_only_for_plan_and_run():
     """Printed after every other check, so a failing check's message is
     never joined by it; triage launches no loop and never checks."""
     stubs = ["check_kc", "check_kc_status", "repo_root", "check_manifest",
-             "load_config", "check_pointer", "check_spec_tree_guard",
+             "load_config", "check_pointer", "remove_spec_tree_guard",
              "check_phase_pointers", "check_devlock", "check_clean_tree",
              "check_synced", "check_baseline_build", "check_plugin_current"]
     for profile in ("triage", "plan", "run"):
@@ -816,26 +811,20 @@ def test_the_plugin_line_comes_last_and_only_for_plan_and_run():
             assert calls[-1] == "check_plugin_current", (profile, calls)
 
 
-# -- the spec-tree guard -----------------------------------------------------
-
-GUARD = preflight.GUARD_SOURCE.read_bytes()
-GUARD_V = preflight.guard_version(GUARD.decode())
-
+# -- the retired spec-tree guard ---------------------------------------------
 
 @contextlib.contextmanager
 def plain_git():
     """Real git, isolated from the machine's config (a global
     `core.hooksPath` would move the hook out from under the tests) and with
-    an identity to commit as. Set in os.environ, because the check and the
-    hook both run git as subprocesses that inherit it."""
+    an identity to commit as. Set in os.environ, because the check runs git
+    as a subprocess that inherits it."""
     env = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
            "GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "t@example.invalid",
            "GIT_COMMITTER_NAME": "Test",
            "GIT_COMMITTER_EMAIL": "t@example.invalid"}
-    saved = {k: os.environ.get(k)
-             for k in (*env, "DEV_PHASE_BRANCH", "GIT_CEILING_DIRECTORIES")}
+    saved = {k: os.environ.get(k) for k in (*env, "GIT_CEILING_DIRECTORIES")}
     os.environ.update(env)
-    os.environ.pop("DEV_PHASE_BRANCH", None)
     try:
         yield
     finally:
@@ -858,59 +847,40 @@ def a_git_spec_repo(tmp):
     return spec
 
 
-def install_guard(spec):
-    """The check over a real spec repo; returns its hook path."""
-    preflight.check_spec_tree_guard(a_config(spec_repo=spec))
-    return spec / ".git" / "hooks" / "pre-commit"
+# What 0.9.86–0.9.92 installed, as far as the removal reads it: the marker
+# line, a version after it.
+OLD_GUARD = ("#!/bin/sh\n# aiworkflow spec-tree guard v1\n"
+             "# refuses a commit on a phase branch it was not named for\n"
+             "exit 1\n")
 
 
-def test_the_guard_is_installed_where_there_is_no_hook():
+def remove_guard(spec):
+    """The removal over a real spec repo; returns what it printed."""
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        preflight.remove_spec_tree_guard(a_config(spec_repo=spec))
+    return out.getvalue()
+
+
+def test_the_retired_guard_is_removed_and_said_once():
+    """A phase on the spec repo works in a worktree, whose commits run the
+    shared git dir's hooks — the guard would refuse every one. The removal
+    says so in one line; a second preflight finds nothing to do and is
+    silent again."""
     if shutil.which("git") is None:
         return
     with tempfile.TemporaryDirectory() as tmp, plain_git():
         spec = a_git_spec_repo(tmp)
         hook = spec / ".git" / "hooks" / "pre-commit"
-        hook.unlink(missing_ok=True)
-        stderr = io.StringIO()
-        with contextlib.redirect_stderr(stderr):
-            install_guard(spec)
-        assert hook.read_bytes() == GUARD
-        assert os.access(hook, os.X_OK)
-        assert stderr.getvalue() == "", "silent on success"
-        assert not [p for p in hook.parent.iterdir()
-                    if p.name.startswith(".pre-commit.")], "no temp left"
+        hook.write_text(OLD_GUARD)
+        said = remove_guard(spec)
+        assert not hook.exists()
+        assert said.count("\n") == 1
+        assert said.startswith(f"removed the retired spec-tree guard {hook}")
+        assert remove_guard(spec) == ""
 
 
-def test_an_older_guard_is_replaced():
-    if shutil.which("git") is None:
-        return
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        spec = a_git_spec_repo(tmp)
-        hook = spec / ".git" / "hooks" / "pre-commit"
-        hook.write_text(f"#!/bin/sh\n# aiworkflow spec-tree guard "
-                        f"v{GUARD_V - 1}\nexit 0\n")
-        install_guard(spec)
-        assert hook.read_bytes() == GUARD
-        assert os.access(hook, os.X_OK)
-
-
-def test_a_same_or_newer_guard_is_left_byte_for_byte():
-    """The git dir is shared by every environment, and they run different
-    plugin versions: an older plugin must not take a newer guard back."""
-    if shutil.which("git") is None:
-        return
-    for version in (GUARD_V, 99):
-        with tempfile.TemporaryDirectory() as tmp, plain_git():
-            spec = a_git_spec_repo(tmp)
-            hook = spec / ".git" / "hooks" / "pre-commit"
-            theirs = (f"#!/bin/sh\n# aiworkflow spec-tree guard v{version}\n"
-                      "# another environment's copy\nexit 0\n")
-            hook.write_text(theirs)
-            install_guard(spec)
-            assert hook.read_text() == theirs, version
-
-
-def test_a_hook_the_plugin_did_not_write_is_refused_not_overwritten():
+def test_a_hook_that_is_not_the_guard_is_left_alone():
     if shutil.which("git") is None:
         return
     with tempfile.TemporaryDirectory() as tmp, plain_git():
@@ -918,122 +888,50 @@ def test_a_hook_the_plugin_did_not_write_is_refused_not_overwritten():
         hook = spec / ".git" / "hooks" / "pre-commit"
         theirs = "#!/bin/sh\nexec lint-staged\n"
         hook.write_text(theirs)
-        code, message = refused(preflight.check_spec_tree_guard,
-                                a_config(spec_repo=spec))
-        assert code == 1
-        assert str(hook) in message
-        assert "never overwrites a hook it did not write" in message
+        assert remove_guard(spec) == ""
         assert hook.read_text() == theirs
 
 
-def test_the_guard_goes_where_core_hookspath_points():
+def test_no_hook_and_no_git_repo_are_nothing_to_do():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        spec = a_git_spec_repo(tmp)
+        (spec / ".git" / "hooks" / "pre-commit").unlink(missing_ok=True)
+        assert remove_guard(spec) == ""
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        spec = Path(tmp) / "Specs"
+        spec.mkdir()
+        os.environ["GIT_CEILING_DIRECTORIES"] = tmp
+        assert remove_guard(spec) == ""
+    assert remove_guard(None) == ""
+
+
+def test_the_guard_is_removed_where_core_hookspath_points():
     if shutil.which("git") is None:
         return
     with tempfile.TemporaryDirectory() as tmp, plain_git():
         spec = a_git_spec_repo(tmp)
         hooks = Path(tmp) / "shared-hooks"
+        hooks.mkdir()
+        (hooks / "pre-commit").write_text(OLD_GUARD)
         subprocess.run(["git", "-C", str(spec), "config", "core.hooksPath",
                         str(hooks)], check=True)
-        install_guard(spec)
-        assert (hooks / "pre-commit").read_bytes() == GUARD
-        assert not (spec / ".git" / "hooks" / "pre-commit").exists()
+        remove_guard(spec)
+        assert not (hooks / "pre-commit").exists()
         # relative: to the repo, where git runs its hooks
+        (spec / "githooks").mkdir()
+        (spec / "githooks" / "pre-commit").write_text(OLD_GUARD)
         subprocess.run(["git", "-C", str(spec), "config", "core.hooksPath",
                         "githooks"], check=True)
-        install_guard(spec)
-        assert (spec / "githooks" / "pre-commit").read_bytes() == GUARD
+        remove_guard(spec)
+        assert not (spec / "githooks" / "pre-commit").exists()
 
 
-def test_a_spec_repo_that_is_no_git_repo_gets_no_guard():
-    if shutil.which("git") is None:
-        return
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        spec = Path(tmp) / "Specs"
-        spec.mkdir()
-        os.environ["GIT_CEILING_DIRECTORIES"] = tmp
-        preflight.check_spec_tree_guard(a_config(spec_repo=spec))
-        assert list(Path(tmp).rglob("*pre-commit*")) == []
-
-
-def test_a_plugin_without_a_readable_versioned_guard_is_a_broken_install():
-    """Exit 2: nothing the project can fix, and nothing is installed."""
-    with tempfile.TemporaryDirectory() as tmp:
-        unmarked = Path(tmp) / "spec-tree-guard.sh"
-        unmarked.write_text("#!/bin/sh\nexit 0\n")
-        for source in (unmarked, Path(tmp) / "missing.sh"):
-            with patched(preflight, GUARD_SOURCE=source):
-                code, message = refused(preflight.check_spec_tree_guard,
-                                        a_config(spec_repo=Path(tmp)))
-            assert code == 2 and str(source) in message
-            assert "plugin install is broken" in message
-
-
-def commit(spec, name, **env):
-    """A real `git commit` of one new file, with these env vars on top;
-    returns (rc, stderr) and whether HEAD moved."""
-    before = subprocess.run(["git", "-C", str(spec), "rev-parse", "HEAD"],
-                            capture_output=True, text=True).stdout
-    (spec / name).write_text(name + "\n")
-    subprocess.run(["git", "-C", str(spec), "add", name], check=True)
-    done = subprocess.run(["git", "-C", str(spec), "commit", "-qm", name],
-                          capture_output=True, text=True,
-                          env={**os.environ, **env})
-    after = subprocess.run(["git", "-C", str(spec), "rev-parse", "HEAD"],
-                           capture_output=True, text=True).stdout
-    if done.returncode != 0:
-        subprocess.run(["git", "-C", str(spec), "rm", "-q", "--cached",
-                        name], check=True)
-        (spec / name).unlink()
-    return done.returncode, done.stderr, before != after
-
-
-def test_the_guard_refuses_a_commit_on_a_phase_branch_not_its_own():
-    """End to end: the hook preflight installs, under real commits. Main and
-    a detached HEAD pass; a phase branch passes only for the session that
-    names it in DEV_PHASE_BRANCH. Refused, a session hears which case it is:
-    a live run holding the tree (its holder note, and the lease to wait on)
-    or a branch a stopped run left."""
-    if shutil.which("git") is None or shutil.which("flock") is None:
-        return
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        spec = a_git_spec_repo(tmp)
-        install_guard(spec)
-        git_dir = spec / ".git"
-        rc_, _, moved = commit(spec, "on-main")
-        assert rc_ == 0 and moved, "main is no phase's"
-
-        branch = "phase/054-P1"
-        subprocess.run(["git", "-C", str(spec), "checkout", "-qb", branch],
-                       check=True)
-        rc_, err, moved = commit(spec, "stray")
-        assert rc_ != 0 and not moved
-        assert "no run holds the tree" in err
-        rc_, _, moved = commit(spec, "own", DEV_PHASE_BRANCH=branch)
-        assert rc_ == 0 and moved
-        rc_, err, moved = commit(spec, "other",
-                                 DEV_PHASE_BRANCH="phase/055-P2")
-        assert rc_ != 0 and not moved
-
-        lease = git_dir / "dev-spec-tree.lock"
-        (git_dir / "dev-spec-tree.holder").write_text(
-            f"slice 054 P1 ({branch})\npid: 1\nhost: env-b\n")
-        fd = os.open(lease, os.O_RDONLY | os.O_CREAT, 0o644)
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            rc_, err, moved = commit(spec, "while-held")
-            assert rc_ != 0 and not moved
-            assert f"slice 054 P1 ({branch})" in err
-            assert f"flock -s '{lease.resolve()}'" in err, err
-            rc_, _, moved = commit(spec, "own-while-held",
-                                   DEV_PHASE_BRANCH=branch)
-            assert rc_ == 0 and moved, "the run's own commit while it holds"
-        finally:
-            os.close(fd)
-
-        subprocess.run(["git", "-C", str(spec), "checkout", "-q", "--detach"],
-                       check=True)
-        rc_, _, moved = commit(spec, "detached")
-        assert rc_ == 0 and moved
+def test_every_profile_removes_the_guard():
+    """Triage too: it commits into the spec repo like every other command."""
+    for profile in ("triage", "plan", "run"):
+        assert "spec_tree_guard" in preflight.PROFILES[profile], profile
 
 
 if __name__ == "__main__":

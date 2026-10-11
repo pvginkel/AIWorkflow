@@ -106,9 +106,7 @@ slice directory.
    - `fix now` — do it here only if the project's `CLAUDE.md` classes the change as ad hoc
      work; otherwise say so and offer `fold into`.
    - `fold into <slice>` — append the entry verbatim as an ask to that slice's `slice.md` under
-     `slices/backlog/`, snapshotted before you edit it
-     (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`); a slice that does not exist yet becomes a
-     `/dev:triage` item instead.
+     `slices/backlog/`; a slice that does not exist yet becomes a `/dev:triage` item instead.
    - `close` — there is nothing to do but record it; the operator's reason, if given, is part
      of their words.
    - `defer` — leave it, with their words recorded and nothing recorded as done: it stays live,

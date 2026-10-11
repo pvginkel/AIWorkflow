@@ -299,14 +299,12 @@ unvalidated; you author none of your own.
 
 Add each slice to the **Pending** section of `<spec-repo>/README.md` — one line matching the
 existing entries, `- **NNN** — <short title>: <one-clause summary>`, placed inside that section,
-above the heading that ends it. Snapshot the README before you edit it
-(`python3 ${CLAUDE_PLUGIN_ROOT}/tools/spec_commit.py snap`): it is outside the slice folders you
-file, so it may hold another writer's uncommitted edit. The line names no card: a README outlives its cards as handles,
+above the heading that ends it. The line names no card: a README outlives its cards as handles,
 and `slice.md` holds the ids. The file's end is `## Completed`, whose bullets have the same
 shape, and an entry landed there is one the close-out refuses. Verify before you commit:
 `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_slice.py --check <slice-dir>...` runs the close-out's
 preconditions over each new folder and moves nothing. Then commit the slice folders and the
-README's token in one `spec_commit.py commit`.
+README to the specs repo, staging files by name (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`).
 
 ### 8. Sweep the Solution Known cards
 

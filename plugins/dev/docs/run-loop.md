@@ -63,81 +63,67 @@ problem and the run refuses the phase. The first phase a run resolves on a clone
 action in the close-out report suggesting the operator delete it once the slice's commits are
 on origin.
 
-**The spec repo is a legal `Target:`** — a slice whose whole deliverable is the wire contracts
-names it, and the driver then branches and merges the tree that also holds its own run record.
-The **whole `slices/` tree stays out of the driver's git queries in that repo**: its
-dirty-checks (after every session, at merge), and the resume reset, which becomes a scoped
-`git restore` so an agent's uncommitted plan.md edit survives it. That is not a special case so
-much as the existing rule stated: the workflow's bookkeeping — this run's `log.txt`,
-`state.json` and `phases/**`, and every parallel session's — is never a phase's deliverable, and
-the driver has never checked it when the target was a code repo. Two guards keep the record
-intact: every dispatch that commits into that tree — executor, reviewer, consult — carries the
-fence (stage by name, never `git add -A`: [spec-tree.md](spec-tree.md)), and a run record found
-*committed* onto the phase branch is taken back out by the driver before any
-`git checkout <base>` — at the merge and at a bail — that would unlink the file the live log
-handle is writing to: `git rm --cached` of those paths and one commit by pathspec on the branch,
-so every commit already there keeps its sha (a rewrite orphans `reviewed_head`, and the next
-resume bails `lost_work` on it; slice 238 P5 paid four bails and a hand rewrite for the
-reviewer's `git add -A`). The spec repo's history then
-carries a snapshot of the record under that phase's merge, which is harmless — the folder is
-committed whole when the slice closes. The same exclusion lets an edit to this
-slice's own tracked files pass the dirty-checks uncommitted — a reviewer's `close_out.py append`
-it did not commit — and `git checkout <base>` then refuses to overwrite it, leaving the shared tree
-stranded on the phase branch. So before the driver checks the base out of that branch, at the
-merge and at a bail, it commits those edits onto the branch itself: this slice's folder only,
-tracked files only, the run record excluded. A head that moved only inside `slices/` keeps the
-gate's green.
+**A shared repo is never branched in place.** A repo kc marks `shared` (`kc env describe
+--output=json`, `repos[].shared` — one clone mounted into every environment of the project; the
+spec repo, in every onboarded project) is one working tree every session in every environment
+commits into: the loops and the sessions they dispatch, the operator's triage, plan-slice,
+run-slice and close-out sessions, the operator by hand. So a phase whose `Target:` resolves to
+one — or to the spec repo, whether kc marks it shared or not: that tree holds the slice folder
+the run writes into, and the spec repo is a legal `Target:` (a slice whose whole deliverable is
+the wire contracts names it) — works in a **linked worktree** of that repo,
+`/work/scratch/worktrees/<Repo>/<NNN>-P<id>`, on its phase branch; the shared checkout stays on
+its base throughout, and nothing anyone commits or leaves uncommitted there can reach the phase.
+The driver reads the shared set from `kc env describe --output=json` once, records it in
+`state.json` (`shared_repos`) and reads it back on a resume, so a phase that began in a worktree
+finishes in one; kc not answering is a `protocol_failure`. The worktree is recorded on the phase
+(`phases.P<id>.worktree`, [runner-state.md](runner-state.md)). A shared primary repo is refused at
+startup, since the gate and the dev services are the environment's own checkout's.
 
-The tree is shared with parallel sessions — other runs, plan loops, the operator's own — so
-where it sits matters past this run. **Its HEAD is leased.** Every session either loop runs
-commits into that tree during its turn — a done-record, a close-out entry, the plan — and a
-phase that targets the spec repo moves the tree's HEAD onto its branch; the two are held apart by a
-reader/writer lease on the tree (`dev-spec-tree.lock` in the spec repo's git dir, a `flock` like
-the devlock's). Every dispatch and every nudge, and every commit of the driver's own, holds it
-shared for exactly the session's or the commit's duration; a phase whose `Target:` is the spec
-repo holds it exclusive from its branch checkout to its stamp, and a bail lets it go once the
-base is checked back out. A writer waits for the sessions in flight to end and its intent holds
-new ones off — writers are preferred, so a stream of dispatches cannot starve one; a reader
-waits for the phase to merge. A wait is logged once with the holder and announced once, and one
-past `SPEC_TREE_MAX_WAIT` (four hours, the devlock's cap) bails `spec_tree_timeout`. Slice 224's
-P1 executor committed its done-record onto `phase/223-P1` seconds after slice 223's driver
-checked that branch out, and the assertion below caught it only after the round:
-the assertion is the check, the lease is what makes it hold.
+The worktree is added **locked** (`git worktree add --lock`, the reason naming the slice, phase,
+environment, host and pid): its registration lives in the shared git dir, every other environment
+sees its path as missing, and `git gc`'s prune would otherwise delete a live worktree's
+registration. Everything that reads or changes a working tree runs in the worktree — the dirty
+checks, the resume reset (a plain `reset --hard`: nothing but the phase writes there), the gate
+(`kc project test` from the worktree's root where the repo carries a manifest; the verbs are
+cwd-bound), the reviewer's `where` — while `bases`, `landed.root`, the test phase's pushes and
+the doc phase's diffs keep the shared repo. The executor's dispatch names the worktree and says
+that the shared tree stays on its base and the plan is edited there, as for any sibling target;
+the run record is untracked and never in a worktree. A resume reuses the worktree it recorded
+(a reattached session needs the tree as it left it) and, finding it gone — a Reset, a resume in
+another environment — unlocks and prunes the branch's stale registrations and re-adds it from
+the branch: the committed work is in the shared git dir, the uncommitted is lost as a lost
+code-repo tree loses it. A bail or a stop leaves the worktree and its branch for the resume; the
+merge removes them.
 
-**Everyone else is refused at the commit.** The lease holds only the loops' own sessions apart. A
-session no loop dispatched never takes it: the operator's run-slice, plan-slice or close-out
-session, or a session in another environment. So the spec repo carries a pre-commit hook,
-`tools/spec-tree-guard.sh`, which preflight installs in every profile ([preflight.md](preflight.md)
-§ Notes on the spec-tree guard). It refuses a commit on a `phase/*` branch unless
-`DEV_PHASE_BRANCH` names that branch. The driver sets that variable on every session it
-dispatches or nudges onto a branch of its own in the spec tree, and on its own commits there. The
-refused session waits outside the hook, never in it: a commit holds the index lock while its hooks
-run, so a hook that blocked would block the driver's checkout back to the base. While a phase
-holds the lease exclusively, the hook's message names that phase from the holder note and tells
-the session to unstage what it staged, since the phase's own commits would take it, and to commit
-again in the background under `flock -s` on the lease. When the lease is free and the tree is
-still on a phase branch, a stopped run left it there, so the session doesn't wait and tells the
-operator. One gap is accepted: an uncommitted edit outside `slices/` left in the tree while the
-session waits bails the phase at its merge (worktree dirty). Edits under `slices/` pass that check
-and go back to the base with the checkout, and each misplaced commit that prompted the guard
-touched only its own slice folder: slice 050's review adjudication on `phase/053-P1`, and two
-commits a run-slice session for 050 in another environment made onto `phase/054-P1` while 054's
-driver held it.
+**The merge of a shared target is a merge, not a fast-forward.** In order: the worktree must be
+clean (`protocol_failure` otherwise, as everywhere); in the spec repo, a change under
+`slices/**` on the branch — the slice tree is never a phase's deliverable, and a writer that
+edited the worktree's copy of the plan put its done-record in the wrong tree — is put back to its
+state at the branch's merge base in one commit on the branch and logged (back to the fork, not
+the base's tip, so the branch then changes nothing there and cannot conflict with a parallel
+session's edit); the gate re-runs where its green no longer covers the head; then `git merge
+<branch>` on the base in the shared tree — a fast-forward when the base stood still, a merge
+commit when it moved, so the branch is never rebased and the record's commits keep their shas. A
+file another writer left uncommitted in the shared tree that the merge would overwrite is
+**swept**: one commit on the base carrying that edit, then the merge again — a change on other
+lines of the same file merges, a true overlap conflicts. A conflict is aborted and bails
+`blocked`, asking for the merge by hand; the resume finds the branch in the base at the merging
+stage, clears the worktree and the branch, and stamps (with no landed range on record). A busy
+`index.lock` is retried; five attempts, then `protocol_failure`. Then the worktree is removed,
+the branch deleted, the phase stamped.
 
-A bail (either exit) checks every repo the run touched back out onto its base branch when the
-tree is clean and the branch is this run's own — a branch it did not create is a parallel
-session's business, and a checkout under it would be the very bug this guards against (a resume
-checks the run's branch out again itself) — so no parallel session commits onto this run's
-branch by accident, and the run never adopts a foreign one: the base a run records for a repo is
-the branch it finds there the first time it touches it, and a `phase/…` branch is refused at the
-record. Before every dispatch and every commit of its own into the spec repo, inside the same
-hold, the driver asserts that repo is on its base — or on the phase branch, for every dispatch
-within a phase that targets it, its review-funding consult included — and bails `blocked`
-otherwise, naming a branch of this run's own as the run's fault rather than a parallel
-session's; the plan loop keeps the same hold and the same
-assertion ([plan-loop.md](plan-loop.md)). What that guards: another slice's plan-loop commits
-and stamps landing on a phase branch and surfacing as out-of-scope changes in its review, and
-the doc-writer writing to the close-out report from a stale checkout.
+The shared tree's own state is still asserted where the driver commits into it — the stamp, the
+report — and before every dispatch: that repo on its base, else `blocked` naming the branch it is
+on; and a shared checkout found holding the phase's own branch in place is a `blocked` stop too,
+nothing touched. Nothing in a run moves that tree any more, so either fires only on a hand
+checkout, or on a run of a plugin older than 0.9.93 in the transition; the plan loop keeps the
+same check ([plan-loop.md](plan-loop.md)). Every session that commits into the shared tree stages by name
+([spec-tree.md](spec-tree.md)), and a commit that carries another writer's uncommitted hunk in a
+file it also commits is accepted, not a defect. A bail (either exit) checks every code repo the
+run touched back out onto its base branch when the tree is clean and the branch is this run's
+own — a branch it did not create is a parallel session's business — and the base a run records
+for a repo is the branch it finds there the first time it touches it, a `phase/…` branch refused
+at the record.
 
 **The plan doc is writable by every agent in the loop — deliberately; this is load-bearing.**
 Executors append their done-record and edit later phases their work changes; consult and test
@@ -229,13 +215,13 @@ whole plan is a feature of the review, not a cost. Then:
   Blocker-only, then critical-only; a prose-only fix range applies the next step early — before
   an executor round is spent. Backstop cap 5. Findings that merge unresolved are never lost:
   they stay in the review file, and the driver records the merge in the close-out report.
-- **Merge** — worktree clean; a base that moved under the branch (a parallel session's commits
-  in a shared tree) has the branch rebased onto it first, the diff proven unchanged and the
-  record's head repointed — an unclean rebase or a changed diff bails `blocked` with the branch
-  left as it is and the rebase handed to the operator, and the resume takes the rebased branch
-  as the one it asked for (review kept, gate re-run; [runner-state.md](runner-state.md)); then
-  gate green on HEAD (re-run if it moved, the rebase included, unless the move is only inside the
-  spec repo's `slices/`; red cannot merge), ff-merge into the base branch, branch deleted, stamp.
+- **Merge** — worktree clean; a base that moved under the branch has the branch rebased onto it
+  first, the diff proven unchanged and the record's head repointed — an unclean rebase or a
+  changed diff bails `blocked` with the branch left as it is and the rebase handed to the
+  operator, and the resume takes the rebased branch as the one it asked for (review kept, gate
+  re-run; [runner-state.md](runner-state.md)); then gate green on HEAD (re-run if it moved, the
+  rebase included; red cannot merge), ff-merge into the base branch, branch deleted, stamp. A
+  shared target merges instead of rebasing, in its worktree (§ The plan is the queue).
 - Executor terminals: `question` pauses the run for the operator (exit 4 — the answer lands in
   the plan's rulings section and the run resumes); `blocked` is an error bail.
 
@@ -443,10 +429,7 @@ run start when planning left none, names the report and `close_out.py` (the only
 it) in every dispatch, with the labels each kind carries and the arguments of `append`, `note`
 and `strike`, enters refuted findings, funding-consult
 merges and every stop of the run (written by the resume that follows the stop, from
-`state.json`'s `bailouts`, at that resume's first dispatch — once the spec tree is on the branch
-the dispatch works on, so that in a phase targeting the spec repo the entry rides the phase
-branch; written at startup it sat uncommitted on the base and refused the checkout of a branch
-whose own `close-out.json` had moved, on every resume), dispatches the wrap-up, and renders the report — before the doc
+`state.json`'s `bailouts`, at that resume's first dispatch), dispatches the wrap-up, and renders the report — before the doc
 phase, after the wrap-up, whenever the run stops, and when it completes, the run header from
 `state.json` with it; the launching session
 renders once more when the cost block has landed and files **one** tracker card pointing at the

@@ -13,7 +13,7 @@ remote-tracking ref, so an unfetched clone dates an agent's read of
 code-writer) → deterministic gate (red spawns a fresh executor fix round,
 capped) → code-reviewer loop (round 1's fix is automatic; from round 2 a
 consult funds each further round against a bar that rises per round; backstop
-cap) → gate-checked ff-merge → the driver stamps `✅ DONE <date>` on the phase
+cap) → gate-checked merge → the driver stamps `✅ DONE <date>` on the phase
 heading. Only the driver stamps.
 
 After the last phase the driver runs the loop-tail gate sweep — `kc project
@@ -67,9 +67,10 @@ Execution state lives in <slice>/state.json (written atomically; the driver
 is its only writer): known phase ids, per-phase rounds, the bail-out and
 appended-phase records, per-session transcript paths. Session outputs land
 in <slice>/phases/P<id>/ (review docs, gate logs, verdicts); executor inputs
-come from plan.md, never from copies. A phase may target the specs repo
-itself, which holds that whole record — so the `slices/` tree stays out of the
-driver's git queries there (_bookkeeping_pathspec).
+come from plan.md, never from copies. A phase whose Target is a repo kc
+marks `shared` — the specs repo, which holds that whole record, is one —
+works in a linked worktree of its own under the scratch root, and the shared
+checkout never leaves its base (`_ensure_worktree`, `_merge_shared`).
 
 All driver and session output goes to <slice>/log.txt (tail -f to watch);
 stdout carries the log-file line plus one terse timestamped line per major
@@ -110,11 +111,13 @@ or still running after the wait · 2 the driver is on another host.
 
 import argparse
 import contextlib
+import copy
 import fcntl
 import json
 import os
 import re
 import select
+import shutil
 import signal
 import socket
 import subprocess
@@ -265,9 +268,6 @@ BAIL_STAGES = {"consult": "at the completion consult",
 # work — the plan-writer heads it `Before /dev:run-slice: …`. After-run ones
 # (the plan loop's push-hold and settle-V entries) never match.
 PRERUN_HEADLINE_RE = re.compile(r"^before\s+`?/dev:run-slice\b`?", re.IGNORECASE)
-# The driver's live run record inside the slice folder — untracked for the
-# whole run, whichever branch the tree holding it is on.
-RUN_RECORD = ("log.txt", "state.json", "phases")
 
 # The spawn environment of every dispatched session (plan_loop imports it).
 # Ephemeral sessions must not pay the 1-hour cache-write premium; and the
@@ -282,12 +282,6 @@ SPAWN_ENV = {
     "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
     "CLAUDE_CODE_DISABLE_BUNDLED_SKILLS": "1",
 }
-
-# The spec repo's pre-commit hook (spec-tree-guard.sh, installed by preflight)
-# refuses a commit on a `phase/*` branch unless this names it. The driver sets
-# it on what it dispatches onto a branch of its own in the spec tree, and on
-# its own commits there (`RunLoop._spawn_env`, `RunLoop.git`).
-PHASE_BRANCH_ENV = "DEV_PHASE_BRANCH"
 
 # The claude flags `create-headless` passes through to the spawned claude
 # (kc's own pass-through, under claude's flag names), finishing the prefix
@@ -386,6 +380,10 @@ def write_promoted_mcp_config(source: Path | None = None,
 # mid-run. Rewritten at the first dispatch, which is what picks up a changed
 # `~/.claude.json` on the next run.
 _PROMOTED_MCP: list[list[str]] = []
+
+
+def _silent(_msg: str) -> None:
+    """The default log sink — a caller that passes none hears nothing."""
 
 
 def _promoted_mcp_flags(log=None) -> list[str]:
@@ -1762,203 +1760,6 @@ class DevLock:
 
 
 # ---------------------------------------------------------------------------
-# The spec-tree lease — a reader/writer lock over the ONE working tree the
-# spec repo is, held over the whole of what moves its HEAD.
-#
-# Every parallel run loop, plan loop and the operator share that mount. Agents
-# commit their done-records and close-out entries into it during their turn,
-# the driver commits stamps and the report there, and a phase whose `Target:`
-# IS that repo checks its own `phase/…` branch out in it. So one run moving
-# the tree's HEAD is every other run's commits landing on that branch — read
-# as out-of-scope changes in that slice's next review, or simply lost. That is
-# how a parallel run's executor committed onto another slice's phase branch;
-# `_assert_spec_on_base` only ever notices afterwards, and this lease is what
-# keeps the branch still while other sessions are committing.
-#
-# Readers — every dispatched session and every driver commit — take it shared;
-# the one phase that branches the tree takes it exclusively, from the checkout
-# to the stamp. The intent file gives writers preference: it is held
-# exclusively for as long as a writer waits, so new readers queue behind it
-# instead of starving it, while readers already out drain. flock throughout,
-# so a driver that dies releases by fd close.
-#
-# The lease holds the loops' own sessions apart. A session no loop dispatched
-# never takes it, so the spec repo's pre-commit hook (spec-tree-guard.sh,
-# installed by preflight) refuses its commit on a phase branch — and the driver
-# names its own branch in PHASE_BRANCH_ENV on what it dispatches and commits
-# there.
-# ---------------------------------------------------------------------------
-
-SPEC_TREE_POLL = 15
-SPEC_TREE_MAX_WAIT = 4 * 3600
-
-
-def git_dir_for(root: Path) -> Path | None:
-    """A repo's git dir — `<root>/.git`, or what its `gitdir:` line points at
-    when that is a file (a linked worktree, a submodule). None when there is
-    none to be found, which degrades the lease to a no-op: nothing here ever
-    creates the directory."""
-    dot = Path(root) / ".git"
-    if dot.is_dir():
-        return dot
-    try:
-        text = dot.read_text()
-    except OSError:
-        return None
-    for line in text.splitlines():
-        if line.startswith("gitdir:"):
-            path = Path(line.split(":", 1)[1].strip())
-            if not path.is_absolute():
-                path = Path(root) / path
-            return path if path.is_dir() else None
-    return None
-
-
-def _silent(_msg: str) -> None:
-    """The default log/announce sink — a lock built without one says
-    nothing."""
-
-
-class SpecTreeLock:
-    """The lease over the shared spec working tree: `shared()` for anything
-    that commits into it, `acquire_exclusive()` for the phase that branches
-    it. Three files beside each other in the repo's git dir — the lease, the
-    writer-intent file, and the exclusive holder's human-readable note."""
-
-    def __init__(self, spec_root: Path | None, log=None, sleep=None,
-                 announce=None):
-        git_dir = git_dir_for(spec_root) if spec_root else None
-        self.git_dir = git_dir
-        self.lease_path = git_dir / "dev-spec-tree.lock" if git_dir else None
-        self.intent_path = (git_dir / "dev-spec-tree.intent" if git_dir
-                            else None)
-        self.holder_path = (git_dir / "dev-spec-tree.holder" if git_dir
-                            else None)
-        self._log = log or _silent
-        self._sleep = sleep or time.sleep
-        self._announce = announce or _silent
-        self._ex_fd = None
-        self._sh_depth = 0
-
-    @property
-    def configured(self) -> bool:
-        """A slice folder whose repo has no git dir has no tree to
-        coordinate — the lease degrades to a no-op rather than inventing a
-        file to flock."""
-        return self.lease_path is not None
-
-    @property
-    def held_exclusive(self) -> bool:
-        return self._ex_fd is not None
-
-    def holder_note(self) -> str:
-        """Who holds the tree. Readers leave no note — with the lease busy
-        and no note beside it, parallel sessions are simply working in it."""
-        try:
-            note = self.holder_path.read_text().strip()
-        except (OSError, AttributeError):
-            note = ""
-        return note or "held shared by parallel sessions"
-
-    def _hold(self, path: Path, mode: int, purpose: str) -> tuple[int, int]:
-        """Take `mode` on `path` and return (fd, seconds waited). Polled
-        non-blocking so the wait is loggable and bounded; the poll and the
-        cap are read per call, so a test can shrink them. A wait may last an
-        hour, so the first one is announced as well as logged."""
-        fd = os.open(path, os.O_RDONLY | os.O_CREAT, 0o644)
-        deadline = time.monotonic() + SPEC_TREE_MAX_WAIT
-        waited = 0
-        logged = False
-        while True:
-            try:
-                fcntl.flock(fd, mode | fcntl.LOCK_NB)
-                return fd, waited
-            except OSError:
-                note = self.holder_note()
-                if not logged:
-                    self._log(f"spec tree held — waiting ({purpose}); "
-                              "holder:\n" + note)
-                    self._announce("waiting for the spec tree "
-                                   f"({note.splitlines()[0]})")
-                    logged = True
-                if time.monotonic() >= deadline:
-                    os.close(fd)
-                    raise Bailout(
-                        "spec_tree_timeout",
-                        details="the spec tree's lease stayed held for "
-                                f"{SPEC_TREE_MAX_WAIT}s; holder:\n" + note,
-                    ) from None
-                self._sleep(SPEC_TREE_POLL)
-                waited += SPEC_TREE_POLL
-
-    @contextlib.contextmanager
-    def shared(self, purpose: str = ""):
-        """The reader hold: taken around every session dispatched into the
-        tree and every commit the driver makes there. Re-entrant, and a
-        no-op while this object holds the tree exclusively — a second fd on
-        one file is a separate flock owner, so taking the lease again would
-        deadlock the driver against itself."""
-        if not self.configured or self._ex_fd is not None:
-            yield
-            return
-        if self._sh_depth:
-            self._sh_depth += 1
-            try:
-                yield
-            finally:
-                self._sh_depth -= 1
-            return
-        intent_fd, waited = self._hold(self.intent_path, fcntl.LOCK_SH,
-                                       purpose)
-        try:
-            fd, more = self._hold(self.lease_path, fcntl.LOCK_SH, purpose)
-        finally:
-            # The intent is held only long enough to queue behind a waiting
-            # writer; the lease is what the reader keeps.
-            os.close(intent_fd)
-        if waited + more:
-            self._log(f"spec tree free after {waited + more}s")
-        self._sh_depth = 1
-        try:
-            yield
-        finally:
-            self._sh_depth = 0
-            os.close(fd)
-
-    def acquire_exclusive(self, purpose: str) -> None:
-        """The writer hold: the intent first (which blocks other writers and
-        every new reader), then the lease once the readers already out have
-        drained. Idempotent."""
-        if not self.configured or self._ex_fd is not None:
-            return
-        intent_fd, _ = self._hold(self.intent_path, fcntl.LOCK_EX, purpose)
-        try:
-            fd, _ = self._hold(self.lease_path, fcntl.LOCK_EX, purpose)
-        finally:
-            os.close(intent_fd)
-        self._ex_fd = fd
-        self.holder_path.write_text(
-            f"{purpose}\npid: {os.getpid()}\n"
-            f"host: {socket.gethostname()}\nsince: {_now_iso()}\n")
-        self._log(f"spec tree ACQUIRED ({purpose})")
-
-    def release_exclusive(self, left_on: str = "") -> None:
-        """Idempotent — every stop path calls it, held or not. `left_on` is
-        the caller's word on where the tree stays when that is not its base:
-        the lease goes either way, and a bare "released" read as "the tree
-        is back" while it still sat on the phase branch."""
-        if self._ex_fd is None:
-            return
-        try:
-            self.holder_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        os.close(self._ex_fd)
-        self._ex_fd = None
-        self._log("spec tree released" + (f" — {left_on}" if left_on else ""))
-
-
-# ---------------------------------------------------------------------------
 # The slice lock — one driver per slice folder. A slice's run record lives in
 # the spec repo, which is the mount every environment shares; the code repo it
 # branches is not. Two drivers on one folder therefore write one log.txt, one
@@ -2127,20 +1928,6 @@ def skills_named(skills: list[tuple[str, Path | None]]) -> str:
         name if path else f"{name} (not installed)" for name, path in skills)
 
 
-# Carried by every dispatch that commits into the tree holding the slice
-# folder — executor, reviewer and consult alike, inside a phase whose
-# `Target:` is the specs repo. The driver's run record is written into that
-# tree while the session works; an agent that sweeps it into a commit takes
-# the live log with it at the merge's `git checkout <base>` (slice 238 P5:
-# the reviewer's `git add -A` of its review with its close-out entry).
-BOOKKEEPING_NOTE = """
-The slice folder {slice_dir} sits inside this phase's target repo, and
-everything the driver writes there — log.txt, state.json, phases/ — is the
-live record of this run, changing while you work. Stage what you commit by
-name, never `git add -A`, and commit none of those. The plan doc is yours to
-edit as always.
-"""
-
 # Carried by every executor dispatch whose target a gate ruling covers: the
 # driver runs no gate there, and the writer's own `kc project test` may be
 # red for the reason the operator ruled on.
@@ -2238,7 +2025,7 @@ phase's scope is under review; end-to-end testing and prose docs have their
 own later phases, so their absence here is not a finding.
 
 {review_set}{gate_line}
-{philosophy_line}{skill_line}{close_out_line}{bookkeeping_note}
+{philosophy_line}{skill_line}{close_out_line}
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
 
@@ -2264,7 +2051,7 @@ touches it. The requirements are unchanged: the phase's section in
 {plan_path} and the acceptance criteria in {verification_path}.
 
 {review_set}{gate_line}
-{philosophy_line}{skill_line}{close_out_line}{bookkeeping_note}
+{philosophy_line}{skill_line}{close_out_line}
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
 
@@ -2754,7 +2541,7 @@ Situation: {situation}
 {phase_line}Slice folder: {slice_dir} (state.json holds the run history)
 {close_out_line} Out-of-scope findings and sub-bar leftovers go there as
 entries; `list` before you write, add if in doubt.
-{bookkeeping_note}
+
 Investigate as needed — read the material below, the plan, git log/diff.
 {material}
 
@@ -2830,9 +2617,22 @@ class ResolvedTarget:
         # a sibling repo's (git_root says which); "sibling" is a whole repo,
         # named by its path.
         self.kind = kind            # "project" | "sibling"
-        self.git_root = git_root    # where branches/merges happen
+        self.git_root = git_root    # the repo: its base, merges, pushes
         self.gate_argv = gate_argv  # None → no deterministic gate
         self.gate_cwd = gate_cwd
+        # The working tree the phase's branch is checked out in — the repo's
+        # own, except for a shared repo's phase, which works in a linked
+        # worktree of its own (`RunLoop._ensure_worktree`).
+        self.work_root = git_root
+
+    def in_worktree(self, path: Path) -> "ResolvedTarget":
+        """This target as its phase works it from the linked worktree at
+        `path`: everything that reads or changes a working tree, the gate
+        among them, runs there; `git_root` stays the shared repo the branch
+        merges into."""
+        moved = copy.copy(self)
+        moved.work_root = moved.gate_cwd = Path(path)
+        return moved
 
 
 # ---------------------------------------------------------------------------
@@ -2922,11 +2722,10 @@ def _read_text(path: Path) -> str:
 ENV_DESCRIBE_ARGV = ["kc", "env", "describe", "--output=json"]
 
 
-def _env_described(key: str) -> set[str]:
-    """The `name`s of `kc env describe --output=json`'s top-level `key`
-    list — what the pod was composed with. ValueError with the cause when
-    kc does not answer that — the caller passes its check with a warning,
-    since a check never holds a loop up on its own bookkeeping."""
+def _env_list(key: str) -> list:
+    """`kc env describe --output=json`'s top-level `key` list — what the pod
+    was composed with. ValueError with the cause when kc does not answer
+    that."""
     cmd = " ".join(ENV_DESCRIBE_ARGV)
     try:
         result = subprocess.run(ENV_DESCRIBE_ARGV, capture_output=True,
@@ -2943,8 +2742,61 @@ def _env_described(key: str) -> set[str]:
     items = data.get(key) if isinstance(data, dict) else None
     if not isinstance(items, list):
         raise ValueError(f"`{cmd}` carries no `{key}` list")
-    return {i["name"] for i in items
+    return items
+
+
+def _env_described(key: str) -> set[str]:
+    """The `name`s of `kc env describe`'s top-level `key` list
+    (`_env_list`). ValueError with the cause when kc does not answer that —
+    the caller passes its check with a warning, since a check never holds a
+    loop up on its own bookkeeping."""
+    return {i["name"] for i in _env_list(key)
             if isinstance(i, dict) and isinstance(i.get("name"), str)}
+
+
+def shared_repo_dirs() -> set[Path]:
+    """The checkouts kc marks `shared` — `kc env describe`'s `repos`, each
+    `{url, dir, shared, ref}`, resolved by `dir`. A shared repo is one clone
+    mounted into every environment of the project: whatever branch it is on
+    is every session's, in every environment, so a phase never branches it
+    in place (`RunLoop._ensure_worktree`). ValueError with the cause when kc
+    does not answer that; unlike the tool and service checks the caller
+    cannot go on without the answer, and bails."""
+    return {Path(r["dir"]).resolve() for r in _env_list("repos")
+            if isinstance(r, dict) and r.get("shared") is True
+            and isinstance(r.get("dir"), str) and r["dir"]}
+
+
+def overwritten_paths(output: str) -> list[str]:
+    """The paths a refused `git merge` names as standing in its way — local
+    changes, staged or not, or untracked files it would overwrite: the
+    indented lines under git's "… would be overwritten by merge:" (a tab
+    before each, or two spaces from the ort strategy's own refusal)."""
+    paths: list[str] = []
+    taking = False
+    for line in output.splitlines():
+        if "would be overwritten by merge" in line:
+            taking = True
+            continue
+        if taking and line[:1] in ("\t", " ") and line.strip():
+            paths.append(line.strip())
+            continue
+        taking = False
+    return list(dict.fromkeys(paths))
+
+
+# Where a shared repo's phase works: `<root>/<repo name>/<NNN>-P<id>`, a
+# linked worktree on its phase branch. Per environment, beside the scratch
+# clones (whose sync walks them by their mark, so it never takes one of these
+# for a clone), and on /work, so the cexec sidecars see it and a restart
+# keeps it.
+WORKTREE_ROOT = github_target.SCRATCH_ROOT / "worktrees"
+# Attempts at a shared repo's merge (`RunLoop._merge_shared`): each sweep of
+# another writer's edit in the way, or wait out a concurrent git's
+# index.lock, costs one.
+MERGE_ATTEMPTS = 5
+# The wait before a merge retried over another git process's index.lock.
+INDEX_LOCK_WAIT = 2
 
 
 def running_tools() -> set[str]:
@@ -3233,7 +3085,8 @@ class RunLoop:
         self._spec_root: Path | None = None
         self._cfg: project_config.ProjectConfig | None = None
         self._devlock: DevLock | None = None
-        self._spec_lock: SpecTreeLock | None = None
+        # The repos kc marks shared (`_shared_dirs`): None until first asked.
+        self._shared: set[Path] | None = None
         self._slice_lock = SliceLock(self.slice_dir / "run.lock")
         # Called once the run is past its refusals (`_run`) — the detached
         # driver's word to the parent that it has started.
@@ -3283,43 +3136,6 @@ class RunLoop:
         if self._devlock is None:
             self._devlock = DevLock(self.cfg.devlock_lease)
         return self._devlock
-
-    @property
-    def spec_lock(self) -> SpecTreeLock:
-        """The lease over the shared spec tree. Built on first use, because
-        locating it asks git where the slice folder's repo is."""
-        if self._spec_lock is None:
-            self._spec_lock = SpecTreeLock(
-                self.spec_root,
-                log=lambda msg: self.log(msg),
-                sleep=lambda seconds: self._sleep(seconds),
-                announce=lambda msg: self.announce(msg))
-        return self._spec_lock
-
-    def _release_spec_tree(self) -> None:
-        """Give the tree back at a stop. Asked of the attribute rather than
-        the property: a bail handler must never be the first thing to run
-        git. A tree this run held that is still off its base — the bail's
-        restore refused to move it, or an interrupt left it for the reattach
-        — is named in the release line, since every other session queued on
-        the lease now walks into that branch."""
-        lock = self._spec_lock
-        if lock is None:
-            return
-        lock.release_exclusive(self._spec_tree_left_on()
-                               if lock.held_exclusive else "")
-
-    def _spec_tree_left_on(self) -> str:
-        """'' when the spec tree is on its recorded base, else where it is.
-        Never raises: it only words a log line at a stop."""
-        try:
-            base = self.state.get("bases", {}).get(str(self.spec_root))
-            cur = self._current_branch(self.spec_root)
-        except Exception:
-            return "the branch it is on could not be read"
-        if base is None or cur == base:
-            return ""
-        return f"the tree is still on {cur}, not {base}"
 
     # -- state ---------------------------------------------------------------
 
@@ -3397,15 +3213,10 @@ class RunLoop:
     # -- git -----------------------------------------------------------------
 
     def git(self, *args: str, root: Path | None = None,
-            check: bool = True, phase_branch: str | None = None) -> str:
-        """`phase_branch` names the branch of this run's own a commit lands
-        on in the spec tree, so the spec repo's pre-commit hook lets it
-        through (PHASE_BRANCH_ENV)."""
+            check: bool = True) -> str:
         result = subprocess.run(
             ["git", *args], cwd=root or self.repo_root,
             capture_output=True, text=True,
-            env=({**os.environ, PHASE_BRANCH_ENV: phase_branch}
-                 if phase_branch else None),
         )
         if check and result.returncode != 0:
             raise Bailout(
@@ -3424,12 +3235,11 @@ class RunLoop:
             capture_output=True, text=True,
         ).returncode == 0
 
-    def specs_git(self, *args: str, phase_branch: str | None = None) -> str:
+    def specs_git(self, *args: str) -> str:
         """Git in the specs repo (the slice folder's repo) — used only for
         the driver's own plan.md edits (stamps), staged by name: the specs
         repo is one working tree shared by several parallel sessions."""
-        return self.git("-C", str(self.slice_dir), *args,
-                        phase_branch=phase_branch)
+        return self.git("-C", str(self.slice_dir), *args)
 
     def _current_branch(self, root: Path) -> str:
         return self.git("rev-parse", "--abbrev-ref", "HEAD", root=root)
@@ -3447,68 +3257,71 @@ class RunLoop:
     def _is_spec_root(self, root: Path) -> bool:
         return Path(root).resolve() == self.spec_root
 
-    def _assert_spec_on_base(self, expected: str | None = None,
-                             phase_id: str | None = None) -> None:
-        """The specs repo must be on the branch this run expects before
-        anything commits there and before any agent is pointed at it.
+    def _shared_dirs(self) -> set[Path]:
+        """The repos kc marks shared (`shared_repo_dirs`), asked once per
+        process and recorded in state.json's `shared_repos` — and a resume
+        reads the record rather than asking again, so a phase that began in
+        a worktree finishes in one. kc not answering is a stop: without the
+        answer a phase could branch a shared tree in place."""
+        if self._shared is None:
+            recorded = self.state.get("shared_repos")
+            if isinstance(recorded, list):
+                self._shared = {Path(p) for p in recorded
+                                if isinstance(p, str)}
+            else:
+                try:
+                    dirs = shared_repo_dirs()
+                except ValueError as e:
+                    raise Bailout(
+                        "protocol_failure",
+                        details="which repos of this environment are shared "
+                                f"could not be read: {e}") from None
+                self._shared = dirs
+                self.state["shared_repos"] = sorted(str(p) for p in dirs)
+        return self._shared
 
-        That one working tree is shared with every parallel session — other
-        run loops, plan loops, the operator's own. Whatever branch it happens
-        to sit on is where this run's stamps, close-out entries and
-        specs-repo phase work would land: on another slice's phase branch
-        they read as out-of-scope changes in that slice's next review, and on
-        a stale branch they are simply lost. `expected` is the phase branch,
-        passed by the one phase whose own target IS this repo; everywhere
-        else the base branch is the only right answer.
+    def _is_shared(self, root: Path) -> bool:
+        return Path(root).resolve() in self._shared_dirs()
 
-        A branch of this run's own is no parallel session's doing, and the
-        message says which of this run's faults it is. On the very phase
-        branch of the phase dispatching, the tree is where that phase put
-        it: the dispatch should have named the branch and did not — a driver
-        defect that every resume reaches again. On another of its branches,
-        an earlier stop of this run left it there."""
+    def _works_in_worktree(self, root: Path) -> bool:
+        """Whether a phase targeting `root` works in a linked worktree of its
+        own rather than on a branch checked out in `root` itself: a repo kc
+        marks shared, and the spec repo whether kc marks it or not — the tree
+        holding the slice folder is never branched under the run, which
+        writes its record there and asserts it on its base before every
+        dispatch (`_assert_spec_on_base`)."""
+        return self._is_shared(root) or self._is_spec_root(root)
+
+    def _assert_spec_on_base(self) -> None:
+        """The specs repo must be on its base branch before anything commits
+        there and before any agent is pointed at it — the stamp, the
+        driver's report commits, every dispatch. Whatever branch that tree
+        sits on is where this run's stamps, plan edits and close-out entries
+        land. The run itself never moves it (a phase on it works in a
+        worktree), so a tree off its base is a hand checkout, or a run of a
+        plugin before 0.9.93, which still branched it in place."""
         base = self._base_branch(self.spec_root)
-        want = expected or base
         cur = self._current_branch(self.spec_root)
-        if cur == want:
+        if cur == base:
             return
-        mine = f"phase/{self.slice_num}-"
-        if phase_id is not None and cur == f"{mine}P{phase_id}":
-            details = (f"the spec repo {self.spec_root} is on {cur}, this "
-                       f"run's own branch for P{phase_id}, where this dispatch "
-                       f"expected {want}: a dispatch within a phase that "
-                       "targets the spec repo should have named that branch "
-                       "and did not. That is a driver defect, not a parallel "
-                       "session, and resuming will hit it again — moving the "
-                       "tree only strands the phase")
-        elif cur.startswith(mine):
-            details = (f"the spec repo {self.spec_root} is on {cur}, a branch "
-                       f"of this run's own, not {want}: an earlier stop of "
-                       "this run left it there (an interrupt, or a bail that "
-                       f"could not check {want} back out) — check out {want} "
-                       "there and resume")
-        else:
-            details = (f"the spec repo {self.spec_root} is on {cur}, not "
-                       f"{want}; a parallel session left it there (a bail "
-                       "of another run, or its own branch) — check out "
-                       f"{want} there and resume")
-        raise Bailout("blocked", phase=phase_id, details=details)
+        raise Bailout(
+            "blocked",
+            details=f"the spec repo {self.spec_root} is on {cur}, not {base} "
+                    "— a hand checkout, or a run of a plugin before 0.9.93, "
+                    f"left it there; check out {base} there and resume")
 
     def _bookkeeping_pathspec(self, root: Path) -> list[str]:
         """The pathspec holding the workflow's own bookkeeping outside a git
-        query — empty unless the target repo IS the specs repo.
+        query of the tree that holds the slice folder — empty for every
+        other tree, a phase's worktree included.
 
-        A phase targeting the specs repo puts the driver's live run record
-        (log.txt, state.json, phases/**) inside the very tree the driver
-        branches, dirty-checks and resets — and every parallel session's
-        record alongside it. None of that is a phase's deliverable: a
-        slice's product is code, docs, or the wire contracts, never the
-        workflow's own scratch. So the whole `slices/` tree stays out of
-        these queries, which is exactly what the driver has always done
-        when the target was a code repo and this tree lived elsewhere.
-        Uncommitted work under `slices/` is therefore unchecked here too —
-        also as before: an agent's plan.md edit rides the next stamp
-        commit."""
+        The spec repo's checkout carries the driver's live run record
+        (log.txt, state.json, phases/**) and every parallel slice's folder
+        beside it. None of that is a slice's deliverable — a slice's product
+        is code, docs, or the wire contracts, never the workflow's own
+        scratch — so the whole `slices/` tree stays out of these queries.
+        Uncommitted work under `slices/` is therefore unchecked here too: an
+        agent's plan.md edit rides the next stamp commit."""
         spec_root = spec_root_for(self.slice_dir)
         if spec_root is None:
             return []
@@ -3525,137 +3338,18 @@ class RunLoop:
         return bool(self.git(*args, root=root))
 
     def _reset_tracked(self, root: Path) -> None:
-        """Drop a dead round's uncommitted work before redispatching. Scoped
-        away from the bookkeeping tree when that sits inside the target:
-        `reset --hard` would take an agent's uncommitted plan.md edit with
-        it (the live log and state are untracked, so neither form touches
-        those)."""
+        """Drop a dead round's uncommitted work before redispatching — a
+        plain `reset --hard` in a phase's worktree, where nothing but the
+        phase writes. Scoped away from the bookkeeping tree where `root`
+        holds it: `reset --hard` would take an agent's uncommitted plan.md
+        edit with it (the live log and state are untracked, so neither form
+        touches those)."""
         pathspec = self._bookkeeping_pathspec(root)
         if not pathspec:
             self.git("reset", "--hard", "HEAD", root=root)
             return
         self.git("restore", "--source=HEAD", "--staged", "--worktree", "--",
                  *pathspec, root=root)
-
-    def _untrack_committed_record(self, phase_id: str | None, root: Path,
-                                  base: str, branch: str) -> None:
-        """Take the driver's run record back out of `branch` when a session
-        committed it there — run on the branch, right before the driver
-        checks `base` out of it (the merge, and `_restore_bases` at a bail).
-        A no-op unless `root` holds the slice folder.
-
-        The record must stay untracked while the run is in flight: tracked
-        on the branch and not on the base, `git checkout <base>` unlinks it
-        from the working tree — the log the open handle is still writing to,
-        the state, the phase outputs (slice 238 P5, a reviewer's `git add
-        -A`). It is taken out by a commit of its own, not by rewriting the
-        branch: the branch's commits keep their shas, so the `reviewed_head`
-        and the gate's green that name them stay true, where the rewrite the
-        old bail asked for orphaned them and the next resume bailed
-        `lost_work`. `git rm --cached` touches the index only, and the commit
-        is made by pathspec against an empty work tree — so the paths commit
-        as absent, the files on disk (the live log among them) are never
-        read or touched, and nothing else staged comes along. Neither the
-        branch's tip nor the base tracks them after that, so the checkout
-        leaves them where they are. The spec repo's history then carries a
-        snapshot of the record under the phase's merge, which is harmless:
-        the folder is committed whole when the slice closes anyway.
-
-        Only a repair that itself fails is a stop, and the stop says what
-        was attempted."""
-        if not self._bookkeeping_pathspec(root):
-            return
-        rel = self.slice_dir.relative_to(Path(root).resolve())
-        paths = [str(rel / name) for name in RUN_RECORD]
-        swept = self.git("log", "--name-only", "--pretty=format:",
-                         f"{base}..{branch}", "--", *paths, root=root)
-        if not swept:
-            return
-        label = f"[P{phase_id}]" if phase_id else "[bail]"
-        # What the tip tracks, not every path the log names: a file a later
-        # commit already removed is not there to take out, and a pathspec
-        # naming it would fail the commit.
-        tracked = sorted(set(self.git("ls-tree", "-r", "--name-only", branch,
-                                      "--", *paths, root=root).split()))
-        if not tracked:
-            self.log(f"{label} the run record was committed onto {branch} "
-                     "and removed again there — nothing to take out")
-            return
-        try:
-            self.git("rm", "-r", "--cached", "--quiet", "--ignore-unmatch",
-                     "--", *tracked, root=root)
-            with tempfile.TemporaryDirectory() as empty:
-                self.git(f"--work-tree={empty}", "commit", "-m",
-                         f"slice {self.slice_num}: the driver's run record "
-                         f"taken back out of {branch} (a git add -A)",
-                         "--", *tracked, root=root, phase_branch=branch)
-            sha = self.git("rev-parse", "HEAD", root=root)
-        except Bailout as e:
-            raise Bailout(
-                "protocol_failure", phase=phase_id,
-                details="the driver's own run record was committed onto "
-                        f"{branch} (a `git add -A` in {root}): "
-                        + ", ".join(tracked)
-                        + ". Taking it back out — `git rm -r --cached` of "
-                          "those paths, then a commit of their removal on "
-                          f"{branch} — failed ({e.details}). The files on "
-                          "disk are the live record: commit their removal "
-                          f"on {branch} without touching them, then "
-                          "resume.",
-            ) from None
-        self.log(f"{label} the run record was committed onto {branch} (a "
-                 f"`git add -A`) — taken back out in {sha[:12]}, the files "
-                 "left untracked: " + ", ".join(tracked))
-
-    def _commit_slice_edits(self, root: Path, branch: str,
-                            label: str) -> bool:
-        """Commit this slice's own uncommitted slice-folder edits onto
-        `branch` before the driver checks the base out of it; True when a
-        commit was made. A no-op unless `root` holds the slice folder — a
-        phase whose target IS the spec repo.
-
-        The dirty checks hold the whole `slices/` tree out
-        (`_bookkeeping_pathspec`), so an edit there that nobody committed —
-        a reviewer's `close_out.py append`, the driver's own report entry
-        made while the tree sat on the phase branch — passes them, and then
-        `git checkout <base>` refuses to overwrite it: the run stopped on
-        its own phase branch with the shared tree stranded there (slice 231
-        P1). Committed here, it rides the phase's merge onto the base, as
-        the hand recovery did. Tracked paths only and this slice's folder
-        only, committed by pathspec so nothing else staged comes along: a
-        parallel slice's folder is its own session's business, and the live
-        run record — untracked by design (`_untrack_committed_record`) — is
-        excluded outright, so not even an agent's stray `git add` of it
-        reaches a commit the driver makes. The report's store is the one
-        untracked file taken, by name: an agent's append creates it on a
-        slice whose report predates it, and it is the report."""
-        if not self._bookkeeping_pathspec(root):
-            return False
-        try:
-            rel = str(self.slice_dir.relative_to(Path(root).resolve()))
-        except ValueError:
-            return False
-        pathspec = [rel, *(f":(exclude){rel}/{name}" for name in RUN_RECORD)]
-        changed = self.git("status", "--porcelain", "--untracked-files=no",
-                           "--", *pathspec, root=root)
-        store = f"{rel}/{store_path(self.slice_dir).name}"
-        untracked = self.git("status", "--porcelain", "--", store, root=root)
-        if untracked.startswith("??"):
-            changed = "\n".join(filter(None, [changed, untracked]))
-        if not changed:
-            return False
-        if untracked.startswith("??"):
-            self.git("add", "--", store, root=root)
-            pathspec.append(store)
-        self.git("add", "-u", "--", *pathspec, root=root)
-        self.git("commit", "-m",
-                 f"slice {self.slice_num}: slice-folder edits left "
-                 f"uncommitted on {branch}", "--", *pathspec, root=root,
-                 phase_branch=branch)
-        paths = sorted({line[3:] for line in changed.splitlines() if line})
-        self.log(f"{label} committed this slice's uncommitted slice-folder "
-                 f"edits onto {branch} before leaving it: " + ", ".join(paths))
-        return True
 
     def _fetch_origin(self, root: Path) -> None:
         """Refresh a repo's remote-tracking refs — run before an agent is
@@ -3875,23 +3569,14 @@ class RunLoop:
 
         A bail is decided after the session that caused it has ended, and
         every resume path checks the branch it needs out again itself, so the
-        tree is simply left the way the run found it. That matters most in
-        the specs repo: left on this run's phase branch, the next parallel
-        session to commit there — another slice's stamp, another plan loop's
-        writer — lands its work on this slice's branch. A repo with
-        uncommitted work is left alone: the work is someone's, and a checkout
-        would carry or drop it. So is a branch this run did not create — the
-        only branches it checks out are its own `phase/<slice>-…`, and
-        anything else under it is a parallel session's business, not a tree
-        state to undo. This slice's own uncommitted slice-folder edits are
-        the exception, in the spec repo: they are this run's, the dirty
-        check does not see them, and left uncommitted they refuse the
-        checkout — so they are committed onto the phase branch first, as the
-        merge does (`_commit_slice_edits`). And a run record a session
-        committed there is taken back out before the checkout, as the merge
-        does too (`_untrack_committed_record`): checked out with it tracked,
-        the base would unlink the live log. A repair that fails leaves the
-        tree on the branch for that reason. Nothing here may mask the bail,
+        tree is simply left the way the run found it. A shared repo needs
+        nothing here: its phase works in a worktree of its own, which the
+        bail leaves for the resume, and the shared checkout never left its
+        base. A repo with uncommitted work is left alone: the work is
+        someone's, and a checkout would carry or drop it. So is a branch this
+        run did not create — the only branches it checks out are its own
+        `phase/<slice>-…`, and anything else under it is a parallel session's
+        business, not a tree state to undo. Nothing here may mask the bail,
         so a git failure is logged and swallowed — naming the branch the
         tree stays on, since that is then not its base."""
         mine = f"phase/{self.slice_num}-"
@@ -3910,8 +3595,6 @@ class RunLoop:
                     self.log(f"[bail] {root.name}: left on {cur} with "
                              "uncommitted work — not touched")
                     continue
-                self._commit_slice_edits(root, cur, "[bail]")
-                self._untrack_committed_record(None, root, base, cur)
                 self.git("checkout", base, root=root)
                 self.log(f"[bail] {root.name}: left on {cur}, checked {base} "
                          "back out")
@@ -4268,19 +3951,17 @@ class RunLoop:
 
     def _stamp_done(self, phase_id: str) -> None:
         """The driver's mechanical `✅ DONE` stamp, committed in the specs
-        repo by name. Agents never stamp. Called after the phase merged, so
-        the stamp lands on the base branch either way — including when the
-        specs repo IS the target and the merge just checked base out."""
+        repo by name, on its base. Agents never stamp. Called after the phase
+        merged — into that very base, when the specs repo is the target."""
         if not stamp_phase(self.plan_path, phase_id, _today()):
             raise Bailout(
                 "plan_doc", question=True,
                 details=f"phase P{phase_id} merged but its heading is gone "
                         "from the plan — restore it so the stamp can land")
-        with self.spec_lock.shared(f"stamp P{phase_id}"):
-            self._assert_spec_on_base(phase_id=phase_id)
-            self.specs_git("add", str(self.plan_path))
-            self.specs_git("commit", "-m",
-                           f"slice {self.slice_num}: stamp P{phase_id} done")
+        self._assert_spec_on_base()
+        self.specs_git("add", str(self.plan_path))
+        self.specs_git("commit", "-m",
+                       f"slice {self.slice_num}: stamp P{phase_id} done")
         self.log(f"[P{phase_id}] stamped ✅ DONE")
 
     # -- session spawning ----------------------------------------------------
@@ -4332,26 +4013,6 @@ class RunLoop:
         finally:
             self._report_quiet = prior
 
-    def _spawn_env(self, spec_branch: str | None) -> dict[str, str]:
-        """The environment a session is dispatched with: SPAWN_ENV, plus
-        PHASE_BRANCH_ENV naming `spec_branch` — the branch of this run's own
-        the spec tree stands on for it — so the spec repo's pre-commit hook
-        lets its commits there through."""
-        if not spec_branch:
-            return SPAWN_ENV
-        return {**SPAWN_ENV, PHASE_BRANCH_ENV: spec_branch}
-
-    def _own_spec_branch(self) -> str | None:
-        """The spec tree's branch when it is one of this run's own, else
-        None — what a nudge names: it resumes a session of this run, and the
-        tree is where this run put it (the commit nudge asks a phase's writer
-        to commit on that branch). Never raises: a nudge never does."""
-        try:
-            cur = self._current_branch(self.spec_root)
-        except Exception:
-            return None
-        return cur if cur.startswith(f"phase/{self.slice_num}-") else None
-
     def _nudge(self, prompt: str, cwd: Path, session_id: str,
                label: str, role: str | None, retry: bool = True) -> bool:
         """One resume-shot at a session that missed part of its protocol;
@@ -4373,18 +4034,13 @@ class RunLoop:
 
         def send():
             try:
-                # A nudge is a session committing into the shared spec tree
-                # like any other, so it waits for the tree like any other.
-                with self.spec_lock.shared(label):
-                    self._assert_current()
-                    _, result = run_kc_session(
-                        prompt=prompt, cwd=str(cwd), timeout=NUDGE_TIMEOUT,
-                        resume_session=session_id,
-                        extra_env=self._spawn_env(self._own_spec_branch()),
-                        flags=spawn_flags(role, self.log),
-                        progress=lambda line: self._emit(
-                            f"    {label} {line}"),
-                    )
+                self._assert_current()
+                _, result = run_kc_session(
+                    prompt=prompt, cwd=str(cwd), timeout=NUDGE_TIMEOUT,
+                    resume_session=session_id, extra_env=SPAWN_ENV,
+                    flags=spawn_flags(role, self.log),
+                    progress=lambda line: self._emit(f"    {label} {line}"),
+                )
             except subprocess.TimeoutExpired:
                 self.log(f"{label} nudge timed out")
                 return None
@@ -4463,8 +4119,7 @@ class RunLoop:
     def _spawn(self, role: str, prompt: str, cwd: Path, verdict_path: Path,
                phase_id: str | None, round_: int,
                agent: str | None = None,
-               display: str | None = None,
-               spec_branch: str | None = None) -> tuple[dict, str | None]:
+               display: str | None = None) -> tuple[dict, str | None]:
         """Run one round; return (verdict, session_id). `_dispatch_rounds`
         does the running — this is the ruling on what came back, and the
         round's one history row.
@@ -4472,13 +4127,10 @@ class RunLoop:
         A round interrupted after it wrote its verdict is never re-run: the
         file on disk is that round's (every dispatch unlinks it first), so
         `_salvage_reattach` takes it and no session is dispatched at all.
-        `spec_branch` is the branch this dispatch expects the shared specs
-        tree on — the phase or doc branch when it is that repo being
-        branched, otherwise None for the base branch.
 
         Every dispatch enters the stops a resume has not reported yet
         (`_report_bailouts`) before anything else: this is the first moment
-        the tree stands on the branch the dispatch works on."""
+        the report exists and the stop is known to be over."""
         self._report_bailouts()
         shown = display or role
         label = f"[P{phase_id}] [{shown}]" if phase_id else f"[{shown}]"
@@ -4490,7 +4142,7 @@ class RunLoop:
             (returncode, verdict, session_id, duration_s, nudged,
              recoveries) = self._dispatch_rounds(
                 role, prompt, cwd, verdict_path, phase_id, round_, agent,
-                shown, label, spec_branch)
+                shown, label)
         return self._rule_on_round(
             role, verdict, verdict_path, cwd, phase_id, round_, label,
             returncode, session_id, duration_s, nudged, recoveries)
@@ -4498,19 +4150,15 @@ class RunLoop:
     def _dispatch_rounds(self, role: str, prompt: str, cwd: Path,
                          verdict_path: Path, phase_id: str | None,
                          round_: int, agent: str | None, shown: str,
-                         label: str, spec_branch: str | None) -> tuple:
+                         label: str) -> tuple:
         """Drive one round to something to rule on; return (returncode,
         verdict, session_id, duration_s, nudged, recoveries).
 
         Every spawn is a fresh session — the only resumed sessions are crash
         reattaches and protocol nudges. Model and effort come from the MODELS
-        config, passed explicitly on every dispatch. Each dispatch runs under
-        the spec tree's reader lease, with the branch assertion it guards
-        inside the same hold: an agent dispatched while the tree sits on
-        someone else's branch commits its close-out entries — and its
-        deliverable when that repo is the phase's target — onto that branch.
-        The lease is taken per iteration, so neither a session-limit window
-        nor a nudge decision is made holding it."""
+        config, passed explicitly on every dispatch. Each dispatch asserts
+        the spec tree on its base first: an agent dispatched while it sits on
+        another branch commits its plan edits and close-out entries there."""
         prompt, resume_session = self._resolve_reattach(
             role, phase_id, prompt, verdict_path, label)
         model, effort = MODELS[role]
@@ -4546,23 +4194,21 @@ class RunLoop:
 
             t0 = time.monotonic()
             try:
-                with self.spec_lock.shared(label):
-                    self._assert_spec_on_base(spec_branch, phase_id)
-                    self._assert_current()
-                    returncode, result = run_kc_session(
-                        prompt=prompt,
-                        cwd=str(cwd),
-                        timeout=TIMEOUTS[role],
-                        agent=agent,
-                        model=model,
-                        effort=effort,
-                        resume_session=resume_session,
-                        extra_env=self._spawn_env(spec_branch),
-                        flags=spawn_flags(role, self.log),
-                        progress=lambda line: self._emit(
-                            f"    {label} {line}"),
-                        on_session=_note_session,
-                    )
+                self._assert_spec_on_base()
+                self._assert_current()
+                returncode, result = run_kc_session(
+                    prompt=prompt,
+                    cwd=str(cwd),
+                    timeout=TIMEOUTS[role],
+                    agent=agent,
+                    model=model,
+                    effort=effort,
+                    resume_session=resume_session,
+                    extra_env=SPAWN_ENV,
+                    flags=spawn_flags(role, self.log),
+                    progress=lambda line: self._emit(f"    {label} {line}"),
+                    on_session=_note_session,
+                )
             except subprocess.TimeoutExpired:
                 # A timed-out session is stuck, not crashed — never reattach.
                 # Its id was learned during the turn, so the salvaged round
@@ -4771,12 +4417,9 @@ class RunLoop:
         time.sleep(seconds)
 
     def _consult(self, site: str, situation: str, actions: dict[str, str],
-                 material: list[Path], phase_id: str | None,
-                 spec_branch: str | None = None) -> dict:
+                 material: list[Path], phase_id: str | None) -> dict:
         """Spawn a fresh bare consult session; return its verdict
-        (validated). `site` names the decision point in log lines;
-        `spec_branch` is `_spawn`'s — the phase branch when the consult sits
-        inside a phase that branches the spec repo itself."""
+        (validated). `site` names the decision point in log lines."""
         n = self.state["consult_seq"] = self.state.get("consult_seq", 0) + 1
         self._save_state()
         base = (self.slice_dir / "phases" / f"P{phase_id}"
@@ -4790,8 +4433,6 @@ class RunLoop:
             phase_line=phase_line,
             slice_dir=self.slice_dir,
             close_out_line=dispatch_line(self.report_path),
-            bookkeeping_note=(BOOKKEEPING_NOTE.format(slice_dir=self.slice_dir)
-                              if spec_branch is not None else ""),
             material="\n".join(f"- {p}" for p in material) or "- (state.json only)",
             actions="\n".join(f"- `{a}` — {why}" for a, why in actions.items()),
             verdict_path=verdict_path,
@@ -4799,7 +4440,7 @@ class RunLoop:
         )
         verdict, _ = self._spawn(
             "consult", prompt, self.repo_root, verdict_path, phase_id, n,
-            display=f"consult: {site}", spec_branch=spec_branch,
+            display=f"consult: {site}",
         )
         if verdict.get("outcome") not in actions:
             raise Bailout(
@@ -4897,11 +4538,11 @@ class RunLoop:
             pass
         if outcome == "green":
             ps["gate_green_commit"] = self.git("rev-parse", "HEAD",
-                                               root=target.git_root)
+                                               root=target.work_root)
             ps["gate_green_log"] = str(log_path)
         elif outcome == "nothing_ran":
             ps["gate_nothing_ran_commit"] = self.git("rev-parse", "HEAD",
-                                                     root=target.git_root)
+                                                     root=target.work_root)
         self._record(phase_id, "gate", n, outcome, tail, None, duration_s)
         self.log(f"[P{phase_id}] gate #{n} → "
                  f"{GATE_OUTCOME_LABELS[outcome]} ({duration_s}s, "
@@ -5090,8 +4731,10 @@ class RunLoop:
         file gained since the phase began (`review_set_start`); a declared
         set with none, and an undeclared phase whose Target range is empty,
         are stated for the reviewer to report. An undeclared phase with work
-        on its Target gets nothing: its dispatch is the one it always was."""
-        root = target.git_root
+        on its Target gets nothing: its dispatch is the one it always was.
+        The range is the phase's working tree's — its worktree's, for a
+        shared repo, whose own HEAD is the base."""
+        root = target.work_root
         empty = self._range_empty(merge_base, root)
         if phase.review is None:
             if not empty:
@@ -5144,32 +4787,28 @@ class RunLoop:
             self._run_phase(pending)
 
     def _executor_where(self, target: ResolvedTarget) -> str:
-        """The clause locating a sibling target's working tree — a sibling
-        path, or a sibling repo's component: the session itself spawns in
-        the invoking repo, so the prompt must carry the pointer."""
-        if target.kind == "project" and target.git_root == self.repo_root:
+        """The clause locating the phase's working tree when it is not the
+        invoking repo's: a sibling path or a sibling repo's component, or a
+        shared repo's worktree — the session itself spawns in the invoking
+        repo, so the prompt must carry the pointer. The worktree's clause
+        names the shared checkout too: the plan lives there, on its base, and
+        the worktree's own copy of the slice tree is not the plan."""
+        work, root = target.work_root, target.git_root
+        if work != root:
+            base = self._base_branch(root)
+            return (f" in the worktree {work} — a linked checkout of {root}; "
+                    f"{root}'s own tree stays on {base}, and the plan is "
+                    f"edited there, never under {work}/slices")
+        if target.kind == "project" and root == self.repo_root:
             return ""
-        return f" in the sibling repo {target.git_root}"
-
-    def _bookkeeping_note(self, target: ResolvedTarget) -> str:
-        """The paragraph fencing the driver's run record off from a session
-        that commits into the tree holding it — empty otherwise. Every round
-        is a fresh session, so every executor and reviewer prompt in such a
-        phase carries it (the consult's, keyed on its `spec_branch`, too):
-        the reviewer writes its review into that record and appends its
-        close-out entry beside it, and one `git add -A` commits both."""
-        if not self._bookkeeping_pathspec(target.git_root):
-            return ""
-        return BOOKKEEPING_NOTE.format(slice_dir=self.slice_dir)
+        return f" in the sibling repo {root}"
 
     def _pointers(self, target: ResolvedTarget, phase_id: str) -> str:
         """What every executor dispatch carries at its tail: the close-out
         report's path and tool, the project's change-discipline doc, plus the
-        gate waiver, the skills the phase names and the bookkeeping fence
-        where they apply."""
+        gate waiver and the skills the phase names where they apply."""
         return (self._gate_waived_note(target) + self._philosophy_line()
-                + self._skill_line(phase_id) + self._close_out_line()
-                + self._bookkeeping_note(target))
+                + self._skill_line(phase_id) + self._close_out_line())
 
     def _close_out_line(self) -> str:
         return CLOSE_OUT_LINE.format(
@@ -5240,18 +4879,22 @@ class RunLoop:
         return PHILOSOPHY_LINE.format(philosophy=self.cfg.design_philosophy)
 
     def _gate_hint(self, target: ResolvedTarget) -> str:
+        """The gate the executor runs itself, from the phase's working tree —
+        a shared repo's worktree, where it has one: kc's verbs are
+        cwd-bound."""
+        work = target.work_root
         if self._is_root(target):
-            return (" (`kc project test --project root`; when that runs "
-                    "nothing — exit 3 — the gate is bare `kc project test`, "
-                    f"every component once). {NOTHING_RAN_HINT}")
+            where = "" if work == self.repo_root else f" from {work}"
+            return (f" (`kc project test --project root`{where}; when that "
+                    "runs nothing — exit 3 — the gate is bare `kc project "
+                    f"test`, every component once). {NOTHING_RAN_HINT}")
         if target.kind == "project":
-            where = ("" if target.git_root == self.repo_root
-                     else f" from {target.git_root}")
+            where = "" if work == self.repo_root else f" from {work}"
             return (f" (`kc project test --project {target.name}`{where}). "
                     f"{NOTHING_RAN_HINT}")
         if target.gate_argv:
-            return (f" (`kc project test` from {target.git_root})")
-        return (f" ({target.git_root} has no kc manifest — gate per that "
+            return (f" (`kc project test` from {work})")
+        return (f" ({work} has no kc manifest — gate per that "
                 "repo's own conventions)")
 
     @staticmethod
@@ -5383,6 +5026,12 @@ class RunLoop:
         - The phase is `pending` — the loop knows of no work — but a branch
           of its name exists with commits the base has not got. `git branch
           -D` below would drop them without a word.
+
+        A branch that carries the record and that the base already carries
+        whole, at the merge stage, is a merge that landed: the driver's, in
+        the window before its cleanup, or the operator's by hand after a
+        conflict bail (`_merge_shared`). Its worktree and the branch go, and
+        the phase is stamped.
         """
         recorded = self._recorded_commits(ps)
         if ps["status"] == "pending":
@@ -5404,26 +5053,51 @@ class RunLoop:
             # the record — nothing to check them against, and a writer that
             # bailed may well have committed nothing at all.
             return False
-        if existing and all(self._work_is_in(branch, sha, root)
-                            for sha in recorded):
+        on_branch = bool(existing) and all(
+            self._work_is_in(branch, sha, root) for sha in recorded)
+        landed = (on_branch and ps.get("stage") == "merging"
+                  and self._work_is_in(base, branch, root))
+        if on_branch and not landed:
             return False
-        if existing and self._take_requested_rebase(phase_id, ps, root, base,
-                                                    branch):
-            return False
-        for sha in recorded:
-            if not self._work_is_in(base, sha, root):
-                raise self._lost_work(phase_id, sha, branch, root)
+        if not landed:
+            if existing and self._take_requested_rebase(phase_id, ps, root,
+                                                        base, branch):
+                return False
+            for sha in recorded:
+                if not self._work_is_in(base, sha, root):
+                    raise self._lost_work(phase_id, sha, branch, root)
         # The merge landed and the record did not: finish the bookkeeping.
-        # No landed range is recorded: after a fast-forward the base branch's
-        # pre-merge sha is unrecoverable, so this phase reads as merged with
-        # no range on record (_landed's second list).
+        # No landed range is recorded: after the merge the base branch's
+        # pre-merge sha is not the driver's to reconstruct, so this phase
+        # reads as merged with no range on record (_landed's second list).
         if ps["status"] != "merged":
             ps.update(status="merged", stage=None)
             self._save_state()
+        self._clear_merged_branch(phase_id, ps, root, base, branch)
         self.log(f"[P{phase_id}] already merged into {base} "
                  f"({recorded[0][:12]}) — stamping")
         self._stamp_done(phase_id)
         return True
+
+    def _clear_merged_branch(self, phase_id: str, ps: dict, root: Path,
+                             base: str, branch: str) -> None:
+        """What a merged phase leaves behind once the reconcile finds it
+        merged: the worktree its record names, and the branch — deleted
+        only when the base carries it whole, so a same-named branch with
+        work of its own is never dropped unseen."""
+        path = ps.pop("worktree", None)
+        if path:
+            self._remove_worktree(root, Path(path))
+            self._save_state()
+        if not self.git("branch", "--list", branch, root=root):
+            return
+        if not self._work_is_in(base, branch, root):
+            self.log(f"[P{phase_id}] {branch} left in {root.name}: it "
+                     f"carries commits {base} has not got")
+            return
+        if self._current_branch(root) == branch:
+            self.git("checkout", base, root=root)
+        self.git("branch", "-D", branch, root=root)
 
     def _run_phase(self, phase: Phase) -> None:
         phase_id = phase.id
@@ -5441,8 +5115,6 @@ class RunLoop:
         outputs.mkdir(parents=True, exist_ok=True)
         branch = f"phase/{self.slice_num}-P{phase_id}"
         base = self._base_branch(root)
-        where = self._executor_where(target)
-        gate_hint = self._gate_hint(target)
 
         self.log(f"[P{phase_id}] start (target={target.name}, "
                  f"branch={branch}, root={root})")
@@ -5453,18 +5125,27 @@ class RunLoop:
         existing = self.git("branch", "--list", branch, root=root)
         if self._reconcile_branch(phase_id, ps, root, base, branch, existing):
             return
-        if self._is_spec_root(root):
-            # This phase branches the tree every parallel session commits
-            # into: hold it exclusively from the checkout below to the stamp,
-            # so nobody else's work lands on this phase's branch. A resume
-            # comes back through here and takes it again.
-            self.spec_lock.acquire_exclusive(
-                f"slice {self.slice_num} P{phase_id} ({branch})")
-        if ps["status"] == "pending" or not existing:
+        fresh = ps["status"] == "pending" or not existing
+        if self._works_in_worktree(root):
+            # A shared checkout never leaves its base: the phase works in a
+            # linked worktree of its own, on its branch, and every working-
+            # tree read and write below goes there.
+            target = target.in_worktree(self._ensure_worktree(
+                phase_id, ps, root, base, branch, existing))
+        elif fresh:
             if existing:
                 self.git("checkout", base, root=root)
                 self.git("branch", "-D", branch, root=root)
             self.git("checkout", "-b", branch, base, root=root)
+        else:
+            self.git("checkout", branch, root=root)
+            if self._reattaching(phase_id):
+                self.log(f"[P{phase_id}] resuming at stage {ps['stage']} "
+                         "(worktree preserved for reattach)")
+            else:
+                self._reset_tracked(root)
+                self.log(f"[P{phase_id}] resuming at stage {ps['stage']}")
+        if fresh:
             ps.update(status="in_progress", stage="executor", branch=branch,
                       target=phase.target)
             # What the phase's review set held before the phase did anything:
@@ -5472,16 +5153,10 @@ class RunLoop:
             ps["review_set_start"] = (
                 None if phase.review is None
                 else [list(pair) for pair in self._review_set_now(phase) or []])
-        else:
-            self.git("checkout", branch, root=root)
-            if self._reattach and self._reattach.get("session") \
-                    and self._reattach.get("phase") == phase_id:
-                self.log(f"[P{phase_id}] resuming at stage {ps['stage']} "
-                         "(worktree preserved for reattach)")
-            else:
-                self._reset_tracked(root)
-                self.log(f"[P{phase_id}] resuming at stage {ps['stage']}")
         self._save_state()
+        work = target.work_root
+        where = self._executor_where(target)
+        gate_hint = self._gate_hint(target)
 
         merge_base = self.git("merge-base", base, branch, root=root)
 
@@ -5505,10 +5180,9 @@ class RunLoop:
                 "code-writer", prompt,
                 self.repo_root, executor_verdict_path(r),
                 phase_id, r, agent="code-writer",
-                spec_branch=branch if self._is_spec_root(root) else None,
             )
             verdict = self._ensure_committed(
-                phase_id, "code-writer", session, root,
+                phase_id, "code-writer", session, work,
                 verdict, executor_verdict_path(r))
             self._assert_record_still_on(phase_id, ps, root, branch)
             self._save_state()
@@ -5572,34 +5246,26 @@ class RunLoop:
 
         # ---- merge + stamp ----
         if ps["stage"] == "merging":
-            if self._worktree_dirty(root):
-                raise Bailout(
-                    "protocol_failure", phase=phase_id,
-                    details="worktree dirty at merge — an agent left changes "
-                            "outside its commit boundary",
-                )
-            # Before the rebase as well as the checkout: either refuses a
-            # tree with a modified tracked file.
-            self._commit_slice_edits(root, branch, f"[P{phase_id}]")
-            behind = self.git("rev-list", "--count", f"{branch}..{base}",
-                              root=root)
-            if behind not in ("", "0"):
-                merge_base = self._rebase_onto_moved_base(
-                    phase_id, ps, root, base, branch, behind)
-            head = self.git("rev-parse", "HEAD", root=root)
-            if target.gate_argv is not None \
-                    and not self._green_covers(ps, head, root):
-                green, gate_log = self._phase_gate(phase_id, ps, outputs,
-                                                   target)
-                if not green:
+            if work != root:
+                head = self._merge_shared(phase_id, ps, outputs, target, base,
+                                          branch)
+            else:
+                if self._worktree_dirty(root):
                     raise Bailout(
-                        "gate_red", phase=phase_id,
-                        details=f"cannot merge a red test gate ({gate_log})",
+                        "protocol_failure", phase=phase_id,
+                        details="worktree dirty at merge — an agent left "
+                                "changes outside its commit boundary",
                     )
-            self._untrack_committed_record(phase_id, root, base, branch)
-            self.git("checkout", base, root=root)
-            self.git("merge", "--ff-only", branch, root=root)
-            self.git("branch", "-D", branch, root=root)
+                behind = self.git("rev-list", "--count", f"{branch}..{base}",
+                                  root=root)
+                if behind not in ("", "0"):
+                    merge_base = self._rebase_onto_moved_base(
+                        phase_id, ps, root, base, branch, behind)
+                head = self.git("rev-parse", "HEAD", root=root)
+                self._regate_for_merge(phase_id, ps, outputs, target, head)
+                self.git("checkout", base, root=root)
+                self.git("merge", "--ff-only", branch, root=root)
+                self.git("branch", "-D", branch, root=root)
             ps.pop("rebase_requested", None)
             ps.update(status="merged", stage=None,
                       landed={"root": str(root), "base": merge_base,
@@ -5608,28 +5274,310 @@ class RunLoop:
             self.log(f"[P{phase_id}] merged into {base}")
             self.announce(f"P{phase_id} merged")
             self._stamp_done(phase_id)
-        # The stamp is in and the tree is back on its base: whoever is queued
-        # for it can have it. A no-op for every phase that never took it.
-        self.spec_lock.release_exclusive()
 
-    def _green_covers(self, ps: dict, head: str, root: Path) -> bool:
-        """Whether the gate's recorded green still speaks for `head` at the
-        merge: it is that commit, or differs from it only inside the
-        bookkeeping tree. The second is the commit `_commit_slice_edits`
-        just made on a spec-repo phase — a close-out entry moves the head
-        and nothing the gate tests, and `_bookkeeping_pathspec` is exactly
-        that line. Anything outside it re-gates, as a rebase always does
-        (it drops the green)."""
-        green = ps.get("gate_green_commit")
+    def _reattaching(self, phase_id: str) -> bool:
+        """Whether this resume reattaches to a session of this phase that a
+        crash interrupted — which needs the tree as it left it, so nothing
+        resets it."""
+        r = self._reattach
+        return bool(r and r.get("session") and r.get("phase") == phase_id)
+
+    def _regate_for_merge(self, phase_id: str, ps: dict, outputs: Path,
+                          target: ResolvedTarget, head: str) -> None:
+        """The gate again, before the merge, when its recorded green no
+        longer speaks for the head about to merge; red bails."""
+        if target.gate_argv is None or self._green_covers(ps, head):
+            return
+        green, gate_log = self._phase_gate(phase_id, ps, outputs, target)
         if not green:
+            raise Bailout(
+                "gate_red", phase=phase_id,
+                details=f"cannot merge a red test gate ({gate_log})",
+            )
+
+    @staticmethod
+    def _green_covers(ps: dict, head: str) -> bool:
+        """Whether the gate's recorded green still speaks for `head` at the
+        merge — only when it is that very commit. A rebase onto a moved base
+        drops the green, and the slice tree taken back out of a shared
+        repo's branch moves the head, so either re-gates."""
+        green = ps.get("gate_green_commit")
+        return bool(green) and green == head
+
+    # -- a shared repo's phase: the worktree and the merge ----------------------
+
+    def _worktree_path(self, root: Path, phase_id: str) -> Path:
+        return WORKTREE_ROOT / Path(root).name / f"{self.slice_num}-P{phase_id}"
+
+    def _ensure_worktree(self, phase_id: str, ps: dict, root: Path, base: str,
+                         branch: str, existing: str) -> Path:
+        """The linked worktree a shared repo's phase works in, on its branch
+        — `WORKTREE_ROOT/<repo>/<NNN>-P<id>`, recorded in the phase's
+        `worktree`.
+
+        A resume reuses the one standing there on the branch — reset to its
+        last commit, as a code repo's tree is, unless this resume reattaches
+        to the session that left it. Anything else at the path goes, and so
+        does every other registration holding the branch (`_free_branch`),
+        before the worktree is added: from the base on a fresh phase (a
+        branch of its name, which the reconcile found holding nothing the
+        base lacks, deleted first), from the branch on a resume — whose
+        committed work is all in the shared git dir, while what a lost tree
+        held uncommitted is lost, as it is in a code repo.
+
+        The worktree is added locked, and the lock is load-bearing. Its
+        registration lives in the shared git dir, where every other
+        environment sees it pointing at a path that does not exist there,
+        and `git worktree prune` — which any environment's `git gc` runs —
+        deletes such a registration unless it is locked. The reason names
+        the environment, host and pid that made it."""
+        path = self._worktree_path(root, phase_id)
+        fresh = ps["status"] == "pending" or not existing
+        if not fresh and self._worktree_on(path, branch):
+            if self._reattaching(phase_id):
+                self.log(f"[P{phase_id}] resuming at stage {ps['stage']} in "
+                         f"{path} (worktree preserved for reattach)")
+            else:
+                self._reset_tracked(path)
+                self.log(f"[P{phase_id}] resuming at stage {ps['stage']} in "
+                         f"{path}")
+            ps["worktree"] = str(path)
+            return path
+        if path.exists() or path.is_symlink():
+            self._remove_worktree(root, path)
+        self._free_branch(root, base, branch)
+        reason = (f"slice {self.slice_num} P{phase_id}: "
+                  f"{os.environ.get('KUBECODER_ENVIRONMENT_ID') or '?'} "
+                  f"{socket.gethostname()} pid {os.getpid()}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if fresh:
+            if existing:
+                self.git("branch", "-D", branch, root=root)
+            self.git("worktree", "add", "--lock", "--reason", reason,
+                     str(path), "-b", branch, base, root=root)
+            self.log(f"[P{phase_id}] worktree {path} added on {branch}, cut "
+                     f"from {base} in {root.name}")
+        else:
+            self.git("worktree", "add", "--lock", "--reason", reason,
+                     str(path), branch, root=root)
+            self.log(f"[P{phase_id}] resuming at stage {ps['stage']} in "
+                     f"{path} — re-added from {branch}; the tree it replaces "
+                     "was gone, and whatever it held uncommitted with it")
+        ps["worktree"] = str(path)
+        return path
+
+    def _worktree_on(self, path: Path, branch: str) -> bool:
+        """Whether a working worktree stands at `path` on `branch`. A `.git`
+        that points at a pruned registration answers nothing, and is not
+        one."""
+        if not (path / ".git").exists():
             return False
-        if green == head:
-            return True
-        pathspec = self._bookkeeping_pathspec(root)
-        if not pathspec:
-            return False
-        return not self.git("diff", "--name-only", green, head, "--",
-                            *pathspec, root=root)
+        return self.git("rev-parse", "--abbrev-ref", "HEAD", root=path,
+                        check=False) == branch
+
+    def _worktrees(self, root: Path) -> list[dict[str, str]]:
+        """`git worktree list --porcelain` in `root`, one dict per worktree
+        (`worktree`, `HEAD`, `branch`, `locked`, …) — the main one first."""
+        entries: list[dict[str, str]] = []
+        entry: dict[str, str] = {}
+        for line in self.git("worktree", "list", "--porcelain",
+                             root=root).splitlines():
+            if not line.strip():
+                if entry:
+                    entries.append(entry)
+                entry = {}
+                continue
+            key, _, value = line.partition(" ")
+            entry[key] = value
+        if entry:
+            entries.append(entry)
+        return entries
+
+    def _free_branch(self, root: Path, base: str, branch: str) -> None:
+        """Clear every registration holding `branch` so a worktree can be
+        added on it. One whose path does not exist here — another
+        environment's, or one a Reset wiped — is unlocked and pruned; one
+        that stands here is this run's own leftover, and is removed. The
+        shared checkout itself on the branch is a hand checkout, or a run
+        of a plugin before 0.9.93 that branched it in place: never touched,
+        and a stop."""
+        ref = f"refs/heads/{branch}"
+        main = Path(root).resolve()
+        prune = False
+        for index, entry in enumerate(self._worktrees(root)):
+            if entry.get("branch") != ref:
+                continue
+            where = Path(entry.get("worktree", ""))
+            if index == 0 or where.resolve() == main:
+                raise Bailout(
+                    "blocked",
+                    details=f"{root} has {branch} checked out in place — a "
+                            "hand checkout, or a run of a plugin before "
+                            f"0.9.93; check out {base} there and resume (the "
+                            "branch's commits are kept, and the phase goes "
+                            "on in a worktree of its own)")
+            if where.exists():
+                self._remove_worktree(root, where)
+            else:
+                self.git("worktree", "unlock", str(where), root=root,
+                         check=False)
+                prune = True
+        if prune:
+            self.git("worktree", "prune", root=root)
+
+    def _remove_worktree(self, root: Path, path: Path) -> None:
+        """A phase's worktree gone, its registration with it. It is locked,
+        so it is unlocked first; `git worktree remove` then refuses a tree
+        with changes, `--force` takes it anyway, and a tree git no longer
+        knows is deleted from disk — only ever under WORKTREE_ROOT."""
+        path = Path(path)
+        self.git("worktree", "unlock", str(path), root=root, check=False)
+        if self.git_ok("worktree", "remove", str(path), root=root) or \
+                self.git_ok("worktree", "remove", "--force", str(path),
+                            root=root):
+            return
+        try:
+            path.resolve().relative_to(WORKTREE_ROOT.resolve())
+        except ValueError:
+            self.log(f"{path} not removed: not a worktree git knows, and not "
+                     f"under {WORKTREE_ROOT}")
+            return
+        shutil.rmtree(path, ignore_errors=True)
+        self.git("worktree", "prune", root=root, check=False)
+
+    def _git_attempt(self, *args: str, root: Path) -> tuple[int, str]:
+        """A git command whose failure the caller reads rather than bails on
+        — its exit code, and stdout and stderr together: `git merge` says
+        CONFLICT on one and what stood in its way on the other."""
+        result = subprocess.run(["git", *args], cwd=root, capture_output=True,
+                                text=True)
+        return result.returncode, (result.stdout + result.stderr).strip()
+
+    def _merge_shared(self, phase_id: str, ps: dict, outputs: Path,
+                      target: ResolvedTarget, base: str, branch: str) -> str:
+        """Merge a shared repo's phase branch into its base, in the shared
+        checkout, and clear its worktree; return the head that merged.
+
+        The worktree clean, as at any merge. Then, where the shared repo
+        holds the slice folder, the slice tree taken back out of the branch
+        (`_revert_slice_tree`), and the gate run again where its green no
+        longer covers the head. Then `git merge` on the base — a fast-forward
+        when the base stood still, a merge commit when it moved, as it does
+        with every session's commit there; never a rebase, which would
+        rewrite what the review read. Bounded at MERGE_ATTEMPTS:
+
+        - another writer's uncommitted edit in a file the merge would touch
+          (staged, modified or untracked): swept — committed on the base by
+          name — and the merge tried again;
+        - another git's index.lock: waited out briefly, and tried again;
+        - a conflict: the merge aborted, the shared tree as it was, and a
+          `blocked` stop asking for the merge by hand — the resume then
+          finds the branch in the base and stamps (`_reconcile_branch`);
+        - anything else is git's own error, a protocol failure."""
+        root, work = target.git_root, target.work_root
+        if self._worktree_dirty(work):
+            raise Bailout(
+                "protocol_failure", phase=phase_id,
+                details="worktree dirty at merge — an agent left changes "
+                        f"outside its commit boundary in {work}",
+            )
+        if self._is_spec_root(root):
+            self._revert_slice_tree(phase_id, work, base, branch)
+        head = self.git("rev-parse", "HEAD", root=work)
+        self._regate_for_merge(phase_id, ps, outputs, target, head)
+        message = f"slice {self.slice_num}: merge {branch} (P{phase_id})"
+        last = ""
+        for _ in range(MERGE_ATTEMPTS):
+            code, out = self._git_attempt("merge", "-m", message, branch,
+                                          root=root)
+            if code == 0:
+                how = ("fast-forward" if "Fast-forward" in out else
+                       f"a merge commit — {base} had moved")
+                self.log(f"[P{phase_id}] {branch} merged into {base} in "
+                         f"{root.name} ({how})")
+                break
+            last = out
+            in_the_way = overwritten_paths(out)
+            if in_the_way:
+                self._sweep_into_base(phase_id, root, base, in_the_way)
+                continue
+            if "index.lock" in out:
+                self.log(f"[P{phase_id}] another git holds {root.name}'s "
+                         f"index.lock — the merge waits {INDEX_LOCK_WAIT}s")
+                self._sleep(INDEX_LOCK_WAIT)
+                continue
+            if "CONFLICT" in out or "Automatic merge failed" in out:
+                self.git("merge", "--abort", root=root, check=False)
+                conflicts = [ln.strip() for ln in out.splitlines()
+                             if ln.startswith("CONFLICT")]
+                raise Bailout(
+                    "blocked", phase=phase_id,
+                    details=f"{branch} does not merge cleanly into {base} in "
+                            f"{root}: {base} moved under it with changes "
+                            "that conflict with the phase's"
+                            + (" (" + "; ".join(conflicts) + ")"
+                               if conflicts else "")
+                            + ". The merge was aborted, so the tree stands "
+                              f"as it did. Merge {branch} into {base} in "
+                              f"{root} by hand — resolve, commit — then "
+                              "resume: the resume finds the branch in "
+                              f"{base}, clears its worktree and stamps the "
+                              "phase.")
+            raise Bailout(
+                "protocol_failure", phase=phase_id,
+                details=f"git merge {branch} into {base} failed in "
+                        f"{root}:\n{out}")
+        else:
+            raise Bailout(
+                "protocol_failure", phase=phase_id,
+                details=f"{branch} did not merge into {base} in {root} in "
+                        f"{MERGE_ATTEMPTS} attempts; the last failed:\n"
+                        f"{last}")
+        self._remove_worktree(root, work)
+        self.git("branch", "-D", branch, root=root)
+        ps.pop("worktree", None)
+        self._save_state()
+        return head
+
+    def _revert_slice_tree(self, phase_id: str, work: Path, base: str,
+                           branch: str) -> None:
+        """Take the slice tree back out of a phase branch of the repo that
+        holds it. The worktree carries `slices/**` as it stood at the fork,
+        and a writer that greps for `plan.md` may edit that copy; the plan is
+        the shared checkout's, and the slice tree is never a phase's
+        deliverable. So whatever the branch changed there goes back to its
+        state at the branch's merge base, in one commit on the branch, the
+        files logged — back to the fork rather than to the base's tip, so
+        the branch then changes nothing there and the merge cannot conflict
+        with a parallel session's edit in the tree."""
+        changed = self.git("diff", "--name-only", f"{base}...{branch}", "--",
+                           "slices/", root=work)
+        if not changed:
+            return
+        fork = self.git("merge-base", base, branch, root=work)
+        self.git("restore", f"--source={fork}", "--staged", "--worktree",
+                 "--", "slices/", root=work)
+        self.git("commit", "-m",
+                 f"slice {self.slice_num}: slices/** taken back out of "
+                 f"{branch} — the slice tree is never a phase's deliverable",
+                 root=work)
+        self.log(f"[P{phase_id}] {branch} changed the slice tree — taken back "
+                 "out, the slice tree is never a phase's deliverable: "
+                 + ", ".join(changed.splitlines()))
+
+    def _sweep_into_base(self, phase_id: str, root: Path, base: str,
+                         paths: list[str]) -> None:
+        """Another writer's uncommitted edits standing in a merge's way,
+        committed on the shared repo's base by name, so the merge can go
+        on: one commit, logged. Whoever left them finds them committed — a
+        sweep, not a loss."""
+        self.git("add", "-A", "--", *paths, root=root)
+        self.git("commit", "-m",
+                 f"slice {self.slice_num}: edits left uncommitted in "
+                 f"{root.name}, swept at P{phase_id}'s merge", "--", *paths,
+                 root=root)
+        self.log(f"[P{phase_id}] uncommitted edits in {root.name} stood in "
+                 f"the merge's way — swept into {base}: " + ", ".join(paths))
 
     def _rebase_onto_moved_base(self, phase_id: str, ps: dict, root: Path,
                                 base: str, branch: str,
@@ -5637,10 +5585,11 @@ class RunLoop:
         """Rebase a reviewed phase branch onto a base that moved under it,
         and return the branch's new merge base.
 
-        The merge is `checkout <base>` + `merge --ff-only`, so a parallel
-        session landing on the base between the review and the merge makes
-        the fast-forward impossible — a specs-repo phase cannot win that race
-        at all. Rebasing by hand afterwards is worse: `reviewed_head` and
+        A repo of this environment's own merges by `checkout <base>` +
+        `merge --ff-only` (a shared repo's phase merges instead —
+        `_merge_shared`), so a parallel session landing on the base between
+        the review and the merge makes the fast-forward impossible. Rebasing
+        by hand afterwards is worse: `reviewed_head` and
         `gate_green_commit` then sit on neither branch nor base, which the
         resume reads as lost work and the operator resolves by editing
         state.json. Done here, the driver repoints its own record — after
@@ -5769,7 +5718,7 @@ class RunLoop:
                      target: ResolvedTarget, branch: str, merge_base: str,
                      where: str, gate_hint: str, spawn_executor) -> None:
         phase_id = phase.id
-        root = target.git_root
+        root = target.work_root
         while True:
             # The round number is proposed here and only BANKED once the
             # round actually produced a review. A round that died — blocked,
@@ -5798,7 +5747,6 @@ class RunLoop:
                     philosophy_line=self._philosophy_line(),
                     skill_line=self._skill_line(phase_id),
                     close_out_line=self._close_out_line(),
-                    bookkeeping_note=self._bookkeeping_note(target),
                 )
             else:
                 prompt = REVIEWER_PROMPT.format(
@@ -5811,12 +5759,10 @@ class RunLoop:
                     philosophy_line=self._philosophy_line(),
                     skill_line=self._skill_line(phase_id),
                     close_out_line=self._close_out_line(),
-                    bookkeeping_note=self._bookkeeping_note(target),
                 )
             verdict, _ = self._spawn(
                 "code-reviewer", prompt, self.repo_root, verdict_path,
                 phase_id, r, agent="code-reviewer",
-                spec_branch=branch if self._is_spec_root(root) else None,
             )
             if verdict["outcome"] == "blocked" \
                     or verdict.get("_protocol_failure"):
@@ -6007,12 +5953,8 @@ class RunLoop:
                 "merge": f"the findings do not clear the bar: {merge_note}",
                 "bail": "stop the slice for the orchestrator",
             }
-        # Mid-phase, so the spec tree is where the phase's writer and
-        # reviewer had it: on the phase branch when this phase branches it.
         choice = self._consult(
-            site, situation, actions, [review_path], phase_id,
-            spec_branch=(f"phase/{self.slice_num}-P{phase_id}"
-                         if self._is_spec_root(root) else None))
+            site, situation, actions, [review_path], phase_id)
         if choice["outcome"] == "merge":
             findings = [f for f in verdict.get("findings") or []
                         if isinstance(f, dict)]
@@ -6725,8 +6667,6 @@ class RunLoop:
                 + build_slice_digest(plan_text),
                 self.repo_root, verdict_path, None, 1, agent="doc-writer",
                 display="doc-phase",
-                spec_branch=(branch if self._is_spec_root(self.repo_root)
-                             else None),
             )
             verdict = self._ensure_committed(None, "doc-writer", session,
                                              root, verdict, verdict_path)
@@ -7196,15 +7136,6 @@ class RunLoop:
     def _wrap_up_branch(self) -> str:
         return f"phase/{self.slice_num}-wrap-up"
 
-    def _wrap_up_spec_home(self, writes: bool, doc_branch: str) -> str | None:
-        """The branch the spec tree stands on around the wrap-up's session —
-        the doc branch where the primary repo IS the spec repo and the doc
-        phase branched it, else its base (None, as `_assert_spec_on_base`
-        takes it)."""
-        if writes and self._is_spec_root(self.repo_root):
-            return doc_branch
-        return None
-
     def _wrap_up(self, ds: dict, doc_branch: str) -> None:
         """The wrap-up stage: one `dev:wrap-up` session works on what the
         close-out report's table gave it, its commits on branches of its own
@@ -7216,8 +7147,8 @@ class RunLoop:
         session timed out, wrote no verdict or an invalid one, answered
         `blocked`, left changes uncommitted or committed outside its
         branches, or a gate is red with its commits — and equally any error
-        the driver meets on the way (a git call that fails, the spec tree's
-        lease, a report that cannot be read, a bug here) ends the stage one
+        the driver meets on the way (a git call that fails, the spec tree
+        off its base, a report that cannot be read, a bug here) ends the stage one
         way (`_wrap_up_leave_out`): no commit of it reaches a base or the doc
         branch, in any repo; the store goes back to where it stood; one event
         is entered; and the ladder goes on. No Bailout leaves this method and
@@ -7228,7 +7159,6 @@ class RunLoop:
         Whatever the outcome, the stage ends by moving `doc_phase.stage` on
         (`_wrap_up_decide`), and — when it did anything — by rendering the
         report and committing it."""
-        writes = ds.get("writer", True)
         wu = self.state["wrap_up"] = {
             "outcome": None, "reason": None, "session": None, "entries": [],
             "store": None, "repos": {}}
@@ -7236,8 +7166,7 @@ class RunLoop:
         # What the leave-out needs to undo, filled in as the steps go: the
         # branch each tree must stand on after the session (`watch`), and
         # every ref no commit of the wrap-up may reach (`guard`).
-        ctx: dict = {"watch": {}, "guard": {},
-                     "spec_home": self._wrap_up_spec_home(writes, doc_branch)}
+        ctx: dict = {"watch": {}, "guard": {}}
         try:
             self._wrap_up_run(ds, doc_branch, wu, ctx)
         except KeyboardInterrupt:
@@ -7264,7 +7193,7 @@ class RunLoop:
         self._render_report()
         try:
             self._commit_report(f"slice {self.slice_num}: close-out report "
-                                "after the wrap-up", ctx["spec_home"])
+                                "after the wrap-up")
         except Exception as e:
             why = e.details if isinstance(e, Bailout) else str(e)
             self.log(f"[wrap-up] close-out report not committed ({why})")
@@ -7294,8 +7223,7 @@ class RunLoop:
         # the store back to — with every entry the run's agents appended
         # before the wrap-up in it.
         wu["store"] = self._commit_report(
-            f"slice {self.slice_num}: close-out report before the wrap-up",
-            ctx["spec_home"])
+            f"slice {self.slice_num}: close-out report before the wrap-up")
         self._save_state()
 
         # 3. The branches. Every code repo's base and the doc branch are
@@ -7344,16 +7272,12 @@ class RunLoop:
             self.log(f"{label} {branch} cut in {root.name} from {home} "
                      f"({sha[:12]})")
 
-        # 4. The dispatch. The spec tree stands where it stood, except where
-        # the primary repo IS the spec repo and the wrap-up branch is cut
-        # there: then that branch is what the session commits the store on.
+        # 4. The dispatch. The spec tree stands on its base, where the
+        # session commits the store, as every agent does.
         verdict_path = self.slice_dir / "wrap_up_result.json"
-        spec_branch = (branch if any(self._is_spec_root(root)
-                                     for root, _ in repos)
-                       else ctx["spec_home"])
         why = self._dispatch_wrap_up(
             self._wrap_up_prompt(repos, branch, verdict_path), verdict_path,
-            spec_branch, wu)
+            wu)
 
         # 5. After the session, whatever its outcome.
         reasons = [r for r in (why, *self._wrap_up_settle(wu, ctx)) if r]
@@ -7497,11 +7421,9 @@ class RunLoop:
         """The code repos the wrap-up may change, primary first, each with
         the base branch the run recorded there: the roots of the slice's
         merged phases and the primary repo, less the repos the plan holds
-        and less the spec repo, which it commits into as every agent does,
-        on the branch checked out there. A primary repo that IS the spec
-        repo stays in: its code is the slice's, and without a branch of its
-        own every store commit the wrap-up made would move the doc branch
-        under it."""
+        and less a shared repo — the spec repo among them — which it commits
+        into on its base, as every agent does, and never branches: whatever
+        branch a shared checkout stands on is every session's."""
         held_roots = {Path(key).resolve() for key in held}
         roots = [self.repo_root]
         roots += [r for r in self._phase_roots() if not self._is_primary(r)]
@@ -7509,7 +7431,7 @@ class RunLoop:
         for root in roots:
             if root.resolve() in held_roots:
                 continue
-            if self._is_spec_root(root) and not self._is_primary(root):
+            if self._works_in_worktree(root):
                 continue
             out.append((root, self._base_branch(root)))
         return out
@@ -7557,13 +7479,13 @@ class RunLoop:
             verdict_path=verdict_path)
 
     def _dispatch_wrap_up(self, prompt: str, verdict_path: Path,
-                          spec_branch: str | None, wu: dict) -> str | None:
+                          wu: dict) -> str | None:
         """The wrap-up's session, through a path of its own: `_spawn` ends
         in `_rule_on_round`, whose protocol failure bails the run, and the
         wrap-up's may not. Kept from the ordinary dispatch: the session
         mechanics (`run_kc_session`), the log lines, the in-flight record,
-        the spec tree's reader lease with the branch assertion it guards, the
-        account session-limit wait and redispatch, and one history row with
+        the spec tree's base assertion, the account session-limit wait and
+        redispatch, and one history row with
         the session and its transcript whatever the outcome — the row
         `slice_cost.py` prices the role from. Dropped: the verdict nudge, the
         lost-wait recovery, the commit nudge, every bail, the salvage of a
@@ -7594,17 +7516,16 @@ class RunLoop:
             self._save_state()
             t0 = time.monotonic()
             try:
-                with self.spec_lock.shared(label):
-                    self._assert_spec_on_base(spec_branch)
-                    self._assert_current()
-                    returncode, result = run_kc_session(
-                        prompt=prompt, cwd=str(cwd), timeout=TIMEOUTS[role],
-                        agent=role, model=model, effort=effort,
-                        extra_env=self._spawn_env(spec_branch),
-                        flags=spawn_flags(role, self.log),
-                        progress=lambda line: self._emit(f"    {label} {line}"),
-                        on_session=_note_session,
-                    )
+                self._assert_spec_on_base()
+                self._assert_current()
+                returncode, result = run_kc_session(
+                    prompt=prompt, cwd=str(cwd), timeout=TIMEOUTS[role],
+                    agent=role, model=model, effort=effort,
+                    extra_env=SPAWN_ENV,
+                    flags=spawn_flags(role, self.log),
+                    progress=lambda line: self._emit(f"    {label} {line}"),
+                    on_session=_note_session,
+                )
             except subprocess.TimeoutExpired:
                 sid = (self.state.get("in_flight") or {}).get("session")
                 self.state["in_flight"] = None
@@ -7686,11 +7607,7 @@ class RunLoop:
             if info is not None and self.git("branch", "--list", branch,
                                              root=root):
                 info["head"] = self.git("rev-parse", branch, root=root)
-            current = self._current_branch(root)
-            if current != watch["expected"]:
-                # Where the tree holds the slice folder, the store an agent
-                # left uncommitted there would refuse the checkout.
-                self._commit_slice_edits(root, current, "[wrap-up]")
+            if self._current_branch(root) != watch["expected"]:
                 self.git("checkout", watch["expected"], root=root)
         for (key, ref), sha in ctx["guard"].items():
             root = Path(key)
@@ -7781,25 +7698,22 @@ class RunLoop:
         """One wrap-up gate command — the seam the wrap-up's tests replace."""
         return self._gate_exec(argv, cwd, log_file)
 
-    def _commit_report(self, message: str, expect: str | None) -> str:
+    def _commit_report(self, message: str) -> str:
         """Commit the report — the store and the close-out.md rendered from
-        it — where either changed, staged and committed by name under the
-        spec tree's reader lease, as the driver's own report commit is;
-        return the spec repo's commit it now stands at. `expect` is the
-        branch the tree must be on (`_assert_spec_on_base`)."""
+        it — where either changed, staged and committed by name on the spec
+        tree's base, as the driver's own report commit is; return the spec
+        repo's commit it now stands at."""
         paths = [str(p) for p in (store_path(self.slice_dir), self.report_path)
                  if p.exists()]
-        with self.spec_lock.shared("close-out report"):
-            self._assert_spec_on_base(expect)
-            if paths and self.specs_git("status", "--porcelain", "--", *paths):
-                self.specs_git("add", "--", *paths)
-                self.specs_git("commit", "-m", message, "--", *paths,
-                               phase_branch=expect)
-                self.log(f"[wrap-up] committed {self.report_path.name}: "
-                         f"{message}")
-            return self.specs_git("rev-parse", "HEAD")
+        self._assert_spec_on_base()
+        if paths and self.specs_git("status", "--porcelain", "--", *paths):
+            self.specs_git("add", "--", *paths)
+            self.specs_git("commit", "-m", message, "--", *paths)
+            self.log(f"[wrap-up] committed {self.report_path.name}: "
+                     f"{message}")
+        return self.specs_git("rev-parse", "HEAD")
 
-    def _wrap_up_restore_store(self, sha: str, expect: str | None) -> None:
+    def _wrap_up_restore_store(self, sha: str) -> None:
         """The store as it is in the spec repo's commit `sha`, written over
         the current one, rendered and committed: the entries the run's
         agents appended before the wrap-up are in it, what the wrap-up wrote
@@ -7821,8 +7735,7 @@ class RunLoop:
         with self._report_logged():
             self._render_report()
         self._commit_report(f"slice {self.slice_num}: close-out report back to "
-                            f"where it stood before the wrap-up ({sha[:12]})",
-                            expect)
+                            f"where it stood before the wrap-up ({sha[:12]})")
         self.log(f"[wrap-up] the store is back to {sha[:12]}")
 
     def _wrap_up_leave_out(self, ds: dict, wu: dict, ctx: dict, reason: str,
@@ -7844,7 +7757,7 @@ class RunLoop:
             self.log(f"[wrap-up] the trees could not all be put back ({why})")
         if wu.get("store"):
             try:
-                self._wrap_up_restore_store(wu["store"], ctx["spec_home"])
+                self._wrap_up_restore_store(wu["store"])
             except Exception as e:
                 why = e.details if isinstance(e, Bailout) else str(e)
                 self.log(f"[wrap-up] the store could not be taken back ({why})")
@@ -7915,7 +7828,6 @@ class RunLoop:
                 if self._current_branch(root) == info.get("branch", branch):
                     if self._worktree_dirty(root):
                         self._wrap_up_discard(root)
-                    self._commit_slice_edits(root, branch, "[wrap-up]")
                     self.git("checkout", home, root=root)
                 if self.git("branch", "--list", branch, root=root):
                     self.git("branch", "-D", branch, root=root)
@@ -7934,8 +7846,7 @@ class RunLoop:
                 self.log(f"[wrap-up] {doc_branch} not deleted ({why})")
         if wu.get("store"):
             try:
-                self._wrap_up_restore_store(
-                    wu["store"], self._wrap_up_spec_home(writes, doc_branch))
+                self._wrap_up_restore_store(wu["store"])
             except Exception as e:
                 why = e.details if isinstance(e, Bailout) else str(e)
                 self.log(f"[wrap-up] the store could not be taken back ({why})")
@@ -8054,6 +7965,19 @@ class RunLoop:
             self.log(f"project config: {self.cfg.path}")
             self.project_dirs = load_project_dirs(self.repo_root)
             self._assert_agents()
+            # Which repos are shared is asked here, before anything else
+            # needs it, and recorded with the state. The primary repo may
+            # not be one: its tree is where the gate, the dev services and
+            # the doc phase's branch live, and those are this environment's.
+            if self._is_shared(self.repo_root):
+                raise Bailout(
+                    "protocol_failure",
+                    details=f"{self.repo_root} is a shared repo (`kc env "
+                            "describe`), and a shared primary repo is not "
+                            "supported: the gate, the dev services and the "
+                            "doc phase's branch work in the primary's own "
+                            "tree, which must be this environment's checkout "
+                            "— run the slice from an unshared code repo")
             if not self.resume:
                 self.preflight()
             # On disk before the start is reported: the `wait` that follows
@@ -8104,18 +8028,11 @@ class RunLoop:
         except Bailout as bail:
             self.devlock.release(self.log)
             self._restore_bases()
-            # After the restore, not before: the tree goes back to its base
-            # while this run still owns it, so the session queued behind the
-            # lease never sees this run's phase branch.
-            self._release_spec_tree()
             self._bail(bail)
         except KeyboardInterrupt:
             # No branch restoring here: the in-flight session may be
             # reattached on resume, and it needs the worktree it was left on.
-            # The lease is given back regardless — an interrupted run is not
-            # coming back within the hour a waiter would spend on it.
             self.devlock.release(self.log)
-            self._release_spec_tree()
             self.log("interrupted — state.json is current; resume with "
                      "--resume")
             print("Interrupted — resume with --resume (the in-flight session "
@@ -8142,34 +8059,26 @@ class RunLoop:
         # Asserted before the store is written, not before the commit: a
         # report created onto the wrong branch and bailed on would be found
         # by the resume and never committed at all.
-        with self.spec_lock.shared("close-out report"):
-            self._assert_spec_on_base()
-            store = store_path(self.slice_dir)
-            had_store = store.exists()
-            try:
-                created = init_report(self.slice_dir)
-            except ReportError as e:
-                raise Bailout("protocol_failure", details=str(e)) from None
-            if created or (not had_store and store.exists()):
-                self.specs_git("add", str(store), str(self.report_path))
-                self.specs_git("commit", "-m",
-                               f"slice {self.slice_num}: close-out report")
-                self.log(f"{'created' if created else 'imported'} "
-                         f"{store.name} beside {self.report_path.name}")
+        self._assert_spec_on_base()
+        store = store_path(self.slice_dir)
+        had_store = store.exists()
+        try:
+            created = init_report(self.slice_dir)
+        except ReportError as e:
+            raise Bailout("protocol_failure", details=str(e)) from None
+        if created or (not had_store and store.exists()):
+            self.specs_git("add", str(store), str(self.report_path))
+            self.specs_git("commit", "-m",
+                           f"slice {self.slice_num}: close-out report")
+            self.log(f"{'created' if created else 'imported'} "
+                     f"{store.name} beside {self.report_path.name}")
 
     def _report_bailouts(self) -> None:
         """Every stop of this run becomes an event entry, written by the
         resume that follows it, at its first dispatch (`_spawn`) — the
-        first moment the report exists, the stop is known to be over, and
-        the spec tree stands on the branch that dispatch works on: the
-        phase branch inside a phase that branches the spec repo, where the
-        entry rides the branch and `_commit_slice_edits` commits it at the
-        merge or at a bail; the base otherwise. A resume that dispatches
-        nothing writes it at completion. Written at startup, on the base,
-        the entry sat uncommitted there and refused the checkout of a
-        spec-repo phase's branch whose own close-out.json had moved (slice
-        238 P5, four bails) — and never at a bail either, for the same
-        reason: the tree is on its base again by then.
+        first moment the report exists and the stop is known to be over; it
+        rides the report's next commit there. A resume that dispatches
+        nothing writes it at completion.
 
         A stop the report did not carry left its Events saying the run
         recorded no bail-out beneath a header counting one. Each `bailouts`
@@ -8321,17 +8230,9 @@ class RunLoop:
         # After bailout.json, so the header names the stage the run stopped
         # in. The rendered files are left as they are — a bail commits
         # nothing — and nothing here may mask the bail or change its code.
-        # Not with the spec repo on a phase branch: where `_restore_bases`
-        # had to leave it there, a report modified on that branch is what
-        # refuses the next checkout. Read off the branch's name, so that
-        # nothing is recorded in `bases` on the way out.
         try:
-            cur = self._current_branch(self.spec_root)
-            if cur.startswith("phase/"):
-                self.log(f"close-out not rendered: the spec repo is on {cur}")
-            else:
-                with self._report_logged():
-                    self._render_report()
+            with self._report_logged():
+                self._render_report()
         except Exception as e:
             why = e.details if isinstance(e, Bailout) else str(e)
             self.log(f"close-out not rendered: {why}")

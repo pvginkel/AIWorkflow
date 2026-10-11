@@ -84,10 +84,8 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   lines) and `plan_loop.py` carry most of the logic and most of the ~4.4k lines of suite; plus
   `close_out.py` (the close-out report: its store, the policy tables that route an entry from
   its labels, the rendering; imported by both loops), `github_target.py`
-  (the `github:` Target's scratch clone), `preflight.py` (with `spec-tree-guard.sh`, the spec
-  repo's pre-commit hook it installs),
-  `spec_commit.py` (a commit of one's own change to a spec-tree file another writer has an
-  uncommitted edit in), `sweep_slice.py`, `close_slice.py`, `slice_cost.py` (with
+  (the `github:` Target's scratch clone), `preflight.py`,
+  `sweep_slice.py`, `close_slice.py`, `slice_cost.py` (with
   `turn_profile.py`, the transcript replay behind its turn table), `allocate-next-slice.sh`.
   Suites load their subject via `importlib.util.spec_from_file_location` (`tools/` is not a
   package) and fake sessions, git, `kc` and the gate — no agent is ever spawned by a test.
@@ -226,5 +224,14 @@ instead of reopening it.
   sub-agents). The plugin passes nothing — no agent-frontmatter `disallowedTools`, no kc
   `--settings` pass-through.
 - **A project's primary repo is never its spec repo** (2026-10-09, AIWF-50). The run loop's
-  branches for that layout (`_wrap_up_spec_home`, a doc phase or wrap-up branching the spec tree)
-  serve no project. A gap that exists only in that layout is not a finding.
+  branches for that layout were removed in 0.9.93. A gap that exists only in that layout is not
+  a finding.
+- **A shared repo is never branched in place; no lock, guard or multiple-writer mechanism for the
+  shared tree** (2026-10-11). A phase targeting a repo kc marks `shared`, or the spec repo, works
+  in a linked worktree under `/work/scratch/worktrees/`, and its merge is a merge, not a rebase and
+  fast-forward. The in-place coping work — the spec tree's lease (0.9.36), the pre-commit guard
+  and `DEV_PHASE_BRANCH` (0.9.86), `spec_commit.py` (0.9.88), the slice-folder commits before a
+  checkout back (0.9.44) — was removed for it in 0.9.93
+  (`docs/research/shared-repo-worktree-plan-2026-10-11.md`). Agents sweeping one another's
+  uncommitted edits into a commit is accepted ("I have no problem one agent sweeping up a change
+  of a different agent"); pristine commits in the shared tree are not a goal.

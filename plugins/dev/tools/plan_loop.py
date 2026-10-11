@@ -60,7 +60,6 @@ Exit codes: 0 plan complete · 4 operator input needed · 3 bailed
 """
 
 import argparse
-import contextlib
 import json
 import os
 import subprocess
@@ -94,7 +93,6 @@ from run_loop import (  # noqa: E402
     AGENTS_DIR,
     PHILOSOPHY_LINE,
     SPAWN_ENV,
-    SpecTreeLock,
     _git_toplevel,
     _now_hms,
     _now_iso,
@@ -256,7 +254,6 @@ class PlanLoop:
         # launched from it, and the agents read the code there.
         self.repo_root = _git_toplevel()
         self._philosophy: str | None = None
-        self._spec_lock: SpecTreeLock | None = None
 
     # -- state ---------------------------------------------------------------
 
@@ -357,50 +354,23 @@ class PlanLoop:
             self._save_state()
         return self.state["base"]
 
-    @property
-    def spec_lock(self) -> SpecTreeLock:
-        """The lease over the shared spec tree (run_loop.SpecTreeLock). Built
-        on first use, because locating it asks git where this tree is."""
-        if self._spec_lock is None:
-            self._spec_lock = SpecTreeLock(
-                Path(self._spec_root()),
-                log=lambda msg: self.log(msg),
-                sleep=lambda seconds: self._sleep(seconds),
-                announce=lambda msg: self.announce(msg))
-        return self._spec_lock
-
-    @contextlib.contextmanager
-    def _spec_tree(self, purpose: str):
-        """The reader hold, in this loop's bail vocabulary: everything this
-        loop writes (plan.md, verification.json, the close-out report) lands in a
-        tree a run loop's spec-repo phase may be branching, so the dispatch
-        or commit waits for it. A wait past the cap is that run's problem to
-        answer for — `blocked`, naming the holder."""
-        try:
-            with self.spec_lock.shared(purpose):
-                yield
-        except run_loop.Bailout as e:
-            raise Bailout("blocked", details=e.details) from None
-
-    def _sleep(self, seconds: float) -> None:
-        """The loop's only wall-clock wait, isolated so tests can take it
-        out."""
-        time.sleep(seconds)
-
     def _assert_on_base(self) -> None:
         """The spec repo must still be on that branch before every dispatch
         and before the loop's own commit. The tree is shared with every
-        parallel session — another plan loop, a run loop's specs-repo phase,
-        the operator's own — so whichever branch it sits on is where this
-        slice's plan, verification.json and close-out entries land."""
+        parallel session — another plan loop, a run loop, the operator's own
+        — so whichever branch it sits on is where this slice's plan,
+        verification.json and close-out entries land. No loop moves it (a
+        run loop's phase on it works in a worktree of its own), so a tree off
+        its base is a hand checkout, or a run loop of a plugin before 0.9.93,
+        which still branched it in place."""
         base = self._base_branch()
         cur = self._current_branch()
         if cur != base:
             raise Bailout(
                 "blocked",
                 details=f"the spec repo {self._spec_root()} is on {cur}, not "
-                        f"{base}; a parallel session left it there (a bail of "
-                        "another run, or its own branch) — check out "
+                        f"{base} — a hand checkout, or a run loop of a plugin "
+                        "before 0.9.93, left it there; check out "
                         f"{base} there and rerun")
 
     def _assert_current(self, plugin: bool = True) -> None:
@@ -425,16 +395,13 @@ class PlanLoop:
                role: str) -> None:
         self.log(f"{label} nudging the session (resume)")
         try:
-            # A nudge is a session committing into the shared spec tree like
-            # any other, so it waits for the tree like any other.
-            with self._spec_tree(label):
-                self._assert_current()
-                run_kc_session(
-                    prompt=prompt, cwd=str(self.repo_root),
-                    timeout=NUDGE_TIMEOUT, resume_session=session_id,
-                    extra_env=SPAWN_ENV, flags=spawn_flags(role, self.log),
-                    progress=lambda line: self._emit(f"    {label} {line}"),
-                )
+            self._assert_current()
+            run_kc_session(
+                prompt=prompt, cwd=str(self.repo_root),
+                timeout=NUDGE_TIMEOUT, resume_session=session_id,
+                extra_env=SPAWN_ENV, flags=spawn_flags(role, self.log),
+                progress=lambda line: self._emit(f"    {label} {line}"),
+            )
         except subprocess.TimeoutExpired:
             self.log(f"{label} nudge timed out")
 
@@ -477,8 +444,7 @@ class PlanLoop:
         """Run one fresh session; return its validated verdict. A session
         failure, invalid verdict (after one nudge), or dirty slice folder
         (after one nudge) is a bail-out — the loop has no fallback driver.
-        The session runs under the spec tree's reader lease, with the branch
-        check it guards inside the same hold: an agent dispatched onto
+        The spec tree is asserted on its base first: an agent dispatched onto
         someone else's branch commits the plan there."""
         label = f"[{role} r{round_}]"
         model, effort = MODELS[role]
@@ -489,19 +455,18 @@ class PlanLoop:
 
         t0 = time.monotonic()
         try:
-            with self._spec_tree(label):
-                self._assert_on_base()
-                self._assert_current()
-                self.log(f"{label} session starting")
-                verdict_path.unlink(missing_ok=True)
-                returncode, result = run_kc_session(
-                    prompt=prompt, cwd=str(self.repo_root),
-                    timeout=TIMEOUTS[role], agent=role, model=model,
-                    effort=effort, extra_env=SPAWN_ENV,
-                    flags=spawn_flags(role, self.log),
-                    progress=lambda line: self._emit(f"    {label} {line}"),
-                    on_session=_note_session,
-                )
+            self._assert_on_base()
+            self._assert_current()
+            self.log(f"{label} session starting")
+            verdict_path.unlink(missing_ok=True)
+            returncode, result = run_kc_session(
+                prompt=prompt, cwd=str(self.repo_root),
+                timeout=TIMEOUTS[role], agent=role, model=model,
+                effort=effort, extra_env=SPAWN_ENV,
+                flags=spawn_flags(role, self.log),
+                progress=lambda line: self._emit(f"    {label} {line}"),
+                on_session=_note_session,
+            )
         except subprocess.TimeoutExpired:
             raise Bailout("timeout",
                           details=f"{role} exceeded {TIMEOUTS[role]}s") from None
@@ -795,20 +760,19 @@ class PlanLoop:
         records its base branch — before the store is written, so a report
         created onto the wrong branch and bailed on cannot be found (and
         skipped) by the rerun."""
-        with self._spec_tree("close-out report"):
-            self._assert_on_base()
-            store = store_path(self.slice_dir)
-            had_store = store.exists()
-            try:
-                created = init_report(self.slice_dir)
-            except ReportError as e:
-                raise Bailout("protocol_failure", details=str(e)) from None
-            if created or (not had_store and store.exists()):
-                self.git("add", str(store), str(self.report_path))
-                self.git("commit", "-m",
-                         f"slice {self.slice_num}: close-out report")
-                self.log(f"{'created' if created else 'imported'} "
-                         f"{store.name} beside {self.report_path.name}")
+        self._assert_on_base()
+        store = store_path(self.slice_dir)
+        had_store = store.exists()
+        try:
+            created = init_report(self.slice_dir)
+        except ReportError as e:
+            raise Bailout("protocol_failure", details=str(e)) from None
+        if created or (not had_store and store.exists()):
+            self.git("add", str(store), str(self.report_path))
+            self.git("commit", "-m",
+                     f"slice {self.slice_num}: close-out report")
+            self.log(f"{'created' if created else 'imported'} "
+                     f"{store.name} beside {self.report_path.name}")
         self._report_ready = True
 
     def _render_report(self) -> None:
@@ -937,7 +901,7 @@ class PlanLoop:
         a later role noticing them. A headline the section already carries,
         live or struck, is left be: the loop reruns after questions and
         adjudication, and a slice may be replanned. Appended entries are
-        committed under the same lease and branch check as `_ensure_report`;
+        committed under the same branch check as `_ensure_report`;
         a report that refuses an entry is logged, never a failed plan — save
         a close-out.md the operator edited where the write would drop the
         edit: the loop stops there with the operator-input exit
@@ -946,34 +910,33 @@ class PlanLoop:
         if not entries:
             return
         refused = None
-        with self._spec_tree("close-out outstanding actions"):
-            self._assert_on_base()
-            seeded = 0
-            for headline, body, consequence, provenance, proposal in entries:
-                try:
-                    eid = find_by_headline(self.slice_dir, OUTSTANDING,
-                                           headline)
-                    if eid is not None:
-                        self.log(f"close-out {eid} already holds: {headline}")
-                        continue
-                    eid = append_entry(self.slice_dir, OUTSTANDING, headline,
-                                       body, consequence=consequence,
-                                       provenance=provenance,
-                                       proposal=proposal)
-                except ReportEdited as e:
-                    refused = e
-                    break
-                except ReportError as e:
-                    self.log(f"close-out entry not written ({e}): {headline}")
+        self._assert_on_base()
+        seeded = 0
+        for headline, body, consequence, provenance, proposal in entries:
+            try:
+                eid = find_by_headline(self.slice_dir, OUTSTANDING,
+                                       headline)
+                if eid is not None:
+                    self.log(f"close-out {eid} already holds: {headline}")
                     continue
-                seeded += 1
-                self.log(f"close-out {eid}: {headline}")
-            if seeded:
-                self.git("add", str(store_path(self.slice_dir)),
-                         str(self.report_path))
-                self.git("commit", "-m",
-                         f"slice {self.slice_num}: seed close-out "
-                         "outstanding actions")
+                eid = append_entry(self.slice_dir, OUTSTANDING, headline,
+                                   body, consequence=consequence,
+                                   provenance=provenance,
+                                   proposal=proposal)
+            except ReportEdited as e:
+                refused = e
+                break
+            except ReportError as e:
+                self.log(f"close-out entry not written ({e}): {headline}")
+                continue
+            seeded += 1
+            self.log(f"close-out {eid}: {headline}")
+        if seeded:
+            self.git("add", str(store_path(self.slice_dir)),
+                     str(self.report_path))
+            self.git("commit", "-m",
+                     f"slice {self.slice_num}: seed close-out "
+                     "outstanding actions")
         if refused is not None:
             self._exit_report_edited(refused)
 

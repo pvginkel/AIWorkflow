@@ -568,6 +568,9 @@ spec-repo phase holds it exclusive from checkout to stamp, writers are preferred
 the devlock's cap bails ([`run-loop.md`](../../plugins/dev/docs/run-loop.md) § The plan is the
 queue).
 
+**Readout.** Superseded by v0.9.93 (below): no phase branches the shared tree any more, and the
+lease went with it.
+
 ### Commits from outside the loops are refused on a phase branch (v0.9.86)
 
 **Incident.** In AnsibleSpecs, slice 050's review adjudication landed on `phase/053-P1`
@@ -584,6 +587,37 @@ it dispatches and commits there, and the refused session waits for the lease out
 ([`run-loop.md`](../../plugins/dev/docs/run-loop.md) § The plan is the queue). The tracker's slice
 status was considered as the signal and dropped: it spans the whole run, not the checkout-to-stamp
 window, it is moved by hand, and a hook can't reach it.
+
+**Readout.** Superseded by v0.9.93 (below): the guard went with the in-place branch, and preflight
+now deletes the hook it installed.
+
+### A shared repo is never branched in place (v0.9.93)
+
+**Incident.** The lease (v0.9.36) and the guard (v0.9.86) kept the loops' and other sessions'
+commits off a phase's branch in the shared spec tree, and the bails moved to the next layer: an
+uncommitted edit anyone left outside `slices/` bailed the phase at its merge (AIWF-69 — six
+reports from AnsibleSpecs and Ansible on 2026-10-10 alone), a bail's own render left
+`close-out.md` modified on main and refused the resume's checkout (AIWF-70), and the stamp was
+written before the lease was held (AIWF-52). Each was recovered by hand.
+
+**Evidence.** KubeCoder's `shared: true` is one clone mounted into every environment of the
+project, recommended by its manual for repositories "none of them writes". Every mechanism since
+v0.9.20 coped with the one thing that made writing there unsafe: a phase checking its branch out
+*in* that tree for hours. Nothing else about the shared tree needed protecting — the operator
+ruled that agents sweeping one another's uncommitted edits into a commit is fine and that the
+commits need not be pristine, and `spec_commit.py` (v0.9.88, AIWF-53) had been built for a case —
+the operator's own lane ticks — they no longer mind.
+
+**Change.** A phase whose Target resolves to a repo kc marks shared works in a linked worktree
+under `/work/scratch/worktrees/`, locked so another environment's `git gc` cannot prune its
+registration; the shared checkout stays on its base; the merge is `git merge`, a merge commit
+when the base moved, with another writer's uncommitted collision swept into a commit of its own
+first ([`run-loop.md`](../../plugins/dev/docs/run-loop.md) § The plan is the queue). The lease,
+the guard, `DEV_PHASE_BRANCH`, `spec_commit.py`, the slice-folder commits before a checkout back
+and the record untracking are removed; preflight deletes the hook an older plugin installed. The
+design, the rulings and the inventory of what went:
+[`shared-repo-worktree-plan-2026-10-11.md`](../research/shared-repo-worktree-plan-2026-10-11.md).
+**Ruled** 2026-10-11; not yet read.
 
 ### A hung send's round is counted from its file (v0.9.36)
 

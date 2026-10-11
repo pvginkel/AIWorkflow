@@ -61,6 +61,17 @@ run_loop.running_tools = lambda: set(RUNNING)
 RUNNING_SERVICES: set[str] = set()
 REAL_RUNNING_SERVICES = run_loop.running_services
 run_loop.running_services = lambda: set(RUNNING_SERVICES)
+# Which repos kc marks shared comes from the same describe; the suite's
+# environment shares none, and the tests of a shared repo's phase say which
+# of theirs is.
+REAL_SHARED_REPO_DIRS = run_loop.shared_repo_dirs
+run_loop.shared_repo_dirs = lambda: set()
+# A shared repo's phase works in a worktree under WORKTREE_ROOT. Never the
+# pod's own scratch root from the suite: the scripted loops point it into
+# their test's tmp dir for the run (`ScriptedLoop.run`), and this is the
+# floor under any call that goes round them.
+run_loop.WORKTREE_ROOT = (Path(tempfile.gettempdir())
+                          / "aiworkflow-suite-worktrees")
 
 # spawn_flags copies the promoted MCP servers out of the user-level
 # ~/.claude.json. That seam is stubbed with a home that does not exist, so no
@@ -120,17 +131,22 @@ class FakeGit:
         # each path had at the last commit through it, and the store as it
         # stood each time HEAD was read — what `show <sha>:` answers.
         self.spec_head = "spec0"
-        self.spec_committed = {}
+        self.specs_committed = {}
         self.spec_snapshots = {}
-        self.spec_commits = []   # the messages, in order
-        # (root, args, branch) of every call made with `phase_branch=` — the
-        # driver's commits the spec repo's pre-commit hook must let through
-        self.phase_branch_calls = []
+        self.specs_commits = []   # the messages, in order
+        # A shared repo's phase worktrees: path → branch, made on disk by
+        # `worktree add` (a `.git` file, so the driver finds one there) and
+        # gone at `worktree remove`; the lock reason of each add; what
+        # `worktree list --porcelain` answers; and the answers of the git
+        # commands the driver reads rather than bails on (`_git_attempt`),
+        # consumed in order — (0, "Fast-forward") once spent.
+        self.worktrees = {}
+        self.lock_reasons = []
+        self.worktree_list = ""
+        self.attempts = []
 
-    def __call__(self, *args, root=None, check=True, phase_branch=None):
+    def __call__(self, *args, root=None, check=True):
         self.calls.append((root, args))
-        if phase_branch is not None:
-            self.phase_branch_calls.append((root, args, phase_branch))
         if args in self.fails:
             if check:
                 raise Bailout("protocol_failure",
@@ -190,6 +206,26 @@ class FakeGit:
         if args[0] == "commit" and "--" in args:
             self._commit_paths(args, root)
             return ""
+        if args[:2] == ("worktree", "add"):
+            return self._worktree_add(args[2:])
+        if args[:2] == ("worktree", "list"):
+            return self.worktree_list
+        return ""
+
+    def _worktree_add(self, rest):
+        rest = [a for a in rest if a != "--lock"]
+        if "--reason" in rest:
+            i = rest.index("--reason")
+            self.lock_reasons.append(rest[i + 1])
+            del rest[i:i + 2]
+        path = Path(rest[0])
+        branch = rest[2] if rest[1] == "-b" else rest[1]
+        if rest[1] == "-b":
+            self.branches.add(branch)
+        path.mkdir(parents=True, exist_ok=True)
+        (path / ".git").write_text("gitdir: a fake's\n")
+        self.branch_at[str(path)] = branch
+        self.worktrees[str(path)] = branch
         return ""
 
     def _spec(self, where, args):
@@ -205,13 +241,13 @@ class FakeGit:
             paths = args[args.index("--") + 1:]
             return "\n".join(
                 f" M {path}" for path in paths if Path(path).exists()
-                and Path(path).read_text() != self.spec_committed.get(path))
+                and Path(path).read_text() != self.specs_committed.get(path))
         if args[0] == "commit" and "--" in args:
             for path in args[args.index("--") + 1:]:
                 if Path(path).exists():
-                    self.spec_committed[path] = Path(path).read_text()
-            self.spec_commits.append(args[args.index("-m") + 1])
-            self.spec_head = f"spec{len(self.spec_commits)}"
+                    self.specs_committed[path] = Path(path).read_text()
+            self.specs_commits.append(args[args.index("-m") + 1])
+            self.spec_head = f"spec{len(self.specs_commits)}"
             return ""
         return None
 
@@ -331,6 +367,9 @@ class FakeGit:
             if ref.startswith("phase/"):
                 return sha not in self.lost
             return sha in self.merged
+        if args[:2] == ("worktree", "remove"):
+            shutil.rmtree(args[-1], ignore_errors=True)
+            self.worktrees.pop(args[-1], None)
         return True
 
     def mutations(self, verb):
@@ -367,6 +406,11 @@ class ScriptedLoop(RunLoop):
         self.git = self.fake_git
         self.git_ok = self.fake_git.ok
         self.sleeps = []
+        self.gate_cwds = []   # where each scripted gate ran
+        # A shared repo's phase worktrees go under the test's own tmp dir.
+        spec_root = run_loop.spec_root_for(self.slice_dir)
+        self.worktree_root = ((spec_root.parent if spec_root
+                               else self.slice_dir) / "scratch" / "worktrees")
         # The wrap-up is dispatched through a path of its own, straight to
         # `run_kc_session` — never `_spawn` — so its sessions are faked at
         # that seam (`run`): a script of (payload[, effect]) steps, and a
@@ -394,7 +438,8 @@ class ScriptedLoop(RunLoop):
                 f"a test reached the real run_kc_session (agent {agent!r})")
             return outer(prompt, cwd, timeout, agent=agent, **kw)
 
-        with patched(run_loop, run_kc_session=route):
+        with patched(run_loop, run_kc_session=route,
+                     WORKTREE_ROOT=self.worktree_root):
             return super().run()
 
     def _wrap_up_session(self, prompt, cwd, timeout, agent=None, model=None,
@@ -447,16 +492,23 @@ class ScriptedLoop(RunLoop):
     def _assert_agents(self):
         pass  # the real assertion has its own unit test
 
+    def _git_attempt(self, *args, root):
+        self.git(*args, root=root, check=False)
+        return (self.fake_git.attempts.pop(0) if self.fake_git.attempts
+                else (0, "Fast-forward"))
+
     def _run_gate(self, phase_id, ps, outputs, target):
         if target.gate_argv is None:
             return True, None
         ps["gate_runs"] += 1
         green = self.gates.pop(0) if self.gates else True
         self.gate_calls.append((phase_id, green))
+        self.gate_cwds.append(Path(target.gate_cwd))
         log_path = outputs / f"gate_r{ps['gate_runs']}.log"
         log_path.write_text("gate output\n")
         if green:
-            ps["gate_green_commit"] = self.git("rev-parse", "HEAD")
+            ps["gate_green_commit"] = self.git("rev-parse", "HEAD",
+                                               root=target.work_root)
             ps["gate_green_log"] = str(log_path)
         self._record(phase_id, "gate", ps["gate_runs"],
                      "green" if green else "red", "", None, 0)
@@ -482,11 +534,10 @@ class ScriptedLoop(RunLoop):
                 "log": str(log_path), "duration_s": 0}
 
     def _spawn(self, role, prompt, cwd, verdict_path, phase_id, round_,
-               agent=None, display=None, spec_branch=None):
+               agent=None, display=None):
         # The real _spawn's preamble, kept in step so the scripted loop
         # exercises the resume's stop entries, the salvage of an interrupted
-        # round, the spec tree's reader lease, and the branch the dispatch
-        # expects that repo on.
+        # round, and the spec tree's base assertion.
         self._report_bailouts()
         verdict_path = Path(verdict_path)
         salvaged = self._salvage_reattach(role, phase_id, verdict_path, "[t]")
@@ -495,27 +546,26 @@ class ScriptedLoop(RunLoop):
             self._record(phase_id, role, round_, verdict["outcome"],
                          verdict.get("summary", ""), session, 0)
             return verdict, session
-        with self.spec_lock.shared("[t]"):
-            self._assert_spec_on_base(spec_branch, phase_id)
-            self._assert_current()
-            prompt, resume_session = self._resolve_reattach(
-                role, phase_id, prompt, verdict_path, "[t]")
-            assert self.script, f"unexpected extra spawn: {role} (P{phase_id})"
-            step = self.script.pop(0)
-            want_role, verdict = step[0], step[1]
-            self.prompts.append((role, prompt))
-            assert role == want_role, (
-                f"expected spawn of {want_role}, driver asked for {role} "
-                f"(P{phase_id}, round {round_})"
-            )
-            self.spawned.append((role, phase_id, round_, verdict["outcome"],
-                                 resume_session))
-            self._record(phase_id, role, round_, verdict["outcome"],
-                         verdict.get("summary", ""), "sess-test", 1,
-                         extra={k: verdict[k] for k in ("findings", "refuted")
-                                if verdict.get(k)})
-            if len(step) > 2:
-                step[2](self)
+        self._assert_spec_on_base()
+        self._assert_current()
+        prompt, resume_session = self._resolve_reattach(
+            role, phase_id, prompt, verdict_path, "[t]")
+        assert self.script, f"unexpected extra spawn: {role} (P{phase_id})"
+        step = self.script.pop(0)
+        want_role, verdict = step[0], step[1]
+        self.prompts.append((role, prompt))
+        assert role == want_role, (
+            f"expected spawn of {want_role}, driver asked for {role} "
+            f"(P{phase_id}, round {round_})"
+        )
+        self.spawned.append((role, phase_id, round_, verdict["outcome"],
+                             resume_session))
+        self._record(phase_id, role, round_, verdict["outcome"],
+                     verdict.get("summary", ""), "sess-test", 1,
+                     extra={k: verdict[k] for k in ("findings", "refuted")
+                            if verdict.get(k)})
+        if len(step) > 2:
+            step[2](self)
         return verdict, "sess-test"
 
 
@@ -538,11 +588,11 @@ class SpawningLoop(ScriptedLoop):
         self._pending = None
 
     def _spawn(self, role, prompt, cwd, verdict_path, phase_id, round_,
-               agent=None, display=None, spec_branch=None):
+               agent=None, display=None):
         self._pending = (role, Path(verdict_path))
         verdict, session = RunLoop._spawn(
             self, role, prompt, cwd, Path(verdict_path), phase_id, round_,
-            agent=agent, display=display, spec_branch=spec_branch)
+            agent=agent, display=display)
         self.prompts.append((role, prompt))
         self.spawned.append((role, phase_id, round_, verdict["outcome"],
                              None))
@@ -2338,42 +2388,6 @@ def test_every_stop_becomes_one_notable_event_written_by_the_resume():
         assert all(b["reported"] for b in load_state(slice_dir)["bailouts"])
 
 
-def test_a_resumed_spec_repo_phase_enters_the_stop_on_its_branch():
-    """Slice 238 P5: the resume wrote the stop's entry at startup, with the
-    spec tree on its base — and the phase branch's own close-out.json had
-    moved (the reviewer's entry), so `git checkout phase/<n>-P<x>` refused
-    the uncommitted store, and every resume bailed again. The entry is
-    written at the first dispatch, on the branch that dispatch works on."""
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        specs = specs_phase(slice_dir, tmp)
-        r1 = ScriptedLoop(slice_dir, [("code-writer", {
-            "outcome": "blocked", "summary": "no creds for the registry"})],
-            repo_root=repo)
-        assert run_to_exit(r1) == 3
-
-        r2 = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
-                                      *TAIL], resume=True, repo_root=repo)
-        r2.fake_git.branches.add("phase/074-P1")
-        written = []
-        real = r2._report
-
-        def spy(section, headline, *args, **kw):
-            if headline.startswith("Run stopped"):
-                written.append(r2.fake_git.branch_at.get(str(specs), "main"))
-            return real(section, headline, *args, **kw)
-
-        r2._report = spy
-        assert run_to_exit(r2) == 0
-        assert written == ["phase/074-P1"]
-        calls = spec_calls(r2, specs)
-        assert calls.index(("checkout", "phase/074-P1")) \
-            < calls.index(("checkout", "main"))
-        assert "### E1 — Run stopped (blocked) in P1\n" \
-            in entries_in_full(slice_dir)
-        assert load_state(slice_dir)["bailouts"][0]["reported"] is True
-
-
 def test_a_resume_that_dispatches_nothing_reports_the_stop_at_completion():
     """A stop in the doc stage of a project that runs no doc phase, with
     nothing waiting for the wrap-up: the resume completes without a single
@@ -2483,11 +2497,10 @@ def test_review_round2_gets_delta_prompt():
         r = ScriptedLoop(slice_dir, script, repo_root=repo)
         real_git = r.fake_git
 
-        def moving_git(*args, root=None, check=True, phase_branch=None):
+        def moving_git(*args, root=None, check=True):
             if args == ("rev-parse", "HEAD"):
                 return next(heads, "head2")
-            return real_git(*args, root=root, check=check,
-                            phase_branch=phase_branch)
+            return real_git(*args, root=root, check=check)
 
         r.git = moving_git
         assert run_to_exit(r) == 0
@@ -2999,12 +3012,13 @@ def test_a_component_an_earlier_phase_creates_in_a_sibling_is_a_target():
         assert f"--project aac-tools` from {sib}" in writers[1]
 
 
-# -- the specs repo as a Target -----------------------------------------------
+# -- a shared repo as a Target: the phase's worktree --------------------------
 #
-# A slice whose whole deliverable is in the spec repo (the wire contracts)
-# names it as its `Target:` — and the driver's own run record, plus every
-# parallel session's, lives inside that same tree. The `slices/` tree is
-# therefore held out of the driver's git queries there.
+# A repo kc marks shared is one clone every environment of the project
+# mounts, and whatever branch it stands on is every session's. The spec repo
+# is one — and holds the driver's own run record besides. A phase on it works
+# in a linked worktree of its own under the scratch root; the shared checkout
+# never leaves its base, and the phase merges into it there.
 
 def specs_as_target(tmp):
     """make_slice's specs tree, made resolvable as a sibling Target."""
@@ -3018,276 +3032,6 @@ def specs_phase(slice_dir, tmp, title="Contract slimming"):
     return (Path(tmp) / "specs").resolve()
 
 
-def test_specs_target_holds_the_bookkeeping_tree_out_of_the_dirty_check():
-    """The driver writes log.txt, state.json and phases/ into the tree it is
-    about to dirty-check, and a parallel run leaves its own alongside. None
-    of it may bail the run — but dirt outside `slices/` still must."""
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir,
-                         [V["exec_done"], V["review_signoff"], *TAIL],
-                         repo_root=repo)
-        specs = specs_phase(slice_dir, tmp)
-        r.fake_git.dirty_roots[str(specs)] = (
-            "?? slices/074_test_slice/log.txt\n"
-            "?? slices/074_test_slice/state.json\n"
-            "?? slices/074_test_slice/phases/\n"
-            "?? slices/124_parallel_run/log.txt\n")
-        assert run_to_exit(r) == 0
-        specs_status = [c for root, c in r.fake_git.calls
-                        if c[0] == "status" and str(root) == str(specs)]
-        dirty_checks = [c for c in specs_status
-                        if "--untracked-files=no" not in c
-                        and c[-1] != SLICE_STORE]
-        assert dirty_checks, "the phase never dirty-checked its target"
-        assert all(":(exclude)slices" in c for c in dirty_checks)
-        # The queries inside that tree are the merge's look for this
-        # slice's own uncommitted edits: its folder, tracked files only —
-        # so the untracked run records above never reach a commit — and
-        # the report's store, by name.
-        assert all(c[c.index("--") + 1:] in (SLICE_EDITS, (SLICE_STORE,))
-                   for c in specs_status if c not in dirty_checks)
-        assert r.fake_git.commits == 0
-        # the exclusion is scoped to the target that holds the slice folder:
-        # the invoking repo's own checks are untouched
-        assert all("--" not in c for root, c in r.fake_git.calls
-                   if c[0] == "status" and str(root) == str(repo))
-
-
-def test_specs_target_still_bails_on_dirt_outside_the_slices_tree():
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir, [V["exec_done"]], repo_root=repo)
-        specs = specs_phase(slice_dir, tmp)
-        r.fake_git.dirty_roots[str(specs)] = " M api/controller-api.md\n"
-        r._nudge = lambda *a, **kw: None   # the nudge commits nothing
-        assert run_to_exit(r) == 3
-        bail = json.loads((slice_dir / "bailout.json").read_text())
-        assert bail["reason"] == "protocol_failure"
-        assert "uncommitted" in bail["details"]
-
-
-def test_executor_prompts_fence_off_the_run_record():
-    """Every executor round is a fresh session, so the fence rides every
-    executor prompt — and only when the target actually holds the record."""
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        script = [V["exec_done"], V["review_issues"], V["exec_done"],
-                  V["review_signoff"], *TAIL]
-        r = ScriptedLoop(slice_dir, script, repo_root=repo)
-        specs_phase(slice_dir, tmp)
-        assert run_to_exit(r) == 0
-        writer_prompts = [p for role, p in r.prompts if role == "code-writer"]
-        assert len(writer_prompts) == 2
-        for prompt in writer_prompts:
-            assert "git add -A" in prompt and str(slice_dir) in prompt
-
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir,
-                         [V["exec_done"], V["review_signoff"], *TAIL],
-                         repo_root=repo)
-        assert run_to_exit(r) == 0
-        prompt = next(p for role, p in r.prompts if role == "code-writer")
-        assert "git add -A" not in prompt
-
-
-def test_reviewer_and_consult_prompts_fence_off_the_run_record():
-    """Slice 238 P5: the reviewer — not the executor — swept its review and
-    the run record with its close-out entry into one `git add -A`. Every
-    dispatch that commits into the tree holding the record carries the
-    fence: the reviewer's rounds and a consult inside the phase; the
-    completion consult, after the merge, and a code-repo phase's reviewer
-    do not."""
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        script = [
-            V["exec_done"],
-            V["review_issues"], V["exec_done"],        # round 1 + auto fix
-            V["review_issues"],                        # r2 → the consult
-            ("consult", {"outcome": "merge", "summary": "advisory only"}),
-            *TAIL,
-        ]
-        r = ScriptedLoop(slice_dir, script, repo_root=repo)
-        specs_phase(slice_dir, tmp)
-        assert run_to_exit(r) == 0
-        reviews = [p for role, p in r.prompts if role == "code-reviewer"]
-        assert len(reviews) == 2
-        for prompt in reviews:
-            assert "git add -A" in prompt and str(slice_dir) in prompt
-            # beside the report's instructions, before the review's own
-            assert prompt.index("git add -A") \
-                < prompt.index("Write your review to")
-        funding, completion = [p for role, p in r.prompts if role == "consult"]
-        assert "git add -A" in funding and str(slice_dir) in funding
-        assert "git add -A" not in completion
-
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir,
-                         [V["exec_done"], V["review_signoff"], *TAIL],
-                         repo_root=repo)
-        assert run_to_exit(r) == 0
-        prompt = next(p for role, p in r.prompts if role == "code-reviewer")
-        assert "git add -A" not in prompt
-
-
-# The run record a session swept into a commit on the phase branch, as
-# `git log --name-only` and `git ls-tree` name it.
-SWEPT = ("slices/074_test_slice/log.txt",
-         "slices/074_test_slice/phases/P1/x.json")
-
-
-def spec_calls(loop, specs):
-    return [c for root, c in loop.fake_git.calls if str(root) == str(specs)]
-
-
-def record_removal(calls):
-    """The index of the repair's `rm` and of its commit in `calls`."""
-    rm = next(i for i, c in enumerate(calls) if c[0] == "rm")
-    commit = next(i for i, c in enumerate(calls)
-                  if c[0].startswith("--work-tree=") and c[1] == "commit")
-    return rm, commit
-
-
-def test_a_committed_run_record_is_taken_back_out_before_the_merge_checkout():
-    """`git checkout <base>` would unlink the file the open log handle is
-    writing to. The old answer was a bail asking for the branch to be
-    rewritten — and the rewrite orphaned `reviewed_head`, so the next resume
-    bailed `lost_work` (slice 238 P5). The record is untracked again by a
-    commit of its own: index only, the branch's commits untouched."""
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir,
-                         [V["exec_done"], V["review_signoff"], *TAIL],
-                         repo_root=repo)
-        specs = specs_phase(slice_dir, tmp)
-        r.fake_git.branch_files = "\n".join(SWEPT) + "\n"
-        assert run_to_exit(r) == 0
-        calls = spec_calls(r, specs)
-        rm, commit = record_removal(calls)
-        assert calls[rm] == ("rm", "-r", "--cached", "--quiet",
-                             "--ignore-unmatch", "--", *SWEPT)
-        removal = calls[commit]
-        assert removal[2:4] == ("-m", "slice 074: the driver's run record "
-                                      "taken back out of phase/074-P1 (a git "
-                                      "add -A)")
-        assert removal[4:] == ("--", *SWEPT)
-        # On the run's own phase branch, named for the spec repo's
-        # pre-commit hook, which refuses a commit there that does not.
-        assert (str(specs), removal, "phase/074-P1") in [
-            (str(root), c, b) for root, c, b in r.fake_git.phase_branch_calls]
-        # Against an empty work tree of its own, gone again after: the
-        # files on disk commit as absent and are never read.
-        empty = Path(removal[0].partition("=")[2])
-        assert empty != specs and not empty.exists()
-        checkout = calls.index(("checkout", "main"))
-        merge = calls.index(("merge", "--ff-only", "phase/074-P1"))
-        assert rm < commit < checkout < merge
-        assert not [c for c in calls if c[0] in ("rebase", "filter-branch")
-                    or c[:2] == ("reset", "--hard")]
-        assert not load_state(slice_dir).get("bailouts")
-        assert load_state(slice_dir)["phases"]["1"]["status"] == "merged"
-        assert "[P1] the run record was committed onto phase/074-P1" \
-            in (slice_dir / "log.txt").read_text()
-
-    # A repair whose own git fails is the one stop left, and says what was
-    # attempted; the checkout never runs with the record still tracked.
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"]],
-                         repo_root=repo)
-        specs = specs_phase(slice_dir, tmp)
-        r.fake_git.branch_files = "\n".join(SWEPT) + "\n"
-        r.fake_git.fails.add(("rm", "-r", "--cached", "--quiet",
-                              "--ignore-unmatch", "--", *SWEPT))
-        assert run_to_exit(r) == 3
-        bail = json.loads((slice_dir / "bailout.json").read_text())
-        assert bail["reason"] == "protocol_failure"
-        assert "log.txt" in bail["details"]
-        assert "git rm -r --cached" in bail["details"]
-        assert r.fake_git.branch_at[str(specs)] == "phase/074-P1"
-        assert ("checkout", "main") not in spec_calls(r, specs)
-        assert not [c for root, c in r.fake_git.mutations("merge")
-                    if str(root) == str(specs)]
-        assert "the tree stays on phase/074-P1" \
-            in (slice_dir / "log.txt").read_text()
-
-
-def test_a_bail_takes_a_committed_run_record_out_before_checking_the_base_out():
-    """At a bail the tree goes back to its base too — and with the record
-    tracked on the branch, that checkout unlinked the live log (slice 238
-    P5's hand recovery). The bail path repairs first, as the merge does."""
-    blocked = ("code-reviewer", {"outcome": "blocked", "summary": "no creds"})
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir, [V["exec_done"], blocked], repo_root=repo)
-        specs = specs_phase(slice_dir, tmp)
-        r.fake_git.branch_files = "\n".join(SWEPT) + "\n"
-        assert run_to_exit(r) == 3
-        bail = json.loads((slice_dir / "bailout.json").read_text())
-        assert bail["reason"] == "blocked", "the repair never masks the bail"
-        calls = spec_calls(r, specs)
-        rm, commit = record_removal(calls)
-        assert rm < commit < calls.index(("checkout", "main"))
-        assert r.fake_git.branch_at[str(specs)] == "main"
-        log = (slice_dir / "log.txt").read_text()
-        assert "[bail] the run record was committed onto phase/074-P1" in log
-        assert "[bail] specs: left on phase/074-P1, checked main back out" \
-            in log
-
-
-# The pathspec the driver commits a spec-repo phase's slice-folder edits by:
-# this slice's folder, its live run record excluded.
-SLICE_EDITS = ("slices/074_test_slice",
-               ":(exclude)slices/074_test_slice/log.txt",
-               ":(exclude)slices/074_test_slice/state.json",
-               ":(exclude)slices/074_test_slice/phases")
-SLICE_STORE = "slices/074_test_slice/close-out.json"
-
-
-def leaves_close_out_unstaged(loop):
-    """A script step's effect in a spec-repo phase: the session appended to
-    this slice's close-out.md and committed nothing — beside the untracked
-    run record, a stray `git add` of its state, and a parallel slice's own
-    uncommitted edit."""
-    loop.fake_git.dirty_roots[str(loop.spec_root)] = (
-        " M slices/074_test_slice/close-out.md\n"
-        "?? slices/074_test_slice/log.txt\n"
-        "A  slices/074_test_slice/state.json\n"
-        " M slices/124_parallel_run/plan.md\n")
-
-
-def leaves_a_new_store_uncommitted(loop):
-    """A script step's effect in a spec-repo phase: the session's append
-    created the store of a report that predates it, and committed nothing."""
-    loop.fake_git.dirty_roots[str(loop.spec_root)] = (
-        "?? slices/074_test_slice/close-out.json\n"
-        " M slices/074_test_slice/close-out.md\n"
-        "?? slices/074_test_slice/log.txt\n")
-
-
-def test_a_spec_repo_phase_commits_a_new_store_by_name_with_its_edits():
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir,
-                         [V["exec_done"],
-                          (*V["review_signoff"], leaves_a_new_store_uncommitted),
-                          *TAIL],
-                         repo_root=repo)
-        specs = specs_phase(slice_dir, tmp)
-        gated_specs(tmp)
-        assert run_to_exit(r) == 0
-        calls = [c for root, c in r.fake_git.calls if str(root) == str(specs)]
-        commit = next(c for c in calls if c[0] == "commit")
-        assert commit[3:] == ("--", *SLICE_EDITS, SLICE_STORE)
-        assert ("add", "--", SLICE_STORE) in calls
-        assert calls.index(("add", "--", SLICE_STORE)) < calls.index(commit)
-        # the rest of the untracked record stays out
-        assert not [c for c in calls if c[0] == "add"
-                    and any("log.txt" in a and "exclude" not in a for a in c)]
-
-
 def gated_specs(tmp):
     """The spec tree with a manifest of its own, so its phase has a gate."""
     (Path(tmp) / "specs" / ".kubecoder").mkdir(exist_ok=True)
@@ -3295,105 +3039,122 @@ def gated_specs(tmp):
         "projects: {}\n")
 
 
-def test_a_spec_repo_phase_commits_its_own_slice_edits_before_the_merge():
-    """Slice 231 P1: the reviewer appended a close-out entry and committed
-    nothing. The dirty check holds `slices/` out, so the merge's `git
-    checkout main` was the first to notice — it refused, and the shared tree
-    stayed on the phase branch. The driver commits this slice's own tracked
-    edits onto the branch first, and nothing of anyone else's."""
+def specs_worktree(loop, pid="1"):
+    """Where the fake loop puts P<pid>'s worktree of the specs repo."""
+    return loop.worktree_root / "specs" / f"074-P{pid}"
+
+
+def where_clause(work, root, base="main"):
+    return (f" in the worktree {work} — a linked checkout of {root}; "
+            f"{root}'s own tree stays on {base}, and the plan is edited "
+            f"there, never under {work}/slices")
+
+
+def test_a_shared_repos_phase_is_dispatched_gated_and_checked_in_its_worktree():
+    """Every working-tree read and write of the phase goes to the worktree —
+    the executor's and the reviewer's pointer, the gate, the dirty checks —
+    and the shared checkout is never checked out. No dispatch carries the
+    old run-record fence: the record is untracked, so never in a worktree."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir,
-                         [V["exec_done"],
-                          (*V["review_signoff"], leaves_close_out_unstaged),
-                          *TAIL],
-                         repo_root=repo)
-        specs = specs_phase(slice_dir, tmp)
         gated_specs(tmp)
-        assert run_to_exit(r) == 0
-        calls = [c for root, c in r.fake_git.calls if str(root) == str(specs)]
-        commit = next(c for c in calls if c[0] == "commit")
-        assert commit[1:3] == ("-m", "slice 074: slice-folder edits left "
-                                     "uncommitted on phase/074-P1")
-        assert commit[3:] == ("--", *SLICE_EDITS)
-        assert ("add", "-u", "--", *SLICE_EDITS) in calls
-        # named for the spec repo's pre-commit hook
-        assert (str(specs), commit, "phase/074-P1") in [
-            (str(root), c, b) for root, c, b in r.fake_git.phase_branch_calls]
-        # on the phase branch, and before the checkout that leaves it
-        assert calls.index(("checkout", "-b", "phase/074-P1", "main")) \
-            < calls.index(commit) < calls.index(("checkout", "main"))
-        assert r.fake_git.branch_at[str(specs)] == "main"
-        left = r.fake_git.dirty_roots[str(specs)]
-        assert "slices/124_parallel_run/plan.md" in left, "a parallel slice's"
-        assert "slices/074_test_slice/log.txt" in left, "untracked: never swept"
-        assert "slices/074_test_slice/state.json" in left, "staged, still not"
-        assert "close-out.md" not in left
-        ps = load_state(slice_dir)["phases"]["1"]
-        assert ps["status"] == "merged"
-        assert ps["landed"]["head"] == "slicecommit1"
-        # The commit moved the head past the gate's green, but only inside
-        # the bookkeeping tree: the green still speaks for it.
-        assert r.gate_calls == [("1", True)]
-        assert ("diff", "--name-only", "abc123", "slicecommit1", "--", ".",
-                ":(exclude)slices") in calls
-        assert "committed this slice's uncommitted slice-folder edits onto " \
-               "phase/074-P1" in (slice_dir / "log.txt").read_text()
+        specs = specs_phase(slice_dir, tmp)
+        script = [V["exec_done"], V["review_issues"], V["exec_done"],
+                  V["review_signoff"], *TAIL]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        work = specs_worktree(r)
+        with patched(run_loop, shared_repo_dirs=lambda: {specs}):
+            assert run_to_exit(r) == 0
+        where = where_clause(work, specs)
+        for role in ("code-writer", "code-reviewer"):
+            prompts = [p for got, p in r.prompts if got == role]
+            assert len(prompts) == 2, role
+            for prompt in prompts:
+                assert where in prompt, role
+                assert "git add -A" not in prompt
+        writer = next(p for role, p in r.prompts if role == "code-writer")
+        assert f"(`kc project test` from {work})" in writer
+        assert r.gate_cwds and set(r.gate_cwds) == {work}
+        adds = [c for root, c in r.fake_git.calls
+                if c[:2] == ("worktree", "add")]
+        assert adds == [("worktree", "add", "--lock", "--reason",
+                         r.fake_git.lock_reasons[0], str(work), "-b",
+                         "phase/074-P1", "main")]
+        assert r.fake_git.lock_reasons[0].startswith("slice 074 P1: ")
+        assert f"pid {os.getpid()}" in r.fake_git.lock_reasons[0]
+        dirty_checks = [root for root, c in r.fake_git.calls
+                        if c[:2] == ("status", "--porcelain")
+                        and str(root) == str(work)]
+        assert dirty_checks, "the phase never dirty-checked its worktree"
+        assert not [c for root, c in r.fake_git.calls
+                    if str(root) == str(specs) and c[0] == "checkout"]
+        merges = [c for root, c in r.fake_git.calls
+                  if str(root) == str(specs) and c[0] == "merge"]
+        assert merges == [("merge", "-m", "slice 074: merge phase/074-P1 (P1)",
+                           "phase/074-P1")]
+        assert not work.exists() and not r.fake_git.worktrees
+        state = load_state(slice_dir)
+        assert "worktree" not in state["phases"]["1"]
+        assert state["phases"]["1"]["landed"]["root"] == str(specs)
+        assert state["shared_repos"] == [str(specs)]
 
-    # A head that differs from the green outside that tree is re-gated.
+
+def test_the_spec_repo_works_in_a_worktree_shared_or_not():
+    """The tree holding the slice folder is never branched under the run,
+    which writes its record there and asserts it on its base before every
+    dispatch — kc's flag or no."""
     with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp, config=rc(test=False, doc=False))
-        r = ScriptedLoop(slice_dir,
-                         [V["exec_done"],
-                          (*V["review_signoff"], leaves_close_out_unstaged),
-                          V["consult_complete"]],
+        slice_dir, repo = make_slice(tmp)
+        specs = specs_phase(slice_dir, tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert load_state(slice_dir)["shared_repos"] == []
+        assert r.fake_git.lock_reasons
+        writer = next(p for role, p in r.prompts if role == "code-writer")
+        assert where_clause(specs_worktree(r), specs) in writer
+
+
+def test_an_unshared_targets_merge_is_the_fast_forward_it_always_was():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert not [c for _, c in r.fake_git.calls if c[0] == "worktree"]
+        at_repo = [c for root, c in r.fake_git.calls
+                   if str(root) == str(repo)
+                   and c[0] in ("checkout", "merge", "branch")
+                   and c[:2] != ("branch", "--list")]
+        merge = at_repo.index(("merge", "--ff-only", "phase/074-P1"))
+        assert at_repo[merge - 1:merge + 2] == [
+            ("checkout", "main"), ("merge", "--ff-only", "phase/074-P1"),
+            ("branch", "-D", "phase/074-P1")]
+        writer = next(p for role, p in r.prompts if role == "code-writer")
+        assert " in the worktree " not in writer
+
+
+def test_a_worktree_left_dirty_at_the_merge_bails():
+    def leaves_work_behind(loop):
+        loop.fake_git.dirty_roots[str(specs_worktree(loop))] = " M api.md\n"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        specs = specs_phase(slice_dir, tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"],
+                                     (*V["review_signoff"],
+                                      leaves_work_behind)],
                          repo_root=repo)
-        specs_phase(slice_dir, tmp)
-        gated_specs(tmp)
-        r.fake_git.diff_files = "api/controller-api.md"
-        assert run_to_exit(r) == 0
-        assert r.gate_calls == [("1", True), ("1", True)]
-
-
-def test_a_bail_commits_its_own_slice_edits_before_checking_the_base_out():
-    """The same refusal at a bail stranded the tree on the phase branch while
-    the log said "spec tree released" — and every other slice's preflight
-    found it there."""
-    blocked = ("code-reviewer", {"outcome": "blocked", "summary": "no creds"},
-               leaves_close_out_unstaged)
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir, [V["exec_done"], blocked], repo_root=repo)
-        specs = specs_phase(slice_dir, tmp)
-        assert run_to_exit(r) == 3
-        calls = [c for root, c in r.fake_git.calls if str(root) == str(specs)]
-        commit = next(c for c in calls if c[0] == "commit")
-        assert commit[3:] == ("--", *SLICE_EDITS)
-        assert calls.index(commit) < calls.index(("checkout", "main"))
-        assert r.fake_git.branch_at[str(specs)] == "main"
-        assert "slices/124_parallel_run/plan.md" \
-            in r.fake_git.dirty_roots[str(specs)]
-        log = (slice_dir / "log.txt").read_text()
-        assert "[bail] specs: left on phase/074-P1, checked main back out" \
-            in log
-        assert "spec tree released\n" in log
-
-    # A checkout that still fails says where the tree stayed — in its own
-    # line and in the release line — instead of reading as restored.
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir, [V["exec_done"], blocked], repo_root=repo)
-        specs = specs_phase(slice_dir, tmp)
-        r.fake_git.fails.add(("checkout", "main"))
-        assert run_to_exit(r) == 3
-        assert r.fake_git.branch_at[str(specs)] == "phase/074-P1"
-        log = (slice_dir / "log.txt").read_text()
-        assert ("could not check main back out (git checkout main failed) — "
-                "the tree stays on phase/074-P1; check main out there by "
-                "hand") in log
-        assert ("spec tree released — the tree is still on phase/074-P1, "
-                "not main") in log
-        assert "checked main back out" not in log
+        with patched(run_loop, shared_repo_dirs=lambda: {specs}):
+            assert run_to_exit(r) == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "protocol_failure"
+        assert "worktree dirty at merge" in bail["details"]
+        assert str(specs_worktree(r)) in bail["details"]
+        # the bail leaves the worktree for the resume, and the shared
+        # checkout was never off its base to restore
+        assert specs_worktree(r).exists()
+        assert "worktree" in load_state(slice_dir)["phases"]["1"]
 
 
 def resume_state(target, stage="review"):
@@ -3411,10 +3172,10 @@ def resume_state(target, stage="review"):
     }
 
 
-def test_resume_reset_is_scoped_away_from_the_bookkeeping_tree():
-    """A resume drops the dead round's uncommitted work — but `reset --hard`
-    in the specs repo would take an agent's uncommitted plan.md edit with
-    it. Elsewhere the reset is unchanged."""
+def test_a_resume_resets_a_shared_repos_phase_in_its_worktree():
+    """The dead round's uncommitted work goes with a plain `reset --hard` —
+    in the worktree, where nothing but the phase writes. A code repo's
+    resume resets its own tree, as ever."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         specs_phase(slice_dir, tmp)
@@ -3423,10 +3184,18 @@ def test_resume_reset_is_scoped_away_from_the_bookkeeping_tree():
         r = ScriptedLoop(slice_dir, [V["review_signoff"], *TAIL],
                          resume=True, repo_root=repo)
         r.fake_git.branches.add("phase/074-P1")
+        work = specs_worktree(r)
+        work.mkdir(parents=True)
+        (work / ".git").write_text("gitdir: a fake's\n")
+        r.fake_git.branch_at[str(work)] = "phase/074-P1"
         assert run_to_exit(r) == 0
-        assert not r.fake_git.mutations("reset")
-        restores = [c for _, c in r.fake_git.mutations("restore")]
-        assert restores and ":(exclude)slices" in restores[0]
+        assert [(str(root), c) for root, c in r.fake_git.mutations("reset")] \
+            == [(str(work), ("reset", "--hard", "HEAD"))]
+        assert not r.fake_git.mutations("restore")
+        assert not [c for _, c in r.fake_git.calls
+                    if c[:2] == ("worktree", "add")], "reused, not re-added"
+        assert f"resuming at stage review in {work}" \
+            in (slice_dir / "log.txt").read_text()
 
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
@@ -3441,13 +3210,500 @@ def test_resume_reset_is_scoped_away_from_the_bookkeeping_tree():
         assert not r.fake_git.mutations("restore")
 
 
+# -- which repos are shared -----------------------------------------------------
+
+def test_shared_repo_dirs_reads_kcs_repos_and_fails_with_the_cause():
+    good = subprocess.CompletedProcess([], 0, stdout=json.dumps({
+        "sections": [], "repos": [
+            {"url": "u1", "dir": "/work/App", "shared": False, "ref": None},
+            {"url": "u2", "dir": "/work/AppSpecs", "shared": True,
+             "ref": None},
+            {"url": "u3", "dir": "/work/Ref", "shared": True},
+            {"url": "u4", "shared": True},
+            "not a repo"]}), stderr="")
+    with patched(run_loop.subprocess, run=lambda *a, **kw: good):
+        assert REAL_SHARED_REPO_DIRS() == {Path("/work/AppSpecs").resolve(),
+                                           Path("/work/Ref").resolve()}
+    for answer, why in [
+            (subprocess.CompletedProcess([], 1, stdout="", stderr="no pod"),
+             "failed (rc=1): no pod"),
+            (subprocess.CompletedProcess([], 0, stdout='{"sections": []}',
+                                         stderr=""),
+             "carries no `repos` list"),
+            (subprocess.CompletedProcess([], 0, stdout="{torn", stderr=""),
+             "invalid JSON")]:
+        with patched(run_loop.subprocess, run=lambda *a, _r=answer, **kw: _r):
+            try:
+                REAL_SHARED_REPO_DIRS()
+            except ValueError as e:
+                assert "kc env describe --output=json" in str(e)
+                assert why in str(e), str(e)
+            else:
+                raise AssertionError(f"{why} must be a ValueError")
+
+
+def test_a_shared_primary_repo_is_refused_before_anything_runs():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        with patched(run_loop, shared_repo_dirs=lambda: {repo.resolve()}):
+            assert run_to_exit(r) == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "protocol_failure"
+        assert "a shared primary repo is not supported" in bail["details"]
+        assert not r.spawned and not r.fake_git.specs_ops()
+
+
+def test_kc_not_saying_which_repos_are_shared_stops_the_run():
+    """Without the answer a phase could branch a shared tree in place."""
+    def broken():
+        raise ValueError("`kc env describe --output=json` failed (rc=1): "
+                         "no pod")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        with patched(run_loop, shared_repo_dirs=broken):
+            assert run_to_exit(r) == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "protocol_failure"
+        assert "which repos of this environment are shared" in bail["details"]
+        assert "`kc env describe --output=json` failed" in bail["details"]
+        assert not r.spawned
+
+
+def test_a_resume_reads_the_shared_repos_the_run_recorded():
+    """A phase that began in a worktree finishes in one, whatever kc says
+    now — and kc is not asked."""
+    def never():
+        raise AssertionError("a resume with a record must not ask kc")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        other = Path(tmp) / "elsewhere"
+        state = resume_state(PROJECT, stage="executor")
+        state["shared_repos"] = [str(other)]
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        with patched(run_loop, shared_repo_dirs=never):
+            assert run_to_exit(r) == 0
+        assert r._shared_dirs() == {other}
+        assert load_state(slice_dir)["shared_repos"] == [str(other)]
+
+
+# -- a shared repo's phase over real git ---------------------------------------
+#
+# The worktree and the merge are git's own behaviour — a locked registration,
+# a refused fast-forward, a conflict — so these run it for real: sessions,
+# gates and kc stay scripted, every git call is git's.
+
+@contextlib.contextmanager
+def plain_git():
+    """Real git, isolated from the machine's config and with an identity to
+    commit as — set in os.environ, since the driver's git and the tests'
+    run as subprocesses that inherit it."""
+    env = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "t@example.invalid",
+           "GIT_COMMITTER_NAME": "Test",
+           "GIT_COMMITTER_EMAIL": "t@example.invalid"}
+    saved = {k: os.environ.get(k) for k in env}
+    os.environ.update(env)
+    try:
+        yield
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def sh(cwd, *args):
+    """git in `cwd`, checked; its stdout."""
+    return subprocess.run(["git", *args], cwd=cwd, check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+class RealGitLoop(ScriptedLoop):
+    """ScriptedLoop over real git. Nothing is fetched: the repos have no
+    origin."""
+
+    def __init__(self, slice_dir, script, **kw):
+        super().__init__(slice_dir, script, **kw)
+        self.git = types.MethodType(RunLoop.git, self)
+        self.git_ok = types.MethodType(RunLoop.git_ok, self)
+
+    def _fetch_origin(self, root):
+        pass
+
+    def _git_attempt(self, *args, root):
+        return RunLoop._git_attempt(self, *args, root=root)
+
+
+def real_shared_slice(tmp):
+    """A slice whose one phase targets the specs repo, over real git: the
+    specs and the code repo each a repo with everything committed on main,
+    the specs carrying a manifest (so the phase has a gate) and api.md, ten
+    lines the phase and the other writers of these tests edit. The project
+    runs neither a test nor a doc phase and never pushes, so a run ends at
+    its completion consult."""
+    slice_dir, repo = make_slice(tmp, phases=[("1", "Contract", "../specs")],
+                                 config=rc(test=False, doc=False, push=False))
+    specs = (Path(tmp) / "specs").resolve()
+    shutil.rmtree(specs / ".git")
+    gated_specs(tmp)
+    (specs / "api.md").write_text("".join(f"line {n}\n" for n in range(1, 11)))
+    for where in (specs, repo):
+        sh(where, "init", "-q", "-b", "main")
+        sh(where, "add", "-A")
+        sh(where, "commit", "-qm", "init")
+    return slice_dir, repo, specs
+
+
+def edit_line(path, n, text):
+    lines = path.read_text().splitlines(keepends=True)
+    lines[n - 1] = text + "\n"
+    path.write_text("".join(lines))
+
+
+def phase_work(*also):
+    """A script step's effect: the writer changes api.md's first line in its
+    worktree and commits it; then each of `also`, called with the loop."""
+    def effect(loop):
+        work = Path(loop.state["phases"]["1"]["worktree"])
+        edit_line(work / "api.md", 1, "line 1, the phase's")
+        sh(work, "commit", "-qam", "P1: the contract")
+        for step in also:
+            step(loop)
+    return effect
+
+
+def base_commit(n, text):
+    """Another session's commit of api.md's line `n` on the shared base."""
+    def step(loop):
+        edit_line(loop.spec_root / "api.md", n, text)
+        sh(loop.spec_root, "commit", "-qm", "another session's", "--",
+           "api.md")
+    return step
+
+
+def base_edit(n, text):
+    """Another writer's edit of api.md's line `n`, left uncommitted in the
+    shared checkout."""
+    def step(loop):
+        edit_line(loop.spec_root / "api.md", n, text)
+    return step
+
+
+def shared_run(slice_dir, repo, specs, *also, **kw):
+    """One phase on the shared specs repo, its writer doing `phase_work`."""
+    r = RealGitLoop(slice_dir, [(*V["exec_done"], phase_work(*also)),
+                                V["review_signoff"], V["consult_complete"]],
+                    repo_root=repo, **kw)
+    with patched(run_loop, shared_repo_dirs=lambda: {specs}):
+        code = run_to_exit(r)
+    return r, code
+
+
+def subjects(specs):
+    return sh(specs, "log", "--format=%s", "main").splitlines()
+
+
+def test_a_shared_repos_phase_fast_forwards_its_base_and_leaves_nothing():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, specs = real_shared_slice(tmp)
+        seen = {}
+
+        def looks(loop):
+            seen["branch"] = sh(specs, "rev-parse", "--abbrev-ref", "HEAD")
+            seen["listed"] = sh(specs, "worktree", "list", "--porcelain")
+
+        r, code = shared_run(slice_dir, repo, specs, looks)
+        assert code == 0
+        work = r.worktree_root / "specs" / "074-P1"
+        # while the phase worked, the shared checkout stayed on main and
+        # the worktree was registered locked, on the phase's branch
+        assert seen["branch"] == "main"
+        assert f"worktree {work}\n" in seen["listed"]
+        assert "branch refs/heads/phase/074-P1" in seen["listed"]
+        assert "locked slice 074 P1: " in seen["listed"]
+        assert r.gate_cwds == [work]
+        # a fast-forward: no merge commit, the phase's commit on main
+        assert not sh(specs, "log", "--merges", "--format=%H", "main")
+        assert subjects(specs)[:2] == ["slice 074: stamp P1 done",
+                                       "P1: the contract"]
+        assert (specs / "api.md").read_text().startswith(
+            "line 1, the phase's\n")
+        assert "merged into main in specs (fast-forward)" \
+            in (slice_dir / "log.txt").read_text()
+        # nothing left behind: the worktree, its registration, the branch
+        assert not work.exists()
+        assert sh(specs, "worktree", "list", "--porcelain").count(
+            "worktree ") == 1
+        assert not sh(specs, "branch", "--list", "phase/074-P1")
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["status"] == "merged" and "worktree" not in ps
+        assert ps["landed"]["head"] == sh(specs, "rev-parse", "main~1")
+
+
+def test_a_base_that_moved_under_the_phase_gets_a_merge_commit():
+    """The shared base moves with every session's commit; the branch is
+    merged, never rebased — the reviewed commits keep their shas."""
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, specs = real_shared_slice(tmp)
+        r, code = shared_run(slice_dir, repo, specs,
+                             base_commit(10, "line 10, another session's"))
+        assert code == 0
+        merges = sh(specs, "log", "--merges", "--format=%s", "main")
+        assert merges == "slice 074: merge phase/074-P1 (P1)"
+        text = (specs / "api.md").read_text()
+        assert "line 1, the phase's" in text
+        assert "line 10, another session's" in text
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["landed"]["head"] == ps["reviewed_head"]
+        assert sh(specs, "merge-base", "--is-ancestor", ps["reviewed_head"],
+                  "main") == ""
+        assert "merged into main in specs (a merge commit — main had moved)" \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_another_writers_edit_in_the_merges_way_is_swept_and_the_merge_goes_on():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, specs = real_shared_slice(tmp)
+        r, code = shared_run(slice_dir, repo, specs,
+                             base_edit(10, "line 10, left uncommitted"))
+        assert code == 0
+        assert "slice 074: edits left uncommitted in specs, swept at P1's " \
+               "merge" in subjects(specs)
+        text = (specs / "api.md").read_text()
+        assert "line 1, the phase's" in text
+        assert "line 10, left uncommitted" in text
+        assert not sh(specs, "status", "--porcelain", "--", "api.md")
+        assert "swept into main: api.md" in (slice_dir / "log.txt").read_text()
+
+
+def test_a_conflict_bails_for_a_hand_merge_and_the_resume_stamps_it():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, specs = real_shared_slice(tmp)
+        r, code = shared_run(slice_dir, repo, specs,
+                             base_commit(1, "line 1, another session's"))
+        assert code == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "blocked" and bail["phase"] == "1"
+        assert "Merge phase/074-P1 into main in" in bail["details"]
+        assert "CONFLICT (content): Merge conflict in api.md" in bail["details"]
+        # aborted: the shared checkout as it stood, the worktree kept
+        assert not (specs / ".git" / "MERGE_HEAD").exists()
+        assert not sh(specs, "status", "--porcelain", "--", "api.md")
+        work = r.worktree_root / "specs" / "074-P1"
+        assert work.exists()
+        assert load_state(slice_dir)["phases"]["1"]["stage"] == "merging"
+
+        # the operator merges by hand
+        subprocess.run(["git", "merge", "-q", "phase/074-P1"], cwd=specs,
+                       capture_output=True)
+        (specs / "api.md").write_text(
+            "line 1, as the operator settled it\n"
+            + "".join(f"line {n}\n" for n in range(2, 11)))
+        sh(specs, "add", "api.md")
+        sh(specs, "commit", "-qm", "merge P1 by hand")
+
+        r2 = RealGitLoop(slice_dir, [V["consult_complete"]], resume=True,
+                         repo_root=repo)
+        with patched(run_loop, shared_repo_dirs=lambda: {specs}):
+            assert run_to_exit(r2) == 0
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["status"] == "merged" and "worktree" not in ps
+        assert not work.exists()
+        assert not sh(specs, "branch", "--list", "phase/074-P1")
+        assert subjects(specs)[0] == "slice 074: stamp P1 done"
+        assert "already merged into main" in (slice_dir / "log.txt").read_text()
+        assert load_state(slice_dir)["bailouts"][0]["reported"] is True
+
+
+def test_the_slice_tree_is_taken_back_out_of_the_branch_and_logged():
+    """A writer that greps for plan.md finds the worktree's copy too. What
+    the branch changed under slices/ goes back to the fork in one commit,
+    and the gate runs again on the head that moved."""
+    def misplaces(loop):
+        work = Path(loop.state["phases"]["1"]["worktree"])
+        plan = work / "slices" / "074_test_slice" / "plan.md"
+        plan.write_text(plan.read_text() + "\n**Done (P1).** misplaced\n")
+        stray = work / "slices" / "075_other" / "notes.md"
+        stray.parent.mkdir(parents=True)
+        stray.write_text("not this phase's\n")
+        sh(work, "add", "-A")
+        sh(work, "commit", "-qm", "P1: the done-record, in the wrong copy")
+
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, specs = real_shared_slice(tmp)
+        r, code = shared_run(slice_dir, repo, specs, misplaces)
+        assert code == 0
+        assert ("slice 074: slices/** taken back out of phase/074-P1 — the "
+                "slice tree is never a phase's deliverable") in subjects(specs)
+        shipped = sh(specs, "show", "main:slices/074_test_slice/plan.md")
+        assert "misplaced" not in shipped
+        assert not sh(specs, "ls-tree", "-r", "--name-only", "main", "--",
+                      "slices/075_other")
+        assert "line 1, the phase's" in (specs / "api.md").read_text()
+        log = (slice_dir / "log.txt").read_text()
+        assert "changed the slice tree — taken back out" in log
+        assert "slices/074_test_slice/plan.md" in log
+        assert "slices/075_other/notes.md" in log
+        assert len(r.gate_cwds) == 2, "the moved head is gated again"
+
+
+def test_a_resume_reuses_the_worktree_or_adds_it_again_over_a_stale_registration():
+    """The registration lives in the shared git dir, locked: another
+    environment sees it pointing at nothing, and so does this one after a
+    Reset wipes the scratch root. Either way the resume unlocks and prunes
+    what holds the branch and adds the worktree again from the branch —
+    the committed work is all there."""
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, specs = real_shared_slice(tmp)
+        r = RealGitLoop(slice_dir, [], repo_root=repo)
+        branch = "phase/074-P1"
+        ps = {"status": "pending", "stage": None}
+
+        def ensure(existing=branch):
+            with patched(run_loop, WORKTREE_ROOT=r.worktree_root):
+                return r._ensure_worktree("1", ps, specs, "main", branch,
+                                          existing)
+
+        work = ensure(existing="")
+        assert work == r.worktree_root / "specs" / "074-P1"
+        assert ps["worktree"] == str(work)
+        listed = sh(specs, "worktree", "list", "--porcelain")
+        assert f"branch refs/heads/{branch}" in listed
+        assert "locked slice 074 P1: " in listed
+        edit_line(work / "api.md", 1, "committed")
+        sh(work, "commit", "-qam", "the phase's work")
+        edit_line(work / "api.md", 2, "left uncommitted")
+        ps.update(status="in_progress", stage="review")
+
+        # reused, reset to its last commit...
+        assert ensure() == work
+        text = (work / "api.md").read_text()
+        assert "committed" in text and "left uncommitted" not in text
+        # ...but as it stands under a reattach
+        edit_line(work / "api.md", 2, "left uncommitted")
+        r._reattach = {"phase": "1", "session": "sess-1"}
+        assert ensure() == work
+        assert "left uncommitted" in (work / "api.md").read_text()
+        r._reattach = None
+
+        # a Reset wiped the scratch root: the locked registration stays
+        shutil.rmtree(r.worktree_root)
+        assert ensure() == work
+        assert "committed" in (work / "api.md").read_text()
+
+        # another environment's registration holds the branch, at a path
+        # that does not exist here
+        sh(specs, "worktree", "unlock", str(work))
+        sh(specs, "worktree", "remove", "--force", str(work))
+        theirs = Path(tmp) / "env-b" / "074-P1"
+        sh(specs, "worktree", "add", "-q", "--lock", "--reason",
+           "slice 074 P1: env-b host-b pid 1", str(theirs), branch)
+        shutil.move(str(theirs), str(Path(tmp) / "gone"))
+        assert ensure() == work
+        listed = sh(specs, "worktree", "list", "--porcelain")
+        assert str(theirs) not in listed
+        assert f"worktree {work}\n" in listed
+        assert "committed" in (work / "api.md").read_text()
+
+
+def test_the_shared_checkout_itself_on_the_branch_is_never_touched():
+    """A hand checkout, or a run of a plugin that still branched the tree in
+    place: never removed or moved — a stop."""
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, specs = real_shared_slice(tmp)
+        r = RealGitLoop(slice_dir, [], repo_root=repo)
+        sh(specs, "checkout", "-qb", "phase/074-P1")
+        ps = {"status": "in_progress", "stage": "review"}
+        with patched(run_loop, WORKTREE_ROOT=r.worktree_root):
+            try:
+                r._ensure_worktree("1", ps, specs, "main", "phase/074-P1",
+                                   "phase/074-P1")
+            except Bailout as e:
+                assert e.reason == "blocked"
+                assert "checked out in place" in e.details
+            else:
+                raise AssertionError("the shared checkout's branch was taken")
+        assert specs.exists()
+        assert sh(specs, "rev-parse", "--abbrev-ref", "HEAD") == "phase/074-P1"
+
+
+def test_what_stands_in_a_merges_way_is_read_off_either_refusal():
+    tracked = ("Updating c4a5e87..6cfb80c\n"
+               "error: Your local changes to the following files would be "
+               "overwritten by merge:\n\tapi.md\n\tdocs/b c.md\n"
+               "Please commit your changes or stash them before you merge.\n"
+               "Aborting")
+    untracked = ("error: The following untracked working tree files would be "
+                 "overwritten by merge:\n\tnew.md\n"
+                 "Please move or remove them before you merge.\nAborting")
+    staged = ("error: Your local changes to the following files would be "
+              "overwritten by merge:\n  staged.md\n"
+              "Merge with strategy ort failed.")
+    assert run_loop.overwritten_paths(tracked) == ["api.md", "docs/b c.md"]
+    assert run_loop.overwritten_paths(untracked) == ["new.md"]
+    assert run_loop.overwritten_paths(staged) == ["staged.md"]
+    assert run_loop.overwritten_paths(
+        "CONFLICT (content): Merge conflict in api.md\n"
+        "Automatic merge failed; fix conflicts and then commit the "
+        "result.") == []
+
+
+def test_a_merge_waits_out_another_gits_index_lock_and_gives_up_at_the_cap():
+    lock = (128, "error: Unable to create '/specs/.git/index.lock': File "
+                 "exists.\nfatal: Unable to write index.")
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        specs = specs_phase(slice_dir, tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        r.fake_git.attempts = [lock, lock]
+        with patched(run_loop, shared_repo_dirs=lambda: {specs}):
+            assert run_to_exit(r) == 0
+        assert r.sleeps == [run_loop.INDEX_LOCK_WAIT] * 2
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        specs = specs_phase(slice_dir, tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"]],
+                         repo_root=repo)
+        r.fake_git.attempts = [lock] * run_loop.MERGE_ATTEMPTS
+        with patched(run_loop, shared_repo_dirs=lambda: {specs}):
+            assert run_to_exit(r) == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "protocol_failure"
+        assert f"in {run_loop.MERGE_ATTEMPTS} attempts" in bail["details"]
+        assert "index.lock" in bail["details"]
+
+
 # -- the shared spec tree -----------------------------------------------------
 #
 # That one working tree is shared with every parallel session — other run
-# loops, plan loops, the operator's own. Three incidents: a bail leaving it on
-# this run's phase branch (where the next session's commits landed), a run
-# adopting another run's abandoned phase branch as its base, and a doc phase
-# rewriting close-out.md on whatever branch it found.
+# loops, plan loops, the operator's own. The run never moves it; what is left
+# here is the run leaving the trees it does branch as it found them, never
+# adopting another run's abandoned phase branch as its base, and refusing to
+# commit or dispatch while the spec tree is off its base.
 
 def test_a_bail_checks_every_touched_repo_back_out_onto_its_base():
     """The bail is decided after the session ended and every resume path
@@ -3521,20 +3777,24 @@ def test_another_runs_phase_branch_is_never_adopted_as_a_base():
 
 
 def test_a_spec_repo_off_its_base_bails_before_the_next_dispatch():
-    """An agent dispatched now would commit its close-out entries — and a
-    spec-repo phase its whole deliverable — onto someone else's branch."""
-    def moves_the_spec_tree(loop):
+    """An agent dispatched now would commit its plan edits and close-out
+    entries onto someone else's branch. The run never moves that tree, so the
+    stop names what did: a hand checkout, or an older plugin's run."""
+    def moves_the_specs_checkout(loop):
         loop.fake_git.branch_at[str(loop.spec_root)] = "phase/191-P3"
 
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         r = ScriptedLoop(slice_dir,
-                         [(*V["exec_done"], moves_the_spec_tree)],
+                         [(*V["exec_done"], moves_the_specs_checkout)],
                          repo_root=repo)
         assert run_to_exit(r) == 3
         bail = json.loads((slice_dir / "bailout.json").read_text())
-        assert bail["reason"] == "blocked" and bail["phase"] == "1"
+        assert bail["reason"] == "blocked"
         assert "is on phase/191-P3, not main" in bail["details"]
+        assert "a hand checkout, or a run of a plugin before" \
+            in bail["details"]
+        assert "check out main there and resume" in bail["details"]
         # the reviewer was never dispatched onto that branch
         assert [role for role, *_ in r.spawned] == ["code-writer"]
         # and the bail did not yank that tree back either: the branch is
@@ -3542,261 +3802,6 @@ def test_a_spec_repo_off_its_base_bails_before_the_next_dispatch():
         assert r.fake_git.branch_at[str(r.spec_root)] == "phase/191-P3"
         assert "which this run did not check out" \
             in (slice_dir / "log.txt").read_text()
-
-
-def test_a_spec_repo_phase_dispatches_on_its_own_phase_branch():
-    """The one dispatch that expects the spec tree off its base: the phase
-    whose Target IS that repo. Its stamp, after the merge, expects the base
-    again."""
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir,
-                         [V["exec_done"], V["review_signoff"], *TAIL],
-                         repo_root=repo)
-        specs = specs_phase(slice_dir, tmp)
-        seen = []
-        real = r._assert_spec_on_base
-
-        def spy(expected=None, phase_id=None):
-            seen.append((expected, r.fake_git.branch_at.get(str(specs))))
-            return real(expected, phase_id)
-
-        r._assert_spec_on_base = spy
-        assert run_to_exit(r) == 0
-        assert ("phase/074-P1", "phase/074-P1") in seen
-        assert (None, "main") in seen          # the stamp, after the merge
-        # exactly two dispatches expect that branch: the writer and the
-        # reviewer of the phase that owns it
-        assert len([e for e, _ in seen if e == "phase/074-P1"]) == 2
-
-
-def test_a_spec_repo_phases_funding_consult_expects_its_phase_branch():
-    """AIWF-6: the review-funding consult sits inside the phase, with the
-    spec tree on that phase's branch — and asked for the base, so every such
-    phase whose review came back `issues` twice was deadlocked. The
-    completion consult, after the merge, still expects the base."""
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        script = [
-            V["exec_done"],
-            V["review_issues"], V["exec_done"],        # round 1 + auto fix
-            V["review_issues"],                        # r2 → the consult
-            ("consult", {"outcome": "merge", "summary": "advisory only"}),
-            *TAIL,
-        ]
-        r = ScriptedLoop(slice_dir, script, repo_root=repo)
-        specs = specs_phase(slice_dir, tmp)
-        seen = []
-        real = r._assert_spec_on_base
-
-        def spy(expected=None, phase_id=None):
-            seen.append((expected, phase_id,
-                         r.fake_git.branch_at.get(str(specs))))
-            return real(expected, phase_id)
-
-        r._assert_spec_on_base = spy
-        assert run_to_exit(r) == 0
-        assert not r.script
-        consults = [s for s in r.spawned if s[0] == "consult"]
-        assert [s[1] for s in consults] == ["1", None]
-        # writer ×2, reviewer ×2, and the funding consult
-        assert seen.count(("phase/074-P1", "1", "phase/074-P1")) == 5
-        assert (None, None, "main") in seen    # the completion consult
-
-
-# AIWF-50: the spec repo's pre-commit hook (spec-tree-guard.sh) refuses a
-# commit on a `phase/*` branch unless DEV_PHASE_BRANCH names that branch — so
-# the driver names it on every session it dispatches onto a branch of its own
-# in the spec tree, and on its own commits there.
-SPAWN_ENV = run_loop.SPAWN_ENV
-P1_ENV = {**SPAWN_ENV, run_loop.PHASE_BRANCH_ENV: "phase/074-P1"}
-
-
-def test_a_spec_repo_phases_sessions_name_its_branch_for_the_guard():
-    """The writer and the reviewer of the phase whose Target IS the spec repo
-    work on its branch there and carry the name, on top of the spawn env;
-    every dispatch after the merge — and every one of a code repo's phase —
-    carries the spawn env alone."""
-    script = [V["exec_done"], V["review_signoff"], *TAIL]
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = SpawningLoop(slice_dir, script, repo_root=repo)
-        specs_phase(slice_dir, tmp)
-        with patched(run_loop, run_kc_session=r.run_kc_session):
-            assert run_to_exit(r) == 0
-        assert r.session_envs == [
-            ("code-writer", P1_ENV), ("code-reviewer", P1_ENV),
-            ("consult", SPAWN_ENV), ("test-agent", SPAWN_ENV),
-            ("doc-writer", SPAWN_ENV)]
-    assert run_loop.PHASE_BRANCH_ENV not in SPAWN_ENV, "never mutated"
-
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = SpawningLoop(slice_dir, script, repo_root=repo)
-        with patched(run_loop, run_kc_session=r.run_kc_session):
-            assert run_to_exit(r) == 0
-        assert [env for _, env in r.session_envs] == [SPAWN_ENV] * 5
-
-
-def test_a_nudge_names_the_spec_trees_branch_only_when_it_is_this_runs():
-    """A nudge resumes a session of this run, and the spec tree is where
-    this run put it: the commit nudge asks the spec repo phase's writer to
-    commit on that phase's branch, so it names the branch; with the tree on
-    its base it names nothing. Reading the branch never raises out of a
-    nudge."""
-    script = [(*V["exec_done"], dirties()),
-              ("code-writer", "committed the leftovers", commits),
-              V["review_signoff"], *TAIL]
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = SpawningLoop(slice_dir, script, repo_root=repo)
-        specs_phase(slice_dir, tmp)
-        with patched(run_loop, run_kc_session=r.run_kc_session):
-            assert run_to_exit(r) == 0
-        assert r.session_resumes[1][:2] == ("code-writer", "sess-1"), (
-            "the second session is the commit nudge")
-        assert r.session_envs[1] == ("code-writer", P1_ENV)
-
-        g = r.fake_git
-        g.branch_at[str(r.spec_root)] = "phase/074-docs"
-        assert r._own_spec_branch() == "phase/074-docs"
-        g.branch_at[str(r.spec_root)] = "phase/191-P3"
-        assert r._own_spec_branch() is None, "another run's branch"
-        g.fails.add(("rev-parse", "--abbrev-ref", "HEAD"))
-        assert r._own_spec_branch() is None
-
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = SpawningLoop(slice_dir, script, repo_root=repo)
-        with patched(run_loop, run_kc_session=r.run_kc_session):
-            assert run_to_exit(r) == 0
-        assert r.session_resumes[1][:2] == ("code-writer", "sess-1")
-        assert r.session_envs[1] == ("code-writer", SPAWN_ENV)
-
-
-def test_the_wrap_up_on_a_spec_repo_branch_names_it_for_the_guard():
-    """The wrap-up's own dispatch path: where its branch is cut in the spec
-    repo, the session commits the store there and carries the name."""
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir, [], repo_root=repo)
-        r.state = {"bases": {str(r.spec_root): "main"}, "phases": {},
-                   "history": [], "in_flight": None}
-        verdict = slice_dir / "wrap_up_result.json"
-        with patched(run_loop, run_kc_session=r._wrap_up_session):
-            r.fake_git.branch_at[str(r.spec_root)] = "phase/074-wrap-up"
-            assert r._dispatch_wrap_up("p", verdict, "phase/074-wrap-up",
-                                       {}) is None
-            r.fake_git.branch_at[str(r.spec_root)] = "main"
-            assert r._dispatch_wrap_up("p", verdict, None, {}) is None
-        assert [s["env"] for s in r.wrap_up_sessions] == [
-            {**SPAWN_ENV, run_loop.PHASE_BRANCH_ENV: "phase/074-wrap-up"},
-            SPAWN_ENV]
-
-
-def test_the_report_committed_on_a_branch_of_this_runs_names_it():
-    """The report's commit lands where the tree is expected: on the doc
-    branch it names that branch for the hook, on the base nothing."""
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir, [], repo_root=repo)
-        r.state = {"bases": {str(r.spec_root): "main"}, "phases": {}}
-        store = run_loop.store_path(slice_dir)
-        store.write_text("{}\n")
-        r.report_path.write_text("# report\n")
-        r.fake_git.branch_at[str(r.spec_root)] = "phase/074-docs"
-        r._commit_report("slice 074: on the doc branch", "phase/074-docs")
-        r.fake_git.branch_at[str(r.spec_root)] = "main"
-        store.write_text('{"entries": []}\n')
-        r._commit_report("slice 074: on the base", None)
-        assert r.fake_git.spec_commits == ["slice 074: on the doc branch",
-                                           "slice 074: on the base"]
-        named = [(c[c.index("-m") + 1], b)
-                 for _, c, b in r.fake_git.phase_branch_calls
-                 if "commit" in c]
-        assert named == [("slice 074: on the doc branch", "phase/074-docs")]
-
-
-def test_the_drivers_own_commit_on_its_phase_branch_passes_the_guard():
-    """Over real git, with the hook preflight installs: the driver's commit
-    on a phase branch of the spec tree goes through when it names the
-    branch, and is refused — a protocol failure — when it does not."""
-    if shutil.which("git") is None:
-        return
-    env = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
-           "GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "t@example.invalid",
-           "GIT_COMMITTER_NAME": "Test",
-           "GIT_COMMITTER_EMAIL": "t@example.invalid"}
-    saved = {k: os.environ.get(k) for k in (*env, run_loop.PHASE_BRANCH_ENV)}
-    os.environ.update(env)
-    os.environ.pop(run_loop.PHASE_BRANCH_ENV, None)
-    try:
-        with tempfile.TemporaryDirectory() as tmp:
-            specs = Path(tmp) / "specs"
-            loop = types.SimpleNamespace(repo_root=specs)
-
-            def git(*args, **kw):
-                return RunLoop.git(loop, *args, root=specs, **kw)
-
-            subprocess.run(["git", "init", "-q", "-b", "main", str(specs)],
-                           check=True)
-            shutil.copy(run_loop.TOOLS_DIR / "spec-tree-guard.sh",
-                        specs / ".git" / "hooks" / "pre-commit")
-            (specs / "plan.md").write_text("one\n")
-            git("add", "plan.md")
-            git("commit", "-qm", "on the base")
-            git("checkout", "-qb", "phase/074-P1")
-            (specs / "plan.md").write_text("two\n")
-            git("add", "plan.md")
-            try:
-                git("commit", "-qm", "unnamed")
-                raise AssertionError("the guard let an unnamed commit through")
-            except Bailout as e:
-                assert e.reason == "protocol_failure"
-                assert "spec-tree guard: commit refused" in e.details
-            git("commit", "-qm", "named", phase_branch="phase/074-P1")
-            assert git("log", "-1", "--format=%s") == "named"
-    finally:
-        for k, v in saved.items():
-            if v is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = v
-
-
-def test_a_spec_tree_on_this_runs_own_branch_is_not_blamed_on_a_parallel_run():
-    """The bail used to say a parallel session left the tree there — on the
-    run's own phase branch, a misdiagnosis that sends the operator hunting
-    for a session that does not exist."""
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        specs = (Path(tmp) / "specs").resolve()
-        r = ScriptedLoop(slice_dir, [], repo_root=repo)
-        r.state = {"bases": {str(specs): "main"}, "phases": {}}
-
-        def details(branch, expected=None, phase_id="1"):
-            r.fake_git.branch_at[str(specs)] = branch
-            try:
-                r._assert_spec_on_base(expected, phase_id)
-            except Bailout as exc:
-                assert exc.reason == "blocked" and exc.phase == phase_id
-                return exc.details
-            raise AssertionError(f"{branch} passed the branch assertion")
-
-        own = details("phase/074-P1")
-        assert "this run's own branch for P1, where this dispatch expected " \
-               "main" in own
-        assert "driver defect" in own and "resuming will hit it again" in own
-        assert "parallel session left it" not in own
-        earlier = details("phase/074-P2")
-        assert "a branch of this run's own, not main" in earlier
-        assert "an earlier stop of this run left it there" in earlier
-        assert "check out main there and resume" in earlier
-        assert "a branch of this run's own" in details("phase/074-P1",
-                                                        phase_id=None)
-        other = details("phase/191-P3")
-        assert "a parallel session left it there" in other
-        assert "check out main there and resume" in other
 
 
 def test_the_report_refuses_a_spec_repo_off_the_recorded_base():
@@ -3827,263 +3832,11 @@ def test_the_stamp_refuses_a_spec_repo_off_its_base():
         try:
             r._stamp_done("1")
         except Bailout as exc:
-            assert exc.reason == "blocked" and exc.phase == "1"
+            assert exc.reason == "blocked"
             assert "check out main there and resume" in exc.details
         else:
             raise AssertionError("the stamp must not commit off the base")
         assert not r.fake_git.specs_ops()
-
-
-# -- the spec tree's lease ----------------------------------------------------
-#
-# The assertions above are after the fact: they catch a tree already moved.
-# The lease is what stops it moving — readers (every session, every driver
-# commit) against the one writer, the phase whose Target IS that repo.
-
-def spec_lock(tmp, log=None, sleep=None, announce=None):
-    """A lock over a tmp repo's git dir — real flock over real files. Two of
-    them stand in for two parallel drivers."""
-    root = Path(tmp)
-    (root / ".git").mkdir(exist_ok=True)
-    return run_loop.SpecTreeLock(root, log=log, sleep=sleep,
-                                 announce=announce)
-
-
-def probes_free(path, mode=fcntl.LOCK_EX):
-    """Whether a fresh fd can take `mode` on `path` right now. A second fd is
-    a separate flock owner even in this process, so the probe sees the loop's
-    own holds."""
-    fd = os.open(path, os.O_RDONLY | os.O_CREAT, 0o644)
-    try:
-        fcntl.flock(fd, mode | fcntl.LOCK_NB)
-        return True
-    except OSError:
-        return False
-    finally:
-        os.close(fd)
-
-
-def test_the_lease_finds_a_repos_git_dir_without_running_git():
-    """A linked worktree's `.git` is a file pointing elsewhere. A directory
-    that is no repo at all leases nothing — and nothing here creates one."""
-    with tempfile.TemporaryDirectory() as tmp:
-        worktree = Path(tmp) / "wt"
-        worktree.mkdir()
-        elsewhere = Path(tmp) / "gitdir"
-        elsewhere.mkdir()
-        (worktree / ".git").write_text(f"gitdir: {elsewhere}\n")
-        assert run_loop.git_dir_for(worktree) == elsewhere
-        (worktree / ".git").write_text("gitdir: ../gitdir\n")
-        assert run_loop.git_dir_for(worktree).resolve() == elsewhere
-        plain = Path(tmp) / "nothing"
-        plain.mkdir()
-        assert run_loop.git_dir_for(plain) is None
-        assert not run_loop.SpecTreeLock(plain).configured
-        assert not (plain / ".git").exists()
-
-
-def test_two_shared_holds_over_the_spec_tree_coexist():
-    """Parallel sessions are the normal case — readers never queue."""
-    with tempfile.TemporaryDirectory() as tmp:
-        first, second = spec_lock(tmp), spec_lock(tmp)
-        with patched(run_loop, SPEC_TREE_MAX_WAIT=0):   # a wait would bail
-            with first.shared("one session"), second.shared("another"):
-                assert not probes_free(first.lease_path)
-        assert probes_free(first.lease_path)
-
-
-def test_the_exclusive_hold_waits_for_the_readers_to_drain():
-    with tempfile.TemporaryDirectory() as tmp:
-        logs = []
-        reader = spec_lock(tmp)
-        out = contextlib.ExitStack()
-        out.enter_context(reader.shared("a session"))
-        writer = spec_lock(tmp, log=logs.append,
-                           sleep=lambda _seconds: out.close())
-        writer.acquire_exclusive("slice 074 P1 (phase/074-P1)")
-        assert any("spec tree held — waiting" in line for line in logs)
-        assert "slice 074 P1 (phase/074-P1)" in writer.holder_note()
-        writer.release_exclusive()
-        assert probes_free(writer.lease_path)
-        assert not writer.holder_path.exists()
-
-
-def test_a_shared_hold_waits_while_the_tree_is_held_exclusively():
-    with tempfile.TemporaryDirectory() as tmp:
-        logs = []
-        writer = spec_lock(tmp)
-        writer.acquire_exclusive("slice 223 P1 (phase/223-P1)")
-        reader = spec_lock(
-            tmp, log=logs.append,
-            sleep=lambda _seconds: writer.release_exclusive())
-        with reader.shared("a session"):
-            assert any("slice 223 P1 (phase/223-P1)" in line for line in logs)
-        assert any(line.startswith("spec tree free after") for line in logs)
-
-
-def test_a_waiting_writer_holds_new_readers_off():
-    """Writer preference. Without it a spec-repo phase waits out its cap
-    behind an unbroken stream of parallel sessions."""
-    with tempfile.TemporaryDirectory() as tmp:
-        reader = spec_lock(tmp)
-        out = contextlib.ExitStack()
-        out.enter_context(reader.shared("a session"))
-        probed = []
-
-        def probe_then_let_go(_seconds):
-            probed.append(probes_free(writer.intent_path, fcntl.LOCK_SH))
-            out.close()
-
-        writer = spec_lock(tmp, sleep=probe_then_let_go)
-        writer.acquire_exclusive("slice 074 P1 (phase/074-P1)")
-        writer.release_exclusive()
-        assert probed == [False], "a new reader walked past a waiting writer"
-
-
-def test_the_shared_hold_is_reentrant_and_a_noop_under_the_exclusive_one():
-    """A second fd on one file is a separate flock owner, so a driver that
-    took the tree exclusively would deadlock against itself."""
-    with tempfile.TemporaryDirectory() as tmp:
-        lock = spec_lock(tmp)
-        with patched(run_loop, SPEC_TREE_MAX_WAIT=0):   # a wait would bail
-            with lock.shared("outer"):
-                with lock.shared("inner"):
-                    assert not probes_free(lock.lease_path)
-                assert not probes_free(lock.lease_path), "the outer holds"
-            assert probes_free(lock.lease_path)
-            lock.acquire_exclusive("slice 074 P1 (phase/074-P1)")
-            with lock.shared("a session of its own"):
-                assert lock.held_exclusive
-        lock.release_exclusive()
-        assert probes_free(lock.lease_path)
-
-
-def test_a_lease_wait_past_the_cap_bails_with_the_holder_note():
-    with tempfile.TemporaryDirectory() as tmp:
-        holder = spec_lock(tmp)
-        holder.acquire_exclusive("slice 223 P1 (phase/223-P1)")
-        waiter = spec_lock(tmp)
-        with patched(run_loop, SPEC_TREE_MAX_WAIT=0):
-            try:
-                with waiter.shared("a session"):
-                    raise AssertionError("the lease was not held")
-            except Bailout as exc:
-                assert exc.reason == "spec_tree_timeout"
-                assert "slice 223 P1 (phase/223-P1)" in exc.details
-        holder.release_exclusive()
-
-
-def test_a_spec_repo_phase_holds_the_spec_tree_exclusively_to_the_stamp():
-    """Two runs started seconds apart, and the second's executor committed
-    its done-record onto the first's phase branch. While a phase branches the
-    shared tree, nothing else commits there."""
-    seen = []
-
-    def sees_the_hold(loop):
-        seen.append((loop.spec_lock.holder_note(),
-                     loop.fake_git.branch_at.get(str(loop.spec_root))))
-
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir,
-                         [(*V["exec_done"], sees_the_hold),
-                          V["review_signoff"], *TAIL],
-                         repo_root=repo)
-        specs_phase(slice_dir, tmp)
-        assert run_to_exit(r) == 0
-        (note, branch), = seen
-        assert "slice 074 P1 (phase/074-P1)" in note
-        assert branch == "phase/074-P1", "held across the phase's own branch"
-        assert not r.spec_lock.holder_path.exists()
-        log = (slice_dir / "log.txt").read_text()
-        assert log.count(
-            "spec tree ACQUIRED (slice 074 P1 (phase/074-P1))") == 1
-        assert log.count("spec tree released") == 1
-
-
-def test_a_dispatch_waits_while_a_parallel_spec_phase_holds_the_tree():
-    """A parallel run's phase is waited out, not bailed on — and at the cap
-    the bail names the holder instead of hanging the run."""
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        parallel = run_loop.SpecTreeLock((Path(tmp) / "specs").resolve())
-        parallel.acquire_exclusive("slice 223 P1 (phase/223-P1)")
-        r = ScriptedLoop(slice_dir,
-                         [V["exec_done"], V["review_signoff"], *TAIL],
-                         repo_root=repo)
-        r._sleep = lambda _seconds: parallel.release_exclusive()
-        assert run_to_exit(r) == 0
-        log = (slice_dir / "log.txt").read_text()
-        assert "spec tree held — waiting" in log
-        assert "slice 223 P1 (phase/223-P1)" in log
-        assert "spec tree free after" in log
-
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        parallel = run_loop.SpecTreeLock((Path(tmp) / "specs").resolve())
-        parallel.acquire_exclusive("slice 223 P1 (phase/223-P1)")
-        r = ScriptedLoop(slice_dir, [V["exec_done"]], repo_root=repo)
-        with patched(run_loop, SPEC_TREE_MAX_WAIT=0):
-            assert run_to_exit(r) == 3
-        bail = json.loads((slice_dir / "bailout.json").read_text())
-        assert bail["reason"] == "spec_tree_timeout"
-        assert "slice 223 P1 (phase/223-P1)" in bail["details"]
-        assert not r.spawned
-        parallel.release_exclusive()
-
-
-def test_the_shared_hold_spans_the_session():
-    """Not the dispatch call — the whole turn: the agent commits into the
-    spec tree while it works, so a spec phase must not take the tree in the
-    middle of one."""
-    probes = []
-
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(
-            slice_dir,
-            [(*V["exec_done"],
-              lambda loop: probes.append(probes_free(loop.spec_lock
-                                                     .lease_path))),
-             V["review_signoff"], *TAIL],
-            repo_root=repo)
-        assert run_to_exit(r) == 0
-        assert probes == [False]
-        assert probes_free(r.spec_lock.lease_path)
-
-
-def test_the_spec_tree_is_released_on_bail_after_the_base_is_restored():
-    """The tree goes back to its base while this run still owns it, so the
-    session queued behind the lease never sees this run's phase branch."""
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir,
-                         [("code-writer", {"outcome": "blocked",
-                                           "summary": "cannot proceed"})],
-                         repo_root=repo)
-        specs = specs_phase(slice_dir, tmp)
-        assert run_to_exit(r) == 3
-        assert not r.spec_lock.holder_path.exists()
-        assert r.fake_git.branch_at[str(specs)] == "main"
-        log = (slice_dir / "log.txt").read_text()
-        assert log.index("checked main back out") \
-            < log.index("spec tree released")
-
-
-def test_a_resumed_spec_repo_phase_reacquires_the_tree():
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        specs_phase(slice_dir, tmp)
-        (slice_dir / "state.json").write_text(
-            json.dumps(resume_state("../specs")))
-        r = ScriptedLoop(slice_dir, [V["review_signoff"], *TAIL],
-                         resume=True, repo_root=repo)
-        r.fake_git.branches.add("phase/074-P1")
-        assert run_to_exit(r) == 0
-        log = (slice_dir / "log.txt").read_text()
-        assert log.count("spec tree ACQUIRED") == 1
-        assert log.count("spec tree released") == 1
-        assert not r.spec_lock.holder_path.exists()
 
 
 # -- the branch under the record ----------------------------------------------
@@ -5616,14 +5369,12 @@ def refuse_in(loop, where, argv):
     it in every repo, and the primary's landing runs the same rebase."""
     inner = loop.git
 
-    def git(*args, root=None, check=True, phase_branch=None):
+    def git(*args, root=None, check=True):
         if str(root) != str(where) or args != argv:
-            return inner(*args, root=root, check=check,
-                         phase_branch=phase_branch)
+            return inner(*args, root=root, check=check)
         loop.fake_git.fails.add(argv)
         try:
-            return inner(*args, root=root, check=check,
-                         phase_branch=phase_branch)
+            return inner(*args, root=root, check=check)
         finally:
             loop.fake_git.fails.discard(argv)
 
@@ -5817,7 +5568,7 @@ def test_the_wrap_up_is_skipped_when_nothing_waits():
         assert r.doc_gate_calls == [True]
         assert r.fake_git.refs[str(repo)]["main"] == "d0"
         assert state["doc_phase"]["stage"] == "done"
-        assert not r.fake_git.spec_commits
+        assert not r.fake_git.specs_commits
         assert "wrap-up" not in load_report(slice_dir).split("\n## ")[0]
 
 
@@ -5881,7 +5632,7 @@ def test_a_green_wrap_up_lands_with_the_doc_phase():
             str(repo): {"branch": WRAP, "base": "d0", "head": "w1"},
             str(sib): {"branch": WRAP, "base": "s0", "head": "sw1"}}
         assert wu["store"] == "spec1"
-        assert g.spec_commits[0] == \
+        assert g.specs_commits[0] == \
             "slice 074: close-out report before the wrap-up"
         rows = [h for h in state["history"]
                 if h["role"] in ("wrap-up", "wrap-up-gate")]
@@ -5895,7 +5646,7 @@ def test_a_green_wrap_up_lands_with_the_doc_phase():
         report = load_report(slice_dir)
         assert "### ~~B1 — a page reads wrong~~" in report
         assert "slice 074: close-out report after the wrap-up" \
-            in g.spec_commits
+            in g.specs_commits
         assert "doc phase done · wrap-up landed" in " ".join(report.split())
         assert state["doc_phase"]["stage"] == "done"
 
@@ -6191,7 +5942,7 @@ def test_a_resume_into_the_wrap_up_starts_it_again_from_a_clean_slate():
         r2 = ScriptedLoop(slice_dir, [], resume=True, repo_root=repo,
                           wrap_ups=[(WRAP_DONE, wrap_up_fixes(repo, sib))])
         for name in ("refs", "parents", "branch_at", "dirty_roots",
-                     "spec_head", "spec_committed", "spec_snapshots"):
+                     "spec_head", "specs_committed", "spec_snapshots"):
             setattr(r2.fake_git, name, getattr(r.fake_git, name))
         r2.fake_git.parents.pop("w1")
         r2.fake_git.parents.pop("sw1")
@@ -6208,7 +5959,7 @@ def test_a_resume_into_the_wrap_up_starts_it_again_from_a_clean_slate():
         # dispatch is told so
         assert "B1 · label" in r2.wrap_up_sessions[0]["prompt"]
         assert any("back to where it stood before the wrap-up (spec1)" in m
-                   for m in g.spec_commits)
+                   for m in g.specs_commits)
         assert load_state(slice_dir)["wrap_up"]["outcome"] == "landed"
         assert g.refs[str(repo)]["main"] == "w1"
 

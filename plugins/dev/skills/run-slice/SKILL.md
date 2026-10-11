@@ -160,14 +160,13 @@ agents or fixing code, stop; that work belongs in a phase the loop executes.
   `run_loop.py stop <slice_dir>` interrupts the run as Ctrl-C would — `state.json` current, the
   in-flight session left for `--resume` to reattach.
 - **Shared spec tree:** commits from other sessions appearing in `<spec-repo>` for your slice
-  usually mean a parallel session accidentally swept your files into its commit. Stage by name
-  (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`);
-  build on the latest state. A bail leaves every repo the run touched back on its base branch
-  (a tree still on a `phase/…` branch afterwards either had uncommitted work on it or is
-  another run's branch — the log says which), and the loop refuses to dispatch or commit while
-  the spec repo is off its base: a `blocked` naming another slice's `phase/…` branch is that
-  run's leftover, not yours — check the base branch out there and resume, and never commit onto
-  another run's branch.
+  usually mean a parallel session swept your files into its commit — accepted, not a defect
+  (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`); build on the latest state. No run moves the shared
+  tree: a phase targeting it works in a worktree under `/work/scratch/worktrees/`, which a bail
+  leaves for the resume. A `blocked` naming the spec repo off its base is a hand checkout —
+  check the base branch out there and resume. A bail leaves every code repo the run touched back
+  on its base branch (a tree still on a `phase/…` branch afterwards either had uncommitted work
+  on it or is another run's branch — the log says which).
 - **Treat the suite as green before every slice** — preflight does not run it. A failure during
   the run is the slice's regression — never accept "flaky" or "pre-existing" from anyone.
 - **Promotion stays operator-gated; pushing does not.** The loop's devlock hold pre-authorizes

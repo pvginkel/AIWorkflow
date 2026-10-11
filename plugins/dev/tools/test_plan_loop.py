@@ -9,11 +9,9 @@ Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_plan_loop.py` or via pytest.
 """
 
 import contextlib
-import fcntl
 import importlib.util
 import io
 import json
-import os
 import re
 import sys
 import tempfile
@@ -26,8 +24,9 @@ plan_loop = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(plan_loop)
 PlanLoop = plan_loop.PlanLoop
 VERDICTS = plan_loop.VERDICTS
-# The spec tree's lease is the run loop's; its globals are read there.
-run_loop = sys.modules[plan_loop.SpecTreeLock.__module__]
+# The run loop's module, as the plan loop imported it: the seams below and
+# the guards' globals are read there.
+run_loop = plan_loop.run_loop
 
 # spawn_flags (the run loop's, shared) copies the promoted MCP servers out of
 # the user-level ~/.claude.json. That seam is stubbed with a home that does
@@ -90,17 +89,11 @@ class ScriptedLoop(PlanLoop):
         self.prompts = []   # (role, prompt)
         self.git_calls = []  # every git invocation, as its argv tuple
         self.branch = "main"  # what the spec repo is checked out on
-        # What `rev-parse --show-toplevel` answers. The default names no real
-        # directory, so the spec tree's lease is unconfigured — a test that
-        # wants the real lock passes `spec_tree(tmp)`.
+        # What `rev-parse --show-toplevel` answers.
         self.spec_top = spec_top
-        self.sleeps = []
 
     def _assert_agents(self):
         pass
-
-    def _sleep(self, seconds):
-        self.sleeps.append(seconds)
 
     def git(self, *args):
         self.git_calls.append(args)
@@ -117,32 +110,24 @@ class ScriptedLoop(PlanLoop):
     def _spawn(self, role, prompt, verdict_path, round_):
         # The real _spawn's preamble, kept in step: the spec tree is shared,
         # and a dispatch onto someone else's branch commits the plan there.
-        with self._spec_tree(f"[{role} r{round_}]"):
-            self._assert_on_base()
-            self._assert_current()
-            assert self.script, f"unexpected extra spawn: {role} r{round_}"
-            step = self.script.pop(0)
-            want_role, verdict = step[0], step[1]
-            assert role == want_role, (
-                f"expected spawn of {want_role}, loop asked for {role} "
-                f"r{round_}"
-            )
-            assert verdict["outcome"] in VERDICTS[role]
-            Path(verdict_path).write_text(json.dumps(verdict))
-            self.prompts.append((role, prompt))
-            self.spawned.append((role, round_, verdict["outcome"]))
-            self._record(role, round_, verdict["outcome"],
-                         verdict.get("summary", ""), "sess-test", 1)
-            if len(step) > 2:
-                step[2](self)
+        self._assert_on_base()
+        self._assert_current()
+        assert self.script, f"unexpected extra spawn: {role} r{round_}"
+        step = self.script.pop(0)
+        want_role, verdict = step[0], step[1]
+        assert role == want_role, (
+            f"expected spawn of {want_role}, loop asked for {role} "
+            f"r{round_}"
+        )
+        assert verdict["outcome"] in VERDICTS[role]
+        Path(verdict_path).write_text(json.dumps(verdict))
+        self.prompts.append((role, prompt))
+        self.spawned.append((role, round_, verdict["outcome"]))
+        self._record(role, round_, verdict["outcome"],
+                     verdict.get("summary", ""), "sess-test", 1)
+        if len(step) > 2:
+            step[2](self)
         return verdict
-
-
-def spec_tree(tmp):
-    """A real spec-repo root for the lease to live in: the slice's parent,
-    with a git dir beside it."""
-    (Path(tmp) / ".git").mkdir(exist_ok=True)
-    return str(Path(tmp))
 
 
 def make_slice(tmp, phases=False):
@@ -984,8 +969,8 @@ def test_the_seed_commits_on_the_base_branch_only():
 # -- the shared spec tree ----------------------------------------------------
 #
 # The loop runs IN the spec repo, one working tree shared with every parallel
-# session — other plan loops, a run loop's spec-repo phase, the operator's
-# own. Everything this loop writes (plan.md, verification.json, close-out.md)
+# session — other plan loops, run loops, the operator's own. Everything this
+# loop writes (plan.md, verification.json, close-out.md)
 # lands on whatever branch that tree is on.
 
 def test_the_loop_records_the_branch_it_started_on():
@@ -1028,101 +1013,6 @@ def test_a_tree_moved_off_the_base_bails_before_the_next_dispatch():
         assert bail["reason"] == "blocked"
         assert "is on phase/191-P3, not main" in bail["details"]
         assert [s[0] for s in loop.spawned] == ["plan-writer"]
-
-
-# -- the spec tree's lease ---------------------------------------------------
-#
-# The assertions above catch a tree already moved. The lease is what stops it
-# moving: this loop is a reader, a run loop's spec-repo phase the one writer.
-
-def probes_free(path, mode=fcntl.LOCK_EX):
-    """Whether a fresh fd can take `mode` on `path` right now. A second fd is
-    a separate flock owner even in this process, so the probe sees the loop's
-    own holds."""
-    fd = os.open(path, os.O_RDONLY | os.O_CREAT, 0o644)
-    try:
-        fcntl.flock(fd, mode | fcntl.LOCK_NB)
-        return True
-    except OSError:
-        return False
-    finally:
-        os.close(fd)
-
-
-def test_the_plan_loop_holds_the_spec_tree_while_a_session_runs():
-    """Every dispatch commits the plan into the shared tree, so a run loop's
-    spec-repo phase must not get that tree mid-session."""
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir = make_slice(tmp)
-        top = spec_tree(tmp)
-        probes = []
-        loop = PlanLoop(slice_dir)
-        loop._assert_agents = lambda: None
-        loop.git = lambda *args: (
-            "" if args[0] == "status"
-            else top if args == ("rev-parse", "--show-toplevel")
-            else "main" if args == ("rev-parse", "--abbrev-ref", "HEAD")
-            else "sha123")
-
-        def fake_session(prompt, cwd, timeout, agent=None, model=None,
-                         effort=None, resume_session=None, extra_env=None,
-                         flags=None, progress=None, on_session=None):
-            probes.append(probes_free(loop.spec_lock.lease_path))
-            if agent == "plan-writer":
-                write_phases(loop)
-                (slice_dir / "plan_writer_result_r1.json").write_text(
-                    '{"outcome": "done", "summary": "ok"}')
-            else:
-                (slice_dir / "plan_review_result_r1.json").write_text(
-                    '{"outcome": "go", "summary": "ok"}')
-            return 0, type("R", (), {"session_id": "sess-1",
-                                     "result_text": "",
-                                     "is_error": False})()
-
-        original = plan_loop.run_kc_session
-        plan_loop.run_kc_session = fake_session
-        try:
-            assert run_to_exit(loop) == 0
-        finally:
-            plan_loop.run_kc_session = original
-        assert probes == [False, False], "writer and reviewer, both held"
-        assert probes_free(loop.spec_lock.lease_path)
-
-
-def test_a_dispatch_waits_while_a_run_loops_spec_phase_holds_the_tree():
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir = make_slice(tmp)
-        parallel = plan_loop.SpecTreeLock(Path(spec_tree(tmp)))
-        parallel.acquire_exclusive("slice 223 P1 (phase/223-P1)")
-        loop = ScriptedLoop(slice_dir, [W_DONE, R_GO],
-                            spec_top=spec_tree(tmp))
-        loop._sleep = lambda _seconds: parallel.release_exclusive()
-        assert run_to_exit(loop) == 0
-        log = (slice_dir / "plan_log.txt").read_text()
-        assert "spec tree held — waiting" in log
-        assert "slice 223 P1 (phase/223-P1)" in log
-
-
-def test_a_lease_wait_past_the_cap_bails_blocked_with_the_holder():
-    """The run loop's `spec_tree_timeout` in this loop's vocabulary."""
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir = make_slice(tmp)
-        parallel = plan_loop.SpecTreeLock(Path(spec_tree(tmp)))
-        parallel.acquire_exclusive("slice 223 P1 (phase/223-P1)")
-        loop = ScriptedLoop(slice_dir, [W_DONE, R_GO],
-                            spec_top=spec_tree(tmp))
-        saved = run_loop.SPEC_TREE_MAX_WAIT
-        run_loop.SPEC_TREE_MAX_WAIT = 0
-        try:
-            assert run_to_exit(loop) == 3
-        finally:
-            run_loop.SPEC_TREE_MAX_WAIT = saved
-            parallel.release_exclusive()
-        bail = json.loads((slice_dir / "plan_bailout.json").read_text())
-        assert bail["reason"] == "blocked"
-        assert "slice 223 P1 (phase/223-P1)" in bail["details"]
-        assert not loop.spawned
-
 
 
 # -- the installed-plugin and verification-key guards -----------------------

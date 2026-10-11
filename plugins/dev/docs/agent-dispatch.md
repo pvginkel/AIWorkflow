@@ -22,16 +22,15 @@ validation.
   assert their definitions exist before dispatching anything.
 - **cwd** is the invoking repo's root for every dispatch — including phases targeting a sibling
   repo: the definitions resolve from the plugin regardless of cwd, and the dispatch prompt carries
-  the sibling's path; the *driver's* git and gate operations root at the `Target:` repo.
+  the sibling's path; the *driver's* git and gate operations root at the `Target:` repo — at its
+  worktree, for a shared target ([run-loop.md](run-loop.md) § The plan is the queue).
 - **`-e FORCE_PROMPT_CACHING_5M=1`** on every `create-headless`: ephemeral sessions must not pay
   the 1-hour cache-write premium. **`-e CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`** and
   **`-e CLAUDE_CODE_DISABLE_BUNDLED_SKILLS=1`** beside it: a dispatched role never reads or writes
   the operator's auto-memory and never invokes a bundled skill, so neither listing rides in its
   prefix (≈ 3 k tokens of every turn). Project knowledge reaches a role through the project's
   `CLAUDE.md` and procedure docs, never through the operator's memory. The set lives once, as
-  `SPAWN_ENV` in `run_loop.py`. A dispatch or nudge onto a branch of the run's own in the spec
-  tree adds **`-e DEV_PHASE_BRANCH=<branch>`**, which the spec repo's pre-commit hook requires
-  of a commit there ([run-loop.md](run-loop.md) § The plan is the queue).
+  `SPAWN_ENV` in `run_loop.py`.
 - **`--disable-slash-commands`** on every `create-headless`, and **`--strict-mcp-config`** on every
   one but the test-agent's — `kc` passes both through to the spawned claude, finishing the trim the
   env vars start. The first drops both plugins' skill listings from the prefix (a headless role

@@ -4,6 +4,52 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-11 — A phase targeting a shared repo works in a worktree; the lease, the guard and spec_commit.py are gone (v0.9.93)
+
+A phase whose `Target:` resolves to a repo kc marks `shared` (`kc env describe --output=json`,
+`repos[].shared` — the spec repo, in every onboarded project), or to the spec repo whether kc
+marks it or not, works in a linked worktree,
+`/work/scratch/worktrees/<Repo>/<NNN>-P<id>`, on its phase branch; the shared checkout never
+leaves its base. The worktree is added locked, so another environment's `git gc` cannot prune a
+registration whose path it cannot see; a resume reuses it, or re-adds it from the branch after
+unlocking and pruning a stale one. The dirty checks, the resume reset, the gate and the review
+run there; `bases`, `landed.root`, the pushes and the doc diffs keep the shared repo. The merge
+is `git merge` on the base in the shared tree — a fast-forward when the base stood still, a
+merge commit when it moved, never a rebase; a file another writer left uncommitted that the
+merge would overwrite is swept into a commit of its own first; a conflict is aborted and bails
+`blocked` for a hand merge, which the resume then stamps. In the spec repo, a change under
+`slices/**` on the branch is put back to the branch's merge base in one commit before the merge.
+A shared primary repo is refused. `state.json` records `shared_repos` (read back on a resume) and
+each phase's `worktree`.
+
+Removed, as the coping work for a tree that is no longer branched in place: the spec tree's
+lease (`SpecTreeLock`, `spec_tree_timeout`; 0.9.36), the pre-commit guard and
+`DEV_PHASE_BRANCH` (0.9.86), the `spec_branch` through every dispatch and consult, the
+slice-folder commit before a checkout back and the run-record untracking (0.9.44), the bail's
+render condition, `spec_commit.py` with the snapshot steps in the wrap-up, the planners, triage
+and close-out (0.9.88), and the branches for a primary repo that is its own spec repo. The spec
+repo on its base is still asserted before the driver's commits and dispatches — a hand checkout
+is the one way it moves now. `docs/spec-tree.md` keeps *stage by name* and says that another
+writer's hunk riding your commit is accepted. Preflight's guard step now deletes the hook an
+older plugin installed, in every profile.
+
+Why: the shared tree was branched in place for hours per phase, and every layer that coped with
+it — restored bases, the lease, the guard, the slice-folder commits — moved the bails to the
+next edit someone left in the tree (AIWF-52, AIWF-69, AIWF-70, each a hand recovery in
+AnsibleSpecs). The operator's ruling: no mechanism for pristine commits or multiple writers in
+the shared tree; agents sweeping one another's edits is fine. Design, rulings and inventory:
+`docs/research/shared-repo-worktree-plan-2026-10-11.md`.
+
+Upgrade: push and update every environment that shares a spec repo before any of them runs a
+spec-repo phase. A run loop older than 0.9.93 still branches the shared tree in place and takes
+a lease this version ignores; this version's base check bails `blocked` rather than commit onto
+such a branch. The first preflight on this version removes the guard hook from the shared git
+dir; an older environment's preflight re-installs it until that environment is updated. The
+lease files (`dev-spec-tree.lock`, `.intent`, `.holder`) left in the git dirs are inert.
+
+Cards: AIWF-52, AIWF-69 and AIWF-70 are superseded; AIWF-58, AIWF-61, AIWF-68 and AIWF-47 stand,
+each with a note on what changed under it.
+
 ## 2026-10-11 — A skill the plan names reaches its roles as the installed file (v0.9.92)
 
 Where a phase's section of `plan.md`, or the plan's text outside every phase, names a skill as
