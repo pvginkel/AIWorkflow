@@ -4,6 +4,22 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-12 — `close_out.py relabel --kind` drops the labels the new kind does not carry, and names them in its note (v0.9.94)
+
+A new table, `CARRIES`, holds the labels each kind carries at all — `close-out.md`'s "Which labels
+an entry carries", with `for` on every kind. A relabel that changes an entry's kind drops every
+old label the new kind does not carry, unless the call gives it again, and the note says so after
+its change list: `relabelled (kind: defect → prose, area: sensitive → —; dropped area, which a
+prose does not carry): …`. An event keeps `fix`, `area` and `repo` whatever its impact, and an
+action or a decision keeps the labels of a fix it names. Between the fix and improvement families
+the drop is what it was; prose losing `area` is the new case. `append --kind prose --area …` is
+unchanged.
+
+Why: the drop used to happen only across the two families, so a defect relabelled prose kept
+`area: sensitive`, and its Triage line said "sensitive area" on a prose entry (AnsibleSpecs,
+2026-10-06). Refusing the change instead would leave the wrap-up stuck: relabel has no way to
+clear a label. (AIWF-46)
+
 ## 2026-10-11 — A phase targeting a shared repo works in a worktree; the lease, the guard and spec_commit.py are gone (v0.9.93)
 
 A phase whose `Target:` resolves to a repo kc marks `shared` (`kc env describe --output=json`,

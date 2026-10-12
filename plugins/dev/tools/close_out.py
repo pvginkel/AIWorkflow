@@ -215,6 +215,19 @@ REQUIRED: dict[str, tuple[str, ...]] = {
 }
 EVENT_PROBLEM = ("fix", "area", "repo")
 
+# The labels a kind carries at all, `for` with every one: what a relabel to
+# that kind keeps of the old labels. An event keeps EVENT_PROBLEM whatever
+# its impact, an action or a decision the labels of a fix it names.
+CARRIES: dict[str, tuple[str, ...]] = {
+    "defect": FIX_FAMILY + ("area", "repo", "for"),
+    "test-gap": FIX_FAMILY + ("area", "repo", "for"),
+    "prose": FIX_FAMILY + ("repo", "for"),
+    "event": FIX_FAMILY + ("area", "repo", "for"),
+    "action": FIX_FAMILY + ("area", "repo", "for"),
+    "decision": FIX_FAMILY + ("area", "repo", "for"),
+    "improvement": IMPROVEMENT_FAMILY + ("area", "repo", "for"),
+}
+
 # The labels in words, for the Triage line; a value mapped to None is left
 # out of it.
 WORDS: dict[str, dict[str, str | None]] = {
@@ -880,8 +893,8 @@ def relabel_entry(slice_dir: Path | str, eid: str, by: str, note: str,
     what changed and why. The refusals of `append` apply to the labels as
     they are after the change, but not the one against the Consequence line
     (that is the author's text; the wrap-up corrects a label from the code).
-    Moving the kind to the other family drops the labels of the old one.
-    Returns the note's paragraph."""
+    A new kind drops every old label it does not carry (CARRIES), and the
+    note names them. Returns the note's paragraph."""
     note_lines = _lines(note.strip())
     if not note_lines:
         raise ReportError("relabel needs a --note: what was found")
@@ -893,12 +906,11 @@ def relabel_entry(slice_dir: Path | str, eid: str, by: str, note: str,
         if new_kind not in KINDS:
             raise ReportError(f"{eid} has no kind; relabel it with --kind")
         old = effective_labels(entry) or {}
-        merged = dict(old)
-        if (old_kind == "improvement") != (new_kind == "improvement"):
-            drop = IMPROVEMENT_FAMILY if old_kind == "improvement" else FIX_FAMILY
-            for k in drop:
-                merged.pop(k, None)
-        merged.update({k: v for k, v in (labels or {}).items() if v is not None})
+        given = {k: v for k, v in (labels or {}).items() if v is not None}
+        dropped = ([k for k in old if k not in CARRIES[new_kind] and k not in given]
+                   if new_kind != old_kind else [])
+        merged = {k: v for k, v in old.items() if k not in dropped}
+        merged.update(given)
         merged = _ordered_labels(merged)
         errors = check_labels(new_kind, merged, entry.get("consequence"),
                               slice_dir, given=labels or {}, relabel=True)
@@ -914,6 +926,9 @@ def relabel_entry(slice_dir: Path | str, eid: str, by: str, note: str,
         entry["labels"] = merged
         said = ", ".join(f"{k}: {o or UNLABELLED_MARK} → {n or UNLABELLED_MARK}"
                          for k, (o, n) in changes.items())
+        if dropped:
+            said += (f"; dropped {_join(dropped)}, which a"
+                     f"{'n' if new_kind[0] in 'aeiou' else ''} {new_kind} does not carry")
         text = [f"relabelled ({said}): {note_lines[0]}", *note_lines[1:]]
         record = {"by": _collapse(by), "date": day, "text": text,
                   "relabel": changes}
@@ -1122,9 +1137,12 @@ def _flag(label: str) -> str:
     return f"--{label}"
 
 
-def _flags(labels) -> str:
-    names = [_flag(k) for k in labels]
+def _join(names: list[str]) -> str:
     return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def _flags(labels) -> str:
+    return _join([_flag(k) for k in labels])
 
 
 def kind_labels_text() -> str:

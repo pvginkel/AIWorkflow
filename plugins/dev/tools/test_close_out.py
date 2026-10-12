@@ -902,6 +902,29 @@ def test_relabel_applies_the_refusals_but_not_the_consequence_check():
         assert e["notes"][-1]["relabel"]["kind"] == ["improvement", "defect"]
 
 
+def test_relabel_to_a_kind_drops_the_labels_it_does_not_carry_and_names_them():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)
+        code, out, err = run_cli("relabel", slice_dir, "B1", "--by", "wrap-up",
+                                 "--note", "it is a comment", "--kind", "prose",
+                                 "--date", "2026-10-12")
+        assert code == 0, err
+        assert out.strip() == ("wrap-up, 2026-10-12 — relabelled (kind: defect → prose, "
+                               "area: sensitive → —; dropped area, which a prose does "
+                               "not carry): it is a comment")
+        e = entry_of(slice_dir, "B1")
+        assert e["kind"] == "prose" and "area" not in e["labels"]
+        assert e["notes"][-1]["relabel"] == {"kind": ["defect", "prose"],
+                                             "area": ["sensitive", None]}
+        assert "sensitive area" not in close_out.render_report(slice_dir)
+        # back to a defect, the area is asked for again
+        code, _, err = run_cli("relabel", slice_dir, "B1", "--by", "w", "--note", "n",
+                               "--kind", "defect")
+        assert code == 2 and "missing: --area" in err
+
+
 def test_relabel_gives_an_unlabelled_entry_its_first_labels():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
