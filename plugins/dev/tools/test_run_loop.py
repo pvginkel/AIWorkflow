@@ -13,6 +13,7 @@ import contextlib
 import fcntl
 import importlib.util
 import io
+import itertools
 import json
 import os
 import re
@@ -9581,11 +9582,212 @@ def test_the_slice_lock_keeps_the_note_it_found():
         assert lock.acquire() is None
         assert lock.previous_note.startswith("host: h\npid: 7")
         # the new note starts at byte 0 — no hole where the old one was
-        assert path.read_text().startswith(f"host: {run_loop.socket.gethostname()}")
+        assert path.read_text().startswith("environment: ")
         assert f"pid: {os.getpid()}" in path.read_text()
         assert "\0" not in path.read_text()
+        assert "x" * 20 not in path.read_text()   # the old note's tail is cut
         lock.release()
         assert path.read_text() == ""
+
+
+@contextlib.contextmanager
+def environment_id(value):
+    """The pod's KUBECODER_ENVIRONMENT_ID for the block; None unsets it."""
+    saved = os.environ.pop("KUBECODER_ENVIRONMENT_ID", None)
+    if value is not None:
+        os.environ["KUBECODER_ENVIRONMENT_ID"] = value
+    try:
+        yield
+    finally:
+        os.environ.pop("KUBECODER_ENVIRONMENT_ID", None)
+        if saved is not None:
+            os.environ["KUBECODER_ENVIRONMENT_ID"] = saved
+
+
+def test_the_slice_lock_note_names_the_environment_the_driver_runs_in():
+    """A project's environments share the spec repo's mount, and the flock
+    with it, but not their process tables: the note names the environment
+    to look in, and the driver record the loops keep says the same."""
+    host = run_loop.socket.gethostname()
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "run.lock"
+        lock = run_loop.SliceLock(path)
+        with environment_id("env-a"), \
+                patched(run_loop, _heartbeat_stamp=lambda: "beat-0"):
+            assert lock.acquire() is None
+        try:
+            note = path.read_text()
+            assert [line.partition(":")[0] for line in note.splitlines()] \
+                == ["environment", "host", "pid", "started", "heartbeat"]
+            fields = run_loop.note_fields(note)
+            assert fields["environment"] == "env-a"
+            assert fields["host"] == host
+            assert fields["pid"] == str(os.getpid())
+            assert fields["heartbeat"] == "beat-0"
+            assert datetime.fromisoformat(fields["started"])
+            assert lock.driver == {"environment": "env-a", "host": host,
+                                   "pid": os.getpid(),
+                                   "started": fields["started"]}
+        finally:
+            lock.release()
+        # Outside KubeCoder the note says so, and the record holds no id.
+        for unset in (None, ""):
+            with environment_id(unset):
+                assert lock.acquire() is None
+            try:
+                note = run_loop.note_fields(path.read_text())
+                assert note["environment"] == "(unset)"
+                assert lock.driver["environment"] is None
+            finally:
+                lock.release()
+
+
+def test_the_heartbeat_rewrites_the_note_while_the_lock_is_held():
+    count = itertools.count()
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "run.lock"
+        lock = run_loop.SliceLock(path, heartbeat_s=0.01)
+        with patched(run_loop,
+                     _heartbeat_stamp=lambda: f"beat-{next(count):04d}"):
+            assert lock.acquire() is None
+            try:
+                first = run_loop.note_fields(path.read_text())
+                assert first["heartbeat"] == "beat-0000"
+                deadline = time.monotonic() + 5
+                while True:
+                    now = run_loop.note_fields(path.read_text())
+                    if now.get("heartbeat", "") > "beat-0002":
+                        break
+                    assert time.monotonic() < deadline, "the note never beat"
+                    time.sleep(0.01)
+                assert run_loop.lock_held(path)
+                assert lock._beat.is_alive()
+                # the beat is the only field that moves
+                del first["heartbeat"], now["heartbeat"]
+                assert now == first
+            finally:
+                lock.release()
+
+
+# A holder that dies without letting go: the kernel drops its flock with the
+# process, and the note — beat and all — stays behind on the free lock.
+DYING_HOLDER = """\
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import run_loop
+lock = run_loop.SliceLock(run_loop.Path(sys.argv[2]), heartbeat_s=0.01)
+assert lock.acquire() is None
+os._exit(0)
+"""
+
+
+def test_release_stops_the_heartbeat_before_it_cuts_the_note():
+    """A clean release leaves an empty note for good — no beat lands after
+    it — so the next holder finds no previous note; a holder that died
+    holding the lock still leaves its note for the next one to find."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "run.lock"
+        lock = run_loop.SliceLock(path, heartbeat_s=0.01)
+        assert lock.acquire() is None
+        beat = lock._beat
+        time.sleep(0.05)
+        lock.release()
+        assert not beat.is_alive()
+        time.sleep(0.05)   # where a beat that outlived the release would land
+        assert path.read_text() == ""
+        assert not run_loop.lock_held(path)
+        again = run_loop.SliceLock(path)
+        assert again.acquire() is None
+        assert again.previous_note == ""
+        again.release()
+
+        subprocess.run([sys.executable, "-c", DYING_HOLDER,
+                        str(Path(run_loop.__file__).parent), str(path)],
+                       check=True, timeout=30)
+        assert not run_loop.lock_held(path)
+        assert again.acquire() is None
+        try:
+            left = run_loop.note_fields(again.previous_note)
+            assert left["pid"] != str(os.getpid()) and "heartbeat" in left
+        finally:
+            again.release()
+
+
+def test_the_run_records_its_driver_and_a_resume_replaces_it():
+    """state.json says where the run is: the driver run.lock's note names,
+    on disk before the start is reported — and a resume's, once a resume
+    holds the lock, wherever the run was before."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        seen = []
+        first = ScriptedLoop(
+            slice_dir, [("code-writer", {"outcome": "blocked",
+                                         "summary": "x"})], repo_root=repo)
+        first.on_start = lambda: seen.append(load_state(slice_dir)["driver"])
+        with environment_id("env-a"), \
+                contextlib.redirect_stderr(io.StringIO()):
+            assert run_to_exit(first) == 3
+        driver = load_state(slice_dir)["driver"]
+        assert seen == [driver]
+        assert driver == {"environment": "env-a",
+                          "host": run_loop.socket.gethostname(),
+                          "pid": os.getpid(), "started": driver["started"]}
+
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], resume=True, repo_root=repo)
+        r.on_start = lambda: seen.append(load_state(slice_dir)["driver"])
+        with environment_id("env-b"):
+            assert run_to_exit(r) == 0
+        resumed = load_state(slice_dir)["driver"]
+        assert resumed["environment"] == "env-b"
+        assert resumed["started"] != driver["started"]
+        assert seen[1] == resumed
+
+
+def status_lines(slice_dir):
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        run_loop.cmd_status(type("Args", (), {"slice_dir": str(slice_dir)})())
+    return out.getvalue().splitlines()
+
+
+def test_status_names_the_driver_and_whether_it_runs():
+    record = {"environment": "env-a", "host": "pod-a", "pid": 4242,
+              "started": "2026-10-12T03:00:00+02:00"}
+    named = ("driver: env env-a  host pod-a  pid 4242  "
+             "started 2026-10-12T03:00:00+02:00")
+    state = {"slice": "075_waited", "run_phase": "phases", "driver": record}
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp, state=state)
+        assert status_lines(slice_dir)[1] == f"  {named} — not running"
+        note = ("environment: env-a\nhost: pod-a\npid: 4242\nstarted: s\n"
+                "heartbeat: 2026-10-12T03:05:00+02:00\n")
+        with holding(slice_dir, note=note):
+            assert status_lines(slice_dir)[1] == (
+                f"  {named} — running, heartbeat 2026-10-12T03:05:00+02:00")
+        # a holder the record does not name is named from its note
+        with holding(slice_dir, note="host: pod-b\npid: 7\n"):
+            assert status_lines(slice_dir)[1] == (
+                f"  {named} — run.lock is held by env ?  host pod-b  pid 7, "
+                "heartbeat (none)")
+        # the live lock of this process, as a driver takes it
+        lock = run_loop.SliceLock(slice_dir / "run.lock")
+        with environment_id("env-c"), \
+                patched(run_loop, _heartbeat_stamp=lambda: "beat-1"):
+            assert lock.acquire() is None
+        try:
+            state["driver"] = lock.driver
+            (slice_dir / "state.json").write_text(json.dumps(state))
+            line = status_lines(slice_dir)[1]
+            assert line.startswith("  driver: env env-c  host ")
+            assert line.endswith("— running, heartbeat beat-1")
+        finally:
+            lock.release()
+        # a state.json from before the record
+        del state["driver"]
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        assert status_lines(slice_dir)[1] == \
+            "  driver: (not recorded) — not running"
 
 
 def test_the_reattach_prompt_says_the_stop_is_not_an_outcome():
@@ -9823,6 +10025,11 @@ def test_stop_refuses_a_driver_on_another_host():
         with holding(slice_dir, note="host: elsewhere\npid: 1\n"):
             code, _, err = stop(slice_dir)
         assert code == 2 and "runs on host elsewhere" in err
+        with holding(slice_dir,
+                     note="environment: env-b\nhost: elsewhere\npid: 1\n"):
+            code, _, err = stop(slice_dir)
+        assert code == 2
+        assert "runs on host elsewhere (environment env-b)" in err
 
 
 # A driver in miniature: holds run.lock with the real note's shape, and on

@@ -158,7 +158,9 @@ agents or fixing code, stop; that work belongs in a phase the loop executes.
   session on it meets the `run.lock` refusal while the run lives, and picks it up with
   `run_loop.py wait <slice_dir>`. Stopping the `wait` command stops the wait, not the loop:
   `run_loop.py stop <slice_dir>` interrupts the run as Ctrl-C would — `state.json` current, the
-  in-flight session left for `--resume` to reattach.
+  in-flight session left for `--resume` to reattach. A loop is dead only when its log has gone
+  quiet, never on `ps`, which sees only this pod: the run may live in another environment of the
+  project, which `run.lock`'s note and `run_loop.py status` name.
 - **Shared spec tree:** commits from other sessions appearing in `<spec-repo>` for your slice
   usually mean a parallel session swept your files into its commit — accepted, not a defect
   (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`); build on the latest state. No run moves the shared

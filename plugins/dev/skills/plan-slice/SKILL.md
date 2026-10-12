@@ -144,7 +144,10 @@ python3 ${CLAUDE_PLUGIN_ROOT}/tools/plan_loop.py run <spec-repo>/slices/backlog/
 
 Run it from the **target code repo**, in the background (`run_in_background: true`). Do **not**
 read or tail `plan_log.txt` — the loop's stdout carries one terse timestamped line per pass start,
-all the mid-run visibility you need. The writer completes the plan (the task-shape declaration,
+all the mid-run visibility you need. A loop is dead only when its log has gone quiet —
+`plan_log.txt` untouched for several minutes — never on `ps`, which sees only this pod while
+another environment of the project may run the loop; `plan_loop.py run` refuses (exit 2) while
+`plan.lock` or `run.lock` is held, naming the holder's environment. The writer completes the plan (the task-shape declaration,
 phases with `Target:` lines, attachments only where genuinely underivable,
 `verification.json`'s acceptance criteria); the reviewer is the **one** structural check against
 slice.md — there is no fix-verify loop behind it. Handle the exit:
@@ -187,7 +190,8 @@ slice.md — there is no fix-verify loop behind it. Handle the exit:
   and apply it directly, sanity-check with `run_loop.py run <slice-dir> --dry-run`, commit.
 - `git mv <spec-repo>/slices/backlog/NNN_slug <spec-repo>/slices/NNN_slug`; commit the move
   together with the loop-owned `plan_state.json` and `plan_log.txt` (they are the planning run's
-  who-did-what record), staging by name; drop a stale `plan_bailout.json`. The slice folder MUST
+  who-did-what record), staging by name; drop a stale `plan_bailout.json` and the emptied
+`plan.lock`. The slice folder MUST
   be clean after.
 - Advance the slice's tracker card — the id in `slice.md`'s `issue:` frontmatter — from
   **triaged** to **planned**. Where planning moved the slice's scope — a requirement dropped,

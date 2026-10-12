@@ -35,7 +35,19 @@ resumes where it paused) · **3** bailed (`plan_bailout.json`:
 the run loop checks them at start ([run-loop.md](run-loop.md) § Protocol invariants),
 `plugin_version` — the installed plugin is not the loop's own version, checked with
 `verification.json`'s keys at startup, before every dispatch and, for the keys, before exit 0;
-[run-loop.md](run-loop.md) § Protocol invariants).
+[run-loop.md](run-loop.md) § Protocol invariants) · **2** refused before it reads or writes
+anything: another plan loop holds the slice's `plan.lock`, or its run loop holds `run.lock`.
+
+**One plan loop per slice.** The loop holds a `flock` on `<slice>/plan.lock` for the whole run —
+the run loop's lock, its note and heartbeat ([runner-state.md](runner-state.md) § Resume and crash
+recovery) — and records the same holder in `plan_state.json`'s `driver`, which `status` prints
+beside the lock's liveness. A second `plan_loop.py run` exits 2 with the holder's note, and so
+does one started while the slice's run loop holds `run.lock`, which the plan loop only probes:
+re-planning under a live run rewrites the queue it executes. Two loops on one slice edit one
+`plan.md` and interleave one `plan_log.txt`; the environments that share the spec repo do not
+share `ps`, so the lock is the only place a second loop can learn of the first. `plan.lock` is
+the loop's own file, which its cleanliness checks pass by; a clean exit empties it, and it stays
+in the folder until the promote drops it.
 
 Every pass is a fresh context reading its inputs from the slice folder; rulings reach agents
 through plan.md only — dispatch prompts carry pointers, never relayed content. Agents must leave

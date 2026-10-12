@@ -4,6 +4,26 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-12 — The loops name their environment, host and pid with a heartbeat; a second plan loop on a slice is refused (v0.9.95)
+
+`run.lock`'s note names the driver's KubeCoder environment (`KUBECODER_ENVIRONMENT_ID`, `(unset)`
+outside KubeCoder), host, pid and start, with a `heartbeat:` that a thread of the driver's
+rewrites every 60 s through the lock's fd while it holds it. `state.json` records the same as
+`driver`, and a `--resume` writes its own over it; `status` prints it beside the lock's liveness
+and heartbeat, and `stop`'s other-host refusal names the environment. The plan loop now holds
+`<slice>/plan.lock` the same way, with `driver` in `plan_state.json`: `plan_loop.py run` exits 2
+before it reads or writes anything while another plan loop holds `plan.lock` or the slice's run
+loop holds `run.lock`, naming the holder from its note. `/dev:plan-slice` and `/dev:run-slice`
+say that a loop is dead only when its log has gone quiet, never on `ps`, and the promote drops
+the emptied `plan.lock` with a stale `plan_bailout.json`.
+
+Why: a project's environments share the spec repo and `~/.claude` but not their process tables.
+On 2026-10-06 a second `/dev:plan-slice 053` in another Ansible environment saw no plan loop in
+its `ps`, reverted the live writer's `plan.md` and ran a second loop: two writers on one plan
+for about 8 minutes. On 2026-10-07 slice 050's plan loop guessed which environment ran 053 and
+wrote a pre-run action that bailed 050's run. The heartbeat stays in the lock notes: a thread
+writing the state files would race the main thread's saves. (AIWF-47)
+
 ## 2026-10-12 — `close_out.py relabel --kind` drops the labels the new kind does not carry, and names them in its note (v0.9.94)
 
 A new table, `CARRIES`, holds the labels each kind carries at all — `close-out.md`'s "Which labels

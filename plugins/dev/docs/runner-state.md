@@ -19,7 +19,10 @@ Slice level:
 `slice`, `created_at`, `updated_at`, `plugin_version` (the plugin the run was created under, from
 its manifest — what lets runs be read before/after a plugin change; a resume does not rewrite
 it), `orchestrator` (the launching session's id and transcript
-path, or `null` for a hand-run), `run_phase` (`phases` | `consult` | `test` | `docs` | `done` —
+path, or `null` for a hand-run), `driver` (the driver that holds `run.lock`, as its note names it:
+`environment` — `KUBECODER_ENVIRONMENT_ID`, `null` outside KubeCoder — `host`, `pid`, `started`;
+a `--resume` writes its own over it, and `status` prints it beside the lock's liveness and
+heartbeat), `run_phase` (`phases` | `consult` | `test` | `docs` | `done` —
 the stage the run is in; a bail leaves it at the stage it stopped in, which is what `--resume`
 re-enters, and records the stop in `bailouts` and `bailout.json`), `bases` (base branch per
 target repo — the branch the run found there, never a
@@ -200,14 +203,19 @@ the outcome the loop acts on — when the nudge that cleaned the tree also left 
 behind. The devlock is in-process (`flock`), so a crash releases it by construction.
 
 **One driver per slice folder.** The run holds a `flock` on `<slice>/run.lock` from start to exit,
-and a second driver on the same folder exits 2 with the holder's host, pid and start time rather
-than joining in. The folder is on the spec repo — the mount every environment shares — while the
-code repo each driver branches is its own: two drivers therefore write one `log.txt`, one
-`state.json` and one `phases/**` while working two different checkouts, and the second finds no
-phase branch where the record says work is committed. Held in-process, so a driver that dies
-releases it and a `--resume` walks straight in. A clean exit empties the holder note, so a note
-on a free lock is a driver that died: the `--resume` that takes the lock logs it as killed from
-outside before writing its own.
+and a second driver on the same folder exits 2 naming the holder from the lock's note — its
+KubeCoder environment, host, pid, start time and heartbeat — rather than joining in. The folder is
+on the spec repo — the mount every environment shares — while the code repo each driver branches
+is its own: two drivers therefore write one `log.txt`, one `state.json` and one `phases/**` while
+working two different checkouts, and the second finds no phase branch where the record says work
+is committed. Held in-process, so a driver that dies releases it and a `--resume` walks straight
+in. A clean exit empties the holder note, so a note on a free lock is a driver that died: the
+`--resume` that takes the lock logs it as killed from outside before writing its own. While it
+holds the lock, a thread of the driver's rewrites the note's `heartbeat:` every 60 s through the
+lock's own fd — in the note only, never in `state.json`, which the main thread alone writes. The
+environments share the mount, so the flock reaches across them, but not their process tables:
+`ps` in one pod cannot see a driver in another, and the note says which environment to look in.
+The plan loop holds `plan.lock` the same way ([plan-loop.md](plan-loop.md)).
 
 **A phase's branch is reconciled against its record** before the driver resets or recreates it, and
 again after every executor round. Every commit the driver recorded on that branch — the head the

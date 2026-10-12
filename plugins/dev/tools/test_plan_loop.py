@@ -12,6 +12,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import re
 import sys
 import tempfile
@@ -570,6 +571,193 @@ def test_dirty_paths_parse_spaces_and_renames():
         assert dirty == ["specs/099/new name.md", "specs/099/a file.md"]
 
 
+def test_the_loops_lock_is_not_uncommitted_work():
+    """plan.lock stays in the slice folder, emptied, once a loop lets it go
+    — untracked, and the loop's own, so the rerun does not refuse on it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = DirtyGitLoop(slice_dir, [W_DONE, R_GO],
+                            porcelain="?? specs/099/plan.lock\0")
+        assert loop._slice_dirty_paths() == []
+        assert run_to_exit(loop) == 0
+
+
+# -- one plan loop per slice --------------------------------------------------
+#
+# A project's environments share the spec repo's mount, so the flock on
+# plan.lock reaches across them where `ps` does not. A second loop is refused
+# before it reads or writes anything, naming the holder from the lock's note.
+
+@contextlib.contextmanager
+def environment_id(value):
+    """The pod's KUBECODER_ENVIRONMENT_ID for the block; None unsets it."""
+    saved = os.environ.pop("KUBECODER_ENVIRONMENT_ID", None)
+    if value is not None:
+        os.environ["KUBECODER_ENVIRONMENT_ID"] = value
+    try:
+        yield
+    finally:
+        os.environ.pop("KUBECODER_ENVIRONMENT_ID", None)
+        if saved is not None:
+            os.environ["KUBECODER_ENVIRONMENT_ID"] = saved
+
+
+def held_by(slice_dir, name, environment):
+    """`name` in the slice folder, held as a live loop in `environment`
+    holds it — a SliceLock of its own, beside the loop under test."""
+    lock = run_loop.SliceLock(slice_dir / name)
+    with environment_id(environment):
+        assert lock.acquire() is None
+    return lock
+
+
+def folder_bytes(slice_dir):
+    return {p.name: p.read_bytes() for p in slice_dir.iterdir()
+            if p.is_file() and not p.name.endswith(".lock")}
+
+
+def test_a_second_plan_loop_on_the_slice_is_refused_naming_the_holder():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        # what the first loop has written so far
+        (slice_dir / "plan_state.json").write_text('{"phase": "writing"}\n')
+        (slice_dir / "plan_log.txt").write_text("[03:00:00] the first loop\n")
+        before = folder_bytes(slice_dir)
+        first = held_by(slice_dir, "plan.lock", "env-a")
+        try:
+            loop = ScriptedLoop(slice_dir, [W_DONE, R_GO])
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                assert run_to_exit(loop) == 2
+            text = err.getvalue()
+            assert "another plan loop is running this slice" in text
+            assert "  environment: env-a" in text
+            assert f"  host: {run_loop.socket.gethostname()}" in text
+            assert f"  pid: {os.getpid()}" in text
+            assert "  heartbeat: " in text
+            assert "another environment" in text
+            # nothing read, dispatched or written
+            assert not loop.spawned and not loop.git_calls
+            assert folder_bytes(slice_dir) == before
+            assert run_loop.lock_held(slice_dir / "plan.lock")
+        finally:
+            first.release()
+
+
+def test_a_plan_loop_under_a_live_run_is_refused_and_lets_its_lock_go():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        before = folder_bytes(slice_dir)
+        run = held_by(slice_dir, "run.lock", "env-b")
+        try:
+            loop = ScriptedLoop(slice_dir, [W_DONE, R_GO])
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                assert run_to_exit(loop) == 2
+            text = err.getvalue()
+            assert f"{slice_dir / 'run.lock'} is held — a run loop is " \
+                   "running this slice" in text
+            assert "  environment: env-b" in text
+            assert "rewrites the queue it is executing" in text
+            assert not loop.spawned and not loop.git_calls
+            assert folder_bytes(slice_dir) == before
+            assert not run_loop.lock_held(slice_dir / "plan.lock")
+        finally:
+            run.release()
+        # the run over, the loop walks in
+        assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE, R_GO])) == 0
+
+
+def test_the_plan_loop_records_its_driver_and_lets_the_lock_go_at_every_exit():
+    """plan_state.json says where the loop runs, on every run, and the lock
+    is held for the whole run and free after it — whatever the exit. The
+    loop only probes run.lock: it never creates it."""
+    def look(loop):
+        seen.append((run_loop.lock_held(slice_dir / "plan.lock"),
+                     load_state(slice_dir)["driver"]))
+        write_phases(loop)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        seen = []
+        with environment_id("env-a"):
+            loop = ScriptedLoop(slice_dir, [(*W_DONE[:2], look), R_GO])
+            assert run_to_exit(loop) == 0
+        driver = load_state(slice_dir)["driver"]
+        assert seen == [(True, driver)]
+        assert driver == {"environment": "env-a",
+                          "host": run_loop.socket.gethostname(),
+                          "pid": os.getpid(), "started": driver["started"]}
+        assert not run_loop.lock_held(slice_dir / "plan.lock")
+        assert (slice_dir / "plan.lock").read_text() == ""
+        assert not (slice_dir / "run.lock").exists()
+
+    def interrupt(loop):
+        raise KeyboardInterrupt
+
+    blocked = ("plan-writer", {"outcome": "blocked", "summary": "no"})
+    for script, fixes_applied, code in [([W_Q], False, 4),
+                                        ([blocked], False, 3),
+                                        ([(*W_DONE[:2], interrupt)], False, 130),
+                                        ([], True, 2)]:
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir = make_slice(tmp)
+            loop = ScriptedLoop(slice_dir, script, fixes_applied=fixes_applied)
+            with contextlib.redirect_stderr(io.StringIO()), \
+                    environment_id(None):
+                assert run_to_exit(loop) == code
+            assert not run_loop.lock_held(slice_dir / "plan.lock"), code
+            assert (slice_dir / "plan.lock").read_text() == "", code
+            assert load_state(slice_dir)["driver"]["environment"] is None
+
+    # a rerun's driver replaces the one before it
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        with contextlib.redirect_stderr(io.StringIO()), \
+                environment_id("env-a"):
+            assert run_to_exit(ScriptedLoop(slice_dir, [W_Q])) == 4
+        first = load_state(slice_dir)["driver"]
+        with environment_id("env-b"):
+            assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE, R_GO])) == 0
+        rerun = load_state(slice_dir)["driver"]
+        assert first["environment"] == "env-a"
+        assert rerun["environment"] == "env-b"
+        assert rerun["started"] != first["started"]
+
+
+def status_lines(slice_dir):
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        plan_loop.cmd_status(type("Args", (), {"slice_dir": str(slice_dir)})())
+    return out.getvalue().splitlines()
+
+
+def test_status_names_the_driver_and_whether_it_runs():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        with contextlib.redirect_stderr(io.StringIO()), \
+                environment_id("env-a"):
+            assert run_to_exit(ScriptedLoop(slice_dir, [W_Q])) == 4
+        driver = load_state(slice_dir)["driver"]
+        named = (f"driver: env env-a  host {driver['host']}  "
+                 f"pid {driver['pid']}  started {driver['started']}")
+        assert status_lines(slice_dir)[1] == f"  {named} — not running"
+        live = held_by(slice_dir, "plan.lock", "env-a")
+        try:
+            beat = run_loop.note_fields(
+                (slice_dir / "plan.lock").read_text())["heartbeat"]
+            assert status_lines(slice_dir)[1] == \
+                f"  {named} — running, heartbeat {beat}"
+        finally:
+            live.release()
+        # a plan_state.json from before the record
+        state = load_state(slice_dir)
+        del state["driver"]
+        (slice_dir / "plan_state.json").write_text(json.dumps(state))
+        assert status_lines(slice_dir)[1] == \
+            "  driver: (not recorded) — not running"
+
+
 def test_dispatch_passes_model_and_effort_explicitly():
     """Both planning dispatches carry the trim and the promoted MCP servers —
     `spawn_flags` is the run loop's, shared, so the planners spawn with
@@ -1076,18 +1264,19 @@ def test_a_plugin_version_mismatch_bails_before_the_first_dispatch():
 
 
 def test_the_relaunch_after_a_plugin_version_bail_needs_no_hand_cleanup():
-    """The bail leaves plan_bailout.json, plan_state.json and plan_log.txt
-    untracked in the slice folder; the relaunch from the installed path
-    starts on them as they are — the real cleanliness parse passes the
-    loop's own files — and clears the stale bail record itself."""
+    """The bail leaves plan_bailout.json, plan_state.json, plan_log.txt and
+    the let-go plan.lock untracked in the slice folder; the relaunch from
+    the installed path starts on them as they are — the real cleanliness
+    parse passes the loop's own files — and clears the stale bail record
+    itself."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         with installed(tmp, "0.0.1") as inst:
             assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE, R_GO])) == 3
             left = sorted(p.name for p in slice_dir.iterdir()
                           if p.name in plan_loop.LOOP_OWNED_FILES)
-            assert left == ["plan_bailout.json", "plan_log.txt",
-                            "plan_state.json"]
+            assert left == ["plan.lock", "plan_bailout.json",
+                            "plan_log.txt", "plan_state.json"]
 
             inst.set(OURS)
             porcelain = "".join(f"?? specs/099/{name}\0" for name in left)

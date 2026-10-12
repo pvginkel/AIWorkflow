@@ -37,6 +37,12 @@ Rulings reach agents through plan.md only — dispatch prompts carry pointers,
 not relayed content. State persists in <slice>/plan_state.json across
 invocations.
 
+One loop plans a slice at a time: it holds <slice>/plan.lock for the run,
+the lock's note naming its KubeCoder environment, host and pid with a
+heartbeat (run_loop's SliceLock), and plan_state.json's `driver` recording
+the same for `status`. A second plan loop — or one started while the
+slice's run loop holds run.lock — is refused with exit 2, naming the holder.
+
 The loop is the first to run on a slice, so it creates and commits the
 slice's close-out report (<slice>/close-out.json, the store, and the
 close-out.md rendered from it — docs/close-out.md) before its first
@@ -93,6 +99,7 @@ from run_loop import (  # noqa: E402
     AGENTS_DIR,
     PHILOSOPHY_LINE,
     SPAWN_ENV,
+    SliceLock,
     _git_toplevel,
     _now_hms,
     _now_iso,
@@ -102,6 +109,9 @@ from run_loop import (  # noqa: E402
     _transcript_path,
     assert_plugin_current,
     assert_verification_keys,
+    driver_line,
+    holder_note,
+    lock_held,
     parse_plan,
     parse_push_holds,
     plugin_version,
@@ -134,6 +144,7 @@ LOOP_OWNED_FILES = frozenset({
     "plan_log.txt",       # loop + session output, appended across runs
     "plan_state.json",    # loop-owned state; survives so a rerun can resume
     "plan_bailout.json",  # bail record, rewritten each run
+    "plan.lock",          # the loop's lock; its note names the live holder
 })
 # The report the loop renders from its store at every exit, and commits only
 # where it commits the store: left modified by an exit that commits nothing,
@@ -254,6 +265,8 @@ class PlanLoop:
         # launched from it, and the agents read the code there.
         self.repo_root = _git_toplevel()
         self._philosophy: str | None = None
+        # One plan loop per slice (`_take_plan_lock`), held for the run.
+        self._plan_lock = SliceLock(self.slice_dir / "plan.lock")
 
     # -- state ---------------------------------------------------------------
 
@@ -747,6 +760,8 @@ class PlanLoop:
                 "pending_questions": None,
                 "history": [],
             }
+        # This run's driver, over whichever run recorded itself last.
+        self.state["driver"] = dict(self._plan_lock.driver)
         self._save_state()
 
     def _ensure_report(self) -> None:
@@ -940,6 +955,36 @@ class PlanLoop:
         if refused is not None:
             self._exit_report_edited(refused)
 
+    def _take_plan_lock(self) -> None:
+        """One plan loop on a slice, and none beside a live run of it —
+        refused (exit 2) before the loop reads or writes anything, so a
+        second loop is told about the first rather than about the first's
+        uncommitted plan.md. The run loop's lock is only probed, never
+        taken or created: the run is not this loop's to hold off."""
+        holder = self._plan_lock.acquire()
+        if holder is not None:
+            print(f"Error: {self._plan_lock.lock_path} is held — another plan "
+                  "loop is running this slice:\n"
+                  + "\n".join(f"  {line}" for line in holder.splitlines())
+                  + "\nTwo plan loops edit one plan.md and interleave one "
+                    "plan_log.txt. `ps` sees only this pod's processes, so the "
+                    "holder may be alive in another environment: wait for it, "
+                    "or stop it in the environment its note names.",
+                  file=sys.stderr)
+            sys.exit(2)
+        run_lock = self.slice_dir / "run.lock"
+        if lock_held(run_lock):
+            self._plan_lock.release()
+            note = holder_note(run_lock) or "(no holder note)"
+            print(f"Error: {run_lock} is held — a run loop is running this "
+                  "slice:\n"
+                  + "\n".join(f"  {line}" for line in note.splitlines())
+                  + "\nRe-planning under a live run rewrites the queue it is "
+                    "executing. Wait for the run to end, or stop it in the "
+                    "environment its note names.",
+                  file=sys.stderr)
+            sys.exit(2)
+
     def run(self) -> None:
         if not (self.slice_dir / "slice.md").exists():
             print(f"Error: {self.slice_dir} has no slice.md", file=sys.stderr)
@@ -949,6 +994,14 @@ class PlanLoop:
                   "session seeds it (requirements/rulings) before the loop "
                   "runs.", file=sys.stderr)
             sys.exit(2)
+        self._take_plan_lock()
+        # Let go at every exit — sys.exit's included, which passes through.
+        try:
+            self._run()
+        finally:
+            self._plan_lock.release()
+
+    def _run(self) -> None:
         self._assert_agents()
         dirty = self._slice_dirty_paths()
         if dirty:
@@ -1058,6 +1111,7 @@ def cmd_status(args) -> None:
     print(f"slice {state['slice']}  phase={state['phase']}  "
           f"reviews={state['review_rounds']}  "
           f"writer_passes={state['writer_rounds']}")
+    print(f"  {driver_line(state.get('driver'), slice_dir / 'plan.lock')}")
     if state.get("pending_questions"):
         print(f"  questions pending: {state['pending_questions']}")
     elif state.get("pending_review") and state["phase"] != "done":

@@ -90,7 +90,11 @@ clears it — so a run with no `exit` and no live driver was killed from
 outside. `wait` blocks on the run.lock flock (liveness is the lock, never
 the pid) for at most --for seconds and reports the run's state with the
 driver's log lines since --from; `stop` SIGINTs the driver — its
-KeyboardInterrupt path, the same as Ctrl-C on an attached run.
+KeyboardInterrupt path, the same as Ctrl-C on an attached run. run.lock's
+note names the driver's KubeCoder environment, host and pid, with a
+heartbeat rewritten every minute while it holds the lock; state.json's
+`driver` records the same, and `status` prints it beside the lock's
+liveness — a pod's `ps` cannot see a driver in another environment.
 
 Usage:
     run_loop.py run <slice-dir> [--resume] [--detach] [--verbose] [--dry-run]
@@ -124,6 +128,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 import traceback
 from collections.abc import Sequence
@@ -1769,16 +1774,48 @@ class DevLock:
 # with no trace in the record. flock, so a driver that dies releases it by
 # construction and a --resume walks straight in; taken non-blocking, because a
 # second driver is a mistake to report, not a queue to join.
+#
+# The note names the holder for whoever finds the lock taken: the KubeCoder
+# environment, host and pid, and a heartbeat. The environments of one project
+# share the spec repo's mount — the flock reaches across them — but not their
+# process tables, so `ps` in one pod cannot see a driver in another; the note
+# says which environment to look in, and the beat that its driver still runs.
 # ---------------------------------------------------------------------------
 
+# How often a held lock's note is rewritten with a fresh `heartbeat:` stamp.
+HEARTBEAT_S = 60
+
+
+def _heartbeat_stamp() -> str:
+    """The note's `heartbeat:` value: the local wall clock to the second —
+    the same length at every beat, so a reader caught between a rewrite's
+    write and its cut still reads one whole note."""
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _write_note(fd: int, data: bytes) -> None:
+    """The whole note, overwritten in place: written over from byte 0, then
+    cut to its length — never truncated to nothing first, so a reader never
+    meets an empty note on a held lock."""
+    os.pwrite(fd, data, 0)
+    os.ftruncate(fd, len(data))
+
+
 class SliceLock:
-    def __init__(self, lock_path: Path):
+    def __init__(self, lock_path: Path, heartbeat_s: float = HEARTBEAT_S):
         self.lock_path = lock_path
+        self.heartbeat_s = heartbeat_s
         self._fd = None
         # The note the lock file held when this driver took it. A clean
         # release truncates the note, so one left on a free lock is a driver
         # that died holding it — what the resume logs as a kill.
         self.previous_note = ""
+        # The holder this lock's note names, set when it is taken — for the
+        # loop's state file to record: environment (None outside KubeCoder;
+        # the note says `(unset)`), host, pid, started.
+        self.driver: dict | None = None
+        self._stop: threading.Event | None = None
+        self._beat: threading.Thread | None = None
 
     def acquire(self) -> str | None:
         """None when the lock is ours, the holder's note when it is not."""
@@ -1800,16 +1837,45 @@ class SliceLock:
                 errors="replace").strip()
         except OSError:
             self.previous_note = ""
-        os.ftruncate(fd, 0)
-        os.lseek(fd, 0, os.SEEK_SET)
-        os.write(fd, (f"host: {socket.gethostname()}\npid: {os.getpid()}\n"
-                      f"started: {_now_iso()}\n").encode())
+        self.driver = {
+            "environment": os.environ.get("KUBECODER_ENVIRONMENT_ID") or None,
+            "host": socket.gethostname(),
+            "pid": os.getpid(),
+            "started": _now_iso(),
+        }
+        _write_note(fd, self._note())
         self._fd = fd
+        self._stop = threading.Event()
+        self._beat = threading.Thread(
+            target=self._heartbeat, args=(fd, self._stop),
+            name=f"heartbeat {self.lock_path.name}", daemon=True)
+        self._beat.start()
         return None
+
+    def _note(self) -> bytes:
+        d = self.driver
+        return (f"environment: {d['environment'] or '(unset)'}\n"
+                f"host: {d['host']}\npid: {d['pid']}\n"
+                f"started: {d['started']}\n"
+                f"heartbeat: {_heartbeat_stamp()}\n").encode()
+
+    def _heartbeat(self, fd: int, stop: threading.Event) -> None:
+        """Rewrite the note with a fresh beat until `release` stops it — the
+        note's only writer while the lock is held, through the lock's own
+        fd. A write that fails is skipped and the next beat tries again: the
+        driver's work never hangs on its note, and a mount that hiccups once
+        must not silence the beat for the rest of the run."""
+        while not stop.wait(self.heartbeat_s):
+            with contextlib.suppress(OSError):
+                _write_note(fd, self._note())
 
     def release(self) -> None:
         if self._fd is None:
             return
+        # The beat stops before the note is cut: one it rewrote after that
+        # would read, on a free lock, as a driver that died holding it.
+        self._stop.set()
+        self._beat.join()
         os.ftruncate(self._fd, 0)
         os.close(self._fd)
         self._fd = None
@@ -1843,13 +1909,37 @@ def holder_note(lock_path: Path) -> str:
 
 
 def note_fields(note: str) -> dict[str, str]:
-    """A holder note's `key: value` lines (host, pid, started)."""
+    """A holder note's `key: value` lines (environment, host, pid, started,
+    heartbeat)."""
     fields = {}
     for line in note.splitlines():
         key, sep, value = line.partition(":")
         if sep:
             fields[key.strip()] = value.strip()
     return fields
+
+
+def driver_line(record: dict | None, lock_path: Path) -> str:
+    """A loop's `status` line for its driver: who the state file says runs
+    it (`SliceLock.driver`, recorded at the run's start), and whether
+    `lock_path` is held now — with the heartbeat the live note carries, the
+    one sign of life a reader in another environment gets. A lock held by
+    someone the record does not name (a driver that has not recorded itself
+    yet, or one of a plugin that never did) is named from its note."""
+    rec = record if isinstance(record, dict) else {}
+    named = (f"env {rec.get('environment') or '(unset)'}  "
+             f"host {rec.get('host') or '?'}  pid {rec.get('pid') or '?'}  "
+             f"started {rec.get('started') or '?'}") if rec else "(not recorded)"
+    if not lock_held(lock_path):
+        return f"driver: {named} — not running"
+    note = note_fields(holder_note(lock_path))
+    beat = note.get("heartbeat") or "(none)"
+    if rec and (note.get("host"), note.get("pid")) == (rec.get("host"),
+                                                       str(rec.get("pid"))):
+        return f"driver: {named} — running, heartbeat {beat}"
+    return (f"driver: {named} — {lock_path.name} is held by env "
+            f"{note.get('environment') or '?'}  host {note.get('host') or '?'}"
+            f"  pid {note.get('pid') or '?'}, heartbeat {beat}")
 
 
 # ---------------------------------------------------------------------------
@@ -7926,9 +8016,12 @@ class RunLoop:
                          "exit record: killed from outside")
             # Cleared on disk before anything else, `in_flight` still in it:
             # a stale exit under a live run would read as the run's end, and
-            # this one may yet be killed before it reattaches.
-            if self.state.pop("exit", None) is not None:
-                self._save_state()
+            # this one may yet be killed before it reattaches. The same write
+            # puts this driver's record over the previous one's — the run is
+            # wherever this driver runs now.
+            self.state.pop("exit", None)
+            self.state["driver"] = dict(self._slice_lock.driver)
+            self._save_state()
             self._reattach = self.state.get("in_flight") or None
             self.state["in_flight"] = None
         self._owns_state = True
@@ -7938,6 +8031,9 @@ class RunLoop:
                 "created_at": _now_iso(),
                 "plugin_version": plugin_version(),
                 "orchestrator": _orchestrator_record(),
+                # The driver as run.lock's note names it, on disk with the
+                # state's first save — before the start is reported.
+                "driver": dict(self._slice_lock.driver),
                 "run_phase": "phases",
                 "bases": {},
                 "known_phases": [],
@@ -8603,9 +8699,11 @@ def cmd_stop(args) -> None:
     fields = note_fields(holder_note(lock_path))
     here = socket.gethostname()
     if fields.get("host") != here:
+        env = fields.get("environment")
+        where = f" (environment {env})" if env and env != "(unset)" else ""
         print(f"Error: the driver holding {lock_path} runs on host "
-              f"{fields.get('host') or '(unknown)'}, not on {here} — its pid "
-              "means nothing here.", file=sys.stderr)
+              f"{fields.get('host') or '(unknown)'}{where}, not on {here} — "
+              "its pid means nothing here.", file=sys.stderr)
         sys.exit(2)
     try:
         pid = int(fields.get("pid", ""))
@@ -8784,6 +8882,7 @@ def cmd_status(args) -> None:
     print(f"slice {state['slice']}  run_phase={state['run_phase']}{bailed}  "
           f"generation={state.get('generation', 0)}  "
           f"bail-outs={len(state.get('bailouts', []))}")
+    print(f"  {driver_line(state.get('driver'), slice_dir / 'run.lock')}")
     for pid in state.get("known_phases", []):
         ps = state.get("phases", {}).get(pid)
         if not ps:
