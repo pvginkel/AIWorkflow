@@ -84,7 +84,9 @@ The mechanical rules the parser holds every author to:
   investigation and the plan review checks it (semantics: [plan-loop.md](plan-loop.md)); the
   run loop's parser ignores it, as it does every `##` section but the next one.
 - **`## Push holds` names the repos this run must not push** — one `- <target> — <why>`
-  bullet each (em dash), target in the same vocabulary as `Target:`. The plan loop enters one
+  bullet each (em dash), target in the same vocabulary as `Target:` — a scratch clone no phase
+  targets, such as a ledger phase's, works as `github:<owner>/<repo>` and as its path
+  `../scratch/<Repo>` alike, and the driver never syncs a held clone. The plan loop enters one
   action per held repo in the close-out report at its exit 0; the driver skips
   held repos in its push check, names them in the test phase's dispatch, and notes that entry
   (or writes it, for a hold added after planning). The doc landing merges locally and does not

@@ -4,6 +4,21 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-12 — A push hold resolves its `github:` clone as the run's own, never syncing it (v0.9.96)
+
+`_resolve_target` takes `held`, which `_push_holds` and the dry run's hold listing pass: a held
+`github:<owner>/<repo>` whose scratch clone exists is checked as the run's own (`ensure_clone`'s
+`owned`) and never synced, whether or not it is in `state["bases"]`. A held clone that does not
+exist yet is cloned, as before; a phase's Target resolves as before, held or not.
+`plan-template.md` says a scratch clone no phase targets may be held either as `github:` or by
+its path.
+
+Why: only Targets fill `bases`, so a `github:` hold on a clone no phase targets, such as a ledger
+phase's `/work/scratch` clones, was synced at every plan read. Once the phase had committed
+there, the sync refused the clone for commits origin lacks, the hold became a plan structure
+error, and the run bailed. AnsibleSpecs slice 053 got past it by writing its 52 holds as
+`../scratch/<Repo>` paths. (AIWF-48)
+
 ## 2026-10-12 — The loops name their environment, host and pid with a heartbeat; a second plan loop on a slice is refused (v0.9.95)
 
 `run.lock`'s note names the driver's KubeCoder environment (`KUBECODER_ENVIRONMENT_ID`, `(unset)`

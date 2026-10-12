@@ -8601,6 +8601,71 @@ def test_the_runs_own_clone_is_resolved_owned_and_a_dry_run_reads_it():
         assert calls == [(GITHUB, True), (GITHUB, False), (GITHUB, True)]
 
 
+# AIWF-48: a ledger phase commits to /work/scratch clones no phase targets, so
+# none of them is in `bases`. A `github:` hold on one was synced, refused for
+# the commits origin lacks, and bailed the run as a plan structure error.
+
+HELD_GITHUB_PLAN = (f"# plan\n\n## Push holds\n\n- {GITHUB} — the ledger's\n\n"
+                    + phase_section("1", "Ledger work", "../Sibling"))
+
+
+def test_an_existing_held_github_clone_resolves_owned_with_no_bases():
+    with tempfile.TemporaryDirectory() as tmp:
+        make_sibling(tmp)
+        root = dry_run_repo(tmp)
+        slice_dir, _ = make_slice(tmp, repo=False)
+        (slice_dir / "plan.md").write_text(HELD_GITHUB_PLAN)
+        clone, calls, patch = fake_clone(tmp)
+        loop = RunLoop(slice_dir, resume=False)
+        loop.repo_root = root
+        out = io.StringIO()
+        with patch:
+            assert loop._push_holds(HELD_GITHUB_PLAN) == (
+                {str(clone.resolve()): "the ledger's"}, [])
+            with contextlib.redirect_stdout(out):
+                try:
+                    run_loop.cmd_dry_run(loop)
+                except SystemExit as e:
+                    raise AssertionError(
+                        f"dry run must pass, exited {e.code}") from None
+        assert calls == [(GITHUB, True), (GITHUB, True)]
+        assert (f"  hold  {GITHUB}  root={clone.resolve()}  not pushed: "
+                "the ledger's") in out.getvalue()
+
+
+def test_a_held_github_clone_not_there_yet_is_cloned():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        clone, _, patch = fake_clone(tmp)
+        shutil.rmtree(clone)
+        calls = []
+
+        def ensure(target, *, owned=False):
+            calls.append((target, owned))
+            (clone / ".git").mkdir(parents=True)
+            return clone
+
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        with patch, patched(run_loop.github_target, ensure_clone=ensure):
+            assert r._push_holds(HELD_GITHUB_PLAN)[0] == {
+                str(clone.resolve()): "the ledger's"}
+        assert calls == [(GITHUB, False)]
+
+
+def test_a_github_target_the_plan_also_holds_still_resolves_as_a_target():
+    """`held` is the hold's resolution only: a phase's Target outside
+    `bases` is synced as before, held or not."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        (slice_dir / "plan.md").write_text(HELD_GITHUB_PLAN)
+        _, calls, patch = fake_clone(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        with patch:
+            r.state = {}
+            r._resolve_target(GITHUB)
+        assert calls == [(GITHUB, False)]
+
+
 def test_a_github_phase_runs_in_its_clone_and_reports_it_once():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(

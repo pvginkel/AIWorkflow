@@ -3478,7 +3478,7 @@ class RunLoop:
         resolved: dict[str, str] = {}
         for target, why in holds:
             try:
-                root = self._resolve_target(target).git_root
+                root = self._resolve_target(target, held=True).git_root
             except ValueError as e:
                 errors.append(f"push hold `{target}`: {e}")
                 continue
@@ -3947,8 +3947,8 @@ class RunLoop:
             self._sibling_owners = owners
         return self._sibling_owners
 
-    def _resolve_target(self, target: str,
-                        creates: str | None = None) -> ResolvedTarget:
+    def _resolve_target(self, target: str, creates: str | None = None,
+                        held: bool = False) -> ResolvedTarget:
         """A `kc project list` component, a sibling repo path, or a GitHub
         repo (`github:<owner>/<repo>`, cloned into the scratch root by
         `github_target.ensure_clone` and a sibling path from then on).
@@ -3970,7 +3970,16 @@ class RunLoop:
         optimism is the invoking repo's: a component a phase registers in a
         sibling is declared on that phase (`Target: ../Repo`, `Creates:`),
         and the later phases that target it resolve here once it is
-        listed."""
+        listed.
+
+        `held` is a `## Push holds` entry's resolution (`_push_holds`, the
+        dry run). A run commits to a held repo whether or not a phase
+        targets it — a ledger phase's `/work/scratch` clones are targeted by
+        none — so a held GitHub clone that exists is the run's own: checked,
+        never synced, as `_owns_clone` makes a Target's. Synced, it is
+        refused for the commits origin lacks once the run has committed
+        there, and the hold becomes a plan structure error. A held clone
+        that does not exist yet is cloned, as for a Target."""
         self_created = (creates is not None and creates == target
                         and not is_repo_path(target))
         if target in self.project_dirs or self_created:
@@ -3980,8 +3989,9 @@ class RunLoop:
                 self.repo_root)
         if github_target.is_github(target):
             # Cloned (or synced) once; from here it is a sibling path.
-            path = github_target.ensure_clone(
-                target, owned=self._owns_clone(target))
+            owned = self._owns_clone(target) or (
+                held and github_target.clone_path(target).exists())
+            path = github_target.ensure_clone(target, owned=owned)
             return self._repo_path_target(target, path.resolve())
         if target.startswith(("../", "/")):
             path = (self.repo_root / target).resolve() \
@@ -8837,7 +8847,7 @@ def cmd_dry_run(loop: RunLoop) -> None:
     errors.extend(hold_errors)
     for target, why in holds:
         try:
-            root = loop._resolve_target(target).git_root
+            root = loop._resolve_target(target, held=True).git_root
             print(f"  hold  {target}  root={root}  not pushed: {why}")
         except ValueError as e:
             errors.append(f"push hold `{target}`: {e}")

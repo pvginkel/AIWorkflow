@@ -20,9 +20,9 @@ What `ensure_clone` does, per target, at most once per process:
 | dirty, detached, a `phase/` branch, no       | refuse            | as is  |
 | upstream, or commits origin lacks            |                   |        |
 
-*Owned* is a clone the calling run already records as one of its repos: its
-merged, not yet pushed phases sit on the base branch, and a sync or an
-"ahead" refusal would fight the run itself.
+*Owned* is a clone the calling run already records as one of its repos, or
+one its plan's `## Push holds` names: its merged, not yet pushed phases sit on
+the base branch, and a sync or an "ahead" refusal would fight the run itself.
 
 A target naming a repo the environment already checks out directly under the
 work root is refused first — the sibling `../<Dir>` form addresses it, and a
