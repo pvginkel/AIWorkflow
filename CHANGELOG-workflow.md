@@ -4,6 +4,32 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-13 — The run loop stubs `kind: Secret` data in the diffs it hands agents; `doc_phase/` ignores itself (v0.9.98)
+
+New `tools/redact_secrets.py` replaces every diff line inside a `kind: Secret`'s `data:` or
+`stringData:` — removed, added and context lines alike — with one `[Secret <name>: N data lines]`
+stub per run. It reads each touched manifest (`.yaml`, `.yml`, `.json`, `.tpl`, `.j2`, `.jinja`,
+`.jinja2`) whole at both ends of the range, so a changed value with no `kind:` line in its hunk's
+context is still found, and checks every hunk line against those blobs. It is fail-closed: a
+Secret it cannot bound (JSON, flow style, a line that reads as `kind: Secret` but is not a
+block-style key), a diff that does not match its blobs, or a blob it cannot read is no output at
+all. The driver imports it; as a CLI it filters a piped `git diff` for an agent.
+
+The doc phase's `doc_phase/<repo>.diff` sections are redacted, and the folder gets a `.gitignore`
+of `*`, so a `git add -A` in the spec repo never commits a diff. A review round whose range
+touches a manifest is diffed and redacted; when anything was stubbed, the reviewer gets
+`phases/P<id>/review_r<N>.diff` (`--stat`, then the redacted diff of each range it names) and is
+told to read that instead of running `git diff`. A new optional phase line, `Never print:
+<paths>`, holds those paths out of the driver's review diffs and gives the reviewer the safe
+command shape: `--stat` first, then the diff with them held out, piped through the redactor. A
+diff the redactor refuses stops the run with the new exit-3 reason `redaction` before any agent
+gets it.
+
+Why: slice 050 removed five Secrets from StepCaDeploy (encrypted CA keys and the passwords that
+decrypt them) and `stringData` passwords from NewsfilterDeploy. The reviewer's dispatched
+`git diff` printed them before it knew what the diff held, and the doc-writer kept them out of its
+transcript only with a grep filter of its own. (AIWF-51)
+
 ## 2026-10-13 — Two slices holding pushes in one scratch clone are an ordering edge; plan review sees the other slices' holds (v0.9.97)
 
 `/dev:slice-dag` reads every pending plan's `## Push holds` on every run, never from its cache,

@@ -121,6 +121,7 @@ import json
 import os
 import re
 import select
+import shlex
 import shutil
 import signal
 import socket
@@ -161,6 +162,7 @@ from close_out import (  # noqa: E402
     worklist,
     worklist_view,
 )
+from redact_secrets import RedactionError, is_examined, redact  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Configuration — the one place models and efforts are set. Every outer
@@ -847,6 +849,9 @@ DONE_STAMP_RE = re.compile(r"✅\s*DONE\b")
 TARGET_RE = re.compile(r"^\s*\**Target\**\s*:\**\s*`?([^`]+?)`?\s*$")
 CREATES_RE = re.compile(r"^\s*\**Creates\**\s*:\**\s*`?([^`]+?)`?\s*$")
 REVIEW_RE = re.compile(r"^\s*\**Review\**\s*:\**\s*`?([^`]+?)`?\s*$")
+# Several paths, each perhaps in backticks or quotes: they are split out of
+# the whole value (`Phase.resolve_target`), not captured one by one.
+NEVER_PRINT_RE = re.compile(r"^\s*\**Never print\**\s*:\**\s*(.+?)\s*$")
 PUSH_HOLDS_RE = re.compile(r"^##\s+Push holds\s*$", re.IGNORECASE)
 HOLD_RE = re.compile(r"^\s*[-*]\s+\**`?(\S+?)`?\**\s+—\s+(\S.*?)\s*$")
 DRIVER_RULINGS_RE = re.compile(r"^##\s+Driver rulings\s*$", re.IGNORECASE)
@@ -866,17 +871,21 @@ class Phase:
         self.target: str | None = None
         self.creates: str | None = None
         self.review: str | None = None
+        self.never_print: list[str] | None = None
 
     def resolve_target(self) -> None:
-        """`Target:` and the optional `Creates:` and `Review:` — first line
-        of each kind wins, in the same styles a plan writes them. `Creates:`
-        declares that this phase REGISTERS that component in the manifest:
-        the name cannot be in `kc project list` until the phase has run, so
-        resolution and validation are told to expect it rather than calling
-        it a typo. `Review:` names a file in the slice folder listing work
-        the phase commits outside its Target — clones it commits into and
-        leaves unpushed — which the reviewer is pointed at
-        (`review_set_pairs`)."""
+        """`Target:` and the optional `Creates:`, `Review:` and `Never
+        print:` — first line of each kind wins, in the same styles a plan
+        writes them. `Creates:` declares that this phase REGISTERS that
+        component in the manifest: the name cannot be in `kc project list`
+        until the phase has run, so resolution and validation are told to
+        expect it rather than calling it a typo. `Review:` names a file in
+        the slice folder listing work the phase commits outside its Target —
+        clones it commits into and leaves unpushed — which the reviewer is
+        pointed at (`review_set_pairs`). `Never print:` lists paths, relative
+        to the Target's root, whose content must never reach a transcript:
+        the driver's review diffs hold them out and the reviewer is given
+        the commands that print none of it (`_review_secrets`)."""
         for line in self.body:
             if self.target is None:
                 match = TARGET_RE.match(line)
@@ -892,6 +901,13 @@ class Phase:
                 match = REVIEW_RE.match(line)
                 if match:
                     self.review = match.group(1).strip()
+                    continue
+            if self.never_print is None:
+                match = NEVER_PRINT_RE.match(line)
+                if match:
+                    paths = [p.strip("`'\"")
+                             for p in re.split(r"[,\s]+", match.group(1))]
+                    self.never_print = [p for p in paths if p] or None
 
 
 # A review-set file's clone/commit pairs (AIWF-37). Ansible slice 036 did its
@@ -2114,7 +2130,7 @@ Judge outcomes, not approach. The slice spans multiple phases — only this
 phase's scope is under review; end-to-end testing and prose docs have their
 own later phases, so their absence here is not a finding.
 
-{review_set}{gate_line}
+{secrets}{review_set}{gate_line}
 {philosophy_line}{skill_line}{close_out_line}
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
@@ -2140,7 +2156,7 @@ premise (live system state, another repo's behavior) only where a fix commit
 touches it. The requirements are unchanged: the phase's section in
 {plan_path} and the acceptance criteria in {verification_path}.
 
-{review_set}{gate_line}
+{secrets}{review_set}{gate_line}
 {philosophy_line}{skill_line}{close_out_line}
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
@@ -2161,6 +2177,34 @@ added or changed since the phase began — review each as part of this
 phase's diff:
 
 {bullets}\
+"""
+
+# A range that changes `kind: Secret` data (AIWF-51), handed to the reviewer
+# as a file the driver wrote with that data stubbed. Dispatched as a bare
+# `git diff`, slice 050's range printed every removed CA key and password
+# into the reviewer's transcript before it knew what the diff held.
+REVIEW_SECRETS_NOTE = """\
+This range changes `kind: Secret` data, so the driver wrote it out with
+that data stubbed: {path} holds `git diff --stat` and then the diff for
+{ranges}, every line inside a Secret's `data:` or `stringData:` replaced by
+a `[Secret <name>: N data lines]` stub{held_out}. Read the diff from that
+file instead of running `git diff`, and do not open those Secrets' blocks
+in the files themselves (`cat`, `sed -n`, `git show`): their values never
+reach a transcript. A hunk's wider context comes through the redactor:
+`git -C {root} diff -U<n> <range> -- <path> | python3 {tool} --root {root} <range>`.
+
+"""
+
+# A phase's `Never print:` line (AIWF-51): paths the plan says never reach a
+# transcript, and the review commands' safe shape over them.
+NEVER_PRINT_NOTE = """\
+plan.md marks {paths} never to print for this phase. Run
+`git -C {root} diff --stat <range>` first; then read the diff only filtered,
+those paths held out and the rest piped through the redactor:
+`git -C {root} diff <range> -- . {excludes} | python3 {tool} --root {root} <range>`,
+where `<range>` is {ranges}. What the review needs of those paths comes
+from commands that print none of their content: the stat, counts, names.
+
 """
 
 REVIEW_SET_EMPTY_RANGE = """\
@@ -2502,7 +2546,10 @@ Deterministic facts from the driver:
   docs from that diff with the whole shipped behavior in view; read its
   hunks by path from the file (`grep -n`, `sed -n`) rather than re-running
   `git diff` — a diff past the tool's output limit round-trips through a
-  persisted-output file and back, and this file already is that.
+  persisted-output file and back, and this file already is that. Every
+  line inside a `kind: Secret`'s `data:` or `stringData:` is a
+  `[Secret <name>: N data lines]` stub there: a doc needs no more of it,
+  so never read it back from git or the files themselves.
 {diff_rows}
 - The plan is {plan_path}, digested below: the rulings and every phase's
   done-record, which is all the doc steering the plan holds. Open the plan
@@ -3324,6 +3371,48 @@ class RunLoop:
             ["git", *args], cwd=root or self.repo_root,
             capture_output=True, text=True,
         ).returncode == 0
+
+    def git_raw(self, *args: str, root: Path | None = None,
+                check: bool = True) -> str:
+        """`git` with its stdout as git wrote it, for the redactor, which
+        reads a blob and a diff line by line: `git`'s strip would shift a
+        blob's line numbers by its leading blank lines and cut a diff's
+        trailing blank context line, and a text-mode read would split a
+        line at a lone `\\r`. Decoded per byte the same way on both sides; a
+        failure bails as `git`'s check does."""
+        result = subprocess.run(
+            ["git", *args], cwd=root or self.repo_root, capture_output=True)
+        if check and result.returncode != 0:
+            raise Bailout(
+                "protocol_failure", details=(
+                    f"git {' '.join(args)} failed:\n"
+                    f"{result.stderr.decode(errors='replace').strip()}"
+                ),
+            )
+        return result.stdout.decode("utf-8", errors="replace")
+
+    def _redact(self, diff: str, base: str, head: str, root: Path,
+                phase_id: str | None = None) -> tuple[str, int]:
+        """`diff` — taken over `base..head` in `root` — with its Secret data
+        stubbed (`redact_secrets.redact`), and how many lines were; the
+        blobs are read at both ends of that range. Fail-closed: a diff the
+        redactor cannot redact, or a blob it cannot read, is a `redaction`
+        stop, and no agent is handed the diff."""
+        def blob(side: str, path: str) -> str:
+            rev = base if side == "old" else head
+            try:
+                return self.git_raw("show", f"{rev}:{path}", root=root)
+            except Bailout as e:
+                raise RedactionError(
+                    f"{path} ({side} side): the blob at {rev} could not be "
+                    f"read — {e.details}") from None
+        try:
+            return redact(diff, blob)
+        except RedactionError as e:
+            raise Bailout(
+                "redaction", phase=phase_id,
+                details=f"{e} — in {base}..{head} of {root}; the driver "
+                        "hands no agent a diff it could not redact") from None
 
     def specs_git(self, *args: str) -> str:
         """Git in the specs repo (the slice folder's repo) — used only for
@@ -4871,6 +4960,78 @@ class RunLoop:
                 merge_base=merge_base, root=root)
         return paragraph + "\n\n", list(dict.fromkeys(c for c, _ in pairs))
 
+    def _review_secrets(self, phase: Phase, outputs: Path, r: int,
+                        root: Path, ranges: list[tuple[str, str]]) -> str:
+        """The Secret and never-print paragraphs of a reviewer dispatch
+        (AIWF-51) — each ending in its blank line — or empty. `ranges` are
+        the ones the prompt names, in its order: the branch, or a delta
+        round's fix range and then the branch.
+
+        A range that changes Secret data is written out redacted, a section
+        per range, to `review_r<N>.diff` beside the round's review, and the
+        reviewer reads that instead of running `git diff` — which would
+        print the values before it knew what the diff held. Telling costs a
+        `--name-only` per range: only a range touching a file the redactor
+        examines is diffed and redacted, so a range of code alone costs
+        nothing more. `--no-renames` names both ends of a rename, so a
+        manifest renamed to a suffix the redactor skips is still seen. The
+        phase's never-print paths are held out of every diff the driver
+        takes — not of the stats, whose names are fine to show — and the
+        reviewer is given the commands that print none of their content. A
+        range the redactor cannot redact stops the run here, before the
+        reviewer is spawned."""
+        never = phase.never_print or []
+        excludes = [f":(exclude){p}" for p in never]
+        spec = ["--", ".", *excludes] if excludes else []
+        redacted: dict[tuple[str, str], str] = {}
+        stubbed = 0
+        for base, head in ranges:
+            names = self.git("diff", "--name-only", "--no-renames",
+                             f"{base}..{head}", *spec, root=root)
+            # a name git C-quoted (core.quotePath) ends in its quote
+            if any(is_examined(name.strip().strip('"'))
+                   for name in names.splitlines()):
+                redacted[(base, head)], count = self._redact(
+                    self.git_raw("diff", f"{base}..{head}", *spec, root=root),
+                    base, head, root, phase.id)
+                stubbed += count
+        if len(ranges) == 1:
+            named = f"`{ranges[0][0]}..{ranges[0][1]}`"
+        else:
+            (fix_base, fix_head), (base, head) = ranges
+            named = (f"the fix range `{fix_base}..{fix_head}` and then the "
+                     f"whole branch `{base}..{head}`")
+        tool = TOOLS_DIR / "redact_secrets.py"
+        notes = ""
+        if stubbed:
+            sections = []
+            for base, head in ranges:
+                if (base, head) not in redacted:
+                    redacted[(base, head)], _ = self._redact(
+                        self.git_raw("diff", f"{base}..{head}", *spec,
+                                     root=root),
+                        base, head, root, phase.id)
+                stat = self.git("diff", "--stat=100", f"{base}..{head}",
+                                root=root)
+                diff = redacted[(base, head)].rstrip("\n")
+                sections.append(
+                    f"{root} — git diff {base[:12]}..{head[:12]}"
+                    f"\n\n{stat}\n\n{diff}\n")
+            path = outputs / f"review_r{r}.diff"
+            path.write_text("\n".join(sections))
+            self.log(f"[P{phase.id}] reviewer handed {path}: {stubbed} "
+                     "Secret data line(s) stubbed")
+            notes += REVIEW_SECRETS_NOTE.format(
+                path=path, ranges=named, root=root, tool=tool,
+                held_out=(", the never-print paths below held out"
+                          if never else ""))
+        if never:
+            notes += NEVER_PRINT_NOTE.format(
+                paths=", ".join(f"`{p}`" for p in never), root=root,
+                excludes=" ".join(shlex.quote(e) for e in excludes),
+                tool=tool, ranges=named)
+        return notes
+
     # -- the phase loop ------------------------------------------------------
 
     def _run_phases(self) -> None:
@@ -5832,6 +5993,10 @@ class RunLoop:
                 phase, ps, target, merge_base)
             gate_line = self._gate_line(ps, head, target, review_repos)
             delta = bool(r > 1 and prev_head and prev_head != head)
+            secrets = self._review_secrets(
+                phase, outputs, r, root,
+                [(prev_head, head), (merge_base, head)] if delta
+                else [(merge_base, head)])
             review_path = outputs / f"code_review_r{r}.md"
             verdict_path = outputs / f"review_result_r{r}.json"
             if delta:
@@ -5843,7 +6008,8 @@ class RunLoop:
                     plan_path=self.plan_path,
                     verification_path=self.verification_path,
                     review_path=review_path, verdict_path=verdict_path,
-                    review_set=review_set, gate_line=gate_line,
+                    secrets=secrets, review_set=review_set,
+                    gate_line=gate_line,
                     philosophy_line=self._philosophy_line(),
                     skill_line=self._skill_line(phase_id),
                     close_out_line=self._close_out_line(),
@@ -5855,7 +6021,8 @@ class RunLoop:
                     where=where, plan_path=self.plan_path,
                     verification_path=self.verification_path,
                     review_path=review_path, verdict_path=verdict_path,
-                    review_set=review_set, gate_line=gate_line,
+                    secrets=secrets, review_set=review_set,
+                    gate_line=gate_line,
                     philosophy_line=self._philosophy_line(),
                     skill_line=self._skill_line(phase_id),
                     close_out_line=self._close_out_line(),
@@ -6921,9 +7088,16 @@ class RunLoop:
         row of its own. The writer reads hunks by path from the file: in the
         sessions read, a per-file `git diff` past the tool's output limit was
         persisted and read back in two turns, and one 26 k-char diff was
-        sliced three times."""
+        sliced three times.
+
+        Every section is redacted (`_redact`, AIWF-51): slice 050's file
+        carried five removed Secrets' CA keys and passwords to the writer.
+        A section the redactor cannot redact stops the run before that
+        repo's file is written. The folder ignores itself (`.gitignore`),
+        so no `git add -A` in the spec repo commits a diff."""
         out_dir = self.slice_dir / "doc_phase"
         out_dir.mkdir(exist_ok=True)
+        (out_dir / ".gitignore").write_text("*\n")
         ranged, unranged = self._landed()
         by_repo: dict[str, list[tuple[str, dict]]] = {}
         for pid, landed in ranged:
@@ -6935,6 +7109,7 @@ class RunLoop:
             spec = ["--", *pathspec] if pathspec else []
             sections: list[str] = []
             summaries: list[str] = []
+            stubbed = 0
             for pid, landed in landings:
                 base, head = landed["base"], landed["head"]
                 rng = f"{base}..{head}"
@@ -6942,8 +7117,12 @@ class RunLoop:
                                 root=Path(repo), check=False)
                 if not stat:
                     continue
-                diff = self.git("diff", rng, *spec, root=Path(repo),
-                                check=False)
+                diff, count = self._redact(
+                    self.git_raw("diff", rng, *spec, root=Path(repo),
+                                 check=False),
+                    base, head, Path(repo))
+                stubbed += count
+                diff = diff.rstrip("\n")
                 sections.append(
                     f"{repo} — P{pid}: git diff {base[:12]}..{head[:12]}"
                     f"\n\n{stat}\n\n{diff}\n")
@@ -6960,6 +7139,9 @@ class RunLoop:
             used.add(name)
             path = out_dir / f"{name}.diff"
             path.write_text("\n".join(sections))
+            if stubbed:
+                self.log(f"doc phase: {stubbed} Secret data line(s) stubbed "
+                         f"in {path}")
             rows.append(f"- {repo}: {path} ({'; '.join(summaries)})")
         for pid in unranged:
             rows.append(

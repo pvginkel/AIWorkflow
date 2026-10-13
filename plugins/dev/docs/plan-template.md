@@ -136,6 +136,14 @@ The mechanical rules the parser holds every author to:
   changed as its review range, and is told that the driver gated the Target alone
   ([run-loop.md](run-loop.md) § The per-phase round). The name is the plan's; the driver knows
   no ledger file of its own.
+- **`Never print: <paths>` marks material that never reaches a transcript** — an optional line
+  under `Target:` for a phase whose diff carries what the slice or a ruling says is never printed:
+  a key file, an encrypted key, a Secret holding the password to one. The value is one or more
+  paths relative to the Target's root, comma- or space-separated. The driver holds them out of the
+  review diffs it writes, and the reviewer's dispatch gives it the command shape that prints none
+  of them: `git diff --stat` first, then the diff with those paths held out, piped through
+  `tools/redact_secrets.py`. A `kind: Secret`'s data needs no line: the driver stubs it in every
+  diff it hands an agent ([run-loop.md](run-loop.md) § The per-phase round).
 - **A skill the work keeps is named, never restated.** Where a convention a phase must keep is
   a skill's — a host style guide such as `kubecoder:jenkins-pipelines` — the phase names it as
   `` `<plugin>:<skill>` ``, or the requirements/rulings do for every phase. The roles have no

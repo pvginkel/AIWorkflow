@@ -110,6 +110,10 @@ class FakeGit:
         self.stat = ""           # what `diff --stat` reports
         self.diff = ""           # what a plain `diff <range>` reports
         self.diffs = []          # plain-diff answers, consumed in order first
+        # What `git_raw("show", "<rev>:<path>")` reads — (rev, path) → the
+        # blob's text; a pair not in it is refused, as git refuses a path
+        # its commit does not have.
+        self.blobs = {}
         self.merge_bases = []    # `merge-base` answers, consumed in order
         self.dirty = ""          # what `status --porcelain` reports
         self.dirty_roots = {}    # str(root) → porcelain, overriding `dirty`
@@ -373,6 +377,20 @@ class FakeGit:
             self.worktrees.pop(args[-1], None)
         return True
 
+    def raw(self, *args, root=None, check=True):
+        """`git_raw` — a blob from `blobs` for `show <rev>:<path>`; anything
+        else (the diffs the redactor reads) as `__call__` answers it."""
+        if args and args[0] == "show":
+            self.calls.append((root, args))
+            rev, _, path = args[1].partition(":")
+            if (rev, path) not in self.blobs or args in self.fails:
+                raise Bailout("protocol_failure",
+                              details=f"git {' '.join(args)} failed:\n"
+                                      f"fatal: path '{path}' does not exist "
+                                      f"in '{rev}'")
+            return self.blobs[(rev, path)]
+        return self(*args, root=root, check=check)
+
     def mutations(self, verb):
         return [(root, c) for root, c in self.calls if c[0] == verb]
 
@@ -406,6 +424,7 @@ class ScriptedLoop(RunLoop):
             spec_root=str(run_loop.spec_root_for(self.slice_dir) or ""))
         self.git = self.fake_git
         self.git_ok = self.fake_git.ok
+        self.git_raw = self.fake_git.raw
         self.sleeps = []
         self.gate_cwds = []   # where each scripted gate ran
         # A shared repo's phase worktrees go under the test's own tmp dir.
@@ -1520,6 +1539,284 @@ def test_a_snapshot_less_phase_state_counts_every_pair():
     assert read({}) == set() and read({"review_set_start": None}) == set()
     assert read({"review_set_start": [["/c", "abc1234"], ["/x"], "junk",
                                       [1, 2]]}) == {("/c", "abc1234")}
+
+
+# -- Secret data in the diffs agents read (AIWF-51) ---------------------------
+#
+# Slice 050 removed five Secrets, and the doc-writer's diff file and the
+# reviewer's own `git diff` carried every CA key and password into their
+# transcripts. The fakes' diffs are shaped as git writes them, and the blobs
+# the redactor reads at both ends of a range come from `FakeGit.blobs`.
+
+SECRET_PATH = "secrets/ca.yaml"
+SECRET_TEXT = ("apiVersion: v1\nkind: Secret\nmetadata:\n  name: ca-key\n"
+               "type: Opaque\ndata:\n  ca.key: S3CRETKEYVALUE\n"
+               "  password: aHVudGVyMg==\n")
+SECRET_VALUES = ("S3CRETKEYVALUE", "aHVudGVyMg", "M1DKEYVALUE", "N3WKEYVALUE")
+
+
+def secret_removal(text=SECRET_TEXT, path=SECRET_PATH):
+    """git's diff of `path` deleted, `text` its blob before."""
+    lines = text.splitlines()
+    return (f"diff --git a/{path} b/{path}\ndeleted file mode 100644\n"
+            f"index 1234567..0000000\n--- a/{path}\n+++ /dev/null\n"
+            f"@@ -1,{len(lines)} +0,0 @@\n"
+            + "".join(f"-{line}\n" for line in lines))
+
+
+def secret_change(old_value, new_value, path=SECRET_PATH):
+    """git's diff of the Secret's `ca.key` changed, and the blobs at either
+    end — the hunk's context, as git's would, reaches neither the kind line
+    nor the name."""
+    old = SECRET_TEXT.replace("S3CRETKEYVALUE", old_value)
+    new = SECRET_TEXT.replace("S3CRETKEYVALUE", new_value)
+    diff = (f"diff --git a/{path} b/{path}\nindex 1111111..2222222 100644\n"
+            f"--- a/{path}\n+++ b/{path}\n@@ -4,5 +4,5 @@ kind: Secret\n"
+            "   name: ca-key\n type: Opaque\n data:\n"
+            f"-  ca.key: {old_value}\n+  ca.key: {new_value}\n"
+            "   password: aHVudGVyMg==\n")
+    return diff, old, new
+
+
+def assert_no_secret_on_disk(slice_dir):
+    """No file the run wrote — state, log, bail, report, diffs — holds a
+    value."""
+    for path in slice_dir.rglob("*"):
+        if path.is_file():
+            text = path.read_text(errors="replace")
+            assert not any(v in text for v in SECRET_VALUES), path
+
+
+def test_the_doc_phase_diff_stubs_secret_data_and_ignores_itself():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        r.fake_git.stat = (f" {SECRET_PATH} | 8 --------\n"
+                           " 1 file changed, 8 deletions(-)")
+        r.fake_git.diff = secret_removal()
+        r.fake_git.blobs = {("base123", SECRET_PATH): SECRET_TEXT}
+        assert run_to_exit(r) == 0
+        out_dir = slice_dir / "doc_phase"
+        assert (out_dir / ".gitignore").read_text() == "*\n"
+        text = (out_dir / "repo.diff").read_text()
+        assert text.startswith(f"{repo} — P1: git diff base123..abc123\n\n"
+                               f" {SECRET_PATH} | 8 --------\n")
+        lines = text.splitlines()
+        assert "-[Secret ca-key: 2 data lines]" in lines
+        assert "-kind: Secret" in lines and "-data:" in lines
+        assert text.endswith("-data:\n-[Secret ca-key: 2 data lines]\n")
+        assert ("show", f"base123:{SECRET_PATH}") in [
+            c for _, c in r.fake_git.calls]
+        assert_no_secret_on_disk(slice_dir)
+        prompt = next(p for role, p in r.prompts if role == "doc-writer")
+        assert ("and this file already is that. Every line inside a `kind: "
+                "Secret`'s `data:` or `stringData:` is a `[Secret <name>: N "
+                "data lines]` stub there: a doc needs no more of it, so never "
+                "read it back from git or the files themselves.") \
+            in " ".join(prompt.split())
+        assert (f"doc phase: 2 Secret data line(s) stubbed in "
+                f"{out_dir / 'repo.diff'}") in (slice_dir / "log.txt").read_text()
+
+
+def test_a_doc_phase_diff_it_cannot_redact_bails_and_writes_none_of_it():
+    flow = ("apiVersion: v1\nkind: Secret\nmetadata:\n  name: ca-key\n"
+            "data: {password: aHVudGVyMg==}\n")
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     V["consult_complete"], V["test_clean"]],
+                         repo_root=repo)
+        r.fake_git.stat = (f" {SECRET_PATH} | 5 -----\n"
+                           " 1 file changed, 5 deletions(-)")
+        r.fake_git.diff = secret_removal(flow)
+        r.fake_git.blobs = {("base123", SECRET_PATH): flow}
+        assert run_to_exit(r) == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "redaction"
+        assert bail["question"] is False and bail["phase"] is None
+        assert f"{SECRET_PATH} (old side), line 5" in bail["details"]
+        assert (f"in base123..abc123 of {repo}; the driver hands no agent a "
+                "diff it could not redact") in bail["details"]
+        assert "doc-writer" not in [s[0] for s in r.spawned]
+        assert not list((slice_dir / "doc_phase").glob("*.diff"))
+        assert_no_secret_on_disk(slice_dir)
+
+
+def test_a_review_range_with_secret_data_is_handed_over_redacted():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        diff, old, new = secret_change("S3CRETKEYVALUE", "N3WKEYVALUE00")
+        r.fake_git.diff_files = f"app/main.py\n{SECRET_PATH}"
+        r.fake_git.stat = (f" {SECRET_PATH} | 2 +-\n"
+                           " 1 file changed, 1 insertion(+), 1 deletion(-)")
+        r.fake_git.diff = diff
+        r.fake_git.blobs = {("base123", SECRET_PATH): old,
+                            ("abc123", SECRET_PATH): new}
+        assert run_to_exit(r) == 0
+        path = slice_dir / "phases" / "P1" / "review_r1.diff"
+        text = path.read_text()
+        assert text.startswith(f"{repo} — git diff base123..abc123\n\n"
+                               f" {SECRET_PATH} | 2 +-\n")
+        # the section heading git took from the file is dropped
+        assert text.splitlines()[-7:] == [
+            "@@ -4,5 +4,5 @@", "   name: ca-key", " type: Opaque", " data:",
+            "-[Secret ca-key: 1 data line]", "+[Secret ca-key: 1 data line]",
+            " [Secret ca-key: 1 data line]"]
+        assert_no_secret_on_disk(slice_dir)
+        prompt = reviews_of(r)[0]
+        note = run_loop.REVIEW_SECRETS_NOTE.format(
+            path=path, ranges="`base123..abc123`", held_out="", root=repo,
+            tool=run_loop.TOOLS_DIR / "redact_secrets.py")
+        assert "not a finding.\n\n" + note + "The deterministic test gate" \
+            in prompt
+        assert "never to print" not in prompt
+        assert (f"[P1] reviewer handed {path}: 3 Secret data line(s) stubbed"
+                in (slice_dir / "log.txt").read_text())
+
+
+def test_a_review_range_of_code_alone_costs_one_name_only_and_nothing_more():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        # prose about Secrets is no manifest
+        r.fake_git.diff_files = "app/main.py\ndocs/secrets.md"
+        assert run_to_exit(r) == 0
+        assert not (slice_dir / "phases" / "P1" / "review_r1.diff").exists()
+        prompt = reviews_of(r)[0]
+        assert "Secret" not in prompt and "never to print" not in prompt
+        assert "not a finding.\n\nThe deterministic test gate ran GREEN" \
+            in prompt
+        calls = [c for _, c in r.fake_git.calls]
+        assert [c for c in calls if c[:2] == ("diff", "--name-only")
+                and "--no-renames" in c] == [
+            ("diff", "--name-only", "--no-renames", "base123..abc123")]
+        assert not [c for c in calls if c[0] == "diff"
+                    and "--name-only" not in c
+                    and not any(a.startswith("--stat") for a in c)]
+        assert not [c for c in calls if c[0] == "show"]
+
+
+def test_never_print_paths_are_parsed_held_out_and_given_the_safe_shape():
+    phases, errors = parse_plan(
+        "### P1 — Keys\n\n**Target:** app\n"
+        "**Never print:** `secrets/ca.yaml`, keys/x.pem\n"
+        "Never print: later.yaml\n\n"
+        "### P2 — None\n\nTarget: app\n")
+    assert not errors
+    assert [p.never_print for p in phases] == [
+        ["secrets/ca.yaml", "keys/x.pem"], None]
+    tool = run_loop.TOOLS_DIR / "redact_secrets.py"
+    spec = ("--", ".", ":(exclude)secrets/ca.yaml", ":(exclude)keys/x.pem")
+    for touched in ("app/main.py", "deploy/app.yaml"):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp, phases=[(
+                "1", "Keys", PROJECT, False,
+                "Never print: secrets/ca.yaml, `keys/x.pem`\n")])
+            r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                         *TAIL], repo_root=repo)
+            diff, old, new = secret_change("S3CRETKEYVALUE", "N3WKEYVALUE00",
+                                           path="deploy/app.yaml")
+            r.fake_git.diff_files = touched
+            r.fake_git.diffs = [diff]
+            r.fake_git.blobs = {("base123", "deploy/app.yaml"): old,
+                                ("abc123", "deploy/app.yaml"): new}
+            assert run_to_exit(r) == 0
+            prompt = reviews_of(r)[0]
+            flat = " ".join(prompt.split())
+            assert ("plan.md marks `secrets/ca.yaml`, `keys/x.pem` never to "
+                    "print for this phase.") in flat
+            assert (f"`git -C {repo} diff <range> -- . "
+                    "':(exclude)secrets/ca.yaml' ':(exclude)keys/x.pem' | "
+                    f"python3 {tool} --root {repo} <range>`, where `<range>` "
+                    "is `base123..abc123`.") in flat
+            assert f"Run `git -C {repo} diff --stat <range>` first" in flat
+            calls = [c for _, c in r.fake_git.calls]
+            assert ("diff", "--name-only", "--no-renames", "base123..abc123",
+                    *spec) in calls
+            if touched == "app/main.py":
+                assert "kind: Secret" not in prompt
+                assert "not a finding.\n\nplan.md marks" in prompt
+                assert ("diff", "base123..abc123", *spec) not in calls
+                continue
+            # the Secret note first, saying the paths are held out of its file
+            assert prompt.index("This range changes `kind: Secret`") \
+                < prompt.index("plan.md marks")
+            assert ("stub, the never-print paths below held out. Read the "
+                    "diff") in flat
+            assert ("diff", "base123..abc123", *spec) in calls
+            assert ("diff", "--stat=100", "base123..abc123") in calls
+            assert_no_secret_on_disk(slice_dir)
+
+
+def test_a_delta_round_hands_over_the_fix_range_then_the_branch():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+
+        def move_head(loop):
+            loop.fake_git.head = "head2"
+
+        r = ScriptedLoop(slice_dir, [
+            V["exec_done"], V["review_issues"],
+            ("code-writer", {"outcome": "done", "summary": "fixed"},
+             move_head),
+            V["review_signoff"], *TAIL], repo_root=repo)
+        first, base_text, mid = secret_change("S3CRETKEYVALUE",
+                                              "M1DKEYVALUE00")
+        fix, _, new = secret_change("M1DKEYVALUE00", "N3WKEYVALUE00")
+        branch, _, _ = secret_change("S3CRETKEYVALUE", "N3WKEYVALUE00")
+        r.fake_git.diff_files = SECRET_PATH
+        r.fake_git.diffs = [first, fix, branch]
+        r.fake_git.blobs = {("base123", SECRET_PATH): base_text,
+                            ("abc123", SECRET_PATH): mid,
+                            ("head2", SECRET_PATH): new}
+        assert run_to_exit(r) == 0 and not r.fake_git.diffs
+        outputs = slice_dir / "phases" / "P1"
+        assert (outputs / "review_r1.diff").exists()
+        text = (outputs / "review_r2.diff").read_text()
+        assert text.startswith(f"{repo} — git diff abc123..head2\n")
+        assert f"\n{repo} — git diff base123..head2\n" in text
+        assert text.count("-[Secret ca-key: 1 data line]") == 2
+        assert_no_secret_on_disk(slice_dir)
+        delta = reviews_of(r)[1]
+        assert "Re-review phase P1" in delta
+        flat = " ".join(delta.split())
+        assert (f"{outputs / 'review_r2.diff'} holds `git diff --stat` and "
+                "then the diff for the fix range `abc123..head2` and then "
+                "the whole branch `base123..head2`, every line") in flat
+        calls = [c for _, c in r.fake_git.calls if c[:2] == ("diff", "--name-only")
+                 and "--no-renames" in c]
+        assert [c[3] for c in calls] == ["base123..abc123", "abc123..head2",
+                                         "base123..head2"]
+
+
+def test_a_review_range_it_cannot_redact_bails_before_the_reviewer():
+    flow = ("apiVersion: v1\nkind: Secret\nmetadata:\n  name: ca-key\n"
+            "data: {password: aHVudGVyMg==}\n")
+    for blobs, why in (({("base123", SECRET_PATH): flow},
+                        f"{SECRET_PATH} (old side), line 5"),
+                       ({}, f"{SECRET_PATH} (old side): the blob at base123 "
+                            "could not be read")):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp)
+            r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                         *TAIL], repo_root=repo)
+            r.fake_git.diff_files = SECRET_PATH
+            r.fake_git.diff = secret_removal(flow)
+            r.fake_git.blobs = blobs
+            assert run_to_exit(r) == 3
+            bail = json.loads((slice_dir / "bailout.json").read_text())
+            assert bail["reason"] == "redaction" and bail["phase"] == "1"
+            assert bail["question"] is False
+            assert why in bail["details"]
+            assert (f"in base123..abc123 of {repo}; the driver hands no agent "
+                    "a diff it could not redact") in bail["details"]
+            assert [s[0] for s in r.spawned] == ["code-writer"]
+            assert not (slice_dir / "phases" / "P1" / "review_r1.diff").exists()
+            assert_no_secret_on_disk(slice_dir)
 
 
 # -- kc's "nothing ran" exit code (KC-81) --------------------------------------
@@ -3335,6 +3632,7 @@ class RealGitLoop(ScriptedLoop):
         super().__init__(slice_dir, script, **kw)
         self.git = types.MethodType(RunLoop.git, self)
         self.git_ok = types.MethodType(RunLoop.git_ok, self)
+        self.git_raw = types.MethodType(RunLoop.git_raw, self)
 
     def _fetch_origin(self, root):
         pass
@@ -5023,7 +5321,9 @@ def test_doc_phase_diff_rows_name_unchanged_repos_without_a_file():
         assert run_to_exit(r) == 0
         prompt = next(p for role, p in r.prompts if role == "doc-writer")
         assert f"- {repo}: no changes (P1)" in prompt
-        assert not list((slice_dir / "doc_phase").iterdir())
+        # the folder's own .gitignore, and no diff file
+        assert [f.name for f in (slice_dir / "doc_phase").iterdir()] == [
+            ".gitignore"]
 
 
 def test_doc_diffs_are_per_repo_and_hold_the_specs_slices_tree_out():

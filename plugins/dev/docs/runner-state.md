@@ -111,8 +111,11 @@ the slice root for the consult/test/doc stages and the wrap-up (`wrap_up_result.
 `<repo>.log` per Target repo, rewritten at every start); the loop-tail sweep's logs live under
 `<slice>/sweeps/r<N>/`; the doc phase's diff files under `<slice>/doc_phase/` (one `<repo>.diff`
 per repo a phase merged into, a section per merged phase over its `landed` range, rewritten at
-every doc-writer dispatch — git's answer written down, not an agent's copy). Executor inputs
-come from `plan.md`, never from copies.
+every doc-writer dispatch — git's answer written down, not an agent's copy, with every `kind:
+Secret`'s data lines stubbed; the folder's own `.gitignore`, `*`, keeps it out of any `git add -A`
+in the spec repo). A review round whose range changes Secret data leaves `review_r<N>.diff`
+beside its review, the range redacted the same way. Executor inputs come from `plan.md`, never
+from copies.
 
 ## bailout.json and exit codes
 
@@ -139,6 +142,7 @@ error the orchestrator diagnoses).
 | `devlock_timeout` | – | the dev occupancy lease stayed held past the wait cap |
 | `timeout` | – | a driver-run gate or sweep command exceeded its limit, or an agent session did with no usable verdict on disk |
 | `unpushed` | – | a repo the slice touched was still behind `origin/<base>` after the test phase and its push nudges |
+| `redaction` | – | a diff the driver hands an agent — a doc-phase diff file, or a review round's range — could not be redacted (`tools/redact_secrets.py`): a manifest's Secret it cannot bound (JSON, flow style, a line that reads as `kind: Secret` but is not a block-style key, a comment included), a diff that does not match its blobs, or a blob it could not read; the details name the file, side and line, never a line of it. No agent is handed that diff |
 | `plugin_version` | – | the installed plugin's version differs from the loop's own, at startup or before a dispatch; the details name the installed `tools/` path to relaunch from ([run-loop.md](run-loop.md) § Protocol invariants) |
 | `protocol_failure` | – | a git command failed, an agent left uncommitted changes, a consult chose an unoffered action, the worktree was dirty at merge, a shared target's merge failed five times over, the primary repo is shared or `kc env describe` does not answer, a `CLAUDE.md` procedure-doc pointer is missing, or a `verification.json` item carries a key outside the schema |
 | `lost_work` | – | a commit the driver recorded on a phase branch is not on it any more (and the driver did not ask for the rebase that rewrote it), or a `pending` phase's branch carries commits the run has no record of |

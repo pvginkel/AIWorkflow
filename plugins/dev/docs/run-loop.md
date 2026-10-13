@@ -195,13 +195,23 @@ whole plan is a feature of the review, not a cost. Then:
   is empty with no `Review:` line, and a `Review:` file that yields no new or changed pair, are
   each stated to the reviewer as such, never handed on as a range to read: one Ansible phase's
   dispatch named an empty `git diff` in the Target repo while its work sat in 13 scratch clones,
-  and the reviewer found it only through `state.json`, the plan and its attachment. The gate
-  paragraph names the suite and the repo it ran in, and with a review set adds that no suite
-  ran in the review set's repos. A `blocking` tag needs an anchor from the closed list in the
-  reviewer's contract (no anchor is advisory by construction), and the verdict reports every
-  finding machine-readably — severity, impact, category, anchor — which the driver persists
-  into `state.json`'s history. A fix round resolves the findings tagged **blocking** and
-  nothing else — advisory findings stay in the review file and the close-out report (the
+  and the reviewer found it only through `state.json`, the plan and its attachment. A range
+  that changes `kind: Secret` data is never handed over as a `git diff` to run: the driver
+  writes it to `review_r<N>.diff` beside the review, `--stat` and then the diff of each range
+  the dispatch names, every line inside a Secret's `data:`/`stringData:` stubbed as
+  `[Secret <name>: N data lines]` by `tools/redact_secrets.py`, and the reviewer reads that
+  file — run as dispatched, slice 050's range printed five removed Secrets' CA keys and
+  passwords before the reviewer knew what it held. A phase's `Never print:` paths
+  ([plan-template.md](plan-template.md)) are held out of that file, and the dispatch gives the
+  command shape over them: `--stat` first, then the diff with them held out, through the
+  redactor. A range the redactor cannot redact bails `redaction` before the reviewer is
+  spawned ([runner-state.md](runner-state.md)). The gate paragraph names the suite and the repo
+  it ran in, and with a review set adds that no suite ran in the review set's repos. A
+  `blocking` tag needs an anchor from the closed list in the reviewer's contract (no anchor is
+  advisory by construction), and the verdict reports every finding machine-readably —
+  severity, impact, category, anchor — which the driver persists into `state.json`'s history.
+  A fix round resolves the findings tagged **blocking** and nothing else — advisory findings
+  stay in the review file and the close-out report (the
   residue rider mops up the mechanical ones), never fixed mid-loop, so each re-review stays the
   size of the blocking fixes rather than everything the writer chose to touch. Fix rounds are
   **failure-first**: a finding with an executable anchor is witnessed — the failing test
@@ -342,7 +352,9 @@ whole plan is a feature of the review, not a cost. Then:
   repo's `slices/` tree held out; never the base branch since the slice began, which in parallel
   lanes carried the other lanes' merges and the slice's own run record, and never HEAD, which is
   the doc branch, so a redispatched writer's own commits never read as shipped work; a phase
-  merged with no range on record is named in the dispatch as missing from the files), read by
+  merged with no range on record is named in the dispatch as missing from the files; every
+  `kind: Secret`'s data lines stubbed, a section the redactor cannot redact a `redaction` bail;
+  the folder ignoring itself, so no `git add -A` in the spec repo commits it), read by
   path instead of re-running `git diff`, which past the tool's output limit round-trips through a
   persisted file; the plan **digested whole** — title, rulings sections, every phase's
   done-record — so the plan is opened only where a record points and slice.md not at all. The
