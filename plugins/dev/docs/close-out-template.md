@@ -199,7 +199,9 @@ Every verb takes the slice directory or the report's path as its first argument.
 | `list` | an author | ids, headlines and Consequence lines by kind, struck entries marked |
 | `note` | anyone | adds a dated paragraph to one entry |
 | `strike` | whoever resolved the entry | strikes it, with the reason and the commit |
-| `relabel` | the wrap-up | gives an entry its labels or corrects them, with a note of what it found |
+| `unnote` | the note's author | withdraws the latest note they wrote with `note` or `relabel` while it is not committed — a relabel's kind and labels go back with it |
+| `unstrike` | the strike's author | withdraws a strike they made while it is not committed |
+| `relabel` | the wrap-up | gives an entry its labels or corrects them, with a note of what it found; `--dry-run` prints the note and the route, and writes nothing |
 | `propose` | the wrap-up, the close-out session | gives an entry its proposal, or replaces it — the one before is kept as a note |
 | `request-card` | the wrap-up | asks for a card on an entry, with how it is reached and what the fix takes — which becomes the entry's proposal |
 | `leave` | the wrap-up | records that it looked at an entry and changed nothing, and why |

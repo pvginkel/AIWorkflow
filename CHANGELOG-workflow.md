@@ -4,6 +4,26 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-13 — An author takes back their own uncommitted note or strike; `relabel --dry-run` (v0.9.99)
+
+`close_out.py` gains `unnote <id> --by` and `unstrike <id> --by`. `unnote` withdraws the latest
+note the author wrote with `note` or `relabel`; a relabel's note puts back the kind and labels it
+changed, and is refused once a later relabel changed one of them again (or either changed the
+kind). `unstrike` withdraws the author's strike, the entry live again. Both refuse what `git show
+HEAD:./close-out.json` in the slice folder already holds, and what another `--by` signed; a
+strike made without `--by`, or by the operator's ruling, has nobody to take it back, and the
+refusal says so. Amending is withdrawing, then writing again. A second `strike` names the way
+back. The notes the tool writes to keep history — a replaced proposal, an earlier wrap-up mark,
+an earlier ruling — now carry a `history` key, and `unnote` never takes them. `relabel
+--dry-run` runs every check `relabel` runs, prints the note and the route the entry would take,
+and writes nothing; the Consequence-pairing check stays off for a relabel, as before. Both verbs
+are in every dispatch's verb block.
+
+Why: a wrong note could be corrected only by a second note, a second strike was refused, and a
+relabel run to see whether it would be refused wrote the labels. The one way back was a `git
+checkout` of the store, which in the shared spec tree drops every other writer's uncommitted
+entries too (AnsibleSpecs, slice 047's wrap-up; FieldnotesApp, slice 004's). (AIWF-55)
+
 ## 2026-10-13 — The run loop stubs `kind: Secret` data in the diffs it hands agents; `doc_phase/` ignores itself (v0.9.98)
 
 New `tools/redact_secrets.py` replaces every diff line inside a `kind: Secret`'s `data:` or

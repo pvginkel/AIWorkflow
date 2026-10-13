@@ -15,14 +15,15 @@ whole life, from the plan loop's first append to the operator's last ruling, and
 what the operator is shown of it: each entry's ask — its headline, its proposal and its
 consequence — with the body, the newest note and the evidence they need to rule on it.
 `${CLAUDE_PLUGIN_ROOT}/tools/close_out.py` is the one pen:
-it writes every author's entries (`append`), notes (`note`) and strikes (`strike`), the
+it writes every author's entries (`append`), notes (`note`) and strikes (`strike`), and takes
+the last two back (`unnote`, `unstrike`), the
 corrections of a label (`relabel`) and of a proposal (`propose`), what the wrap-up asked for and
 left (`request-card`, `leave`), the operator's rulings (`rule`), prints an entry in full
 (`show`), renders the report and counts it. Both
 loops import it, and every dispatch names it beside the report's path — which the tool takes as
 its positional, the slice directory or the report itself, so the first call works — with
 the labels each kind carries and how they pair, from the tables `append` refuses by, and the
-arguments of `append`, `note` and `strike`, rendered from the tool's own parser
+arguments of `append`, `note`, `strike`, `unnote` and `unstrike`, rendered from the tool's own parser
 (`close_out.verb_usage`), so no `--help` turn or refused call is spent. No agent edits either
 file by hand. The `Disposition:` lines of `close-out.md` are the operator's, and the one thing
 in that file that is read back. Every verb that changes the store renders the report as it
@@ -36,6 +37,13 @@ passes; the driver bails `report_edited` instead ([run-loop.md](run-loop.md) § 
 invariants). **Nor does a ruling replace one.** `rule --words` refuses an entry that holds other
 words already: `--append` adds the session's record of what the operator said after the words
 they wrote, `--replace` is for when they say the new words replace the old.
+**An author takes back only their own words, and only before they are committed.** `unnote`
+withdraws the latest note an author wrote with `note` or `relabel` — a relabel's note puts back
+the kind and labels it changed, and is refused once a later relabel changed them again — and
+`unstrike` withdraws an author's strike. Both refuse what `HEAD`'s `close-out.json` already
+holds, and what another `--by` signed: a strike made without `--by`, or by a ruling, has no
+author to take it back. Amending is withdrawing, then writing again. `relabel --dry-run`
+prints the note and the route a relabel would give the entry, and writes nothing.
 
 ## What it is — and is not
 

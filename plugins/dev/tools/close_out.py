@@ -20,8 +20,14 @@ is judgment — and nobody edits either file by hand; importable by both loops
                headlines and Consequence lines, struck entries marked.
   note         add a dated paragraph `<who>, <date> — <text>` to one entry.
   strike       strike one entry, with the reason and the commit.
+  unnote       withdraw the latest note an author wrote with `note` or
+               `relabel` — a relabel's kind and labels put back — while it
+               is not committed, and only on its own --by.
+  unstrike     withdraw an author's own strike while it is not committed.
   relabel      give an entry its labels or correct them, with a note of what
                changed and why. The id never changes, not even with the kind.
+               `--dry-run` prints the note and the route it would give the
+               entry, and writes nothing.
   propose      give an entry its proposal — what the author would do about
                it — or replace it, the old one kept as a note.
   request-card the wrap-up asks for a card on an entry; its words become the
@@ -89,6 +95,7 @@ import json
 import os
 import re
 import string
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -117,14 +124,15 @@ LABELS_HEADING = "## The labels"
 DISPATCH_LINE = """\
 The slice's close-out report is {report}, rendered from its store,
 {store}. Write to it only through `python3 {tool} <verb> {report} …` —
-`append`, `note`, `strike`; `list` shows what is there (ids, headlines,
-Consequence lines) — never edit either file by hand, and commit the store
-with your own commit, staged by name. An entry carries labels that say
-what it is, and the tool routes it from them: you state what you know
-and, where `append` asks for a proposal, what you would do — never where
-the entry goes. `python3 {tool} labels` prints what each label means —
-read it before your first append. The labels each kind carries, every one
-of them, `unknown` where you cannot tell:
+`append`, `note`, `strike`, and `unnote` or `unstrike` to take back your
+own note or strike while it is not committed; `list` shows what is there
+(ids, headlines, Consequence lines) — never edit either file by hand, and
+commit the store with your own commit, staged by name. An entry carries
+labels that say what it is, and the tool routes it from them: you state
+what you know and, where `append` asks for a proposal, what you would do
+— never where the entry goes. `python3 {tool} labels` prints what each
+label means — read it before your first append. The labels each kind
+carries, every one of them, `unknown` where you cannot tell:
 {kind_labels}
 {label_pairing}
 The verbs take:
@@ -339,8 +347,8 @@ EDITED_TAIL = ("Ask the operator about every line here that is not yours to take
                "A role the run loop dispatched never passes --overwrite: say in your "
                "verdict's summary what you meant to write, and carry on.")
 # The verbs that write close-out.md, each taking `--overwrite`.
-WRITING_VERBS = ("append", "note", "strike", "relabel", "propose", "request-card",
-                 "leave", "rule", "close", "render", "stamp")
+WRITING_VERBS = ("append", "note", "strike", "unnote", "unstrike", "relabel", "propose",
+                 "request-card", "leave", "rule", "close", "render", "stamp")
 OVERWRITE_HELP = ("write close-out.md although it was edited since its last render "
                   "(after the refusal's list is dealt with)")
 
@@ -385,12 +393,13 @@ def slice_dir_of(arg: Path | str) -> Path:
 def dispatch_line(report: Path | str) -> str:
     """The report pointer a dispatch prompt carries — the path, the store,
     the tool, the labels each kind carries and how they pair, as
-    `check_labels` holds them, and the arguments of the three verbs it
+    `check_labels` holds them, and the arguments of the five verbs it
     names, rendered from the parser."""
     return DISPATCH_LINE.format(report=report, store=STORE_NAME, tool=TOOL_PATH,
                                 kind_labels=kind_labels_text(),
                                 label_pairing=LABEL_PAIRING,
-                                verb_usage=verb_usage("append", "note", "strike"))
+                                verb_usage=verb_usage("append", "note", "strike",
+                                                      "unnote", "unstrike"))
 
 
 def _collapse(text: str | None) -> str:
@@ -565,6 +574,42 @@ def _load(slice_dir: Path | str) -> dict:
 def _read_store(slice_dir: Path | str) -> dict:
     with _locked(slice_dir):
         return _load(slice_dir)
+
+
+# How long reading HEAD's store may take before a withdrawal is refused.
+GIT_SHOW_TIMEOUT = 30
+
+
+def _committed_entry(slice_dir: Path | str, eid: str) -> dict | None:
+    """The entry as HEAD's store holds it — `git show HEAD:./close-out.json`
+    from the slice directory — the line `unnote` and `unstrike` do not
+    cross: what a commit holds stays. None when nothing is committed: no
+    git, no repository, no commit yet, no store or no such entry in it. A
+    git that does not answer, or a committed store that is not JSON, is a
+    ReportError — a withdrawal is never let through on a store that could
+    not be read. Called under the lock."""
+    try:
+        result = subprocess.run(
+            ["git", "show", f"HEAD:./{STORE_NAME}"], cwd=slice_dir,
+            capture_output=True, text=True, timeout=GIT_SHOW_TIMEOUT,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+    except subprocess.TimeoutExpired:
+        raise ReportError(f"`git show HEAD:./{STORE_NAME}` in {slice_dir} did not answer "
+                          f"within {GIT_SHOW_TIMEOUT}s, so what is committed is unknown "
+                          "— nothing was withdrawn; try again") from None
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        committed = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        committed = None
+    if not isinstance(committed, dict) or not isinstance(committed.get("entries"), list):
+        raise ReportError(f"HEAD's {STORE_NAME} in {slice_dir} is not a close-out store, "
+                          "so what is committed is unknown — nothing was withdrawn")
+    return next((e for e in committed["entries"]
+                 if isinstance(e, dict) and e.get("id") == eid), None)
 
 
 _OVERWRITE = threading.local()
@@ -852,11 +897,27 @@ def _struck_heading(entry: dict) -> str:
             + _strike_tail(entry["strike"]))
 
 
+def _no_striker(strike: dict) -> str | None:
+    """Why nobody withdraws a strike, or None when its author may: one made
+    without --by (a `close`, a strike that named nobody) has no author to
+    take it back, and the operator's ruling owns its own."""
+    if not strike.get("by"):
+        return "a strike made without --by has no author to take it back"
+    if strike["by"] == RULED_BY:
+        return "the operator's ruling (`rule --did`) struck it, and the ruling owns it"
+    return None
+
+
 def _strike(entry: dict, reason: str, by: str | None, commit: str | None,
             date: str) -> None:
-    if entry.get("strike"):
+    strike = entry.get("strike")
+    if strike:
+        why = _no_striker(strike)
+        back = (f"{why[0].upper()}{why[1:]}; a note adds to it." if why else
+                f"Its striker withdraws it while it is not committed — `unstrike "
+                f"{entry['id']} --by {strike['by']}` — and strikes again.")
         raise ReportError(f"{entry['id']} is already struck: "
-                          + _struck_heading(entry)[4:])
+                          + _struck_heading(entry)[4:] + ". " + back)
     reason = _collapse(reason)
     if not reason:
         raise ReportError("a strike needs a --reason")
@@ -876,6 +937,35 @@ def strike_entry(slice_dir: Path | str, eid: str, reason: str,
         return _struck_heading(entry)
 
 
+def unstrike_entry(slice_dir: Path | str, eid: str, by: str) -> str:
+    """Withdraw a strike, the entry live again: only on the strike's own
+    --by, and only while it is not committed — a strike HEAD's store holds
+    stays, and a note adds to it. A strike made without --by, and the
+    operator's ruling's, have nobody to withdraw them. Amending a strike is
+    withdrawing it and striking again. Returns the entry's heading."""
+    who = _collapse(by)
+    if not who:
+        raise ReportError("unstrike needs --by: who struck the entry")
+    with _writing(slice_dir) as store:
+        entry = _find(store, eid)
+        eid = entry["id"]
+        strike = entry.get("strike")
+        if not strike:
+            raise ReportError(f"{eid} is not struck")
+        why = _no_striker(strike)
+        if why:
+            raise ReportError(f"{eid} stays struck: {why}; a note adds to it")
+        if strike["by"] != who:
+            raise ReportError(f"{eid} was struck by {strike['by']}, not {who}: only its "
+                              "striker withdraws a strike")
+        committed = _committed_entry(slice_dir, eid)
+        if committed is not None and committed.get("strike") == strike:
+            raise ReportError(f"{eid}'s strike is committed, and a committed strike "
+                              "stays; a note adds to it")
+        entry["strike"] = None
+        return _heading(entry)
+
+
 UNLABELLED_MARK = "—"
 
 
@@ -885,66 +975,153 @@ def _label_changes(old: dict | None, new: dict) -> dict:
             if old.get(k) != new.get(k)}
 
 
+def _relabel(entry: dict, who: str, day: str, note_lines: list[str],
+             kind: str | None, labels: dict | None,
+             slice_dir: Path | str) -> dict:
+    """Apply a relabel to `entry` in place — the merged labels, the kind —
+    and append the note that says what changed, its `relabel` record the
+    (old, new) of every key it changed. Returns the note."""
+    eid = entry["id"]
+    old_kind = entry.get("kind")
+    new_kind = kind or old_kind
+    if new_kind not in KINDS:
+        raise ReportError(f"{eid} has no kind; relabel it with --kind")
+    old = effective_labels(entry) or {}
+    given = {k: v for k, v in (labels or {}).items() if v is not None}
+    dropped = ([k for k in old if k not in CARRIES[new_kind] and k not in given]
+               if new_kind != old_kind else [])
+    merged = {k: v for k, v in old.items() if k not in dropped}
+    merged.update(given)
+    merged = _ordered_labels(merged)
+    errors = check_labels(new_kind, merged, entry.get("consequence"),
+                          slice_dir, given=labels or {}, relabel=True)
+    if errors:
+        raise ReportError("\n".join(errors))
+    changes = _label_changes(entry.get("labels"), merged)
+    if new_kind != old_kind:
+        changes = {"kind": [old_kind, new_kind], **changes}
+    if not changes:
+        raise ReportError(f"relabel changes nothing on {eid}: its labels "
+                          "are already those")
+    entry["kind"] = new_kind
+    entry["labels"] = merged
+    said = ", ".join(f"{k}: {o or UNLABELLED_MARK} → {n or UNLABELLED_MARK}"
+                     for k, (o, n) in changes.items())
+    if dropped:
+        said += (f"; dropped {_join(dropped)}, which a"
+                 f"{'n' if new_kind[0] in 'aeiou' else ''} {new_kind} does not carry")
+    text = [f"relabelled ({said}): {note_lines[0]}", *note_lines[1:]]
+    record = {"by": who, "date": day, "text": text, "relabel": changes}
+    entry["notes"].append(record)
+    return record
+
+
 def relabel_entry(slice_dir: Path | str, eid: str, by: str, note: str,
                   kind: str | None = None, labels: dict | None = None,
-                  date: str | None = None) -> str:
+                  date: str | None = None, dry_run: bool = False) -> str:
     """Merge `labels` into an entry's (an unlabelled one gets its first),
     correct its kind where given — the id stays — and leave a note saying
     what changed and why. The refusals of `append` apply to the labels as
     they are after the change, but not the one against the Consequence line
     (that is the author's text; the wrap-up corrects a label from the code).
     A new kind drops every old label it does not carry (CARRIES), and the
-    note names them. Returns the note's paragraph."""
+    note names them. Returns the note's paragraph. With `dry_run`, the same
+    relabel is made on a copy of the store and nothing is written: the
+    paragraph is followed by a `route:` line — the section of the report
+    and the Route the entry would take after it."""
     note_lines = _lines(note.strip())
     if not note_lines:
         raise ReportError("relabel needs a --note: what was found")
+    who = _collapse(by)
+    if not who:
+        raise ReportError("relabel needs --by")
     day = _date(date)
+    if dry_run:
+        entry = _find(_read_store(slice_dir), eid)
+        record = _relabel(entry, who, day, note_lines, kind, labels, slice_dir)
+        key, words = route(entry, touched_repos(slice_dir))
+        return f"{_note_text(record)}\nroute: {report_section(key)} — {words}"
     with _writing(slice_dir) as store:
         entry = _find(store, eid)
-        old_kind = entry.get("kind")
-        new_kind = kind or old_kind
-        if new_kind not in KINDS:
-            raise ReportError(f"{eid} has no kind; relabel it with --kind")
-        old = effective_labels(entry) or {}
-        given = {k: v for k, v in (labels or {}).items() if v is not None}
-        dropped = ([k for k in old if k not in CARRIES[new_kind] and k not in given]
-                   if new_kind != old_kind else [])
-        merged = {k: v for k, v in old.items() if k not in dropped}
-        merged.update(given)
-        merged = _ordered_labels(merged)
-        errors = check_labels(new_kind, merged, entry.get("consequence"),
-                              slice_dir, given=labels or {}, relabel=True)
-        if errors:
-            raise ReportError("\n".join(errors))
-        changes = _label_changes(entry.get("labels"), merged)
-        if new_kind != old_kind:
-            changes = {"kind": [old_kind, new_kind], **changes}
-        if not changes:
-            raise ReportError(f"relabel changes nothing on {eid}: its labels "
-                              "are already those")
-        entry["kind"] = new_kind
-        entry["labels"] = merged
-        said = ", ".join(f"{k}: {o or UNLABELLED_MARK} → {n or UNLABELLED_MARK}"
-                         for k, (o, n) in changes.items())
-        if dropped:
-            said += (f"; dropped {_join(dropped)}, which a"
-                     f"{'n' if new_kind[0] in 'aeiou' else ''} {new_kind} does not carry")
-        text = [f"relabelled ({said}): {note_lines[0]}", *note_lines[1:]]
-        record = {"by": _collapse(by), "date": day, "text": text,
-                  "relabel": changes}
-        if not record["by"]:
-            raise ReportError("relabel needs --by")
-        entry["notes"].append(record)
-        return _note_text(record)
+        return _note_text(_relabel(entry, who, day, note_lines, kind, labels,
+                                   slice_dir))
+
+
+def _undo_relabel(entry: dict, i: int) -> None:
+    """Put back what the relabel recorded on note `i` changed: the kind,
+    and each label as it was (None: not there) — an entry left with no
+    labels has none again, as before its first relabel. Refused when a
+    later relabel changed one of the same keys, or either changed the kind
+    (the labels a kind carries move with it), and when the entry no longer
+    carries what the relabel left."""
+    eid, note = entry["id"], entry["notes"][i]
+    record = note["relabel"]
+    for later in entry["notes"][i + 1:]:
+        again = later.get("relabel") or {}
+        shared = [k for k in record if k in again]
+        if again and (shared or "kind" in record or "kind" in again):
+            said = (f"changed {_join(shared)} again" if shared
+                    else "relabelled it across a change of its kind")
+            raise ReportError(f"{eid}: {note['by']}'s relabel is not withdrawn — a later "
+                              f"relabel, {later['by']}'s of {later['date']}, {said}; "
+                              "that one is withdrawn first")
+    labels = dict(entry.get("labels") or {})
+    for key, (_, new) in record.items():
+        now = entry.get("kind") if key == "kind" else labels.get(key)
+        if now != new:
+            raise ReportError(f"{eid}: {note['by']}'s relabel is not withdrawn — it left "
+                              f"{key} {new or UNLABELLED_MARK}, and the entry carries "
+                              f"{now or UNLABELLED_MARK} now")
+    for key, (old, _) in record.items():
+        if key == "kind":
+            entry["kind"] = old
+        elif old is None:
+            labels.pop(key, None)
+        else:
+            labels[key] = old
+    entry["labels"] = _ordered_labels(labels) or None
+
+
+def unnote_entry(slice_dir: Path | str, eid: str, by: str) -> str:
+    """Withdraw the latest note `by` wrote on an entry with `note` or
+    `relabel` — never one the tool wrote to keep history (`history`),
+    whoever signs it — while it is not committed: a note HEAD's store holds
+    stays, and a new note adds to it. A relabel's note takes its change
+    back with it (`_undo_relabel`). Amending a note is withdrawing it and
+    writing it again. Returns the withdrawn paragraph."""
+    who = _collapse(by)
+    if not who:
+        raise ReportError("unnote needs --by: who wrote the note")
+    with _writing(slice_dir) as store:
+        entry = _find(store, eid)
+        eid, notes = entry["id"], entry["notes"]
+        i = next((i for i in reversed(range(len(notes)))
+                  if notes[i].get("by") == who and not notes[i].get("history")), None)
+        if i is None:
+            raise ReportError(f"{eid} holds no note {who} wrote with `note` or `relabel`")
+        note = notes[i]
+        # The note is the n-th of its exact copies on the entry; HEAD holding
+        # n of them commits it — an agent's retried note stays withdrawable.
+        committed = (_committed_entry(slice_dir, eid) or {}).get("notes") or []
+        if committed.count(note) >= notes[:i + 1].count(note):
+            raise ReportError(f"{who}'s latest note on {eid} is committed, and a "
+                              f"committed note stays; a new note adds to it — "
+                              f"{_note_text(note)}")
+        if note.get("relabel"):
+            _undo_relabel(entry, i)
+        del notes[i]
+        return _note_text(note)
 
 
 def _set_proposal(entry: dict, who: str, day: str, text: str) -> None:
     """Give the entry `text` as its proposal; one it already had, and that
-    says something else, stays as a note signed by whoever replaced it."""
+    says something else, stays as a note signed by whoever replaced it —
+    a history note, which `unnote` never takes."""
     old = entry.get("proposal")
     if old and old != text:
         entry["notes"].append({"by": who, "date": day,
-                               "text": [f"proposal replaced — was: {old}"]})
+                               "text": [f"proposal replaced — was: {old}"],
+                               "history": "proposal"})
     entry["proposal"] = text
 
 
@@ -982,10 +1159,10 @@ def _mark_wrap_up(slice_dir: Path | str, eid: str, outcome: str, by: str,
         if entry.get("strike"):
             raise ReportError(f"{eid} is struck — a struck entry is settled")
         if entry.get("wrap_up"):
-            # A second mark replaces the first; the first stays, as a note.
+            # A second mark replaces the first; the first stays, as a history note.
             prior = entry["wrap_up"]
             entry["notes"].append({"by": prior["by"], "date": prior["date"],
-                                   "text": _wrap_up_lines(prior)})
+                                   "text": _wrap_up_lines(prior), "history": "wrap-up"})
         entry["wrap_up"] = {"outcome": outcome, "by": who, "date": day,
                             "text": lines}
         if propose:
@@ -1017,8 +1194,8 @@ def _rule(entry: dict, words: str | None, did: str | None,
     """The ruling's words and what was done on them. Words the entry holds
     already, and that say something else, are refused unless `mode` says
     what to do with them: `append` adds the new ones after them, `replace`
-    puts the new ones in their place and keeps the old in a note. The same
-    words again change nothing."""
+    puts the new ones in their place and keeps the old in a history note.
+    The same words again change nothing."""
     ruling = entry.get("ruling")
     if words is not None:
         words = words.strip()
@@ -1037,7 +1214,8 @@ def _rule(entry: dict, words: str | None, did: str | None,
                 words = f"{old}; {words}"
             else:
                 entry["notes"].append({"by": "the operator", "date": day,
-                                       "text": _lines("ruled earlier: " + old)})
+                                       "text": _lines("ruled earlier: " + old),
+                                       "history": "ruling"})
             ruling = entry["ruling"] = {"words": words, "did": ruling.get("did"),
                                         "date": day}
         elif not old:
@@ -2372,7 +2550,7 @@ def _label_value(value: str) -> str:
 
 
 # The help strings are prompt text: `verb_usage("append", "note",
-# "strike")` is rendered into every dispatch.
+# "strike", "unnote", "unstrike")` is rendered into every dispatch.
 LABEL_HELP = {
     "trigger": "what has to happen for the problem to show",
     "impact": "what is then experienced",
@@ -2485,6 +2663,16 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p.add_argument("--commit", help="the commit that resolved the entry")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
+    p = verb("unnote", "withdraw the latest note you wrote with note or relabel, "
+                       "not yet committed", entry=True)
+    p.add_argument("--by", required=True,
+                   help="the --by the note was written with — a relabel's labels "
+                        "go back with it")
+
+    p = verb("unstrike", "withdraw a strike you made, not yet committed; prints "
+                         "the entry's heading", entry=True)
+    p.add_argument("--by", required=True, help="the --by the strike was made with")
+
     p = verb("relabel", "give an entry its labels or correct them", entry=True)
     p.add_argument("--by", required=True, help="who relabels")
     p.add_argument("--note", required=True,
@@ -2493,6 +2681,9 @@ def build_parser() -> tuple[argparse.ArgumentParser,
                    help="the corrected kind; the id stays")
     _add_label_args(p)
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
+    p.add_argument("--dry-run", action="store_true",
+                   help="print the note and the route the entry would take, and "
+                        "write nothing")
 
     p = verb("propose", "give an entry its proposal, or replace it", entry=True)
     p.add_argument("--by", required=True, help="who proposes")
@@ -2684,11 +2875,16 @@ def _main(args) -> int:
         elif command == "strike":
             print(strike_entry(slice_dir, args.id, args.reason, by=args.by,
                                commit=args.commit, date=args.date))
+        elif command == "unnote":
+            para = unnote_entry(slice_dir, args.id, args.by)
+            print(f"{args.id} unnoted: {para}")
+        elif command == "unstrike":
+            print(unstrike_entry(slice_dir, args.id, args.by))
         elif command == "relabel":
             print(relabel_entry(slice_dir, args.id, args.by, _stdin_or(args.note),
                                 kind=args.kind,
                                 labels=normalise_for(_labels_from(args), slice_dir),
-                                date=args.date))
+                                date=args.date, dry_run=args.dry_run))
         elif command == "propose":
             print(propose_entry(slice_dir, args.id, args.by, _stdin_or(args.text),
                                 date=args.date))

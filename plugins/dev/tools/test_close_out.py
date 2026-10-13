@@ -14,6 +14,7 @@ import importlib.util
 import io
 import json
 import re
+import subprocess
 import sys
 import tempfile
 import threading
@@ -941,6 +942,385 @@ def test_relabel_gives_an_unlabelled_entry_its_first_labels():
         assert close_out.route(entry_of(slice_dir, "B1"))[0] == "closed:fault"
 
 
+def test_relabel_dry_run_prints_the_note_and_the_route_and_writes_nothing():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)
+        before = _files(slice_dir)
+        relabel = ("relabel", slice_dir, "B1", "--by", "wrap-up", "--note", "one call site",
+                   "--date", "2026-10-13")
+        code, out, err = run_cli(*relabel, "--fix", "one-edit", "--area", "plain",
+                                 "--dry-run")
+        assert code == 0, err
+        assert out == ("wrap-up, 2026-10-13 — relabelled (fix: design → one-edit, area: "
+                       "sensitive → plain): one call site\n"
+                       "route: For the wrap-up — the wrap-up — fix\n")
+        assert _files(slice_dir) == before
+        # what relabel refuses, the dry run refuses — and writes nothing either
+        for flags, needle in ((("--benefit", "user"), "--benefit: not a label of a defect"),
+                              (("--fix", "design"), "changes nothing"),
+                              (("--for", "77"), "--for 77")):
+            code, out, err = run_cli(*relabel, *flags, "--dry-run")
+            assert code == 2 and not out and needle in err, (flags, err)
+            assert _files(slice_dir) == before
+        # the Consequence check stays off, as on relabel: an impact of none over
+        # a Consequence that is not none is taken, and closes the entry
+        code, out, err = run_cli(*relabel, "--impact", "none", "--signal", "none",
+                                 "--dry-run")
+        assert code == 0, err
+        assert out.endswith("\nroute: Closed — closed — it has no impact\n")
+        assert _files(slice_dir) == before
+        # the relabel itself leaves the note the dry run printed
+        code, real, err = run_cli(*relabel, "--fix", "one-edit", "--area", "plain")
+        assert code == 0, err
+        assert real == ("wrap-up, 2026-10-13 — relabelled (fix: design → one-edit, area: "
+                        "sensitive → plain): one call site\n")
+        assert entry_of(slice_dir, "B1")["labels"]["fix"] == "one-edit"
+
+
+# -- unnote, unstrike: an author takes back what is not committed ------------------
+
+def git(cwd, *args):
+    """git with an identity and no signing, whatever the host's config says."""
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                    "-c", "commit.gpgsign=false", *args],
+                   cwd=cwd, check=True, capture_output=True)
+
+
+def commit_store(slice_dir, text=None):
+    """Commit the slice's store in the spec repo around it, made one first
+    where it is not; with `text`, that is what the commit holds, the store
+    on disk kept as it is."""
+    spec = slice_dir.parent.parent
+    if not (spec / ".git").exists():
+        git(spec, "init", "-q")
+    path = slice_dir / "close-out.json"
+    kept = path.read_bytes()
+    if text is not None:
+        path.write_text(text)
+    git(spec, "add", str(path))
+    git(spec, "commit", "-q", "--no-verify", "-m", "close-out")
+    path.write_bytes(kept)
+
+
+def test_unstrike_withdraws_its_strikers_strike_and_striking_again_amends_it():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)
+        live = report(slice_dir)
+        run_cli("strike", slice_dir, "B1", "--reason", "fixed", "--by", "consult 1")
+        code, _, err = run_cli("strike", slice_dir, "B1", "--reason", "fixed in abc123",
+                               "--by", "consult 1")
+        assert code == 2 and "B1 is already struck: ~~B1 — " in err
+        assert ("Its striker withdraws it while it is not committed — `unstrike B1 --by "
+                "consult 1` — and strikes again.") in err
+        code, out, err = run_cli("unstrike", slice_dir, "B1", "--by", " consult  1 ")
+        assert code == 0, err
+        assert out == "### B1 — controller: the status line is wrong\n"
+        assert entry_of(slice_dir, "B1")["strike"] is None
+        assert report(slice_dir) == live
+        # the amendment: struck again, with the words it should have had
+        code, _, err = run_cli("strike", slice_dir, "B1", "--reason", "fixed in abc123",
+                               "--by", "consult 1")
+        assert code == 0, err
+        assert entry_of(slice_dir, "B1")["strike"]["reason"] == "fixed in abc123"
+        assert entry_of(slice_dir, "B1")["notes"] == []
+        # nothing to withdraw on a live entry, and --by is required
+        run_cli("append", slice_dir, *DEFECT)
+        code, _, err = run_cli("unstrike", slice_dir, "B2", "--by", "consult 1")
+        assert code == 2 and "B2 is not struck" in err
+        code, _, _ = run_cli("unstrike", slice_dir, "B1")
+        assert code == 2
+        try:
+            close_out.unstrike_entry(slice_dir, "B1", " ")
+            raise AssertionError("an empty --by must raise")
+        except ReportError as e:
+            assert "unstrike needs --by" in str(e)
+
+
+def test_unstrike_is_refused_to_another_by_a_strike_without_one_and_the_rulings():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        for _ in range(3):
+            run_cli("append", slice_dir, *DEFECT)                              # B1–B3
+        close_out.strike_entry(slice_dir, "B1", "fixed", by="consult 1")
+        close_out.strike_entry(slice_dir, "B2", "fixed")
+        close_out.rule_entry(slice_dir, "B3", words="fix it", did="fixed in abc123")
+        before = _files(slice_dir)
+        for eid, by, needles in (
+                ("B1", "wrap-up", ["B1 was struck by consult 1, not wrap-up: only its "
+                                   "striker withdraws a strike"]),
+                ("B2", "consult 1", ["B2 stays struck: a strike made without --by has no "
+                                     "author to take it back; a note adds to it"]),
+                ("B3", "the operator's ruling",
+                 ["B3 stays struck: the operator's ruling (`rule --did`) struck it, and "
+                  "the ruling owns it"])):
+            code, _, err = run_cli("unstrike", slice_dir, eid, "--by", by)
+            assert code == 2, (eid, err)
+            for needle in needles:
+                assert needle in err, (needle, err)
+            assert _files(slice_dir) == before
+        # striking again says the same, in place of naming unstrike
+        code, _, err = run_cli("strike", slice_dir, "B2", "--reason", "r")
+        assert code == 2 and "is already struck" in err
+        assert ("A strike made without --by has no author to take it back; a note adds "
+                "to it.") in err and "unstrike" not in err
+        code, _, err = run_cli("strike", slice_dir, "B3", "--reason", "r")
+        assert code == 2 and "the ruling owns it; a note adds to it." in err
+        # a closed report's strikes are made without --by
+        run_cli("append", slice_dir, *DEFECT)                                   # B4
+        close_out.close_report(slice_dir, "all done")
+        code, _, err = run_cli("unstrike", slice_dir, "B4", "--by", "the operator")
+        assert code == 2 and "has no author to take it back" in err
+
+
+def test_a_committed_strike_stays_and_a_later_one_is_withdrawn():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)
+        run_cli("append", slice_dir, *DEFECT)
+        close_out.strike_entry(slice_dir, "B1", "fixed", by="consult 1")
+        commit_store(slice_dir)
+        before = _files(slice_dir)
+        code, _, err = run_cli("unstrike", slice_dir, "B1", "--by", "consult 1")
+        assert code == 2
+        assert "B1's strike is committed, and a committed strike stays; a note adds" in err
+        assert _files(slice_dir) == before
+        close_out.strike_entry(slice_dir, "B2", "fixed", by="consult 1")
+        code, _, err = run_cli("unstrike", slice_dir, "B2", "--by", "consult 1")
+        assert code == 0, err
+        assert entry_of(slice_dir, "B2")["strike"] is None
+        assert entry_of(slice_dir, "B1")["strike"]["by"] == "consult 1"
+
+
+def test_unnote_withdraws_the_authors_latest_note_and_skips_another_authors_later_one():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)
+        live = report(slice_dir)
+        for by, text in (("consult 1", "first"), ("consult 1", "second"),
+                         ("wrap-up", "theirs")):
+            run_cli("note", slice_dir, "B1", "--by", by, "--text", text,
+                    "--date", "2026-10-13")
+        code, out, err = run_cli("unnote", slice_dir, "B1", "--by", "consult 1")
+        assert code == 0, err
+        assert out == "B1 unnoted: consult 1, 2026-10-13 — second\n"
+        assert [n["text"] for n in entry_of(slice_dir, "B1")["notes"]] == [["first"],
+                                                                         ["theirs"]]
+        assert "second" not in close_out.show_view(slice_dir, ["B1"])
+        code, out, _ = run_cli("unnote", slice_dir, "B1", "--by", "consult 1")
+        assert code == 0 and out == "B1 unnoted: consult 1, 2026-10-13 — first\n"
+        before = _files(slice_dir)
+        code, _, err = run_cli("unnote", slice_dir, "B1", "--by", "consult 1")
+        assert code == 2
+        assert "B1 holds no note consult 1 wrote with `note` or `relabel`" in err
+        assert _files(slice_dir) == before
+        code, _, _ = run_cli("unnote", slice_dir, "B1", "--by", "wrap-up")
+        assert code == 0 and entry_of(slice_dir, "B1")["notes"] == []
+        assert report(slice_dir) == live
+        code, _, err = run_cli("unnote", slice_dir, "B9", "--by", "wrap-up")
+        assert code == 2 and "no entry B9" in err
+
+
+def test_unnote_never_takes_a_history_note():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)                                   # B1
+        run_cli("append", slice_dir, *DEFECT)                                   # B2
+        run_cli("append", slice_dir, *DECISION)                                 # D1
+        # a replaced proposal is kept as a note signed by who replaced it
+        close_out.propose_entry(slice_dir, "B1", "wrap-up", "Card it.")
+        close_out.add_note(slice_dir, "B1", "wrap-up", "mine", date="2026-10-13")
+        close_out.propose_entry(slice_dir, "B1", "wrap-up", "Fix it now.")
+        assert entry_of(slice_dir, "B1")["notes"][-1]["history"] == "proposal"
+        code, out, err = run_cli("unnote", slice_dir, "B1", "--by", "wrap-up")
+        assert code == 0, err
+        assert out == "B1 unnoted: wrap-up, 2026-10-13 — mine\n"
+        assert [n["text"] for n in entry_of(slice_dir, "B1")["notes"]] == [
+            ["proposal replaced — was: Card it."]]
+        code, _, err = run_cli("unnote", slice_dir, "B1", "--by", "wrap-up")
+        assert code == 2 and "B1 holds no note wrap-up wrote" in err
+        # the wrap-up's first mark, kept when a second replaces it
+        close_out.request_card(slice_dir, "B2", "wrap-up", "needs a design")
+        close_out.leave_entry(slice_dir, "B2", "wrap-up", "dead code after all")
+        assert entry_of(slice_dir, "B2")["notes"][-1]["history"] == "wrap-up"
+        code, _, err = run_cli("unnote", slice_dir, "B2", "--by", "wrap-up")
+        assert code == 2 and "B2 holds no note wrap-up wrote" in err
+        # the operator's earlier words, kept when a ruling replaces them
+        close_out.rule_entry(slice_dir, "D1", words="A")
+        close_out.rule_entry(slice_dir, "D1", words="B", mode="replace")
+        code, _, err = run_cli("unnote", slice_dir, "D1", "--by", "the operator")
+        assert code == 2 and "D1 holds no note the operator wrote" in err
+        # history notes render as every note does
+        shown = close_out.show_view(slice_dir, ["B1", "D1"])
+        assert "— proposal replaced — was: Card it." in shown
+        assert "the operator, " in shown and "— ruled earlier: A" in shown
+
+
+def test_a_committed_note_stays_and_a_later_one_is_withdrawn():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)
+        note = ("note", slice_dir, "B1", "--by", "consult 1", "--date", "2026-10-13",
+                "--text")
+        run_cli(*note, "committed")
+        # a repository with no commit yet holds nothing
+        git(slice_dir.parent.parent, "init", "-q")
+        code, _, err = run_cli("unnote", slice_dir, "B1", "--by", "consult 1")
+        assert code == 0, err
+        run_cli(*note, "committed")
+        commit_store(slice_dir)
+        before = _files(slice_dir)
+        code, _, err = run_cli("unnote", slice_dir, "B1", "--by", "consult 1")
+        assert code == 2
+        assert ("consult 1's latest note on B1 is committed, and a committed note stays; "
+                "a new note adds to it — consult 1, 2026-10-13 — committed") in err
+        assert _files(slice_dir) == before
+        # a later note is withdrawn — and so is a retry of the committed one
+        for text in ("later", "committed"):
+            run_cli(*note, text)
+            code, out, err = run_cli("unnote", slice_dir, "B1", "--by", "consult 1")
+            assert code == 0, err
+            assert out == f"B1 unnoted: consult 1, 2026-10-13 — {text}\n"
+            assert len(entry_of(slice_dir, "B1")["notes"]) == 1
+        # a HEAD store that cannot be read refuses rather than lets through
+        commit_store(slice_dir, text="not json\n")
+        run_cli(*note, "after")
+        code, _, err = run_cli("unnote", slice_dir, "B1", "--by", "consult 1")
+        assert code == 2 and "HEAD's close-out.json in " in err
+        assert "is not a close-out store" in err
+        assert len(entry_of(slice_dir, "B1")["notes"]) == 2
+
+
+def test_a_git_that_hangs_refuses_the_withdrawal_and_no_git_commits_nothing():
+    def hang(argv, **kw):
+        raise subprocess.TimeoutExpired(argv, kw.get("timeout"))
+
+    def missing(argv, **kw):
+        raise FileNotFoundError(argv[0])
+
+    real = close_out.subprocess.run
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)
+        close_out.add_note(slice_dir, "B1", "consult 1", "t")
+        close_out.strike_entry(slice_dir, "B1", "fixed", by="consult 1")
+        before = _files(slice_dir)
+        try:
+            close_out.subprocess.run = hang
+            for verb in ("unnote", "unstrike"):
+                code, _, err = run_cli(verb, slice_dir, "B1", "--by", "consult 1")
+                assert code == 2, (verb, err)
+                assert f"did not answer within {close_out.GIT_SHOW_TIMEOUT}s" in err
+                assert "nothing was withdrawn" in err
+                assert _files(slice_dir) == before
+            close_out.subprocess.run = missing
+            for verb in ("unnote", "unstrike"):
+                code, _, err = run_cli(verb, slice_dir, "B1", "--by", "consult 1")
+                assert code == 0, (verb, err)
+        finally:
+            close_out.subprocess.run = real
+        b1 = entry_of(slice_dir, "B1")
+        assert b1["notes"] == [] and b1["strike"] is None
+
+
+def test_unnote_of_a_relabel_puts_back_the_kind_and_the_labels():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)                                   # B1
+        close_out.append_entry(slice_dir, "Bugs", "an old bug", "b",
+                               consequence="c")                                 # B2
+        close_out.append_entry(slice_dir, "action", "do it", "b",
+                               consequence="c")                                 # A1
+        relabels = (
+            ("B1", ["--fix", "one-edit", "--area", "plain"]),
+            # a new kind, the label it does not carry dropped
+            ("B1", ["--kind", "prose"]),
+            # an unlabelled entry's first labels
+            ("B2", ["--trigger", "fault", "--impact", "degraded", "--signal", "silent",
+                    "--fix", "design", "--area", "plain", "--repo", "KubeCoder"]),
+            # the labels the tool gave an action a loop entered
+            ("A1", ["--impact", "degraded"]))
+        for eid, flags in relabels:
+            before, text = store(slice_dir), report(slice_dir)
+            code, _, err = run_cli("relabel", slice_dir, eid, "--by", "wrap-up",
+                                   "--note", "n", *flags)
+            assert code == 0, (eid, flags, err)
+            assert entry_of(slice_dir, eid) != next(e for e in before["entries"]
+                                                    if e["id"] == eid)
+            code, out, err = run_cli("unnote", slice_dir, eid, "--by", "wrap-up")
+            assert code == 0, (eid, flags, err)
+            assert out.startswith(f"{eid} unnoted: wrap-up, ")
+            assert store(slice_dir)["entries"] == before["entries"], (eid, flags)
+            assert report(slice_dir) == text, (eid, flags)
+        assert entry_of(slice_dir, "B2")["labels"] is None
+        assert close_out.route(entry_of(slice_dir, "B2"))[0] == "unlabelled"
+        assert entry_of(slice_dir, "A1")["labels"] == close_out.tool_labels("action", "c")
+
+
+def test_unnote_of_a_relabel_is_refused_when_a_later_relabel_changed_it_again():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)
+
+        def relabel(by, *flags):
+            code, _, err = run_cli("relabel", slice_dir, "B1", "--by", by, "--note", "n",
+                                   "--date", "2026-10-13", *flags)
+            assert code == 0, err
+
+        def labels():
+            e = entry_of(slice_dir, "B1")
+            return e["kind"], e["labels"]
+
+        original = labels()
+        relabel("w1", "--fix", "one-edit")
+        relabel("w2", "--fix", "several-places")
+        before = _files(slice_dir)
+        code, _, err = run_cli("unnote", slice_dir, "B1", "--by", "w1")
+        assert code == 2
+        assert ("B1: w1's relabel is not withdrawn — a later relabel, w2's of 2026-10-13, "
+                "changed fix again; that one is withdrawn first") in err
+        assert _files(slice_dir) == before
+        # in order, both come back
+        assert run_cli("unnote", slice_dir, "B1", "--by", "w2")[0] == 0
+        assert labels()[1]["fix"] == "one-edit"
+        assert run_cli("unnote", slice_dir, "B1", "--by", "w1")[0] == 0
+        assert labels() == original
+        # a later relabel of another label leaves this one free to go
+        relabel("w1", "--fix", "one-edit")
+        relabel("w2", "--trigger", "fault")
+        assert run_cli("unnote", slice_dir, "B1", "--by", "w1")[0] == 0
+        assert labels()[1]["fix"] == "design" and labels()[1]["trigger"] == "fault"
+        assert run_cli("unnote", slice_dir, "B1", "--by", "w2")[0] == 0
+        assert labels() == original
+        # across a change of kind, any later relabel holds it
+        relabel("w1", "--kind", "prose")
+        relabel("w2", "--impact", "degraded")
+        code, _, err = run_cli("unnote", slice_dir, "B1", "--by", "w1")
+        assert code == 2 and "relabelled it across a change of its kind" in err
+        assert run_cli("unnote", slice_dir, "B1", "--by", "w2")[0] == 0
+        assert run_cli("unnote", slice_dir, "B1", "--by", "w1")[0] == 0
+        assert labels() == original
+        # a store that no longer carries what the relabel left is not undone
+        relabel("w1", "--fix", "one-edit")
+        data = store(slice_dir)
+        data["entries"][0]["labels"]["fix"] = "unknown"
+        (slice_dir / "close-out.json").write_text(json.dumps(data))
+        code, _, err = run_cli("unnote", slice_dir, "B1", "--by", "w1")
+        assert code == 2
+        assert ("it left fix one-edit, and the entry carries unknown now") in err
+
+
 # -- the wrap-up: marks and worklist ---------------------------------------------
 
 def test_request_card_and_leave_mark_the_entry_and_the_card_is_its_proposal():
@@ -966,7 +1346,7 @@ def test_request_card_and_leave_mark_the_entry_and_the_card_is_its_proposal():
         assert b1["proposal"] == "reached on every restart; needs a design"
         assert b1["notes"] == [{"by": "wrap-up", "date": "2026-09-30",
                                 "text": ["proposal replaced — was: Close it: it needs a "
-                                         "fault."]}]
+                                         "fault."], "history": "proposal"}]
         code, _, _ = run_cli("leave", slice_dir, "B2", "--by", "wrap-up", "--text",
                              "the path is dead code", "--date", "2026-09-30")
         assert code == 0
@@ -1022,7 +1402,7 @@ def test_propose_sets_the_proposal_and_keeps_the_one_it_replaces():
         assert b1["proposal"] == "Fix now: one edit."
         assert b1["notes"] == [{"by": "wrap-up", "date": "2026-10-02",
                                 "text": ["proposal replaced — was: Card it: the fix needs "
-                                         "a design."]}]
+                                         "a design."], "history": "proposal"}]
         # the same proposal again replaces nothing
         close_out.propose_entry(slice_dir, "B1", "wrap-up", "Fix now:  one edit.")
         assert len(entry_of(slice_dir, "B1")["notes"]) == 1
@@ -1280,7 +1660,7 @@ def test_a_ruling_rule_replaces_stands_through_the_next_render():
         b1 = entry_of(slice_dir, "B1")
         assert b1["ruling"]["words"] == "B"
         assert b1["notes"] == [{"by": "the operator", "date": "2026-10-09",
-                                "text": ["ruled earlier: A"]}]
+                                "text": ["ruled earlier: A"], "history": "ruling"}]
         assert "**Disposition:** B\n" in report(slice_dir)
 
 
@@ -1545,11 +1925,14 @@ def test_overwrite_is_on_every_writing_verb_and_never_in_the_dispatch():
         code, _, err = run_cli("append", slice_dir, *DEFECT, "--overwrite")
         assert code == 0, err
         for argv in (["note", "B1", "--by", "op", "--text", "t"],
+                     ["unnote", "B1", "--by", "op"],
                      ["propose", "B1", "--by", "op", "--text", "t"],
                      ["relabel", "B1", "--by", "op", "--note", "n", "--fix", "one-edit"],
                      ["rule", "B1", "--words", "card it"],
                      ["rule"],
                      ["render"],
+                     ["strike", "B1", "--reason", "r", "--by", "op"],
+                     ["unstrike", "B1", "--by", "op"],
                      ["strike", "B1", "--reason", "r"]):
             code, _, err = run_cli(argv[0], slice_dir, *argv[1:], "--overwrite")
             assert code == 0, (argv, err)
@@ -1586,7 +1969,8 @@ def test_rule_never_replaces_words_the_entry_holds_unasked():
                                "--date", "2026-10-11")
         assert code == 0 and out.strip() == "D2: B"
         assert entry_of(slice_dir, "D2")["notes"] == [
-            {"by": "the operator", "date": "2026-10-11", "text": ["ruled earlier: A"]}]
+            {"by": "the operator", "date": "2026-10-11", "text": ["ruled earlier: A"],
+             "history": "ruling"}]
         # on an entry without words either is plain --words
         for eid, mode in (("D3", "--append"), ("D4", "--replace")):
             code, out, _ = run_cli("rule", slice_dir, eid, "--words", "agreed", mode)
@@ -2329,18 +2713,24 @@ def test_dispatch_line_is_the_text_with_the_labels_and_the_verbs_usage_in_it():
     assert line.startswith(f"The slice's close-out report is {report_md}, rendered from "
                            "its store,\nclose-out.json. Write to it only through "
                            f"`python3 {tool} <verb> {report_md} …` —\n")
-    assert ("what you would do — never where\nthe entry goes. "
-            f"`python3 {tool} labels` prints what each label means —\n") in line
-    assert ("read it before your first append. The labels each kind carries, every "
-            "one\nof them, `unknown` where you cannot tell:\n"
+    assert ("`append`, `note`, `strike`, and `unnote` or `unstrike` to take back your\n"
+            "own note or strike while it is not committed; `list` shows what is there\n"
+            ) in line
+    assert ("what you would do\n— never where the entry goes. "
+            f"`python3 {tool} labels` prints what each\nlabel means —") in line
+    assert ("read it before your first append. The labels each kind\ncarries, every "
+            "one of them, `unknown` where you cannot tell:\n"
             + close_out.kind_labels_text() + "\n" + close_out.LABEL_PAIRING
-            + "\nThe verbs take:\n" + close_out.verb_usage("append", "note", "strike")
+            + "\nThe verbs take:\n"
+            + close_out.verb_usage("append", "note", "strike", "unnote", "unstrike")
             + "\nThe report is about the work;") in line
     # every verb the line names to write with has its arguments in it
-    for verb in ("append", "note", "strike"):
+    for verb in ("append", "note", "strike", "unnote", "unstrike"):
         assert f"close_out.py {verb} <close-out.md>" in line, verb
     assert "close_out.py note <close-out.md> <id> --by BY --text TEXT" in line
     assert "--reason REASON [--by BY]" in line
+    assert "close_out.py unnote <close-out.md> <id> --by BY\n" in line
+    assert "close_out.py unstrike <close-out.md> <id> --by BY\n" in line
     assert line.endswith("goes to the `fieldnotes` MCP tool\n`post` instead.")
 
 
@@ -2436,6 +2826,13 @@ def test_verb_usage_puts_the_positionals_right_after_the_verb():
     assert rule.startswith("close_out.py rule <close-out.md> [<id>] [--words WORDS]")
     assert close_out.verb_usage("note").splitlines()[0].startswith(
         "close_out.py note <close-out.md> <id> --by BY --text TEXT")
+    assert close_out.verb_usage("unnote", "unstrike").splitlines() == [
+        "close_out.py unnote <close-out.md> <id> --by BY",
+        "    <id>: the entry's id, like B3",
+        "    --by: the --by the note was written with — a relabel's labels go back with it",
+        "close_out.py unstrike <close-out.md> <id> --by BY",
+        "    <id>: the entry's id, like B3",
+        "    --by: the --by the strike was made with"]
     # The CLI's own usage — what an argument error prints — has the same shape.
     _, subs = close_out.build_parser()
     assert subs["strike"].format_usage().startswith(
