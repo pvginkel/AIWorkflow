@@ -4,6 +4,24 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-13 — Two slices holding pushes in one scratch clone are an ordering edge; plan review sees the other slices' holds (v0.9.97)
+
+`/dev:slice-dag` reads every pending plan's `## Push holds` on every run, never from its cache,
+and gives the inventory a Holds column: the scratch clones a slice holds, `github:<owner>/<Repo>`,
+`../scratch/<Repo>` and `/work/scratch/<Repo>` alike. Two slices holding the same clone get a hard
+edge, lower number first unless a `needs` runs the other way, drawn dotted in the graph, and the
+later slice a gate, `hold: <earlier> → <Repo>`, that a re-run drops once the earlier slice has left
+the pending set and the clone holds nothing its upstream lacks. The plan loop's reviewer dispatch
+lists the push holds every other plan under `slices/` and `slices/backlog/` declares, and the
+plan-reviewer reports a phase `Target:` or a hold on such a clone with no ordering constraint
+after that push as an operator-decidable finding.
+
+Why: a `github:` Target's clone is one per repo, used by every slice that targets it. AnsibleSpecs'
+DAG put slices 050 and 053 in one wave with held commits in the same three clones; the second
+slice's github: phases were refused for the first one's commits, and the refusal's two ways out —
+push them or delete the clone — both break the first slice. Since 0.9.96 a second slice that holds
+the clone itself is not refused but builds on those commits. (AIWF-49)
+
 ## 2026-10-12 — A push hold resolves its `github:` clone as the run's own, never syncing it (v0.9.96)
 
 `_resolve_target` takes `held`, which `_push_holds` and the dry run's hold listing pass: a held

@@ -68,6 +68,7 @@ Exit codes: 0 plan complete · 4 operator input needed · 3 bailed
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import textwrap
@@ -160,6 +161,9 @@ OUTSTANDING = "Outstanding actions"
 SEED_HEADLINE_WIDTH = 90
 SEED_CRITERION_WIDTH = 100
 
+# A slice folder's name — its number, then its slug (`NNN_slug`).
+SLICE_FOLDER_RE = re.compile(r"^\d{3,}_")
+
 
 def _target_key(target: str) -> str:
     """A hold target or an `owed_after` as the seed compares them — the
@@ -220,10 +224,17 @@ REVIEWER_PROMPT = """\
 Review the plan for slice {slice_name} — the full plan, in your one and
 only round: no fix-verify loop follows; your findings go to the operator.
 Slice folder: {slice_dir}
-{philosophy_line}{skill_line}{close_out_line}
+{philosophy_line}{skill_line}{close_out_line}{other_holds_line}
 
 Write your review to {review_path} and your verdict to {verdict_path}.
 """
+
+# The reviewer's alone: the push holds the other slices in flight declare
+# (PlanLoop._other_holds_line), one row per hold.
+OTHER_HOLDS_LINE = """\
+Push holds of the other slices in flight (each plan's `## Push holds`) —
+commits each keeps unpushed in that repo until the operator pushes it:
+{rows}"""
 
 VERDICT_NUDGE_PROMPT = """\
 Your session ended without writing a valid verdict file. Do not start new
@@ -452,6 +463,45 @@ class PlanLoop:
         self.log(f"{label} {skills_named(skills)}")
         return skill_line(skills, "this slice") + "\n"
 
+    def _other_holds_line(self, label: str) -> str:
+        """The push holds of every other slice in flight — pending
+        (`slices/NNN_slug`) or being planned (`slices/backlog/NNN_slug`) —
+        for the review. A scratch clone is one per repo, shared by every
+        slice that targets it; another slice's held commits sit in it
+        unpushed, so a plan that targets or holds that clone without an
+        ordering constraint builds on them. The reviewer is the one check
+        that sees this plan and the others together. A plan's malformed
+        holds are its own loops' to report; this lists what parses. The
+        close-out line carries no newline of its own, so a blank line opens
+        the block."""
+        slices = self.slice_dir.parent
+        if slices.name == "backlog":
+            slices = slices.parent
+        folders: list[Path] = []
+        for parent in (slices, slices / "backlog"):
+            try:
+                folders += [d for d in parent.iterdir()
+                            if SLICE_FOLDER_RE.match(d.name) and d.is_dir()
+                            and d != self.slice_dir]
+            except OSError:
+                pass
+        rows: list[str] = []
+        holders = 0
+        for folder in sorted(folders,
+                             key=lambda d: d.relative_to(slices).as_posix()):
+            try:
+                holds, _ = parse_push_holds((folder / "plan.md").read_text())
+            except (OSError, UnicodeDecodeError):
+                continue
+            name = folder.relative_to(slices).as_posix()
+            rows += [f"- {name}: {target} — {why}" for target, why in holds]
+            holders += bool(holds)
+        if not rows:
+            return ""
+        self.log(f"{label} other slices' push holds — {len(rows)} from "
+                 f"{holders} slice(s)")
+        return "\n\n" + OTHER_HOLDS_LINE.format(rows="\n".join(rows))
+
     def _spawn(self, role: str, prompt: str, verdict_path: Path,
                round_: int) -> dict:
         """Run one fresh session; return its validated verdict. A session
@@ -586,6 +636,7 @@ class PlanLoop:
             philosophy_line=self._philosophy_line(),
             skill_line=self._skill_line(f"[plan-reviewer r{r}]"),
             close_out_line=dispatch_line(self.report_path),
+            other_holds_line=self._other_holds_line(f"[plan-reviewer r{r}]"),
             review_path=review_path, verdict_path=verdict_path)
 
         self.announce(f"plan-reviewer r{r}")

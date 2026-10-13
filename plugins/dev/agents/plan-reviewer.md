@@ -57,6 +57,13 @@ plan cites.
    `plan_review_r*.md`.
 8. **Nothing load-bearing silently uncertain.** A hedged or conditional ruling treated as
    settled, or a code claim the plan rests on that is wrong, is a finding.
+9. **Another slice's held push.** Your dispatch lists the push holds of the other slices in
+   flight, when there are any. A scratch clone is one per repo, shared by every slice that
+   targets it — `github:<owner>/<Repo>`, `../scratch/<Repo>` and `/work/scratch/<Repo>` name the
+   same one — and another slice's held commits sit in it unpushed until the operator pushes
+   them. A phase that targets such a clone, or a hold of this plan's on it, with no ordering
+   constraint putting this slice after that push, is an operator-decidable finding: the run
+   would build on those commits, or be refused for them.
 
 **Describe problems; never design corrections.** A finding that carries its own fix is invalid
 output: state the defect and the evidence, then stop. Do not manufacture findings — a clean plan

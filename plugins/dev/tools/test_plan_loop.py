@@ -1532,6 +1532,137 @@ def test_go_proceeds_past_a_service_repo_the_rulings_waive_whole():
             run_loop.load_project_dirs = saved
 
 
+# -- the other slices' push holds, the reviewer's alone ------------------------
+#
+# A scratch clone is one per repo, shared by every slice that targets it: the
+# reviewer is shown what the other slices in flight keep unpushed there.
+
+OTHER_HOLDS = (
+    "Push holds of the other slices in flight (each plan's `## Push holds`) "
+    "—\ncommits each keeps unpushed in that repo until the operator pushes "
+    "it:\n")
+
+
+def sibling(tmp, rel, holds=None):
+    """A folder at `<tmp>/<rel>` whose plan.md holds `holds` ((target, why)
+    pairs; an empty list for a plan with no `## Push holds` section) — None
+    for a folder with no plan.md at all."""
+    folder = Path(tmp) / rel
+    folder.mkdir(parents=True)
+    if holds is not None:
+        section = "".join(f"- {target} — {why}\n" for target, why in holds)
+        (folder / "plan.md").write_text(
+            PLAN_HEADER + ("\n## Push holds\n\n" + section if holds else "")
+            + PHASE_BLOCK)
+    return folder
+
+
+def holding_own_push(slice_dir):
+    """The loop's own plan, phased, holding a push of its own."""
+    (slice_dir / "plan.md").write_text(PLAN_HEADER + HOLD_SECTION + PHASE_BLOCK)
+
+
+def test_the_review_lists_the_push_holds_of_the_other_slices_in_flight():
+    """A pending slice and one being planned each hold a push: the review
+    names both, labelled by their folder under slices/, target and why as
+    written, after the close-out line; no writer pass carries them."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        sibling(tmp, "050_x", [("github:pvginkel/StepCaDeploy",
+                                "Ruling Q1: the CA rides the next release.")])
+        sibling(tmp, "backlog/054_y", [("../scratch/NewsfilterDeploy",
+                                        "the operator pushes it by hand.")])
+        loop = ScriptedLoop(slice_dir, [W_DONE, R_ISSUES])
+        assert run_to_exit(loop) == 4
+        loop2 = ScriptedLoop(slice_dir, [W_DONE])
+        assert run_to_exit(loop2) == 0
+        prompts = loop.prompts + loop2.prompts
+        assert [role for role, _ in prompts] == [
+            "plan-writer", "plan-reviewer", "plan-writer"]
+        block = (
+            plan_loop.dispatch_line(loop.report_path) + "\n\n" + OTHER_HOLDS
+            + "- 050_x: github:pvginkel/StepCaDeploy — Ruling Q1: the CA "
+              "rides the next release.\n"
+            + "- backlog/054_y: ../scratch/NewsfilterDeploy — the operator "
+              "pushes it by hand.\n"
+            + "\nWrite your review to ")
+        assert prompts[1][1].count(block) == 1
+        for role, prompt in (prompts[0], prompts[2]):
+            assert "Push holds of the other slices" not in prompt, role
+            assert "StepCaDeploy" not in prompt, role
+        log = (slice_dir / "plan_log.txt").read_text()
+        assert ("[plan-reviewer r1] other slices' push holds — 2 from 2 "
+                "slice(s)\n") in log
+
+
+def test_only_the_other_pending_and_backlog_slices_holds_are_listed():
+    """The loop's own holds, a slice holding nothing, a slice folder with no
+    plan, a folder that is no slice, and the completed and deferred slices
+    contribute nothing."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        holding_own_push(slice_dir)
+        sibling(tmp, "050_x", [("app", "held for the release.")])
+        sibling(tmp, "051_no_holds", [])
+        sibling(tmp, "052_no_plan")
+        sibling(tmp, "notes", [("../NotesRepo", "not a slice.")])
+        sibling(tmp, "backlog/notes", [("../BacklogNotes", "not a slice.")])
+        sibling(tmp, "completed/040_z", [("../DoneRepo", "shipped.")])
+        sibling(tmp, "deferred/041_w", [("../LaterRepo", "parked.")])
+        loop = ScriptedLoop(slice_dir, [R_GO])
+        assert run_to_exit(loop) == 0
+        [(role, reviewer)] = loop.prompts
+        assert role == "plan-reviewer"
+        assert (OTHER_HOLDS + "- 050_x: app — held for the release.\n\n"
+                "Write your review to ") in reviewer
+        for absent in ("HelmCharts", "051_no_holds", "052_no_plan",
+                       "NotesRepo", "BacklogNotes", "DoneRepo", "LaterRepo"):
+            assert absent not in reviewer, absent
+        log = (slice_dir / "plan_log.txt").read_text()
+        assert ("[plan-reviewer r1] other slices' push holds — 1 from 1 "
+                "slice(s)\n") in log
+
+
+def test_a_slice_planned_in_the_backlog_sees_the_pending_slices_holds():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(Path(tmp) / "backlog")
+        holding_own_push(slice_dir)
+        sibling(tmp, "050_x", [("app", "held for the release.")])
+        sibling(tmp, "backlog/054_y", [("../Other", "held too.")])
+        loop = ScriptedLoop(slice_dir, [R_GO])
+        assert run_to_exit(loop) == 0
+        [(_, reviewer)] = loop.prompts
+        assert (OTHER_HOLDS + "- 050_x: app — held for the release.\n"
+                "- backlog/054_y: ../Other — held too.\n\n"
+                "Write your review to ") in reviewer
+        assert "HelmCharts" not in reviewer
+
+
+def test_no_other_slice_holding_a_push_leaves_the_review_as_it_was():
+    """Nothing held elsewhere renders the reviewer's prompt as before the
+    block existed — the close-out line, a blank line, the review's paths —
+    and logs nothing."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        holding_own_push(slice_dir)
+        sibling(tmp, "051_no_holds", [])
+        sibling(tmp, "completed/040_z", [("../DoneRepo", "shipped.")])
+        loop = ScriptedLoop(slice_dir, [R_GO])
+        assert run_to_exit(loop) == 0
+        [(_, reviewer)] = loop.prompts
+        assert "Push holds of the other slices" not in reviewer
+        assert (plan_loop.dispatch_line(loop.report_path)
+                + "\n\nWrite your review to ") in reviewer
+        assert reviewer == plan_loop.REVIEWER_PROMPT.format(
+            slice_name=loop.slice_name, slice_dir=loop.slice_dir,
+            philosophy_line=loop._philosophy_line(), skill_line="",
+            close_out_line=plan_loop.dispatch_line(loop.report_path),
+            other_holds_line="",
+            review_path=loop.slice_dir / "plan_review_r1.md",
+            verdict_path=loop.slice_dir / "plan_review_result_r1.json")
+        assert "push holds —" not in (slice_dir / "plan_log.txt").read_text()
+
+
 if __name__ == "__main__":
     _tests = [v for k, v in sorted(globals().items())
               if k.startswith("test_") and callable(v)]

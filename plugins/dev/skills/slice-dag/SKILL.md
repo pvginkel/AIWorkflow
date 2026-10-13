@@ -45,14 +45,27 @@ These — and only these — are pending. Anything under `slices/completed/`, `s
 not the source of truth: if disk and README disagree, **disk wins** (a slice may have been authored
 or moved since the README was last touched).
 
+Then read every pending plan's push holds — on **every** run, never from the cache: a run adds a
+hold when the operator rules one mid-run.
+
+```bash
+awk 'FNR == 1 { on = 0 } /^## / { on = /^## +[Pp]ush holds *$/ } on && /^[ \t]*[-*] / { print FILENAME ": " $0 }' \
+  <spec-repo>/slices/[0-9][0-9][0-9]_*/plan.md 2>/dev/null
+```
+
+Keep only the holds on a **scratch clone** — a target written `github:<owner>/<Repo>`,
+`../scratch/<Repo>` or `/work/scratch/<Repo>`, all three the same clone, recorded as `<Repo>`.
+These are each slice's **Holds**; a hold on any other repo plays no part in the plan.
+
 ### Phase 2 — Load the existing DAG.md (the cache)
 
 If `<spec-repo>/slices/DAG.md` exists, read it and parse the **Inventory** table into one
-record per slice (`subprojects`, `needs`, `gate`, `scope`) plus the current **Lane plan** (its
+record per slice (`subprojects`, `needs`, `holds`, `gate`, `scope`) plus the current **Lane plan** (its
 check-off state and cell positions). Then reconcile against Phase 1:
 
-- **Carry over** — a row whose slice is still pending is kept **verbatim**. Do **not** re-read its
-  files; its analysis is already captured. This is what keeps re-runs cheap.
+- **Carry over** — a row whose slice is still pending is kept **verbatim**, its **Holds** cell
+  aside, which Phase 1's read replaces. Do **not** re-read its files; its analysis is already
+  captured. This is what keeps re-runs cheap.
 - **Drop** — a row whose slice is no longer pending is removed, along with its graph edges. A
   `needs` that pointed at a dropped (completed) slice is now **satisfied** — delete that edge.
 - **New** — a pending slice with no row yet goes to Phase 3 (the only slices that cost tokens).
@@ -124,12 +137,13 @@ _Updated <DATE> · <L> lanes · <K> pending slices. Re-run /dev:slice-dag after 
 The cached analysis — re-runs reuse these rows and only analyse slices not already listed. No
 names in the lane plan, but here scope is fine.
 
-| Slice | Subprojects                          | Needs   | Gate              | Scope                              |
-| ----- | ------------------------------------ | ------- | ----------------- | ---------------------------------- |
-| 045   | firmware                             | —       | —                 | wifi-reconnect robustness          |
-| 046   | models, backend                      | —       | —                 | per-device storage layout          |
-| 052   | frontend, models, backend, firmware  | 039     | —                 | rename devices                     |
-| 055   | models, backend, firmware            | 053,054 | vendor-sdk spike  | device provisioning (keystone)     |
+| Slice | Subprojects                          | Needs   | Holds         | Gate                         | Scope                              |
+| ----- | ------------------------------------ | ------- | ------------- | ---------------------------- | ---------------------------------- |
+| 045   | firmware                             | —       | —             | —                            | wifi-reconnect robustness          |
+| 046   | models, backend                      | —       | StepCaDeploy  | —                            | per-device storage layout          |
+| 049   | backend                              | —       | StepCaDeploy  | hold: 046 → StepCaDeploy     | cert rotation                      |
+| 052   | frontend, models, backend, firmware  | 039     | —             | —                            | rename devices                     |
+| 055   | models, backend, firmware            | 053,054 | —             | vendor-sdk spike             | device provisioning (keystone)     |
 
 ## Graph
 
@@ -139,10 +153,12 @@ graph TD
   039 --> 052
   053 --> 055
   054 --> 055
+  046 -. StepCaDeploy .-> 049
 ```
 
-Only **hard ordering** (`needs`) edges are drawn. Merge relationships are not edges — they are
-derived from the shared subprojects in the inventory.
+Only **hard ordering** edges are drawn — `needs` solid, holds dotted and labelled with the clone.
+Merge relationships are not edges — they are derived from the shared subprojects in the
+inventory.
 
 ## Hotspots & gates
 
@@ -150,18 +166,32 @@ derived from the shared subprojects in the inventory.
 - **Codegen/drift-gated component** — if the project has one (e.g. a shared contracts package that
   regenerates across languages), two slices touching it concurrently is the costliest merge there
   is; never share a wave between two unless forced.
-- **Gates:** `<slice> — <external blocker that must clear before /dev:run-slice>`. <others…>
+- **Gates:** `<slice> — <external blocker that must clear before /dev:run-slice>`, a hold gate
+  as `<slice> — <earlier>'s held push to <Repo>`. <others…>
 - **Lane rationale:** brief notes on any non-obvious placement, so a re-pack keeps the intent.
 ````
 
 ## How to assign lanes
 
 The lane plan is a **schedule**, derived by reasoning over the inventory — not code. Inputs:
-the nodes, the `needs` edges, each slice's subproject set, the gates, and the lane count `L`.
+the nodes, the `needs` edges, each slice's subproject set and holds, the gates, and the lane
+count `L`.
 
-**Two kinds of relationship:**
+**Three kinds of relationship:**
 
 - **needs (hard).** B needs A ⟹ A must be in an **earlier wave** than B. Non-negotiable.
+- **hold (hard).** A and B **hold pushes in the same scratch clone** (the Holds column) ⟹ the
+  lower number goes first, unless a `needs` runs the other way, and the later slice carries the
+  gate `hold: <earlier> → <Repo>`. A clone is one per repo, shared by every slice that targets
+  it, and a slice's held commits sit in it unpushed until the operator pushes them: the later
+  slice would build on them, or be refused for them — and both ways out of that refusal, push
+  them or lose them, break the earlier slice. Ticking the earlier slice's box pushes nothing,
+  hence the gate as well as the edge. Every step below treats a hold edge as a `needs`; three
+  slices holding one clone chain in that order. The edge drops with the earlier slice's row
+  (Phase 2), the gate does not: on a re-run, a hold gate whose earlier slice is no longer
+  pending is dropped once its clone holds nothing its upstream lacks —
+  `git -C /work/scratch/<Repo> fetch --quiet && git -C /work/scratch/<Repo> rev-list --count
+  @{u}..HEAD` prints `0` — and stands otherwise.
 - **merge (soft).** Two slices that **share a subproject** create merge work if they run in the
   same wave (concurrent sessions, two diffs to the same area). Avoid it where the schedule allows;
   accept it where avoiding it would strand the plan. Weight by the shared subproject: a
@@ -201,6 +231,8 @@ The expensive part is reading slice docs; everything here is built so you do it 
 ever**:
 
 - **Subprojects from `ls`, never from file contents.** The merge analysis is free.
+- **Holds from one `awk` over the pending plans** — the one read every run repeats, because a
+  hold can be added after the row was cached.
 - **Scope and most `needs` from the README `## Pending` block** — one read for all slices.
 - **Deep-read a `slice.md` only for a *new* slice**, only for `needs`/gate, and only where the
   README is silent — via a parallel `Explore` agent that returns just the four fields,
@@ -216,7 +248,7 @@ ever**:
   Everything else serves rebuilding it.
 - **Disk decides what's pending; the inventory caches the rest.** Reconcile against the folders,
   reuse cached rows, never overwrite blind.
-- **Honour every `needs`; minimise — don't forbid — merge.** Ordering is a hard constraint; merge
-  is a cost to push down, not a wall.
+- **Honour every `needs` and hold; minimise — don't forbid — merge.** Ordering is a hard
+  constraint; merge is a cost to push down, not a wall.
 - **Every pending slice is in the plan.** Want one out? Move its folder, then re-run.
 - **The page must be self-sufficient.** A re-pack at any lane count needs nothing but `DAG.md`.

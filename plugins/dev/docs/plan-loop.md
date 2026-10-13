@@ -121,6 +121,9 @@ slice.md facts that hold; detailed designs correct (load-bearing citations
 verified against the code); every phase's `Target:` present and real; phases independently
 reviewable and roughly PR-sized; attachments at the altitude above; no auto-doc content (an
 altitude finding — flagged, never fact-checked claim by claim) and no criterion only the doc
-phase could earn; no correction-chained rulings; nothing load-bearing silently uncertain.
-Findings describe problems, never corrections. One round, ever — the findings go to the
-operator. Verdicts: `go` / `issues` / `questions`.
+phase could earn; no correction-chained rulings; nothing load-bearing silently uncertain; no
+phase `Target:` or push hold on a scratch clone another slice in flight holds without an
+ordering constraint putting this slice after that push — an operator-decidable finding. For that
+last one the reviewer's dispatch, alone of the loop's, lists the push holds the other plans
+under `slices/` and `slices/backlog/` declare. Findings describe problems, never corrections.
+One round, ever — the findings go to the operator. Verdicts: `go` / `issues` / `questions`.
