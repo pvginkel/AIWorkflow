@@ -347,6 +347,37 @@ def test_improvement_rows_in_order():
     assert R(E("improvement", labels={**add, "prevents": "severe"})) == "operator:risk"
 
 
+# The slices still to run as `slices_to_run` gives them: 012 unplanned, 051
+# planned or running.
+PENDING = {12: ("012", "unplanned"), 51: ("051", "planned")}
+FOR_PLANNED = ("operator:action", "to you — an action: slice 051 is planned or running "
+               "and its run never reads slice.md; add a phase or rule on its run")
+
+
+def test_a_for_routes_by_the_stage_of_the_slice_it_names_in_both_tables():
+    for kind, lab, without in (
+            ("defect", fix_labels(fix="one-edit", area="plain"), "wrap-up:fix"),
+            ("improvement", imp_labels(), "wrap-up:improvement")):
+        def at(target, touched=None, lab=lab, kind=kind):
+            return close_out.route(E(kind, labels={**lab, "for": target}), touched,
+                                   PENDING)
+        # still unplanned: the fold, as without the slices to look at
+        assert at("012") == ("wrap-up:fold", "the wrap-up — fold into slice 012")
+        assert at("12")[0] == at("012_later_slice")[0] == "wrap-up:fold"
+        # planned or running: its run never reads slice.md — to the operator
+        assert at("051") == FOR_PLANNED
+        assert at("51")[0] == at("051_x")[0] == "operator:action"
+        # no longer to run: the route the labels give without `for`
+        assert at("002")[0] == without
+        assert at("002") == close_out.route(E(kind, labels=lab), None, PENDING)
+        # ...down to the rows below the fold: the repo elsewhere
+        assert at("002", touched={"Ansible"})[0] in ("card:table", "closed:elsewhere")
+        # without the slices to look at, every `for` folds
+        assert R(E(kind, labels={**lab, "for": "051"})) == "wrap-up:fold"
+        assert close_out.table_route(E(kind, labels={**lab, "for": "051"}), None,
+                                     PENDING) == FOR_PLANNED
+
+
 def test_unlabelled_struck_and_the_wrap_ups_marks():
     assert close_out.route(E("defect")) == ("unlabelled",
                                             "none yet — the entry has no labels")
@@ -569,7 +600,11 @@ def test_append_refuses_a_for_that_names_no_slice_still_to_run():
                  "--for 99: no other slice still to run has that number",
                  "--for names another slice, still to run, that should take the "
                  "entry, never the slice being run — leave it out for an entry "
-                 "about this one")
+                 "about this one; an entry for a slice already planned or running "
+                 "comes to the operator, since that run never reads slice.md")
+        # `none` clears a relabel's `for`; an append stores no "none"
+        _refused(slice_dir, with_flags(DEFECT, **{"for": "none"}), "--for none",
+                 "no other slice still to run")
         # a completed slice is not still to run, and neither is the slice
         # itself — which the refusal names as the slice being run
         _refused(slice_dir, with_flags(DEFECT, **{"for": "002"}), "--for 002",
@@ -591,6 +626,52 @@ def test_append_refuses_a_for_that_names_no_slice_still_to_run():
         lone.mkdir(parents=True)
         close_out.init_report(lone)
         _refused(lone, with_flags(DEFECT, **{"for": "12"}), "no `slices` ancestor")
+
+
+def plan(folder, how="state"):
+    """Make a slice folder planned: a state.json, or a plan.md with a phase."""
+    if how == "state":
+        (folder / "state.json").write_text(json.dumps({"slice": folder.name}))
+    else:
+        (folder / "plan.md").write_text("# Plan\n\n## Requirements\n\n### P1 — x\n\n"
+                                        "Target: app\n")
+
+
+def test_slices_to_run_carries_each_slices_stage():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp, later=("012_later_slice", "013_running"))
+        root = slice_dir.parent
+        (root / "backlog" / "031_in_the_backlog" / "slice.md").write_text("the ask\n")
+        plan(root / "013_running")
+        for name in ("040_seeded", "041_header_only", "042_odd"):
+            (root / "backlog" / name).mkdir()
+        plan(root / "backlog" / "040_seeded", how="plan")
+        # a header and `###` lines that are no phase heading are no phases
+        (root / "backlog" / "041_header_only" / "plan.md").write_text(
+            "# Plan\n\n## Requirements\n\n## P1 — not a phase\n### P1 - hyphen\n")
+        # a plan.md that cannot be read has no phases
+        (root / "backlog" / "042_odd" / "plan.md").mkdir()
+        assert close_out.slices_to_run(slice_dir) == {
+            12: ("012", "unplanned"), 13: ("013", "planned"), 31: ("031", "unplanned"),
+            40: ("040", "planned"), 41: ("041", "unplanned"), 42: ("042", "unplanned")}
+        assert close_out.slices_to_run(Path(tmp) / "007_x") is None
+
+
+def test_append_takes_a_for_naming_a_planned_slice_and_routes_it_to_the_operator():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp, later=("012_later_slice", "051_planned"))
+        plan(slice_dir.parent / "051_planned")
+        close_out.init_report(slice_dir)
+        code, out, err = run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "51"}))
+        assert code == 0, err
+        assert entry_of(slice_dir, out.strip())["labels"]["for"] == "051"
+        code, out, err = run_cli("append", slice_dir, *with_flags(
+            IMPROVEMENT, **{"for": "051_planned"}))
+        assert code == 0, err
+        comes = _section(report(slice_dir), "Comes to you")
+        assert _heads(comes) == ["### B1 — controller: the status line is wrong",
+                                 "### I1 — drop the duplicate helper"]
+        assert comes.count("**Route:** " + FOR_PLANNED[1]) == 2
 
 
 def test_append_normalises_label_values_and_names_the_choices():
@@ -977,6 +1058,76 @@ def test_relabel_dry_run_prints_the_note_and_the_route_and_writes_nothing():
         assert real == ("wrap-up, 2026-10-13 — relabelled (fix: design → one-edit, area: "
                         "sensitive → plain): one call site\n")
         assert entry_of(slice_dir, "B1")["labels"]["fix"] == "one-edit"
+
+
+def test_relabel_dry_run_prints_the_route_a_for_naming_a_planned_slice_gives():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp, later=("012_later_slice", "051_planned"))
+        plan(slice_dir.parent / "051_planned")
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)
+        before = _files(slice_dir)
+        code, out, err = run_cli("relabel", slice_dir, "B1", "--by", "wrap-up", "--note",
+                                 "slice 051 takes it", "--for", "51", "--date",
+                                 "2026-10-14", "--dry-run")
+        assert code == 0, err
+        assert out == ("wrap-up, 2026-10-14 — relabelled (for: — → 051): slice 051 takes it\n"
+                       f"route: Comes to you — {FOR_PLANNED[1]}\n")
+        assert _files(slice_dir) == before
+
+
+def test_relabel_for_none_clears_for_and_unnote_puts_it_back():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "12"}))
+        before, text = store(slice_dir), report(slice_dir)
+        relabel = ("relabel", slice_dir, "B1", "--by", "wrap-up", "--date", "2026-10-14")
+        code, out, err = run_cli(*relabel, "--note", "it is this slice's", "--for", "none")
+        assert code == 0, err
+        assert out.strip() == ("wrap-up, 2026-10-14 — relabelled (for: 012 → —): it is "
+                               "this slice's")
+        e = entry_of(slice_dir, "B1")
+        assert "for" not in e["labels"]
+        assert e["notes"][-1]["relabel"] == {"for": ["012", None]}
+        assert "fold" not in report(slice_dir)
+        # nothing left to clear: a relabel that changes nothing
+        code, _, err = run_cli(*relabel, "--note", "n", "--for", "NONE")
+        assert code == 2 and "changes nothing" in err
+        try:
+            close_out.relabel_entry(slice_dir, "B1", "w", "n", labels={"for": "none"})
+            raise AssertionError("clearing a `for` the entry lacks must raise")
+        except ReportError as e:
+            assert "changes nothing" in str(e)
+        # the author withdraws it, and the label comes back
+        code, _, err = run_cli("unnote", slice_dir, "B1", "--by", "wrap-up")
+        assert code == 0, err
+        assert store(slice_dir)["entries"] == before["entries"]
+        assert report(slice_dir) == text
+        # the Python API clears it the same way
+        close_out.relabel_entry(slice_dir, "B1", "w", "n", labels={"for": "none"})
+        assert "for" not in entry_of(slice_dir, "B1")["labels"]
+
+
+def test_a_relabel_checks_for_only_where_the_call_gives_one():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        root = slice_dir.parent
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "12"}))
+        # 012 runs and is completed; the stored `for` names no slice to run
+        (root / "012_later_slice").rename(root / "completed" / "012_later_slice")
+        relabel = ("relabel", slice_dir, "B1", "--by", "wrap-up", "--note", "n")
+        code, _, err = run_cli(*relabel, "--impact", "degraded")
+        assert code == 0, err
+        assert entry_of(slice_dir, "B1")["labels"]["for"] == "012"
+        # a `for` the call gives is checked, the slice that ran refused
+        for target in ("12", "77"):
+            code, _, err = run_cli(*relabel, "--for", target)
+            assert code == 2 and f"--for {target}: no other slice still to run" in err
+        code, _, err = run_cli(*relabel, "--for", "31")
+        assert code == 0, err
+        assert entry_of(slice_dir, "B1")["labels"]["for"] == "031"
 
 
 # -- unnote, unstrike: an author takes back what is not committed ------------------
@@ -1491,6 +1642,33 @@ def test_worklist_names_what_waits_and_what_is_asked():
             close_out.leave_entry(slice_dir, eid, "w", "t")
         code, out, _ = run_cli("worklist", slice_dir)
         assert code == 0 and out.strip() == "nothing waits for the wrap-up"
+
+
+def test_a_for_folds_only_into_a_slice_still_unplanned_and_a_finished_one_drops_out():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp, later=("012_later_slice", "051_planned"))
+        root = slice_dir.parent
+        plan(root / "051_planned", how="plan")
+        close_out.init_report(slice_dir)
+        easy = with_flags(DEFECT, fix="one-edit", area="plain")
+        run_cli("append", slice_dir, *with_flags(easy, **{"for": "12"}))           # B1
+        run_cli("append", slice_dir, *with_flags(easy, **{"for": "51"}))           # B2
+        assert [(e["id"], a) for e, a in close_out.worklist(slice_dir)] == [
+            ("B1", "fold — fold it into slice 012")]
+        counts = close_out.entry_counts(slice_dir)
+        assert (counts["to you"], counts["wrap-up"]) == (1, 1)
+        assert "**Route:** " + FOR_PLANNED[1] in _section(report(slice_dir),
+                                                          "Comes to you")
+        assert ("**Route:** the wrap-up — fold into slice 012" in
+                _section(report(slice_dir), "For the wrap-up"))
+        # 012 runs and is completed: B1 goes where its other labels send it
+        (root / "012_later_slice").rename(root / "completed" / "012_later_slice")
+        close_out.render_report(slice_dir)
+        assert [(e["id"], a) for e, a in close_out.worklist(slice_dir)] == [("B1", "fix")]
+        wrap_up = _section(report(slice_dir), "For the wrap-up")
+        assert _heads(wrap_up) == ["### B1 — controller: the status line is wrong"]
+        assert "**Route:** the wrap-up — fix\n" in wrap_up and "fold" not in wrap_up
+        assert FOR_PLANNED[1] in close_out.show_view(slice_dir, ["B2"])
 
 
 # -- rule, the read-back, close ------------------------------------------------------
@@ -2772,7 +2950,8 @@ def test_verb_usage_renders_append_compactly_with_its_help_strings():
             ("--repo", "the repository the fix lives in, by its directory name"),
             ("--for", "the number of another slice, still to run, that should take "
                       "the entry — never the slice being run; leave it out for an "
-                      "entry about this one"),
+                      "entry about this one. One already planned or running brings "
+                      "the entry to the operator, since that run never reads slice.md"),
             ("--benefit", "improvement: who is better off"),
             ("--felt", "improvement: when that is felt"),
             ("--change", "improvement: whether it removes, adjusts or adds"),

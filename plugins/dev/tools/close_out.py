@@ -52,9 +52,10 @@ is judgment — and nobody edits either file by hand; importable by both loops
   import       read a close-out.md of the old, parsed shape into a store.
 
 The route is computed at every render, never stored: `route()` reads an
-entry's kind and labels, and the repositories the slice touched, against the
-two tables of the contract (§ The routes) — the policy is the operator's and
-lives here only. So does the run loop's trigger for what is owed before the
+entry's kind and labels, the repositories the slice touched, and the stage
+of the slice a `for` names (still unplanned, or planned or running) against
+the two tables of the contract (§ The routes) — the policy is the operator's
+and lives here only. So does the run loop's trigger for what is owed before the
 push (`owed_before_push()`): the live entries it hands the completion consult.
 
 A report written before the store existed is imported by the first call that
@@ -988,10 +989,15 @@ def _relabel(entry: dict, who: str, day: str, note_lines: list[str],
         raise ReportError(f"{eid} has no kind; relabel it with --kind")
     old = effective_labels(entry) or {}
     given = {k: v for k, v in (labels or {}).items() if v is not None}
+    clear = _clears_for(given)
+    if clear:
+        del given["for"]
     dropped = ([k for k in old if k not in CARRIES[new_kind] and k not in given]
                if new_kind != old_kind else [])
     merged = {k: v for k, v in old.items() if k not in dropped}
     merged.update(given)
+    if clear:
+        merged.pop("for", None)
     merged = _ordered_labels(merged)
     errors = check_labels(new_kind, merged, entry.get("consequence"),
                           slice_dir, given=labels or {}, relabel=True)
@@ -1021,9 +1027,11 @@ def relabel_entry(slice_dir: Path | str, eid: str, by: str, note: str,
                   date: str | None = None, dry_run: bool = False) -> str:
     """Merge `labels` into an entry's (an unlabelled one gets its first),
     correct its kind where given — the id stays — and leave a note saying
-    what changed and why. The refusals of `append` apply to the labels as
-    they are after the change, but not the one against the Consequence line
-    (that is the author's text; the wrap-up corrects a label from the code).
+    what changed and why; `for` given as `none` (FOR_CLEAR) removes the
+    label. The refusals of `append` apply to the labels as they are after
+    the change, but not the one against the Consequence line (that is the
+    author's text; the wrap-up corrects a label from the code), and `for`
+    is checked only where the call gives one.
     A new kind drops every old label it does not carry (CARRIES), and the
     note names them. Returns the note's paragraph. With `dry_run`, the same
     relabel is made on a copy of the store and nothing is written: the
@@ -1039,7 +1047,7 @@ def relabel_entry(slice_dir: Path | str, eid: str, by: str, note: str,
     if dry_run:
         entry = _find(_read_store(slice_dir), eid)
         record = _relabel(entry, who, day, note_lines, kind, labels, slice_dir)
-        key, words = route(entry, touched_repos(slice_dir))
+        key, words = route(entry, touched_repos(slice_dir), slices_to_run(slice_dir))
         return f"{_note_text(record)}\nroute: {report_section(key)} — {words}"
     with _writing(slice_dir) as store:
         entry = _find(store, eid)
@@ -1289,16 +1297,36 @@ def close_report(slice_dir: Path | str, words: str,
 
 # -- labels: the checks of `append` and `relabel` -----------------------------
 
-def slices_to_run(slice_dir: Path | str) -> dict[int, str] | None:
-    """Number → folder number as written, of every slice still to run: a
-    `<number>_*` folder directly under the nearest `slices` ancestor of the
-    slice folder, or under its `backlog/` — the slice itself left out. None
-    without such an ancestor."""
+# A phase heading as the run loop's parser reads one (run_loop.PHASE_RE;
+# run_loop imports this file, so it is not imported from there).
+PHASE_RE = re.compile(r"^###\s+P([A-Za-z0-9]+)\s+—\s+(.+?)\s*$")
+
+
+def _stage(folder: Path) -> str:
+    """`planned` for a slice folder that holds a state.json, or a plan.md
+    with a phase heading — its run reads the plan, never slice.md again;
+    `unplanned` otherwise. An unreadable plan.md has no phases."""
+    if (folder / "state.json").exists():
+        return "planned"
+    try:
+        plan = (folder / "plan.md").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return "unplanned"
+    return "planned" if any(PHASE_RE.match(line) for line in plan.splitlines()) \
+        else "unplanned"
+
+
+def slices_to_run(slice_dir: Path | str) -> dict[int, tuple[str, str]] | None:
+    """Number → (folder number as written, stage), of every slice still to
+    run: a `<number>_*` folder directly under the nearest `slices` ancestor
+    of the slice folder, or under its `backlog/` — the slice itself left
+    out. The stage is `planned` or `unplanned` (`_stage`). None without
+    such an ancestor."""
     here = Path(slice_dir).resolve()
     root = next((p for p in here.parents if p.name == "slices"), None)
     if root is None:
         return None
-    out: dict[int, str] = {}
+    out: dict[int, tuple[str, str]] = {}
     for parent in (root, root / "backlog"):
         try:
             children = list(parent.iterdir())
@@ -1306,9 +1334,17 @@ def slices_to_run(slice_dir: Path | str) -> dict[int, str] | None:
             continue
         for child in children:
             m = re.match(r"(\d+)_", child.name)
-            if m and child.is_dir() and child.resolve() != here:
-                out.setdefault(int(m.group(1)), m.group(1))
+            if m and child.is_dir() and child.resolve() != here \
+                    and int(m.group(1)) not in out:
+                out[int(m.group(1))] = (m.group(1), _stage(child))
     return out
+
+
+def _slice_number(target) -> int | None:
+    """The slice number a `for` names — `12`, `012` and `012_slug` all
+    name 12 — or None for a value that names none."""
+    m = re.match(r"(\d+)(?:_|$)", str(target))
+    return int(m.group(1)) if m else None
 
 
 def _flag(label: str) -> str:
@@ -1350,7 +1386,15 @@ none; --impact none takes --signal none, and --signal none takes
 
 FOR_RULE = ("--for names another slice, still to run, that should take the "
             "entry, never the slice being run — leave it out for an entry "
-            "about this one")
+            "about this one; an entry for a slice already planned or running "
+            "comes to the operator, since that run never reads slice.md")
+
+# What `relabel --for` takes to remove the label.
+FOR_CLEAR = "none"
+
+
+def _clears_for(labels: dict) -> bool:
+    return str(labels.get("for") or "").strip().lower() == FOR_CLEAR
 
 
 def check_labels(kind: str, labels: dict, consequence: str | None,
@@ -1360,9 +1404,11 @@ def check_labels(kind: str, labels: dict, consequence: str | None,
     naming the flag: a label the kind carries that is missing, a label of
     the other family, an impact that contradicts the Consequence line (not
     on a relabel), a signal that contradicts the impact (not on a relabel),
-    a benefit of the workflow, a `for` naming no slice still to run.
-    `labels` are the entry's labels as they would be stored; `given` the
-    flags of this call, for the other-family check."""
+    a benefit of the workflow, a `for` naming no slice still to run (on a
+    relabel, only a `for` the call gives: a stored one whose slice has run
+    since stops no relabel). `labels` are the entry's labels as they would
+    be stored; `given` the flags of this call, for the other-family check
+    and a relabel's `for`."""
     errors: list[str] = []
     improvement = kind == "improvement"
     required = list(REQUIRED[kind])
@@ -1401,15 +1447,15 @@ def check_labels(kind: str, labels: dict, consequence: str | None,
                       "tools they run — is not an entry. Post it to Fieldnotes "
                       "instead: the `fieldnotes` MCP tool `post`, category `idea`")
     target = labels.get("for")
-    if target is not None:
-        m = re.match(r"(\d+)(?:_|$)", str(target))
+    if target is not None and (not relabel or (given or {}).get("for") is not None):
+        number = _slice_number(target)
         pending = slices_to_run(slice_dir)
         if pending is None:
             errors.append(f"--for {target}: the slice folder has no `slices` "
                           "ancestor, so no slice still to run can be named")
-        elif not m or int(m.group(1)) not in pending:
+        elif number not in pending:
             own = re.match(r"(\d+)_", Path(slice_dir).resolve().name)
-            if m and own and int(m.group(1)) == int(own.group(1)):
+            if number is not None and own and number == int(own.group(1)):
                 errors.append(f"--for {target} is the slice being run: {FOR_RULE}")
             else:
                 errors.append(f"--for {target}: no other slice still to run has "
@@ -1424,10 +1470,10 @@ def normalise_for(labels: dict, slice_dir: Path | str) -> dict:
     target = labels.get("for")
     if target is None:
         return labels
-    m = re.match(r"(\d+)", str(target))
+    number = _slice_number(target)
     pending = slices_to_run(slice_dir) or {}
-    if m and int(m.group(1)) in pending:
-        return {**labels, "for": pending[int(m.group(1))]}
+    if number in pending:
+        return {**labels, "for": pending[number][0]}
     return labels
 
 
@@ -1491,13 +1537,35 @@ def _fold(lab: dict) -> tuple[str, str]:
     return "wrap-up:fold", f"the wrap-up — fold into slice {lab['for']}"
 
 
+def _for_route(lab: dict, pending: dict | None) -> tuple[str, str] | None:
+    """Where the entry's `for` sends it, at the row the fold sits at: a
+    fold into a slice still unplanned; to the operator for one planned or
+    running, whose run never reads slice.md again; None — the table's next
+    rows, as if the label were not there — for a slice no longer to run.
+    Without `pending` (no `slices` ancestor, no context given), a fold."""
+    target = lab.get("for")
+    if not target:
+        return None
+    if pending is None:
+        return _fold(lab)
+    slot = pending.get(_slice_number(target))
+    if slot is None:
+        return None
+    if slot[1] == "planned":
+        return ("operator:action",
+                f"to you — an action: slice {target} is planned or running and its run "
+                "never reads slice.md; add a phase or rule on its run")
+    return _fold(lab)
+
+
 def _card_or_close(repo: str, card: bool) -> tuple[str, str]:
     where = f"the fix lives in {repo}, which the slice did not touch"
     return ("card:table", f"card request — {where}") if card \
         else ("closed:elsewhere", f"closed — {where}")
 
 
-def _route_fix(entry: dict, lab: dict, touched: set[str] | None) -> tuple[str, str]:
+def _route_fix(entry: dict, lab: dict, touched: set[str] | None,
+               pending: dict | None = None) -> tuple[str, str]:
     """What should be fixed — every kind but `improvement`: the first row
     that fits."""
     kind = entry.get("kind")
@@ -1516,8 +1584,9 @@ def _route_fix(entry: dict, lab: dict, touched: set[str] | None) -> tuple[str, s
         return "operator:decision", "to you — a decision"
     if kind == "event" and no_impact:                               # 3
         return "record", "the record"
-    if lab.get("for"):                                              # 4
-        return _fold(lab)
+    taken = _for_route(lab, pending)
+    if taken:                                                       # 4
+        return taken
     repo = _elsewhere(lab, touched)
     if repo:                                                        # 5
         # An unknown trigger counts as one that shows, an unknown impact as
@@ -1548,11 +1617,12 @@ def _route_fix(entry: dict, lab: dict, touched: set[str] | None) -> tuple[str, s
     return "closed:loud", "closed — it is loud on an ordinary condition"
 
 
-def _route_improvement(entry: dict, lab: dict,
-                       touched: set[str] | None) -> tuple[str, str]:
+def _route_improvement(entry: dict, lab: dict, touched: set[str] | None,
+                       pending: dict | None = None) -> tuple[str, str]:
     """What could be better: the first row that fits."""
-    if lab.get("for"):                                              # 1
-        return _fold(lab)
+    taken = _for_route(lab, pending)
+    if taken:                                                       # 1
+        return taken
     change = lab.get("change")
     if (change in ("adjust", "remove")
             and lab.get("size") in ("one-edit", "several-places")
@@ -1570,19 +1640,22 @@ def _route_improvement(entry: dict, lab: dict,
     return "operator:improvement", "to you — an improvement"        # 5
 
 
-def table_route(entry: dict, touched: set[str] | None = None) -> tuple[str, str]:
+def table_route(entry: dict, touched: set[str] | None = None,
+                pending: dict | None = None) -> tuple[str, str]:
     """(key, the Route line's words) of a live entry by the tables alone —
     the wrap-up's mark not applied. `unlabelled` when the entry has no
-    labels and is not a kind the tool labels itself."""
+    labels and is not a kind the tool labels itself. `touched` is
+    `touched_repos()`, `pending` `slices_to_run()`, of the slice."""
     lab = effective_labels(entry)
     if lab is None or entry.get("kind") not in KINDS:
         return "unlabelled", "none yet — the entry has no labels"
     if entry["kind"] == "improvement":
-        return _route_improvement(entry, lab, touched)
-    return _route_fix(entry, lab, touched)
+        return _route_improvement(entry, lab, touched, pending)
+    return _route_fix(entry, lab, touched, pending)
 
 
-def route(entry: dict, touched: set[str] | None = None) -> tuple[str, str]:
+def route(entry: dict, touched: set[str] | None = None,
+          pending: dict | None = None) -> tuple[str, str]:
     """(key, the Route line's words) of an entry — computed, never stored.
     A struck entry has none: it is in the record. The wrap-up's mark
     overrides the table: a card asked for makes a card request; an entry
@@ -1590,7 +1663,7 @@ def route(entry: dict, touched: set[str] | None = None) -> tuple[str, str]:
     wrap-up."""
     if entry.get("strike"):
         return "record", "the record"
-    key, words = table_route(entry, touched)
+    key, words = table_route(entry, touched, pending)
     mark = (entry.get("wrap_up") or {}).get("outcome")
     if mark == "card":
         return "card:wrap-up", "card request — the wrap-up asks for a card"
@@ -1647,13 +1720,14 @@ def _ruled(entry: dict) -> bool:
     return bool((entry.get("ruling") or {}).get("words"))
 
 
-def _asked(entry: dict, touched: set[str] | None) -> str | None:
+def _asked(entry: dict, touched: set[str] | None,
+           pending: dict | None = None) -> str | None:
     """What the wrap-up is asked to do with an entry, None when it waits for
     nothing. An entry the operator has ruled on is theirs, whatever its
     route: it does not wait."""
     if entry.get("strike") or entry.get("wrap_up") or _ruled(entry):
         return None
-    key, _ = table_route(entry, touched)
+    key, _ = table_route(entry, touched, pending)
     if key == "unlabelled":
         return "label — give it its labels from its text"
     if key == "wrap-up:fold":
@@ -1679,10 +1753,10 @@ def worklist(slice_dir: Path | str) -> list[tuple[dict, str]]:
     """(entry, what is asked) for every entry that waits for the wrap-up,
     in order of arrival."""
     store = _read_store(slice_dir)
-    touched = touched_repos(slice_dir)
+    touched, pending = touched_repos(slice_dir), slices_to_run(slice_dir)
     out = []
     for entry in store["entries"]:
-        asked = _asked(entry, touched)
+        asked = _asked(entry, touched, pending)
         if asked:
             out.append((entry, asked))
     return out
@@ -1717,7 +1791,7 @@ def entry_counts(slice_dir: Path | str) -> dict[str, int]:
     those that come to the operator (to you, card requests) without a
     proposal."""
     store = _read_store(slice_dir)
-    touched = touched_repos(slice_dir)
+    touched, pending = touched_repos(slice_dir), slices_to_run(slice_dir)
     counts = dict.fromkeys(COUNT_NAMES, 0)
     by_name = dict(zip(REPORT_SECTIONS, COUNT_NAMES, strict=True))
     letters = dict.fromkeys(KINDS.values(), 0)
@@ -1729,7 +1803,7 @@ def entry_counts(slice_dir: Path | str) -> dict[str, int]:
     for entry in store["entries"]:
         if entry.get("strike"):
             continue
-        key, _ = route(entry, touched)
+        key, _ = route(entry, touched, pending)
         counts[by_name[report_section(key)]] += 1
         letter = _ID_RE.fullmatch(entry["id"]).group(1)
         letters[letter] = letters.get(letter, 0) + 1
@@ -2055,12 +2129,12 @@ def _placed(store: dict, slice_dir: Path | str,
     sections as REPORT_SECTIONS, a section's entries as the render sorts
     them — the record's events first, then what was struck. With
     `live_only`, struck entries are left out."""
-    touched = touched_repos(slice_dir)
+    touched, pending = touched_repos(slice_dir), slices_to_run(slice_dir)
     placed: dict[str, list[tuple[dict, str]]] = {s: [] for s in REPORT_SECTIONS}
     for entry in store["entries"]:
         if live_only and entry.get("strike"):
             continue
-        key, words = route(entry, touched)
+        key, words = route(entry, touched, pending)
         placed[report_section(key)].append((entry, words))
     out = []
     for section in REPORT_SECTIONS:
@@ -2101,10 +2175,10 @@ def show_view(slice_dir: Path | str, ids: list[str] | None = None) -> str:
     named ids in the order given, struck ones too; without ids every live
     entry, under its section's `## ` line, in the report's order."""
     store = _read_store(slice_dir)
-    touched = touched_repos(slice_dir)
     if ids:
+        touched, pending = touched_repos(slice_dir), slices_to_run(slice_dir)
         entries = [_find(store, eid) for eid in ids]
-        return "\n\n".join(_render_entry(e, "full", route(e, touched)[1])
+        return "\n\n".join(_render_entry(e, "full", route(e, touched, pending)[1])
                             for e in entries)
     out: list[str] = []
     for section, items in _placed(store, slice_dir, live_only=True):
@@ -2561,7 +2635,8 @@ LABEL_HELP = {
     "repo": "the repository the fix lives in, by its directory name",
     "for": "the number of another slice, still to run, that should take the "
            "entry — never the slice being run; leave it out for an entry about "
-           "this one",
+           "this one. One already planned or running brings the entry to the "
+           "operator, since that run never reads slice.md",
     "benefit": "improvement: who is better off",
     "felt": "improvement: when that is felt",
     "change": "improvement: whether it removes, adjusts or adds",
@@ -2574,11 +2649,13 @@ LABEL_FLAG_ORDER = ("trigger", "impact", "signal", "fix", "area", "repo", "for",
                     "benefit", "felt", "change", "size", "product-call", "prevents")
 
 
-def _add_label_args(p: argparse.ArgumentParser) -> None:
+def _add_label_args(p: argparse.ArgumentParser, relabel: bool = False) -> None:
     for label in LABEL_FLAG_ORDER:
         values = LABELS[label]
-        kwargs: dict = {"dest": f"label_{label.replace('-', '_')}",
-                        "help": LABEL_HELP[label]}
+        help_ = LABEL_HELP[label]
+        if relabel and label == "for":
+            help_ += f". --for {FOR_CLEAR} clears it"
+        kwargs: dict = {"dest": f"label_{label.replace('-', '_')}", "help": help_}
         if values is None:
             kwargs["metavar"] = "NAME" if label == "repo" else "SLICE"
         else:
@@ -2679,7 +2756,7 @@ def build_parser() -> tuple[argparse.ArgumentParser,
                    help="what was found that the labels now say, or - for stdin")
     p.add_argument("--kind", choices=list(KINDS), type=_label_value,
                    help="the corrected kind; the id stays")
-    _add_label_args(p)
+    _add_label_args(p, relabel=True)
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
     p.add_argument("--dry-run", action="store_true",
                    help="print the note and the route the entry would take, and "

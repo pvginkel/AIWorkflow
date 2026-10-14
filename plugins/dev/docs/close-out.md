@@ -118,7 +118,7 @@ does not rename the entry.
 | | `design` | a choice with consequences is open, or the change adds behaviour — a code path, a piece of state, a process, a gate |
 | `area` | `plain` · `sensitive` | sensitive: the change touches concurrency or timing, the layout of stored data, a wire contract, or authentication and secrets |
 | `repo` | a name | the repository the fix lives in, by its directory name |
-| `for` | a slice, optional | the slice still to run that should take the entry, by its number |
+| `for` | a slice, optional | the slice still to run that should take the entry, by its number; `relabel --for none` clears it |
 
 **What could be better** — the labels of an `improvement`, which says what the change would
 bring and what it would take:
@@ -214,7 +214,7 @@ happens to it.
 - an action, a decision or an improvement without a proposal;
 - an entry without the labels its kind carries;
 - an impact other than `none` over a `Consequence:` that opens with "none", and the reverse;
-- a `for` that names no slice that is still to run;
+- a `for` that names no slice that is still to run — on a relabel, only a `for` the call gives;
 - an improvement whose benefit is `workflow`.
 
 ## The routes
@@ -232,7 +232,7 @@ What should be fixed — every kind but `improvement` — takes the first row th
 | 1 | an action | to the operator |
 | 2 | a decision | to the operator |
 | 3 | an event that describes no problem | to the record |
-| 4 | input for a slice that is still to run | to the wrap-up, to fold into that slice |
+| 4 | input for a slice that is still to run | to the wrap-up, to fold into that slice; to the operator, as an action, once that slice is planned or running |
 | 5 | fixable only in a repository the slice did not touch | to the operator as a card request when it shows and has an impact as row 8 says, or is `severe` or graded major; closed otherwise |
 | 6 | prose; or fixed by one edit or in several known places, outside a sensitive area | to the wrap-up, to fix |
 | 7 | anything else, with a trigger or an impact `unknown` | to the wrap-up, to look |
@@ -244,12 +244,17 @@ An improvement takes the first of these that fits:
 
 | | an improvement that | goes |
 |--:|---|---|
-| 1 | is input for a slice that is still to run | to the wrap-up, to fold into that slice |
+| 1 | is input for a slice that is still to run | to the wrap-up, to fold into that slice; to the operator, as an action, once that slice is planned or running |
 | 2 | adjusts or removes, in one edit or in several known places, and is no product call | to the wrap-up, within its bar. In a repository the slice did not touch: to the operator as a card request when it prevents something `severe` or is graded major, closed otherwise |
 | 3 | adds something, for a benefit that is not felt in use, and prevents something `severe` or is graded major | to the operator, as a risk |
 | 4 | adds something, for a benefit that is not felt in use | closed |
 | 5 | is anything else — a product call, a change that needs design or a look first, an addition felt in use | to the operator |
 
+- **A `for` is read against the slice it names, at every render.** Unplanned, the entry folds
+  into its `slice.md`. Planned or running — a `state.json`, or a `plan.md` with a phase
+  heading, a seeded one in the backlog too — its run never reads `slice.md` again, so the
+  entry comes to the operator as an action, to add a phase or rule on that run. No longer
+  still to run — it has run since — the entry routes as if it had no `for`.
 - **Severity stands where the close would have been, and nowhere else** (row 9, and row 3 of
   the second table). What is severe is not closed for being unlikely; where the table would fix
   it or ask for a card, it does.
@@ -375,7 +380,7 @@ operator is theirs, and no card is filed without their word.
 | a likely problem it cannot fix within its bar | a card request: how it is reached, what the fix takes (`request-card`) — it becomes the entry's proposal |
 | a trigger or an impact the author could not tell | the label, from the code |
 | an entry without labels | its labels, from its text |
-| input for a slice that is still to run | the entry appended to that slice's `slice.md`, and a strike naming the slice |
+| input for a slice still unplanned | the entry appended to that slice's `slice.md`, and a strike naming the slice |
 | a close that rests on one label, on an entry that breaks a flow | that label checked in the code — its trigger, or its signal — and corrected where the code says otherwise |
 | a risk that comes to the operator | a proposal, where its author gave none or the code says otherwise (`propose`), and what the code shows under it (`leave`); the entry stays theirs |
 | a gate that goes red on its fix | the fix taken back, and a card request or a note that says so |

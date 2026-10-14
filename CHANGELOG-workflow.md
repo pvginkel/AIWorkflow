@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-14 — An entry for a slice already planned or running comes to the operator; `relabel --for none` (v0.9.100)
+
+`close_out.py` reads a `for` against the slice it names, at every render. `slices_to_run()`
+carries each slice's stage: planned when its folder holds a `state.json`, or a `plan.md` with a
+`### P<id> —` phase heading (a seeded one in the backlog too), unplanned otherwise. An entry for
+an unplanned slice folds as before. One for a planned or running slice is an `operator:action`
+— "to you — an action: slice 051 is planned or running and its run never reads slice.md; add a
+phase or rule on its run" — and the worklist asks no fold of it. One whose slice is no longer
+still to run routes as if it had no `for`. `append --for` a planned slice is accepted, with no new
+refusal; `FOR_RULE` and the `--for` help say where such an entry goes. `relabel --for none`
+clears the label, its note records `for: 048 → —`, and `unnote` puts it back. A relabel checks
+`for` only when the call passes one, so a stored `for` whose slice has run since no longer
+refuses every relabel of the entry.
+
+Why: the fold put the ask in a `slice.md` the running driver never reads again (AnsibleSpecs
+slice 046's P1, `--for 051` while 051 ran P6–P11), and a `for` outlived its slice — slice 060's
+I1 still routed "fold into slice 048" after 048 had completed, and every relabel of it was
+refused. (AIWF-57)
+
 ## 2026-10-13 — An author takes back their own uncommitted note or strike; `relabel --dry-run` (v0.9.99)
 
 `close_out.py` gains `unnote <id> --by` and `unstrike <id> --by`. `unnote` withdraws the latest
