@@ -126,7 +126,13 @@ is the only place the plan-writer reads it; `refinement.md` carries none of it. 
 listing whose description says the slice's work follows it is named there as
 `` `<plugin>:<skill>` `` (`${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md`): the roles see no
 listing, and get the file only for a name the plan carries. Then any
-ordering constraints already known; not-in-scope. A ruling that forbids
+ordering constraints already known; not-in-scope. A constraint where a later phase consumes what
+an earlier one publishes — a chart release, an image build number, an artifact deployed and
+verified live — needs a push no phase makes: phases merge locally and only the test phase pushes
+(`${CLAUDE_PLUGIN_ROOT}/docs/run-loop.md`, the push check). Put the in-phase push to the operator
+now, as agree-or-comment — which phase's executor pushes which repo, and after what — and record
+their ruling in the requirements/rulings section in their words; the constraint written down
+without it stops the plan loop on a questions round. A ruling that forbids
 pushing a repo also gets its machine-readable half — a `## Push holds` bullet, shaped as the
 plan template above says; prose alone is invisible to the driver, which then nudges the test
 agent for that push and bails. Likewise, a ruling that replaces a target's test gate

@@ -4,6 +4,19 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-14 — `/dev:plan-slice` gets the in-phase push ruling at seeding when a later phase consumes what an earlier one publishes (v0.9.102)
+
+§3 of the skill, beside the ordering constraints the seeded header carries: a constraint where a
+later phase consumes what an earlier one publishes — a chart release, an image build number, an
+artifact deployed and verified live — needs a push no phase makes, so the session puts the
+in-phase push to the operator then, as agree-or-comment (which phase's executor pushes which
+repo, and after what), and records the ruling in the requirements/rulings section in their
+words. AIWF-40's project hook stays deferred; this takes nothing from it.
+
+Why: Ansible slices 055 and 056, planned on 2026-10-09, both stopped their plan loops on a
+questions round for that push; each seeding session had written the ordering constraint down
+without asking for the ruling. (AIWF-60)
+
 ## 2026-10-14 — A resume sets a dead round's uncommitted work aside before it resets the phase branch (v0.9.101)
 
 `run_loop.py --resume`, over a phase tree a dead round left dirty, saves the work before
