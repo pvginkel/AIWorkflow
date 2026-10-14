@@ -2045,6 +2045,32 @@ result in your done-record where you can reach it; where it needs a push,
 the test phase owns it.
 """
 
+# Carried by a phase's first code-writer dispatch after a resume set a dead
+# round's uncommitted work aside (`_set_aside`, AIWF-58), one sentence per
+# record. The round may have written its done-record and died before its
+# commit, so the plan can describe work the tree no longer holds.
+SET_ASIDE_LINE = """
+{records} Take what you can use from what was set aside; none of it is in
+the tree's tracked files now. A dead round's done-record in plan.md, if it
+wrote one, may describe the patch rather than the tree.
+"""
+
+
+def set_aside_line(records: list[dict]) -> str:
+    """SET_ASIDE_LINE over a phase's `set_aside` records."""
+    sentences = []
+    for rec in records:
+        n = rec["files"]
+        untracked = (f", and `{rec['untracked']}` holds copies of its {n} "
+                     f"untracked file{'' if n == 1 else 's'} — those files "
+                     "are still in the tree" if rec["untracked"] else "")
+        sentences.append(
+            f"Code-writer round {rec['round']} of this phase died with "
+            "uncommitted work, and the resume set it aside before resetting "
+            f"the branch to its last commit: `{rec['patch']}` is its `git "
+            f"diff HEAD`{untracked}.")
+    return SET_ASIDE_LINE.format(records=" ".join(sentences))
+
 EXECUTOR_GATE_FIX_PROMPT = """\
 The test gate for phase P{phase_id} of slice {slice_name} is red (branch
 {branch}, fix round {round}). The plan: {plan_path}, digested below.
@@ -3516,13 +3542,76 @@ class RunLoop:
                                            else []))
         return bool(self.git(*args, root=root))
 
+    def _set_aside(self, phase_id: str, ps: dict, root: Path) -> None:
+        """Save what a dead round left uncommitted in `root` before the
+        resume's `_reset_tracked` drops it (AIWF-58): SecretRotator slice
+        051's P12 writer hit the session cap with its test edits uncommitted,
+        the resume reset them away, and the next writer rebuilt them from
+        the dead session's transcript.
+
+        Under the phase's `set-aside/`, named for the phase's last
+        code-writer round — the one whose work the tree holds — go its `git
+        diff HEAD` as a patch `git apply` takes (an external diff driver,
+        textconv and colour held off) and copies of its untracked files,
+        which stay in the tree: `reset --hard` leaves them, and so does
+        this. The folder ignores itself, as `doc_phase/` does: the patch is
+        git's raw answer, Secret data and all. The record in `set_aside`
+        reaches the phase's next code-writer (`set_aside_line`). A save
+        that fails stops the resume before anything is reset."""
+        if not self._worktree_dirty(root):
+            return
+        k = ps["executor_rounds"]
+        out = self.slice_dir / "phases" / f"P{phase_id}" / "set-aside"
+        pathspec = self._bookkeeping_pathspec(root)
+        spec = ["--", *pathspec] if pathspec else []
+        try:
+            out.mkdir(parents=True, exist_ok=True)
+            (out / ".gitignore").write_text("*\n")
+            stem, n = f"r{k}", 1
+            while ((out / f"{stem}.patch").exists()
+                   or (out / f"{stem}-untracked").exists()):
+                n += 1
+                stem = f"r{k}-{n}"
+            patch = out / f"{stem}.patch"
+            self.git("diff", "--binary", "--no-ext-diff", "--no-textconv",
+                     "--no-color", f"--output={patch}", "HEAD", *spec,
+                     root=root)
+            files = [f for f in self.git_raw(
+                "ls-files", "--others", "--exclude-standard", "-z", *spec,
+                root=root).split("\0") if f]
+            untracked = out / f"{stem}-untracked" if files else None
+            for rel in files:
+                src, dst = Path(root) / rel, untracked / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                if src.is_dir() and not src.is_symlink():
+                    shutil.copytree(src, dst, symlinks=True)   # a nested repo
+                else:
+                    shutil.copy2(src, dst, follow_symlinks=False)
+        except (Bailout, OSError) as e:
+            why = e.details if isinstance(e, Bailout) else str(e)
+            raise Bailout(
+                "protocol_failure", phase=phase_id,
+                details="the resume could not set the dead round's "
+                        f"uncommitted work in {root} aside under {out} "
+                        f"({why}) — nothing was reset, and the work is still "
+                        "in the tree") from None
+        self.log(f"[P{phase_id}] the dead round's uncommitted work set aside "
+                 f"before the reset: {patch}"
+                 + (f"; {len(files)} untracked file(s) copied to {untracked} "
+                    "(still in the tree)" if files else ""))
+        ps.setdefault("set_aside", []).append({
+            "round": k, "patch": str(patch),
+            "untracked": str(untracked) if untracked else None,
+            "files": len(files)})
+        self._save_state()
+
     def _reset_tracked(self, root: Path) -> None:
         """Drop a dead round's uncommitted work before redispatching — a
         plain `reset --hard` in a phase's worktree, where nothing but the
-        phase writes. Scoped away from the bookkeeping tree where `root`
-        holds it: `reset --hard` would take an agent's uncommitted plan.md
-        edit with it (the live log and state are untracked, so neither form
-        touches those)."""
+        phase writes; a resume sets the work aside first (`_set_aside`).
+        Scoped away from the bookkeeping tree where `root` holds it: `reset
+        --hard` would take an agent's uncommitted plan.md edit with it (the
+        live log and state are untracked, so neither form touches those)."""
         pathspec = self._bookkeeping_pathspec(root)
         if not pathspec:
             self.git("reset", "--hard", "HEAD", root=root)
@@ -3751,13 +3840,14 @@ class RunLoop:
         tree is simply left the way the run found it. A shared repo needs
         nothing here: its phase works in a worktree of its own, which the
         bail leaves for the resume, and the shared checkout never left its
-        base. A repo with uncommitted work is left alone: the work is
-        someone's, and a checkout would carry or drop it. So is a branch this
-        run did not create — the only branches it checks out are its own
-        `phase/<slice>-…`, and anything else under it is a parallel session's
-        business, not a tree state to undo. Nothing here may mask the bail,
-        so a git failure is logged and swallowed — naming the branch the
-        tree stays on, since that is then not its base."""
+        base. A repo with uncommitted work is left alone: a checkout would
+        carry or drop it, and the resume sets it aside before it resets the
+        branch (`_set_aside`). So is a branch this run did not create — the
+        only branches it checks out are its own `phase/<slice>-…`, and
+        anything else under it is a parallel session's business, not a tree
+        state to undo. Nothing here may mask the bail, so a git failure is
+        logged and swallowed — naming the branch the tree stays on, since
+        that is then not its base."""
         mine = f"phase/{self.slice_num}-"
         for key, base in sorted(self.state.get("bases", {}).items()):
             root = Path(key)
@@ -3772,7 +3862,7 @@ class RunLoop:
                     continue
                 if self._worktree_dirty(root):
                     self.log(f"[bail] {root.name}: left on {cur} with "
-                             "uncommitted work — not touched")
+                             "uncommitted work — set aside at resume")
                     continue
                 self.git("checkout", base, root=root)
                 self.log(f"[bail] {root.name}: left on {cur}, checked {base} "
@@ -5404,6 +5494,7 @@ class RunLoop:
                 self.log(f"[P{phase_id}] resuming at stage {ps['stage']} "
                          "(worktree preserved for reattach)")
             else:
+                self._set_aside(phase_id, ps, root)
                 self._reset_tracked(root)
                 self.log(f"[P{phase_id}] resuming at stage {ps['stage']}")
         if fresh:
@@ -5429,7 +5520,10 @@ class RunLoop:
             is appended. Every round is a fresh session — fix rounds read
             their inputs from the digest, the plan and the durable outputs
             dir, never from the prior round's context. A round a crash
-            interrupted keeps its number: the in-flight record banked it."""
+            interrupted keeps its number: the in-flight record banked it.
+            What a resume set aside rides the first round after it, and is
+            dropped from the state only once that round's session returns:
+            a run that dies mid-dispatch hands it to the next one."""
             pending = self._reattach_round("code-writer", phase_id)
             if pending is None:
                 ps["executor_rounds"] += 1
@@ -5437,11 +5531,15 @@ class RunLoop:
             self._save_state()
             prompt = (build_prompt(executor_verdict_path(r)) + "\n"
                       + self._phase_digest(phase_id))
+            if ps.get("set_aside"):
+                prompt += set_aside_line(ps["set_aside"])
             verdict, session = self._spawn(
                 "code-writer", prompt,
                 self.repo_root, executor_verdict_path(r),
                 phase_id, r, agent="code-writer",
             )
+            if ps.pop("set_aside", None) is not None:
+                self._save_state()
             verdict = self._ensure_committed(
                 phase_id, "code-writer", session, work,
                 verdict, executor_verdict_path(r))
@@ -5599,6 +5697,7 @@ class RunLoop:
                 self.log(f"[P{phase_id}] resuming at stage {ps['stage']} in "
                          f"{path} (worktree preserved for reattach)")
             else:
+                self._set_aside(phase_id, ps, path)
                 self._reset_tracked(path)
                 self.log(f"[P{phase_id}] resuming at stage {ps['stage']} in "
                          f"{path}")

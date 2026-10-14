@@ -69,8 +69,11 @@ reviewer is told the target defines no tests only when it is the commit under re
 `--project root` ran nothing; what the reviewer's gate line and a fix round's prompt name),
 `rebase_requested` (set when a merge-time rebase bails `blocked` and hands the
 rebase to the operator — `base`, `from` (the branch head it asked to rebase), `ts`; cleared when
-the resume takes the rebased branch, and at the merge), and `landed` — set at the merge: the
-phase's `root` (the shared repo, for a worktree phase), the `base` sha its branch was cut from
+the resume takes the rebased branch, and at the merge), `set_aside` (what a resume set aside
+from a dead round's tree — each entry's `round`, `patch`, `untracked` and `files`; named in the
+phase's next code-writer prompt, and cleared once that session returns), and `landed` — set at
+the merge: the phase's `root` (the shared repo, for a worktree phase), the `base` sha its branch
+was cut from
 and the `head` of the branch that merged — fast-forwarded into the base, or taken by a merge
 commit for a shared target. That range is the phase's
 own commits and nothing else, which is what the executor digest's touched list and the doc
@@ -114,7 +117,10 @@ per repo a phase merged into, a section per merged phase over its `landed` range
 every doc-writer dispatch — git's answer written down, not an agent's copy, with every `kind:
 Secret`'s data lines stubbed; the folder's own `.gitignore`, `*`, keeps it out of any `git add -A`
 in the spec repo). A review round whose range changes Secret data leaves `review_r<N>.diff`
-beside its review, the range redacted the same way. Executor inputs come from `plan.md`, never
+beside its review, the range redacted the same way. What a dead round left uncommitted, set aside
+by the resume before it resets the tree, is under `phases/P<id>/set-aside/` (`r<N>.patch` and
+`r<N>-untracked/`, unredacted, so that folder ignores itself the same way;
+[run-loop.md](run-loop.md) § The per-phase round). Executor inputs come from `plan.md`, never
 from copies.
 
 ## bailout.json and exit codes

@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-14 — A resume sets a dead round's uncommitted work aside before it resets the phase branch (v0.9.101)
+
+`run_loop.py --resume`, over a phase tree a dead round left dirty, saves the work before
+`_reset_tracked` drops it — at both resume sites, a code repo's tree and a shared or spec repo's
+worktree; the wrap-up's discard is unchanged. `_set_aside` writes `git diff HEAD --binary` as
+`phases/P<id>/set-aside/r<N>.patch` (`N` the phase's last code-writer round; a name already
+taken gets `r<N>-2`, …) and copies the untracked files into `r<N>-untracked/` — they stay in the
+tree, as the reset leaves them. The folder ignores itself, as `doc_phase/` does, because the
+patch is unredacted. The log names the paths, `ps["set_aside"]` records them, and the phase's
+next code-writer, whatever stage the round died in, is given them with a line warning that the
+dead round's done-record in `plan.md` may describe the patch rather than the tree; the record is
+cleared once that session returns. A save that fails bails `protocol_failure` before anything is
+reset. The bail line for such a tree reads `with uncommitted work — set aside at resume` instead
+of `— not touched`. The reset itself stays: a fresh round should not build on half-applied edits
+without knowing it.
+
+Why: SecretRotator slice 051's P12 code-writer hit the 7200 s cap, the resume reset its test
+edits away, and the next writer rebuilt them from the dead session's transcript. (AIWF-58)
+
 ## 2026-10-14 — An entry for a slice already planned or running comes to the operator; `relabel --for none` (v0.9.100)
 
 `close_out.py` reads a `for` against the slice it names, at every render. `slices_to_run()`

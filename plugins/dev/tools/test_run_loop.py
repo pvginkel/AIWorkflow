@@ -149,6 +149,11 @@ class FakeGit:
         self.lock_reasons = []
         self.worktree_list = ""
         self.attempts = []
+        # What a resume sets aside from a dirty tree: str(root) → the text
+        # `diff --output=<file>` writes there, and → the paths `ls-files
+        # --others` lists (the files themselves are the test's to make).
+        self.uncommitted = {}
+        self.untracked = {}
 
     def __call__(self, *args, root=None, check=True):
         self.calls.append((root, args))
@@ -170,6 +175,13 @@ class FakeGit:
             return self.branch_at.get(str(root), self.branch)
         if args[:2] == ("rev-parse", "--show-toplevel"):
             return self.spec_root
+        if args[0] == "diff" and any(a.startswith("--output=") for a in args):
+            out = next(a for a in args if a.startswith("--output="))
+            Path(out.removeprefix("--output=")).write_text(
+                self.uncommitted.get(str(root), ""))
+            return ""
+        if args[:2] == ("ls-files", "--others"):
+            return "".join(f"{p}\0" for p in self.untracked.get(str(root), ()))
         if args[0] == "diff" and "--name-only" in args:
             return self.diff_files
         if args[0] == "diff" and any(a.startswith("--stat") for a in args):
@@ -3508,6 +3520,249 @@ def test_a_resume_resets_a_shared_repos_phase_in_its_worktree():
         assert not r.fake_git.mutations("restore")
 
 
+# -- a resume sets a dead round's uncommitted work aside (AIWF-58) -------------
+
+# A dead round's work as `git diff HEAD` answers it — the trailing blank
+# context line and the final newline are what `git apply` reads, so the
+# set-aside keeps them.
+DEAD_ROUND_DIFF = ("diff --git a/src/api.py b/src/api.py\n"
+                   "--- a/src/api.py\n+++ b/src/api.py\n"
+                   "@@ -1,2 +1,3 @@\n def handler():\n+    return 1\n \n")
+
+
+def set_aside_dir(slice_dir):
+    return slice_dir / "phases" / "P1" / "set-aside"
+
+
+def set_aside_diff(patch):
+    """The driver's `git diff` that writes the set-aside patch to `patch`."""
+    return ("diff", "--binary", "--no-ext-diff", "--no-textconv",
+            "--no-color", f"--output={patch}", "HEAD")
+
+
+def commits_round(root):
+    """A code-writer effect: the round commits its work, leaving `root`
+    clean — the fake's `reset` leaves an unmodelled tree as it found it."""
+    def effect(loop):
+        loop.fake_git.dirty_roots[str(root)] = ""
+    return effect
+
+
+def dead_round_in(loop, root, untracked=()):
+    """`root` as a round that died uncommitted left it: DEAD_ROUND_DIFF
+    tracked, and `untracked` on disk (path → text)."""
+    lines = [" M src/api.py"] + [f"?? {p}" for p in untracked]
+    loop.fake_git.dirty_roots[str(root)] = "\n".join(lines) + "\n"
+    loop.fake_git.uncommitted[str(root)] = DEAD_ROUND_DIFF
+    loop.fake_git.untracked[str(root)] = list(untracked)
+    for rel, text in dict(untracked).items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(text)
+
+
+def calls_at(loop):
+    return [(str(root), c) for root, c in loop.fake_git.calls]
+
+
+def test_a_resume_sets_the_dead_rounds_work_aside_before_the_reset():
+    """SecretRotator slice 051: the writer hit the session cap with its test
+    edits uncommitted, and the resume's reset dropped them. The reset
+    stays; the patch, byte for byte, and copies of the untracked files go
+    under the phase's `set-aside/` first, and the next writer is told where
+    — and that the dead round's done-record may describe the patch."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        (slice_dir / "state.json").write_text(
+            json.dumps(resume_state(PROJECT, stage="executor")))
+        r = ScriptedLoop(slice_dir, [(*V["exec_done"], commits_round(repo)),
+                                     V["review_signoff"], *TAIL],
+                         resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        dead_round_in(r, repo, {"notes.txt": "half a thought\n",
+                                "tests/new/test_api.py": "def test(): ...\n"})
+        os.symlink("notes.txt", repo / "link.txt")
+        r.fake_git.untracked[str(repo)].append("link.txt")
+        assert run_to_exit(r) == 0
+        out = set_aside_dir(slice_dir)
+        patch, copies = out / "r1.patch", out / "r1-untracked"
+        assert (out / ".gitignore").read_text() == "*\n"
+        assert patch.read_text() == DEAD_ROUND_DIFF
+        assert (copies / "notes.txt").read_text() == "half a thought\n"
+        assert (copies / "tests" / "new" / "test_api.py").read_text() \
+            == "def test(): ...\n"
+        assert os.readlink(copies / "link.txt") == "notes.txt"
+        assert (repo / "notes.txt").exists(), "the untracked stay in the tree"
+        calls = calls_at(r)
+        reset = calls.index((str(repo), ("reset", "--hard", "HEAD")))
+        saved = calls.index((str(repo), set_aside_diff(patch)))
+        listed = calls.index((str(repo), ("ls-files", "--others",
+                                          "--exclude-standard", "-z")))
+        assert saved < reset and listed < reset
+        assert ("[P1] the dead round's uncommitted work set aside before the "
+                f"reset: {patch}; 3 untracked file(s) copied to {copies} "
+                "(still in the tree)") in (slice_dir / "log.txt").read_text()
+        writer = next(p for role, p in r.prompts if role == "code-writer")
+        assert ("Code-writer round 1 of this phase died with uncommitted "
+                "work") in writer
+        assert f"`{patch}` is its `git diff HEAD`, and `{copies}` holds " \
+            "copies of its 3 untracked files" in writer
+        assert "may describe the patch rather than the tree" in writer
+        assert "set_aside" not in load_state(slice_dir)["phases"]["1"]
+
+
+def test_a_shared_repos_resume_sets_aside_from_its_worktree():
+    """The second resume site: the worktree is the tree being reset, so it
+    is the one read — never the shared checkout, which stays on its base."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        specs = specs_phase(slice_dir, tmp)
+        (slice_dir / "state.json").write_text(
+            json.dumps(resume_state("../specs", stage="executor")))
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        work = specs_worktree(r)
+        work.mkdir(parents=True)
+        (work / ".git").write_text("gitdir: a fake's\n")
+        r.fake_git.branch_at[str(work)] = "phase/074-P1"
+        dead_round_in(r, work, {"draft.md": "draft\n"})
+        r.script[0] = (*V["exec_done"], commits_round(work))
+        assert run_to_exit(r) == 0
+        out = set_aside_dir(slice_dir)
+        assert (out / "r1.patch").read_text() == DEAD_ROUND_DIFF
+        assert (out / "r1-untracked" / "draft.md").read_text() == "draft\n"
+        calls = calls_at(r)
+        assert calls.index((str(work), set_aside_diff(out / "r1.patch"))) \
+            < calls.index((str(work), ("reset", "--hard", "HEAD")))
+        assert not [c for root, c in calls if root == str(specs)
+                    and (c[0] == "ls-files" or "--output=" in " ".join(c))]
+        writer = next(p for role, p in r.prompts if role == "code-writer")
+        assert f"`{out / 'r1.patch'}` is its `git diff HEAD`" in writer
+
+
+def test_a_resume_over_a_clean_tree_sets_nothing_aside():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        (slice_dir / "state.json").write_text(
+            json.dumps(resume_state(PROJECT, stage="executor")))
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        assert run_to_exit(r) == 0
+        assert r.fake_git.mutations("reset"), "the reset runs as ever"
+        assert not set_aside_dir(slice_dir).exists()
+        assert not [c for _, c in r.fake_git.calls
+                    if c[0] == "ls-files" or "--output=" in " ".join(c)]
+        writer = next(p for role, p in r.prompts if role == "code-writer")
+        assert "set it aside" not in writer
+        assert "uncommitted work set aside" \
+            not in (slice_dir / "log.txt").read_text()
+
+
+def test_a_reattaching_resume_sets_nothing_aside():
+    """The reattached session needs its tree as it left it: no reset, so
+    nothing to save from one."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        state = resume_state(PROJECT, stage="executor")
+        state["in_flight"] = {
+            "phase": "1", "role": "code-writer", "round": 1,
+            "verdict_path": str(slice_dir / "phases" / "P1"
+                                / "executor_result_r1.json"),
+            "session": "sess-crashed", "started_at": "t"}
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        r = ScriptedLoop(slice_dir, [(*V["exec_done"], commits_round(repo)),
+                                     V["review_signoff"], *TAIL],
+                         resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        dead_round_in(r, repo, {"notes.txt": "half a thought\n"})
+        assert run_to_exit(r) == 0
+        assert r.spawned[0][4] == "sess-crashed"
+        assert not r.fake_git.mutations("reset")
+        assert not set_aside_dir(slice_dir).exists()
+        assert "set_aside" not in load_state(slice_dir)["phases"]["1"]
+
+
+def test_the_set_aside_line_reaches_the_first_writer_after_the_resume_only():
+    """A red gate's fix round is a second writer in the same run: the note
+    was the first one's, and the state no longer holds it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        (slice_dir / "state.json").write_text(
+            json.dumps(resume_state(PROJECT, stage="executor")))
+        r = ScriptedLoop(slice_dir, [(*V["exec_done"], commits_round(repo)),
+                                     V["exec_done"], V["review_signoff"],
+                                     *TAIL],
+                         resume=True, repo_root=repo, gates=[False, True])
+        r.fake_git.branches.add("phase/074-P1")
+        dead_round_in(r, repo)
+        assert run_to_exit(r) == 0
+        writers = [p for role, p in r.prompts if role == "code-writer"]
+        assert len(writers) == 2
+        assert "may describe the patch rather than the tree" in writers[0]
+        assert "set it aside" not in writers[1]
+        # no untracked files: no copies, and the prompt names none
+        assert "untracked" not in writers[0].split("Code-writer round 1")[1]
+        assert not (set_aside_dir(slice_dir) / "r1-untracked").exists()
+        assert "set_aside" not in load_state(slice_dir)["phases"]["1"]
+
+
+def test_a_set_aside_never_overwrites_an_earlier_one():
+    """A second resume of the same round — the first set-aside saved, the
+    reset or the dispatch after it failed — takes the next free name."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        out = set_aside_dir(slice_dir)
+        out.mkdir(parents=True)
+        (out / "r1.patch").write_text("the first resume's\n")
+        (out / "r1-2-untracked").mkdir()
+        (slice_dir / "state.json").write_text(
+            json.dumps(resume_state(PROJECT, stage="executor")))
+        r = ScriptedLoop(slice_dir, [(*V["exec_done"], commits_round(repo)),
+                                     V["review_signoff"], *TAIL],
+                         resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        dead_round_in(r, repo)
+        assert run_to_exit(r) == 0
+        assert (out / "r1.patch").read_text() == "the first resume's\n"
+        assert (out / "r1-3.patch").read_text() == DEAD_ROUND_DIFF
+        writer = next(p for role, p in r.prompts if role == "code-writer")
+        assert f"`{out / 'r1-3.patch'}` is its `git diff HEAD`." in writer
+
+
+def test_a_set_aside_that_fails_bails_before_the_reset():
+    """Losing the work is what the set-aside is for, so a save that cannot
+    be made stops the resume rather than resetting — a git failure and a
+    copy that cannot be made alike."""
+    def git_fails(loop, slice_dir, repo):
+        dead_round_in(loop, repo)
+        loop.fake_git.fails.add(
+            set_aside_diff(set_aside_dir(slice_dir) / "r1.patch"))
+
+    def copy_fails(loop, slice_dir, repo):
+        dead_round_in(loop, repo)
+        loop.fake_git.untracked[str(repo)] = ["gone.txt"]   # not on disk
+
+    for breaks in (git_fails, copy_fails):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp)
+            (slice_dir / "state.json").write_text(
+                json.dumps(resume_state(PROJECT, stage="executor")))
+            r = ScriptedLoop(slice_dir, [], resume=True, repo_root=repo)
+            r.fake_git.branches.add("phase/074-P1")
+            breaks(r, slice_dir, repo)
+            assert run_to_exit(r) == 3, breaks.__name__
+            bail = json.loads((slice_dir / "bailout.json").read_text())
+            assert bail["reason"] == "protocol_failure"
+            assert bail["phase"] == "1"
+            assert "could not set the dead round's uncommitted work in " \
+                f"{repo} aside" in bail["details"]
+            assert "nothing was reset" in bail["details"]
+            assert not r.fake_git.mutations("reset"), breaks.__name__
+            assert not r.prompts
+            assert "set_aside" not in load_state(slice_dir)["phases"]["1"]
+
+
 # -- which repos are shared -----------------------------------------------------
 
 def test_shared_repo_dirs_reads_kcs_repos_and_fails_with_the_cause():
@@ -3876,7 +4131,7 @@ def test_a_resume_reuses_the_worktree_or_adds_it_again_over_a_stale_registration
         slice_dir, repo, specs = real_shared_slice(tmp)
         r = RealGitLoop(slice_dir, [], repo_root=repo)
         branch = "phase/074-P1"
-        ps = {"status": "pending", "stage": None}
+        ps = {"status": "pending", "stage": None, "executor_rounds": 1}
 
         def ensure(existing=branch):
             with patched(run_loop, WORKTREE_ROOT=r.worktree_root):
@@ -3892,12 +4147,28 @@ def test_a_resume_reuses_the_worktree_or_adds_it_again_over_a_stale_registration
         edit_line(work / "api.md", 1, "committed")
         sh(work, "commit", "-qam", "the phase's work")
         edit_line(work / "api.md", 2, "left uncommitted")
+        (work / "notes").mkdir()
+        (work / "notes" / "new.md").write_text("an untracked draft\n")
         ps.update(status="in_progress", stage="review")
 
         # reused, reset to its last commit...
         assert ensure() == work
         text = (work / "api.md").read_text()
         assert "committed" in text and "left uncommitted" not in text
+        # ...once what the reset dropped is set aside: a patch git applies
+        # back, the untracked file copied and still in the tree, and nothing
+        # of it showing in the spec repo's own status
+        out = set_aside_dir(slice_dir)
+        assert [rec["patch"] for rec in ps.pop("set_aside")] \
+            == [str(out / "r1.patch")]
+        assert (out / "r1-untracked" / "notes" / "new.md").read_text() \
+            == "an untracked draft\n"
+        assert (work / "notes" / "new.md").exists()
+        assert "set-aside" not in sh(specs, "status", "--porcelain",
+                                     "--untracked-files=all")
+        sh(work, "apply", str(out / "r1.patch"))
+        assert (work / "api.md").read_text() == text.replace(
+            "line 2\n", "left uncommitted\n")
         # ...but as it stands under a reattach
         edit_line(work / "api.md", 2, "left uncommitted")
         r._reattach = {"phase": "1", "session": "sess-1"}
@@ -4038,8 +4309,8 @@ def test_a_bail_leaves_a_repo_with_uncommitted_work_where_it_is():
         assert r.fake_git.branch_at[str(repo)] == "phase/074-P1"
         assert not [c for _, c in r.fake_git.mutations("checkout")
                     if c == ("checkout", "main")]
-        assert "left on phase/074-P1 with uncommitted work — not touched" \
-            in (slice_dir / "log.txt").read_text()
+        assert "left on phase/074-P1 with uncommitted work — set aside at " \
+            "resume" in (slice_dir / "log.txt").read_text()
 
 
 def test_an_interrupt_leaves_the_branches_alone():

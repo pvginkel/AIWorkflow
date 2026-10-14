@@ -83,17 +83,16 @@ The worktree is added **locked** (`git worktree add --lock`, the reason naming t
 environment, host and pid): its registration lives in the shared git dir, every other environment
 sees its path as missing, and `git gc`'s prune would otherwise delete a live worktree's
 registration. Everything that reads or changes a working tree runs in the worktree — the dirty
-checks, the resume reset (a plain `reset --hard`: nothing but the phase writes there), the gate
-(`kc project test` from the worktree's root where the repo carries a manifest; the verbs are
-cwd-bound), the reviewer's `where` — while `bases`, `landed.root`, the test phase's pushes and
-the doc phase's diffs keep the shared repo. The executor's dispatch names the worktree and says
-that the shared tree stays on its base and the plan is edited there, as for any sibling target;
-the run record is untracked and never in a worktree. A resume reuses the worktree it recorded
-(a reattached session needs the tree as it left it) and, finding it gone — a Reset, a resume in
-another environment — unlocks and prunes the branch's stale registrations and re-adds it from
-the branch: the committed work is in the shared git dir, the uncommitted is lost as a lost
-code-repo tree loses it. A bail or a stop leaves the worktree and its branch for the resume; the
-merge removes them.
+checks, the resume's set-aside and reset (a plain `reset --hard`: nothing but the phase writes
+there), the gate (`kc project test` from the worktree's root where the repo carries a manifest; the
+verbs are cwd-bound), the reviewer's `where` — while `bases`, `landed.root`, the test phase's pushes
+and the doc phase's diffs keep the shared repo. The executor's dispatch names the worktree and says
+that the shared tree stays on its base and the plan is edited there, as for any sibling target; the
+run record is untracked and never in a worktree. A resume reuses the worktree it recorded (a
+reattached session needs the tree as it left it) and, finding it gone — a Reset, a resume in another
+environment — unlocks and prunes the branch's stale registrations and re-adds it from the branch:
+the committed work is in the shared git dir, the uncommitted is lost as a lost code-repo tree loses
+it. A bail or a stop leaves the worktree and its branch for the resume; the merge removes them.
 
 **The merge of a shared target is a merge, not a fast-forward.** In order: the worktree must be
 clean (`protocol_failure` otherwise, as everywhere); in the spec repo, a change under
@@ -164,7 +163,17 @@ whole plan is a feature of the review, not a cost. Then:
   recreates it and again after every executor round: a commit the record vouches for that the
   branch no longer carries is a `lost_work` bail, not a branch to rebuild from base
   ([runner-state.md](runner-state.md), which also carries the one-driver-per-slice lock the
-  first such loss came from).
+  first such loss came from). A resume that does not reattach resets the branch's tree to its
+  last commit, so a fresh round never builds on half-applied edits without knowing it — and sets
+  the dead round's uncommitted work aside first: `git diff HEAD --binary` as
+  `phases/P<id>/set-aside/r<N>.patch` (`N` the phase's last code-writer round) and a copy of its
+  untracked files in `r<N>-untracked/`, which the reset leaves in the tree. The folder ignores
+  itself, as `doc_phase/` does: the patch is git's raw answer, Secret data and all. The phase's
+  next code-writer, whatever stage the round died in, is given the paths and told that the dead
+  round's done-record in `plan.md` may describe the patch rather than the tree. A save that fails
+  bails the resume rather than resetting. SecretRotator slice 051's P12 writer hit the session
+  cap, the resume reset its test edits away, and the next writer rebuilt them from the dead
+  session's transcript.
 - **Fetch** — before the session, the driver fetches the target repo's `origin` (and every repo
   the run has touched before the test phase). Nothing else in a run fetches: the driver branches
   off the **local** base and ff-merges back into it, so a repo cloned days ago keeps the
