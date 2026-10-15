@@ -265,8 +265,11 @@ An improvement takes the first of these that fits:
 - **An `unknown` is not taken for the value that closes.** A trigger or an impact that is
   `unknown` sends the entry to the wrap-up to look, and in row 5 counts as one that shows and
   has an impact; a benefit whose `felt` is `unknown` is not taken as unfelt.
-- **Whether the slice touched a repository** is read from the run's record — the roots of the
-  phases in `state.json`. Without a run record every repository is taken as the slice's own.
+- **Whether the slice touched a repository** is read from the run's record in `state.json`: the
+  roots its phases landed in, and the repositories its unfinished phases' `Target:` lines
+  resolve to (`target_roots`). A phase counts from the moment the plan names it, so an entry
+  for the repository of a phase still in review, or still to run, routes as the slice's own.
+  Without a run record every repository is taken as the slice's own.
 - **An entry without labels** — a report written before the labels existed — has no route. It
   waits, in a section of its own, until it is labelled.
 

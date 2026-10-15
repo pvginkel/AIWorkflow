@@ -1488,9 +1488,11 @@ def effective_labels(entry: dict) -> dict | None:
 
 
 def touched_repos(slice_dir: Path | str) -> set[str] | None:
-    """The basenames of every `root` in the slice's state.json — the
-    repositories its phases landed in. None without a state.json, or one
-    that names no root: every repository is then the slice's own."""
+    """The basenames of the slice's repositories, read off its state.json:
+    every `root` in it — the repositories its phases landed in — plus its
+    `target_roots`, those the plan's unfinished phases target, as the run
+    loop resolved them at its last plan load. None without a state.json, or
+    one that names neither: every repository is then the slice's own."""
     try:
         state = json.loads((Path(slice_dir) / "state.json").read_text())
     except (OSError, json.JSONDecodeError):
@@ -1509,6 +1511,10 @@ def touched_repos(slice_dir: Path | str) -> set[str] | None:
                 walk(value)
 
     walk(state)
+    targets = state.get("target_roots") if isinstance(state, dict) else None
+    if isinstance(targets, list):
+        roots.update(Path(value).name for value in targets
+                     if isinstance(value, str) and value)
     return roots or None
 
 

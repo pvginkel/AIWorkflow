@@ -3153,7 +3153,7 @@ def test_target_errors_wait_for_the_phase_that_creates_the_component():
         def errors_for(*sections):
             phases, structure = parse_plan(creating_plan(*sections))
             assert structure == []
-            return r._target_errors(phases)
+            return r._plan_targets(phases)[1]
 
         # an earlier pending phase declares it — expected, not wrong
         assert errors_for(
@@ -3288,6 +3288,44 @@ def test_sibling_without_manifest_has_no_deterministic_gate():
         assert r.gate_calls == [], "no gate run for a manifest-less sibling"
         prompt = next(p for role, p in r.prompts if role == "code-reviewer")
         assert "unverified" in prompt
+
+
+def test_target_roots_are_the_pending_phases_repos_as_the_last_load_resolved():
+    """state.json's `target_roots` is what the close-out routes read for a
+    repo a phase still in its rounds targets: every pending phase's resolved
+    root — started or not — replaced at every plan load, so a phase that is
+    done drops out (its `landed` root stands for it)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sib = make_sibling(tmp)
+        slice_dir, repo = make_slice(tmp, phases=[
+            ("1", "App change", PROJECT),
+            ("2", "Chart change", "../Sibling"),
+        ])
+        both = sorted([str(repo), str(sib.resolve())])
+        r = ScriptedLoop(slice_dir, [("code-writer", {"outcome": "blocked",
+                                                       "summary": "no creds"})],
+                         repo_root=repo)
+        assert run_to_exit(r) == 3
+        # bailed in P1's rounds: P1's repo and P2's, which has not begun
+        state = load_state(slice_dir)
+        assert state["phases"]["1"]["landed"] is None
+        assert "2" not in state["phases"]
+        assert state["target_roots"] == both
+        seen = []
+        script = [
+            V["exec_done"], V["review_signoff"],
+            ("code-writer", {"outcome": "done", "summary": "built"},
+             lambda loop: seen.append(list(loop.state["target_roots"]))),
+            V["review_signoff"], *TAIL,
+        ]
+        r2 = ScriptedLoop(slice_dir, script, resume=True, repo_root=repo)
+        assert run_to_exit(r2) == 0
+        assert not r2.script
+        # in P2's rounds P1 is done: its repo is gone from the list, not kept
+        assert seen == [[str(sib.resolve())]]
+        state = load_state(slice_dir)
+        assert state["phases"]["1"]["landed"]["root"] == str(repo)
+        assert state["target_roots"] == []
 
 
 # -- a sibling repo's component as a Target ------------------------------------
@@ -8347,6 +8385,8 @@ def test_dry_run_lists_phases_and_validates_targets(capsys=None):
         assert f"target={PROJECT} [project]" in text
         assert "target=../Sibling [sibling]" in text
         assert str(sib) in text
+        # nothing written: no state.json, so no `target_roots` either
+        assert not (slice_dir / "state.json").exists()
 
 
 def test_dry_run_flags_bad_targets():

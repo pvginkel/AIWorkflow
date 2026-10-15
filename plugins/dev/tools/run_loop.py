@@ -4060,11 +4060,13 @@ class RunLoop:
                 raise Bailout("plan_unreadable", details=str(e)) from None
             phases, errors = parse_plan(text)
             errors.extend(self._vanished_phases(phases))
-            errors.extend(self._target_errors(phases))
+            roots, target_errors = self._plan_targets(phases)
+            errors.extend(target_errors)
             errors.extend(self._push_holds(text)[1])
             errors.extend(self._rulings(text)[1])
             if not errors:
                 self._track_phases(phases)
+                self._track_target_roots(roots)
                 return phases
             session, role = self._last_session()
             if attempt == 1 and session:
@@ -4089,15 +4091,19 @@ class RunLoop:
                 for pid in self.state.get("known_phases", [])
                 if pid not in present]
 
-    def _target_errors(self, phases: list[Phase]) -> list[str]:
-        """A pending phase whose Target does not resolve — unless the plan
-        says a phase creates it and that phase has not run yet."""
+    def _plan_targets(self, phases: list[Phase]) -> tuple[list[str], list[str]]:
+        """(the repo roots the pending phases' Targets resolve to, sorted and
+        unique, errors). An error is a pending phase whose Target does not
+        resolve — unless the plan says a phase creates it and that phase has
+        not run yet, which is no error and no root."""
+        roots: set[str] = set()
         errors = []
         for index, phase in enumerate(phases):
             if phase.done or not phase.target:
                 continue
             try:
-                self._resolve_target(phase.target, creates=phase.creates)
+                roots.add(str(self._resolve_target(
+                    phase.target, creates=phase.creates).git_root))
                 continue
             except ValueError as e:
                 why = str(e)
@@ -4105,11 +4111,11 @@ class RunLoop:
             if creator is not None:
                 continue
             errors.append(f"phase P{phase.id}: {false_claim or why}")
-        return errors
+        return sorted(roots), errors
 
     def _tool_roots(self) -> list[Path]:
         """The repos whose tools the run needs: each pending phase's Target
-        repo, resolved as `_target_errors` resolves it (a target a phase
+        repo, resolved as `_plan_targets` resolves it (a target a phase
         still has to create, or one that does not resolve — a plan problem
         `_load_plan` reports — is skipped), plus the code repos of the run's
         `bases`, which the loop-tail sweep covers (a resume's are on disk).
@@ -4230,6 +4236,17 @@ class RunLoop:
                 self.log(f"new phase(s) in the plan: {', '.join(fresh)}")
                 self.state.setdefault("appended_phases", []).extend(fresh)
             self.state["known_phases"] = known
+            self._save_state()
+
+    def _track_target_roots(self, roots: list[str]) -> None:
+        """The repos the plan's pending phases target, as this load resolved
+        them — replaced every load, never accumulated: a phase done since
+        stands in `landed`, and one the plan dropped is no repo of the
+        slice's. The close-out routes read them with the landed roots
+        (`close_out.touched_repos`), so an entry naming the repo a phase
+        still in its rounds targets is not elsewhere."""
+        if roots != self.state.get("target_roots"):
+            self.state["target_roots"] = roots
             self._save_state()
 
     def _last_session(self) -> tuple[str | None, str | None]:

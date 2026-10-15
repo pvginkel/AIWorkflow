@@ -31,7 +31,9 @@ kc marks shared — one clone mounted into every environment — whose phases wo
 the spec repo's do regardless; read from kc once and read back on a resume,
 [run-loop.md](run-loop.md) § The plan is the queue), `known_phases` (the
 plan's phase ids in document
-order, as last parsed), `generation` (follow-up generations spent), `test_rounds`, `sweep_runs`,
+order, as last parsed), `target_roots` (the repo roots the unfinished phases' `Target:` lines
+resolved to at the last plan load, replaced at every load — a phase that is done drops out and
+its `landed` root stands for it; never written by a dry run), `generation` (follow-up generations spent), `test_rounds`, `sweep_runs`,
 `gate_sweep` (the loop-tail sweep's record: per-command `results` with log paths and an
 `outcome` — `green`, `red` or `nothing_ran` (kc's exit 3), with `green` kept beside it — the
 sweep's own `outcome` (red on any red row, else green on any green row, else `nothing_ran`) and
@@ -106,7 +108,8 @@ renders the report at every write, and rendered by the driver at its stages — 
 rendered report is read off this state (`created_at` → `updated_at`, `known_phases` against
 `appended_phases`, `bailouts`, `test_rounds`, `doc_phase.stage`, and `cost` once
 `slice_cost.py --write-state` has run), and so is which repositories the slice touched: the
-`root` of every phase. What goes in the report is [close-out.md](close-out.md).
+`root` of every landed phase and the `target_roots`. What goes in the report is
+[close-out.md](close-out.md).
 
 Session outputs live under `<slice>/phases/P<id>/` (review docs, gate logs, verdict files) and at
 the slice root for the consult/test/doc stages and the wrap-up (`wrap_up_result.json`,

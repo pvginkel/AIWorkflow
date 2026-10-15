@@ -4,6 +4,22 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-15 — Close-out routing counts the repos the plan's Targets name as touched, not only the landed ones (v0.9.105)
+
+`_load_plan` now records `state["target_roots"]`: the repo root that each unfinished phase's
+`Target:` resolves to, taken from the resolution `_plan_targets` (formerly `_target_errors`)
+already makes. The record is replaced at every load, and a dry run writes none. `close_out.py`'s `touched_repos()` counts
+those repos' basenames alongside the `landed` roots. As a result, an entry for the repo of a
+phase still in review, or not started yet, routes as the slice's own. A `state.json` without
+the key routes as before. `close-out.md` § The routes and `runner-state.md` say so.
+
+Why: a phase's root reached `state.json` only at its merge. Before then, every review round of
+that phase rendered an entry for its own repo as "closed — the fix lives in <Repo>, which the
+slice did not touch", and those rounds are when reviewers and consults read the routes. Ansible
+slices 055 (P7, targeting AnsibleSpecs) and 049 (P9, `Target:
+github:pvginkel/ElasticsearchDeploy`) were both affected, and in 049 the reviewer misread its own
+appended Route on every round. (AIWF-63)
+
 ## 2026-10-15 — A `Review:` ledger line naming two distinct commits is flagged to the reviewer, not guessed (v0.9.104)
 
 `review_set_pairs` used to take a line's first absolute path with its last sha. A line whose shas

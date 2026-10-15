@@ -415,6 +415,52 @@ def test_touched_repos_are_the_roots_of_the_state():
         assert close_out.touched_repos(slice_dir) == {"KubeCoder", "KubeCoderSpecs"}
 
 
+def test_touched_repos_add_the_repos_the_plans_pending_phases_target():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        state = slice_dir / "state.json"
+        # the plan's targets alone: no phase has landed yet
+        state.write_text(json.dumps({"phases": {}, "target_roots": [
+            "/work/KubeCoderSpecs", "/work/scratch/ElasticsearchDeploy"]}))
+        assert close_out.touched_repos(slice_dir) == {
+            "KubeCoderSpecs", "ElasticsearchDeploy"}
+        # with the landed roots: the union
+        state.write_text(json.dumps({**STATE, "target_roots": [
+            "/work/KubeCoder", "/work/scratch/ElasticsearchDeploy"]}))
+        assert close_out.touched_repos(slice_dir) == {
+            "KubeCoder", "KubeCoderSpecs", "ElasticsearchDeploy"}
+        # an empty list, or junk in it, adds nothing — and names no root alone
+        state.write_text(json.dumps({**STATE, "target_roots": []}))
+        assert close_out.touched_repos(slice_dir) == {"KubeCoder", "KubeCoderSpecs"}
+        state.write_text(json.dumps({"phases": {}, "target_roots": ["", None, 3]}))
+        assert close_out.touched_repos(slice_dir) is None
+        state.write_text(json.dumps({"phases": {}, "target_roots": "/work/KubeCoder"}))
+        assert close_out.touched_repos(slice_dir) is None
+
+
+def test_a_repo_a_pending_phase_targets_is_not_elsewhere():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        # P1 landed in KubeCoder; P2, still in its rounds, targets a GitHub clone
+        (slice_dir / "state.json").write_text(json.dumps({
+            "phases": {"1": {"landed": {"root": "/work/KubeCoder"}},
+                       "2": {"status": "in_progress"}},
+            "target_roots": ["/work/scratch/ElasticsearchDeploy"]}))
+        touched = close_out.touched_repos(slice_dir)
+        shows = fix_labels(repo="ElasticsearchDeploy")
+        quiet = fix_labels(trigger="fault", impact="degraded",
+                           repo="ElasticsearchDeploy")
+        assert R(E("defect", labels=shows), touched) == "wrap-up:fix-or-card"
+        assert R(E("defect", labels=quiet), touched) == "closed:fault"
+        assert R(E("improvement", labels=imp_labels(repo="ElasticsearchDeploy")),
+                 touched) == "wrap-up:improvement"
+        # a repo in neither the landed nor the targeted roots still is
+        assert R(E("defect", labels={**shows, "repo": "HelmCharts"}), touched) == \
+            "card:table"
+        assert R(E("defect", labels={**quiet, "repo": "HelmCharts"}), touched) == \
+            "closed:elsewhere"
+
+
 # -- owed before the push ---------------------------------------------------------
 
 def _owed(slice_dir):
