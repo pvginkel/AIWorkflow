@@ -14,6 +14,10 @@ repos:
   # The kubecoder plugin marketplace: the host conventions the dev plugin's
   # skills load (youtrack-usage above all) change with the plugin often.
   - url: https://github.com/pvginkel/KubeCoderConfig
+  # The aiworkflow.home site: the rules and guidelines that accompany the
+  # workflow, data modelling first. Its strict build and check run in the python
+  # toolchain; its image is built by the Jenkins job AIWorkflowSite.
+  - url: https://github.com/pvginkel/AIWorkflowSite
 
 capabilities:
   github: rw
@@ -29,7 +33,8 @@ preamble:
   instructions: |
     The AI workflow's environment: the `dev` plugin marketplace
     (/work/AIWorkflow, with its spec repo in /work/AIWorkflowSpecs), and
-    the `kubecoder` plugin marketplace in /work/KubeCoderConfig.
+    the `kubecoder` plugin marketplace in /work/KubeCoderConfig, and the
+    aiworkflow.home site in /work/AIWorkflowSite.
 
     Two toolchain sidecars:
 
