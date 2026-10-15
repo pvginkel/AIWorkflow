@@ -179,11 +179,21 @@ whole plan is a feature of the review, not a cost. Then:
   off the **local** base and ff-merges back into it, so a repo cloned days ago keeps the
   `origin/<base>` that came with the clone, and an agent reading that ref reads the day of the
   clone — one run's executor called a sibling-repo commit that had been on `origin/main` for a
-  day "absent from origin" and raised a Blocker over it. Refs only: no local branch moves — the
-  pull that brings a base up to its origin is preflight's, made once before the run
-  ([`preflight.md`](preflight.md) § Notes on the sync), and a base that moves on origin mid-run
-  stays the operator's call. Agents carry the other half of the rule — never conclude a commit is
-  missing from a tree you have not fetched yourself.
+  day "absent from origin" and raised a Blocker over it. Refs only, save one move: before a fresh
+  phase cuts its branch, a base that is a plain ancestor of `origin/<base>` — no commit of its
+  own, so none can be lost — is fast-forwarded to it, by `merge --ff-only` where the base is
+  checked out (a shared repo's checkout included) and by ref where it is checked out nowhere.
+  A base checked out in another worktree, or a fast-forward git refuses (a dirty file the commits
+  touch), is left with a log line, never a bail. Ansible slice 049's P10 was cut from a `main`
+  ten commits behind origin, where slice 052 had edited the same anchors, and its push needed a
+  hand merge. A base with commits of its own is never moved — the bases have diverged and the
+  driver chooses nothing for the phase; the pull that rebases those is preflight's, made once
+  before the run ([`preflight.md`](preflight.md) § Notes on the sync). Wherever `origin/<base>`
+  still holds commits the base lacks — diverged, a fast-forward left, or a resume after origin
+  moved — every code-writer dispatch of the phase, first round and fix rounds, says how many
+  each side holds and which of origin's changed paths the phase's own section of the plan names
+  word for word. Agents carry the other half of the rule — never conclude a commit is missing
+  from a tree you have not fetched yourself.
 - **Gate** — the driver runs the target's deterministic gate itself, and that gate is **test
   only**: the executor runs the linter once itself before handing back, and lint or build
   breakage is caught deterministically by the loop-tail sweep and the doc gate — so a per-phase

@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-15 — The run loop fast-forwards a phase's stale base before cutting its branch, and tells the writer when origin has diverged (v0.9.103)
+
+`_run_phase`, on a fresh phase, runs `_sync_base` after the fetch and before either cut, the
+in-place branch or a shared repo's worktree. A local base that is a plain ancestor of
+`origin/<base>` is fast-forwarded: by `merge --ff-only` where it is checked out (a shared
+checkout included) and by `update-ref` against the sha it was read at where it is checked out
+nowhere. A base checked out in another worktree, or a fast-forward git refuses over a dirty file
+the commits touch, is left with a log line, never a bail. A base with commits of its own is never
+moved. Wherever origin still holds commits the base lacks (diverged, left, or a resume after
+origin moved), every code-writer dispatch of the phase, first round and fix rounds, carries
+`ORIGIN_AHEAD_LINE`: both sides' counts, and those of origin's changed paths that the phase's own
+plan section names word for word. The reviewer and the consults do not get it. `run-loop.md`
+§ Fetch and `preflight.md`'s mid-run rule say the same.
+
+Why: two Ansible slices cut phases from a stale `main` and edited
+`docs/runbooks/secret-rotator-go-live.md` under another slice's commits on origin. Slice 047 P9's
+bases had diverged by one commit each. Slice 049 P10's `main` was a plain ancestor ten commits
+behind, slice 052 had edited the same anchors, and the push needed a hand merge. (AIWF-61)
+
 ## 2026-10-14 — `/dev:plan-slice` gets the in-phase push ruling at seeding when a later phase consumes what an earlier one publishes (v0.9.102)
 
 §3 of the skill, beside the ordering constraints the seeded header carries: a constraint where a

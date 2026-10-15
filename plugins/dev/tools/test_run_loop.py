@@ -120,6 +120,11 @@ class FakeGit:
         self.branch_files = ""   # what `log --name-only` and `ls-tree` report
         self.unpushed = {}       # str(root) → `rev-list --count` answer
         self.no_origin = set()   # roots where `origin/<base>` does not exist
+        # What `rev-parse --verify` answers for a fully qualified
+        # `refs/remotes/…` ref — the one the base sync and the origin-ahead
+        # line read. Absent is no such ref: no base moves and no dispatch
+        # says origin is ahead (the real-git tests cover both).
+        self.remote_refs = {}
         self.ahead = {}          # "<base>..<branch>" → commits it is ahead by
         self.lost = set()        # shas no ref in this repo reaches any more
         self.merged = set()      # shas the base branch carries
@@ -192,6 +197,9 @@ class FakeGit:
             if args[-1].startswith("origin/"):
                 return self.unpushed.get(str(root), "0")
             return self.ahead.get(args[-1], "0")
+        if args[:2] == ("rev-parse", "--verify") \
+                and args[-1].startswith("refs/remotes/"):
+            return self.remote_refs.get(args[-1], "")
         if args[:2] == ("rev-parse", "--verify"):
             return "" if str(root) in self.no_origin else self.head
         if args[0] == "rev-parse" and args[-1].endswith("^{tree}"):
@@ -3896,15 +3904,16 @@ class RealGitLoop(ScriptedLoop):
         return RunLoop._git_attempt(self, *args, root=root)
 
 
-def real_shared_slice(tmp):
+def real_shared_slice(tmp, body=""):
     """A slice whose one phase targets the specs repo, over real git: the
     specs and the code repo each a repo with everything committed on main,
     the specs carrying a manifest (so the phase has a gate) and api.md, ten
     lines the phase and the other writers of these tests edit. The project
     runs neither a test nor a doc phase and never pushes, so a run ends at
     its completion consult."""
-    slice_dir, repo = make_slice(tmp, phases=[("1", "Contract", "../specs")],
-                                 config=rc(test=False, doc=False, push=False))
+    slice_dir, repo = make_slice(
+        tmp, phases=[("1", "Contract", "../specs", False, body)],
+        config=rc(test=False, doc=False, push=False))
     specs = (Path(tmp) / "specs").resolve()
     shutil.rmtree(specs / ".git")
     gated_specs(tmp)
@@ -3951,11 +3960,11 @@ def base_edit(n, text):
     return step
 
 
-def shared_run(slice_dir, repo, specs, *also, **kw):
+def shared_run(slice_dir, repo, specs, *also, loop=RealGitLoop, **kw):
     """One phase on the shared specs repo, its writer doing `phase_work`."""
-    r = RealGitLoop(slice_dir, [(*V["exec_done"], phase_work(*also)),
-                                V["review_signoff"], V["consult_complete"]],
-                    repo_root=repo, **kw)
+    r = loop(slice_dir, [(*V["exec_done"], phase_work(*also)),
+                         V["review_signoff"], V["consult_complete"]],
+             repo_root=repo, **kw)
     with patched(run_loop, shared_repo_dirs=lambda: {specs}):
         code = run_to_exit(r)
     return r, code
@@ -5073,6 +5082,291 @@ def test_test_phase_fetches_every_touched_repo_before_dispatch():
         # the sibling was the phase's target; the invoking repo was fetched by
         # nothing but this loop, so its presence is the proof
         assert str(repo) in at_dispatch and str(sib) in at_dispatch
+
+
+# -- the base sync: a phase is cut from what origin holds ---------------------
+#
+# Ansible slice 049's P10 was cut from a `main` ten commits behind origin,
+# where another slice had edited the same anchors, and its push needed a
+# hand merge. A fresh phase's base with no commits of its own is
+# fast-forwarded before the cut; where origin still holds commits the base
+# lacks, every code-writer dispatch of the phase says so. Real git, with a
+# real origin.
+
+class FetchingLoop(RealGitLoop):
+    """RealGitLoop that fetches every repo with an origin, as the driver
+    does."""
+
+    def _fetch_origin(self, root):
+        if sh(root, "remote"):
+            RunLoop._fetch_origin(self, root)
+
+
+def with_origin(tmp, repo):
+    """A bare origin for `repo`, its main pushed there, and another clone of
+    it — another environment's — to push from."""
+    bare = Path(tmp) / f"{repo.name}-origin.git"
+    sh(tmp, "init", "-q", "--bare", "-b", "main", str(bare))
+    sh(repo, "remote", "add", "origin", str(bare))
+    sh(repo, "push", "-q", "-u", "origin", "main")
+    other = Path(tmp) / f"{repo.name}-elsewhere"
+    sh(tmp, "clone", "-q", str(bare), str(other))
+    return other
+
+
+def pushed(clone, path, text):
+    """A commit of `path` in `clone`, pushed to origin; its sha."""
+    file = clone / path
+    file.parent.mkdir(parents=True, exist_ok=True)
+    file.write_text(text)
+    sh(clone, "add", path)
+    sh(clone, "commit", "-qm", f"elsewhere: {path}")
+    sh(clone, "push", "-q", "origin", "main")
+    return sh(clone, "rev-parse", "HEAD")
+
+
+def real_code_slice(tmp):
+    """A slice whose one phase works on the code repo in place and names
+    `docs/runbook.md`, over real git: the specs and the code repo committed
+    on main, the code repo with an origin and another clone of it (the
+    third value). A run ends at its completion consult."""
+    slice_dir, repo = make_slice(
+        tmp, phases=[("1", "Runbook", PROJECT, False,
+                      "Rewrite the restart section of `docs/runbook.md`.\n")],
+        config=rc(test=False, doc=False, push=False))
+    specs = (Path(tmp) / "specs").resolve()
+    shutil.rmtree(specs / ".git")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "runbook.md").write_text("restart: by hand\n")
+    for where in (specs, repo):
+        sh(where, "init", "-q", "-b", "main")
+        sh(where, "add", "-A")
+        sh(where, "commit", "-qm", "init")
+    return slice_dir, repo, with_origin(tmp, repo)
+
+
+def local_commit(repo, path):
+    """A commit on the code repo's main that origin has not got; its sha."""
+    file = repo / path
+    file.parent.mkdir(parents=True, exist_ok=True)
+    file.write_text("local\n")
+    sh(repo, "add", path)
+    sh(repo, "commit", "-qm", f"local: {path}")
+    return sh(repo, "rev-parse", "HEAD")
+
+
+def cuts_and_commits(seen):
+    """A script step's effect: the writer notes the commit its branch was
+    cut from, then commits its work on the branch."""
+    def effect(loop):
+        repo = loop.repo_root
+        seen["cut_from"] = sh(repo, "rev-parse", "HEAD")
+        (repo / "src").mkdir(exist_ok=True)
+        (repo / "src" / "work.py").write_text("the phase's\n")
+        sh(repo, "add", "-A")
+        sh(repo, "commit", "-qm", "P1: the work")
+    return effect
+
+
+def flat(text):
+    return " ".join(text.split())
+
+
+AHEAD_WORDS = "commit(s) ahead of the local"
+
+
+def test_a_base_behind_origin_is_fast_forwarded_before_the_phase_is_cut():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, other = real_code_slice(tmp)
+        pushed(other, "docs/runbook.md", "restart: the script\n")
+        tip = pushed(other, "src/other.py", "other\n")
+        seen = {}
+        r = FetchingLoop(slice_dir, [(*V["exec_done"], cuts_and_commits(seen)),
+                                     V["review_signoff"],
+                                     V["consult_complete"]], repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert seen["cut_from"] == tip
+        assert sh(repo, "rev-parse", "main~1") == tip
+        assert "[P1] main fast-forwarded 2 commit(s) to origin/main in repo" \
+            in (slice_dir / "log.txt").read_text()
+        writers = [p for role, p in r.prompts if role == "code-writer"]
+        assert writers and not any(AHEAD_WORDS in p for p in writers)
+
+
+def test_a_base_ahead_of_origin_is_left_and_no_dispatch_says_a_word():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, _ = real_code_slice(tmp)
+        local = local_commit(repo, "src/local.py")
+        origin = sh(repo, "rev-parse", "origin/main")
+        seen = {}
+        r = FetchingLoop(slice_dir, [(*V["exec_done"], cuts_and_commits(seen)),
+                                     V["review_signoff"],
+                                     V["consult_complete"]], repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert seen["cut_from"] == local
+        assert sh(repo, "rev-parse", "origin/main") == origin
+        log = (slice_dir / "log.txt").read_text()
+        for words in ("fast-forwarded", "diverged", "behind origin"):
+            assert words not in log
+        assert not any(AHEAD_WORDS in p for _, p in r.prompts)
+
+
+def test_diverged_bases_are_never_moved_and_every_writer_dispatch_says_so():
+    """One local commit, two on origin — one of them touching the path the
+    phase names. The base stays; the first round and the gate's fix round
+    are told, with only the named path; the reviewer and the consult are
+    not."""
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, other = real_code_slice(tmp)
+        local = local_commit(repo, "src/local.py")
+        pushed(other, "docs/runbook.md", "restart: the script\n")
+        pushed(other, "src/other.py", "other\n")
+        seen = {}
+        script = [(*V["exec_done"], cuts_and_commits(seen)), V["exec_done"],
+                  V["review_signoff"], V["consult_complete"]]
+        r = FetchingLoop(slice_dir, script, gates=[False, True],
+                         repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert seen["cut_from"] == local
+        assert sh(repo, "rev-list", "--count", "main..origin/main") == "2"
+        assert ("[P1] main and origin/main have diverged in repo (1 commit(s) "
+                "local, 2 on origin) — not moved") \
+            in (slice_dir / "log.txt").read_text()
+        line = ("origin/main is 2 commit(s) ahead of the local main this "
+                "phase's branch was cut from, which has 1 commit(s) of its "
+                "own origin lacks; they touch `docs/runbook.md`, which this "
+                "phase names. The driver has neither merged nor rebased.")
+        writers = [p for role, p in r.prompts if role == "code-writer"]
+        assert len(writers) == 2
+        for prompt in writers:
+            assert line in flat(prompt)
+            assert "src/other.py" not in prompt
+        others = [role for role, p in r.prompts if role != "code-writer"]
+        assert others == ["code-reviewer", "consult"]
+        assert not any(AHEAD_WORDS in p for role, p in r.prompts
+                       if role != "code-writer")
+
+
+def shared_slice_behind_origin(tmp):
+    """`real_shared_slice` with a phase that names api.md and the close-out
+    report the plan loop leaves committed (so the run commits nothing on the
+    base before the phase), pushed to an origin that then took one more
+    commit of api.md's line 10 from elsewhere; that commit is the fourth
+    value."""
+    slice_dir, repo, specs = real_shared_slice(
+        tmp, body="Settle the contract in `api.md`.\n")
+    run_loop.init_report(slice_dir)
+    sh(specs, "add", "-A")
+    sh(specs, "commit", "-qm", "slice 074: close-out report")
+    other = with_origin(tmp, specs)
+    edit_line(other / "api.md", 10, "line 10, origin's")
+    sh(other, "commit", "-qam", "elsewhere: api.md")
+    sh(other, "push", "-q", "origin", "main")
+    return slice_dir, repo, specs, sh(other, "rev-parse", "HEAD")
+
+
+def test_a_shared_checkout_behind_origin_is_fast_forwarded_before_the_cut():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, specs, tip = shared_slice_behind_origin(tmp)
+        seen = {}
+
+        def looks(loop):
+            work = Path(loop.state["phases"]["1"]["worktree"])
+            seen["cut_from"] = sh(work, "rev-parse", "HEAD~1")
+
+        r, code = shared_run(slice_dir, repo, specs, looks, loop=FetchingLoop)
+        assert code == 0
+        assert seen["cut_from"] == tip
+        assert "[P1] main fast-forwarded 1 commit(s) to origin/main in specs" \
+            in (slice_dir / "log.txt").read_text()
+        text = (specs / "api.md").read_text()
+        assert "line 1, the phase's" in text and "line 10, origin's" in text
+        assert not any(AHEAD_WORDS in p for _, p in r.prompts)
+
+
+def test_a_dirty_file_in_the_way_leaves_a_shared_base_behind_and_the_run_goes_on():
+    """The shared checkout's `merge --ff-only` refuses over another writer's
+    uncommitted edit in a file origin's commit touches: a log line, never a
+    bail — the worktree is cut from the base as it stands, and the writer is
+    told."""
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, specs, _ = shared_slice_behind_origin(tmp)
+        edit_line(specs / "api.md", 5, "line 5, left uncommitted")
+        before = sh(specs, "rev-parse", "main")
+        seen = {}
+
+        def looks(loop):
+            work = Path(loop.state["phases"]["1"]["worktree"])
+            seen["cut_from"] = sh(work, "rev-parse", "HEAD~1")
+
+        r, code = shared_run(slice_dir, repo, specs, looks, loop=FetchingLoop)
+        assert code == 0
+        assert seen["cut_from"] == before
+        assert ("[P1] main left 1 commit(s) behind origin/main in specs: "
+                "error: Your local changes to the following files would be "
+                "overwritten by merge:") in (slice_dir / "log.txt").read_text()
+        text = (specs / "api.md").read_text()
+        assert "line 1, the phase's" in text
+        assert "line 5, left uncommitted" in text
+        assert "line 10, origin's" not in text
+        writer = next(p for role, p in r.prompts if role == "code-writer")
+        assert ("origin/main is 1 commit(s) ahead of the local main this "
+                "phase's branch was cut from; they touch `api.md`, which this "
+                "phase names. The driver has neither merged nor rebased.") \
+            in flat(writer)
+
+
+def test_a_base_checked_out_nowhere_moves_by_ref_and_one_checked_out_elsewhere_stays():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, other = real_code_slice(tmp)
+        tip = pushed(other, "src/other.py", "other\n")
+        sh(repo, "fetch", "-q")
+        was = sh(repo, "rev-parse", "main")
+        sh(repo, "checkout", "-q", "--detach")
+        elsewhere = (Path(tmp) / "elsewhere-worktree").resolve()
+        sh(repo, "worktree", "add", "-q", str(elsewhere), "main")
+        r = RealGitLoop(slice_dir, [], repo_root=repo)
+        r._sync_base("1", repo, "main")
+        assert sh(repo, "rev-parse", "main") == was
+        assert ("[P1] main left 1 commit(s) behind origin/main in repo: "
+                f"checked out in {elsewhere}") \
+            in (slice_dir / "log.txt").read_text()
+        sh(repo, "worktree", "remove", str(elsewhere))
+        r._sync_base("1", repo, "main")
+        assert sh(repo, "rev-parse", "main") == tip
+        assert "[P1] main fast-forwarded 1 commit(s) to origin/main in repo" \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_no_origin_moves_nothing_and_tells_no_writer():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, _ = real_code_slice(tmp)
+        sh(repo, "remote", "remove", "origin")
+        was = sh(repo, "rev-parse", "main")
+        seen = {}
+        r = FetchingLoop(slice_dir, [(*V["exec_done"], cuts_and_commits(seen)),
+                                     V["review_signoff"],
+                                     V["consult_complete"]], repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert seen["cut_from"] == was
+        log = (slice_dir / "log.txt").read_text()
+        for words in ("fast-forwarded", "diverged", "behind origin"):
+            assert words not in log
+        assert not any(AHEAD_WORDS in p for _, p in r.prompts)
 
 
 # -- the push check: every repo the slice touched is on its origin ------------

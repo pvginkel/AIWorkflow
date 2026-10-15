@@ -9,12 +9,13 @@ a GitHub repo the driver clones into the scratch root (`github:<owner>/<repo>`).
 Document order is authoritative; ids are labels. Per unfinished phase, in
 order: fetch the target repo (nothing else in a run refreshes a
 remote-tracking ref, so an unfetched clone dates an agent's read of
-`origin/<base>` to the day it was cloned) → branch → executor session (fresh
-code-writer) → deterministic gate (red spawns a fresh executor fix round,
-capped) → code-reviewer loop (round 1's fix is automatic; from round 2 a
-consult funds each further round against a bar that rises per round; backstop
-cap) → gate-checked merge → the driver stamps `✅ DONE <date>` on the phase
-heading. Only the driver stamps.
+`origin/<base>` to the day it was cloned) and fast-forward a base with no
+commits of its own → branch → executor session (fresh code-writer) →
+deterministic gate (red spawns a fresh executor fix round, capped) →
+code-reviewer loop (round 1's fix is automatic; from round 2 a consult funds
+each further round against a bar that rises per round; backstop cap) →
+gate-checked merge → the driver stamps `✅ DONE <date>` on the phase heading.
+Only the driver stamps.
 
 After the last phase the driver runs the loop-tail gate sweep — `kc project
 lint` + `build` + `test`, per component, across every touched repo with a kc
@@ -2071,6 +2072,19 @@ def set_aside_line(records: list[dict]) -> str:
             f"diff HEAD`{untracked}.")
     return SET_ASIDE_LINE.format(records=" ".join(sentences))
 
+
+# Carried by every code-writer dispatch of a phase whose target's
+# `origin/<base>` holds commits the local base lacks once the driver has
+# fetched it and, on a fresh phase, fast-forwarded what it could
+# (`_sync_base`): the bases diverged, the fast-forward was skipped, or a
+# resume finds origin moved since the cut. The driver merges and rebases
+# nothing for the phase; the writer is told.
+ORIGIN_AHEAD_LINE = """
+origin/{base} is {ahead} commit(s) ahead of the local {base} this phase's
+branch was cut from{own}; {touches}. The driver has neither merged nor
+rebased.
+"""
+
 EXECUTOR_GATE_FIX_PROMPT = """\
 The test gate for phase P{phase_id} of slice {slice_name} is red (branch
 {branch}, fix round {round}). The plan: {plan_path}, digested below.
@@ -3629,12 +3643,98 @@ class RunLoop:
         whatever `origin/<base>` came with the clone, and an agent reading
         that ref reads the day of the clone. One run's executor called a
         sibling-repo commit that had been on `origin/main` for a day "absent
-        from origin" and raised a Blocker over it. Refs only — no local branch
-        moves: preflight pulled every base before the run, and a base that
-        moves on origin mid-run stays the operator's call, save where the
-        doc phase's landing rebases onto it (`_land_doc_branch`,
-        `_rebase_doc_sibling`)."""
+        from origin" and raised a Blocker over it. Refs only: the one local
+        branch a run moves to its origin is a fresh phase's base with no
+        commits of its own (`_sync_base`); a base that has diverged from
+        origin is never moved, save where the doc phase's landing rebases
+        onto it (`_land_doc_branch`, `_rebase_doc_sibling`)."""
         self.git("fetch", "origin", root=root)
+
+    def _sync_base(self, phase_id: str, root: Path, base: str) -> None:
+        """Bring a fresh phase's local base up to `origin/<base>` before its
+        branch is cut, when the base is a plain ancestor of it — no commit
+        of its own, so none can be lost. Where the base is checked out in
+        `root` (a shared repo's checkout included) it is `merge --ff-only`,
+        which refuses rather than overwrite a dirty file the commits touch;
+        checked out nowhere, `update-ref` against the sha it was read at;
+        checked out in another worktree, it is left. A refusal, or a base
+        left, is a log line and the branch is cut from the base as it
+        stands — never a bail. A base with commits of its own is never
+        moved: the bases have diverged, and the phase's writer is told
+        (`_origin_ahead_line`). Ansible slice 049's P10 was cut from a
+        `main` ten commits behind origin, where slice 052 had edited the
+        same anchors, and its push needed a hand merge."""
+        origin = f"refs/remotes/origin/{base}"
+        tip = self.git("rev-parse", "--verify", "--quiet", origin, root=root,
+                       check=False)
+        if not tip or self.git_ok("merge-base", "--is-ancestor", origin, base,
+                                  root=root):
+            return
+        behind = self.git("rev-list", "--count", f"{base}..{origin}",
+                          root=root)
+        if not self.git_ok("merge-base", "--is-ancestor", base, origin,
+                           root=root):
+            own = self.git("rev-list", "--count", f"{origin}..{base}",
+                           root=root)
+            self.log(f"[P{phase_id}] {base} and origin/{base} have diverged "
+                     f"in {root.name} ({own} commit(s) local, {behind} on "
+                     "origin) — not moved")
+            return
+        holder = next((Path(entry.get("worktree", ""))
+                       for entry in self._worktrees(root)
+                       if entry.get("branch") == f"refs/heads/{base}"), None)
+        if holder is None:
+            was = self.git("rev-parse", f"refs/heads/{base}", root=root)
+            rc, out = self._git_attempt("update-ref", f"refs/heads/{base}",
+                                        tip, was, root=root)
+        elif holder.resolve() == Path(root).resolve():
+            rc, out = self._git_attempt("merge", "--ff-only", tip, root=root)
+        else:
+            rc, out = 1, f"checked out in {holder}"
+        if rc:
+            # `merge` prints its `Updating a..b` before it refuses: the
+            # reason is git's complaint, not that.
+            lines = [line for line in out.splitlines() if line.strip()]
+            reason = next((line for line in lines
+                           if line.startswith(("error:", "fatal:"))),
+                          lines[0] if lines else f"git exited {rc}")
+            self.log(f"[P{phase_id}] {base} left {behind} commit(s) behind "
+                     f"origin/{base} in {root.name}: {reason}")
+            return
+        self.log(f"[P{phase_id}] {base} fast-forwarded {behind} commit(s) to "
+                 f"origin/{base} in {root.name}")
+
+    def _origin_ahead_line(self, phase: Phase, root: Path, base: str) -> str:
+        """ORIGIN_AHEAD_LINE when `origin/<base>` holds commits the local base
+        lacks — diverged, a fast-forward skipped, or a resume after origin
+        moved — else empty. Of what origin changed since the merge base, it
+        names the paths the phase's own section of the plan names word for
+        word."""
+        origin = f"refs/remotes/origin/{base}"
+        if not self.git("rev-parse", "--verify", "--quiet", origin, root=root,
+                        check=False):
+            return ""
+        ahead = int(self.git("rev-list", "--count", f"{base}..{origin}",
+                             root=root) or 0)
+        if not ahead:
+            return ""
+        own = int(self.git("rev-list", "--count", f"{origin}..{base}",
+                           root=root) or 0)
+        text = "\n".join([phase.title, *phase.body])
+        named = [path for path in self.git(
+            "diff", "--name-only", f"{base}...{origin}",
+            root=root).splitlines() if path and path in text]
+        if named:
+            shown = ", ".join(f"`{path}`" for path in named[:20])
+            if len(named) > 20:
+                shown += f" and {len(named) - 20} more"
+            touches = f"they touch {shown}, which this phase names"
+        else:
+            touches = "none of the files they touch is named in this phase"
+        return ORIGIN_AHEAD_LINE.format(
+            base=base, ahead=ahead, touches=touches,
+            own=(f", which has {own} commit(s) of its own origin lacks"
+                 if own else ""))
 
     def _touched_roots(self) -> list[tuple[Path, str]]:
         """Every repo this slice has touched, with the base branch it was
@@ -5477,6 +5577,9 @@ class RunLoop:
         if self._reconcile_branch(phase_id, ps, root, base, branch, existing):
             return
         fresh = ps["status"] == "pending" or not existing
+        if fresh:
+            self._sync_base(phase_id, root, base)
+        origin_line = self._origin_ahead_line(phase, root, base)
         if self._works_in_worktree(root):
             # A shared checkout never leaves its base: the phase works in a
             # linked worktree of its own, on its branch, and every working-
@@ -5533,6 +5636,7 @@ class RunLoop:
                       + self._phase_digest(phase_id))
             if ps.get("set_aside"):
                 prompt += set_aside_line(ps["set_aside"])
+            prompt += origin_line
             verdict, session = self._spawn(
                 "code-writer", prompt,
                 self.repo_root, executor_verdict_path(r),

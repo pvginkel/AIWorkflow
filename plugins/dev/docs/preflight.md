@@ -114,9 +114,10 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   upstream or a rebase that does not apply is the operator's to resolve by hand (exit 1) — the
   relaying session does not resolve it either. A repo on a phase branch is exit 1 too, but a
   live run's branch is waited out, not resolved.
-- **Mid-run, the loop moves no local branch.** Its own fetches are refs-only
-  ([`run-loop.md`](run-loop.md) § Fetch); the pull that brings a base up to its origin is the
-  operator's call, made once here.
+- **Mid-run, the loop only fast-forwards.** Its own fetches are refs-only, save that a fresh
+  phase's base with no commits of its own is fast-forwarded to its origin before the branch is
+  cut ([`run-loop.md`](run-loop.md) § Fetch); the pull that rebases local commits onto origin is
+  the operator's call, made once here.
 
 ## Notes on the run baseline
 
