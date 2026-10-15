@@ -917,25 +917,61 @@ class Phase:
 # range. The file's shape is its writer's: any line carrying an absolute path
 # and a commit sha is a pair, so a table row and a bullet both read, and a
 # header, separator or prose line carries at most one of the two. A sha is
-# 7–40 lowercase hex with a digit in it — a hex-spelled word is not one.
+# 7–40 lowercase hex with a digit in it — a hex-spelled word is not one. A
+# line naming two commits is not guessed at: Ansible slice 055's rows named
+# each bump's parent after it, and the last-sha rule handed the reviewer the
+# parents (AIWF-62).
 REVIEW_SHA_RE = re.compile(r"(?=[a-f]*\d)[0-9a-f]{7,40}")
 
 
-def review_set_pairs(text: str) -> list[tuple[str, str]]:
-    """The (clone, sha) pairs in a `Review:` file, in order, each once: a
-    line's first absolute path with its last sha. Several rows sharing one
-    clone and commit are one pair; a clone whose commit was amended, listed
-    with its new sha, is a new one."""
-    pairs: list[tuple[str, str]] = []
+def _review_set_lines(text: str) -> list[tuple[str, list[str]]]:
+    """Each line of a `Review:` file carrying a clone and a commit: its
+    first absolute path and its distinct shas, in line order. Two shas are
+    one commit when one is a prefix of the other — a short and a full form —
+    and the longer is kept."""
+    lines: list[tuple[str, list[str]]] = []
     for line in text.splitlines():
         tokens = [token.lstrip("`'\"(<[").rstrip("`'\")>],.;:")
                   for token in re.split(r"[\s|]+", line)]
         clone = next((t for t in tokens
                       if t.startswith("/") and len(t) > 1), None)
-        shas = [t for t in tokens if REVIEW_SHA_RE.fullmatch(t)]
-        if clone and shas and (clone, shas[-1]) not in pairs:
-            pairs.append((clone, shas[-1]))
+        shas: list[str] = []
+        for token in tokens:
+            if not REVIEW_SHA_RE.fullmatch(token):
+                continue
+            same = next((i for i, sha in enumerate(shas)
+                         if sha.startswith(token) or token.startswith(sha)),
+                        None)
+            if same is None:
+                shas.append(token)
+            elif len(token) > len(shas[same]):
+                shas[same] = token
+        if clone and shas:
+            lines.append((clone, shas))
+    return lines
+
+
+def review_set_pairs(text: str) -> list[tuple[str, str]]:
+    """The (clone, sha) pairs in a `Review:` file, in order, each once: a
+    line's first absolute path with the one commit it names. Several rows
+    sharing one clone and commit are one pair; a clone whose commit was
+    amended, listed with its new sha, is a new one. A line naming two or
+    more distinct commits is no pair (`review_set_ambiguous`)."""
+    pairs: list[tuple[str, str]] = []
+    for clone, shas in _review_set_lines(text):
+        if len(shas) == 1 and (clone, shas[0]) not in pairs:
+            pairs.append((clone, shas[0]))
     return pairs
+
+
+def review_set_ambiguous(text: str) -> list[tuple[str, tuple[str, ...]]]:
+    """The lines of a `Review:` file naming two or more distinct commits —
+    (clone, the line's shas in line order) — in order, each once."""
+    lines: list[tuple[str, tuple[str, ...]]] = []
+    for clone, shas in _review_set_lines(text):
+        if len(shas) > 1 and (clone, tuple(shas)) not in lines:
+            lines.append((clone, tuple(shas)))
+    return lines
 
 
 def parse_plan(text: str) -> tuple[list[Phase], list[str]]:
@@ -2252,6 +2288,27 @@ The Target's own range, `git diff {merge_base}..HEAD` in {root}, is empty:
 these pairs are the phase's work.\
 """
 
+# The review set's lines naming more than one commit for a clone (AIWF-62,
+# slice 055), handed on as no pair: the reviewer finds the phase's commit on
+# each and says which it took.
+REVIEW_SET_AMBIGUOUS_NOTE = """\
+plan.md's `Review:` line for this phase names `{path}`, and these lines the
+phase added or changed there each name more than one commit for one clone.
+A ledger line holds one sha; the driver cannot tell which is the phase's
+commit and which a parent or a base, so it hands none of them on as a range:
+
+{bullets}
+
+Find the phase's commit on each line (`git -C <clone> log`), review it as
+part of this phase's diff, and say in your review which commit you took
+for each line.\
+"""
+
+REVIEW_SET_AMBIGUOUS_EMPTY_RANGE = """\
+The Target's own range, `git diff {merge_base}..HEAD` in {root}, is empty:
+the phase's work is what the lines above name.\
+"""
+
 REVIEW_SET_NONE_NOTE = """\
 plan.md's `Review:` line for this phase declares a review set outside its
 Target, `{path}`, and {state}; the Target's own range,
@@ -3349,6 +3406,7 @@ class RunLoop:
             "gate_green_commit": None, "gate_green_log": None,
             "gate_nothing_ran_commit": None, "gate_cmd": None,
             "reviewed_head": None, "landed": None, "review_set_start": None,
+            "review_set_ambiguous_start": None,
         }
         ps = self.state["phases"].setdefault(phase_id, dict(defaults))
         for key, value in defaults.items():
@@ -5066,17 +5124,18 @@ class RunLoop:
                 gate_repo=target.gate_cwd, clones=", ".join(review_repos))
         return line
 
-    def _review_set_now(self, phase: Phase) -> list[tuple[str, str]] | None:
-        """The pairs `phase`'s `Review:` file lists now — None when the phase
-        declares none or the file cannot be read (missing, mostly: the phase
-        writes it)."""
+    def _review_set_now(self, phase: Phase) -> tuple[
+            list[tuple[str, str]], list[tuple[str, tuple[str, ...]]]] | None:
+        """The pairs `phase`'s `Review:` file lists now and its lines naming
+        more than one commit — None when the phase declares none or the
+        file cannot be read (missing, mostly: the phase writes it)."""
         if phase.review is None:
             return None
         try:
             text = (self.slice_dir / phase.review).read_text()
         except (OSError, ValueError):
             return None
-        return review_set_pairs(text)
+        return review_set_pairs(text), review_set_ambiguous(text)
 
     @staticmethod
     def _review_set_start(ps: dict) -> set[tuple[str, str]]:
@@ -5090,6 +5149,21 @@ class RunLoop:
         return {(p[0], p[1]) for p in start
                 if isinstance(p, list) and len(p) == 2
                 and all(isinstance(x, str) for x in p)}
+
+    @staticmethod
+    def _review_set_ambiguous_start(
+            ps: dict) -> set[tuple[str, tuple[str, ...]]]:
+        """The lines naming more than one commit the phase's `Review:` file
+        held when the phase began, read as leniently as `_review_set_start`:
+        no snapshot or an off-shape entry is skipped, and every such line
+        then counts as the phase's."""
+        start = ps.get("review_set_ambiguous_start")
+        if not isinstance(start, list):
+            return set()
+        return {(e[0], tuple(e[1])) for e in start
+                if isinstance(e, list) and len(e) == 2
+                and isinstance(e[0], str) and isinstance(e[1], list)
+                and all(isinstance(sha, str) for sha in e[1])}
 
     def _range_empty(self, merge_base: str, root: Path) -> bool:
         """Whether the phase's Target range changes nothing — trees compared,
@@ -5109,10 +5183,13 @@ class RunLoop:
         gate line. A phase declaring `Review:` is pointed at the pairs its
         file gained since the phase began (`review_set_start`); a declared
         set with none, and an undeclared phase whose Target range is empty,
-        are stated for the reviewer to report. An undeclared phase with work
-        on its Target gets nothing: its dispatch is the one it always was.
-        The range is the phase's working tree's — its worktree's, for a
-        shared repo, whose own HEAD is the base."""
+        are stated for the reviewer to report. The lines it gained naming
+        more than one commit for a clone are handed on as no pair: the
+        reviewer is shown them to find the phase's commit, and their clones
+        join the gate line's. An undeclared phase with work on its Target
+        gets nothing: its dispatch is the one it always was. The range is
+        the phase's working tree's — its worktree's, for a shared repo,
+        whose own HEAD is the base."""
         root = target.work_root
         empty = self._range_empty(merge_base, root)
         if phase.review is None:
@@ -5123,11 +5200,13 @@ class RunLoop:
             return REVIEW_EMPTY_RANGE_NOTE.format(
                 merge_base=merge_base, root=root) + "\n\n", []
         path = self.slice_dir / phase.review
-        listed = self._review_set_now(phase)
+        listed, ambiguous = self._review_set_now(phase) or ([], [])
         start = self._review_set_start(ps)
-        pairs = [pair for pair in listed or [] if pair not in start]
+        pairs = [pair for pair in listed if pair not in start]
+        start_unclear = self._review_set_ambiguous_start(ps)
+        unclear = [line for line in ambiguous if line not in start_unclear]
         range_note = ", Target range empty" if empty else ""
-        if not pairs:
+        if not pairs and not unclear:
             missing = not path.exists()
             self.log(f"[P{phase.id}] reviewer told: review set "
                      f"{phase.review} "
@@ -5140,15 +5219,31 @@ class RunLoop:
                        "or changed"),
                 range_state="empty too" if empty else "not empty",
             ) + "\n\n", []
-        self.log(f"[P{phase.id}] reviewer told: review set of {len(pairs)} "
-                 f"pair(s) from {phase.review}{range_note}")
-        paragraph = REVIEW_SET_NOTE.format(
-            path=path, bullets="\n".join(
-                f"- `git -C {clone} show {sha}`" for clone, sha in pairs))
+        paragraphs: list[str] = []
+        if pairs:
+            self.log(f"[P{phase.id}] reviewer told: review set of "
+                     f"{len(pairs)} pair(s) from {phase.review}{range_note}")
+            paragraphs.append(REVIEW_SET_NOTE.format(
+                path=path, bullets="\n".join(
+                    f"- `git -C {clone} show {sha}`"
+                    for clone, sha in pairs)))
+        if unclear:
+            self.log(f"[P{phase.id}] reviewer told: {phase.review} has "
+                     f"{len(unclear)} line(s) naming more than one commit: "
+                     + "; ".join(f"{clone} ({', '.join(shas)})"
+                                 for clone, shas in unclear)
+                     + ("" if pairs else range_note))
+            paragraphs.append(REVIEW_SET_AMBIGUOUS_NOTE.format(
+                path=path, bullets="\n".join(
+                    f"- `{clone}`: " + ", ".join(f"`{sha}`" for sha in shas)
+                    for clone, shas in unclear)))
         if empty:
-            paragraph += "\n\n" + REVIEW_SET_EMPTY_RANGE.format(
-                merge_base=merge_base, root=root)
-        return paragraph + "\n\n", list(dict.fromkeys(c for c, _ in pairs))
+            paragraphs.append(
+                (REVIEW_SET_AMBIGUOUS_EMPTY_RANGE if unclear
+                 else REVIEW_SET_EMPTY_RANGE).format(
+                    merge_base=merge_base, root=root))
+        clones = [c for c, _ in pairs] + [c for c, _ in unclear]
+        return "\n\n".join(paragraphs) + "\n\n", list(dict.fromkeys(clones))
 
     def _review_secrets(self, phase: Phase, outputs: Path, r: int,
                         root: Path, ranges: list[tuple[str, str]]) -> str:
@@ -5604,10 +5699,16 @@ class RunLoop:
             ps.update(status="in_progress", stage="executor", branch=branch,
                       target=phase.target)
             # What the phase's review set held before the phase did anything:
-            # the reviewer is pointed at the pairs the phase adds or changes.
-            ps["review_set_start"] = (
-                None if phase.review is None
-                else [list(pair) for pair in self._review_set_now(phase) or []])
+            # the reviewer is pointed at the pairs, and the lines naming more
+            # than one commit, the phase adds or changes.
+            if phase.review is None:
+                ps["review_set_start"] = None
+                ps["review_set_ambiguous_start"] = None
+            else:
+                pairs, ambiguous = self._review_set_now(phase) or ([], [])
+                ps["review_set_start"] = [list(pair) for pair in pairs]
+                ps["review_set_ambiguous_start"] = [
+                    [clone, list(shas)] for clone, shas in ambiguous]
         self._save_state()
         work = target.work_root
         where = self._executor_where(target)

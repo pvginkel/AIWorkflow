@@ -132,7 +132,9 @@ The mechanical rules the parser holds every author to:
   unpushed commits in `/work/scratch/<Repo>` clones kept in a ledger. The value is a path
   relative to the slice folder, to a file the phase writes as it commits: one clone and commit
   pair per line, the clone's absolute path and the commit's sha on the same line (a Markdown
-  table row does), any other line ignored. The reviewer is handed the pairs the phase added or
+  table row does), any other line ignored. **One sha per line:** a parent or base commit beside
+  the phase's own makes the line ambiguous, and the driver hands neither on — it shows the line
+  to the reviewer to sort out. The reviewer is handed the pairs the phase added or
   changed as its review range, and is told that the driver gated the Target alone
   ([run-loop.md](run-loop.md) § The per-phase round). The name is the plan's; the driver knows
   no ledger file of its own.

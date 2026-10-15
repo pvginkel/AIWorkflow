@@ -1395,6 +1395,40 @@ def test_review_set_pairs_reads_clone_and_sha_off_any_line():
     assert run_loop.review_set_pairs("") == []
 
 
+def bump_row(clone, sha, parent):
+    """A ledger row in slice 055's shape: the bump's sha, then its parent."""
+    return (f"| B | Jobs/B | `{clone}` | `main` | `Jenkinsfile` | `{sha}` "
+            f"| `{parent}` |\n")
+
+
+def test_a_line_naming_two_commits_is_no_pair():
+    """Slice 055's rows named each bump and then its parent, and the last
+    sha handed the reviewer the parent (AIWF-62). A short and a full form
+    of one commit are one commit."""
+    text = (ledger(("A", "/work/scratch/A", SHA_A))
+            + bump_row("/work/scratch/B", SHA_B, SHA_B2)
+            + f"- /work/scratch/C: {SHA_C[:7]} ({SHA_C})\n"
+            + f"- /work/scratch/D: {SHA_A}, then {SHA_A[:9]}\n")
+    assert run_loop.review_set_pairs(text) == [
+        ("/work/scratch/A", SHA_A), ("/work/scratch/C", SHA_C),
+        ("/work/scratch/D", SHA_A)]
+
+
+def test_review_set_ambiguous_reads_the_lines_naming_two_commits():
+    text = (ledger(("A", "/work/scratch/A", SHA_A))
+            + bump_row("/work/scratch/B", SHA_B, SHA_B2)
+            # the same row again: one line
+            + bump_row("/work/scratch/B", SHA_B, SHA_B2)
+            + f"- /work/scratch/C: {SHA_C[:7]} ({SHA_C})\n"
+            # a short form, a second commit, the full form: two commits,
+            # each where it first appears, the longer form kept
+            + f"- /work/scratch/E: {SHA_C[:8]}, 1234abc, {SHA_C}\n")
+    assert run_loop.review_set_ambiguous(text) == [
+        ("/work/scratch/B", (SHA_B, SHA_B2)),
+        ("/work/scratch/E", (SHA_C, "1234abc"))]
+    assert run_loop.review_set_ambiguous("") == []
+
+
 def test_the_review_line_is_parsed_plain_or_bold():
     phases, errors = parse_plan(
         "### P1 — Plain\n\nTarget: app\n\nReview: migration-ledger.md\n"
@@ -1559,6 +1593,109 @@ def test_a_snapshot_less_phase_state_counts_every_pair():
     assert read({}) == set() and read({"review_set_start": None}) == set()
     assert read({"review_set_start": [["/c", "abc1234"], ["/x"], "junk",
                                       [1, 2]]}) == {("/c", "abc1234")}
+
+
+def test_a_line_naming_two_commits_is_flagged_and_handed_on_as_no_pair():
+    """Slice 055's shape (AIWF-62): a good row and a bump row naming its
+    parent after it. The good row is a pair; the bump row is shown to the
+    reviewer to find the phase's commit, and neither of its shas is."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = review_set_slice(tmp)
+        path = slice_dir / "ledger.md"
+        mine = (ledger(("A", "/work/scratch/A", SHA_A))
+                + bump_row("/work/scratch/B", SHA_B, SHA_B2))
+        r = ScriptedLoop(slice_dir, [
+            (*V["exec_done"], writes(path, mine)), V["review_signoff"],
+            *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert load_state(slice_dir)["phases"]["1"][
+            "review_set_ambiguous_start"] == []
+        prompt = reviews_of(r)[0]
+        assert (f"- `git -C /work/scratch/A show {SHA_A}`\n\n"
+                f"plan.md's `Review:` line for this phase names `{path}`, "
+                "and these lines") in prompt
+        assert "git -C /work/scratch/B show" not in prompt
+        assert ("each name more than one commit for one clone"
+                in prompt.replace("\n", " "))
+        assert f"\n\n- `/work/scratch/B`: `{SHA_B}`, `{SHA_B2}`\n\n" in prompt
+        assert ("say in your review which commit you took\nfor each line.\n\n"
+                "The deterministic test gate ran GREEN") in prompt
+        assert "is empty" not in prompt
+        assert ("the review set's repos (/work/scratch/A, /work/scratch/B)"
+                in prompt.replace("\n", " "))
+        assert "\n\n\n" not in prompt
+        log = (slice_dir / "log.txt").read_text()
+        assert "[P1] reviewer told: review set of 1 pair(s) from ledger.md\n" \
+            in log
+        assert ("[P1] reviewer told: ledger.md has 1 line(s) naming more than "
+                f"one commit: /work/scratch/B ({SHA_B}, {SHA_B2})\n") in log
+
+
+def test_only_lines_naming_two_commits_over_an_empty_range_are_flagged():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = review_set_slice(tmp)
+        path = slice_dir / "ledger.md"
+        r = ScriptedLoop(slice_dir, [
+            (*V["exec_done"], writes(path, ledger() + bump_row(
+                "/work/scratch/B", SHA_B, SHA_B2))),
+            V["review_signoff"], *TAIL], repo_root=repo)
+        r.fake_git.trees = {"base123": "tree0", "HEAD": "tree0"}
+        assert run_to_exit(r) == 0
+        prompt = reviews_of(r)[0]
+        flat = prompt.replace("\n", " ")
+        assert "each name more than one commit for one clone" in flat
+        assert f"- `/work/scratch/B`: `{SHA_B}`, `{SHA_B2}`" in prompt
+        assert ("for each line.\n\n"
+                + run_loop.REVIEW_SET_AMBIGUOUS_EMPTY_RANGE.format(
+                    merge_base="base123", root=repo)
+                + "\n\nThe deterministic test gate") in prompt
+        assert (f"The Target's own range, `git diff base123..HEAD` in {repo}, "
+                "is empty: the phase's work is what the lines above name."
+                ) in flat
+        assert "holds no clone and commit pair" not in flat
+        assert "these pairs are the phase's work" not in flat
+        assert "git -C /work/scratch/B show" not in prompt
+        assert "the review set's repos (/work/scratch/B)" in flat
+        assert "\n\n\n" not in prompt
+        log = (slice_dir / "log.txt").read_text()
+        assert ("[P1] reviewer told: ledger.md has 1 line(s) naming more than "
+                f"one commit: /work/scratch/B ({SHA_B}, {SHA_B2}), Target "
+                "range empty\n") in log
+        assert "has no new pair" not in log and "review set of" not in log
+
+
+def test_a_line_naming_two_commits_before_the_phase_is_not_flagged():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = review_set_slice(tmp)
+        (slice_dir / "ledger.md").write_text(
+            ledger(("A", "/work/scratch/A", SHA_A))
+            + bump_row("/work/scratch/B", SHA_B, SHA_B2))
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["review_set_start"] == [["/work/scratch/A", SHA_A]]
+        assert ps["review_set_ambiguous_start"] == [
+            ["/work/scratch/B", [SHA_B, SHA_B2]]]
+        prompt = reviews_of(r)[0]
+        assert ("it holds no clone and commit pair this phase added or "
+                "changed") in prompt.replace("\n", " ")
+        assert "more than one commit" not in prompt.replace("\n", " ")
+        assert SHA_B not in prompt and SHA_B2 not in prompt
+        log = (slice_dir / "log.txt").read_text()
+        assert "[P1] reviewer told: review set ledger.md has no new pair" \
+            in log
+        assert "naming more than one commit" not in log
+
+
+def test_a_snapshot_less_phase_state_flags_every_line_naming_two_commits():
+    read = RunLoop._review_set_ambiguous_start
+    assert read({}) == set()
+    assert read({"review_set_ambiguous_start": None}) == set()
+    assert read({"review_set_ambiguous_start": [
+        ["/c", ["abc1234", "def5678"]], ["/x"], "junk", [1, ["abc1234"]],
+        ["/y", "abc1234"], ["/z", ["abc1234", 5]]]}) == {
+        ("/c", ("abc1234", "def5678"))}
 
 
 # -- Secret data in the diffs agents read (AIWF-51) ---------------------------

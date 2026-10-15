@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-15 — A `Review:` ledger line naming two distinct commits is flagged to the reviewer, not guessed (v0.9.104)
+
+`review_set_pairs` used to take a line's first absolute path with its last sha. A line whose shas
+name two or more distinct commits now yields no pair. A short and a full form of one commit count
+as one, and the longer form is kept. `review_set_ambiguous` lists those lines, and the phase-start
+snapshot records them as `review_set_ambiguous_start` so that a line an earlier phase wrote is not
+flagged again. The reviewer's dispatch shows each new such line with its shas
+(`REVIEW_SET_AMBIGUOUS_NOTE`) and asks the reviewer to find the phase's commit and say which it
+took. The gate line counts those lines' clones among the review set's repos. A file holding only
+such lines no longer reads as "no new pair". The run log names the lines. The run carries on.
+`plan-template.md` § `Review:` now says one sha per line, and `run-loop.md` § The per-phase round
+says what the driver does with a line that names two.
+
+Why: the rows of Ansible slice 055 P6's `canary-ledger.md` named each bump's parent commit after
+the bump. The code reviewer was handed four older commits from slices 052 and 053 instead of the
+phase's bumps, nothing warned, and the reviewer noticed only by chance. (AIWF-62)
+
 ## 2026-10-15 — The run loop fast-forwards a phase's stale base before cutting its branch, and tells the writer when origin has diverged (v0.9.103)
 
 `_run_phase`, on a fresh phase, runs `_sync_base` after the fetch and before either cut, the

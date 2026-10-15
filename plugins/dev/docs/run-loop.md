@@ -210,7 +210,11 @@ whole plan is a feature of the review, not a cost. Then:
   delta-scoped to the fix range. A phase whose body declares `Review: <file>`
   ([plan-template.md](plan-template.md)) also has its review set listed, one
   `git -C <clone> show <sha>` per clone and commit pair the file gained or changed since the
-  phase began — the driver records the file's pairs when the phase starts. A Target range that
+  phase began — the driver records the file's pairs when the phase starts. A line the file
+  gained that names two distinct commits for one clone is no pair: the dispatch shows it, with
+  its shas, for the reviewer to find the phase's commit, and the log says so — slice 055's
+  ledger named each bump's parent after it, and the last-sha rule handed the reviewer four
+  older commits from other slices with nothing said. A Target range that
   is empty with no `Review:` line, and a `Review:` file that yields no new or changed pair, are
   each stated to the reviewer as such, never handed on as a range to read: one Ansible phase's
   dispatch named an empty `git diff` in the Target repo while its work sat in 13 scratch clones,
