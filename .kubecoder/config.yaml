@@ -23,6 +23,9 @@ capabilities:
   github: rw
   fleetAdmin: true
 
+# AIWorkflowSite's `kc project build` runs kaniko --no-push, the image its Jenkins job builds.
+imageBuilder: true
+
 tools:
   # The plugin's suites and ruff; the dev container has no uv.
   - use: python
