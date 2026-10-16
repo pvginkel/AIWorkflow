@@ -2885,8 +2885,14 @@ class ResolvedTarget:
 CEXEC_CALL_RE = re.compile(r"\bcexec\s+([A-Za-z0-9][A-Za-z0-9_.-]*)")
 # The token before a `cexec` that makes it a guarded probe, not a call the
 # statement needs: `! cexec <tool> true || …` and `if cexec <tool> …; then`
-# are a manifest asking whether the tool is there, and fine without it.
+# are a manifest asking whether the tool is there, and fine without it. A
+# YAML-quoted statement leaves the quote on the token (`'!`); it is stripped.
+# The `cexec <tool>` after `||` in a statement that opened with
+# `! cexec <tool>` runs only when the tool is there, so it is guarded too;
+# another tool after the `||` is not.
 CEXEC_GUARDS = ("!", "if", "elif")
+# Where a statement on a manifest line ends, and a `! cexec` guard's reach.
+STATEMENT_END_RE = re.compile(r";|&&")
 # A `- use: <tool>` item of the environment config's `tools:` list.
 TOOL_USE_RE = re.compile(r"(?:-\s*)?use:\s*[\"']?([A-Za-z0-9][A-Za-z0-9_.-]*)")
 # What cexec prints when the sidecar it is asked for does not exist — the
@@ -2919,11 +2925,18 @@ def manifest_tools(text: str) -> set[str]:
     for line in text.splitlines():
         if line.lstrip().startswith("#"):
             continue
-        for match in CEXEC_CALL_RE.finditer(line):
-            before = line[:match.start()].split()
-            prev = before[-1].lstrip(";&|(") if before else ""
-            if prev not in CEXEC_GUARDS:
-                tools.add(match.group(1))
+        for statement in STATEMENT_END_RE.split(line):
+            probed: set[str] = set()
+            for match in CEXEC_CALL_RE.finditer(statement):
+                tool = match.group(1)
+                before = statement[:match.start()].split()
+                token = before[-1] if before else ""
+                prev = token.lstrip(";&|('\"")
+                if prev == "!":
+                    probed.add(tool)
+                elif prev not in CEXEC_GUARDS and not (
+                        token.endswith("||") and tool in probed):
+                    tools.add(tool)
     return tools
 
 

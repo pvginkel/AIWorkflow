@@ -4,6 +4,20 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-16 — The missing-tools scan treats both halves of a quoted `'! cexec X true || cexec X …'` as guarded (v0.9.106)
+
+`manifest_tools` strips a quote from the token before a `cexec`, so a YAML-quoted statement's
+`'!` reads as the `!` guard. It also scans a manifest line one statement at a time, a statement
+ending at the next `;` or `&&`. A `cexec X` after `||` in a statement that opened with `! cexec X`
+counts as guarded. A different tool after the `||` is still required. `run-loop.md` says which
+calls do not count.
+
+Why: DockerImages guards every statement as `'! cexec <tool> true 2>/dev/null || cexec <tool> …'`.
+The scan used to return `{iac, document-conversion, go, aac-tools}` for it, so any phase that
+targeted DockerImages from an environment without `go` bailed `missing_tools` at GO. The only
+way round it was to waive that repo's whole gate, including its arch-validate row. Two DHCPApp
+reports, 2026-10-09. (AIWF-64)
+
 ## 2026-10-15 — Close-out routing counts the repos the plan's Targets name as touched, not only the landed ones (v0.9.105)
 
 `_load_plan` now records `state["target_roots"]`: the repo root that each unfinished phase's

@@ -531,8 +531,8 @@ completion only log the refusal: `/dev:run-slice` meets it there with the operat
 **The loop does not start without the tool containers its Targets' manifests call.** At
 startup, fresh or `--resume`, once the plan's Targets resolve and before any dispatch, the run
 loop scans each Target repo's `.kubecoder/project.yaml` for `cexec <tool>` calls — a text scan,
-never a parse of the manifest, and a call guarded by `! cexec … ||` or `if cexec …` does not
-count — and holds them against the tool containers the environment runs (`kc env describe`). A
+never a parse of the manifest, and a guarded call does not count: `if cexec …`, and both halves
+of `! cexec X … || cexec X …`, quoted or not, up to the statement's next `;` or `&&` — and holds them against the tool containers the environment runs (`kc env describe`). A
 tool missing bails `missing_tools` (exit 4), naming each tool, the manifest that calls it and the
 `- use: <tool>` line to add under `tools:` in the host's `.kubecoder/config.yaml` — or, where that
 line is already there, that the pod predates it and `kc env restart` applies it. The run-slice

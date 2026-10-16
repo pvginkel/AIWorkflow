@@ -9872,8 +9872,13 @@ projects:
     deploy: if false; then :; elif cexec elsewhere true; then :; fi
     setup: true && cexec frontend npm ci; ! cexec probe2 true
     help: cexec --help
+    gate: '! cexec go true 2>/dev/null || cexec go go test ./...'
+    other: "! cexec probe3 true || cexec other run"
+    next: ! cexec probe4 true; cexec probe4 run
+    then: ! cexec probe5 true && cexec probe5 run
 """
-    assert run_loop.manifest_tools(text) == {"python", "needed", "frontend"}
+    assert run_loop.manifest_tools(text) == {
+        "python", "needed", "frontend", "other", "probe4", "probe5"}
 
 
 def test_the_config_scan_reads_the_tools_list_alone():
