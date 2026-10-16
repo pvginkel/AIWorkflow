@@ -125,5 +125,8 @@ phase could earn; no correction-chained rulings; nothing load-bearing silently u
 phase `Target:` or push hold on a scratch clone another slice in flight holds without an
 ordering constraint putting this slice after that push — an operator-decidable finding. For that
 last one the reviewer's dispatch, alone of the loop's, lists the push holds the other plans
-under `slices/` and `slices/backlog/` declare. Findings describe problems, never corrections.
+under `slices/` and `slices/backlog/` declare. A step an ordering constraint shares with a named
+sibling slice is compared with that slice's `plan.md`, its done-record too once it has run; each
+difference is an operator-decidable finding that names no winner. Findings describe problems,
+never corrections.
 One round, ever — the findings go to the operator. Verdicts: `go` / `issues` / `questions`.

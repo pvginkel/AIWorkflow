@@ -4,6 +4,22 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-16 — The plan-reviewer compares a step an ordering constraint shares with a sibling slice against that slice's plan (v0.9.107)
+
+Sometimes an ordering constraint names another slice for a step both plans carry ("whichever
+runs first builds it, the other takes it as found"). The plan-reviewer now opens that slice's
+`plan.md` and compares its version of the step with the outcome of this plan's phase. A sibling
+that has already run is compared too, with its done-record read alongside the plan. Each
+difference is an operator-decidable finding, so the verdict is `questions`. The finding says
+what each plan specifies and does not pick a winner. This is item 10 of the agent's attack list,
+and `plan-loop.md` § The reviewer's charter has a clause for it.
+
+Why: AnsibleSpecs 060 and 061 were planned in parallel, and both specified the SecretRotator
+dev-VM start/stop step pair. The two plans differed on two behaviours, and this was caught by
+chance. The slice that ran second would have silently changed what the first one shipped. A
+single attachment that both plans reference would be cleaner, but the plan layout has no shared
+place to keep one. (AIWF-66)
+
 ## 2026-10-16 — The missing-tools scan treats both halves of a quoted `'! cexec X true || cexec X …'` as guarded (v0.9.106)
 
 `manifest_tools` strips a quote from the token before a `cexec`, so a YAML-quoted statement's

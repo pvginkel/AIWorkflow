@@ -64,6 +64,13 @@ plan cites.
    them. A phase that targets such a clone, or a hold of this plan's on it, with no ordering
    constraint putting this slice after that push, is an operator-decidable finding: the run
    would build on those commits, or be refused for them.
+10. **A step shared with a sibling slice.** An ordering constraint that names another slice for a
+   step both plans carry — "whichever runs first builds it, the other takes it as found" — leaves
+   the step specified twice, and whichever slice runs second silently reshapes what the first
+   shipped. Open the named slice's `plan.md` — under `slices/`, `slices/backlog/`, or
+   `slices/completed/` once it has run, its done-record then read with it — and compare its
+   specification of the step with this plan's phase outcome. Each difference is an
+   operator-decidable finding: state what each plan says, and name no winner.
 
 **Describe problems; never design corrections.** A finding that carries its own fix is invalid
 output: state the defect and the evidence, then stop. Do not manufacture findings — a clean plan
