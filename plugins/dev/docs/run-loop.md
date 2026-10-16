@@ -369,13 +369,20 @@ whole plan is a feature of the review, not a cost. Then:
   carries no slice task and owes no acceptance criterion: a doc change a requirement names is a
   phase of the plan ([plan-template.md](plan-template.md)), merged before this point like any
   other. Its dispatch carries the driver's deterministic facts, in the phase digest's spirit: the
-  slice's diff **on disk**, one `<slice>/doc_phase/<repo>.diff` per repo a phase merged into, a
-  section per merged phase (`git diff --stat` on top, then the diff, over the phase's landed range
-  — the sha its branch was cut from to the head that fast-forwarded the base — with the spec
-  repo's `slices/` tree held out; never the base branch since the slice began, which in parallel
-  lanes carried the other lanes' merges and the slice's own run record, and never HEAD, which is
-  the doc branch, so a redispatched writer's own commits never read as shipped work; a phase
-  merged with no range on record is named in the dispatch as missing from the files; every
+  slice's diff **on disk**, one `<slice>/doc_phase/<repo>.diff` per repo a phase merged or
+  committed into, a section per merged phase (`git diff --stat` on top, then the diff, over the
+  phase's landed range — the sha its branch was cut from to the head that fast-forwarded the base
+  — with the spec repo's `slices/` tree held out; never the base branch since the slice began,
+  which in parallel lanes carried the other lanes' merges and the slice's own run record, and
+  never HEAD, which is the doc branch, so a redispatched writer's own commits never read as
+  shipped work) and, after its repo's landings, one per commit a phase's `Review:` ledger gained
+  outside its Target — the reviewer's set, over the commit's parent to it, a commit a landed
+  range already carries left to that range's section (AIWF-67: slice 057's two runbook
+  corrections were on the doc branch and in no section); a repo no phase targets gets its file
+  and a row saying the driver pushes no doc edit there, so a doc it needs goes in the close-out
+  report; a phase merged with no range on record, and a ledger line the driver cannot diff (no
+  checkout, no such commit, a root commit, more than one commit on the line), is named in the
+  dispatch as missing from the files; every
   `kind: Secret`'s data lines stubbed, a section the redactor cannot redact a `redaction` bail;
   the folder ignoring itself, so no `git add -A` in the spec repo commits it), read by
   path instead of re-running `git diff`, which past the tool's output limit round-trips through a

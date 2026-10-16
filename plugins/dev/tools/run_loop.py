@@ -2636,10 +2636,12 @@ Run the slice's doc phase: read {doc_plan_doc} and execute it for this slice
 
 Deterministic facts from the driver:
 - The slice's shipped work is on disk, one file per repo, a section per
-  merged phase — `git diff --stat` at the top of each, then that phase's
-  own diff. The files carry exactly what this slice's phases merged:
-  nothing another slice landed on the base branch meanwhile, nothing under
-  the spec repo's `slices/` tree, and never your own doc commits. Write
+  merged phase and one per commit a phase's `Review:` ledger lists outside
+  its Target — `git diff --stat` at the top of each, then that phase's or
+  that commit's own diff. The files carry exactly what this slice's phases
+  merged and committed: nothing another slice landed on the base branch
+  meanwhile, nothing under the spec repo's `slices/` tree, and never your
+  own doc commits. Write
   docs from that diff with the whole shipped behavior in view; read its
   hunks by path from the file (`grep -n`, `sed -n`) rather than re-running
   `git diff` — a diff past the tool's output limit round-trips through a
@@ -2657,8 +2659,9 @@ Deterministic facts from the driver:
 - {close_out_line}
 - Work on branch {branch}, which is checked out in {root} — the one repo
   that branch exists in. A doc edit in another code repo this slice touched
-  (a diff row above names it) is committed on the base branch checked out
-  there, never on a new branch; the driver pushes it after the landing.
+  (a diff row above names it, and does not say the driver pushes no doc
+  edit there) is committed on the base branch checked out there,
+  never on a new branch; the driver pushes it after the landing.
   Never push — any repo, any branch. After your hand-back the driver runs
   the full gate sweep —
   `kc project lint` + `build` + `test` (a red comes back to this session) —
@@ -7416,13 +7419,23 @@ class RunLoop:
         merges sit between this slice's commits, its phases' ranges are not
         contiguous.
 
+        A phase's commits outside its Target are in too — the pairs its
+        `Review:` file gained since it began, the reviewer's set
+        (`_doc_ledger_commits`), each a section after its repo's landings:
+        Ansible slice 057's two runbook corrections were on the doc branch
+        and in no section (AIWF-67). A repo no phase targets gets a file and
+        a row saying the driver pushes no doc edit there
+        (`_push_doc_siblings`), so a doc it needs goes in the close-out
+        report.
+
         Returns the dispatch rows — the file and each phase's stat summary
         line, one row per repo; a repo whose phases all came out empty gets a
         row and no file, and a merged phase with no range on record gets a
-        row of its own. The writer reads hunks by path from the file: in the
-        sessions read, a per-file `git diff` past the tool's output limit was
-        persisted and read back in two turns, and one 26 k-char diff was
-        sliced three times.
+        row of its own, as does a ledger line the driver cannot diff. The
+        writer reads hunks by path from the file: in the sessions read, a
+        per-file `git diff` past the tool's output limit was persisted and
+        read back in two turns, and one 26 k-char diff was sliced three
+        times.
 
         Every section is redacted (`_redact`, AIWF-51): slice 050's file
         carried five removed Secrets' CA keys and passwords to the writer.
@@ -7433,19 +7446,32 @@ class RunLoop:
         out_dir.mkdir(exist_ok=True)
         (out_dir / ".gitignore").write_text("*\n")
         ranged, unranged = self._landed()
-        by_repo: dict[str, list[tuple[str, dict]]] = {}
+        # Per repo, each section's (header label, row label, base, head): the
+        # landings in merge order, then the ledger commits.
+        by_repo: dict[str, list[tuple[str, str, str, str]]] = {}
         for pid, landed in ranged:
-            by_repo.setdefault(landed["root"], []).append((pid, landed))
+            by_repo.setdefault(landed["root"], []).append(
+                (f"P{pid}", f"P{pid}", landed["base"], landed["head"]))
+        ledgered, unhandled = self._doc_ledger_commits(ranged)
+        # A ledger commit joins the file of the repo a phase landed in,
+        # matched resolved; a repo none landed in gets a file after theirs.
+        named: dict[Path, str] = {}
+        for repo in by_repo:
+            named.setdefault(Path(repo).resolve(), repo)
+        for key, top, pid, review, parent, sha in ledgered:
+            by_repo.setdefault(named.setdefault(key, top), []).append(
+                (f"P{pid}, ledger {review}", f"P{pid} ledger {sha[:12]}",
+                 parent, sha))
+        targets = {Path(key).resolve() for key in self.state.get("bases", {})}
         rows: list[str] = []
         used: set[str] = set()
-        for repo, landings in by_repo.items():
+        for repo, items in by_repo.items():
             pathspec = self._bookkeeping_pathspec(Path(repo))
             spec = ["--", *pathspec] if pathspec else []
             sections: list[str] = []
             summaries: list[str] = []
             stubbed = 0
-            for pid, landed in landings:
-                base, head = landed["base"], landed["head"]
+            for label, tag, base, head in items:
                 rng = f"{base}..{head}"
                 stat = self.git("diff", "--stat=100", rng, *spec,
                                 root=Path(repo), check=False)
@@ -7458,11 +7484,11 @@ class RunLoop:
                 stubbed += count
                 diff = diff.rstrip("\n")
                 sections.append(
-                    f"{repo} — P{pid}: git diff {base[:12]}..{head[:12]}"
+                    f"{repo} — {label}: git diff {base[:12]}..{head[:12]}"
                     f"\n\n{stat}\n\n{diff}\n")
-                summaries.append(f"P{pid}: {stat.splitlines()[-1].strip()}")
+                summaries.append(f"{tag}: {stat.splitlines()[-1].strip()}")
             if not sections:
-                ids = ", ".join(f"P{pid}" for pid, _ in landings)
+                ids = ", ".join(tag for _, tag, _, _ in items)
                 rows.append(f"- {repo}: no changes ({ids})")
                 continue
             name = Path(repo).name or "repo"
@@ -7476,7 +7502,12 @@ class RunLoop:
             if stubbed:
                 self.log(f"doc phase: {stubbed} Secret data line(s) stubbed "
                          f"in {path}")
-            rows.append(f"- {repo}: {path} ({'; '.join(summaries)})")
+            row = f"- {repo}: {path} ({'; '.join(summaries)})"
+            if Path(repo).resolve() not in targets:
+                row += (" — no phase's Target: the driver pushes no doc edit "
+                        "there, so a doc this needs goes in the close-out "
+                        "report")
+            rows.append(row)
         for pid in unranged:
             rows.append(
                 f"- P{pid}: merged with no range on record (an earlier "
@@ -7484,7 +7515,96 @@ class RunLoop:
                 "its changes are not in the files above")
             self.log(f"doc phase: P{pid} merged with no range on record — "
                      "its changes are not in the diff files")
-        return rows
+        return rows + unhandled
+
+    def _doc_ledger_commits(self, ranged: list[tuple[str, dict]]) -> tuple[
+            list[tuple[Path, str, str, str, str, str]], list[str]]:
+        """The commits merged phases made outside their Targets, for the doc
+        diff files: per phase in state order, the pairs its `Review:` file
+        gained since the phase began — the set its reviewer was handed
+        (`_review_set_paragraph`) — as (resolved root, root, phase id,
+        ledger, parent, sha), in ledger order. A commit one of `ranged`'s
+        ranges in that repo carries is left to that range's section, and one
+        an earlier line named is not repeated. Apart, the dispatch rows of
+        the gained lines the driver cannot diff — no checkout, no such
+        commit, a root commit, or more than one commit on the line — each
+        logged. A plan that cannot be read holds no ledger."""
+        try:
+            phases, _ = parse_plan(self.plan_path.read_text())
+        except OSError:
+            return [], []
+        by_id: dict[str, Phase] = {}
+        for phase in phases:
+            by_id.setdefault(phase.id, phase)
+        commits: list[tuple[Path, str, str, str, str, str]] = []
+        rows: list[str] = []
+        seen: set[tuple[Path, str]] = set()
+        for pid, ps in self.state["phases"].items():
+            phase = by_id.get(pid)
+            if ps.get("status") != "merged" or phase is None:
+                continue
+            listed, ambiguous = self._review_set_now(phase) or ([], [])
+            start = self._review_set_start(ps)
+            for clone, sha in listed:
+                if (clone, sha) in start:
+                    continue
+                resolved = self._ledger_commit(clone, sha)
+                if isinstance(resolved, str):
+                    rows.append(f"- P{pid}: {clone} {sha} in {phase.review} — "
+                                f"{resolved}, so its changes are not in the "
+                                "files above")
+                    self.log(f"doc phase: P{pid} ledger {phase.review}: "
+                             f"{clone} {sha} — {resolved}; its changes are "
+                             "not in the diff files")
+                    continue
+                top, parent, full = resolved
+                key = Path(top).resolve()
+                if (key, full) in seen:
+                    continue
+                seen.add((key, full))
+                if any(Path(landed["root"]).resolve() == key
+                       and self._work_is_in(landed["head"], full, Path(top))
+                       and not self._work_is_in(landed["base"], full,
+                                                Path(top))
+                       for _, landed in ranged):
+                    continue
+                commits.append((key, top, pid, phase.review, parent, full))
+            start_unclear = self._review_set_ambiguous_start(ps)
+            for clone, shas in ambiguous:
+                if (clone, shas) in start_unclear:
+                    continue
+                rows.append(
+                    f"- P{pid}: {phase.review} names more than one commit "
+                    f"for {clone} on one line ({', '.join(shas)}) — the "
+                    "driver cannot tell which is the phase's, so none of "
+                    "them is in the files above")
+                self.log(f"doc phase: P{pid} ledger {phase.review} names more "
+                         f"than one commit for {clone} on one line "
+                         f"({', '.join(shas)}); none of them is in the diff "
+                         "files")
+        return commits, rows
+
+    def _ledger_commit(self, clone: str,
+                       sha: str) -> tuple[str, str, str] | str:
+        """A ledger pair as the doc diff reads it — (the clone's git root,
+        the commit's parent, the commit's full sha) — or why it cannot be:
+        a path that is no checkout (a missing one included: git cannot run
+        there at all), a sha the clone does not have, or a root commit."""
+        if not Path(clone).is_dir():
+            return "not a git checkout"
+        top = self.git("rev-parse", "--show-toplevel", root=Path(clone),
+                       check=False)
+        if not top:
+            return "not a git checkout"
+        full = self.git("rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}",
+                        root=Path(top), check=False)
+        if not full:
+            return "no such commit there"
+        parent = self.git("rev-parse", "--verify", "--quiet", f"{full}^",
+                          root=Path(top), check=False)
+        if not parent:
+            return "a root commit, with no parent to diff against"
+        return top, parent, full
 
     def _doc_gate_until_green(self, ds: dict, branch: str) -> None:
         """The driver's own full-sweep gate on the doc branch. Red is

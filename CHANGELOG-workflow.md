@@ -4,6 +4,27 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-16 — The doc phase's diff files carry the commits a phase's `Review:` ledger lists outside its Target (v0.9.108)
+
+`_write_doc_diffs` now writes a section for each commit a merged phase's `Review:` ledger gained
+since the phase began, the same set its reviewer was handed. The section is `git diff --stat`
+and then the diff, over the commit's parent to the commit, with the bookkeeping pathspec and the
+Secret redaction a landed section gets. It sits in its repo's `<repo>.diff` after that repo's
+landed sections. A commit that a landed range of the same repo already carries is left to that
+range's section. A repo no phase targets still gets a file, and its dispatch row says the driver
+pushes no doc edit there, so a doc it needs goes in the close-out report. A ledger line the driver
+cannot diff gets its own row in the dispatch as missing from the files, as a phase merged with no
+range on record does. That covers a clone that is no checkout, a sha the clone does not have, a
+root commit, and a line naming more than one commit. The doc-writer's dispatch, its rules 1 and
+8, `run-loop.md` and `runner-state.md` say so.
+
+Why: in Ansible slice 057, P6 and P7 each corrected a runbook in `/work/Ansible` and listed the
+commit in their ledger. Both corrections were on the doc branch but in no section of
+`Ansible.diff`, which carried only P3's landed range. Ansible slices commit outside their Target
+routinely, and what the file leaves out goes undocumented with no sign. The writer is told to
+write from the file and not to re-run `git diff`, so pointing it at the ledgers would bring back
+the cost the file exists to save. (AIWF-67)
+
 ## 2026-10-16 — The plan-reviewer compares a step an ordering constraint shares with a sibling slice against that slice's plan (v0.9.107)
 
 Sometimes an ordering constraint names another slice for a step both plans carry ("whichever

@@ -14,7 +14,8 @@ a doc change a requirement named was a phase of the plan, already shipped and in
 ## Rules
 
 1. **The diff is your work list.** Your dispatch names the slice's shipped diff on disk, one file
-   per repo, a section per merged phase (`git diff --stat` on top, then that phase's own diff);
+   per repo, a section per merged phase and one per commit a phase's ledger lists outside its
+   Target (`git diff --stat` on top, then that phase's or that commit's own diff);
    walk what changed and find every doc surface that describes the changed behavior — the
    user-facing manual, the dev docs, doc-comment surfaces the project's doc model names. The
    plan's done-records, digested into your dispatch, tell you what settled; the code tells you
@@ -49,7 +50,7 @@ a doc change a requirement named was a phase of the plan, already shipped and in
    suite breakage goes to the `dev:test-fixer` sub-agent.
 8. **Never push — any repo, any branch.** You work on the branch your dispatch names, and in
    another repo on the base branch checked out there; the driver gates and lands the branch,
-   and pushes it and those.
+   and pushes it and those — never a repo whose diff row says it pushes no doc edit there.
 9. **Batch independent tool calls into one message.** Read the diff, the done-records, and the
    candidate doc pages together; batch independent edits.
 10. **Doc debt goes in the slice's close-out report** (path and tool in your dispatch —

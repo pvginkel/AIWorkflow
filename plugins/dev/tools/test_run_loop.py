@@ -104,10 +104,14 @@ class FakeGit:
         # gives its base and HEAD the same tree.
         self.trees = {}
         self.spec_root = spec_root   # what `rev-parse --show-toplevel` says
+        # str(root) → what `rev-parse --show-toplevel` says there instead —
+        # a ledger's clone ("" for a directory that is no checkout).
+        self.toplevels = {}
         self.branch = "main"     # the branch every root is checked out on
         self.branch_at = {}      # str(root) → its branch, overriding `branch`
         self.diff_files = ""     # what `diff --name-only` reports
         self.stat = ""           # what `diff --stat` reports
+        self.stats = {}          # "<base>..<head>" → its stat, over `stat`
         self.diff = ""           # what a plain `diff <range>` reports
         self.diffs = []          # plain-diff answers, consumed in order first
         # What `git_raw("show", "<rev>:<path>")` reads — (rev, path) → the
@@ -136,7 +140,9 @@ class FakeGit:
         # branches of that repo with their shas, and a commit graph that
         # `rev-list --count` walks. A root not in `refs` answers as above.
         self.refs = {}           # str(root) → {ref: sha}
-        self.parents = {}        # sha → its parent
+        # sha → its parent; in any repo, also what `rev-parse --verify
+        # <sha>^` answers (none: a root commit).
+        self.parents = {}
         # The spec repo as `git -C <slice dir>` sees it: its HEAD, the text
         # each path had at the last commit through it, and the store as it
         # stood each time HEAD was read — what `show <sha>:` answers.
@@ -179,7 +185,7 @@ class FakeGit:
         if args[:3] == ("rev-parse", "--abbrev-ref", "HEAD"):
             return self.branch_at.get(str(root), self.branch)
         if args[:2] == ("rev-parse", "--show-toplevel"):
-            return self.spec_root
+            return self.toplevels.get(str(root), self.spec_root)
         if args[0] == "diff" and any(a.startswith("--output=") for a in args):
             out = next(a for a in args if a.startswith("--output="))
             Path(out.removeprefix("--output=")).write_text(
@@ -190,7 +196,8 @@ class FakeGit:
         if args[0] == "diff" and "--name-only" in args:
             return self.diff_files
         if args[0] == "diff" and any(a.startswith("--stat") for a in args):
-            return self.stat
+            rng = next((a for a in args if ".." in a), None)
+            return self.stats.get(rng, self.stat)
         if args[0] == "diff":
             return self.diffs.pop(0) if self.diffs else self.diff
         if args[0] == "rev-list":
@@ -200,6 +207,12 @@ class FakeGit:
         if args[:2] == ("rev-parse", "--verify") \
                 and args[-1].startswith("refs/remotes/"):
             return self.remote_refs.get(args[-1], "")
+        if args[:2] == ("rev-parse", "--verify") \
+                and args[-1].endswith("^{commit}"):
+            rev = args[-1].removesuffix("^{commit}")
+            return self.revs.get(rev, rev)
+        if args[:2] == ("rev-parse", "--verify") and args[-1].endswith("^"):
+            return self.parents.get(args[-1].removesuffix("^"), "")
         if args[:2] == ("rev-parse", "--verify"):
             return "" if str(root) in self.no_origin else self.head
         if args[0] == "rev-parse" and args[-1].endswith("^{tree}"):
@@ -6158,6 +6171,226 @@ def test_a_merged_phase_without_a_landed_range_is_named_in_the_rows():
         assert "- P1: merged with no range on record" in prompt
         assert not [c for _, c in r.fake_git.calls if c[0] == "diff"]
         assert not list((slice_dir / "doc_phase").glob("*.diff"))
+
+
+# -- a phase's commits outside its Target in the doc diff (AIWF-67) -----------
+#
+# Ansible slice 057's P6 and P7 each corrected a runbook in /work/Ansible, the
+# repo P3 landed in, and listed the commit in their `Review:` ledgers beside
+# commits in /work/scratch/TerraformState, which no phase targets. Ansible's
+# doc diff carried P3's section alone: the corrections were on the doc branch
+# and went undocumented.
+
+LEDGER_SUMMARY = "1 file changed, 1 insertion(+), 1 deletion(-)"
+
+
+def doc_phase_resume(slice_dir, repo, phases):
+    """A run resumed at the doc phase's writer with every phase merged —
+    `phases` maps each id to what its record carries beyond that (`landed`,
+    the review-set snapshots)."""
+    record = {"status": "merged", "stage": None, "branch": None,
+              "target": PROJECT, "executor_rounds": 1, "gate_fix_rounds": 0,
+              "review_rounds": 1, "gate_runs": 1,
+              "gate_green_commit": "abc123", "gate_green_log": "x",
+              "reviewed_head": "abc123"}
+    state = {
+        "slice": "074_test_slice", "created_at": "t", "orchestrator": None,
+        "run_phase": "docs", "bases": {str(repo): "main"},
+        "known_phases": list(phases),
+        "phases": {pid: {**record, **extra} for pid, extra in phases.items()},
+        "generation": 0, "test_rounds": 1, "consult_seq": 1,
+        "in_flight": None, "history": [],
+        "doc_phase": {"stage": "writer", "gate_runs": 0, "nudges": 0,
+                      "session": None},
+    }
+    (slice_dir / "state.json").write_text(json.dumps(state))
+
+
+def landed_in(repo, base, head):
+    return {"landed": {"root": str(repo), "base": base, "head": head}}
+
+
+def one_line_diff(name):
+    return f"diff --git a/{name} b/{name}\n@@ -1 +1 @@\n-x\n+y"
+
+
+def test_a_ledgers_commits_join_the_doc_diff_after_the_landed_sections():
+    """Slice 057's shape: P1 lands in the repo, and so does P2, whose ledger
+    gained a commit there, one in a clone no phase targets, the first again
+    under a path inside the repo, and one P1's range already carries. A
+    pair the ledger held when P2 began is not P2's."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[
+            ("1", "Roles", PROJECT, True),
+            ("2", "Runbook", PROJECT, True, "Review: ledger.md\n")])
+        tf = Path(tmp) / "scratch" / "TerraformState"
+        tf.mkdir(parents=True)
+        roles = repo / "roles"
+        roles.mkdir()
+        (slice_dir / "ledger.md").write_text(ledger(
+            ("Old", "/work/scratch/Old", SHA_B2),
+            ("Ansible", str(repo), SHA_A),
+            ("TerraformState", str(tf), SHA_B),
+            ("Ansible", str(roles), SHA_A),
+            ("Ansible", str(repo), SHA_C)))
+        doc_phase_resume(slice_dir, repo, {
+            "1": landed_in(repo, "base123", "abc123"),
+            "2": {**landed_in(repo, "abc123", "def456"),
+                  "review_set_start": [["/work/scratch/Old", SHA_B2]],
+                  "review_set_ambiguous_start": []}})
+        r = ScriptedLoop(slice_dir, [V["doc_done"]], resume=True,
+                         repo_root=repo)
+        g = r.fake_git
+        g.toplevels = {str(repo): str(repo), str(roles): str(repo),
+                       str(tf): str(tf)}
+        g.parents = {SHA_A: "a1" * 20, SHA_B: "b1" * 20, SHA_C: "c1" * 20}
+        # P1's range carries SHA_C: its head reaches it, its base does not
+        g.merged.add(SHA_C)
+        g.not_in.add((SHA_C, "base123"))
+        g.stat = f" a.py | 2 +-\n {LEDGER_SUMMARY}"
+        g.diffs = [one_line_diff(name)
+                   for name in ("p1.py", "p2.py", "runbook.md", "main.tf")]
+        assert run_to_exit(r) == 0
+        out_dir = slice_dir / "doc_phase"
+        assert sorted(f.name for f in out_dir.glob("*.diff")) == [
+            "TerraformState.diff", "repo.diff"]
+        text = (out_dir / "repo.diff").read_text()
+        assert [line for line in text.splitlines()
+                if line.startswith(f"{repo} — ")] == [
+            f"{repo} — P1: git diff base123..abc123",
+            f"{repo} — P2: git diff abc123..def456",
+            f"{repo} — P2, ledger ledger.md: git diff a1a1a1a1a1a1.."
+            f"{SHA_A[:12]}"]
+        assert text.endswith(f"{SHA_A[:12]}\n\n{g.stat}\n\n"
+                             + one_line_diff("runbook.md") + "\n")
+        assert (out_dir / "TerraformState.diff").read_text() == (
+            f"{tf} — P2, ledger ledger.md: git diff b1b1b1b1b1b1.."
+            f"{SHA_B[:12]}\n\n{g.stat}\n\n" + one_line_diff("main.tf") + "\n")
+        # the pair from before P2 and the commit P1's range carries are
+        # diffed nowhere
+        assert not [c for _, c in g.calls if c[0] == "diff" and any(
+            SHA_B2 in a or SHA_C in a for a in c)]
+        prompt = next(p for role, p in r.prompts if role == "doc-writer")
+        assert (f"- {repo}: {out_dir / 'repo.diff'} (P1: {LEDGER_SUMMARY}; "
+                f"P2: {LEDGER_SUMMARY}; P2 ledger {SHA_A[:12]}: "
+                f"{LEDGER_SUMMARY})\n"
+                f"- {tf}: {out_dir / 'TerraformState.diff'} (P2 ledger "
+                f"{SHA_B[:12]}: {LEDGER_SUMMARY}) — no phase's Target: the "
+                "driver pushes no doc edit there, so a doc this needs goes in "
+                "the close-out report\n- The plan is") in prompt
+        assert "/work/scratch/Old" not in prompt
+
+
+def test_ledger_lines_the_driver_cannot_diff_are_named_and_in_no_file():
+    """A gained line naming a path that is no checkout (missing, or a plain
+    directory), a commit its clone does not have, a root commit, or more
+    than one commit is a row of its own after the phases' rows — P2 merged
+    with no range on record, and its ledger is read all the same. A line
+    naming two commits the ledger held when P2 began is not P2's."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[
+            ("1", "Roles", PROJECT, True),
+            ("2", "Runbook", PROJECT, True, "Review: ledger.md\n")])
+        gone, plain = Path(tmp) / "gone", Path(tmp) / "plain"
+        plain.mkdir()
+        (slice_dir / "ledger.md").write_text(
+            ledger(("Gone", str(gone), SHA_A), ("Plain", str(plain), SHA_A),
+                   ("Ansible", str(repo), SHA_B),
+                   ("Ansible", str(repo), SHA_C))
+            + bump_row(str(repo), SHA_B2, SHA_A)
+            + bump_row("/work/scratch/Old", SHA_B, SHA_B2))
+        doc_phase_resume(slice_dir, repo, {
+            "1": landed_in(repo, "base123", "abc123"),
+            "2": {"review_set_start": [], "review_set_ambiguous_start": [
+                ["/work/scratch/Old", [SHA_B, SHA_B2]]]}})
+        r = ScriptedLoop(slice_dir, [V["doc_done"]], resume=True,
+                         repo_root=repo)
+        g = r.fake_git
+        g.toplevels = {str(repo): str(repo), str(plain): ""}
+        g.parents = {SHA_A: "a1" * 20}   # SHA_C has none: a root commit
+        g.fails.add(("rev-parse", "--verify", "--quiet", f"{SHA_B}^{{commit}}"))
+        g.stat = f" a.py | 2 +-\n {LEDGER_SUMMARY}"
+        g.diff = one_line_diff("p1.py")
+        assert run_to_exit(r) == 0
+        prompt = next(p for role, p in r.prompts if role == "doc-writer")
+        tail = "so its changes are not in the files above"
+        assert (f"- {repo}: {slice_dir / 'doc_phase' / 'repo.diff'} (P1: "
+                f"{LEDGER_SUMMARY})\n"
+                "- P2: merged with no range on record (an earlier plugin "
+                "version, or a resume past a crash at its merge) — its changes "
+                "are not in the files above\n"
+                f"- P2: {gone} {SHA_A} in ledger.md — not a git checkout, "
+                f"{tail}\n"
+                f"- P2: {plain} {SHA_A} in ledger.md — not a git checkout, "
+                f"{tail}\n"
+                f"- P2: {repo} {SHA_B} in ledger.md — no such commit there, "
+                f"{tail}\n"
+                f"- P2: {repo} {SHA_C} in ledger.md — a root commit, with no "
+                f"parent to diff against, {tail}\n"
+                f"- P2: ledger.md names more than one commit for {repo} on one "
+                f"line ({SHA_B2}, {SHA_A}) — the driver cannot tell which is "
+                "the phase's, so none of them is in the files above\n"
+                "- The plan is") in prompt
+        assert "/work/scratch/Old" not in prompt
+        assert [f.name for f in (slice_dir / "doc_phase").glob("*.diff")] == [
+            "repo.diff"]
+        text = (slice_dir / "doc_phase" / "repo.diff").read_text()
+        assert text.count(f"{repo} — ") == 1
+        assert not [c for _, c in g.calls if c[0] == "diff" and any(
+            sha in a for a in c for sha in (SHA_A, SHA_B, SHA_C, SHA_B2))]
+        log = (slice_dir / "log.txt").read_text()
+        assert (f"doc phase: P2 ledger ledger.md: {gone} {SHA_A} — not a git "
+                "checkout; its changes are not in the diff files\n") in log
+        assert (f"doc phase: P2 ledger ledger.md: {repo} {SHA_C} — a root "
+                "commit, with no parent to diff against; its changes are not "
+                "in the diff files\n") in log
+        assert (f"doc phase: P2 ledger ledger.md names more than one commit "
+                f"for {repo} on one line ({SHA_B2}, {SHA_A}); none of them is "
+                "in the diff files\n") in log
+
+
+def test_a_ledger_section_is_redacted_over_its_commit_and_parent():
+    """The redactor reads a ledger section's blobs at the commit's parent and
+    at the commit itself. P1's own range came out empty, and the repo still
+    gets a file for its ledger commit, and no `no changes` row."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[
+            ("1", "Rotate", PROJECT, True, "Review: ledger.md\n")])
+        (slice_dir / "ledger.md").write_text(
+            ledger(("Ansible", str(repo), SHA_A)))
+        doc_phase_resume(slice_dir, repo, {
+            "1": {**landed_in(repo, "base123", "abc123"),
+                  "review_set_start": [], "review_set_ambiguous_start": []}})
+        r = ScriptedLoop(slice_dir, [V["doc_done"]], resume=True,
+                         repo_root=repo)
+        g = r.fake_git
+        parent = "a1" * 20
+        g.toplevels = {str(repo): str(repo)}
+        g.parents = {SHA_A: parent}
+        diff, old, new = secret_change("S3CRETKEYVALUE", "N3WKEYVALUE00")
+        g.stats = {"base123..abc123": ""}
+        g.stat = f" {SECRET_PATH} | 2 +-\n {LEDGER_SUMMARY}"
+        g.diff = diff
+        g.blobs = {(parent, SECRET_PATH): old, (SHA_A, SECRET_PATH): new}
+        assert run_to_exit(r) == 0
+        path = slice_dir / "doc_phase" / "repo.diff"
+        text = path.read_text()
+        assert text.startswith(
+            f"{repo} — P1, ledger ledger.md: git diff {parent[:12]}.."
+            f"{SHA_A[:12]}\n\n {SECRET_PATH} | 2 +-\n")
+        assert text.splitlines()[-3:] == [
+            "-[Secret ca-key: 1 data line]", "+[Secret ca-key: 1 data line]",
+            " [Secret ca-key: 1 data line]"]
+        shows = [c for _, c in g.calls if c[0] == "show"]
+        assert ("show", f"{parent}:{SECRET_PATH}") in shows
+        assert ("show", f"{SHA_A}:{SECRET_PATH}") in shows
+        assert_no_secret_on_disk(slice_dir)
+        prompt = next(p for role, p in r.prompts if role == "doc-writer")
+        assert (f"- {repo}: {path} (P1 ledger {SHA_A[:12]}: "
+                f"{LEDGER_SUMMARY})\n- The plan is") in prompt
+        assert f"- {repo}: no changes" not in prompt
+        assert (f"doc phase: 3 Secret data line(s) stubbed in {path}"
+                in (slice_dir / "log.txt").read_text())
 
 
 def test_doc_phase_runs_on_branch_and_driver_lands_it():
