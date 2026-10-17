@@ -31,6 +31,15 @@ tools:
   - use: python
   # KubeCoderConfig's setup and Prettier gate run npm here (its project.yaml).
   - use: frontend
+  # The dev-guides.home build (AIWF-81) runs here end to end, the hosting side included, so this
+  # environment carries the toolchains the other repos' gates name: JenkinsPipelineUtils' Maven
+  # and offline check (java) and its docs verbs (iac); the deploy repos' Helm and Terraform (iac)
+  # and their chart-deps and architecture commands (aac-tools); Architecture's Poetry gate
+  # (modern-app).
+  - use: java
+  - use: iac
+  - use: aac-tools
+  - use: modern-app
 
 preamble:
   instructions: |
@@ -39,10 +48,15 @@ preamble:
     the `kubecoder` plugin marketplace in /work/KubeCoderConfig, and the
     aiworkflow.home site in /work/AIWorkflowSite.
 
-    Two toolchain sidecars:
+    Toolchain sidecars:
 
-      cexec python    Python with uv. There is no uv in the dev container.
-      cexec frontend  Node with npm, for KubeCoderConfig's Prettier gate.
+      cexec python      Python with uv. There is no uv in the dev container.
+      cexec frontend    Node with npm, for KubeCoderConfig's Prettier gate.
+      cexec java        JDK and Maven, for JenkinsPipelineUtils' gates.
+      cexec iac         Helm, Terraform and uv, for JenkinsPipelineUtils'
+                        docs verbs and the deploy repos' gates.
+      cexec aac-tools   chart-deps, gen-architecture, arch-validate.
+      cexec modern-app  Node and Poetry, for Architecture's gates.
 
     `kc project` verbs are cwd-bound, so run them from the repo's root.
 
