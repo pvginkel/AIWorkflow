@@ -43,6 +43,14 @@ set is re-read at every plan parse, so a component a phase registers — declare
 line under its `Target:` ([plan-template.md](plan-template.md)) — is a valid target from the
 moment the creating phase merges, and may be named before that on the declaration's word.
 
+**A sibling path config.yaml declares but the pod has not cloned is not a plan problem.** A repo
+added to `.kubecoder/config.yaml` while the environment runs is cloned at the next pod start, and
+until then its Target does not resolve. When `kc env describe` lists the path among the declared
+repos, the driver stops with `target_not_cloned`, an error, not an operator question, and nudges no
+session to fix a plan that is fine. The details give the fix: `kc env restart`, or a clone at the
+declared path plus `kc project setup` there, then `--resume`. When `kc env describe` does not
+answer, the Target is reported as one that does not resolve, as before.
+
 **`Target: github:<owner>/<repo>` names a repo the environment does not check out.** A sibling
 path must exist under `/work`, and putting it there took a `repos:` entry in the project's
 `.kubecoder/config.yaml` — the repo in every environment of the project for one slice's sake.

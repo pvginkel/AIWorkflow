@@ -67,6 +67,11 @@ run_loop.running_services = lambda: set(RUNNING_SERVICES)
 # of theirs is.
 REAL_SHARED_REPO_DIRS = run_loop.shared_repo_dirs
 run_loop.shared_repo_dirs = lambda: set()
+# So do the repos config.yaml declares, asked when a repo-path Target is
+# missing; the suite's environment declares none, so a missing Target reads
+# as a wrong path, and the tests of one not cloned yet say which it is.
+REAL_DECLARED_REPO_DIRS = run_loop.declared_repo_dirs
+run_loop.declared_repo_dirs = lambda: {}
 # A shared repo's phase works in a worktree under WORKTREE_ROOT. Never the
 # pod's own scratch root from the suite: the scripted loops point it into
 # their test's tmp dir for the run (`ScriptedLoop.run`), and this is the
@@ -3343,6 +3348,154 @@ def test_target_roots_are_the_pending_phases_repos_as_the_last_load_resolved():
         state = load_state(slice_dir)
         assert state["phases"]["1"]["landed"]["root"] == str(repo)
         assert state["target_roots"] == []
+
+
+# -- a Target declared but not cloned (AIWF-73) --------------------------------
+#
+# A repo added to `.kubecoder/config.yaml` while the environment runs is
+# cloned at the next pod start. Until then its sibling path is missing, and
+# the loop took it for a wrong path: it nudged a session to fix a plan that
+# was fine, then asked the operator.
+
+def declaring(*dirs):
+    """`declared_repo_dirs` answering as kc would with `dirs` in
+    config.yaml, each at a GitHub url named after it."""
+    return patched(run_loop, declared_repo_dirs=lambda: {
+        Path(d).resolve(): f"https://github.com/acme/{Path(d).name}"
+        for d in dirs})
+
+
+def kc_never_asked():
+    raise AssertionError("kc must not be asked for this Target")
+
+
+def test_declared_repo_dirs_maps_every_declared_checkout_to_its_url():
+    answer = subprocess.CompletedProcess([], 0, stdout=json.dumps({
+        "repos": [
+            {"url": "u1", "dir": "/work/App", "shared": False, "ref": None},
+            {"url": "u2", "dir": "/work/AppSpecs", "shared": True},
+            {"dir": "/work/NoUrl"},
+            {"url": "u4", "dir": ""},
+            {"url": "u5"},
+            "not a repo"]}), stderr="")
+    with patched(run_loop.subprocess, run=lambda *a, **kw: answer):
+        assert REAL_DECLARED_REPO_DIRS() == {
+            Path("/work/App").resolve(): "u1",
+            Path("/work/AppSpecs").resolve(): "u2",
+            Path("/work/NoUrl").resolve(): ""}
+    broken = subprocess.CompletedProcess([], 1, stdout="", stderr="no pod")
+    with patched(run_loop.subprocess, run=lambda *a, **kw: broken):
+        try:
+            REAL_DECLARED_REPO_DIRS()
+        except ValueError as e:
+            assert "kc env describe --output=json" in str(e)
+        else:
+            raise AssertionError("kc failing must be a ValueError")
+
+
+def test_a_pending_phase_on_a_declared_uncloned_repo_stops_the_run_unnudged():
+    """No plan error and no nudge — not even beside a real plan error: the
+    run bails `target_not_cloned`, an error (exit 3) naming the fix. A
+    directory that is there but no checkout reads the same."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[
+            ("1", "Rotate the secrets", "../SecretRotator"),
+            ("2", "Chart it", "../Charts"),
+            ("3", "A wrong name", "nosuch")])
+        rotator, charts = Path(tmp) / "SecretRotator", Path(tmp) / "Charts"
+        charts.mkdir()   # kc's mount point, nothing cloned into it
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r._last_session = lambda: ("sess-earlier", "code-writer")
+        nudges = []
+        r._nudge = lambda *a, **kw: nudges.append(a)
+        with declaring(rotator, charts):
+            try:
+                r._load_plan()
+            except Bailout as e:
+                bail = e
+            else:
+                raise AssertionError("an uncloned Target must stop the run")
+        assert bail.reason == "target_not_cloned" and bail.question is False
+        assert not nudges
+        lines = bail.details.splitlines()
+        assert "the plan is fine" in lines[0]
+        assert len(lines) == 3, "one line per uncloned phase, no plan error"
+        assert lines[1] == (
+            "- phase P1: Target `../SecretRotator` is declared but not "
+            "cloned: `.kubecoder/config.yaml` lists "
+            f"https://github.com/acme/SecretRotator at {rotator.resolve()}, "
+            "and the environment has not checked it out (a repo added while "
+            "the pod runs is cloned at its next start). Restart the "
+            "environment (`kc env restart`) or clone it (`git clone "
+            f"https://github.com/acme/SecretRotator {rotator.resolve()}`), "
+            f"then run `kc project setup` in {rotator.resolve()}")
+        assert lines[2].startswith("- phase P2: Target `../Charts` is "
+                                   "declared but not cloned")
+
+
+def test_a_run_whose_target_is_declared_and_uncloned_exits_3_before_any_session():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(
+            tmp, phases=[("1", "Rotate the secrets", "../SecretRotator")])
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        with declaring(Path(tmp) / "SecretRotator"):
+            assert run_to_exit(r) == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "target_not_cloned"
+        assert bail["question"] is False
+        assert "declared but not cloned" in bail["details"]
+        assert "kc project setup" in bail["details"]
+        assert not r.spawned
+
+
+def test_a_missing_target_kc_cannot_place_is_the_plan_question_it_was():
+    """kc not answering, or config.yaml not declaring the path: the plain
+    message, as before — the path may well be the plan's mistake."""
+    def kc_down():
+        raise ValueError("`kc env describe --output=json` failed (rc=1)")
+
+    for answer in (kc_down, lambda: {Path("/work/Elsewhere"): "u"}):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(
+                tmp, phases=[("1", "Rotate", "../SecretRotator")])
+            r = ScriptedLoop(slice_dir, [], repo_root=repo)
+            with patched(run_loop, declared_repo_dirs=answer):
+                assert run_to_exit(r) == 4
+            bail = json.loads((slice_dir / "bailout.json").read_text())
+            assert bail["reason"] == "plan_doc" and bail["question"] is True
+            assert ("Target `../SecretRotator` is not an existing directory"
+                    in bail["details"])
+            assert "declared but not cloned" not in bail["details"]
+
+
+def test_a_done_phase_and_a_cloned_target_never_ask_kc():
+    """A done phase's Target is not resolved at all, and a Target on disk
+    resolves without kc — only a miss asks."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sib = make_sibling(tmp)
+        slice_dir, repo = make_slice(tmp, phases=[
+            ("1", "Rotated once", "../SecretRotator", True),
+            ("2", "Chart change", "../Sibling")])
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        with patched(run_loop, declared_repo_dirs=kc_never_asked):
+            phases = r._load_plan()
+            assert r._resolve_target("../Sibling").git_root == sib.resolve()
+        assert [p.id for p in phases] == ["1", "2"]
+
+
+def test_a_dry_run_names_a_declared_uncloned_target():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = dry_run_repo(tmp)
+        slice_dir, _ = make_slice(tmp, repo=False)
+        (slice_dir / "plan.md").write_text(
+            "# plan\n\n" + phase_section("1", "Rotate", "../SecretRotator"))
+        loop = RunLoop(slice_dir, resume=False)
+        with declaring(Path(tmp) / "SecretRotator"):
+            code, out, err = dry_run_from(loop, root)
+        assert code == 2
+        assert "target=INVALID" in out
+        assert ("phase P1: Target `../SecretRotator` is declared but not "
+                "cloned") in err
 
 
 # -- a sibling repo's component as a Target ------------------------------------

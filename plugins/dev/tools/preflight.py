@@ -21,6 +21,7 @@ schema):
 | `test_phase.strategy` set + exists, when on     |        |      |  x  |
 | `doc_phase.plan` set + exists, when on          |        |      |  x  |
 | `devlock.lease` resolvable, when set            |        |      |  x  |
+| Declared Target repos cloned (`--slice` only)   |        |  x   |  x  |
 | Clean working tree                              |        |      |  x  |
 | Synced with origin (ff / rebase; refuse dirty)  |        |  x*  |  x  |
 | Baseline `kc project build` (all components)    |        |      |  x  |
@@ -33,6 +34,11 @@ contract, and checking it would make an optional phase mandatory again.
 repo, and every repo a Target of the `--slice` plan names. Any other repo's
 refusal is a `warning:` line and the sync goes on; a repo that vanished
 mid-sync, or whose GitHub origin is gone, is skipped. Run refuses them all.
+
+A pending phase of the `--slice` plan whose repo-path Target
+`.kubecoder/config.yaml` declares and the pod has not cloned yet is an
+environment fault (exit 2), named as such (`check_targets_cloned`); without
+`--slice` there is no plan to read, and the check passes.
 
 Two steps *act* rather than check. The sync pulls a clean base onto its own
 origin, which destroys nothing, while a repo with uncommitted work is refused,
@@ -529,6 +535,45 @@ def strict_repos(root: Path, cfg: project_config.ProjectConfig | None,
     return strict
 
 
+def check_targets_cloned(root: Path, cfg: project_config.ProjectConfig | None,
+                         slice_arg: str | None) -> None:
+    """Fail (exit 2) when a pending phase of the `--slice` plan targets a
+    repo `.kubecoder/config.yaml` declares and the pod has not cloned
+    (`run_loop.not_cloned_message`). Such a repo was added while the
+    environment ran and is cloned at the next pod start; until then the run
+    loop would take the Target for a wrong path, nudge a session to fix a
+    plan that is fine, and ask the operator. The environment is broken, not
+    the project — hence 2.
+
+    Only repo paths are looked at, resolved as the run loop resolves them,
+    and only pending phases, which are all the run loop resolves. A
+    `github:` Target's scratch clone is the loop's to make, and an unknown
+    component the plan loop's to name. A missing Target config.yaml does
+    not declare, or kc not answering, passes: the loop names it as before.
+    No `--slice`, or no plan.md yet, is nothing to check."""
+    if slice_arg is None:
+        return
+    plan = find_slice(cfg, slice_arg) / "plan.md"
+    if not plan.is_file():
+        return
+    phases, _errors = run_loop.parse_plan(plan.read_text())
+    problems = []
+    for phase in phases:
+        target = phase.target
+        if phase.done or not target or not target.startswith(("../", "/")):
+            continue
+        path = ((root / target).resolve() if not target.startswith("/")
+                else Path(target))
+        message = run_loop.not_cloned_message(target, path)
+        if message:
+            problems.append(f"- phase P{phase.id}: {message}")
+    if problems:
+        fail(2,
+             f"The slice's plan ({plan}) targets a repo this environment "
+             f"declares but has not cloned — the plan is fine, and the "
+             f"environment is a checkout short:\n" + "\n".join(problems))
+
+
 # A dirty tree may be another process's pull caught mid-checkout — a sibling
 # is half-applied for a moment, and "commit or stash" would capture that. So a
 # repo found behind and dirty is looked at once more after this wait (seconds).
@@ -772,11 +817,11 @@ def check_plugin_current(profile: str) -> None:
 PROFILES = {
     "triage": ["kc", "config", "spec_repo", "spec_tree_guard"],
     "plan": ["kc", "kc_status", "manifest", "config", "spec_repo",
-             "spec_tree_guard", "synced", "plugin_current"],
+             "spec_tree_guard", "targets_cloned", "synced", "plugin_current"],
     "run": ["kc", "kc_status", "manifest", "config", "spec_repo",
             "spec_tree_guard", "design_philosophy", "phase_pointers",
-            "devlock", "clean_tree", "synced", "baseline_build",
-            "plugin_current"],
+            "devlock", "targets_cloned", "clean_tree", "synced",
+            "baseline_build", "plugin_current"],
 }
 
 
@@ -785,11 +830,13 @@ def main() -> None:
     parser.add_argument("--for", dest="profile", required=True,
                         choices=sorted(PROFILES), help="which command's profile to run")
     parser.add_argument("--slice", metavar="N|PATH",
-                        help="plan only: the slice (its number or folder) whose "
-                             "plan's Targets may block the sync")
+                        help="plan and run: the slice (its number or folder) "
+                             "whose plan's Targets must not name a repo the "
+                             "environment declares and has not cloned; under "
+                             "plan, its Targets may also block the sync")
     args = parser.parse_args()
-    if args.slice is not None and args.profile != "plan":
-        parser.error("--slice applies to --for plan only")
+    if args.slice is not None and args.profile not in ("plan", "run"):
+        parser.error("--slice applies to --for plan and --for run only")
     checks = PROFILES[args.profile]
 
     # kc first (env gate), before anything that shells out to it; the control
@@ -812,6 +859,8 @@ def main() -> None:
         check_phase_pointers(cfg)
     if "devlock" in checks:
         check_devlock(cfg)
+    if "targets_cloned" in checks:
+        check_targets_cloned(root, cfg, args.slice)
     if "clean_tree" in checks:
         check_clean_tree(root, cfg)
     if "synced" in checks:

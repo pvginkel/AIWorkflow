@@ -10,7 +10,9 @@ dirty tree gets. A repo on a run loop's phase branch — live run, bailed run, n
 slice folder — is refused before either the sync or the clean-tree check acts
 on it. Under plan, only the target, the spec repo and what the `--slice` plan
 targets block; any other repo's refusal is a warning line, and a vanished repo
-or a gone GitHub origin is skipped. The phase pointers and the devlock
+or a gone GitHub origin is skipped. Given `--slice`, plan and run fail on a
+pending phase's Target that config.yaml declares and the pod has not cloned,
+and on nothing kc cannot place. The phase pointers and the devlock
 follow, and the retired spec-tree guard: its removal from the spec repo's git
 dir, over real git. The kc/manifest/baseline checks and the rest of clean-tree
 are not covered here.
@@ -958,25 +960,27 @@ def test_a_slice_that_names_no_folder_fails():
     assert str(cfg.spec_repo) in message and "slices/backlog/" in message
 
 
-def test_slice_with_another_profile_is_a_usage_error():
-    """`--slice` says which repos planning blocks on; no other profile has
-    such a set, so it is refused by argparse (exit 2) before anything runs."""
-    for profile in ("triage", "run"):
-        stderr = io.StringIO()
-        argv = ["preflight.py", "--for", profile, "--slice", "7"]
-        with patched(preflight.sys, argv=argv), \
-                contextlib.redirect_stderr(stderr):
-            try:
-                preflight.main()
-                raise AssertionError("expected SystemExit")
-            except SystemExit as exit_:
-                assert exit_.code == 2, profile
-        assert "--slice applies to --for plan only" in stderr.getvalue()
+def test_slice_under_triage_is_a_usage_error():
+    """`--slice` names the plan whose Targets plan and run check; triage
+    reads no plan, so it is refused by argparse (exit 2) before anything
+    runs."""
+    stderr = io.StringIO()
+    argv = ["preflight.py", "--for", "triage", "--slice", "7"]
+    with patched(preflight.sys, argv=argv), \
+            contextlib.redirect_stderr(stderr):
+        try:
+            preflight.main()
+            raise AssertionError("expected SystemExit")
+        except SystemExit as exit_:
+            assert exit_.code == 2
+    assert ("--slice applies to --for plan and --for run only"
+            in stderr.getvalue())
 
 
 def test_plan_hands_the_sync_its_strict_repos_and_run_hands_it_none():
     """main's wiring: under plan the target and spec repos block, plus what
-    the `--slice` plan targets; under run every repo does (None)."""
+    the `--slice` plan targets; under run every repo does (None), `--slice`
+    or not."""
     with tempfile.TemporaryDirectory() as tmp:
         app, sib, cfg = a_slice_layout(tmp, "../Sib")
         handed = []
@@ -985,7 +989,8 @@ def test_plan_hands_the_sync_its_strict_repos_and_run_hands_it_none():
             "remove_spec_tree_guard", "check_phase_pointers",
             "check_devlock", "check_clean_tree", "check_baseline_build",
             "check_plugin_current")}
-        for profile, slice_ in (("plan", "7"), ("plan", None), ("run", None)):
+        for profile, slice_ in (("plan", "7"), ("plan", None), ("run", None),
+                                ("run", "7")):
             with patched(preflight, repo_root=lambda: app,
                          load_config=lambda root: cfg,
                          check_synced=lambda r, c, strict: handed.append(strict),
@@ -993,7 +998,128 @@ def test_plan_hands_the_sync_its_strict_repos_and_run_hands_it_none():
                 code, _ = run_main(profile, fake_subprocess(), slice_)
             assert code is None, profile
     both = {app.resolve(), cfg.spec_repo.resolve()}
-    assert handed == [both | {sib.resolve()}, both, None]
+    assert handed == [both | {sib.resolve()}, both, None, None]
+
+
+# -- a Target declared but not cloned ----------------------------------------
+#
+# A repo added to `.kubecoder/config.yaml` while the environment runs is
+# cloned at the next pod start; until then a Target naming it passed here and
+# the run loop took it for a wrong path.
+
+CLONE_PLAN = """# Slice 007 — the rotator
+
+### P1 — rotated once ✅ DONE
+Target: {done}
+
+### P2 — rotate the secrets
+Target: {pending}
+
+### P3 — a scratch clone, the loop's to make
+Target: github:acme/Widget
+
+### P4 — a component, the plan loop's to name
+Target: frontend
+"""
+
+
+def a_cloning_layout(tmp, pending, done="../Sib"):
+    """work/App (the target repo), work/Sib beside it, and a spec repo whose
+    slice 007 plan has a done phase on `done` and a pending one on
+    `pending`. Returns (app, cfg)."""
+    work = Path(tmp) / "work"
+    app = _checkout(work / "App")
+    _checkout(work / "Sib")
+    spec = a_spec_repo(work, "007_widget")
+    (spec / "slices" / "007_widget" / "plan.md").write_text(
+        CLONE_PLAN.format(done=done, pending=pending))
+    return app, a_config(spec_repo=spec)
+
+
+def declared(*dirs):
+    """What `run_loop.declared_repo_dirs` answers with `dirs` declared."""
+    return lambda: {Path(d).resolve(): f"https://github.com/acme/{Path(d).name}"
+                    for d in dirs}
+
+
+def kc_never_asked():
+    raise AssertionError("kc must not be asked")
+
+
+def kc_down():
+    raise ValueError("`kc env describe --output=json` failed (rc=1)")
+
+
+def cloning_main(profile, app, cfg, slice_, declares):
+    """main() with every check but the clone check stubbed out, and kc's
+    declared repos answered by `declares`. Returns (exit_code, stderr)."""
+    quiet = {name: (lambda *a, **k: None) for name in (
+        "check_kc", "check_kc_status", "check_manifest", "check_pointer",
+        "remove_spec_tree_guard", "check_phase_pointers", "check_devlock",
+        "check_clean_tree", "check_synced", "check_baseline_build",
+        "check_plugin_current")}
+    with patched(preflight, repo_root=lambda: app,
+                 load_config=lambda root: cfg, **quiet), \
+            patched(preflight.run_loop, declared_repo_dirs=declares):
+        return run_main(profile, fake_subprocess(), slice_)
+
+
+def test_a_slice_whose_plan_targets_a_declared_uncloned_repo_fails_plan_and_run():
+    """An environment fault (exit 2), naming the phase, the repo and the
+    fix; the done phase's Target, declared and missing too, is not named."""
+    with tempfile.TemporaryDirectory() as tmp:
+        app, cfg = a_cloning_layout(tmp, "../SecretRotator", done="../Gone")
+        rotator = app.parent / "SecretRotator"
+        for profile in ("plan", "run"):
+            code, message = cloning_main(
+                profile, app, cfg, "7",
+                declared(rotator, app.parent / "Gone"))
+            assert code == 2, profile
+            assert "declares but has not cloned" in message.splitlines()[0]
+            assert ("- phase P2: Target `../SecretRotator` is declared but "
+                    "not cloned") in message
+            assert (f"git clone https://github.com/acme/SecretRotator "
+                    f"{rotator.resolve()}") in message
+            assert f"kc project setup` in {rotator.resolve()}" in message
+            assert "phase P1" not in message, "a done phase is not checked"
+
+
+def test_a_missing_target_preflight_cannot_place_passes():
+    """Not declared, or kc not answering: the loop names it, as before."""
+    with tempfile.TemporaryDirectory() as tmp:
+        app, cfg = a_cloning_layout(tmp, "../SecretRotator")
+        for declares in (declared(app.parent / "Elsewhere"), kc_down):
+            for profile in ("plan", "run"):
+                code, message = cloning_main(profile, app, cfg, "7", declares)
+                assert code is None, (profile, message)
+
+
+def test_a_cloned_target_and_a_done_phase_ask_kc_nothing():
+    with tempfile.TemporaryDirectory() as tmp:
+        app, cfg = a_cloning_layout(tmp, "../Sib", done="../Gone")
+        for profile in ("plan", "run"):
+            code, message = cloning_main(profile, app, cfg, "7",
+                                         kc_never_asked)
+            assert code is None, (profile, message)
+
+
+def test_without_a_slice_the_clone_check_reads_no_plan():
+    with tempfile.TemporaryDirectory() as tmp:
+        app, cfg = a_cloning_layout(tmp, "../SecretRotator")
+        for profile in ("plan", "run"):
+            code, message = cloning_main(profile, app, cfg, None,
+                                         kc_never_asked)
+            assert code is None, (profile, message)
+
+
+def test_the_clone_check_runs_before_the_tree_and_sync_checks():
+    """In run before the clean tree, in plan before the sync: the missing
+    repo is the first thing to fix, and no repo is synced for a slice that
+    cannot run."""
+    run, plan = preflight.PROFILES["run"], preflight.PROFILES["plan"]
+    assert run.index("targets_cloned") == run.index("clean_tree") - 1
+    assert plan.index("targets_cloned") == plan.index("synced") - 1
+    assert "targets_cloned" not in preflight.PROFILES["triage"]
 
 
 FETCH_HEAD_GONE = (128, "", "error: cannot open '.git/FETCH_HEAD': No such "

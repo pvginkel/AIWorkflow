@@ -4,6 +4,26 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-17 — Preflight and the run loop name a Target config.yaml declares but the pod has not cloned (v0.9.111)
+
+`preflight.py` takes `--slice` under `--for run` as well as `--for plan`, and `/dev:run-slice`
+step 1 now passes it. A new check in both profiles looks at every pending phase of that slice's
+plan whose `Target:` is a repo path with no checkout. When `kc env describe` lists that path among
+the repos `.kubecoder/config.yaml` declares, preflight exits 2 with "declared but not cloned" and
+the fix: `kc env restart`, or a clone at the declared path plus `kc project setup` there. In the
+run loop, `_repo_path_target` raises `TargetNotCloned` for such a Target. `_load_plan` stops with
+the new bail `target_not_cloned`, an error (exit 3), not an operator question, and nudges no
+session. kc's list is the file as it stands now, so it names a repo added after the pod started.
+A missing Target the file does not declare, or a `kc env describe` that does not answer, gets
+today's messages, and kc is asked only for a Target that missed. `docs/preflight.md` § Notes on
+the Target clones, `docs/run-loop.md` § The plan is the queue and `docs/runner-state.md`'s bail
+table carry it.
+
+Why: two reports from Ansible environments (2026-10-07, slice 054; 2026-10-14, two deploy repos).
+A repo added to config.yaml while the environment ran is cloned only at the next pod start.
+Preflight passed, and the run bailed `plan_doc` with `question: true` ("Target `../SecretRotator`
+is not an existing directory") over a plan that was fine. (AIWF-73)
+
 ## 2026-10-17 — Dispatched roles keep the `kubecoder-worker` MCP server (v0.9.110)
 
 `PROMOTED_MCP_SERVERS` in `run_loop.py` now names `kubecoder-worker` beside `fieldnotes` and

@@ -36,6 +36,7 @@ does **not** re-run preflight, so `/dev:run-slice` is the gate.
 | `test_phase.strategy` set + exists — only when the phase runs | – | – | ✓ |
 | `doc_phase.plan` set + exists — only when the phase runs | – | – | ✓ |
 | `devlock.lease` resolvable — only when one is named | – | – | ✓ |
+| Declared Target repos cloned: no pending phase of the `--slice` plan targets a repo path `.kubecoder/config.yaml` declares and the pod has not cloned — only with `--slice` | – | ✓ | ✓ |
 | Clean working tree | – | – | ✓ |
 | Synced with origin: fetch, then fast-forward or rebase the checked-out branch — the target repo, every checkout beside it, the spec repo; under `plan` only the target repo, the spec repo and the `--slice` plan's Target repos block | – | ✓ | ✓ |
 | Baseline: `kc project build` (all components) | – | – | ✓ |
@@ -77,6 +78,24 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   git repo is skipped. A git dir preflight cannot write is exit 2.
 - **Why it stays.** The git dir is shared, and an environment still on an older plugin installs
   the hook again at its own preflight until it is updated.
+
+## Notes on the Target clones
+
+- **Why it exists.** A repo added to `.kubecoder/config.yaml` while the environment runs is cloned
+  at the next pod start. Until then a phase targeting it as `../Repo` read as a wrong path:
+  preflight passed, and the run loop nudged a session to fix a plan that was fine, then asked the
+  operator (AIWF-73).
+- **What it checks.** With `--slice`, every pending phase of the slice's `plan.md` whose `Target:`
+  is a repo path (`../Repo` or absolute) with no checkout there. Only then is `kc env describe`
+  asked: its repo list is config.yaml as it stands now, so it lists a repo the pod has not cloned.
+  A declared one is exit 2, one line per phase, naming the fix: `kc env restart`, or a clone at
+  the declared path plus `kc project setup` there. `/dev:plan-slice` and `/dev:run-slice` pass the
+  slice; without `--slice` there is no plan to read, and the check passes.
+- **What it leaves alone.** A missing Target config.yaml does not declare is the plan's to fix,
+  and `kc env describe` not answering is no evidence: both pass, and the loop reports a Target
+  that does not resolve, as before. A `github:` Target's scratch clone is the run loop's to make,
+  and a component name is not looked up. A run that meets the same Target stops with
+  `target_not_cloned` ([run-loop.md](run-loop.md) § The plan is the queue).
 
 ## Notes on the sync
 

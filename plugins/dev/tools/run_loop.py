@@ -3019,6 +3019,58 @@ def shared_repo_dirs() -> set[Path]:
             and isinstance(r.get("dir"), str) and r["dir"]}
 
 
+def declared_repo_dirs() -> dict[Path, str]:
+    """Every checkout `.kubecoder/config.yaml` declares — `kc env
+    describe`'s `repos`, resolved `dir` → `url` ("" when kc gives none).
+    That list is the file as it stands now, not as the pod was composed: a
+    repo added while the environment runs is listed before the pod has
+    cloned it, which is how `not_cloned_message` tells such a Target from a
+    wrong path. ValueError with the cause when kc does not answer that."""
+    return {Path(r["dir"]).resolve():
+            (r["url"] if isinstance(r.get("url"), str) else "")
+            for r in _env_list("repos")
+            if isinstance(r, dict) and isinstance(r.get("dir"), str)
+            and r["dir"]}
+
+
+class TargetNotCloned(ValueError):
+    """A repo-path Target `.kubecoder/config.yaml` declares and the pod has
+    not cloned (`not_cloned_message`). The plan is fine; the environment is
+    a clone short, which the plan's author cannot fix and a nudge cannot
+    either — `_load_plan` stops on it at once. A ValueError, so every
+    caller that reports an unresolvable Target reports this one too, in its
+    own words."""
+
+
+def not_cloned_message(target: str, path: Path) -> str | None:
+    """Why the repo a Target names at `path` is missing, when the reason is
+    that the pod has not cloned it yet: a repo added to config.yaml while
+    the environment runs is cloned at the next pod start, and until then
+    the Target read as a wrong path — preflight passed, and the run loop
+    nudged a session to fix a plan that was fine, then asked the operator.
+
+    None when `path` is a checkout, when kc does not answer (the caller's
+    own message stands, as before this existed), or when config.yaml does
+    not declare it (then the path is the plan's to fix). Asked only for a
+    Target that missed, so a Target on disk never waits on kc."""
+    if (path / ".git").exists():
+        return None
+    try:
+        declared = declared_repo_dirs()
+    except ValueError:
+        return None
+    where = path.resolve()
+    if where not in declared:
+        return None
+    url = declared[where] or "<its url>"
+    return (f"Target `{target}` is declared but not cloned: "
+            f"`.kubecoder/config.yaml` lists {url} at {where}, and the "
+            "environment has not checked it out (a repo added while the pod "
+            "runs is cloned at its next start). Restart the environment "
+            f"(`kc env restart`) or clone it (`git clone {url} {where}`), "
+            f"then run `kc project setup` in {where}")
+
+
 def overwritten_paths(output: str) -> list[str]:
     """The paths a refused `git merge` names as standing in its way — local
     changes, staged or not, or untracked files it would overwrite: the
@@ -4056,7 +4108,10 @@ class RunLoop:
         """Parse the plan; on structure errors, nudge the session that
         produced them, then re-parse. A plan still broken after the nudge —
         or broken with no session to nudge (the operator's own edit) — is an
-        operator question, not a crash.
+        operator question, not a crash. A pending phase's Target that the
+        environment declares and has not cloned is neither: it bails
+        `target_not_cloned` at once, an error the launching session can fix
+        (clone, `kc project setup`, `--resume`) without touching the plan.
 
         The component set is re-read first, every load. A phase may register
         a NEW component in the manifest, and the run's opening snapshot would
@@ -4078,7 +4133,16 @@ class RunLoop:
                 raise Bailout("plan_unreadable", details=str(e)) from None
             phases, errors = parse_plan(text)
             errors.extend(self._vanished_phases(phases))
-            roots, target_errors = self._plan_targets(phases)
+            roots, target_errors, not_cloned = self._plan_targets(phases)
+            if not_cloned:
+                # Before the nudge, whatever else is wrong: no session can
+                # clone the repo, and asked to fix the plan it would edit a
+                # Target that was right.
+                raise Bailout(
+                    "target_not_cloned",
+                    details="the plan is fine, but a Target names a repo "
+                            "this environment declares and has not cloned:\n"
+                            + "\n".join(f"- {e}" for e in not_cloned))
             errors.extend(target_errors)
             errors.extend(self._push_holds(text)[1])
             errors.extend(self._rulings(text)[1])
@@ -4109,13 +4173,18 @@ class RunLoop:
                 for pid in self.state.get("known_phases", [])
                 if pid not in present]
 
-    def _plan_targets(self, phases: list[Phase]) -> tuple[list[str], list[str]]:
+    def _plan_targets(self, phases: list[Phase]
+                      ) -> tuple[list[str], list[str], list[str]]:
         """(the repo roots the pending phases' Targets resolve to, sorted and
-        unique, errors). An error is a pending phase whose Target does not
-        resolve — unless the plan says a phase creates it and that phase has
-        not run yet, which is no error and no root."""
+        unique, errors, not cloned). An error is a pending phase whose Target
+        does not resolve — unless the plan says a phase creates it and that
+        phase has not run yet, which is no error and no root. A Target the
+        environment declares and has not cloned (TargetNotCloned) is no plan
+        error either: it goes in the third list, in the same `phase P<id>:`
+        form, for `_load_plan` to stop on."""
         roots: set[str] = set()
         errors = []
+        not_cloned = []
         for index, phase in enumerate(phases):
             if phase.done or not phase.target:
                 continue
@@ -4124,12 +4193,13 @@ class RunLoop:
                     phase.target, creates=phase.creates).git_root))
                 continue
             except ValueError as e:
-                why = str(e)
+                why, missing = str(e), isinstance(e, TargetNotCloned)
             creator, false_claim = creation_claim(phases, index)
             if creator is not None:
                 continue
-            errors.append(f"phase P{phase.id}: {false_claim or why}")
-        return sorted(roots), errors
+            (not_cloned if missing else errors).append(
+                f"phase P{phase.id}: {false_claim or why}")
+        return sorted(roots), errors, not_cloned
 
     def _tool_roots(self) -> list[Path]:
         """The repos whose tools the run needs: each pending phase's Target
@@ -4393,7 +4463,13 @@ class RunLoop:
     @staticmethod
     def _repo_path_target(target: str, path: Path) -> ResolvedTarget:
         """A whole repo at `path` as a Target — a sibling path, or a GitHub
-        target's clone."""
+        target's clone. One that is missing because config.yaml declares it
+        and the pod has not cloned it raises TargetNotCloned; kc is asked
+        only then, and when it cannot answer the plain messages stand."""
+        if not path.is_dir() or not (path / ".git").exists():
+            message = not_cloned_message(target, path)
+            if message:
+                raise TargetNotCloned(message)
         if not path.is_dir():
             raise ValueError(f"Target `{target}` is not an existing "
                              "directory")

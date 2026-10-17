@@ -26,9 +26,11 @@ nothing from you between launch and close-out.
 
 ## Job 1 — start the loop
 
-1. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for run`. On a non-zero exit, **relay
-   its message verbatim** and stop — fix the root cause only if it is clearly environmental,
-   otherwise notify the operator. A dirty working tree — or a repo preflight refused to pull — is
+1. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for run --slice <the slice number or
+   path>`. On a non-zero exit, **relay its message verbatim** and stop — fix the root cause only
+   if it is clearly environmental, otherwise notify the operator. A Target repo the environment
+   declares but has not cloned is environmental: the message names the clone and the
+   `kc project setup` that fix it. A dirty working tree — or a repo preflight refused to pull — is
    never yours to clean up. A line it prints on exit 0 names the installed `run_loop.py`:
    this session's plugin copy is stale, so launch and relaunch from that path wherever this
    skill says `${CLAUDE_PLUGIN_ROOT}/tools/run_loop.py`.
