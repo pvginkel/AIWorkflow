@@ -1,13 +1,22 @@
 {
   "folders": [
     {
-      "path": "."
+      "path": ".",
     },
     {
-      "path": "../AIWorkflowSpecs"
+      "path": "../AIWorkflowSpecs",
     },
     {
-      "path": "../KubeCoderConfig"
-    }
-  ]
+      "path": "../KubeCoderConfig",
+    },
+    {
+      "path": "../DevGuides",
+    },
+    {
+      "path": "../DevGuidesPrivate",
+    },
+    {
+      "path": "../JenkinsPipelineUtils",
+    },
+  ],
 }

@@ -14,16 +14,24 @@ repos:
   # The kubecoder plugin marketplace: the host conventions the dev plugin's
   # skills load (youtrack-usage above all) change with the plugin often.
   - url: https://github.com/pvginkel/KubeCoderConfig
-  # The aiworkflow.home site: the rules and guidelines that accompany the
-  # workflow, data modelling first. Its strict build and check run in the python
-  # toolchain; its image is built by the Jenkins job AIWorkflowSite.
-  - url: https://github.com/pvginkel/AIWorkflowSite
+  # The hub of https://dev-guides.home/, public: the index page, the root
+  # llms.txt, the shared guide checker tools/check_guide.py, and the one Jenkins
+  # job, DevGuides, that builds and publishes every guide. Its `kc project test`
+  # builds the hub over the three working trees under /work.
+  - url: https://github.com/pvginkel/DevGuides
+  # The private guides, published under dev-guides.home: data modelling, which
+  # derives from a copyrighted course.
+  - url: https://github.com/pvginkel/DevGuidesPrivate
+  # The source of the Jenkins guide (docs/), published at
+  # https://dev-guides.home/pipelines/. Here because the hub builds over it; the
+  # Ansible environment clones it too, so pull before working.
+  - url: https://github.com/pvginkel/JenkinsPipelineUtils
 
 capabilities:
   github: rw
   fleetAdmin: true
 
-# AIWorkflowSite's `kc project build` runs kaniko --no-push, the image its Jenkins job builds.
+# DevGuides' `kc project build` runs kaniko --no-push, the image its Jenkins job builds.
 imageBuilder: true
 
 tools:
@@ -46,7 +54,9 @@ preamble:
     The AI workflow's environment: the `dev` plugin marketplace
     (/work/AIWorkflow, with its spec repo in /work/AIWorkflowSpecs), and
     the `kubecoder` plugin marketplace in /work/KubeCoderConfig, and the
-    aiworkflow.home site in /work/AIWorkflowSite.
+    dev-guides.home repos: the hub in /work/DevGuides, the private guides in
+    /work/DevGuidesPrivate, and the Jenkins guide's source in
+    /work/JenkinsPipelineUtils.
 
     Toolchain sidecars:
 
