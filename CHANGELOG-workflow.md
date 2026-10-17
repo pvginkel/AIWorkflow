@@ -4,6 +4,26 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-17 — `preflight --for plan` blocks only on the repos the slice plans in and warns on the rest (v0.9.109)
+
+`preflight.py --for plan` takes `--slice <N|path>`, which `/dev:plan-slice` step 0 now passes.
+Only the target repo, the spec repo and the repos the slice's `plan.md` Targets name can stop
+planning. Every other repo the sync covers is still synced. A refusal in one of them (an
+unrebasable commit, a dirty tree, a live run's phase branch, no upstream, a failed fetch) is now
+one `warning:` line on exit 0, which the skill relays before carrying on. Under `plan`, a repo
+whose directory vanished mid-sync is skipped silently, in any repo of the set, and so is one whose
+GitHub origin answers `Repository not found`, with one warning line. In both profiles, a tree
+that is behind and dirty gets a second look two seconds later before it is refused. If git's
+`index.lock` was held, the refusal says to wait for the other git process, not to commit or
+stash. `--for run` is otherwise unchanged and still refuses every repo. `docs/preflight.md`
+§ Notes on the sync says so.
+
+Why: four sessions in Ansible and KubeCoder (2026-09-25 to 10-15) had planning stopped by a repo
+the slice never touched. One was a sibling with an obsolete local commit, one a transient `/work`
+clone that vanished mid-fetch, and one a sibling caught mid-pull, where "commit or stash" would
+have stashed the other process's half-applied checkout. The last was a set of scratch clones and
+a declared sibling whose GitHub repos had been deleted, reported one per run. (AIWF-71)
+
 ## 2026-10-16 — The doc phase's diff files carry the commits a phase's `Review:` ledger lists outside its Target (v0.9.108)
 
 `_write_doc_diffs` now writes a section for each commit a merged phase's `Review:` ledger gained

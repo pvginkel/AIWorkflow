@@ -22,12 +22,17 @@ schema):
 | `doc_phase.plan` set + exists, when on          |        |      |  x  |
 | `devlock.lease` resolvable, when set            |        |      |  x  |
 | Clean working tree                              |        |      |  x  |
-| Synced with origin (ff / rebase; refuse dirty)  |        |  x   |  x  |
+| Synced with origin (ff / rebase; refuse dirty)  |        |  x*  |  x  |
 | Baseline `kc project build` (all components)    |        |      |  x  |
 | Session plugin = installed (else print loop)    |        |  x   |  x  |
 
 A phase the project switched off is not checked: its pointer is absent by
 contract, and checking it would make an optional phase mandatory again.
+
+* Planning blocks only on the repos it may touch: the target repo, the spec
+repo, and every repo a Target of the `--slice` plan names. Any other repo's
+refusal is a `warning:` line and the sync goes on; a repo that vanished
+mid-sync, or whose GitHub origin is gone, is skipped. Run refuses them all.
 
 Two steps *act* rather than check. The sync pulls a clean base onto its own
 origin, which destroys nothing, while a repo with uncommitted work is refused,
@@ -35,7 +40,8 @@ never pulled over (docs/preflight.md, "Notes on the sync"). The guard removal
 deletes the pre-commit hook an older plugin installed in the spec repo's git
 dir — only a hook carrying the guard's marker; anyone else's is left alone.
 
-**Silent on success** (exit 0) — but for a line when it removed that hook, and
+**Silent on success** (exit 0) — but for a line when it removed that hook, a
+`warning:` line under plan for each repo the sync passed over (*, above), and
 one, printed last, when the plugin this session runs from is not the installed
 one: the installed copy of the loop the command launches, which the session
 launches instead. On failure, prints ONE
@@ -92,6 +98,19 @@ def fail(code: int, message: str):
     """Print one actionable message and exit with the contract/env code."""
     sys.stderr.write(message.rstrip("\n") + "\n")
     raise SystemExit(code)
+
+
+class Refusal(Exception):
+    """A repo the sync will not sync: the exit code and message to `fail`
+    with — or, in a repo planning does not block on, `summary`, the refusal
+    on one line (the message's first unless the refusal gives its own), for
+    the warning printed instead."""
+
+    def __init__(self, code: int, message: str, summary: str | None = None):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.summary = summary or message.splitlines()[0]
 
 
 def _git(args: list[str]) -> subprocess.CompletedProcess:
@@ -351,8 +370,9 @@ def _indented(note: str) -> str:
 
 def refuse_phase_branch(repo: Path, branch: str | None,
                         cfg: project_config.ProjectConfig | None) -> None:
-    """Refuse (exit 1) a repo on a `phase/` branch — telling a live run's
-    branch from one a bail left, and never advising a push or an upstream."""
+    """Refuse (a Refusal, exit 1) a repo on a `phase/` branch — telling a
+    live run's branch from one a bail left, and never advising a push or an
+    upstream."""
     if branch is None or not branch.startswith("phase/"):
         return
     name, path = repo.name, str(repo)
@@ -365,39 +385,47 @@ def refuse_phase_branch(repo: Path, branch: str | None,
     if slice_dir is None:
         whose = f" for slice {num}" if num else ""
         where = f" under {spec / 'slices'}" if spec and num else ""
-        fail(1,
-             f"{head}, a run loop's phase branch{whose} — not a branch to "
-             f"push or track. Preflight found no slice folder{where} to tell "
-             f"whether that run is live. If it is, wait for its phase to "
-             f"merge (the run checks the base branch back out itself); if it "
-             f"is not, once any work on the branch is committed, check "
-             f"`{name}`'s base branch back out, then retry.")
+        raise Refusal(
+            1,
+            f"{head}, a run loop's phase branch{whose} — not a branch to "
+            f"push or track. Preflight found no slice folder{where} to tell "
+            f"whether that run is live. If it is, wait for its phase to "
+            f"merge (the run checks the base branch back out itself); if it "
+            f"is not, once any work on the branch is committed, check "
+            f"`{name}`'s base branch back out, then retry.")
 
     lock = slice_dir / "run.lock"
     holder = run_lock_holder(lock)
     if holder is None:
-        fail(1,
-             f"{head}, a phase branch left by slice {num}'s run "
-             f"({slice_dir}), which is not running — nothing holds its "
-             f"run.lock. A bail leaves the branch checked out; the slice's "
-             f"log.txt says why. Once any work on the branch is committed, "
-             f"check `{name}`'s base branch back out, then retry. Never push "
-             f"a phase branch or give it an upstream: it is the run's own.")
+        raise Refusal(
+            1,
+            f"{head}, a phase branch left by slice {num}'s run "
+            f"({slice_dir}), which is not running — nothing holds its "
+            f"run.lock. A bail leaves the branch checked out; the slice's "
+            f"log.txt says why. Once any work on the branch is committed, "
+            f"check `{name}`'s base branch back out, then retry. Never push "
+            f"a phase branch or give it an upstream: it is the run's own.")
 
-    fail(1,
-         f"{head}, the phase branch of slice {num}'s run ({slice_dir}), and "
-         f"that run is live — {lock} is held by:\n{_indented(holder)}\n"
-         f"The run checked this branch out for its phase and checks the base "
-         f"branch back out itself once the phase merges. Wait for that, then "
-         f"retry. Do not set an upstream, push, or check anything out in "
-         f"`{name}` meanwhile — each would change a live run's branch under it.")
+    live = (f"{head}, the phase branch of slice {num}'s run ({slice_dir}), "
+            f"and that run is live")
+    raise Refusal(
+        1,
+        f"{live} — {lock} is held by:\n{_indented(holder)}\n"
+        f"The run checked this branch out for its phase and checks the base "
+        f"branch back out itself once the phase merges. Wait for that, then "
+        f"retry. Do not set an upstream, push, or check anything out in "
+        f"`{name}` meanwhile — each would change a live run's branch under it.",
+        summary=f"{live} ({lock} is held).")
 
 
 def check_clean_tree(root: Path,
                      cfg: project_config.ProjectConfig | None = None) -> None:
     # A dirty tree on a phase branch is most likely a live run's writer at
     # work — "commit or stash" is the one advice that must not reach it.
-    refuse_phase_branch(root, current_branch(root), cfg)
+    try:
+        refuse_phase_branch(root, current_branch(root), cfg)
+    except Refusal as refusal:
+        fail(refusal.code, refusal.message)
     result = _git(["-C", str(root), "status", "--porcelain"])
     if result.stdout.strip():
         fail(1,
@@ -440,7 +468,226 @@ def sync_roots(root: Path,
     return roots
 
 
-def check_synced(root: Path, cfg: project_config.ProjectConfig | None) -> None:
+def find_slice(cfg: project_config.ProjectConfig, given: str) -> Path:
+    """`--slice`'s folder: a directory path as given, else slice `given`
+    by number in the spec repo — zero-padded to the folders' three digits
+    when the number as given finds none."""
+    if Path(given).is_dir():
+        return Path(given)
+    nums = [given]
+    if given.isdigit() and given.zfill(3) != given:
+        nums.append(given.zfill(3))
+    for num in nums:
+        found = find_slice_dir(cfg.spec_repo, num)
+        if found is not None:
+            return found
+    fail(1,
+         f"`--slice {given}` names no slice folder: `{given}` is not a "
+         f"directory, and the spec repo {cfg.spec_repo} has no slice "
+         f"{' or '.join(nums)} under slices/, slices/backlog/ or "
+         f"slices/completed/. Give the slice's number or its folder's path, "
+         f"then retry.")
+
+
+def plan_targets(root: Path, slice_dir: Path) -> set[Path]:
+    """The repos the slice's plan.md targets, resolved: a sibling path
+    against the target repo, a `github:` Target as its scratch clone, a
+    component as the target repo itself (a component that lives in a sibling
+    is not looked up). Done phases count. The plan's structure errors, and a
+    malformed `github:` Target, are the plan loop's to name, not preflight's;
+    no plan.md yet is no Targets."""
+    plan = slice_dir / "plan.md"
+    if not plan.is_file():
+        return set()
+    phases, _errors = run_loop.parse_plan(plan.read_text())
+    repos = set()
+    for phase in phases:
+        target = phase.target
+        if not target:
+            continue
+        if target.startswith(("../", "/")):
+            repos.add((root / target).resolve())
+        elif github_target.is_github(target):
+            try:
+                repos.add(github_target.clone_path(target).resolve())
+            except ValueError:
+                continue
+        else:
+            repos.add(root.resolve())
+    return repos
+
+
+def strict_repos(root: Path, cfg: project_config.ProjectConfig | None,
+                 slice_arg: str | None) -> set[Path]:
+    """The repos planning blocks on, by resolved path: the target repo, the
+    spec repo, and — given `--slice` — every repo its plan targets."""
+    strict = {root.resolve()}
+    if cfg is not None and cfg.spec_repo is not None:
+        strict.add(cfg.spec_repo.resolve())
+    if slice_arg is not None:
+        strict |= plan_targets(root, find_slice(cfg, slice_arg))
+    return strict
+
+
+# A dirty tree may be another process's pull caught mid-checkout — a sibling
+# is half-applied for a moment, and "commit or stash" would capture that. So a
+# repo found behind and dirty is looked at once more after this wait (seconds).
+DIRTY_RECHECK_WAIT = 2
+
+# What GitHub answers a fetch from a repo that was deleted or moved:
+# `remote: Repository not found.`, then `fatal: repository '<url>' not found`.
+ORIGIN_GONE_MARKER = "repository not found"
+
+
+def _ahead_behind(path: str) -> tuple[int, int] | None:
+    """(ahead, behind) against the upstream; None when nothing is countable."""
+    counts = _git(["-C", path, "rev-list", "--left-right", "--count",
+                   "HEAD...@{u}"])
+    parts = counts.stdout.split()
+    if counts.returncode != 0 or len(parts) != 2 or not all(
+            p.isdigit() for p in parts):
+        return None
+    return int(parts[0]), int(parts[1])
+
+
+def _index_lock(repo: Path) -> Path | None:
+    """Where git's index lock for `repo` would be (relative answers are to
+    the repo); None when git does not say."""
+    where = _git(["-C", str(repo), "rev-parse", "--git-path", "index.lock"])
+    if where.returncode != 0 or not where.stdout.strip():
+        return None
+    lock = Path(where.stdout.strip())
+    return lock if lock.is_absolute() else repo / lock
+
+
+def _origin_gone(repo: Path) -> str:
+    """The warning for a repo whose GitHub origin no longer exists."""
+    name, path = repo.name, str(repo)
+    line = (f"warning: `{name}` ({path}) was not synced — its origin reports "
+            f"\"Repository not found\", so the repo was deleted or moved on "
+            f"GitHub; planning goes on without it.")
+    if _git(["-C", path, "config", "--get",
+             github_target.MARK_KEY]).stdout.strip():
+        line += (f" It is a workflow scratch clone: `git -C {path} config "
+                 f"--unset {github_target.MARK_KEY}` unmarks it.")
+    return line
+
+
+def _passed_over(repo: Path, refusal: Refusal) -> str:
+    """The warning for a refusal in a repo planning does not block on."""
+    return (f"warning: {refusal.summary} Not synced, as the slice's plan "
+            f"targets no part of `{repo.name}`: planning goes on, and "
+            f"`/dev:run-slice`'s preflight refuses it until it is resolved.")
+
+
+def _sync_repo(repo: Path, cfg: project_config.ProjectConfig | None,
+               planning: bool) -> str | None:
+    """One repo's sync (check_synced). Raises a Refusal where the repo is not
+    synced; returns the warning line a repo skipped under plan gets, if any."""
+    name, path = repo.name, str(repo)
+    branch_name = current_branch(repo)
+    if branch_name is None:
+        return None  # detached HEAD — nothing to pull onto
+    refuse_phase_branch(repo, branch_name, cfg)
+    tracking = _git(["-C", path, "rev-parse", "--abbrev-ref",
+                     "--symbolic-full-name", "@{u}"])
+    if tracking.returncode != 0:
+        raise Refusal(
+            1,
+            f"`{name}` ({path}) is on `{branch_name}`, a branch with no "
+            f"upstream — preflight syncs every repo of the environment "
+            f"with its origin before a slice starts, and a repo it skipped "
+            f"would report green having synced nothing. Set the tracking "
+            f"ref (`git -C {path} branch --set-upstream-to=origin/"
+            f"{branch_name}`) or push the branch with `-u`, then retry.")
+    upstream = tracking.stdout.strip()
+    remote = upstream.split("/", 1)[0]
+
+    fetched, attempts = _fetch(path, remote)
+    if fetched.returncode != 0:
+        if planning and not (repo / ".git").exists():
+            return None  # the checkout (or the whole dir) vanished mid-sync
+        if planning and ORIGIN_GONE_MARKER in (
+                (fetched.stderr or "") + (fetched.stdout or "")).lower():
+            return _origin_gone(repo)
+        if _lost_race(fetched):
+            why = (f"Another session in this pod was updating the same "
+                   f"clone's refs at the same moment — git's ref-update "
+                   f"race, not a network or credentials problem. Preflight "
+                   f"tried {attempts} times; a rerun normally clears it.")
+        else:
+            why = ("Check that the remote is reachable from this pod "
+                   "(network, credentials), then retry.")
+        output = fetched.stderr or fetched.stdout
+        raise Refusal(
+            2,
+            f"`git fetch {remote}` failed in `{name}` ({path}) "
+            f"(rc={fetched.returncode}). Preflight syncs every repo of the "
+            f"environment with its origin before a slice starts. {why}\n"
+            + output.rstrip("\n"))
+
+    counts = _ahead_behind(path)
+    if counts is None or counts[1] == 0:
+        return None  # nothing countable, up to date, or ahead only
+    ahead, behind = counts
+
+    status = _git(["-C", path, "status", "--porcelain"])
+    if status.stdout.strip():
+        # Another process's pull may be mid-checkout: look once more after a
+        # wait, and a held index lock at either look is that process.
+        lock = _index_lock(repo)
+        locked = lock is not None and lock.exists()
+        _sleep(DIRTY_RECHECK_WAIT)
+        counts = _ahead_behind(path)
+        if counts is None or counts[1] == 0:
+            return None  # whatever was pulling brought it up to date
+        ahead, behind = counts
+        status = _git(["-C", path, "status", "--porcelain"])
+        locked = locked or (lock is not None and lock.exists())
+        if status.stdout.strip() and locked:
+            raise Refusal(
+                1,
+                f"`{name}` ({path}) is {behind} behind {upstream} and has "
+                f"uncommitted changes while another git process works in it "
+                f"— its index lock {lock} was held as preflight looked. "
+                f"Committing or stashing now would capture that process's "
+                f"half-applied work, so don't: wait for it to finish, then "
+                f"retry.\n" + status.stdout.rstrip("\n"))
+        if status.stdout.strip():
+            raise Refusal(
+                1,
+                f"`{name}` ({path}) is {behind} behind {upstream} and has "
+                f"uncommitted changes — preflight will not pull over them. "
+                f"Commit or stash, or pull by hand, then retry.\n"
+                + status.stdout.rstrip("\n"))
+
+    if ahead == 0:
+        merged = _git(["-C", path, "merge", "--ff-only", "--quiet", "@{u}"])
+        if merged.returncode != 0:
+            raise Refusal(
+                1,
+                f"`{name}` ({path}) is {behind} behind {upstream} but "
+                f"`git merge --ff-only` refused it "
+                f"(rc={merged.returncode}) — bring it up to date by hand, "
+                f"then retry.\n"
+                + (merged.stderr or merged.stdout).rstrip("\n"))
+        return None
+
+    rebased = _git(["-C", path, "rebase", "--quiet", "@{u}"])
+    if rebased.returncode != 0:
+        _git(["-C", path, "rebase", "--abort"])
+        tail = (rebased.stdout + rebased.stderr).strip().splitlines()[-20:]
+        raise Refusal(
+            1,
+            f"`{name}` ({path}) has {ahead} local commits that do not "
+            f"rebase onto {upstream} ({behind} behind) — resolve by hand "
+            f"(rebase or merge), then retry. The rebase was aborted, so "
+            f"the repo stands where it did.\n" + "\n".join(tail))
+    return None
+
+
+def check_synced(root: Path, cfg: project_config.ProjectConfig | None,
+                 strict: set[Path] | None = None) -> None:
     """Bring every repo of the environment up to date with its origin.
 
     The *checked-out* branch is what gets synced, in the target repo and in
@@ -456,82 +703,26 @@ def check_synced(root: Path, cfg: project_config.ProjectConfig | None) -> None:
     rebase that conflicts is aborted (leaving the repo as it was) and handed to
     the operator. Ahead-only is left alone — unpushed commits are the
     operator's, and the run loop pushes at its test phase. A repo with
-    uncommitted changes is refused rather than pulled over.
+    uncommitted changes is refused rather than pulled over — after a second
+    look DIRTY_RECHECK_WAIT later, since another process's pull is dirty for a
+    moment; one whose index lock was held is told to wait, never to commit or
+    stash.
+
+    `strict` is the plan profile's set of repos that may block (strict_repos,
+    resolved paths); None, the run profile, makes every repo strict. Under
+    plan any other repo's refusal is printed as one `warning:` line and the
+    sync goes on, and every repo, strict or not, is skipped when it vanished
+    mid-sync (silently) or its GitHub origin is gone (with a warning line).
     """
     for repo in sync_roots(root, cfg):
-        name, path = repo.name, str(repo)
-        branch_name = current_branch(repo)
-        if branch_name is None:
-            continue  # detached HEAD — nothing to pull onto
-        refuse_phase_branch(repo, branch_name, cfg)
-        tracking = _git(["-C", path, "rev-parse", "--abbrev-ref",
-                         "--symbolic-full-name", "@{u}"])
-        if tracking.returncode != 0:
-            fail(1,
-                 f"`{name}` ({path}) is on `{branch_name}`, a branch with no "
-                 f"upstream — preflight syncs every repo of the environment "
-                 f"with its origin before a slice starts, and a repo it skipped "
-                 f"would report green having synced nothing. Set the tracking "
-                 f"ref (`git -C {path} branch --set-upstream-to=origin/"
-                 f"{branch_name}`) or push the branch with `-u`, then retry.")
-        upstream = tracking.stdout.strip()
-        remote = upstream.split("/", 1)[0]
-
-        fetched, attempts = _fetch(path, remote)
-        if fetched.returncode != 0:
-            output = fetched.stderr or fetched.stdout
-            if _lost_race(fetched):
-                why = (f"Another session in this pod was updating the same "
-                       f"clone's refs at the same moment — git's ref-update "
-                       f"race, not a network or credentials problem. Preflight "
-                       f"tried {attempts} times; a rerun normally clears it.")
-            else:
-                why = ("Check that the remote is reachable from this pod "
-                       "(network, credentials), then retry.")
-            fail(2,
-                 f"`git fetch {remote}` failed in `{name}` ({path}) "
-                 f"(rc={fetched.returncode}). Preflight syncs every repo of the "
-                 f"environment with its origin before a slice starts. {why}\n"
-                 + output.rstrip("\n"))
-
-        counts = _git(["-C", path, "rev-list", "--left-right", "--count",
-                       "HEAD...@{u}"])
-        parts = counts.stdout.split()
-        if counts.returncode != 0 or len(parts) != 2 or not all(
-                p.isdigit() for p in parts):
-            continue  # nothing countable — nothing to act on
-        ahead, behind = int(parts[0]), int(parts[1])
-        if behind == 0:
-            continue  # up to date, or ahead only
-
-        status = _git(["-C", path, "status", "--porcelain"])
-        if status.stdout.strip():
-            fail(1,
-                 f"`{name}` ({path}) is {behind} behind {upstream} and has "
-                 f"uncommitted changes — preflight will not pull over them. "
-                 f"Commit or stash, or pull by hand, then retry.\n"
-                 + status.stdout.rstrip("\n"))
-
-        if ahead == 0:
-            merged = _git(["-C", path, "merge", "--ff-only", "--quiet", "@{u}"])
-            if merged.returncode != 0:
-                fail(1,
-                     f"`{name}` ({path}) is {behind} behind {upstream} but "
-                     f"`git merge --ff-only` refused it "
-                     f"(rc={merged.returncode}) — bring it up to date by hand, "
-                     f"then retry.\n"
-                     + (merged.stderr or merged.stdout).rstrip("\n"))
-            continue
-
-        rebased = _git(["-C", path, "rebase", "--quiet", "@{u}"])
-        if rebased.returncode != 0:
-            _git(["-C", path, "rebase", "--abort"])
-            tail = (rebased.stdout + rebased.stderr).strip().splitlines()[-20:]
-            fail(1,
-                 f"`{name}` ({path}) has {ahead} local commits that do not "
-                 f"rebase onto {upstream} ({behind} behind) — resolve by hand "
-                 f"(rebase or merge), then retry. The rebase was aborted, so "
-                 f"the repo stands where it did.\n" + "\n".join(tail))
+        try:
+            warning = _sync_repo(repo, cfg, planning=strict is not None)
+        except Refusal as refusal:
+            if strict is None or repo.resolve() in strict:
+                fail(refusal.code, refusal.message)
+            warning = _passed_over(repo, refusal)
+        if warning:
+            print(warning)
 
 
 # kc's exit code for "nothing ran" (KC-81; run_loop.KC_NOTHING_RAN): a project
@@ -593,7 +784,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--for", dest="profile", required=True,
                         choices=sorted(PROFILES), help="which command's profile to run")
+    parser.add_argument("--slice", metavar="N|PATH",
+                        help="plan only: the slice (its number or folder) whose "
+                             "plan's Targets may block the sync")
     args = parser.parse_args()
+    if args.slice is not None and args.profile != "plan":
+        parser.error("--slice applies to --for plan only")
     checks = PROFILES[args.profile]
 
     # kc first (env gate), before anything that shells out to it; the control
@@ -619,13 +815,15 @@ def main() -> None:
     if "clean_tree" in checks:
         check_clean_tree(root, cfg)
     if "synced" in checks:
-        check_synced(root, cfg)
+        strict = (strict_repos(root, cfg, args.slice)
+                  if args.profile == "plan" else None)
+        check_synced(root, cfg, strict)
     if "baseline_build" in checks:
         check_baseline_build(root)
     # Last, so it is printed only on a pass, never beside a failure's message.
     if "plugin_current" in checks:
         check_plugin_current(args.profile)
-    # Silent on success, but for that line.
+    # Silent on success, but for that line and the sync's warnings.
 
 
 if __name__ == "__main__":

@@ -21,8 +21,10 @@ what realises the slice card and its states is your host convention. **Load that
 before the first tracker call** — where the host ships it as a skill, invoke the skill: nothing
 in the pipeline loads it for you, and a convention that is not in context gets guessed at.
 
-**Preflight (step 0).** Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for plan` and relay its
-message verbatim if it exits non-zero. A silent exit 0 means every gate passed; a line on exit 0
+**Preflight (step 0).** Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for plan --slice
+<the slice number or path>` and relay its message verbatim if it exits non-zero. A silent exit 0
+means every gate passed. A `warning:` line on exit 0 names a repo preflight left unsynced, one this
+slice's planning does not need: relay it to the operator and carry on. Any other line on exit 0
 names the installed `plan_loop.py` — this session's plugin copy is stale, so launch and rerun
 the loop from that path wherever this skill says `${CLAUDE_PLUGIN_ROOT}/tools/plan_loop.py`.
 

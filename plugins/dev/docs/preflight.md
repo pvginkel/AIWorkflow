@@ -8,7 +8,8 @@ the spec repo (§ Notes on the spec-tree guard), and the sync that brings the en
 up to their origins (§ Notes on the sync).
 
 **Silent on success** — but for one line, on a pass, when the session's plugin copy is stale
-(§ Notes on the plugin check). On failure it prints **one** actionable message — what is missing,
+(§ Notes on the plugin check), and under `plan` a `warning:` line for each repo the sync passed
+over (§ Notes on the sync). On failure it prints **one** actionable message — what is missing,
 the exact line/fix, and a pointer to `project-contract.md` — so a new repo self-onboards from the
 error text. Each skill relays that message verbatim on a non-zero exit and stops; the run loop
 does **not** re-run preflight, so `/dev:run-slice` is the gate.
@@ -36,7 +37,7 @@ does **not** re-run preflight, so `/dev:run-slice` is the gate.
 | `doc_phase.plan` set + exists — only when the phase runs | – | – | ✓ |
 | `devlock.lease` resolvable — only when one is named | – | – | ✓ |
 | Clean working tree | – | – | ✓ |
-| Synced with origin: fetch, then fast-forward or rebase the checked-out branch — the target repo, every checkout beside it, the spec repo | – | ✓ | ✓ |
+| Synced with origin: fetch, then fast-forward or rebase the checked-out branch — the target repo, every checkout beside it, the spec repo; under `plan` only the target repo, the spec repo and the `--slice` plan's Target repos block | – | ✓ | ✓ |
 | Baseline: `kc project build` (all components) | – | – | ✓ |
 | The session's plugin is the installed one — else a line naming the installed loop, still a pass | – | ✓ | ✓ |
 
@@ -89,6 +90,19 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   already assumes — then the spec repo if it lives elsewhere, then every clone under
   `/work/scratch/` that the run loop made or adopted for a `github:` Target (it marks them;
   a hand clone there is not the environment's and is left alone).
+- **Which repos block, under `plan`.** The target repo, the spec repo, and every repo a Target
+  of the slice's `plan.md` names — `/dev:plan-slice` passes the slice as `--slice <N|path>`, and
+  without a `plan.md` yet that is the first two. A `../Repo` Target is that sibling, a `github:`
+  Target its scratch clone, a component the target repo (a component living in a sibling is not
+  looked up). Every other repo is still synced, but a refusal there — any of the ones below — is
+  one `warning:` line on exit 0, and the sync goes on: planning does not read or write it, and a
+  stranger's repo (an unrebasable local commit, another process's pull, a live run's branch) is
+  not the planner's to settle. The run profile refuses it until it is resolved. Two more cases
+  are skipped under `plan` in any repo: one whose directory vanished mid-sync (silently — a
+  transient clone under `/work`), and one whose GitHub origin answers `Repository not found`
+  (one `warning:` line; the repo was deleted or moved, and for a marked scratch clone the line
+  names the `git config --unset aiworkflow.scratchClone` that unmarks it). Under `run` both stay
+  the failed fetch they are.
 - **Which branch.** The checked-out one, against its upstream, because that *is* the base: the run
   loop records as a repo's base whatever branch is checked out the first time it touches that repo
   ([`run-loop.md`](run-loop.md)). Detached HEAD → skipped. A run loop's `phase/<slice>-…` branch
@@ -109,7 +123,11 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   (unpushed commits are the operator's, and the run pushes at its test phase). Behind and clean →
   fast-forward, or rebase when local commits sit on top — a rebase that conflicts is aborted and
   reported. Behind and dirty → refused: preflight never pulls over uncommitted changes, in any repo,
-  the shared spec repo included.
+  the shared spec repo included. Before it refuses, it looks once more after two seconds, because
+  another process's pull leaves a tree dirty for a moment: clean at the second look, the repo
+  syncs on the second look's counts. Still dirty while git's `index.lock` was held at either look
+  → refused with "wait for it to finish", never "commit or stash", which would capture that
+  process's half-applied checkout.
 - **Exit codes.** A fetch that fails is environment (exit 2). A refused dirty tree, a branch with no
   upstream or a rebase that does not apply is the operator's to resolve by hand (exit 1) — the
   relaying session does not resolve it either. A repo on a phase branch is exit 1 too, but a

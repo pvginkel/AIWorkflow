@@ -5,9 +5,12 @@ pointers, and how all of them are wired into main.
 it is checked before the repo is resolved, and triage — which dispatches
 nothing — is deliberately exempt. `check_synced` / `sync_roots`: which
 checkouts the environment syncs, and what fast-forward, rebase, ahead-only,
-dirty, detached, no upstream and a dead remote each do. A repo on a run loop's
-phase branch — live run, bailed run, no slice folder — is refused before either
-the sync or the clean-tree check acts on it. The phase pointers and the devlock
+dirty, detached, no upstream and a dead remote each do, and the second look a
+dirty tree gets. A repo on a run loop's phase branch — live run, bailed run, no
+slice folder — is refused before either the sync or the clean-tree check acts
+on it. Under plan, only the target, the spec repo and what the `--slice` plan
+targets block; any other repo's refusal is a warning line, and a vanished repo
+or a gone GitHub origin is skipped. The phase pointers and the devlock
 follow, and the retired spec-tree guard: its removal from the spec repo's git
 dir, over real git. The kc/manifest/baseline checks and the rest of clean-tree
 are not covered here.
@@ -92,7 +95,8 @@ class scripted_subprocess:
 
     A matcher is a token or a tuple of tokens that must appear in the argv in
     order — `"fetch"` answers every fetch, `("/work/Specs", "rebase")` only one
-    repo's."""
+    repo's. A list of answers is given out one call at a time, its last one
+    repeated — a repo that changes between two looks."""
 
     def __init__(self, rules=()):
         self.rules = [((m,) if isinstance(m, str) else tuple(m), r)
@@ -102,21 +106,24 @@ class scripted_subprocess:
     def run(self, argv, **kwargs):
         argv = list(argv)
         self.calls.append(argv)
-        for tokens, (code, out, err) in self.rules:
+        for tokens, answer in self.rules:
             if argv_has(tokens, argv):
-                return subprocess.CompletedProcess(argv, code, out, err)
+                if isinstance(answer, list):
+                    answer = answer.pop(0) if len(answer) > 1 else answer[0]
+                return subprocess.CompletedProcess(argv, *answer)
         return subprocess.CompletedProcess(argv, 0, "", "")
 
     def called(self, *tokens):
         return any(argv_has(tokens, argv) for argv in self.calls)
 
 
-def run_main(profile, subproc):
-    """main() for one profile with `kc` on PATH and a stubbed subprocess.
-    Returns (exit_code, stderr) — exit_code None when it passed silently."""
+def run_main(profile, subproc, slice_=None):
+    """main() for one profile (and `--slice`) with `kc` on PATH and a stubbed
+    subprocess. Returns (exit_code, stderr) — exit_code None when it passed
+    silently."""
     stderr = io.StringIO()
     kc_on_path = types.SimpleNamespace(which=lambda name: "/usr/local/bin/kc")
-    argv = types.SimpleNamespace(profile=profile)
+    argv = types.SimpleNamespace(profile=profile, slice=slice_)
     parser = types.SimpleNamespace(
         add_argument=lambda *a, **k: None, parse_args=lambda: argv)
     fake_argparse = types.SimpleNamespace(ArgumentParser=lambda **k: parser)
@@ -290,9 +297,12 @@ def repo_rules(counts, dirty="", first=()):
 
 def synced(subproc, roots=(APP,)):
     """Patch preflight for a `check_synced` run over a fixed repo list — the
-    repo set is `sync_roots`' business, so no filesystem is touched here."""
+    repo set is `sync_roots`' business, so no filesystem is touched here —
+    and with no real wait: a test that counts the waits patches `_sleep`
+    again inside."""
     return patched(preflight, subprocess=subproc,
-                   sync_roots=lambda root, cfg: list(roots))
+                   sync_roots=lambda root, cfg: list(roots),
+                   _sleep=lambda seconds: None)
 
 
 def test_a_repo_already_at_its_origin_is_left_alone():
@@ -559,6 +569,92 @@ def test_plan_and_run_sync_the_environment_and_triage_does_not():
             < run.index("baseline_build"))
 
 
+# -- a dirty tree, looked at twice -------------------------------------------
+
+DIRTY = (0, " M app.py\n", "")
+CLEAN = (0, "", "")
+
+
+def test_a_tree_dirty_for_a_moment_is_synced_on_the_second_look():
+    """Another process's pull caught mid-checkout: dirty at the first look,
+    clean one wait later — so the repo syncs, in both profiles, on the
+    counts of the second look (here it gained a commit: a rebase, not the
+    first look's fast-forward)."""
+    for strict in (None, {APP.resolve()}):
+        subproc = scripted_subprocess(repo_rules("0\t3", first=[
+            ("rev-list", [(0, "0\t3", ""), (0, "1\t4", "")]),
+            (("status", "--porcelain"), [DIRTY, CLEAN])]))
+        slept, out = [], io.StringIO()
+        with synced(subproc), patched(preflight, _sleep=slept.append), \
+                contextlib.redirect_stdout(out):
+            preflight.check_synced(APP, None, strict)
+        assert slept == [preflight.DIRTY_RECHECK_WAIT], strict
+        assert subproc.called("rebase", "@{u}"), strict
+        assert not subproc.called("merge"), strict
+        assert out.getvalue() == "", strict
+
+
+def test_a_tree_the_other_process_brought_level_is_left_alone():
+    """Dirty and behind at the first look, level with origin at the second:
+    whatever was pulling finished the job, and nothing is left to do."""
+    for strict in (None, {APP.resolve()}):
+        subproc = scripted_subprocess(repo_rules("0\t3", first=[
+            ("rev-list", [(0, "0\t3", ""), (0, "0\t0", "")]),
+            (("status", "--porcelain"), DIRTY)]))
+        with synced(subproc):
+            preflight.check_synced(APP, None, strict)
+        assert not subproc.called("merge") and not subproc.called("rebase")
+
+
+def test_a_tree_still_dirty_under_a_held_index_lock_is_told_to_wait_not_stash():
+    """Another git process is working in the repo — its index.lock was there
+    at the first look, the second, or both — and "commit or stash" would
+    capture its half-applied work. Exit 1 naming the lock, in both profiles;
+    the path git answers is relative to the repo."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _checkout(Path(tmp) / "App")
+        lock = repo / ".git" / "index.lock"
+        looks = ((True, lambda s: None), (True, lambda s: lock.unlink()),
+                 (False, lambda s: lock.write_text("")))
+        for strict in (None, {repo.resolve()}):
+            for held_first, during_wait in looks:
+                lock.unlink(missing_ok=True)
+                if held_first:
+                    lock.write_text("")
+                subproc = scripted_subprocess(repo_rules(
+                    "0\t3", dirty=" M app.py\n", first=[
+                        (("--git-path", "index.lock"),
+                         (0, ".git/index.lock\n", ""))]))
+                with synced(subproc, roots=(repo,)), \
+                        patched(preflight, _sleep=during_wait):
+                    code, message = refused(preflight.check_synced, repo,
+                                            None, strict)
+                assert code == 1
+                assert "another git process" in message
+                assert str(lock) in message
+                assert "so don't" in message and "wait for it to finish" in message
+                assert "Commit or stash" not in message
+                assert not subproc.called("merge")
+                assert not subproc.called("rebase")
+
+
+def test_a_tree_still_dirty_with_no_index_lock_gets_the_established_refusal():
+    """No git process at work, and still dirty after the wait: someone's own
+    uncommitted work, refused as it always was — looked at twice first."""
+    subproc = scripted_subprocess(repo_rules("0\t3", dirty=" M app.py\n"))
+    slept = []
+    with synced(subproc), patched(preflight, _sleep=slept.append):
+        code, message = refused(preflight.check_synced, APP, None)
+    assert code == 1
+    assert message == ("`App` (/work/App) is 3 behind origin/main and has "
+                       "uncommitted changes — preflight will not pull over "
+                       "them. Commit or stash, or pull by hand, then retry.\n"
+                       " M app.py\n")
+    assert slept == [preflight.DIRTY_RECHECK_WAIT]
+    assert sum(argv_has(("rev-list",), argv) for argv in subproc.calls) == 2
+    assert sum(argv_has(("status",), argv) for argv in subproc.calls) == 2
+
+
 # -- a run loop's phase branch -----------------------------------------------
 
 @contextlib.contextmanager
@@ -694,6 +790,269 @@ def test_a_dirty_target_on_a_live_phase_branch_hears_wait_not_stash():
     assert "live" in message and "stash" not in message
 
 
+# -- planning: the repos that block it, the ones it passes over --------------
+
+SIB = Path("/work/Sib")
+OTHER = Path("/work/Other")
+CONFLICT = (1, "", "CONFLICT (content): in app.py\n")
+
+
+def planned(subproc, roots, strict, cfg=None):
+    """check_synced under plan over `roots`, the repos in `strict` blocking;
+    returns what it printed (it must not bail)."""
+    out = io.StringIO()
+    with synced(subproc, roots=roots), contextlib.redirect_stdout(out):
+        preflight.check_synced(roots[0], cfg, {p.resolve() for p in strict})
+    return out.getvalue()
+
+
+def passed_over(said, name):
+    """One warning line for `name`, saying why planning went on."""
+    assert said.count("\n") == 1, said
+    assert said.startswith(f"warning: `{name}` "), said
+    assert "plan targets no part of" in said and "planning goes on" in said
+    assert "`/dev:run-slice`'s preflight refuses it" in said
+
+
+def test_under_plan_a_sibling_whose_rebase_conflicts_is_a_warning_and_the_sync_goes_on():
+    """A repo no Target of the slice names cannot hold planning up: its
+    refusal becomes one `warning:` line — the refusal's first line and why
+    it was passed over, not git's output — and the repos after it sync."""
+    subproc = scripted_subprocess(repo_rules("2\t3", first=[
+        (("/work/Sib", "rebase", "@{u}"), CONFLICT)]))
+    said = planned(subproc, (APP, SIB, OTHER), strict=(APP,))
+    passed_over(said, "Sib")
+    assert "do not rebase onto origin/main" in said and "CONFLICT" not in said
+    assert subproc.called("/work/Sib", "rebase", "--abort")
+    assert subproc.called("/work/Other", "rebase", "@{u}")
+
+
+def test_under_plan_a_sibling_dirty_and_behind_is_a_warning_and_the_sync_goes_on():
+    """Typically a sibling another process is pulling, or someone's work in
+    progress there — neither is the plan's to settle."""
+    subproc = scripted_subprocess(repo_rules("0\t3", first=[
+        (("/work/Sib", "status", "--porcelain"), (0, " M x.py\n", ""))]))
+    said = planned(subproc, (APP, SIB, OTHER), strict=(APP,))
+    passed_over(said, "Sib")
+    assert "uncommitted changes" in said and "x.py" not in said
+    assert not subproc.called("/work/Sib", "merge")
+    assert subproc.called("/work/Other", "merge", "--ff-only", "@{u}")
+
+
+def test_under_plan_a_sibling_on_a_live_runs_phase_branch_is_a_warning():
+    """A run working in a repo the plan does not touch: one line, naming the
+    run's lock — the holder's note stays out of it — and nothing fetched."""
+    with tempfile.TemporaryDirectory() as tmp:
+        spec = a_spec_repo(tmp, "231_contract_slimming")
+        lock = spec / "slices" / "231_contract_slimming" / "run.lock"
+        subproc = scripted_subprocess(repo_rules("0\t3", first=[
+            (("/work/Sib", "symbolic-ref"), (0, "phase/231-P1\n", ""))]))
+        with held_run_lock(lock, HOLDER):
+            said = planned(subproc, (APP, SIB, OTHER), strict=(APP, spec),
+                           cfg=a_config(spec_repo=spec))
+    passed_over(said, "Sib")
+    assert "phase/231-P1" in said and "run is live" in said
+    assert f"({lock} is held)." in said and "pid: 4242" not in said
+    assert not subproc.called("/work/Sib", "fetch")
+    assert subproc.called("/work/Other", "merge", "--ff-only", "@{u}")
+
+
+def test_under_plan_the_same_refusal_in_the_target_or_spec_repo_still_fails():
+    """The repos planning reads and writes block it — with the run profile's
+    code and message, byte for byte."""
+    specs = Path("/work/Specs")
+    for repo in (APP, specs):
+        outcomes = []
+        for strict in (None, {APP.resolve(), specs.resolve()}):
+            subproc = scripted_subprocess(repo_rules("2\t3", first=[
+                ((str(repo), "rebase", "@{u}"), CONFLICT)]))
+            with synced(subproc, roots=(APP, specs)):
+                outcomes.append(refused(preflight.check_synced, APP, None,
+                                        strict))
+        assert outcomes[0] == outcomes[1], repo
+        assert outcomes[0][0] == 1 and f"`{repo.name}`" in outcomes[0][1]
+
+
+PLAN = """# Slice 007 — the widget
+
+### P1 — the widget's model ✅ DONE
+Target: {target}
+
+### P2 — a malformed repo Target, the plan loop's to name
+Target: github:not-a-repo
+"""
+
+
+def a_slice_layout(tmp, target):
+    """work/App (the target repo) and work/Sib beside it, and a spec repo
+    holding slice 007, whose plan's (done) P1 targets `target`. Returns
+    (app, sib, cfg)."""
+    work = Path(tmp) / "work"
+    app, sib = _checkout(work / "App"), _checkout(work / "Sib")
+    spec = a_spec_repo(work, "007_widget")
+    (spec / "slices" / "007_widget" / "plan.md").write_text(
+        PLAN.format(target=target))
+    return app, sib, a_config(spec_repo=spec)
+
+
+def test_a_slice_whose_plan_targets_a_sibling_makes_that_sibling_block():
+    """`--slice`: a sibling a Target names — a done phase's counts too — is
+    one the plan may touch, so its refusal fails planning as under run."""
+    with tempfile.TemporaryDirectory() as tmp:
+        app, sib, cfg = a_slice_layout(tmp, "../Sib")
+        strict = preflight.strict_repos(app, cfg, "7")
+        assert strict == {app.resolve(), cfg.spec_repo.resolve(),
+                          sib.resolve()}
+        subproc = scripted_subprocess(repo_rules("2\t3", first=[
+            ((str(sib), "rebase", "@{u}"), CONFLICT)]))
+        with synced(subproc, roots=(app, sib)):
+            code, message = refused(preflight.check_synced, app, cfg, strict)
+    assert code == 1 and "`Sib`" in message and "do not rebase" in message
+
+
+def test_a_slice_whose_plan_targets_a_github_repo_makes_its_scratch_clone_block():
+    with tempfile.TemporaryDirectory() as tmp:
+        app, sib, cfg = a_slice_layout(tmp, "github:acme/Widget")
+        scratch = Path(tmp) / "work" / "scratch"
+        clone = _checkout(scratch / "Widget")
+        with patched(preflight.github_target, SCRATCH_ROOT=scratch):
+            strict = preflight.strict_repos(app, cfg, "7")
+        assert strict == {app.resolve(), cfg.spec_repo.resolve(),
+                          clone.resolve()}
+        subproc = scripted_subprocess(repo_rules("2\t3", first=[
+            ((str(clone), "rebase", "@{u}"), CONFLICT)]))
+        with synced(subproc, roots=(app, sib, clone)):
+            code, message = refused(preflight.check_synced, app, cfg, strict)
+    assert code == 1 and "`Widget`" in message
+
+
+def test_a_slice_whose_plan_targets_a_component_leaves_the_siblings_warned():
+    """A `kc project list` component is taken to live in the target repo —
+    a component in a sibling is not looked up — so a sibling's refusal is
+    still only a warning."""
+    with tempfile.TemporaryDirectory() as tmp:
+        app, sib, cfg = a_slice_layout(tmp, "frontend")
+        strict = preflight.strict_repos(app, cfg, "7")
+        assert strict == {app.resolve(), cfg.spec_repo.resolve()}
+        subproc = scripted_subprocess(repo_rules("2\t3", first=[
+            ((str(sib), "rebase", "@{u}"), CONFLICT)]))
+        said = planned(subproc, (app, sib), strict=strict, cfg=cfg)
+    passed_over(said, "Sib")
+
+
+def test_a_slice_number_finds_its_zero_padded_folder_and_a_path_is_taken_as_given():
+    with tempfile.TemporaryDirectory() as tmp:
+        _, _, cfg = a_slice_layout(tmp, "../Sib")
+        folder = cfg.spec_repo / "slices" / "007_widget"
+        for given in ("7", "007", str(folder)):
+            assert preflight.find_slice(cfg, given) == folder, given
+
+
+def test_a_slice_that_names_no_folder_fails():
+    """Exit 1, naming what was looked for and where."""
+    with tempfile.TemporaryDirectory() as tmp:
+        app, _, cfg = a_slice_layout(tmp, "../Sib")
+        code, message = refused(preflight.strict_repos, app, cfg, "8")
+    assert code == 1
+    assert "`--slice 8`" in message and "8 or 008" in message
+    assert str(cfg.spec_repo) in message and "slices/backlog/" in message
+
+
+def test_slice_with_another_profile_is_a_usage_error():
+    """`--slice` says which repos planning blocks on; no other profile has
+    such a set, so it is refused by argparse (exit 2) before anything runs."""
+    for profile in ("triage", "run"):
+        stderr = io.StringIO()
+        argv = ["preflight.py", "--for", profile, "--slice", "7"]
+        with patched(preflight.sys, argv=argv), \
+                contextlib.redirect_stderr(stderr):
+            try:
+                preflight.main()
+                raise AssertionError("expected SystemExit")
+            except SystemExit as exit_:
+                assert exit_.code == 2, profile
+        assert "--slice applies to --for plan only" in stderr.getvalue()
+
+
+def test_plan_hands_the_sync_its_strict_repos_and_run_hands_it_none():
+    """main's wiring: under plan the target and spec repos block, plus what
+    the `--slice` plan targets; under run every repo does (None)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        app, sib, cfg = a_slice_layout(tmp, "../Sib")
+        handed = []
+        quiet = {name: (lambda *a, **k: None) for name in (
+            "check_kc", "check_kc_status", "check_manifest", "check_pointer",
+            "remove_spec_tree_guard", "check_phase_pointers",
+            "check_devlock", "check_clean_tree", "check_baseline_build",
+            "check_plugin_current")}
+        for profile, slice_ in (("plan", "7"), ("plan", None), ("run", None)):
+            with patched(preflight, repo_root=lambda: app,
+                         load_config=lambda root: cfg,
+                         check_synced=lambda r, c, strict: handed.append(strict),
+                         **quiet):
+                code, _ = run_main(profile, fake_subprocess(), slice_)
+            assert code is None, profile
+    both = {app.resolve(), cfg.spec_repo.resolve()}
+    assert handed == [both | {sib.resolve()}, both, None]
+
+
+FETCH_HEAD_GONE = (128, "", "error: cannot open '.git/FETCH_HEAD': No such "
+                            "file or directory\n")
+
+
+def test_under_plan_a_repo_that_vanished_mid_fetch_is_skipped_silently():
+    """A transient /work dir removed while the sync fetched it: nothing left
+    to sync and nothing to say, strict or not. Under run it is the fetch
+    failure it always was."""
+    with tempfile.TemporaryDirectory() as tmp:
+        gone = Path(tmp) / "Gone"  # no longer there by the time it is looked at
+        rules = [((str(gone), "fetch"), FETCH_HEAD_GONE)]
+        for strict in ((APP,), (APP, gone)):
+            subproc = scripted_subprocess(repo_rules("0\t3", first=rules))
+            said = planned(subproc, (APP, gone, OTHER), strict=strict)
+            assert said == "", strict
+            assert subproc.called("/work/Other", "merge", "--ff-only", "@{u}")
+        subproc = scripted_subprocess(repo_rules("0\t3", first=rules))
+        with synced(subproc, roots=(APP, gone)):
+            code, message = refused(preflight.check_synced, APP, None)
+    assert code == 2 and "FETCH_HEAD" in message
+
+
+NOT_FOUND = (128, "", "remote: Repository not found.\nfatal: repository "
+                      "'https://github.com/acme/Gone/' not found\n")
+
+
+def test_under_plan_a_repo_whose_github_origin_is_gone_is_skipped_with_one_warning():
+    """The repo was deleted or moved on GitHub — no retry brings it back, so
+    planning goes on past it, strict or not, with one line saying so; a
+    marked scratch clone's line says how to unmark it. Under run it is the
+    exit-2 fetch failure it always was."""
+    with tempfile.TemporaryDirectory() as tmp:
+        gone = _checkout(Path(tmp) / "Gone")
+        rules = [((str(gone), "fetch"), NOT_FOUND)]
+        for strict in ((APP,), (APP, gone)):
+            subproc = scripted_subprocess(repo_rules("0\t3", first=rules))
+            said = planned(subproc, (APP, gone, OTHER), strict=strict)
+            assert said.count("\n") == 1, said
+            assert said.startswith(f"warning: `Gone` ({gone}) was not synced")
+            assert '"Repository not found"' in said
+            assert "deleted or moved on GitHub" in said
+            assert "--unset" not in said
+            assert subproc.called("/work/Other", "merge", "--ff-only", "@{u}")
+        marked = [*rules, ((str(gone), "config", "--get",
+                            preflight.github_target.MARK_KEY),
+                           (0, "acme/Gone\n", ""))]
+        said = planned(scripted_subprocess(repo_rules("0\t3", first=marked)),
+                       (APP, gone), strict=(APP,))
+        assert said.count("\n") == 1
+        assert (f"`git -C {gone} config --unset aiworkflow.scratchClone` "
+                f"unmarks it") in said
+        subproc = scripted_subprocess(repo_rules("0\t3", first=rules))
+        with synced(subproc, roots=(APP, gone)):
+            code, message = refused(preflight.check_synced, APP, None)
+    assert code == 2 and "Repository not found" in message
+
+
 # -- one live call -----------------------------------------------------------
 
 # -- check_baseline_build ----------------------------------------------------
@@ -797,7 +1156,8 @@ def test_the_plugin_line_comes_last_and_only_for_plan_and_run():
     stubs = ["check_kc", "check_kc_status", "repo_root", "check_manifest",
              "load_config", "check_pointer", "remove_spec_tree_guard",
              "check_phase_pointers", "check_devlock", "check_clean_tree",
-             "check_synced", "check_baseline_build", "check_plugin_current"]
+             "strict_repos", "check_synced", "check_baseline_build",
+             "check_plugin_current"]
     for profile in ("triage", "plan", "run"):
         calls = []
         recorders = {name: (lambda *a, _n=name, _c=calls, **k: _c.append(_n))
