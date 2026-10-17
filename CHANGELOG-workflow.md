@@ -4,6 +4,20 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-17 — Dispatched roles keep the `kubecoder-worker` MCP server (v0.9.110)
+
+`PROMOTED_MCP_SERVERS` in `run_loop.py` now names `kubecoder-worker` beside `fieldnotes` and
+`gitblit`, so every role spawned under `--strict-mcp-config` has the worker's `notification` tool.
+The entry is copied verbatim out of `~/.claude.json` like the others, its
+`${KUBECODER_SESSION_NAME:-}` header included, for the spawned claude to expand. Jenkins stays the
+test-agent's. `docs/agent-dispatch.md` § Spawning says why it is promoted.
+
+Why: four reports from SecretRotator, Ansible and AnsibleSpecs (2026-10-05 to 10-11). A ruling
+that asked a role to keep the operator posted could not be followed: only the test-agent had the
+tool, and the way round was a hand-made call to the worker's unauthenticated loopback endpoint. In
+AnsibleSpecs slice 059 a plan-writer pass went to working out whether the code-writer could notify
+at all. (AIWF-72)
+
 ## 2026-10-17 — `preflight --for plan` blocks only on the repos the slice plans in and warns on the rest (v0.9.109)
 
 `preflight.py --for plan` takes `--slice <N|path>`, which `/dev:plan-slice` step 0 now passes.

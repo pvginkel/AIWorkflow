@@ -310,9 +310,11 @@ MCP_ROLES = frozenset({"test-agent"})
 # the friction it hit while working, which is why every role needs it.
 # Gitblit is the read-only mirror of the operator's GitHub repos, so a role can
 # search the code of repos the environment does not check out (a slice ruling
-# may point it at gitblit's `find_files`); it needs no token. Naming the
+# may point it at gitblit's `find_files`); it needs no token. The KubeCoder
+# worker carries `notification`, so a ruling that asks a role to keep the
+# operator posted works as written; Jenkins stays the test-agent's. Naming the
 # servers here is fine: AIWorkflow is bespoke to this host.
-PROMOTED_MCP_SERVERS = ("fieldnotes", "gitblit")
+PROMOTED_MCP_SERVERS = ("fieldnotes", "gitblit", "kubecoder-worker")
 
 # The two sides of that copy. A promoted entry may carry a bearer token, so the
 # copy lives under the user's home, which no repo contains — never a command

@@ -50,7 +50,10 @@ validation.
   there and not into the report ([close-out.md](close-out.md#what-it-is--and-is-not)), and a role
   that cannot post cannot follow that rule. `gitblit`, the read-only mirror of the operator's
   repos, because a role — or a slice ruling it follows — may need the code of a repo the
-  environment does not check out; it carries no token and reaches no tracker. The loop copies each
+  environment does not check out; it carries no token and reaches no tracker. `kubecoder-worker`,
+  the environment's own worker, for its `notification` tool, so a ruling that asks a role to keep
+  the operator posted works as written; its session header (`${KUBECODER_SESSION_NAME:-}`) is
+  copied unexpanded and the spawned claude expands it. The loop copies each
   named entry verbatim out of the user-level `mcpServers` of `~/.claude.json` into
   `~/.claude/aiworkflow-promoted-mcp.json` (mode 0600, written atomically, once per process at the
   first dispatch) and passes that path as `--mcp-config` beside `--strict-mcp-config`. An entry
