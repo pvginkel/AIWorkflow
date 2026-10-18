@@ -4,6 +4,24 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-18 — The completion consult is handed the close-out entries to fix before the test phase (v0.9.112)
+
+`close_out.owed_before_test()` sits beside `owed_before_push()`. It picks every live prose, defect
+or test-gap entry whose headline or proposal names `verification.json` and one of this slice's
+criterion ids (`V1` names V01), and names no other slice's number (`slice <n>`, or a number or
+`NNN_slug` folder just before `verification.json`). Where the project runs a test phase, the run
+loop hands those entries to the completion consult as `TEST_OWED_BLOCK`, "Fix before the test
+phase", after the push block. The consult rewords a criterion the plan and its rulings show worded
+wrong, no further, commits and strikes the entry. Where the wording is right and the slice falls
+short, that is outstanding work; otherwise it notes why. Without a test phase no block is built
+and the store is not read. `route()` is unchanged: an entry the consult leaves still goes to the
+wrap-up. `docs/run-loop.md` § After the last phase carries it.
+
+Why: in AnsibleSpecs slice 058 (2026-10-11), P3 said V15 could not hold under ruling D2, and it
+routed to the wrap-up, which runs after the test phase. The test phase checks every criterion as
+worded and would have failed V15, spending a round on wording. Consult 1 reworded it only because
+it happened to read the entry. Slice 045's P10 had the same shape. (AIWF-74)
+
 ## 2026-10-17 — Preflight and the run loop name a Target config.yaml declares but the pod has not cloned (v0.9.111)
 
 `preflight.py` takes `--slice` under `--for run` as well as `--for plan`, and `/dev:run-slice`

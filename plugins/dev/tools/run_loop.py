@@ -44,12 +44,14 @@ ${CLAUDE_PLUGIN_ROOT}/docs/close-out.md): create it if the plan loop did
 not, name it and close_out.py (the only way to write to it) in every
 dispatch, enter refuted findings and funding-consult merges through that
 tool, hand the completion consult the live entries owed before the push
-(close_out.owed_before_push), dispatch the wrap-up, render it before the
-doc phase, after the wrap-up, at every bail and at completion, stamp the
-run header at completion. A close-out.md edited by hand where a render would
-drop the edit stops the run with an operator question (`report_edited`) —
-checked before every dispatch, and met by any driver write mid-run; at a
-bail, in the wrap-up and at completion a refused write is logged.
+(close_out.owed_before_push) and, where a test phase runs, those to fix
+before it (close_out.owed_before_test), dispatch the wrap-up, render it
+before the doc phase, after the wrap-up, at every bail and at completion,
+stamp the run header at completion. A close-out.md edited by hand where a
+render would drop the edit stops the run with an operator question
+(`report_edited`) — checked before every dispatch, and met by any driver
+write mid-run; at a bail, in the wrap-up and at completion a refused write
+is logged.
 
 The plan doc is writable by every agent in the loop — deliberately. The
 driver's job is keeping the shared doc parseable: a parse error, a vanished
@@ -155,6 +157,7 @@ from close_out import (  # noqa: E402
     init_report,
     live_entries,
     owed_before_push,
+    owed_before_test,
     render_report,
     report_path,
     stamp_header,
@@ -2489,7 +2492,7 @@ edited to depend on something nothing produced.
 
 {sweep_block}
 
-{push_owed_block}{generation_bar}
+{push_owed_block}{test_owed_block}{generation_bar}
 
 If outstanding work clears that bar, append new phases to {plan_path}
 (`### P<id> — <title>` with a `Target:` line; a suffix like P3a inserts
@@ -2523,6 +2526,28 @@ that removes it, or answer `bail` with the question; where a phase already
 removed it, strike the entry naming the commit. Where it carries none of it
 — the content is on origin already, or nothing in it is exposed by a push —
 say why in a `note` on the entry and leave it.\
+"""
+
+# The close-out entries close_out.owed_before_test picks, as they ride the
+# completion consult where the project runs a test phase: that phase checks
+# every criterion as worded, and the report is worked after it (AnsibleSpecs
+# slice 058's P3 — V15 worded against ruling D2, reworded only because the
+# consult happened to read the entry).
+TEST_OWED_BLOCK = """\
+Fix before the test phase. The test phase that follows this consult checks
+every criterion in {verification_path} as it is worded and marks one the
+slice has not earned `fail`, and nothing reads the close-out report before
+it. These live entries say a criterion of this slice is worded wrong:
+
+{rows}
+
+For each, judge the criterion against the plan and its rulings. Where they
+show the wording wrong, reword it to what they require and no further — a
+reword never asks less than the plan does — commit it, and strike the entry
+naming the commit. Where the wording is right and the slice falls short of
+it, that is outstanding work on this consult's table: append a phase, or
+answer `bail` with the question. Where neither holds, say why in a `note`
+on the entry and leave it.\
 """
 
 # The loop-tail sweep's report, as it rides the completion-consult and
@@ -6952,11 +6977,35 @@ class RunLoop:
                          f"({'; '.join(reasons)})" for entry, reasons in owed)
         return PUSH_OWED_BLOCK.format(rows=rows) + "\n\n"
 
+    def _test_owed_block(self) -> str:
+        """The close-out entries that say a criterion of this slice is worded
+        wrong, as TEST_OWED_BLOCK with its trailing blank line — empty when
+        there are none, and where the project runs no test phase, which
+        leaves them to the wrap-up. A report that cannot be read is logged
+        and carries no block, as with _push_owed_block."""
+        if not self.cfg.test_phase:
+            return ""
+        try:
+            owed = owed_before_test(self.slice_dir)
+        except ReportError as e:
+            self.log(f"close-out not read for what to fix before the test phase ({e})")
+            return ""
+        if not owed:
+            return ""
+        ids = [entry["id"] for entry, _ in owed]
+        noun = "entry" if len(ids) == 1 else "entries"
+        self.log(f"completion consult: {len(ids)} close-out {noun} to fix before "
+                 f"the test phase: {', '.join(ids)}")
+        rows = "\n".join(f"- {entry['id']} — {entry.get('headline', '')} "
+                         f"({', '.join(criteria)})" for entry, criteria in owed)
+        return TEST_OWED_BLOCK.format(verification_path=self.verification_path,
+                                      rows=rows) + "\n\n"
+
     def _completion_consult(self) -> bool:
         """After all phases are done: one fresh consult — 'does the plan
         describe outstanding work?' — carrying the loop-tail sweep and the
-        close-out entries owed before the push. True → phases were
-        appended, loop again."""
+        close-out entries owed before the push and before the test phase.
+        True → phases were appended, loop again."""
         self.state["run_phase"] = "consult"
         self._save_state()
         sweep = self._ensure_gate_sweep()
@@ -6969,6 +7018,7 @@ class RunLoop:
                                               SWEEP_STANCE_CONSULT_GREEN,
                                               SWEEP_STANCE_CONSULT_RED),
                 push_owed_block=self._push_owed_block(),
+                test_owed_block=self._test_owed_block(),
                 generation_bar=self._generation_bar()),
             {
                 "complete": "the plan describes no outstanding work",

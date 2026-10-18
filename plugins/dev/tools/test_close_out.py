@@ -547,6 +547,106 @@ def test_owed_before_push_without_a_store_is_a_report_error():
             assert "close_out.py init" in str(e)
 
 
+# -- to fix before the test phase --------------------------------------------------
+
+def _test_slice(tmp, name="058_secret_rotation"):
+    slice_dir = make_slice(tmp, name=name)
+    (slice_dir / "verification.json").write_text(json.dumps({"items": [
+        {"id": vid, "area": "a", "description": "d"} for vid in ("V01", "V02", "V15")]}))
+    close_out.init_report(slice_dir)
+    return slice_dir
+
+
+def _to_test(slice_dir):
+    return {e["id"]: vids for e, vids in close_out.owed_before_test(slice_dir)}
+
+
+def test_owed_before_test_lists_an_entry_that_says_a_criterion_is_worded_wrong():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _test_slice(tmp)
+
+        def add(kind, headline, proposal=None):
+            return close_out.append_entry(slice_dir, kind, headline, "b", consequence="c",
+                                          labels=fix_labels(), proposal=proposal)
+
+        # the slice-058 shape
+        add("test-gap", "AnsibleSpecs 058 verification.json V15: worded against "
+            "ruling D2")                                                    # T1
+        add("prose", "verification.json V1 asks for a restart the plan rules out")  # P1
+        add("defect", "the criterion asks more than the plan",
+            "Reword V15 and V2 in slices/058_secret_rotation/verification.json "
+            "to what D2 rules")                                             # B1
+        add("defect", "P3 verification.json V2 names the wrong port")      # B2
+        add("defect", "slice 58's verification.json V15 is worded wrong")  # B3
+        add("defect", "verification.json V99 is worded wrong")             # B4
+        add("defect", "V15 is worded against ruling D2",
+            "reword it before the test phase")                             # B5
+        before = (slice_dir / "close-out.json").read_text()
+        rendered = report(slice_dir)
+        owed = close_out.owed_before_test(slice_dir)
+        # report id order; the criteria as verification.json spells them, in
+        # number order; a phase id or the slice's own number is no other slice
+        assert [(e["id"], vids) for e, vids in owed] == [
+            ("B1", ["V02", "V15"]), ("B2", ["V02"]), ("B3", ["V15"]),
+            ("P1", ["V01"]), ("T1", ["V15"])]
+        assert owed[-1][0]["headline"].startswith("AnsibleSpecs 058 verification.json")
+        # it reads; it never writes
+        assert (slice_dir / "close-out.json").read_text() == before
+        assert report(slice_dir) == rendered
+
+
+def test_owed_before_test_leaves_an_entry_about_another_slice():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _test_slice(tmp)
+        for headline in ("slice 045's verification.json V15 is worded wrong",
+                         "AnsibleSpecs 045 verification.json V15: worded wrong",
+                         "slices/completed/045_x/verification.json V15 is worded wrong",
+                         "verification.json V15, as Slices 45 and 58 word it",
+                         "verification.json V15 contradicts slice 058 and SLICE 45"):
+            close_out.append_entry(slice_dir, "defect", headline, "b", consequence="c",
+                                   labels=fix_labels())
+        close_out.append_entry(slice_dir, "defect", "V15 is worded wrong", "b",
+                               consequence="c", labels=fix_labels(),
+                               proposal="reword it as 045_secret_rotator/verification.json "
+                                        "words it")
+        assert _to_test(slice_dir) == {}
+
+    # A slice folder that carries no number: any slice named is another's.
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _test_slice(tmp, name="secret_rotation")
+        close_out.append_entry(slice_dir, "defect", "058 verification.json V15 is worded "
+                               "wrong", "b", consequence="c", labels=fix_labels())
+        close_out.append_entry(slice_dir, "defect", "verification.json V15 is worded "
+                               "wrong", "b", consequence="c", labels=fix_labels())
+        assert _to_test(slice_dir) == {"B2": ["V15"]}
+
+
+def test_owed_before_test_skips_struck_entries_and_the_kinds_a_test_never_fails():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _test_slice(tmp)
+        headline = "verification.json V15 is worded against ruling D2"
+        for kind, labels in (("defect", fix_labels()), ("defect", fix_labels()),
+                             ("action", None), ("decision", None), ("event", None),
+                             ("improvement", imp_labels())):
+            close_out.append_entry(slice_dir, kind, headline, "b", consequence="c",
+                                   labels=labels, proposal="reword V15")
+        close_out.strike_entry(slice_dir, "B2", "reworded", commit="abc123")
+        assert _to_test(slice_dir) == {"B1": ["V15"]}
+        # no verification.json: no criterion of the slice's is named
+        (slice_dir / "verification.json").unlink()
+        assert _to_test(slice_dir) == {}
+
+
+def test_owed_before_test_without_a_store_is_a_report_error():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp, name="058_secret_rotation")
+        try:
+            close_out.owed_before_test(slice_dir)
+            raise AssertionError("no store must raise")
+        except ReportError as e:
+            assert "close_out.py init" in str(e)
+
+
 # -- append: the refusals -------------------------------------------------------
 
 def _refused(slice_dir, argv, *needles):

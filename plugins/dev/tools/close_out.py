@@ -55,8 +55,9 @@ The route is computed at every render, never stored: `route()` reads an
 entry's kind and labels, the repositories the slice touched, and the stage
 of the slice a `for` names (still unplanned, or planned or running) against
 the two tables of the contract (§ The routes) — the policy is the operator's
-and lives here only. So does the run loop's trigger for what is owed before the
-push (`owed_before_push()`): the live entries it hands the completion consult.
+and lives here only. So do the run loop's triggers for what is owed before the
+push (`owed_before_push()`) and what a test phase would fail as worded
+(`owed_before_test()`): the live entries it hands the completion consult.
 
 A report written before the store existed is imported by the first call that
 finds a `close-out.md` and no store beside it. The old parser stays as the
@@ -1717,6 +1718,49 @@ def owed_before_push(slice_dir: Path | str) -> list[tuple[dict, list[str]]]:
                            + textwrap.shorten(proposal, 160, placeholder=" …"))
         if reasons:
             out.append((entry, reasons))
+    return sorted(out, key=lambda item: _id_key(item[0]))
+
+
+# What the slice's test phase would fail as worded. It checks every criterion
+# of the slice's verification.json as it stands, and the report is worked
+# after it — so the run loop hands the completion consult the entries that
+# say one of them is worded wrong (AnsibleSpecs slice 058's P3: V15 worded
+# against ruling D2, reworded before the test phase only because the consult
+# happened to read the entry). A criterion is named `V<n>`; another slice by
+# `slice <n>`, or by its number or folder just before `verification.json`.
+TEST_OWED_KINDS = ("prose", "defect", "test-gap")
+_CRITERION_RE = re.compile(r"\bV(\d+)\b")
+_SLICE_NAMED_RE = re.compile(r"\bslices?\s+(\d+)", re.IGNORECASE)
+_SLICE_FOLDER_RE = re.compile(r"(?<![^\s/])(\d+)(?:_[\w-]+)?[\s/]+verification\.json")
+
+
+def owed_before_test(slice_dir: Path | str) -> list[tuple[dict, list[str]]]:
+    """(entry, the criteria it names) for every live prose, defect or
+    test-gap entry whose headline or proposal names verification.json and a
+    criterion the slice's own holds, and no other slice, in id order — the
+    criteria as verification.json spells them, in number order (`V1` names
+    V01). Reads the store, never writes it."""
+    store = _read_store(slice_dir)
+    criteria: dict[int, str] = {}
+    for vid in _verification(slice_dir):
+        m = re.fullmatch(r"V(\d+)", str(vid))
+        if m:
+            criteria.setdefault(int(m.group(1)), str(vid))
+    own = _slice_number(Path(slice_dir).resolve().name)
+    out = []
+    for entry in store["entries"]:
+        if entry.get("strike") or entry.get("kind") not in TEST_OWED_KINDS:
+            continue
+        texts = [_collapse(entry.get("headline")), _collapse(entry.get("proposal"))]
+        if not any("verification.json" in text for text in texts):
+            continue
+        slices = {int(n) for text in texts
+                  for n in _SLICE_NAMED_RE.findall(text) + _SLICE_FOLDER_RE.findall(text)}
+        if slices - {own}:
+            continue
+        named = {int(n) for text in texts for n in _CRITERION_RE.findall(text)}
+        if held := sorted(named & criteria.keys()):
+            out.append((entry, [criteria[n] for n in held]))
     return sorted(out, key=lambda item: _id_key(item[0]))
 
 

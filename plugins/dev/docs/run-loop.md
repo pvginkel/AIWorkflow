@@ -296,7 +296,14 @@ whole plan is a feature of the review, not a cost. Then:
   describes, the consult appends a phase that removes it or bails, as for a red sweep row; where
   it would not, it says why in a note on the entry. The code-writer fixes such a thing in its
   own phase ([its definition](../agents/code-writer.md)); this is the backstop for one entered
-  anyway.
+  anyway. Where the project runs a test phase, the consult is handed as well, to fix before it,
+  every live prose, defect or test-gap entry whose headline or proposal names `verification.json`
+  and one of this slice's criterion ids, and no other slice's number — because the test phase
+  checks each criterion as worded and the report is worked after it. Where the plan and its
+  rulings show the wording wrong, the consult rewords the criterion to what they require, no
+  further, commits and strikes the entry; where the wording is right and the slice falls short,
+  that is outstanding work; otherwise it notes why. Without a test phase the entry stays with
+  the wrap-up.
 - **Test phase** — a fresh `test-agent` session told to read the project's slice-testing-strategy
   doc (`.aiworkflowrc`'s `test_phase.strategy`) and execute it. **The driver holds the devlock**
   for this phase (a `flock` on the inode `devlock.lease` names; it releases on crash): taken

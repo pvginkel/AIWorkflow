@@ -5050,6 +5050,110 @@ def test_completion_consult_without_entries_owed_reads_as_before():
                 in (slice_dir / "log.txt").read_text())
 
 
+# AnsibleSpecs slice 058: a criterion worded against the plan's ruling D2 was
+# reworded before the test phase only because the completion consult
+# happened to read the entry — the test phase checks every criterion as
+# worded, and the report is worked after it. The consult now carries every
+# live entry that says a criterion of this slice is worded wrong.
+
+V15_HEADLINE = "074 verification.json V15 is worded against ruling D2"
+
+
+def files_p1(loop):
+    run_loop.append_entry(
+        loop.slice_dir, "prose", V15_HEADLINE, "b",
+        consequence="the test phase fails a criterion the slice met",
+        labels={"trigger": "normal-use", "impact": "degraded", "signal": "silent",
+                "fix": "one-edit", "area": "plain", "repo": "specs"},
+        proposal="reword V15 to what D2 rules")
+
+
+def with_criteria(slice_dir):
+    (slice_dir / "verification.json").write_text(json.dumps({"items": [
+        {"id": vid, "area": "core", "description": "It ships."}
+        for vid in ("V01", "V15")]}))
+
+
+def test_completion_consult_carries_the_entries_to_fix_before_the_test_phase():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        with_criteria(slice_dir)
+        script = [(*V["exec_done"], files_p1), V["review_signoff"], *TAIL]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        consult = next(p for role, p in r.prompts
+                       if role == "consult" and "stamped done" in p)
+        assert "about it.\n\nFix before the test phase. The test phase that" in consult
+        assert f"- P1 — {V15_HEADLINE} (V15)" in consult
+        assert f"every criterion in {slice_dir / 'verification.json'} as it" in consult
+        assert "on the entry and leave it.\n\n" + GEN_BAR_OPENING in consult
+        log = (slice_dir / "log.txt").read_text()
+        assert ("completion consult: 1 close-out entry to fix before the test "
+                "phase: P1") in log
+
+    # Beside an entry owed before the push: that block first, one blank line
+    # between them.
+    def files_both(loop):
+        files_p1(loop)
+        run_loop.append_entry(
+            loop.slice_dir, "defect", "test_reader.py carries production IPs",
+            "b", consequence="the push publishes them",
+            labels={"trigger": "normal-use", "impact": "severe",
+                    "signal": "silent", "fix": "one-edit", "area": "plain",
+                    "repo": "repo"},
+            proposal=B3_PROPOSAL)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        with_criteria(slice_dir)
+        script = [(*V["exec_done"], files_both), V["review_signoff"], *TAIL]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        consult = next(p for role, p in r.prompts
+                       if role == "consult" and "stamped done" in p)
+        assert "about it.\n\nOwed before the push. The push that follows" in consult
+        assert ("say why in a `note` on the entry and leave it.\n\n"
+                "Fix before the test phase. The test phase that") in consult
+        assert "on the entry and leave it.\n\n" + GEN_BAR_OPENING in consult
+
+
+def test_completion_consult_with_no_test_phase_leaves_the_entry_to_the_wrap_up():
+    def not_read(slice_dir):
+        raise AssertionError("a project with no test phase reads nothing for one")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc(test=False))
+        with_criteria(slice_dir)
+        script = [(*V["exec_done"], files_p1), V["review_signoff"],
+                  V["consult_complete"], V["doc_done"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, owed_before_test=not_read):
+            assert run_to_exit(r) == 0
+        consult = next(p for role, p in r.prompts if role == "consult")
+        assert "Fix before the test phase" not in consult
+        assert "about it.\n\n" + GEN_BAR_OPENING in consult
+        assert "before the test phase" not in (slice_dir / "log.txt").read_text()
+
+
+def test_completion_consult_goes_on_when_the_report_cannot_be_read_for_the_test_phase():
+    def unreadable(slice_dir):
+        raise run_loop.ReportError("close-out.json is not valid JSON")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        with_criteria(slice_dir)
+        script = [(*V["exec_done"], files_p1), V["review_signoff"], *TAIL]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, owed_before_test=unreadable):
+            assert run_to_exit(r) == 0
+        consult = next(p for role, p in r.prompts if role == "consult")
+        assert "Fix before the test phase" not in consult
+        assert "about it.\n\n" + GEN_BAR_OPENING in consult
+        assert ("close-out not read for what to fix before the test phase "
+                "(close-out.json is not valid JSON)"
+                in (slice_dir / "log.txt").read_text())
+
+
 def test_test_phase_findings_loop_with_rising_bar_then_third_generation_bails():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
