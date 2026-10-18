@@ -132,7 +132,8 @@ line to add goes under the host's `services:`.
    `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py counts <slice_dir>` for the entry counts
    step 4 needs.
 3. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_slice.py <slice_dir>` (moves the README slice
-   entry Pending → Completed and `git mv`s the folder to `slices/completed/`, staging by name);
+   entry Pending → Completed, `git mv`s the folder to `slices/completed/` and deletes the loop's
+   `run.lock` from it, staging by name);
    commit together with the slice artifacts, **including `state.json`, `log.txt`,
    `close-out.json` and `close-out.md`** (the run's who-did-what record, the report's store and
    the report rendered from it; only a stale `bailout.json` is dropped).

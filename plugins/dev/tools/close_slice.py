@@ -12,7 +12,11 @@ Given `<spec-repo>/slices/NNN_slug` it:
      bullet list with links to the slice's old path rewritten, or folded into
      a synthesized row when the section is a Markdown table,
   3. `git mv`s the slice folder into `slices/completed/`,
-  4. stages README.md **by name** — never `git add -A`: the spec repo is one
+  4. deletes the run loop's `run.lock` from the moved folder — the loop has
+     exited by close-out, and the untracked file left behind would count as
+     uncommitted work in the spec repo for good (preflight's sync passes an
+     untracked one over, the host's other dirty checks do not),
+  5. stages README.md **by name** — never `git add -A`: the spec repo is one
      working tree shared by several parallel sessions.
 
 The spec repo is not configured here: it is the repo the slice folder sits in,
@@ -323,6 +327,11 @@ def close_slice(slice_dir: Path) -> list[str]:
     # All preconditions hold; from here on we mutate.
     git(spec_root, "mv", str(slice_dir.relative_to(spec_root)),
         str(checked.destination.relative_to(spec_root)))
+    # The mv carried the run loop's lock along, untracked; a completed slice
+    # has no run left to hold it.
+    lock = checked.destination / "run.lock"
+    had_lock = lock.exists()
+    lock.unlink(missing_ok=True)
 
     entry = lines[span[0]:span[1]]
     remaining = lines[:span[0]] + lines[span[1]:]
@@ -350,8 +359,13 @@ def close_slice(slice_dir: Path) -> list[str]:
     else:
         moved = (f"README.md: slice {number} entry moved Pending → Completed "
                  f"({shift} line{'' if shift == 1 else 's'})")
-    return [
+    actions = [
         f"git mv slices/{slice_dir.name} → slices/completed/{slice_dir.name}",
+    ]
+    if had_lock:
+        actions.append(f"deleted slices/completed/{slice_dir.name}/run.lock "
+                       "(the run loop's lock — the slice has no run left)")
+    return actions + [
         moved,
         "staged README.md (not committed — commit it with state.json/log.txt/"
         "close-out.json/close-out.md, added by name at their new path)",

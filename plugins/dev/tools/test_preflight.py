@@ -360,6 +360,37 @@ def test_uncommitted_changes_are_never_pulled_over():
     assert not subproc.called("merge") and not subproc.called("rebase")
 
 
+def test_an_untracked_run_lock_is_not_uncommitted_work():
+    """The run loop's lock, live or left by a close-out that predates its
+    deletion, is no change a pull could clobber: the spec repo still syncs,
+    in both profiles, with no second look — quoted paths included."""
+    locks = ("?? slices/completed/057_x/run.lock\n"
+             "?? \"slices/062 a b/run.lock\"\n")
+    for strict in (None, {APP.resolve()}):
+        subproc = scripted_subprocess(repo_rules("0\t3", dirty=locks))
+        slept = []
+        with synced(subproc), patched(preflight, _sleep=slept.append):
+            preflight.check_synced(APP, None, strict)
+        assert subproc.called("merge", "--ff-only", "@{u}"), strict
+        assert slept == [], strict
+
+
+def test_beside_a_run_lock_any_other_change_is_still_refused():
+    """Only the lock is passed over: an untracked file of another name, or a
+    tracked run.lock modified, is uncommitted work as before."""
+    for dirty, listed in (
+            ("?? slices/completed/057_x/run.lock\n?? notes.md\n",
+             "retry.\n?? notes.md\n"),
+            (" M slices/057_x/run.lock\n",
+             "retry.\n M slices/057_x/run.lock\n")):
+        subproc = scripted_subprocess(repo_rules("0\t3", dirty=dirty))
+        with synced(subproc):
+            code, message = refused(preflight.check_synced, APP, None)
+        assert code == 1 and "uncommitted" in message, dirty
+        assert message.endswith(listed), dirty
+        assert not subproc.called("merge"), dirty
+
+
 def test_a_fetch_that_fails_is_an_environment_failure():
     """Exit 2, not 1: an unreachable remote is network or credentials, nothing
     the project's contract can fix — and it is not retried, nor blamed on

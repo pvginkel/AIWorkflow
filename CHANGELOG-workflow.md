@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-18 — Finished runs no longer leave an untracked run.lock behind (v0.9.114)
+
+`close_slice.py` now deletes the run loop's `run.lock` from the folder it `git mv`s to
+`slices/completed/`, the same way `/dev:plan-slice`'s promote step drops the emptied `plan.lock`
+(AIWF-47). The loop has exited by close-out, and nothing resumes a completed slice. A deleted lock
+gets an action line. Preflight's sync (`_sync_repo`, so both `plan` and `run`) passes untracked
+`run.lock` lines over before its dirty test: a live run holds one in the spec repo, and no pull
+writes it. Any other untracked file still counts, and so do a tracked `run.lock` that was
+modified and `plan.lock`. `docs/preflight.md` § Notes on the sync, `runner-state.md`'s lock
+paragraph and `/dev:run-slice` job 4 carry it.
+
+Why: a close-out moved the emptied lock along with the folder, and the spec repo stayed dirty for
+good. Preflight refused to pull it once it fell behind, and the nightly card pass stopped at
+`checkout: dirty`. That refused AnsibleSpecs' SR cards five nights running (2026-10-11 to
+2026-10-13 reports). The stale locks already in AnsibleSpecs are an Ansible session's to delete.
+(AIWF-76)
+
 ## 2026-10-18 — Another Target repo's environment services are a warning, not a plan problem (v0.9.113)
 
 `run_loop.services_check` now holds only the host repo to the services its `.kubecoder/config.yaml`

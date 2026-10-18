@@ -225,7 +225,10 @@ is its own: two drivers therefore write one `log.txt`, one `state.json` and one 
 working two different checkouts, and the second finds no phase branch where the record says work
 is committed. Held in-process, so a driver that dies releases it and a `--resume` walks straight
 in. A clean exit empties the holder note, so a note on a free lock is a driver that died: the
-`--resume` that takes the lock logs it as killed from outside before writing its own. While it
+`--resume` that takes the lock logs it as killed from outside before writing its own. The file
+stays, untracked, until close-out: `close_slice.py` deletes it from the folder it moves to
+`slices/completed/`, and preflight's sync passes an untracked one over
+([preflight.md](preflight.md) § Notes on the sync). While it
 holds the lock, a thread of the driver's rewrites the note's `heartbeat:` every 60 s through the
 lock's own fd — in the note only, never in `state.json`, which the main thread alone writes. The
 environments share the mount, so the flock reaches across them, but not their process tables:

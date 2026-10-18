@@ -579,6 +579,13 @@ def check_targets_cloned(root: Path, cfg: project_config.ProjectConfig | None,
 # repo found behind and dirty is looked at once more after this wait (seconds).
 DIRTY_RECHECK_WAIT = 2
 
+# The run loop's lock, untracked wherever it sits: a live run holds it, and a
+# clean exit empties its note and leaves the file until close_slice.py deletes
+# it at close-out. No pull writes it, so the dirty test passes it over — or a
+# spec repo with a run on, or a lock a close-out predating the deletion left,
+# would never be pulled again.
+RUN_LOCK = "run.lock"
+
 # What GitHub answers a fetch from a repo that was deleted or moved:
 # `remote: Repository not found.`, then `fatal: repository '<url>' not found`.
 ORIGIN_GONE_MARKER = "repository not found"
@@ -593,6 +600,16 @@ def _ahead_behind(path: str) -> tuple[int, int] | None:
             p.isdigit() for p in parts):
         return None
     return int(parts[0]), int(parts[1])
+
+
+def _uncommitted(path: str) -> str:
+    """`git status --porcelain`, less its untracked run.lock lines (RUN_LOCK).
+    A path git quotes keeps its closing quote, stripped before the name."""
+    status = _git(["-C", path, "status", "--porcelain"]).stdout
+    return "".join(
+        line for line in status.splitlines(keepends=True)
+        if not (line.startswith("?? ")
+                and line[3:].rstrip('\n"').rsplit("/", 1)[-1] == RUN_LOCK))
 
 
 def _index_lock(repo: Path) -> Path | None:
@@ -676,8 +693,8 @@ def _sync_repo(repo: Path, cfg: project_config.ProjectConfig | None,
         return None  # nothing countable, up to date, or ahead only
     ahead, behind = counts
 
-    status = _git(["-C", path, "status", "--porcelain"])
-    if status.stdout.strip():
+    status = _uncommitted(path)
+    if status.strip():
         # Another process's pull may be mid-checkout: look once more after a
         # wait, and a held index lock at either look is that process.
         lock = _index_lock(repo)
@@ -687,9 +704,9 @@ def _sync_repo(repo: Path, cfg: project_config.ProjectConfig | None,
         if counts is None or counts[1] == 0:
             return None  # whatever was pulling brought it up to date
         ahead, behind = counts
-        status = _git(["-C", path, "status", "--porcelain"])
+        status = _uncommitted(path)
         locked = locked or (lock is not None and lock.exists())
-        if status.stdout.strip() and locked:
+        if status.strip() and locked:
             raise Refusal(
                 1,
                 f"`{name}` ({path}) is {behind} behind {upstream} and has "
@@ -697,14 +714,14 @@ def _sync_repo(repo: Path, cfg: project_config.ProjectConfig | None,
                 f"— its index lock {lock} was held as preflight looked. "
                 f"Committing or stashing now would capture that process's "
                 f"half-applied work, so don't: wait for it to finish, then "
-                f"retry.\n" + status.stdout.rstrip("\n"))
-        if status.stdout.strip():
+                f"retry.\n" + status.rstrip("\n"))
+        if status.strip():
             raise Refusal(
                 1,
                 f"`{name}` ({path}) is {behind} behind {upstream} and has "
                 f"uncommitted changes — preflight will not pull over them. "
                 f"Commit or stash, or pull by hand, then retry.\n"
-                + status.stdout.rstrip("\n"))
+                + status.rstrip("\n"))
 
     if ahead == 0:
         merged = _git(["-C", path, "merge", "--ff-only", "--quiet", "@{u}"])
@@ -751,7 +768,7 @@ def check_synced(root: Path, cfg: project_config.ProjectConfig | None,
     uncommitted changes is refused rather than pulled over — after a second
     look DIRTY_RECHECK_WAIT later, since another process's pull is dirty for a
     moment; one whose index lock was held is told to wait, never to commit or
-    stash.
+    stash. An untracked run.lock is not uncommitted work (RUN_LOCK).
 
     `strict` is the plan profile's set of repos that may block (strict_repos,
     resolved paths); None, the run profile, makes every repo strict. Under

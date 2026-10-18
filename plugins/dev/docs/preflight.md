@@ -146,7 +146,10 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   another process's pull leaves a tree dirty for a moment: clean at the second look, the repo
   syncs on the second look's counts. Still dirty while git's `index.lock` was held at either look
   → refused with "wait for it to finish", never "commit or stash", which would capture that
-  process's half-applied checkout.
+  process's half-applied checkout. An untracked `run.lock` is not a change: a live run holds
+  one in the spec repo, a clean exit leaves the emptied file until `close_slice.py` deletes it
+  at close-out, and no pull writes it — so the dirty test passes it over, in both profiles. Any
+  other untracked file, a tracked `run.lock` modified, or `plan.lock` still counts (AIWF-76).
 - **Exit codes.** A fetch that fails is environment (exit 2). A refused dirty tree, a branch with no
   upstream or a rebase that does not apply is the operator's to resolve by hand (exit 1) — the
   relaying session does not resolve it either. A repo on a phase branch is exit 1 too, but a

@@ -253,6 +253,28 @@ def test_backlog_slice_closes_out_too(ws):
 
 
 @with_workspace
+def test_run_loops_untracked_lock_is_deleted_from_the_moved_folder(ws):
+    # The run loop's clean exit empties run.lock's note and leaves the file,
+    # untracked; carried into completed/ it would keep the spec repo dirty.
+    spec, slice_dir = make_spec_repo(ws)
+    (slice_dir / "run.lock").write_text("")
+    code, out, _ = run_cli(str(slice_dir))
+    assert code == 0
+    moved = spec / "slices" / "completed" / "116_toolchain_sweep"
+    assert not (moved / "run.lock").exists()
+    assert "??" not in status(spec)
+    assert "deleted slices/completed/116_toolchain_sweep/run.lock" in out
+
+
+@with_workspace
+def test_no_lock_no_deletion_line(ws):
+    _, slice_dir = make_spec_repo(ws)
+    code, out, _ = run_cli(str(slice_dir))
+    assert code == 0
+    assert "run.lock" not in out
+
+
+@with_workspace
 def test_link_wrapped_bullet_moves_with_rewritten_links(ws):
     """The entry travels as it reads, minus its links to the old location."""
     readme = README.replace(
