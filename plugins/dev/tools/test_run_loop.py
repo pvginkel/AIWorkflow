@@ -10651,8 +10651,11 @@ def test_a_doc_gate_command_that_meets_a_missing_tool_is_unrunnable():
 # Ansible slice 036's P14 targeted ElectronicsInventory from the Ansible
 # environment, which runs no postgres or s3storage: setup and tests failed on
 # localhost:5432 and :9000, and the driver dispatched a fix round that could
-# only hand back `blocked`. The check asks the operator before any dispatch,
-# and a red gate in a repo whose services the pod lacks is never a red to fix.
+# only hand back `blocked`. A red gate in a repo whose services the pod lacks
+# is never a red to fix. Before any dispatch only the host's own are asked
+# (AIWF-75): KubeCoder slice 244 stopped in planning over a service Ansible's
+# config declares for a phase whose gates never touch it, so another Target
+# repo's are a warning.
 
 INVENTORY_CONFIG = """\
 # services:
@@ -10778,14 +10781,15 @@ def test_a_describe_that_fails_passes_the_service_check_with_a_warning():
             assert REAL_RUNNING_SERVICES() == set()
 
 
-def services_run(tmp, *, rulings=(), declared=(), resume=False, script=None):
-    """A run whose one phase targets `../Inventory` (whose config declares
-    `postgres` and `s3storage`), from a host repo whose config declares
-    `declared`."""
+def services_run(tmp, *, target="../Inventory", rulings=(), declared=(),
+                 resume=False, script=None):
+    """A run whose one phase targets `target` — `../Inventory` (whose config
+    declares `postgres` and `s3storage`) unless the test names another — from
+    a host repo whose config declares `declared`."""
     inventory_repo(tmp)
     slice_dir, repo = make_slice(tmp)
     host_services(repo, *declared)
-    body = phase_section("1", "Inventory change", "../Inventory")
+    body = phase_section("1", "The change", target)
     if rulings:
         ruled_plan(slice_dir, *rulings, body=body)
     else:
@@ -10794,52 +10798,63 @@ def services_run(tmp, *, rulings=(), declared=(), resume=False, script=None):
     return slice_dir, repo, r
 
 
-def test_a_target_needing_a_missing_service_bails_before_any_dispatch():
+# A run's whole script: the one phase, then the tail.
+SERVICES_SCRIPT = [V["exec_done"], V["review_signoff"], *TAIL]
+NOT_HELD = ("warning: services not held — Inventory/.kubecoder/config.yaml "
+            "declares postgres, s3storage, which this pod does not run; only "
+            "the host's own are held, and a gate that goes red in Inventory "
+            "bails missing_services")
+
+
+def test_a_sibling_target_needing_a_missing_service_is_warned_about_not_held():
+    """KubeCoder slice 244: another repo's config declares services for its
+    own workspace, and nothing says which its gates use."""
     with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo, r = services_run(tmp)
+        slice_dir, repo, r = services_run(tmp, script=SERVICES_SCRIPT)
+        assert run_to_exit(r) == 0
+        assert not r.script
+        assert NOT_HELD in (slice_dir / "log.txt").read_text()
+
+
+def test_a_host_declaring_a_missing_service_bails_before_any_dispatch():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r = services_run(tmp, target=PROJECT,
+                                          declared=["postgres"])
         assert run_to_exit(r) == 4
         assert not r.spawned
         bail = json.loads((slice_dir / "bailout.json").read_text())
         assert bail["reason"] == "missing_services" and bail["question"] is True
         details = bail["details"]
         config = repo / ".kubecoder" / "config.yaml"
-        assert ("- postgres — declared by Inventory/.kubecoder/config.yaml; "
-                f"add `- postgres` under `services:` in {config}, then "
-                "`kc env restart`") in details
-        assert ("- s3storage — declared by Inventory/.kubecoder/config.yaml; "
-                "add `- s3storage`") in details
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo, r = services_run(tmp,
-                                          declared=["postgres", "s3storage"])
-        assert run_to_exit(r) == 4
-        details = json.loads((slice_dir / "bailout.json").read_text())[
-            "details"]
-        assert "declared in" in details and "not running in this pod" \
-            in details
+        assert ("- postgres — declared by repo/.kubecoder/config.yaml; "
+                f"declared in {config} but not running in this pod") in details
         assert "`kc env restart` applies it" in details
         assert "add `- " not in details
+        # the sibling's are no part of it
+        assert "s3storage" not in details
 
 
 def test_a_resume_runs_the_service_check_too():
     with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo, r = services_run(tmp)
+        slice_dir, repo, r = services_run(tmp, target=PROJECT,
+                                          declared=["postgres"])
         assert run_to_exit(r) == 4
         r2 = ScriptedLoop(slice_dir, [], repo_root=repo, resume=True)
         assert run_to_exit(r2) == 4 and not r2.spawned
         assert json.loads((slice_dir / "bailout.json").read_text())[
             "reason"] == "missing_services"
-        # once the pod runs them, the resume proceeds
-        r3 = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
-                                      *TAIL], repo_root=repo, resume=True)
-        with patched(run_loop, running_services=lambda: {"postgres",
-                                                         "s3storage"}):
+        # once the pod runs it, the resume proceeds
+        r3 = ScriptedLoop(slice_dir, list(SERVICES_SCRIPT), repo_root=repo,
+                          resume=True)
+        with patched(run_loop, running_services=lambda: {"postgres"}):
             assert run_to_exit(r3) == 0
         assert not r3.script
 
 
-def test_a_resume_checks_the_services_of_the_repos_the_run_already_touched():
+def test_a_sibling_the_run_already_touched_is_warned_about_not_held():
     """No pending phase targets the repo any more, but the run's `bases`
-    hold it — the loop-tail sweep would run its suites."""
+    hold it — the loop-tail sweep would run its suites, and a red there is
+    where its services are asked."""
     with tempfile.TemporaryDirectory() as tmp:
         sib = inventory_repo(tmp)
         slice_dir, repo = make_slice(tmp)
@@ -10849,30 +10864,49 @@ def test_a_resume_checks_the_services_of_the_repos_the_run_already_touched():
             + "\n" + phase_section("2", "App change"))
         r = ScriptedLoop(slice_dir, [], repo_root=repo)
         r.state = {"bases": {str(sib): "main"}}
-        assert "- postgres — declared by Inventory" \
-            in (r._missing_services() or "")
+        logged = []
+        r.log = logged.append
+        assert r._missing_services() is None
+        assert logged == [NOT_HELD]
 
 
-def test_rulings_waiving_every_gate_of_the_repo_exempt_it_from_its_services():
+HOST_WAIVERS = (
+    f"gate {PROJECT} — none — no postgres in this environment",
+    f"accept {PROJECT} lint — no postgres in this environment",
+    f"accept {PROJECT} build — no postgres in this environment")
+
+
+def test_rulings_waiving_every_gate_of_the_host_exempt_it_from_its_services():
     with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo, r = services_run(tmp, rulings=(
-            "gate ../Inventory — none — no postgres in this environment",
-            "accept ../Inventory lint — no postgres in this environment",
-            "accept ../Inventory build — no postgres in this environment"),
-            script=[V["exec_done"], V["review_signoff"], *TAIL])
+        slice_dir, repo, r = services_run(
+            tmp, target=PROJECT, declared=["postgres"], rulings=HOST_WAIVERS,
+            script=SERVICES_SCRIPT)
         assert run_to_exit(r) == 0
         assert not r.script
-    # one verb left unwaived still holds the repo to its services
+    # one verb left unwaived still holds the host to its services
     with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo, r = services_run(tmp, rulings=(
-            "gate ../Inventory — none — no postgres in this environment",
-            "accept ../Inventory lint — no postgres in this environment"))
+        slice_dir, repo, r = services_run(
+            tmp, target=PROJECT, declared=["postgres"],
+            rulings=HOST_WAIVERS[:2])
         assert run_to_exit(r) == 4
         assert json.loads((slice_dir / "bailout.json").read_text())[
             "reason"] == "missing_services"
 
 
-def test_a_dry_run_lists_the_missing_services_as_a_plan_problem():
+def test_a_sibling_the_rulings_waive_whole_is_not_warned_about():
+    """Nothing runs its suites, so there is nothing to warn of."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r = services_run(tmp, rulings=(
+            "gate ../Inventory — none — no postgres in this environment",
+            "accept ../Inventory lint — no postgres in this environment",
+            "accept ../Inventory build — no postgres in this environment"),
+            script=SERVICES_SCRIPT)
+        assert run_to_exit(r) == 0
+        assert not r.script
+        assert "services not held" not in (slice_dir / "log.txt").read_text()
+
+
+def test_a_dry_run_warns_once_of_a_siblings_unheld_services():
     with tempfile.TemporaryDirectory() as tmp:
         inventory_repo(tmp)
         root = dry_run_repo(tmp)
@@ -10881,11 +10915,25 @@ def test_a_dry_run_lists_the_missing_services_as_a_plan_problem():
             "# plan\n\n"
             + phase_section("1", "Inventory change", "../Inventory"))
         code, out, err = dry_run_from(RunLoop(slice_dir, resume=False), root)
+        assert code == 0, err
+        assert err.count("warning: services not held — ") == 1, err
+        assert f"{NOT_HELD}\n" in err
+        assert "warning: warning:" not in err
+        assert "plan problems:" not in err
+
+
+def test_a_dry_run_lists_the_hosts_missing_services_as_a_plan_problem():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = dry_run_repo(tmp)
+        host_services(root, "postgres")
+        slice_dir, _ = make_slice(tmp, repo=False)
+        (slice_dir / "plan.md").write_text(
+            "# plan\n\n" + phase_section("1", "App change"))
+        code, out, err = dry_run_from(RunLoop(slice_dir, resume=False), root)
         assert code == 2
         assert "plan problems:" in err
         assert "the run needs services this environment does not run" in err
-        assert "- postgres — declared by Inventory/.kubecoder/config.yaml" \
-            in err
+        assert "- postgres — declared by repo/.kubecoder/config.yaml" in err
 
 
 def declares_services(*services):
@@ -10916,6 +10964,35 @@ def test_a_red_gate_in_a_repo_missing_its_services_bails_without_a_fix_round():
         config = repo / ".kubecoder" / "config.yaml"
         assert ("- postgres — declared by repo/.kubecoder/config.yaml; "
                 f"declared in {config} but not running in this pod") \
+            in details
+        assert load_state(slice_dir)["phases"]["1"]["gate_fix_rounds"] == 0
+
+
+def test_a_red_gate_in_a_sibling_missing_its_services_bails_too():
+    """The startup check only warns of a sibling's services; a gate gone red
+    there is where they are asked."""
+    with tempfile.TemporaryDirectory() as tmp:
+        inventory_repo(tmp)
+        slice_dir, repo = make_slice(tmp)
+        (slice_dir / "plan.md").write_text(
+            "# plan\n\n"
+            + phase_section("1", "Inventory change", "../Inventory"))
+        r = KcExitLoop(slice_dir, [V["exec_done"]], repo_root=repo,
+                       gate_rcs=[1])
+        assert run_to_exit(r) == 4
+        assert not r.script and len(r.spawned) == 1, "no fix round"
+        assert NOT_HELD in (slice_dir / "log.txt").read_text()
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "missing_services" and bail["question"]
+        assert bail["phase"] == "1"
+        details = bail["details"]
+        assert " in Inventory went red (output in " in details
+        assert "and the repo declares services this pod does not run" \
+            in details
+        config = repo / ".kubecoder" / "config.yaml"
+        assert ("- postgres — declared by Inventory/.kubecoder/config.yaml; "
+                f"add `- postgres` under `services:` in {config}") in details
+        assert "- s3storage — declared by Inventory/.kubecoder/config.yaml" \
             in details
         assert load_state(slice_dir)["phases"]["1"]["gate_fix_rounds"] == 0
 
@@ -11030,7 +11107,7 @@ def test_a_run_that_bails_on_missing_tools_runs_no_setup():
 
 def test_a_run_that_bails_on_missing_services_runs_no_setup():
     with tempfile.TemporaryDirectory() as tmp:
-        _, _, r = services_run(tmp)
+        _, _, r = services_run(tmp, target=PROJECT, declared=["postgres"])
         assert run_to_exit(r) == 4
         assert r.setup_runs == []
 

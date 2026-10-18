@@ -4,6 +4,28 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-18 — Another Target repo's environment services are a warning, not a plan problem (v0.9.113)
+
+`run_loop.services_check` now holds only the host repo to the services its `.kubecoder/config.yaml`
+declares. A service the host declares and the pod does not run still bails `missing_services`
+(a restart owed). For any other Target repo (a sibling, a `github:` clone, a code repo the run's
+`bases` hold), the services it declares that the pod does not run become one line in the log:
+`warning: services not held — <repo>/.kubecoder/config.yaml declares …`. The run then goes on. A
+repo the rulings waive whole is not warned about. This applies at run start, fresh and
+`--resume`, in `--dry-run` (a warning, not a plan problem) and at the plan loop's GO, which all
+call the one function. The backstop is unchanged: a phase gate that goes red in any repo whose
+declared services the pod does not run bails `missing_services` with no fix round, so Ansible
+slice 036's case still stops before a fix round that could only return `blocked`. `--dry-run` no
+longer doubles the prefix of a message already worded as a warning. `docs/run-loop.md` §
+Protocol invariants, `plan-loop.md`'s exits, `runner-state.md`'s bail table and `/dev:run-slice`
+carry it.
+
+Why: KubeCoder slice 244 (2026-10-11) stopped in planning over Ansible's
+`terraform-backend-git`, for a phase editing one sentence of Ansible's docs. None of Ansible's
+gates touches that service. Both ways out needed a ruling: add a sidecar nothing uses, or waive
+Ansible's whole gate. A `needs:` key on the component in `project.yaml`, naming the services a gate
+uses, is left for later. (AIWF-75)
+
 ## 2026-10-18 — The completion consult is handed the close-out entries to fix before the test phase (v0.9.112)
 
 `close_out.owed_before_test()` sits beside `owed_before_push()`. It picks every live prose, defect

@@ -30,8 +30,9 @@ queue) · **4** operator input needed (writer questions, a review pending adjudi
 `close-out.md` edited by hand that refused the exit-0 seed below; handle it, rerun — the loop
 resumes where it paused) · **3** bailed (`plan_bailout.json`:
 `blocked`, `timeout`, `protocol_failure`, `missing_tools` — a plan Target's manifest calls a
-`cexec` tool this environment does not run, `missing_services` — a plan Target's
-`.kubecoder/config.yaml` declares a service this environment does not run, both checked at GO as
+`cexec` tool this environment does not run, `missing_services` — the host's own
+`.kubecoder/config.yaml` declares a service this environment does not run (another Target repo's
+is a warning in the log), both checked at GO as
 the run loop checks them at start ([run-loop.md](run-loop.md) § Protocol invariants),
 `plugin_version` — the installed plugin is not the loop's own version, checked with
 `verification.json`'s keys at startup, before every dispatch and, for the keys, before exit 0;

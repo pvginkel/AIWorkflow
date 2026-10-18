@@ -3259,8 +3259,11 @@ def _file_size(path: Path) -> int:
 # 036's P14 targeted ElectronicsInventory from the Ansible environment, which
 # runs no postgres or s3storage; setup and tests failed on :5432 and :9000,
 # and the driver dispatched a fix round that could only hand back `blocked`.
-# The fix is the tools' fix — a config.yaml line and `kc env restart` — so it
-# is asked the same way, before any dispatch.
+# The fix is the tools' fix — a config.yaml line and `kc env restart` — so a
+# gate gone red in a repo whose services the pod lacks bails for it, never a
+# fix round (`RunLoop._unrun_services`). Before any dispatch only the host's
+# own config is held, another Target repo's logged (AIWF-75, `services_check`
+# says why).
 # ---------------------------------------------------------------------------
 
 # An item of the environment config's `services:` list: the bare name
@@ -3358,30 +3361,47 @@ def services_check(roots: Sequence[Path],
                    rulings: list[tuple[Ruling, ResolvedTarget]],
                    host_root: Path, log, relaunch: str = RUN_RELAUNCH
                    ) -> str | None:
-    """The missing-services message for `roots` (a bail's `details`), None
-    when the pod runs every service their environment configs declare — or
-    when it cannot say which it runs (logged as a warning, and the check
-    passes). Only a repo whose config declares a service is held, so kc is
-    not asked where there is nothing to hold; one the rulings waive whole
-    (`tools_waived`: no gate it must pass runs its suites) is not held."""
+    """The missing-services message for the host among `roots` (a bail's
+    `details`), None when the pod runs every service the host's environment
+    config declares — or when it cannot say which it runs (logged as a
+    warning, and the check passes). Only the host is held (AIWF-75): its
+    config is the pod's, while another Target repo's declares services for
+    that repo's own workspace, and nothing in it says which its gates use —
+    KubeCoder slice 244 stopped in planning over Ansible's
+    terraform-backend-git for a phase editing one sentence of Ansible's
+    docs, whose gates never touch it. Such a repo's unrun services are a
+    logged warning, and a gate gone red there bails for them
+    (`RunLoop._unrun_services`). kc is asked only when some root's config
+    declares a service; a repo the rulings waive whole (`tools_waived`: no
+    gate it must pass runs its suites) is neither held nor warned about."""
+    host = Path(host_root).resolve()
     seen: set[Path] = set()
-    held = []
+    declaring = []
     for root in roots:
         key = Path(root).resolve()
         if key not in seen and config_services(
                 _read_text(key / ENV_CONFIG_REL)):
             seen.add(key)
-            held.append(key)
-    if not held:
+            declaring.append(key)
+    if not declaring:
         return None
     try:
         running = running_services()
     except ValueError as e:
         log(f"warning: service check skipped — {e}")
         return None
-    held = [root for root in held
-            if not (missing_services([root], host_root, running)
-                    and tools_waived(root, rulings))]
+    held = []
+    for root in declaring:
+        unrun = missing_services([root], host_root, running)
+        if not unrun or tools_waived(root, rulings):
+            continue
+        if root == host:
+            held.append(root)
+            continue
+        log(f"warning: services not held — {root.name}/{ENV_CONFIG_REL} "
+            f"declares {', '.join(m.service for m in unrun)}, which this pod "
+            "does not run; only the host's own are held, and a gate that goes "
+            f"red in {root.name} bails missing_services")
     missing = missing_services(held, host_root, running)
     return (missing_services_details(missing, host_root, relaunch)
             if missing else None)
@@ -4270,16 +4290,18 @@ class RunLoop:
 
     def _missing_services(self) -> str | None:
         """The missing-services message for this run's repos
-        (`services_check`, over `_tool_roots`), None when the pod runs every
-        service their environment configs declare."""
+        (`services_check`, over `_tool_roots`: the host held, another repo's
+        unrun services logged), None when the pod runs every service the
+        host's environment config declares."""
         return services_check(self._tool_roots(), self._current_rulings(),
                               self.repo_root, self.log)
 
     def _assert_services(self) -> None:
-        """Bail `missing_services` (an operator question) while a repo the
-        run needs declares a service this pod does not run — `_assert_tools`'
-        reason, for a suite that reaches postgres on localhost instead of a
-        sidecar through cexec."""
+        """Bail `missing_services` (an operator question) while the host
+        repo the run needs declares a service this pod does not run —
+        `_assert_tools`' reason, for a suite that reaches postgres on
+        localhost instead of a sidecar through cexec. Another repo's are
+        asked when its gate goes red (`_unrun_services`)."""
         details = self._missing_services()
         if details:
             raise Bailout("missing_services", question=True, details=details)
@@ -8870,9 +8892,9 @@ class RunLoop:
             # tree still stands on its base (`_report_bailouts`).
             assert_no_prerun_actions(self.slice_dir)
             # Before the first dispatch, fresh and resumed alike: a repo
-            # whose manifest calls a tool container this pod lacks, or whose
-            # environment config declares a service it does not run, is a
-            # restart only the operator can make.
+            # whose manifest calls a tool container this pod lacks, or a host
+            # whose environment config declares a service it does not run, is
+            # a restart only the operator can make.
             self._assert_tools()
             self._assert_services()
             # Then those repos' installs, so a gate fails on the change, not
@@ -9569,8 +9591,10 @@ def cmd_dry_run(loop: RunLoop) -> None:
         print(f"Error: {loop.plan_path} does not exist.", file=sys.stderr)
         sys.exit(2)
     # A dry run keeps no log of its own: what resolution logs (a sibling kc
-    # could not list) is a warning here, and never lands in log.txt.
-    loop.log = lambda msg: print(f"warning: {msg}", file=sys.stderr)
+    # could not list) is a warning here, and never lands in log.txt; one
+    # worded as a warning already keeps its one prefix.
+    loop.log = lambda msg: print(f"warning: {msg.removeprefix('warning: ')}",
+                                 file=sys.stderr)
     _dry_run_code_repo(loop)
     phases, errors = parse_plan(loop.plan_path.read_text())
     try:

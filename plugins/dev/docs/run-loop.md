@@ -571,22 +571,29 @@ minutes of writer work and handed back `blocked`, and the fix ended the session 
 resumed it; Ansible slice 033 bailed at the sweep on KubeCoder's lint and build rows for the
 same reason and needed `accept` rulings to get past them.
 
-**Nor without the services its Targets' environments declare.** In the same place, the run loop
+**Nor without the services its own environment declares.** In the same place, the run loop
 reads the `services:` list of each Target repo's own `.kubecoder/config.yaml` — both entry forms,
 `- <service>` and `- use: <service>`, by a line scan as above — and holds it against the services
-`kc env describe` says the pod runs. A service missing bails `missing_services` (exit 4), naming
-each service, the config.yaml that declares it and the `- <service>` line to add under `services:`
-in the host's `.kubecoder/config.yaml`, or that the host already declares it and `kc env restart`
-applies it. The host stays responsible for declaring what the repos it pulls in need; the check
-only says so before the run instead of after a phase. Every declared service counts, one only
-`setup` uses included, and the same waiver exempts a repo. The plan loop checks it at GO,
-`--dry-run` lists it as a problem, and a phase gate that goes red in a repo whose declared services
-the pod does not run bails `missing_services` with no fix round. Unlike a tool, a missing service
-leaves no fixed line in the gate log, so the declaration is the test. Ansible slice 036's P14
-targeted ElectronicsInventory from an environment without its `postgres` and `s3storage`: setup and
-tests failed on `localhost:5432` and `:9000`, and after the executor handed back `done` saying the
-gate could not run there, the driver ran the gate again and dispatched a fix round that could only
-return `blocked`.
+`kc env describe` says the pod runs. Only the host is held to its list: a service the host
+declares and the pod does not run bails `missing_services` (exit 4), naming each service and that
+the pod predates the line, so `kc env restart` applies it. Every service the host declares counts,
+one only `setup` uses included, and the same waiver exempts it. Any other Target repo — a sibling,
+a `github:` clone, a code repo the run's `bases` hold — declares its services for its own
+workspace, and nothing in its environment config says which of them its gates use. The services
+it declares that the pod does not run are a `warning:` line in `log.txt` naming them and the
+config.yaml, and the run goes on. KubeCoder slice 244 stopped in planning over Ansible's
+`terraform-backend-git` for a phase editing one sentence of Ansible's docs, whose gates never touch
+the state backend: both ways out — a sidecar nothing uses, or Ansible's whole gate waived — took an
+operator ruling. The plan loop checks it at GO, and `--dry-run` lists the host's as a problem and
+the others' as warnings. A phase gate that goes red in any repo whose declared services the pod
+does not run bails `missing_services` with no fix round, naming the `- <service>` line to add under
+`services:` in the host's `.kubecoder/config.yaml`, or that the host already declares it and
+`kc env restart` applies it. Unlike a tool, a missing service leaves no fixed line in the gate log,
+so the declaration is the test, and for a repo other than the host the red gate is where it is
+asked. Ansible slice 036's P14 targeted ElectronicsInventory from an environment without its
+`postgres` and `s3storage`: setup and tests failed on `localhost:5432` and `:9000`, and after the
+executor handed back `done` saying the gate could not run there, the driver ran the gate again and
+dispatched a fix round that could only return `blocked`.
 
 **The loop sets up its Target repos before the first dispatch.** At startup, fresh or `--resume`,
 right after the tool and service checks, the run loop runs a bare `kc project setup` once from the

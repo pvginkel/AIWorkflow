@@ -1501,22 +1501,61 @@ def service_plan(tmp, *rulings):
     return step
 
 
-def test_go_with_a_target_needing_a_missing_service_bails():
+def test_go_with_a_sibling_needing_a_missing_service_warns_and_proceeds():
+    """Another repo's config declares services for its own workspace, and
+    nothing says which its gates use: logged, and a red gate there is where
+    the run loop asks (AIWF-75)."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         loop = ScriptedLoop(slice_dir, [service_plan(tmp), R_GO])
+        assert run_to_exit(loop) == 0
+        assert not (slice_dir / "plan_bailout.json").exists()
+        assert ("warning: services not held — Deploy/.kubecoder/config.yaml "
+                "declares postgres, s3storage, which this pod does not run; "
+                "only the host's own are held, and a gate that goes red in "
+                "Deploy bails missing_services") \
+            in (slice_dir / "plan_log.txt").read_text()
+
+
+def host_with_services(loop, tmp):
+    """Point the loop at a host repo whose environment config declares
+    `postgres`, a service the stubbed pod does not run."""
+    root = Path(tmp) / "repo"
+    (root / ".kubecoder").mkdir(parents=True)
+    (root / ".kubecoder" / "config.yaml").write_text("services:\n  - postgres\n")
+    loop.repo_root = root
+
+
+def host_plan(*rulings):
+    """A GO'd plan whose one phase targets the host's `app`, with
+    `rulings` under `## Driver rulings`."""
+    ruled = ("\n## Driver rulings\n\n" + "".join(f"- {r}\n" for r in rulings)
+             if rulings else "")
+
+    def write(loop):
+        loop.plan_path.write_text(PLAN_HEADER + ruled + PHASE_BLOCK)
+        (loop.slice_dir / "verification.json").write_text('{"items": []}\n')
+
+    return ("plan-writer", {"outcome": "done", "summary": "written"}, write)
+
+
+def test_go_with_a_host_declaring_a_missing_service_bails():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [host_plan(), R_GO])
+        host_with_services(loop, tmp)
         assert run_to_exit(loop) == 3
         bail = json.loads((slice_dir / "plan_bailout.json").read_text())
         assert bail["reason"] == "missing_services"
-        assert "- postgres — declared by Deploy/.kubecoder/config.yaml" \
+        assert "- postgres — declared by repo/.kubecoder/config.yaml" \
             in bail["details"]
-        assert "- s3storage — declared by Deploy/.kubecoder/config.yaml" \
-            in bail["details"]
+        assert "`kc env restart` applies it" in bail["details"]
         assert "rerun the plan loop once the environment runs them" \
             in bail["details"]
 
 
 def test_go_proceeds_past_a_service_repo_the_rulings_waive_whole():
+    # a waived sibling is not warned about: nothing runs its suites
     with tempfile.TemporaryDirectory() as tmp:
         deploy = Path(tmp) / "Deploy"
         slice_dir = make_slice(tmp)
@@ -1530,6 +1569,23 @@ def test_go_proceeds_past_a_service_repo_the_rulings_waive_whole():
             assert run_to_exit(loop) == 0
         finally:
             run_loop.load_project_dirs = saved
+        assert "services not held" \
+            not in (slice_dir / "plan_log.txt").read_text()
+    # a waived host is not held; one verb left unwaived still holds it
+    waivers = ("gate app — none — no postgres here",
+               "accept app lint — no postgres here",
+               "accept app build — no postgres here")
+    for rulings, code in ((waivers, 0), (waivers[:2], 3)):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir = make_slice(tmp)
+            loop = ScriptedLoop(slice_dir, [host_plan(*rulings), R_GO])
+            host_with_services(loop, tmp)
+            saved = run_loop.load_project_dirs
+            run_loop.load_project_dirs = lambda cwd: {"app": Path(cwd)}
+            try:
+                assert run_to_exit(loop) == code, rulings
+            finally:
+                run_loop.load_project_dirs = saved
 
 
 # -- the other slices' push holds, the reviewer's alone ------------------------
