@@ -624,12 +624,14 @@ def first_edit_turn(turns: list[dict]) -> int | None:
 
 def turn_tier_cost(t: dict, cost_for) -> dict[str, float]:
     """One turn's cost, split by the tier each token was billed at. `cost_for`
-    is slice_cost.cost_for — prices live there, and only there."""
+    is slice_cost.cost_for — prices live there, and only there; it is handed
+    the turn's prompt size, which picks a model's long-prompt tier."""
+    prompt = t["input"] + t["cr"] + t["cw"]
     return {
-        "input": cost_for(t["model"], {"input": t["input"]}),
-        "cache_read": cost_for(t["model"], {"cache_read": t["cr"]}),
-        "cache_write": cost_for(t["model"], {"cache_write": t["cw"]}),
-        "output": cost_for(t["model"], {"output": t["out"]}),
+        "input": cost_for(t["model"], {"input": t["input"]}, prompt_tokens=prompt),
+        "cache_read": cost_for(t["model"], {"cache_read": t["cr"]}, prompt_tokens=prompt),
+        "cache_write": cost_for(t["model"], {"cache_write": t["cw"]}, prompt_tokens=prompt),
+        "output": cost_for(t["model"], {"output": t["out"]}, prompt_tokens=prompt),
     }
 
 
@@ -647,10 +649,13 @@ def prefix_breaks(turns: list[dict], cost_for) -> tuple[list[dict], int]:
         if gap > TTL_S:
             gaps_over_ttl += 1
         if shortfall > BREAK_SLACK:
+            prompt = cur["input"] + cur["cr"] + cur["cw"]
             breaks.append({
                 "turn": cur["i"], "shortfall": shortfall, "gap_s": round(gap),
-                "extra_cost": (cost_for(cur["model"], {"cache_write": shortfall})
-                               - cost_for(cur["model"], {"cache_read": shortfall})),
+                "extra_cost": (cost_for(cur["model"], {"cache_write": shortfall},
+                                        prompt_tokens=prompt)
+                               - cost_for(cur["model"], {"cache_read": shortfall},
+                                          prompt_tokens=prompt)),
             })
     return breaks, gaps_over_ttl
 

@@ -19,8 +19,9 @@ logs each assistant message several times with identical usage):
   * their sub-agents (<transcript-dir>/<session>/subagents/agent-*.jsonl)
 
 Missing transcript files (cleaned ~/.claude, another machine) and unknown
-model ids are reported as warnings, never silently priced at zero without
-notice.
+model ids are reported as warnings. An id missing from PRICES is priced as
+its dated base id, or else as its family's newest model (FAMILY_DEFAULTS),
+with a warning; only an id with no family costs $0, and that is warned too.
 
 The report also carries a `turns` block: every transcript is replayed a
 second time by turn_profile.py, which puts each turn in one class (what it
@@ -50,6 +51,7 @@ Exit codes: 0 report printed · 2 no state file found in the slice dir.
 
 import argparse
 import json
+import re
 import statistics
 import sys
 from collections import defaultdict
@@ -67,8 +69,13 @@ import turn_profile  # noqa: E402
 # per model: CACHE_READ_MULT unless the entry carries its own `cache_read` —
 # the Fable/Mythos 5.1 tier reads cache at 0.025× base ($0.25/MTok), Opus 5.5
 # at 0.05× ($0.20/MTok; its $4/$20 rates from the claude-api skill, 2026-09-22).
-# Sonnet 5.5's $2/$10 are from the same skill, 2026-09-30.
-PRICES: dict[str, dict[str, float]] = {
+# Sonnet 5.5's $2/$10 are from the same skill, 2026-09-30. Haiku 5.5's
+# $0.10/$0.50, and $0.50/$2.50 when one request's prompt is over 100K tokens,
+# are from the same skill, 2026-10-19; it reads cache at the default
+# CACHE_READ_MULT. An entry's `long_prompt` is the rate a message is billed at
+# when its prompt (input + cache read + cache write) is over `above` tokens,
+# and its cache rates follow that tier's input rate.
+PRICES: dict[str, dict] = {
     "claude-fable-5-1":          {"input": 10.0, "output": 50.0, "cache_read": 0.025},
     "claude-mythos-5-1":         {"input": 10.0, "output": 50.0, "cache_read": 0.025},
     "claude-fable-5":            {"input": 10.0, "output": 50.0},
@@ -80,8 +87,19 @@ PRICES: dict[str, dict[str, float]] = {
     "claude-sonnet-5-5":         {"input": 2.0,  "output": 10.0},
     "claude-sonnet-5":           {"input": 2.0,  "output": 10.0},
     "claude-sonnet-4-6":         {"input": 3.0,  "output": 15.0},
+    "claude-haiku-5-5":          {"input": 0.10, "output": 0.50,
+                                  "long_prompt": {"above": 100_000, "input": 0.50, "output": 2.50}},
     "claude-haiku-4-5":          {"input": 1.0,  "output": 5.0},
     "claude-haiku-4-5-20251001": {"input": 1.0,  "output": 5.0},
+}
+# The newest id of each family: what an id of that family missing from PRICES
+# is priced as — move it when a model ships.
+FAMILY_DEFAULTS = {
+    "fable": "claude-fable-5-1",
+    "mythos": "claude-mythos-5-1",
+    "opus": "claude-opus-5-5",
+    "sonnet": "claude-sonnet-5-5",
+    "haiku": "claude-haiku-5-5",
 }
 CACHE_WRITE_MULT = 1.25
 CACHE_READ_MULT = 0.10
@@ -95,15 +113,42 @@ USAGE_KEYS = {
 STATE_FILES = (("state.json", "run"), ("plan_state.json", "plan"))
 
 
-def cost_for(model: str, tok: dict[str, int]) -> float:
-    base = PRICES.get(model)
-    if base is None:
+def resolve_model(model: str) -> str | None:
+    """The PRICES key `model` is priced as: itself; else the base id of a
+    dated snapshot (`claude-opus-5-5-20261101`); else its family's newest
+    model (FAMILY_DEFAULTS); else None. Only an 8-digit date is a snapshot
+    suffix — `claude-opus-5-6` is a new model, priced by its family and not
+    as `claude-opus-5`."""
+    if model in PRICES:
+        return model
+    base, _, date = model.rpartition("-")
+    if base in PRICES and re.fullmatch(r"\d{8}", date):
+        return base
+    if model.startswith("claude-"):
+        for token in model.split("-"):
+            if token in FAMILY_DEFAULTS:
+                return FAMILY_DEFAULTS[token]
+    return None
+
+
+def cost_for(model: str, tok: dict[str, int], prompt_tokens: int | None = None) -> float:
+    """What `tok` costs on `model`, $0 when resolve_model finds no price.
+    `prompt_tokens` is one message's prompt size: over an entry's
+    `long_prompt` floor it selects that tier. Without it — an aggregate —
+    the base rate applies."""
+    key = resolve_model(model)
+    if key is None:
         return 0.0
+    base = PRICES[key]
+    tier = base
+    long = base.get("long_prompt")
+    if long and prompt_tokens is not None and prompt_tokens > long["above"]:
+        tier = long
     rates = {
-        "input": base["input"],
-        "output": base["output"],
-        "cache_write": base["input"] * CACHE_WRITE_MULT,
-        "cache_read": base["input"] * base.get("cache_read", CACHE_READ_MULT),
+        "input": tier["input"],
+        "output": tier["output"],
+        "cache_write": tier["input"] * CACHE_WRITE_MULT,
+        "cache_read": tier["input"] * base.get("cache_read", CACHE_READ_MULT),
     }
     return sum(tok.get(k, 0) / 1_000_000 * rates[k] for k in USAGE_KEYS)
 
@@ -139,6 +184,7 @@ class Conv:
         self.tok_by_model: dict[str, dict[str, int]] = defaultdict(
             lambda: dict.fromkeys(USAGE_KEYS, 0))
         self.turns = 0            # deduplicated billed assistant messages
+        self.cost_usd = 0.0       # priced message by message, as it is billed
         self.start: datetime | None = None
         self.end: datetime | None = None
 
@@ -153,7 +199,7 @@ class Conv:
         return out
 
     def cost(self) -> float:
-        return sum(cost_for(m, t) for m, t in self.tok_by_model.items())
+        return self.cost_usd
 
     def duration_s(self) -> float:
         if self.start and self.end:
@@ -195,9 +241,14 @@ def scan_transcript(path: Path, conv: Conv) -> None:
         if mid:
             seen.add(mid)
         conv.turns += 1
-        bucket = conv.tok_by_model[msg.get("model", "unknown")]
-        for k, uk in USAGE_KEYS.items():
-            bucket[k] += usage.get(uk, 0) or 0
+        model = msg.get("model", "unknown")
+        msg_tok = {k: usage.get(uk, 0) or 0 for k, uk in USAGE_KEYS.items()}
+        bucket = conv.tok_by_model[model]
+        for k, v in msg_tok.items():
+            bucket[k] += v
+        conv.cost_usd += cost_for(
+            model, msg_tok,
+            prompt_tokens=msg_tok["input"] + msg_tok["cache_read"] + msg_tok["cache_write"])
 
 
 def _subagent_convs(parent: Conv) -> list[Conv]:
@@ -418,6 +469,7 @@ def build_report(slice_dir: Path, convs: list[Conv],
     phases: dict[str, dict] = defaultdict(
         lambda: {"n": 0, "tokens": 0, "cost": 0.0})
     unpriced: dict[str, int] = defaultdict(int)
+    fallback: dict[tuple[str, str], int] = defaultdict(int)
 
     for c in convs:
         for k, v in c.tokens_by_class().items():
@@ -438,12 +490,19 @@ def build_report(slice_dir: Path, convs: list[Conv],
         p["tokens"] += c.total_tokens()
         p["cost"] += c.cost()
         for model, tok in c.tok_by_model.items():
-            if model not in PRICES:
-                unpriced[model] += sum(tok[k] for k in USAGE_KEYS)
+            tokens = sum(tok[k] for k in USAGE_KEYS)
+            resolved = resolve_model(model)
+            if resolved is None:
+                unpriced[model] += tokens
+            elif resolved != model:
+                fallback[(model, resolved)] += tokens
 
     for model, tokens in sorted(unpriced.items()):
         warnings.append(f"unknown model '{model}': {tokens:,} tokens "
                         "unpriced — extend PRICES in slice_cost.py")
+    for (model, resolved), tokens in sorted(fallback.items()):
+        warnings.append(f"model '{model}' not in PRICES: {tokens:,} tokens "
+                        f"priced as {resolved} — add it to PRICES in slice_cost.py")
 
     return {
         "slice": slice_dir.name,

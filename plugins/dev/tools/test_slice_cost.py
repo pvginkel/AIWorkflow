@@ -18,14 +18,17 @@ slice_cost = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(slice_cost)
 CACHE_READ_MULT = slice_cost.CACHE_READ_MULT
 CACHE_WRITE_MULT = slice_cost.CACHE_WRITE_MULT
+FAMILY_DEFAULTS = slice_cost.FAMILY_DEFAULTS
 PRICES = slice_cost.PRICES
 build_report = slice_cost.build_report
 collect = slice_cost.collect
 cost_for = slice_cost.cost_for
 main = slice_cost.main
+resolve_model = slice_cost.resolve_model
 
 OPUS = "claude-opus-5"
 SONNET = "claude-sonnet-5"
+HAIKU = "claude-haiku-5-5"
 
 
 def _message(mid, model=OPUS, ts="2026-07-31T10:00:00Z", **usage):
@@ -108,6 +111,37 @@ def test_fable_5_1_is_priced():
                     {"input": 1_000_000, "output": 1_000_000}) == pytest.approx(60.0)
 
 
+def test_haiku_5_5_is_priced():
+    """Explore sub-agents run on it — a missing entry left 1.68M tokens of
+    them unpriced."""
+    assert cost_for(HAIKU, {"input": 1_000_000, "output": 1_000_000}) == pytest.approx(0.60)
+    assert cost_for(HAIKU, {"cache_read": 1_000_000}) == pytest.approx(0.01)
+
+
+def test_haiku_5_5_long_prompt_tier():
+    """A prompt over 100K tokens bills the whole message at $0.50/$2.50, its
+    cache rates following that input rate; an aggregate gets the base rate."""
+    mtok = {"input": 1_000_000, "output": 1_000_000}
+    assert cost_for(HAIKU, mtok, prompt_tokens=100_000) == pytest.approx(0.60)
+    assert cost_for(HAIKU, mtok, prompt_tokens=100_001) == pytest.approx(3.00)
+    assert cost_for(HAIKU, {"cache_write": 1_000_000},
+                    prompt_tokens=100_001) == pytest.approx(0.625)
+    assert cost_for(HAIKU, mtok) == pytest.approx(0.60)
+
+
+def test_dated_id_priced_as_its_base():
+    tok = {"input": 1_000_000, "output": 1_000_000,
+           "cache_write": 1_000_000, "cache_read": 1_000_000}
+    assert cost_for("claude-opus-5-5-20261101", tok) == cost_for("claude-opus-5-5", tok)
+    assert resolve_model("claude-opus-5-5-20261101") == "claude-opus-5-5"
+    # a new version is not a snapshot of the shorter id it starts with
+    assert resolve_model("claude-opus-5-6") == "claude-opus-5-5"
+
+
+def test_family_defaults_are_priced():
+    assert set(FAMILY_DEFAULTS.values()) <= set(PRICES)
+
+
 # -- transcript scanning ----------------------------------------------------
 
 def test_duplicate_message_ids_counted_once(tmp_path):
@@ -127,6 +161,30 @@ def test_duplicate_message_ids_counted_once(tmp_path):
     assert c.turns == 2
     assert c.tokens_by_class()["input"] == 150
     assert c.tokens_by_class()["output"] == 15
+
+
+def test_a_transcript_is_priced_message_by_message(tmp_path):
+    """Haiku 5.5's long-prompt tier is per request: one message under 100K of
+    prompt, one over, each billed at its own rate."""
+    short = {"input": 2_000, "cache_read": 90_000, "output": 1_000}
+    long = {"input": 2_000, "cache_read": 150_000, "output": 1_000}
+    t = tmp_path / "proj" / "s1.jsonl"
+    _write_transcript(t, [
+        _message("m1", model=HAIKU, input_tokens=2_000,
+                 cache_read_input_tokens=90_000, output_tokens=1_000),
+        _message("m2", model=HAIKU, input_tokens=2_000,
+                 cache_read_input_tokens=150_000, output_tokens=1_000),
+    ])
+    slice_dir = _slice(tmp_path, state={
+        "orchestrator": None, "history": [_history_entry("s1", t)]})
+    convs, warnings = collect(slice_dir)
+    report = build_report(slice_dir, convs, warnings)
+    (c,) = convs
+    expected = (cost_for(HAIKU, short, prompt_tokens=92_000)
+                + cost_for(HAIKU, long, prompt_tokens=152_000))
+    assert c.cost() == pytest.approx(expected)
+    assert c.cost() > cost_for(HAIKU, c.tokens_by_class())   # the base rate throughout
+    assert not any(HAIKU in w for w in report["warnings"])
 
 
 def test_wall_clock_spans_message_timestamps(tmp_path):
@@ -276,6 +334,21 @@ def test_unknown_model_tokens_warned(tmp_path):
     report = build_report(slice_dir, convs, warnings)
     assert report["totals"]["cost_usd"] == 0.0
     assert any("claude-future-9" in w and "123" in w
+               for w in report["warnings"])
+
+
+def test_family_fallback_prices_new_id_and_warns(tmp_path):
+    tok = {"input": 50_000, "output": 1_000_000}
+    t = tmp_path / "proj" / "s1.jsonl"
+    _write_transcript(t, [_message("m1", model="claude-haiku-5-7",
+                                   input_tokens=50_000, output_tokens=1_000_000)])
+    slice_dir = _slice(tmp_path, state={
+        "orchestrator": None, "history": [_history_entry("s1", t)]})
+    convs, warnings = collect(slice_dir)
+    report = build_report(slice_dir, convs, warnings)
+    assert report["totals"]["cost_usd"] > 0
+    assert convs[0].cost() == pytest.approx(cost_for(HAIKU, tok, prompt_tokens=50_000))
+    assert any("claude-haiku-5-7" in w and "claude-haiku-5-5" in w
                for w in report["warnings"])
 
 

@@ -4,6 +4,24 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-19 — slice_cost.py prices Haiku 5.5, and an id missing from its table falls back to its family's price (v0.9.116)
+
+`PRICES` now carries `claude-haiku-5-5` at $0.10/$0.50, with cache reads at the default 0.1×. A
+message whose prompt (input + cache read + cache write) is over 100K tokens is billed at
+$0.50/$2.50. The tier is per request, so `scan_transcript` now prices each message as it reads it
+(`Conv.cost()` returns that sum), and `turn_profile.py`'s per-turn costs pass the turn's prompt
+size too. An id missing from the table is resolved by `resolve_model` in three steps: the exact
+id; then the id it is a dated snapshot of (`<id>-YYYYMMDD`); then its family's newest model
+(`FAMILY_DEFAULTS`: Fable 5.1, Mythos 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5). Only an 8-digit date
+counts as a snapshot, so `claude-opus-5-6` is priced as Opus 5.5 and not as `claude-opus-5`.
+Every fallback draws a warning naming the id it was priced as. An id with no family keeps the
+old warning and still costs $0.
+
+Why: in AnsibleSpecs slice 065 (2026-10-14), two Haiku 5.5 Explore sub-agents spent 1,685,686
+tokens that went unpriced, so the committed cost line ($59.93) is too low. The close-out session
+could not fix the table, because it sits in the plugin cache. A model that ships after the table
+was last edited now costs its family's price instead of nothing. (AIWF-78)
+
 ## 2026-10-19 — A whole-repo Target's gate is read at gate time, and the dry run names the phase that adds its manifest (v0.9.115)
 
 `ResolvedTarget.gate_argv` is now a property for a whole-repo Target (a sibling path or a

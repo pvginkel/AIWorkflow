@@ -7,7 +7,8 @@ tests build turn dicts directly — `_t(i, *calls)` — because what a class
 depends on is the tool calls and their results, not how they were logged.
 
 No agent is spawned, nothing is priced: `analyse` takes the pricing function,
-and these tests hand it one that charges a flat rate per token.
+and these tests hand it one that charges a flat rate per token — except the
+one that checks a turn reaches slice_cost.py's long-prompt tier.
 """
 
 import importlib.util
@@ -20,11 +21,16 @@ _spec = importlib.util.spec_from_file_location(
 )
 tp = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(tp)
+_sc_spec = importlib.util.spec_from_file_location(
+    "slice_cost", Path(__file__).resolve().parent / "slice_cost.py"
+)
+slice_cost = importlib.util.module_from_spec(_sc_spec)
+_sc_spec.loader.exec_module(slice_cost)
 
 OPUS = "claude-opus-5"
 
 
-def flat_cost(_model, tok):
+def flat_cost(_model, tok, prompt_tokens=None):
     """A pricing function with one rate, so a cost is a token count / 1e6."""
     return sum(tok.values()) / 1_000_000
 
@@ -322,6 +328,19 @@ def test_a_prompt_that_did_not_come_back_from_cache_is_a_break():
     assert a["metrics"]["breaks_after_gap"] == 1
     assert a["metrics"]["gaps_over_ttl"] == 1
     assert brk["extra_cost"] == 0.0                  # flat_cost charges no tier
+
+
+def test_a_long_prompt_turn_is_priced_at_the_long_tier():
+    """Every price is handed the turn's prompt size: a Haiku 5.5 turn over
+    100K of prompt bills at $0.50/$2.50, one under it at $0.10/$0.50."""
+    t = {"model": "claude-haiku-5-5", "input": 1_000, "cr": 150_000, "cw": 0,
+         "out": 1_000_000}
+    c = tp.turn_tier_cost(t, slice_cost.cost_for)
+    assert abs(c["output"] - 2.50) < 1e-9
+    assert abs(c["input"] - 1_000 / 1e6 * 0.50) < 1e-9
+    assert abs(c["cache_read"] - 150_000 / 1e6 * 0.50 * slice_cost.CACHE_READ_MULT) < 1e-9
+    short = tp.turn_tier_cost({**t, "cr": 90_000}, slice_cost.cost_for)
+    assert abs(short["output"] - 0.50) < 1e-9
 
 
 def test_an_empty_transcript_analyses_to_nothing():
