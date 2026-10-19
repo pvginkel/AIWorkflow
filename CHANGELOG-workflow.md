@@ -4,6 +4,18 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-19 — run-loop.md says a `github:` Target's clone is set up at run start (v0.9.117)
+
+Documentation only. run-loop.md's `Target: github:` paragraph now says the clone is set up at run
+start like every Target repo, and points at § Protocol invariants, *The loop sets up its Target
+repos*. Behaviour is unchanged. Since 0.9.74 `_setup_targets` resolves each pending Target through
+`_resolve_target`, which clones or adopts a `github:` repo first, and then runs a bare `kc project
+setup` there.
+
+Why: a planner in PilotAppSpecs (2026-10-14) read the `github:` paragraph as "cloned and gated,
+never set up" and asked for the setup the loop already runs. The slice's own `log.txt` shows
+`[setup] Architecture → GREEN` for `/work/scratch/Architecture`. (AIWF-79)
+
 ## 2026-10-19 — slice_cost.py prices Haiku 5.5, and an id missing from its table falls back to its family's price (v0.9.116)
 
 `PRICES` now carries `claude-haiku-5-5` at $0.10/$0.50, with cache reads at the default 0.1×. A

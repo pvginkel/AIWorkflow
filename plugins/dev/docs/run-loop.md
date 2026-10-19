@@ -57,11 +57,12 @@ path must exist under `/work`, and putting it there took a `repos:` entry in the
 `.kubecoder/config.yaml` — the repo in every environment of the project for one slice's sake.
 KubeCoder puts a task's repo in `/work/scratch/<repo>`, so the driver clones it there, hard-coded,
 and from then on it is a sibling path: branched, merged and pushed in that clone, gated by `kc
-project test` from its root when it carries a manifest. The first resolution in a process clones
-it, or adopts a clone already there: origin must be that repo, and a dirty clone, a detached HEAD, a
-`phase/` branch, no upstream or commits ahead of origin are refused; otherwise it is fetched and
-fast-forwarded. A clone the run has already recorded as one of its repos (a resume over its own
-merged phases) is only checked, never synced. Every resolution calls the one helper
+project test` from its root when it carries a manifest, and set up at run start like every Target
+repo (§ Protocol invariants, *The loop sets up its Target repos*). The first resolution in a
+process clones it, or adopts a clone already there: origin must be that repo, and a dirty clone, a
+detached HEAD, a `phase/` branch, no upstream or commits ahead of origin are refused; otherwise it
+is fetched and fast-forwarded. A clone the run has already recorded as one of its repos (a resume
+over its own merged phases) is only checked, never synced. Every resolution calls the one helper
 (`tools/github_target.py`) — the phase, the dry run (which is where planning clones it), the plan
 loop's held-repo name — and preflight's sync covers the clones it made
 ([preflight.md](preflight.md) § Notes on the sync). Refused outright, before any clone: a repo
