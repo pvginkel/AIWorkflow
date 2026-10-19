@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-19 — A whole-repo Target's gate is read at gate time, and the dry run names the phase that adds its manifest (v0.9.115)
+
+`ResolvedTarget.gate_argv` is now a property for a whole-repo Target (a sibling path or a
+`github:` clone). It looks for `.kubecoder/project.yaml` in the phase's own tree (the repo, or a
+shared repo's worktree) each time the gate is read, not once when the Target resolves at phase
+start. The phase that adds the manifest is therefore gated by it: the gate, the merge's re-gate
+and the reviewer's gate line all see it. The writer's dispatch says so up front.
+`--dry-run` reads a `Creates:` declaration on a phase of a repo that has no manifest as that
+phase writing it. That phase and every later pending one on the repo print `kc project test
+(gated once P<n> adds the manifest)` instead of `(no deterministic gate)`. A `github:` phase that
+declares `Creates:` needs no `gate` ruling, before the writer or in the dry run. Its gate holds it
+to the claim: a clone that still has no manifest there stops the run on the same `plan_doc`
+question, so nothing passes unverified. `docs/plan-template.md`'s `Target:` and `Creates:`
+bullets and `run-loop.md` § The plan is the queue carry it.
+
+Why: in Notifications slice 002 (2026-10-14), P2 created NotificationsDeploy's manifest and ran
+ungated, and its reviewer was told the state was unverified. The dry run showed P2 to P5 ungated,
+though the run gated P3 to P5. Every new deploy repo has such a bootstrap phase. (AIWF-77)
+
 ## 2026-10-18 — Finished runs no longer leave an untracked run.lock behind (v0.9.114)
 
 `close_slice.py` now deletes the run loop's `run.lock` from the folder it `git mv`s to

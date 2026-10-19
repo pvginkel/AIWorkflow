@@ -110,7 +110,8 @@ The mechanical rules the parser holds every author to:
   sibling path ([run-loop.md](run-loop.md) § The plan is the queue). A repo the environment
   checks out is refused in that form — name it `../Repo`. A `github:` repo without a
   `.kubecoder/project.yaml` has no gate, so its phases need a `gate` line under
-  `## Driver rulings`. A component name resolves in the repo the run starts
+  `## Driver rulings` — unless a phase declares that it adds the manifest (`Creates:`, below).
+  A component name resolves in the repo the run starts
   from first, and there it shadows any sibling's same name (`root` is this repo's). A name this
   repo lacks is looked up in the sibling repos' own `kc project list`. A component of exactly one
   sibling lands in that repo and is gated there per component; one that several siblings have
@@ -126,7 +127,13 @@ The mechanical rules the parser holds every author to:
   on the declaration's word instead of failing against a manifest that does not hold it yet. A
   declarer stamped done whose component never appeared in the manifest is a structure error. A
   component registered in a sibling repo is declared on the phase that targets that repo
-  (`Target: ../Repo` + `Creates: <name>`); later phases may name it the same way.
+  (`Target: ../Repo` + `Creates: <name>`); later phases may name it the same way. A phase that
+  gives a whole-repo Target (a sibling path or a `github:` clone) its first
+  `.kubecoder/project.yaml` declares a component that manifest registers (`root` at least). The
+  driver reads such a repo's gate from the phase's own tree at gate time, so the phase is gated
+  by the manifest it adds whether it declares one or not. The declaration is what lets
+  `--dry-run` print `gated once P<n> adds the manifest` for that phase and the later ones on the
+  repo, and what lets a `github:` phase run without a `gate` ruling.
 - **`Review: <file>` declares a phase's review set outside its Target** — an optional line
   under `Target:` for a phase whose work lands where its Target's diff cannot show it, such as
   unpushed commits in `/work/scratch/<Repo>` clones kept in a ledger. The value is a path

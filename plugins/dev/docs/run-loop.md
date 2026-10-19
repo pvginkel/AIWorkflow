@@ -25,7 +25,8 @@ one-line **`Target:`** naming where it lands — a `kc project list` component, 
 path (`../SiblingRepo`) — from which the driver roots its git operations (branch, merge,
 dirty-checks in that repo) and picks the gate: `kc project test --project <name>` for a
 component, run from the root of the repo that lists it; `kc project test` from the sibling's own
-root when it carries a manifest; no
+root when it carries a manifest, looked for at gate time in the phase's own tree, so the phase
+that adds the manifest is gated by it; no
 deterministic gate otherwise (the reviewer is told the state is unverified). **`Target: root` is
 the repo as a whole**: its gate is `--project root` first, and when that ran nothing — kc's exit
 3, a root that declares no `test:` — bare `kc project test`, every component once. Root's own
@@ -67,7 +68,9 @@ loop's held-repo name — and preflight's sync covers the clones it made
 some checkout under `/work` already has as its origin — the environment's own, named `../Repo`
 instead. A `github:` repo without a manifest has no gate, and its phase needs a `gate` line under
 `## Driver rulings` ([plan-template.md](plan-template.md)): without one the dry run lists a plan
-problem and the run refuses the phase. The first phase a run resolves on a clone leaves an
+problem and the run refuses the phase. A phase that declares that it adds the manifest
+(`Creates:`) needs no ruling. The check moves to its gate, where a clone that still has no
+manifest is the same plan problem. The first phase a run resolves on a clone leaves an
 action in the close-out report suggesting the operator delete it once the slice's commits are
 on origin.
 

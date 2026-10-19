@@ -135,7 +135,7 @@ import textwrap
 import threading
 import time
 import traceback
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -1069,6 +1069,28 @@ def creation_claim(phases: list[Phase],
             "list` does not know that component (the component set was just "
             "re-read). Register it in the manifest, or fix the name.")
     return None, None
+
+
+def manifest_claimer(phases: list[Phase], index: int,
+                     root_of: Callable[[str], Path | None]) -> Phase | None:
+    """For a phase whose whole-repo Target has no manifest yet: the phase
+    that will add it, None when none will. `Creates:` on a phase of a repo
+    without a manifest can only mean the phase writes that manifest, and
+    the gate is read at gate time, so from then on the repo is gated. The
+    claimer is the earliest pending phase at or before this one — a later
+    one runs too late, a DONE one would have left the manifest there by now
+    — that declares `Creates:` on a Target resolving to the same repo.
+    `root_of` is a Target's resolved repo root, None when it does not
+    resolve; a claimer that does not resolve is no claimer."""
+    root = root_of(phases[index].target or "")
+    if root is None:
+        return None
+    for phase in phases[:index + 1]:
+        if phase.done or phase.creates is None or not phase.target:
+            continue
+        if root_of(phase.target) == root:
+            return phase
+    return None
 
 
 def parse_push_holds(text: str) -> tuple[list[tuple[str, str]], list[str]]:
@@ -2874,7 +2896,8 @@ it, then write your verdict to {verdict_path}.
 
 class ResolvedTarget:
     def __init__(self, name: str, kind: str, git_root: Path,
-                 gate_argv: list[str] | None, gate_cwd: Path):
+                 gate_argv: list[str] | None, gate_cwd: Path,
+                 manifest_gate: bool = False):
         self.name = name
         # What the Target names, not where it lives: "project" is a `kc
         # project list` component, gated on its own — the invoking repo's, or
@@ -2882,12 +2905,28 @@ class ResolvedTarget:
         # named by its path.
         self.kind = kind            # "project" | "sibling"
         self.git_root = git_root    # the repo: its base, merges, pushes
-        self.gate_argv = gate_argv  # None → no deterministic gate
+        self._gate_argv = gate_argv
+        # A whole repo's gate is its manifest's, looked for whenever the
+        # gate is read (`gate_argv`), not fixed when the Target resolved.
+        self.manifest_gate = manifest_gate
         self.gate_cwd = gate_cwd
         # The working tree the phase's branch is checked out in — the repo's
         # own, except for a shared repo's phase, which works in a linked
         # worktree of its own (`RunLoop._ensure_worktree`).
         self.work_root = git_root
+
+    @property
+    def gate_argv(self) -> list[str] | None:
+        """The gate's command, None for no deterministic gate. A whole repo
+        (`manifest_gate`) gates through kc from its root when the phase's
+        tree carries a manifest — read now, in `gate_cwd`, so a phase that
+        bootstraps the repo's `.kubecoder/project.yaml` is gated by the
+        manifest it wrote: the Target resolves at phase start, before the
+        writer has written anything (AIWF-77)."""
+        if not self.manifest_gate:
+            return self._gate_argv
+        return (list(REPO_GATE_ARGV)
+                if (self.gate_cwd / MANIFEST_REL).is_file() else None)
 
     def in_worktree(self, path: Path) -> "ResolvedTarget":
         """This target as its phase works it from the linked worktree at
@@ -4524,11 +4563,10 @@ class RunLoop:
             raise ValueError(f"Target `{target}` is not a git repo")
         # A sibling with its own manifest gates through kc from its own
         # root; one without has no deterministic gate — the reviewer is
-        # told the state is unverified.
-        gate = (["kc", "project", "test"]
-                if (path / ".kubecoder" / "project.yaml").is_file()
-                else None)
-        return ResolvedTarget(target, "sibling", path, gate, path)
+        # told the state is unverified. The manifest is looked for at gate
+        # time, in the phase's tree (`ResolvedTarget.gate_argv`).
+        return ResolvedTarget(target, "sibling", path, None, path,
+                              manifest_gate=True)
 
     def _owns_clone(self, target: str) -> bool:
         """Is this GitHub target's clone one of this slice's run's repos
@@ -5058,9 +5096,15 @@ class RunLoop:
         round's re-gate, the merge's re-gate. A target plan.md's `## Driver
         rulings` waives passes unrun, like a target with no deterministic
         gate: no green commit is recorded, the reviewer is told why, and no
-        fix round is spent on a red the operator already ruled on."""
+        fix round is spent on a red the operator already ruled on.
+
+        A GitHub clone still without a manifest here is a phase that said
+        (`Creates:`) it would add one and did not: nothing would verify it,
+        so the run stops on the operator's question, as `_run_phase` does
+        before the writer, rather than passing it unverified."""
         ruling = self._gate_ruling(target)
         if ruling is None:
+            self._refuse_ungated_github(phase_id, target)
             return self._run_gate(phase_id, ps, outputs, target)
         self.log(f"[P{phase_id}] test gate for {target.name} waived by "
                  f"plan.md's `## Driver rulings` (substitute: "
@@ -5074,8 +5118,10 @@ class RunLoop:
         """Run the target's test gate as a subprocess: (passed, its log).
         The exit code decides; full output goes to gate_r<N>.log in the
         phase's outputs dir. A target with no deterministic gate (a sibling
-        repo without a manifest) passes by definition — but records no green
-        commit, so the reviewer is told the state is unverified.
+        repo whose phase tree has no manifest now — looked for at gate time,
+        so a manifest the phase itself added gates it) passes by definition
+        — but records no green commit, so the reviewer is told the state is
+        unverified.
 
         A gate kc says ran nothing (KC_NOTHING_RAN: the target defines no
         tests) passes the same way, and for the same reason: a fix round
@@ -5598,8 +5644,9 @@ class RunLoop:
                     f"{NOTHING_RAN_HINT}")
         if target.gate_argv:
             return (f" (`kc project test` from {work})")
-        return (f" ({work} has no kc manifest — gate per that "
-                "repo's own conventions)")
+        return (f" ({work} has no kc manifest — gate per that repo's own "
+                "conventions; if this phase adds `.kubecoder/project.yaml`, "
+                f"the driver's gate is `kc project test` from {work})")
 
     @staticmethod
     def _recorded_commits(ps: dict) -> list[str]:
@@ -5808,12 +5855,8 @@ class RunLoop:
         ps = self._phase_state(phase_id)
         target = self._resolve_target(phase.target, creates=phase.creates)
         self._report_scratch_clone(target)
-        problem = self._github_gate_problem(target)
-        if problem:
-            raise Bailout(
-                "plan_doc", question=True, phase=phase_id,
-                details="the plan doc needs a fix only you can make:\n"
-                        f"- phase P{phase_id}: {problem}")
+        self._refuse_ungated_github(phase_id, target,
+                                    claimed=phase.creates is not None)
         root = target.git_root
         outputs = self.slice_dir / "phases" / f"P{phase_id}"
         outputs.mkdir(parents=True, exist_ok=True)
@@ -7203,14 +7246,22 @@ class RunLoop:
         reported.append(key)
         self._save_state()
 
-    def _github_gate_problem(self, target: ResolvedTarget) -> str | None:
+    def _github_gate_problem(self, target: ResolvedTarget,
+                             claimed: bool = False) -> str | None:
         """Why a GitHub target cannot run as planned, None when it can. Its
         clone gates through kc when it carries a manifest; one without has
         no gate at all, and a phase nothing verifies runs only on the
         operator's word — a `## Driver rulings` gate line covering it. A
         plan problem: the dry run lists it, and `_run_phase` refuses the
-        phase with it."""
-        if not github_target.is_github(target.name) \
+        phase with it.
+
+        `claimed` is a phase's `Creates:` saying the manifest is still to
+        come — the phase's own (`_run_phase`), or a pending one's at or
+        before it (the dry run, `manifest_claimer`). The phase will be gated
+        by what it writes, so it runs; the gate itself holds it to that
+        (`_phase_gate`), where the clone still lacking one is this problem
+        again."""
+        if claimed or not github_target.is_github(target.name) \
                 or target.gate_argv is not None \
                 or self._gate_ruling(target) is not None:
             return None
@@ -7219,6 +7270,17 @@ class RunLoop:
                 "gate, and no driver ruling waives one. Add a gate ruling for "
                 "it under plan.md's `## Driver rulings`: "
                 f"`- gate {target.name} — <substitute or none> — <why>`")
+
+    def _refuse_ungated_github(self, phase_id: str, target: ResolvedTarget,
+                               claimed: bool = False) -> None:
+        """Stop the run on `_github_gate_problem` as the operator's question
+        — before the writer, and again at the gate."""
+        problem = self._github_gate_problem(target, claimed=claimed)
+        if problem:
+            raise Bailout(
+                "plan_doc", question=True, phase=phase_id,
+                details="the plan doc needs a fix only you can make:\n"
+                        f"- phase P{phase_id}: {problem}")
 
     def _report_scratch_clone(self, target: ResolvedTarget) -> None:
         """A GitHub target's clone, entered in the close-out report once per
@@ -9603,20 +9665,35 @@ def cmd_dry_run(loop: RunLoop) -> None:
         print(f"warning: {e.details} — component targets unvalidated",
               file=sys.stderr)
     print(f"slice {loop.slice_name}: {len(phases)} phase(s)")
+    # Each pending phase's resolved repo root, filled in document order — so
+    # every pending phase at or before the one being printed is in it when
+    # `manifest_claimer` looks, and nothing resolves (or clones) twice.
+    roots: dict[str, Path | None] = {}
     for index, phase in enumerate(phases):
         line = f"  P{phase.id}  {'DONE ' if phase.done else ''}{phase.title}"
         if phase.done:
             print(line)
             continue
+        roots[phase.target or ""] = None
         try:
             target = loop._resolve_target(phase.target or "")
-            gate = " ".join(target.gate_argv) if target.gate_argv \
-                else "(no deterministic gate)"
+            roots[phase.target or ""] = target.git_root
+            claimer = None
+            if target.gate_argv is None and is_repo_path(target.name):
+                claimer = manifest_claimer(phases, index, roots.get)
+            if target.gate_argv:
+                gate = " ".join(target.gate_argv)
+            elif claimer is not None:
+                gate = (f"{' '.join(REPO_GATE_ARGV)} (gated once "
+                        f"P{claimer.id} adds the manifest)")
+            else:
+                gate = "(no deterministic gate)"
             if loop._is_root(target):
                 gate += f" (else {' '.join(REPO_GATE_ARGV)} when it runs nothing)"
             print(f"{line}\n        target={target.name} [{target.kind}]  "
                   f"root={target.git_root}  gate: {gate}")
-            problem = loop._github_gate_problem(target)
+            problem = loop._github_gate_problem(
+                target, claimed=claimer is not None)
             if problem:
                 errors.append(f"phase P{phase.id}: {problem}")
         except ValueError as e:

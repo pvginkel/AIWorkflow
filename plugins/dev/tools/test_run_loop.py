@@ -156,8 +156,10 @@ class FakeGit:
         self.spec_snapshots = {}
         self.specs_commits = []   # the messages, in order
         # A shared repo's phase worktrees: path → branch, made on disk by
-        # `worktree add` (a `.git` file, so the driver finds one there) and
-        # gone at `worktree remove`; the lock reason of each add; what
+        # `worktree add` (a `.git` file, so the driver finds one there, and
+        # the repo's kc manifest, as a checkout of its base carries it — the
+        # gate reads it in the phase's tree) and gone at `worktree remove`;
+        # the lock reason of each add; what
         # `worktree list --porcelain` answers; and the answers of the git
         # commands the driver reads rather than bails on (`_git_attempt`),
         # consumed in order — (0, "Fast-forward") once spent.
@@ -250,12 +252,12 @@ class FakeGit:
             self._commit_paths(args, root)
             return ""
         if args[:2] == ("worktree", "add"):
-            return self._worktree_add(args[2:])
+            return self._worktree_add(args[2:], root)
         if args[:2] == ("worktree", "list"):
             return self.worktree_list
         return ""
 
-    def _worktree_add(self, rest):
+    def _worktree_add(self, rest, root=None):
         rest = [a for a in rest if a != "--lock"]
         if "--reason" in rest:
             i = rest.index("--reason")
@@ -267,6 +269,10 @@ class FakeGit:
             self.branches.add(branch)
         path.mkdir(parents=True, exist_ok=True)
         (path / ".git").write_text("gitdir: a fake's\n")
+        manifest = Path(root or "") / run_loop.MANIFEST_REL
+        if root is not None and manifest.is_file():
+            (path / run_loop.MANIFEST_REL).parent.mkdir(exist_ok=True)
+            shutil.copyfile(manifest, path / run_loop.MANIFEST_REL)
         self.branch_at[str(path)] = branch
         self.worktrees[str(path)] = branch
         return ""
@@ -3310,6 +3316,42 @@ def test_sibling_without_manifest_has_no_deterministic_gate():
         assert r.gate_calls == [], "no gate run for a manifest-less sibling"
         prompt = next(p for role, p in r.prompts if role == "code-reviewer")
         assert "unverified" in prompt
+
+
+def adds_manifest(repo):
+    """A script step's effect: the session wrote `repo`'s kc manifest."""
+    def effect(loop):
+        (Path(repo) / run_loop.MANIFEST_REL).parent.mkdir(exist_ok=True)
+        (Path(repo) / run_loop.MANIFEST_REL).write_text("projects: []\n")
+    return effect
+
+
+def test_a_sibling_phase_that_adds_its_manifest_is_gated_by_it():
+    """The gate is read at gate time, in the phase's tree: the phase that
+    bootstraps a sibling's `.kubecoder/project.yaml` runs `kc project test`
+    there, though its Target resolved before the manifest existed — and its
+    writer is told so up front (AIWF-77)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sib = make_sibling(tmp, manifest=False).resolve()
+        slice_dir, repo = make_slice(tmp)
+        writer = ("code-writer", {"outcome": "done", "summary": "built"},
+                  adds_manifest(sib))
+        r = ScriptedLoop(slice_dir, [writer, V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        (slice_dir / "plan.md").write_text(
+            "# plan\n\n" + phase_section("1", "Bootstrap", "../Sibling"))
+        assert run_to_exit(r) == 0
+        assert r.gate_calls == [("1", True)]
+        assert r.gate_cwds == [sib]
+        prompt = next(p for role, p in r.prompts if role == "code-writer")
+        assert (f"({sib} has no kc manifest — gate per that repo's own "
+                "conventions; if this phase adds `.kubecoder/project.yaml`, "
+                f"the driver's gate is `kc project test` from {sib})"
+                ) in prompt.replace("\n", " ")
+        prompt = next(p for role, p in r.prompts if role == "code-reviewer")
+        assert f"`kc project test` in {sib} — with full output" in prompt
+        assert "ran GREEN on this exact commit" in prompt
+        assert run_loop.GATE_UNVERIFIED_LINE not in prompt
 
 
 def test_target_roots_are_the_pending_phases_repos_as_the_last_load_resolved():
@@ -8963,6 +9005,38 @@ def test_dry_run_flags_a_component_a_done_phase_never_created():
         assert "declared `Creates:` by phase P1" in err.getvalue()
 
 
+def test_a_dry_run_gates_a_manifest_less_repo_from_the_phase_that_adds_one():
+    """`Creates:` on a phase of a repo with no manifest is the phase writing
+    it, and the gate is read at gate time: that phase and every later one in
+    the repo print the gate they will run. A DONE claimer, or one after the
+    phase, gates nothing (AIWF-77)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_sibling(tmp, manifest=False)
+        make_sibling(tmp, name="Bare", manifest=False)
+        slice_dir, _ = make_slice(tmp, repo=False)
+        (slice_dir / "plan.md").write_text(
+            "# plan\n\n"
+            + phase_section("1", "Stood up", "../Bare", done=True,
+                            body="Creates: root\n")
+            + "\n" + phase_section("2", "Bootstrap", "../Sibling",
+                                   body="Creates: root\n")
+            + "\n" + phase_section("3", "Build on it", "../Sibling")
+            + "\n" + phase_section("4", "Before its claim", "../Bare")
+            + "\n" + phase_section("5", "Late claim", "../Bare",
+                                   body="Creates: root\n"))
+        code, out, err = dry_run_from(RunLoop(slice_dir, resume=False),
+                                      dry_run_repo(tmp))
+    assert code == 0, err
+    gates = [ln.split("gate: ", 1)[1] for ln in out.splitlines()
+             if "gate: " in ln]
+    assert gates == [
+        "kc project test (gated once P2 adds the manifest)",
+        "kc project test (gated once P2 adds the manifest)",
+        "(no deterministic gate)",
+        "kc project test (gated once P5 adds the manifest)",
+    ]
+
+
 # /dev:plan-slice leaves its session in the spec repo, and a dry run from
 # there asked kc about a repo with no manifest: a warning, then every
 # component Target of a valid plan reported as a plan problem (AIWF-9).
@@ -10277,12 +10351,52 @@ def test_a_github_phase_with_no_manifest_and_no_gate_ruling_is_refused():
             assert load_state(slice_dir)["phases"]["1"]["status"] == "merged"
 
 
-def dry_run_github(tmp, *rulings, manifest=False):
+def test_a_github_phase_that_adds_the_manifest_runs_gated_by_it():
+    """`Creates:` on a GitHub Target whose clone has no manifest is the
+    phase writing one: it runs with no gate ruling and is gated by what it
+    wrote. One that did not write it is a phase nothing verifies, so the
+    gate stops the run on the operator's question, as the check before the
+    writer stops an undeclared one (AIWF-77)."""
+    phases = [("1", "Bootstrap", GITHUB, False, "Creates: root\n")]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=phases)
+        clone, _, patch = fake_clone(tmp, manifest=False)
+        writer = ("code-writer", {"outcome": "done", "summary": "built"},
+                  adds_manifest(clone))
+        r = ScriptedLoop(slice_dir, [writer, V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        with patch:
+            assert run_to_exit(r) == 0
+        assert r.gate_calls == [("1", True)]
+        assert r.gate_cwds == [clone.resolve()]
+        assert load_state(slice_dir)["phases"]["1"]["status"] == "merged"
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=phases)
+        _, _, patch = fake_clone(tmp, manifest=False)
+        r = ScriptedLoop(slice_dir, [V["exec_done"]], repo_root=repo)
+        with patch:
+            assert run_to_exit(r) == 4
+        assert [s[0] for s in r.spawned] == ["code-writer"]
+        assert r.gate_calls == [], "nothing passed unverified"
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert (bail["reason"], bail["question"], bail["phase"]) == (
+            "plan_doc", True, "1")
+        assert "has no `.kubecoder/project.yaml`" in bail["details"]
+    # the dry run reads the declaration the same way
+    with tempfile.TemporaryDirectory() as tmp:
+        code, out, err = dry_run_github(tmp, body="Creates: root\n")
+    assert code is None, err
+    assert "gate: kc project test (gated once P1 adds the manifest)" in out
+    assert "is cloned at" not in err
+
+
+def dry_run_github(tmp, *rulings, manifest=False, body=""):
     """(exit code or None, stdout, stderr) of a dry run over a one-phase
-    plan targeting GITHUB."""
+    plan targeting GITHUB, its phase's body `body`."""
     root = dry_run_repo(tmp)
     slice_dir, _ = make_slice(tmp, repo=False)
-    ruled_plan(slice_dir, *rulings, body=phase_section("1", "X", GITHUB))
+    ruled_plan(slice_dir, *rulings,
+               body=phase_section("1", "X", GITHUB, body=body))
     _, _, patch = fake_clone(tmp, manifest=manifest)
     loop = RunLoop(slice_dir, resume=False)
     loop.repo_root = root
