@@ -3519,6 +3519,27 @@ class RunLoop:
                 sys.exit(2)
         return self._cfg
 
+    def _push_on(self) -> bool:
+        """`push.enabled`, read from the repo's `.aiworkflowrc` again at every
+        push point — the push check after the test phase, the driver's own
+        push without one, and the doc landing's in each repo — rather than
+        taken from the cached `cfg`, as the plan's push holds and driver
+        rulings are re-read at their points of use. A phase that switches
+        push on (a project's first deploy slice does) takes effect in the
+        same run; every other setting stays as `cfg` read it at the start.
+        A config that no longer loads here is a resumable bail, not the
+        exit 2 `cfg` gives at the run's start: the slice's own phase may be
+        what broke it, and fixing the file and resuming is the way out."""
+        try:
+            return project_config.load(self.repo_root).push
+        except project_config.ConfigError as e:
+            raise Bailout(
+                "protocol_failure",
+                details=f"{e} — read again for `push.enabled` at the push "
+                        "check, the driver's own push or the doc landing; "
+                        "fix it, then resume",
+            ) from None
+
     @property
     def devlock(self) -> DevLock:
         if self._devlock is None:
@@ -7342,7 +7363,7 @@ class RunLoop:
         project saying its runs never reach origin at all. That one is its
         standing mode, not an outstanding keystroke, so it returns here
         without reporting anything."""
-        if not self.cfg.push:
+        if not self._push_on():
             return
         nudges = 0
         while True:
@@ -7547,7 +7568,7 @@ class RunLoop:
                  if root.resolve() != primary]
         if not roots:
             return
-        if not self.cfg.push:
+        if not self._push_on():
             self.log("[doc-phase] the project does not push — doc commits in "
                      + ", ".join(root.name for root, _ in roots)
                      + " stay local")
@@ -8013,7 +8034,7 @@ class RunLoop:
         # repo whose push is off is ahead of its origin by everything the slice
         # landed and stays that way, so the branch rebases onto its own local
         # base and the check below has nothing left to protect.
-        pushing = self.cfg.push and not held
+        pushing = self._push_on() and not held
         onto = f"origin/{base}" if pushing else base
         if pushing:
             # Taken before the fetch, so nothing another driver pushes lands
@@ -9142,7 +9163,7 @@ class RunLoop:
         pushed."""
         if self.cfg.test_phase:
             return
-        if not self.cfg.push:
+        if not self._push_on():
             self.log("the project does not push — the slice's commits stay "
                      "local")
             return

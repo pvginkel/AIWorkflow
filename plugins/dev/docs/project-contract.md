@@ -76,9 +76,11 @@ every phase and nobody loses one by omission. Each switch is an opt-*out*:
   phase, that phase's procedure doc pushes and the driver checks it happened; **with no test phase
   the driver pushes**, because nothing else does — `_run_phase` ff-merges into the base locally,
   primary repo and siblings alike. Set it false and the slice's commits stay in the pod, the doc
-  branch lands against the local base, and no push check runs. This is the project's standing mode;
-  a single slice holding a single repo is [`plan.md`'s `## Push holds`](run-loop.md) instead, which
-  is reported as an outstanding action where this is not.
+  branch lands against the local base, and no push check runs. The driver reads it afresh at each
+  push point — the push check or its own push, and the doc landing — so a phase that switches it,
+  as a project's first deploy slice does, takes effect in that same run. This is the project's
+  standing mode; a single slice holding a single repo is [`plan.md`'s `## Push holds`](run-loop.md)
+  instead, which is reported as an outstanding action where this is not.
 - **`devlock.lease`** — the flock inode for the cooperative occupancy lease over a single dev
   instance, held for the test phase and again for the doc landing's push — never for the doc
   phase's writing ([run-loop.md](run-loop.md)). This one defaults **off**: one dev instance is a

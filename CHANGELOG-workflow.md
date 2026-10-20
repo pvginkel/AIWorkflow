@@ -4,6 +4,22 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-20 — The run loop re-reads `push.enabled` at the push check and the doc landing (v0.9.118)
+
+`run_loop.py` now reads `.aiworkflowrc`'s `push.enabled` fresh at each push point instead of from
+the `cfg` it caches at the run's start. Those points are the push check after the test phase
+(`_assert_pushed`), the driver's own push for a project with no test phase (`_settle_push`), and
+the doc landing for the primary repo (`_land_doc_branch`) and the siblings
+(`_push_doc_siblings`). Every other setting is still read once. A phase that switches push on now
+takes effect in the same run. If `.aiworkflowrc` no longer loads at one of those points, the run
+bails `protocol_failure`, and it resumes once the file is fixed. A file broken at the run's start
+is still exit 2. project-contract.md, run-loop.md and runner-state.md say so.
+
+Why: every project's first deploy slice is the one that switches push on. PilotApp slice 001
+(2026-10-14) had push off when it started, so its run skipped the push check, and the doc phase
+landed without pushing the primary or the siblings. The plan had to carry a "push what is left"
+action for the operator to do after the run. (AIWF-80)
+
 ## 2026-10-19 — run-loop.md says a `github:` Target's clone is set up at run start (v0.9.117)
 
 Documentation only. run-loop.md's `Target: github:` paragraph now says the clone is set up at run

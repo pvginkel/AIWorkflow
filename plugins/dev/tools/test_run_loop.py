@@ -7724,6 +7724,126 @@ def test_a_repo_with_no_aiworkflowrc_cannot_be_driven():
         assert run_to_exit(r) == 2
 
 
+# A phase that switches `[push] enabled = true` on — every project's first
+# deploy slice does — got no push check and a doc landing that pushed nothing,
+# primary repo and siblings alike: `cfg` is read once, at the run's start
+# (AIWF-80). The driver reads `push.enabled` again at each push point — the
+# push check, its own push without a test phase, the doc landing in every
+# repo — and nothing else in the config.
+
+def rewrites_rc(config):
+    """A script step's effect: the session rewrote the repo's
+    `.aiworkflowrc`."""
+    def effect(loop):
+        (loop.repo_root / ".aiworkflowrc").write_text(config)
+    return effect
+
+
+def test_a_phase_that_switches_push_on_gets_the_push_check_and_a_pushing_landing():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc(push=False))
+        script = [(*V["exec_done"], rewrites_rc(rc())), V["review_signoff"],
+                  V["consult_complete"], V["test_clean"], V["doc_done"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        r.fake_git.unpushed[str(repo)] = "3"
+        nudges = []
+
+        def fake_nudge(prompt, cwd, session_id, label, role):
+            nudges.append(prompt)
+            r.fake_git.unpushed.clear()   # the nudged session pushes
+
+        r._nudge = fake_nudge
+        assert run_to_exit(r) == 0
+        assert len(nudges) == 1 and "3 commit(s)" in nudges[0]
+        assert ("rebase", "origin/main") in [
+            c for _, c in r.fake_git.mutations("rebase")]
+        assert pushes(r) == [(str(repo), "main")]
+
+
+def test_a_phase_that_switches_push_on_gets_its_sibling_doc_commits_pushed():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = sibling_phase_slice(tmp)
+        (repo / ".aiworkflowrc").write_text(rc(push=False))
+        script = sibling_doc_script(sib)
+        script[0] = (*V["exec_done"], rewrites_rc(rc()))
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert pushes(r) == [(str(repo), "main"), (str(sib), "main")]
+        assert f"pushed main in {sib} (1 commit(s)" \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_a_phase_that_switches_push_on_without_a_test_phase_gets_the_drivers_push():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(
+            tmp, config=rc(test=False, doc=False, push=False))
+        script = [(*V["exec_done"], rewrites_rc(rc(test=False, doc=False))),
+                  V["review_signoff"], V["consult_complete"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert pushes(r) == [(str(repo), "main")]
+
+
+def test_a_phase_that_switches_push_off_lands_the_docs_locally_and_pushes_nothing():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [(*V["exec_done"], rewrites_rc(rc(push=False))),
+                  V["review_signoff"], V["consult_complete"],
+                  V["test_clean"], V["doc_done"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        # pushing, this would be nudged and the landing would bail `blocked`
+        r.fake_git.unpushed[str(repo)] = "3"
+        r._nudge = lambda *a, **kw: (_ for _ in ()).throw(
+            AssertionError("a project that stopped pushing is not nudged"))
+        assert run_to_exit(r) == 0
+        assert ("rebase", "main") in [
+            c for _, c in r.fake_git.mutations("rebase")]
+        assert pushes(r) == []
+        assert "the project does not push — nothing sent to origin" \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_a_phase_that_breaks_the_config_bails_at_the_push_check_and_resumes():
+    """Not the exit 2 a config broken before the run gives: the slice's own
+    phase broke it, so fixing the file and resuming is the way out."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        broken = rc() + "[push]\nenable = false\n"
+        script = [(*V["exec_done"], rewrites_rc(broken)), V["review_signoff"],
+                  V["consult_complete"], V["test_clean"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "protocol_failure"
+        assert "unknown key(s): `enable`" in bail["details"]
+        assert "`push.enabled`" in bail["details"]
+        assert "fix it, then resume" in bail["details"]
+        assert load_state(slice_dir)["run_phase"] == "test"
+        assert not any(role == "doc-writer" for role, *_ in r.spawned)
+        assert pushes(r) == []
+
+        (repo / ".aiworkflowrc").write_text(rc())
+        r2 = ScriptedLoop(slice_dir, [V["test_clean"], V["doc_done"]],
+                          resume=True, repo_root=repo)
+        assert run_to_exit(r2) == 0
+        assert pushes(r2) == [(str(repo), "main")]
+        assert load_state(slice_dir)["run_phase"] == "done"
+
+
+def test_a_phase_that_switches_the_doc_phase_off_still_gets_it():
+    """Only `push.enabled` is read again: the rest of the config is the one
+    the run started with."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [(*V["exec_done"], rewrites_rc(rc(doc=False))),
+                  V["review_signoff"], V["consult_complete"],
+                  V["test_clean"], V["doc_done"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert not r.script
+        assert [role for role, *_ in r.spawned][-1] == "doc-writer"
+
+
 # -- the devlock --------------------------------------------------------------
 
 def watch_push_holder(loop, holder):

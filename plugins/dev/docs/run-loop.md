@@ -342,6 +342,9 @@ whole plan is a feature of the review, not a cost. Then:
   doc phase either ends with every commit in the pod. `push.enabled = false` switches the whole
   concern off: no push, no check, and the doc branch lands against the local base. That is a
   standing mode, not an outstanding action, so unlike a plan hold it is logged and not reported.
+  It is read afresh at each of those points, not once at the run's start, so the phase that
+  switches it on — a project's first deploy slice — is pushed in that same run; a `.aiworkflowrc`
+  that no longer loads there bails `protocol_failure`, resumable once the file is fixed.
 - **A repo the plan holds is exempt from all of that.** `plan.md`'s `## Push holds` section
   ([plan-template.md](plan-template.md)) names repos this slice must not push. The driver leaves
   them out of the check, states them in the test phase's dispatch — whose procedure doc says
