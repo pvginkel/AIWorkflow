@@ -4,6 +4,27 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-20 — `close_out.py settle` settles an owed-after criterion and strikes its action (v0.9.119)
+
+The new verb `close_out.py settle <slice> <Vid> --verdict pass|fail --evidence "…"` settles a
+criterion owed after an operator's action. It writes the verdict into `verification.json`, adds
+the evidence after the test phase's, and keeps `owed_after`. The rationale defaults to
+`Settled <verdict> after <owed_after>, <date>.`, and `--rationale` replaces it. In the same call
+it strikes the `Settle <Vid> after …` action. A push hold's action that lists several criteria
+gets a note until the last of them is settled, and is then struck. The verb refuses a criterion
+that has no `owed_after`, or whose verdict is anything other than `owed` or null. A refusal
+writes nothing, and neither does a store write that `ReportEdited` refuses. `verification.json`
+keeps its own escaping and indent: the verb uses whichever `ensure_ascii` and indent setting
+reproduces the file as it was read. plan-template.md § verification.json now says what a settled
+criterion looks like. The close-out skill settles an owed-after action with this verb, and
+close-out.md and close-out-template.md list it.
+
+Why: until now the close-out session settled such a criterion by editing `verification.json` by
+hand, and plan-template.md said only "settles it `pass` or `fail`". The first JSON round-trip
+in PilotAppSpecs (2026-10-15, dev 0.9.93) rewrote every escape in the file: a 37-line diff for a
+3-line change. Slice 004 (2026-10-19) did the same the other way round, because that file holds
+`—` literally. (AIWF-83)
+
 ## 2026-10-20 — The run loop re-reads `push.enabled` at the push check and the doc landing (v0.9.118)
 
 `run_loop.py` now reads `.aiworkflowrc`'s `push.enabled` fresh at each push point instead of from

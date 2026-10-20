@@ -240,3 +240,10 @@ The mechanical rules the parser holds every author to:
   checks items off (`pass`/`fail` with rationale and evidence). A criterion marked `owed_after`
   whose offline half the test phase has earned takes `owed` — never null, which reads as untested,
   and never free text — until the action it waits on settles it `pass` or `fail`.
+- **A settled criterion keeps its `owed_after`**: it is the record that the criterion was proven
+  after the run, not in it. Its `rationale` names the action and the date it was settled
+  (`Settled pass after ../HelmCharts, 2026-10-20.`), and its `evidence` carries, after the test
+  phase's, the operator's words or what was observed once the action had happened. The close-out
+  session settles it with `close_out.py settle`, which writes the item in the file's own
+  escaping and strikes the action that waited on it ([close-out-template.md](close-out-template.md)
+  § The verbs); it never edits the item by hand.

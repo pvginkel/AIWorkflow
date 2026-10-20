@@ -207,6 +207,7 @@ Every verb takes the slice directory or the report's path as its first argument.
 | `leave` | the wrap-up | records that it looked at an entry and changed nothing, and why |
 | `worklist` | the wrap-up, the close-out session | what waits for the wrap-up, entry by entry, with what is asked of each |
 | `rule` | the close-out session | records the operator's words on an entry and what was done on them — refused on an entry that holds other words, unless `--append` or `--replace`; without an id, reads the `Disposition:` lines of `close-out.md` back into the store |
+| `settle` | the close-out session | settles a criterion owed after an operator's action: writes its `pass` or `fail`, rationale and evidence into `verification.json` in the file's own escaping, `owed_after` kept ([plan-template.md](plan-template.md) § verification.json), and strikes the action that waited on it — a push hold's action listing several criteria takes a note until the last of them is settled; refused on a criterion without `owed_after` or already settled |
 | `close` | the close-out session | closes the report on the operator's word: every entry still live is closed by it, but one that carries a ruling nobody executed — that one stays, and the report stays open over it |
 | `render` | the loops, the skills | reads the `Disposition:` lines back, then writes `close-out.md` from the store |
 | `stamp` | `/dev:run-slice` | `render`, printing the run header |

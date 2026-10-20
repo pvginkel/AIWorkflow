@@ -41,6 +41,11 @@ is judgment — and nobody edits either file by hand; importable by both loops
                `--append` adds to them, `--replace` puts the new ones in
                their place (the old kept in a note); without an id, the
                `Disposition:` lines of close-out.md read back into the store.
+  settle       settle a criterion owed after an operator's action, once it
+               has happened: its verdict, rationale and evidence written
+               into verification.json in the file's own escaping, and the
+               action that waited on it struck — a push hold's action that
+               lists more criteria takes a note until the last is settled.
   close        close the report on the operator's word.
   render       read the `Disposition:` lines back, then write close-out.md:
                sections by route, each entry in its form — the ask (headline,
@@ -91,6 +96,7 @@ Exit codes: 0 ok · 2 usage/precondition error.
 
 import argparse
 import contextlib
+import difflib
 import fcntl
 import hashlib
 import json
@@ -350,7 +356,7 @@ EDITED_TAIL = ("Ask the operator about every line here that is not yours to take
                "verdict's summary what you meant to write, and carry on.")
 # The verbs that write close-out.md, each taking `--overwrite`.
 WRITING_VERBS = ("append", "note", "strike", "unnote", "unstrike", "relabel", "propose",
-                 "request-card", "leave", "rule", "close", "render", "stamp")
+                 "request-card", "leave", "rule", "settle", "close", "render", "stamp")
 OVERWRITE_HELP = ("write close-out.md although it was edited since its last render "
                   "(after the refusal's list is dealt with)")
 
@@ -1294,6 +1300,172 @@ def close_report(slice_dir: Path | str, words: str,
         if not stay:
             store["closed"] = {"date": day, "words": words}
         return n, stay
+
+
+VERIFICATION_NAME = "verification.json"
+SETTLE_VERDICTS = ("pass", "fail")
+# A push hold's action, as plan_loop.py seeds it, lists the criteria owed
+# after the push under this paragraph, one `- V01 — <description>` row each.
+_HOLD_CRITERIA = "Criteria owed after that push"
+_HOLD_ROW_RE = re.compile(r"^- (?P<vid>V\d+)\b")
+
+
+def _verification_doc(slice_dir: Path | str) -> tuple[Path, str, dict]:
+    """verification.json's path, its text and its data — refused when it is
+    missing, unreadable, or not an object with an `items` list."""
+    path = Path(slice_dir) / VERIFICATION_NAME
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise ReportError(f"{path} does not exist — no criterion to settle") from None
+    except OSError as e:
+        raise ReportError(f"{path} is unreadable: {e}") from None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ReportError(f"{path} is not valid JSON: {e}") from None
+    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        raise ReportError(f"{path} is not an object with an `items` list")
+    return path, raw, data
+
+
+def _dump_like(raw: str, data) -> str:
+    """`data` as JSON written the way `raw`, the file it replaces, is: the
+    first of ensure_ascii off or on × indent 2 or 4 whose dump of `raw`'s
+    own data gives `raw` back byte for byte, its trailing newline or none
+    kept; when none does, the one whose dump differs from it in the fewest
+    lines. The slices' verification.json files are written both ways — one
+    holds `\\u2014` escapes, another a literal `—` — so no one setting is
+    safe: a round-trip under the wrong one rewrites every line that holds
+    an escape, and a one-item change becomes a diff of the whole file."""
+    original = json.loads(raw)
+    newline = "\n" if raw.endswith("\n") else ""
+    old = raw.splitlines()
+
+    def dump(obj, ensure_ascii: bool, indent: int) -> str:
+        return json.dumps(obj, indent=indent, ensure_ascii=ensure_ascii) + newline
+
+    def lines_changed(fmt: tuple[bool, int]) -> int:
+        matcher = difflib.SequenceMatcher(None, old, dump(original, *fmt).splitlines(),
+                                          autojunk=False)
+        return sum(max(i2 - i1, j2 - j1)
+                   for op, i1, i2, j1, j2 in matcher.get_opcodes() if op != "equal")
+
+    formats = [(ensure_ascii, indent) for ensure_ascii in (False, True) for indent in (2, 4)]
+    fmt = next((f for f in formats if dump(original, *f) == raw), None)
+    if fmt is None:
+        fmt = min(formats, key=lines_changed)
+    return dump(data, *fmt)
+
+
+def _hold_criteria(entry: dict) -> list[str]:
+    """The criteria a push hold's action lists as owed after the push: the
+    `- V01 — …` rows under its `Criteria owed after that push` paragraph,
+    up to the first other line after them; none for any other entry."""
+    vids: list[str] = []
+    under = False
+    for line in entry.get("body") or []:
+        if not under:
+            under = line.startswith(_HOLD_CRITERIA)
+            continue
+        m = _HOLD_ROW_RE.match(line)
+        if m:
+            vids.append(m.group("vid"))
+        elif line.strip() and vids:
+            break
+    return vids
+
+
+def _settle_entries(store: dict, vid: str, verdicts: dict, by: str | None,
+                    day: str) -> list[str]:
+    """The live actions a settle of `vid` answers: the `Settle <vid> after …`
+    one is struck; a push hold's that lists `vid` is struck once every
+    criterion it lists is `pass` or `fail` in `verdicts` (verification.json
+    as the settle leaves it), and takes a note naming what is still owed
+    until then. Returns one line per entry changed."""
+    done: list[str] = []
+    for entry in store["entries"]:
+        if entry.get("strike"):
+            continue
+        m = _OWED_HEADLINE_RE.match(entry.get("headline") or "")
+        if m and m.group("vid") == vid:
+            _strike(entry, f"settled {vid} {verdicts[vid]} in {VERIFICATION_NAME}", by,
+                    None, day)
+            done.append(_struck_heading(entry))
+            continue
+        listed = list(dict.fromkeys(_hold_criteria(entry)))
+        if vid not in listed:
+            continue
+        owed = [v for v in listed if verdicts.get(v) not in SETTLE_VERDICTS]
+        if not owed:
+            settled = ", ".join(f"{v} {verdicts[v]}" for v in listed)
+            _strike(entry, f"settled {settled} in {VERIFICATION_NAME}", by, None, day)
+            done.append(_struck_heading(entry))
+            continue
+        note = {"by": _collapse(by) or "settle", "date": day,
+                "text": _lines(f"{vid} settled {verdicts[vid]} in {VERIFICATION_NAME}; "
+                               f"{', '.join(owed)} still owed.")}
+        entry["notes"].append(note)
+        done.append(f"{entry['id']} noted: {_note_text(note)}")
+    return done
+
+
+def settle_criterion(slice_dir: Path | str, vid: str, verdict: str,
+                     evidence: list[str], rationale: str | None = None,
+                     by: str | None = None) -> list[str]:
+    """Settle a criterion owed after an operator's action, once it has
+    happened: its verdict, rationale and evidence into verification.json —
+    `owed_after` kept, the record that it was proven after the run, the
+    evidence added after the test phase's, the rationale naming the action
+    and the date unless one is given — and the actions that waited on it
+    struck or noted (`_settle_entries`). Refused, nothing written, on a
+    criterion without `owed_after` or with a verdict other than `owed` or
+    none. verification.json is written after the store, so a store write
+    refused (`ReportEdited`) leaves both as they were; a slice without a
+    store has nothing to strike and gets verification.json alone. Returns
+    one line per thing done."""
+    vid = vid.strip()
+    if verdict not in SETTLE_VERDICTS:
+        raise ReportError(f"unknown verdict {verdict!r}; one of " + ", ".join(SETTLE_VERDICTS))
+    evidence = [e.strip() for e in evidence]
+    if not evidence or not all(evidence):
+        raise ReportError("settle needs --evidence: the operator's words, or what was "
+                          "observed once the action had happened")
+    if rationale is not None and not rationale.strip():
+        raise ReportError("--rationale is empty")
+    day = _date(None)
+    with _locked(slice_dir):
+        path, raw, data = _verification_doc(slice_dir)
+        item = next((i for i in data["items"]
+                     if isinstance(i, dict) and i.get("id") == vid), None)
+        if item is None:
+            raise ReportError(f"no criterion {vid} in {path}")
+        after = item.get("owed_after")
+        if not isinstance(after, str) or not after.strip():
+            raise ReportError(f"{vid} has no owed_after — settle takes a criterion owed "
+                              "after an operator's action; the test phase settles the rest")
+        held = item.get("verdict")
+        if held not in (None, "owed"):
+            raise ReportError(f"{vid}'s verdict is {held!r} already — settle takes a "
+                              "criterion still owed (verdict owed, or none)")
+        kept = item.get("evidence")
+        if isinstance(kept, str):
+            kept = [kept] if kept.strip() else []
+        elif not isinstance(kept, list):
+            kept = [kept] if kept else []
+        item["verdict"] = verdict
+        item["rationale"] = (rationale.strip() if rationale is not None
+                             else f"Settled {verdict} after {_collapse(after)}, {day}.")
+        item["evidence"] = [*kept, *evidence]
+        text = _dump_like(raw, data)
+        verdicts = {i.get("id"): i.get("verdict") for i in data["items"]
+                    if isinstance(i, dict)}
+        done = [f"{vid} settled {verdict} in {VERIFICATION_NAME}"]
+        if store_path(slice_dir).exists() or report_path(slice_dir).exists():
+            with _writing(slice_dir) as store:
+                done += _settle_entries(store, vid, verdicts, by, day)
+        _write_atomic(path, text)
+    return done
 
 
 # -- labels: the checks of `append` and `relabel` -----------------------------
@@ -2855,6 +3027,23 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p.add_argument("--commit", help="the commit of what was done")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
+    p = verb("settle", "settle a criterion owed after an operator's action — writes its "
+                       "verdict into verification.json and strikes the action that waited "
+                       "on it")
+    p.add_argument("vid", metavar="<Vid>",
+                   help="the criterion's id in verification.json, like V17")
+    p.add_argument("--verdict", required=True, choices=SETTLE_VERDICTS,
+                   help="what the criterion is, now that the action has happened")
+    p.add_argument("--evidence", required=True, action="append",
+                   help="the operator's words, or what was observed once the action had "
+                        "happened, or - for stdin; repeatable, each added after the "
+                        "evidence the criterion holds")
+    p.add_argument("--rationale",
+                   help="replaces the criterion's rationale; `Settled <verdict> after "
+                        "<owed_after>, <date>.` when omitted")
+    p.add_argument("--by", help="who settles — signs the strike, and the note on a push "
+                                "hold's action that still waits on another criterion")
+
     p = verb("close", "close the report on the operator's word")
     p.add_argument("--words", required=True, help="the operator's words, verbatim")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
@@ -3027,6 +3216,10 @@ def _main(args) -> int:
             print(show_view(slice_dir, args.ids))
         elif command == "rule":
             print(_rule_cli(slice_dir, args))
+        elif command == "settle":
+            print("\n".join(settle_criterion(slice_dir, args.vid, args.verdict,
+                                             [_stdin_or(e) for e in args.evidence],
+                                             rationale=args.rationale, by=args.by)))
         elif command == "close":
             n, stay = close_report(slice_dir, args.words, date=args.date)
             if stay:

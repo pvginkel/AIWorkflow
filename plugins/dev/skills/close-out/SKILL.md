@@ -109,6 +109,11 @@ slice directory.
      `slices/backlog/`; a slice that does not exist yet becomes a `/dev:triage` item instead.
    - `close` — there is nothing to do but record it; the operator's reason, if given, is part
      of their words.
+   - an owed-after action (`Settle <Vnn> after …`, or a push hold's action listing criteria),
+     once the operator says the action happened — `close_out.py settle <slice> <Vnn> --verdict
+     pass|fail --evidence "<their words, or what you observed>"` per criterion, which writes it
+     into `verification.json` and strikes the action; a hold's action stays live until the last
+     criterion it lists is settled. Never edit `verification.json` by hand.
    - `defer` — leave it, with their words recorded and nothing recorded as done: it stays live,
      and it is `/dev:triage`'s.
 8. **Offer to close the report — don't wait to be asked.** The operator rules on what they care

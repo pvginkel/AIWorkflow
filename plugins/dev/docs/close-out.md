@@ -18,7 +18,8 @@ consequence — with the body, the newest note and the evidence they need to rul
 it writes every author's entries (`append`), notes (`note`) and strikes (`strike`), and takes
 the last two back (`unnote`, `unstrike`), the
 corrections of a label (`relabel`) and of a proposal (`propose`), what the wrap-up asked for and
-left (`request-card`, `leave`), the operator's rulings (`rule`), prints an entry in full
+left (`request-card`, `leave`), the operator's rulings (`rule`), the criterion an owed-after
+action settles (`settle`, which writes `verification.json` too), prints an entry in full
 (`show`), renders the report and counts it. Both
 loops import it, and every dispatch names it beside the report's path — which the tool takes as
 its positional, the slice directory or the report itself, so the first call works — with

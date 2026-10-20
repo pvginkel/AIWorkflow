@@ -9,6 +9,7 @@ Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_close_out.py` or via pytest.
 """
 
 import contextlib
+import difflib
 import hashlib
 import importlib.util
 import io
@@ -2371,6 +2372,253 @@ def test_close_rules_and_strikes_every_live_entry_once():
         counts = close_out.entry_counts(slice_dir)
         assert close_out.counts_line(counts).startswith(
             "to you 0 · card requests 0 · wrap-up 0 · unlabelled 0 · closed 0 · record 0")
+
+
+# -- settle: a criterion owed after an operator's action ------------------------------
+
+DEPLOY = "the operator runs the deploy against prd"
+
+
+def _criterion(vid, owed_after=None, verdict=None, evidence=(), desc="d"):
+    item = {"id": vid, "area": "deploy", "description": desc}
+    if owed_after is not None:
+        item["owed_after"] = owed_after
+    item.update(verdict=verdict, rationale="", evidence=list(evidence))
+    return item
+
+
+def _owed_slice(tmp, items, store=True, **dump):
+    slice_dir = make_slice(tmp)
+    (slice_dir / "verification.json").write_text(
+        json.dumps({"items": items}, **{"indent": 2, **dump}) + "\n")
+    if store:
+        close_out.init_report(slice_dir)
+    return slice_dir
+
+
+def _verification(slice_dir):
+    return {i["id"]: i for i in
+            json.loads((slice_dir / "verification.json").read_text())["items"]}
+
+
+def _seed_owed(slice_dir, vid, after):
+    """The action plan_loop.py seeds for a criterion owed after anything
+    but a push hold (`_owed_entries`)."""
+    return close_out.append_entry(
+        slice_dir, "Outstanding actions", f"Settle {vid} after {after}",
+        f"{vid} — d\n\n`verification.json` marks {vid} owed after: {after}. The run "
+        "cannot take that action; settle the criterion once it has happened.",
+        consequence=f"{vid} stays unproven until then; the test phase does not settle it.",
+        provenance="read — `verification.json`'s `owed_after`, seeded by the plan loop",
+        proposal=f"When that has happened, say so: the session settles {vid} in "
+                 "verification.json.")
+
+
+def _seed_hold(slice_dir, rows):
+    """The action plan_loop.py seeds for a `## Push holds` repo with
+    criteria owed after the push."""
+    return close_out.append_entry(
+        slice_dir, "Outstanding actions", "Push HelmCharts by hand when its hold lifts",
+        "`plan.md`'s `## Push holds` section holds `../HelmCharts`: review first\n\n"
+        "Criteria owed after that push — the run cannot prove them, so they stay open "
+        "until the push lands and are settled after it:\n\n" + "\n".join(rows),
+        consequence="until you push it, nothing HelmCharts deploys carries the slice.",
+        provenance="read — `plan.md`'s `## Push holds`, seeded by the plan loop",
+        proposal="Push it when the hold lifts, then say so.")
+
+
+def test_settle_writes_the_verdict_and_strikes_the_action_that_waited_on_it():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _owed_slice(tmp, [
+            _criterion("V16", verdict="pass", evidence=["suite green"]),
+            _criterion("V17", DEPLOY, "owed", ["helm template renders"])])
+        _seed_owed(slice_dir, "V17", DEPLOY)                                     # A1
+        _seed_owed(slice_dir, "V171", DEPLOY)                                    # A2
+        before = _verification(slice_dir)["V16"]
+        code, out, err = run_cli("settle", slice_dir / "close-out.md", "V17",
+                                 "--verdict", "pass", "--evidence",
+                                 "the operator: deployed, the pod is green",
+                                 "--by", "close-out session")
+        assert code == 0, err
+        today = close_out._today()
+        assert out.splitlines() == [
+            "V17 settled pass in verification.json",
+            f"### ~~A1 — Settle V17 after {DEPLOY}~~ — settled V17 pass in "
+            "verification.json; struck by close-out session"]
+        v = _verification(slice_dir)
+        assert v["V17"] == {
+            "id": "V17", "area": "deploy", "description": "d", "owed_after": DEPLOY,
+            "verdict": "pass", "rationale": f"Settled pass after {DEPLOY}, {today}.",
+            "evidence": ["helm template renders",
+                         "the operator: deployed, the pod is green"]}
+        assert v["V16"] == before
+        a1, a2 = store(slice_dir)["entries"]
+        assert a1["strike"] == {"reason": "settled V17 pass in verification.json",
+                                "by": "close-out session", "date": today, "commit": None}
+        assert a2["strike"] is None                                    # V171 is not V17
+        assert "~~A1 — Settle V17 after" in report(slice_dir)
+
+
+def test_settle_replaces_the_rationale_adds_the_evidence_and_needs_no_store():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _owed_slice(tmp, [_criterion("V03", "../HelmCharts")], store=False)
+        item = _verification(slice_dir)["V03"]
+        item.update(rationale="offline half proven", evidence="helm lint clean")
+        (slice_dir / "verification.json").write_text(
+            json.dumps({"items": [item]}, indent=2) + "\n")
+        code, out, err = run_cli("settle", slice_dir, "V03", "--verdict", "fail",
+                                 "--evidence", "the rollout stalled",
+                                 "--evidence", "-", "--rationale",
+                                 "The pod never went ready after the push.",
+                                 stdin="kubectl rollout status: timed out\n")
+        assert code == 0, err
+        assert out.splitlines() == ["V03 settled fail in verification.json"]
+        assert _verification(slice_dir)["V03"] == dict(
+            item, verdict="fail", rationale="The pod never went ready after the push.",
+            evidence=["helm lint clean", "the rollout stalled",
+                      "kubectl rollout status: timed out"])
+        assert not (slice_dir / "close-out.json").exists()
+        assert not (slice_dir / "close-out.md").exists()
+
+
+def test_settle_refuses_what_is_not_owed_and_writes_nothing():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _owed_slice(tmp, [
+            _criterion("V01", verdict="owed"),
+            _criterion("V02", DEPLOY, "pass"),
+            _criterion("V03", DEPLOY, "proven offline"),
+            _criterion("V04", "  "),
+            _criterion("V05", DEPLOY, "owed")])
+        _seed_owed(slice_dir, "V02", DEPLOY)                                     # A1
+        verification = (slice_dir / "verification.json").read_bytes()
+        files = _files(slice_dir)
+        ev = ["--verdict", "pass", "--evidence", "seen"]
+        for argv, needle in (
+                (["V99", *ev], "no criterion V99 in"),
+                (["V01", *ev], "V01 has no owed_after"),
+                (["V04", *ev], "V04 has no owed_after"),
+                (["V02", *ev], "V02's verdict is 'pass' already"),
+                (["V03", *ev], "V03's verdict is 'proven offline' already"),
+                (["V05", "--verdict", "pass", "--evidence", " "], "settle needs --evidence"),
+                (["V05", *ev, "--rationale", ""], "--rationale is empty")):
+            code, _, err = run_cli("settle", slice_dir, *argv)
+            assert code == 2 and needle in err, (argv, err)
+            assert (slice_dir / "verification.json").read_bytes() == verification
+            assert _files(slice_dir) == files
+        # argparse's own: a verdict other than pass or fail, no --evidence
+        assert run_cli("settle", slice_dir, "V05", "--verdict", "owed",
+                       "--evidence", "x")[0] == 2
+        assert run_cli("settle", slice_dir, "V05", "--verdict", "pass")[0] == 2
+        # a verification.json that is not one
+        for text, needle in (("[]", "not an object with an `items` list"),
+                             ('{"items": {}}', "not an object with an `items` list"),
+                             ("{", "not valid JSON")):
+            (slice_dir / "verification.json").write_text(text)
+            code, _, err = run_cli("settle", slice_dir, "V05", *ev)
+            assert code == 2 and needle in err, (text, err)
+            assert (slice_dir / "verification.json").read_text() == text
+        (slice_dir / "verification.json").unlink()
+        code, _, err = run_cli("settle", slice_dir, "V05", *ev)
+        assert code == 2 and "verification.json does not exist" in err
+        assert _files(slice_dir) == files
+
+
+def test_settle_writes_verification_json_in_the_files_own_escaping():
+    items = [_criterion("V01", desc="the chart — rendered"),
+             _criterion("V02", DEPLOY, "owed", desc="the pod — ready"),
+             _criterion("V03", desc="the café’s sign")]
+    with tempfile.TemporaryDirectory() as tmp:
+        for dump, newline in (({"indent": 2, "ensure_ascii": True}, ""),
+                              ({"indent": 4, "ensure_ascii": False}, "\n")):
+            slice_dir = Path(tmp) / f"{dump['indent']}" / "slice"
+            slice_dir.mkdir(parents=True)
+            raw = json.dumps({"items": items}, **dump) + newline
+            (slice_dir / "verification.json").write_text(raw)
+            code, _, err = run_cli("settle", slice_dir, "V02", "--verdict", "pass",
+                                   "--evidence", "deployed — green", "--rationale", "r")
+            assert code == 0, err
+            new = (slice_dir / "verification.json").read_text()
+            expected = [dict(i) for i in items]
+            expected[1].update(verdict="pass", rationale="r", evidence=["deployed — green"])
+            assert new == json.dumps({"items": expected}, **dump) + newline, dump
+            # only V02's verdict, rationale and evidence lines differ
+            old_lines, new_lines = raw.splitlines(), new.splitlines()
+            changed = [line for line in difflib.ndiff(old_lines, new_lines)
+                       if line[:2] in ("- ", "+ ")]
+            assert all(re.search(r'"verdict"|"rationale"|"evidence"|deployed|^[-+]\s+\]',
+                                 line) for line in changed), changed
+            assert ("\\u2014" in new) == dump["ensure_ascii"]
+            assert ("—" in new) != dump["ensure_ascii"]
+        # a file no setting reproduces takes the nearest: here, indent 4 and the
+        # literal dash, the one hand-spaced line normalised with the change
+        slice_dir = Path(tmp) / "odd" / "slice"
+        slice_dir.mkdir(parents=True)
+        raw = json.dumps({"items": items}, indent=4, ensure_ascii=False) + "\n"
+        raw = raw.replace('"area": "deploy"', '"area":  "deploy"', 1)
+        (slice_dir / "verification.json").write_text(raw)
+        code, _, err = run_cli("settle", slice_dir, "V02", "--verdict", "pass",
+                               "--evidence", "e", "--rationale", "r")
+        assert code == 0, err
+        expected = [dict(i) for i in items]
+        expected[1].update(verdict="pass", rationale="r", evidence=["e"])
+        assert (slice_dir / "verification.json").read_text() == json.dumps(
+            {"items": expected}, indent=4, ensure_ascii=False) + "\n"
+
+
+def test_settling_a_push_holds_criteria_notes_its_action_until_the_last_is_settled():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _owed_slice(tmp, [
+            _criterion("V01", "../HelmCharts", "owed"),
+            _criterion("V02", "../HelmCharts", "owed"),
+            _criterion("V03", "../HelmCharts", "owed")])
+        _seed_hold(slice_dir, ["- V01 — the chart deploys", "- V02"])           # A1
+        _seed_hold(slice_dir, ["- V03 — the other chart"])                       # A2
+        _seed_hold(slice_dir, ["- V01 — the chart deploys"])                     # A3
+        close_out.strike_entry(slice_dir, "A3", "superseded by A1")
+        today = close_out._today()
+        code, out, err = run_cli("settle", slice_dir, "V01", "--verdict", "pass",
+                                 "--evidence", "the operator pushed; the chart is live")
+        assert code == 0, err
+        note = "V01 settled pass in verification.json; V02 still owed."
+        assert out.splitlines() == ["V01 settled pass in verification.json",
+                                    f"A1 noted: settle, {today} — {note}"]
+        a1, a2, a3 = store(slice_dir)["entries"]
+        assert a1["strike"] is None
+        assert a1["notes"] == [{"by": "settle", "date": today, "text": [note]}]
+        assert a2["notes"] == [] and a2["strike"] is None
+        assert a3["notes"] == [] and a3["strike"]["reason"] == "superseded by A1"
+        code, out, err = run_cli("settle", slice_dir, "V02", "--verdict", "fail",
+                                 "--evidence", "the second job failed",
+                                 "--by", "close-out session")
+        assert code == 0, err
+        assert out.splitlines() == [
+            "V02 settled fail in verification.json",
+            "### ~~A1 — Push HelmCharts by hand when its hold lifts~~ — settled V01 "
+            "pass, V02 fail in verification.json; struck by close-out session"]
+        a1, a2, _ = store(slice_dir)["entries"]
+        assert a1["strike"]["reason"] == "settled V01 pass, V02 fail in verification.json"
+        assert a1["strike"]["by"] == "close-out session" and len(a1["notes"]) == 1
+        assert a2["strike"] is None
+        assert _verification(slice_dir)["V03"]["verdict"] == "owed"
+
+
+def test_a_settle_the_report_refuses_leaves_verification_json_as_it_was():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _owed_slice(tmp, [_criterion("V17", DEPLOY, "owed")])
+        _seed_owed(slice_dir, "V17", DEPLOY)                                     # A1
+        _edit(slice_dir, "## ", "the operator's aside\n\n## ")
+        verification = (slice_dir / "verification.json").read_bytes()
+        files = _files(slice_dir)
+        argv = ["settle", slice_dir, "V17", "--verdict", "pass", "--evidence", "e"]
+        code, _, err = run_cli(*argv)
+        assert code == 2 and err.startswith("Error: close-out.md was edited since")
+        assert "  > the operator's aside\n" in err
+        assert (slice_dir / "verification.json").read_bytes() == verification
+        assert _files(slice_dir) == files
+        code, _, err = run_cli(*argv, "--overwrite")
+        assert code == 0, err
+        assert _verification(slice_dir)["V17"]["verdict"] == "pass"
+        assert entry_of(slice_dir, "A1")["strike"] is not None
 
 
 # -- render ----------------------------------------------------------------------
