@@ -47,11 +47,12 @@ tool, hand the completion consult the live entries owed before the push
 (close_out.owed_before_push) and, where a test phase runs, those to fix
 before it (close_out.owed_before_test), dispatch the wrap-up, render it
 before the doc phase, after the wrap-up, at every bail and at completion,
-stamp the run header at completion. A close-out.md edited by hand where a
-render would drop the edit stops the run with an operator question
-(`report_edited`) — checked before every dispatch, and met by any driver
-write mid-run; at a bail, in the wrap-up and at completion a refused write
-is logged.
+stamp the run header at completion, and commit the store before every
+dispatch that finds it changed, so a role's commit of it holds only its own
+entries. A close-out.md edited by hand where a render would drop the edit
+stops the run with an operator question (`report_edited`) — checked before
+every dispatch, and met by any driver write mid-run; at a bail, in the
+wrap-up and at completion a refused write is logged.
 
 The plan doc is writable by every agent in the loop — deliberately. The
 driver's job is keeping the shared doc parseable: a parse error, a vanished
@@ -4714,6 +4715,31 @@ class RunLoop:
         finally:
             self._report_quiet = prior
 
+    def _commit_own_entries(self, before: str) -> None:
+        """Before a dispatch, commit the store when it changed. The driver's
+        own entries (`_report`, the hold notes, a resume's stops) are written
+        mid-run, and the role about to run commits the store staged by name
+        — a JSON store is not staged in part, so its commit would carry them
+        too. Committed here, the role's commit holds only its own entries;
+        whatever else the store held uncommitted (an earlier session's
+        append) goes in with the driver's. close-out.md changed alone is an
+        agent's render, left uncommitted by design: no commit. Never fatal —
+        a commit that fails is logged, and the entries ride the role's
+        commit instead."""
+        store = store_path(self.slice_dir)
+        try:
+            if not store.exists() or not self.specs_git(
+                    "status", "--porcelain", "--", str(store)):
+                return
+            self._commit_report(
+                f"slice {self.slice_num}: close-out report before {before}",
+                label="[close-out]")
+        except Exception as e:
+            why = (e.details if isinstance(e, Bailout)
+                   else f"{type(e).__name__}: {e}")
+            self.log(f"[close-out] report not committed before {before} "
+                     f"({why}) — the driver's entries ride its commit")
+
     def _nudge(self, prompt: str, cwd: Path, session_id: str,
                label: str, role: str | None, retry: bool = True) -> bool:
         """One resume-shot at a session that missed part of its protocol;
@@ -4736,6 +4762,8 @@ class RunLoop:
         def send():
             try:
                 self._assert_current()
+                self._commit_own_entries(f"the {role} nudge" if role
+                                         else "the nudge")
                 _, result = run_kc_session(
                     prompt=prompt, cwd=str(cwd), timeout=NUDGE_TIMEOUT,
                     resume_session=session_id, extra_env=SPAWN_ENV,
@@ -4859,7 +4887,10 @@ class RunLoop:
         reattaches and protocol nudges. Model and effort come from the MODELS
         config, passed explicitly on every dispatch. Each dispatch asserts
         the spec tree on its base first: an agent dispatched while it sits on
-        another branch commits its plan edits and close-out entries there."""
+        another branch commits its plan edits and close-out entries there.
+        Then it commits the store when the driver's entries, or anything
+        else, left it changed (`_commit_own_entries`), so the role's own
+        commit of the store holds only its entries."""
         prompt, resume_session = self._resolve_reattach(
             role, phase_id, prompt, verdict_path, label)
         model, effort = MODELS[role]
@@ -4897,6 +4928,8 @@ class RunLoop:
             try:
                 self._assert_spec_on_base()
                 self._assert_current()
+                self._commit_own_entries(
+                    (f"P{phase_id} " if phase_id else "") + shown)
                 returncode, result = run_kc_session(
                     prompt=prompt,
                     cwd=str(cwd),
@@ -8722,18 +8755,18 @@ class RunLoop:
         """One wrap-up gate command — the seam the wrap-up's tests replace."""
         return self._gate_exec(argv, cwd, log_file)
 
-    def _commit_report(self, message: str) -> str:
+    def _commit_report(self, message: str, label: str = "[wrap-up]") -> str:
         """Commit the report — the store and the close-out.md rendered from
         it — where either changed, staged and committed by name on the spec
         tree's base, as the driver's own report commit is; return the spec
-        repo's commit it now stands at."""
+        repo's commit it now stands at. `label` heads the log line."""
         paths = [str(p) for p in (store_path(self.slice_dir), self.report_path)
                  if p.exists()]
         self._assert_spec_on_base()
         if paths and self.specs_git("status", "--porcelain", "--", *paths):
             self.specs_git("add", "--", *paths)
             self.specs_git("commit", "-m", message, "--", *paths)
-            self.log(f"[wrap-up] committed {self.report_path.name}: "
+            self.log(f"{label} committed {self.report_path.name}: "
                      f"{message}")
         return self.specs_git("rev-parse", "HEAD")
 
@@ -9107,8 +9140,8 @@ class RunLoop:
         """Every stop of this run becomes an event entry, written by the
         resume that follows it, at its first dispatch (`_spawn`) — the
         first moment the report exists and the stop is known to be over; it
-        rides the report's next commit there. A resume that dispatches
-        nothing writes it at completion.
+        is committed before that dispatch (`_commit_own_entries`). A resume
+        that dispatches nothing writes it at completion.
 
         A stop the report did not carry left its Events saying the run
         recorded no bail-out beneath a header counting one. Each `bailouts`

@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-21 — The run loop commits its own close-out entries before a dispatch (v0.9.122)
+
+Before every dispatch and every nudge, the run loop now commits the slice's close-out store when
+`close-out.json` shows a change. The commit is `slice NNN: close-out report before …`, with the
+store and `close-out.md` staged by name. A `close-out.md` changed alone makes no commit. A commit
+that fails is logged and the dispatch goes ahead, so the entries ride the role's commit as
+before. The wrap-up's own commit before it starts is unchanged. run-loop.md § Protocol
+invariants and close-out.md § Who writes what, when say so, and so do run_loop.py's docstrings.
+
+Why: the driver writes its own entries between sessions and left them for the report's next
+commit, which is usually the next role's. A role appends with `close_out.py append` and commits
+the store, staged by name, and a JSON store cannot be staged in part. In PilotApp (2026-10-18),
+slice 002's P9 code-reviewer appended T6, and its commit 2a5ed4f also carried the loop's E1 and
+a header bump. The loop's commit can also take along appends an earlier session left
+uncommitted, which is accepted. This is a narrow exception for the store, not a change to the
+shared tree's rule that another writer's hunk may ride your commit. (AIWF-87)
+
 ## 2026-10-21 — Preflight runs `kc project setup` before its baseline build (v0.9.121)
 
 `preflight.py --for run` now runs a bare `kc project setup` from the repo root before its

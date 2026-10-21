@@ -310,7 +310,11 @@ Both loops create the store if it does not exist — the plan loop first, so pla
 write to it. All agents may append, through `close_out.py append` (`list` first shows what is
 already there); an agent commits the store with its own commit, staged by name like every other
 slice-folder artifact ([spec-tree.md](spec-tree.md)). The `close-out.md` its write rendered is
-left for the next commit of the report; a render's own commit carries the store with it.
+left for the next commit of the report; a render's own commit carries the store with it. The
+store is one JSON file and cannot be staged in part, so the run loop commits it before every
+dispatch that finds it changed: the driver's own entries, and whatever an earlier session left
+uncommitted, are in the loop's commit, and a role's commit holds only what the role wrote
+([run-loop.md](run-loop.md) § Protocol invariants).
 
 - **plan-writer / plan-reviewer** — out-of-scope observations about the spec or the estate;
   events during planning. Their in-scope findings and questions keep their existing routes (the

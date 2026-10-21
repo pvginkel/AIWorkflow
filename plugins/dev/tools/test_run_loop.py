@@ -3052,6 +3052,193 @@ def test_a_stop_outside_a_phase_and_a_row_without_details_are_reported():
         assert "> ### not a heading" in events and "### E3" not in events
 
 
+# AIWF-87: the driver's own entries were left in the store to ride the
+# report's next commit — a role's, which stages the store by name and so
+# carried them too (a P9 code-reviewer's commit held the loop's E1). The
+# driver commits the store before every dispatch that finds it changed. The
+# fake sees only the spec repo's pathspec commits, so a test marks the store
+# committed where a real run's commits would have left it so.
+
+def store_committed(loop):
+    """The store as it stands is the one the spec repo's last commit holds."""
+    store = run_loop.store_path(loop.slice_dir)
+    loop.fake_git.specs_committed[str(store)] = store.read_text()
+
+
+def committed_entry_ids(loop):
+    """The ids of the entries the spec repo's last commit of the store
+    holds — none before one."""
+    text = loop.fake_git.specs_committed.get(
+        str(run_loop.store_path(loop.slice_dir)))
+    return [e["id"] for e in json.loads(text)["entries"]] if text else []
+
+
+def stopped_in_p1(slice_dir):
+    """The planned report in place, and a run that stopped in P1's executor
+    with the stop not entered yet — its resume enters it at the first
+    dispatch."""
+    run_loop.init_report(slice_dir)
+    state = resume_state(PROJECT, stage="executor")
+    state["bailouts"] = [
+        {"reason": "blocked", "phase": "1", "question": False,
+         "ts": "2026-10-20T08:00:00.000000+02:00", "run_phase": "phases",
+         "details": "no creds for the registry"}]
+    (slice_dir / "state.json").write_text(json.dumps(state))
+
+
+BEFORE_P1_WRITER = "slice 074: close-out report before P1 code-writer"
+
+
+def test_the_drivers_entries_are_committed_before_the_next_dispatch():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        stopped_in_p1(slice_dir)
+        seen = {}
+
+        def appends_and_commits(loop):
+            g, store = loop.fake_git, run_loop.store_path(loop.slice_dir)
+            seen["spawned"] = (list(g.specs_commits),
+                               g.specs_committed.get(str(store))
+                               == store.read_text(),
+                               committed_entry_ids(loop))
+            # the role's own entry, the store committed by name
+            close_out.append_entry(loop.slice_dir, "defect", "the writer's",
+                                   "body", consequence="c")
+            loop.specs_git("add", "--", str(store))
+            loop.specs_git("commit", "-m", "slice 074: P1 built", "--",
+                           str(store))
+            seen["role"] = committed_entry_ids(loop)
+
+        def reviews(loop):
+            md = loop.report_path
+            seen["review"] = (list(loop.fake_git.specs_commits),
+                              loop.fake_git.specs_committed.get(str(md))
+                              != md.read_text())
+
+        script = [("code-writer", {"outcome": "done", "summary": "built"},
+                   appends_and_commits),
+                  ("code-reviewer", {"outcome": "signoff", "summary": "ok"},
+                   reviews),
+                  *TAIL]
+        r = SpawningLoop(slice_dir, script, resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        store_committed(r)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        # the resume's stop entry, committed on its own before the writer ran
+        assert seen["spawned"] == ([BEFORE_P1_WRITER], True, ["E1"])
+        # so the writer's commit of the store adds its own entry, nothing else
+        assert seen["role"] == ["E1", "B1"]
+        # the render it left uncommitted is no reason for another commit
+        assert seen["review"] == ([BEFORE_P1_WRITER, "slice 074: P1 built"],
+                                  True)
+        assert (f"[close-out] committed close-out.md: {BEFORE_P1_WRITER}"
+                in (slice_dir / "log.txt").read_text())
+
+
+def test_a_render_changed_alone_is_not_committed_before_a_dispatch():
+    """Every agent that writes to the report leaves its render, close-out.md,
+    uncommitted: a dispatch that finds the store unchanged commits nothing."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        run_loop.init_report(slice_dir)
+        seen = []
+
+        def looks(loop):
+            md = loop.report_path
+            seen.append((list(loop.fake_git.specs_commits),
+                         loop.fake_git.specs_committed.get(str(md))
+                         != md.read_text()))
+
+        r = SpawningLoop(slice_dir, [("code-writer", {
+            "outcome": "blocked", "summary": "no creds"}, looks)],
+            repo_root=repo)
+        store_committed(r)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 3
+        assert seen == [([], True)]
+
+
+def test_a_report_commit_that_fails_before_a_dispatch_is_logged_not_fatal():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        stopped_in_p1(slice_dir)
+        seen = []
+        r = SpawningLoop(slice_dir, [
+            ("code-writer", {"outcome": "done", "summary": "built"},
+             lambda loop: seen.append(list(loop.fake_git.specs_commits))),
+            V["review_signoff"], *TAIL], resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        store_committed(r)
+        r.fake_git.fails.add((
+            "-C", str(r.slice_dir), "commit", "-m", BEFORE_P1_WRITER, "--",
+            str(run_loop.store_path(r.slice_dir)), str(r.report_path)))
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        # the writer ran all the same, with the stop entry uncommitted
+        assert r.sessions[0][0] == "code-writer" and seen == [[]]
+        log = (slice_dir / "log.txt").read_text()
+        assert (f"[close-out] report not committed before P1 code-writer "
+                f"(git -C {r.slice_dir} commit -m {BEFORE_P1_WRITER} --"
+                in log)
+        assert "failed) — the driver's entries ride its commit" in log
+        # the next dispatch commits what that one could not
+        assert r.fake_git.specs_commits[0] == \
+            "slice 074: close-out report before P1 code-reviewer"
+
+    # Any error, not a Bailout alone, is logged the same way.
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        run_loop.init_report(slice_dir)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+
+        def breaks(message, label="[wrap-up]"):
+            raise OSError("disk full")
+
+        r._commit_report = breaks
+        r._commit_own_entries("the test-agent nudge")
+        assert ("[close-out] report not committed before the test-agent "
+                "nudge (OSError: disk full)"
+                in (slice_dir / "log.txt").read_text())
+
+
+def test_a_nudge_commits_the_drivers_entries_before_it_resumes_the_session():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = sibling_phase_slice(tmp)
+        ids = []
+
+        def tests_then_the_driver_writes(loop):
+            store_committed(loop)   # the test agent committed the store
+            # an entry the driver writes after the round, before the nudge
+            ids.append(loop._report("Notable events", "a driver event",
+                                    "body", consequence="none"))
+
+        r = ScriptedLoop(slice_dir, [
+            V["exec_done"], V["review_signoff"], V["consult_complete"],
+            (*V["test_clean"], tests_then_the_driver_writes), V["doc_done"]],
+            repo_root=repo)
+        r.fake_git.unpushed[str(sib)] = "1"
+        seen = []
+
+        def resumed(prompt, cwd, timeout, agent=None, resume_session=None,
+                    **kw):
+            g, store = r.fake_git, run_loop.store_path(r.slice_dir)
+            seen.append((resume_session, list(g.specs_commits),
+                         g.specs_committed.get(str(store))
+                         == store.read_text()))
+            g.unpushed.clear()   # the nudged session pushes
+            result = run_loop.SessionResult()
+            result.session_id = resume_session
+            result.result_text = "pushed"
+            return 0, result
+
+        with patched(run_loop, run_kc_session=resumed):
+            assert run_to_exit(r) == 0
+        assert seen == [("sess-test", ["slice 074: close-out report before "
+                                       "the test-agent nudge"], True)]
+        assert ids[0] in committed_entry_ids(r)
+
+
 def test_writer_question_resume_dispatches_writer_with_tagged_ruling():
     """A writer `question` mid-review resumes into a writer fix round — the
     ruling pointer is tagged onto the round's review report — never into a

@@ -557,6 +557,15 @@ whose own write meets the refusal says what it meant to write in its verdict and
 the check before the next dispatch stops the run. The render at a bail and the stamp at
 completion only log the refusal: `/dev:run-slice` meets it there with the operator.
 
+**The loop commits its own entries before a role writes.** The driver's close-out entries — a
+refuted finding, a held push, a resumed stop — are written between sessions. Before every
+dispatch and every nudge, once the report passed the edit check, the run loop commits the store
+when `close-out.json` shows a change, `close-out.md` with it, staged by name. Left in the store,
+they would ride the next role's commit, since a JSON file cannot be staged in part: PilotApp's
+slice 002 P9 reviewer committed its own T6 together with the loop's E1 and a header bump. A
+`close-out.md` changed alone makes no commit; it rides the next one. A commit that fails is logged
+and the dispatch goes ahead.
+
 **The loop does not start without the tool containers its Targets' manifests call.** At
 startup, fresh or `--resume`, once the plan's Targets resolve and before any dispatch, the run
 loop scans each Target repo's `.kubecoder/project.yaml` for `cexec <tool>` calls — a text scan,
