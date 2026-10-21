@@ -2241,6 +2241,140 @@ def test_every_component_gate_hint_says_what_exit_3_means():
         assert "Exit 3 is kc's \"nothing ran\"" in run_loop.NOTHING_RAN_HINT
 
 
+# -- kc's full output inlined into the gate log (AIWF-85) ---------------------
+#
+# `kc project test` prints a status line and the last few lines per
+# statement, and closes on `full output: /tmp/kc/project/test-….log` — a file
+# kc keeps for 20 runs and a restart loses. The reviewer, told the gate log
+# holds the full output, had to open /tmp; the driver now appends that file.
+
+class KcFullOutputLoop(KcExitLoop):
+    """KcExitLoop whose phase-gate kc runs close the way kc's do, on a
+    `full output:` line — naming `full_outputs` in order, one per run, and
+    none once spent."""
+
+    def __init__(self, slice_dir, script, full_outputs=(), **kw):
+        super().__init__(slice_dir, script, **kw)
+        self.full_outputs = list(full_outputs)
+
+    def _gate_exec(self, argv, cwd, log_file):
+        rc_ = super()._gate_exec(argv, cwd, log_file)
+        if not self._sweeping and self.full_outputs:
+            log_file.write(f"full output: {self.full_outputs.pop(0)}\n")
+        return rc_
+
+
+def kc_full_log(tmp, name, text):
+    path = Path(tmp) / name
+    path.write_text(text)
+    return str(path)
+
+
+def test_the_gate_log_inlines_kcs_full_output_after_kcs_own_lines():
+    """The history row's summary stays kc's own last line, never the
+    inlined file's."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        full = kc_full_log(tmp, "test-20261021T010554Z-653.log",
+                           "collected 12 items\nlast line of the full log\n")
+        r = KcFullOutputLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                         *TAIL],
+                             repo_root=repo, gate_rcs=[0],
+                             full_outputs=[full])
+        assert run_to_exit(r) == 0
+        state = load_state(slice_dir)
+        log = Path(state["phases"]["1"]["gate_green_log"]).read_text()
+        assert log == (f"kc project test --project {PROJECT}: exit 0\n"
+                       f"full output: {full}\n"
+                       f"\n=== kc's full output ({full}) ===\n"
+                       "collected 12 items\nlast line of the full log\n")
+        row = next(h for h in state["history"] if h["role"] == "gate")
+        assert row["summary"] == f"full output: {full}"
+
+
+def test_a_full_output_file_that_is_gone_is_said_and_not_inlined():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        gone = str(Path(tmp) / "test-rotated-out.log")
+        r = KcFullOutputLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                         *TAIL],
+                             repo_root=repo, gate_rcs=[0],
+                             full_outputs=[gone])
+        assert run_to_exit(r) == 0
+        state = load_state(slice_dir)
+        log = Path(state["phases"]["1"]["gate_green_log"]).read_text()
+        assert log.endswith(f"full output: {gone}\n\n=== kc's full output "
+                            f"({gone}) is gone — not inlined ===\n")
+        row = next(h for h in state["history"] if h["role"] == "gate")
+        assert row["summary"] == f"full output: {gone}"
+
+
+def test_the_missing_tool_scan_never_reads_the_inlined_full_output():
+    """A red whose kc lines are clean is a fix round, even when a failing
+    test's full output quotes cexec's missing-tool line."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        full = kc_full_log(tmp, "test-red.log",
+                           f"FAILED test_cexec_message\n{CEXEC_MISSING}")
+        r = KcFullOutputLoop(slice_dir, [V["exec_done"], V["exec_done"],
+                                         V["review_signoff"], *TAIL],
+                             repo_root=repo, gate_rcs=[1, 0],
+                             full_outputs=[full, full])
+        assert run_to_exit(r) == 0
+        assert not r.script
+        assert not (slice_dir / "bailout.json").exists()
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["gate_fix_rounds"] == 1
+        red_log = Path(ps["gate_green_log"]).with_name("gate_r1.log")
+        assert f"=== kc's full output ({full}) ===\n" \
+            f"FAILED test_cexec_message\n{CEXEC_MISSING}" in red_log.read_text()
+
+
+def test_each_root_gate_step_inlines_its_own_full_output():
+    """Step 2's pointer search starts where step 2 began: step 1's pointer
+    and its inlined file are never inlined again."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First phase",
+                                                   "root")])
+        root_full = kc_full_log(tmp, "test-root.log", "ROOT-FULL\n")
+        bare_full = kc_full_log(tmp, "test-bare.log", "BARE-FULL\n")
+        r = KcFullOutputLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                         *TAIL],
+                             repo_root=repo, gate_rcs=[3, 0],
+                             full_outputs=[root_full, bare_full])
+        with patched(run_loop, load_project_dirs=root_components):
+            assert run_to_exit(r) == 0
+        assert [argv for argv, _, _ in r.phase_gate_runs] == [ROOT_ARGV,
+                                                               BARE_ARGV]
+        state = load_state(slice_dir)
+        log = Path(state["phases"]["1"]["gate_green_log"]).read_text()
+        marks = [log.index(s) for s in (
+            "--project root: exit 3", f"full output: {root_full}",
+            f"=== kc's full output ({root_full}) ===", "ROOT-FULL",
+            "ran nothing (exit 3) — the gate is the whole repo",
+            "kc project test: exit 0", f"full output: {bare_full}",
+            f"=== kc's full output ({bare_full}) ===", "BARE-FULL")]
+        assert marks == sorted(marks)
+        assert log.count("=== kc's full output") == 2
+        row = next(h for h in state["history"] if h["role"] == "gate")
+        assert row["summary"] == f"full output: {bare_full}"
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First phase",
+                                                   "root")])
+        root_full = kc_full_log(tmp, "test-root.log", "ROOT-FULL\n")
+        r = KcFullOutputLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                         *TAIL],
+                             repo_root=repo, gate_rcs=[3, 0],
+                             full_outputs=[root_full])
+        with patched(run_loop, load_project_dirs=root_components):
+            assert run_to_exit(r) == 0
+        log = Path(load_state(slice_dir)["phases"]["1"]["gate_green_log"]
+                   ).read_text()
+        assert log.count("=== kc's full output") == 1
+        assert log.count("ROOT-FULL") == 1
+        assert log.rstrip().endswith("kc project test: exit 0")
+
+
 def test_red_gate_spawns_fresh_executor_fix_round():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
@@ -10840,6 +10974,25 @@ def test_a_phase_gate_that_meets_a_missing_tool_bails_without_a_fix_round():
             "repo" in bail["details"]
         assert "add `- use: aac-tools`" in bail["details"]
         assert load_state(slice_dir)["phases"]["1"]["gate_fix_rounds"] == 0
+
+
+class MissingToolFullOutputLoop(KcFullOutputLoop, MissingToolLoop):
+    """A red kc run printing cexec's missing-tool line, then kc's pointer."""
+
+
+def test_a_missing_tool_bailout_still_inlines_kcs_full_output():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        full = kc_full_log(tmp, "test-missing.log", "FULL-OF-THE-RED-RUN\n")
+        r = MissingToolFullOutputLoop(slice_dir, [V["exec_done"]],
+                                      repo_root=repo, gate_rcs=[1],
+                                      full_outputs=[full])
+        assert run_to_exit(r) == 4
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "missing_tools"
+        log = (slice_dir / "phases" / "P1" / "gate_r1.log").read_text()
+        assert log.index(CEXEC_MISSING) < log.index(
+            f"=== kc's full output ({full}) ===\nFULL-OF-THE-RED-RUN\n")
 
 
 def test_a_doc_gate_command_that_meets_a_missing_tool_is_unrunnable():

@@ -4,6 +4,21 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-21 — A phase gate's `gate_r<N>.log` carries kc's full output (v0.9.120)
+
+The run loop now copies kc's full-output log into the phase gate's `gate_r<N>.log`. It reads the
+`full output: /tmp/kc/project/…` line that `kc project test` ends on and appends that file's
+contents, uncapped, below kc's own lines. If the file is gone, it appends one line saying so. Each
+step of a `root` two-step gate gets its own copy. This happens after the red-outcome scans, so the
+missing-tool and missing-service checks still read only kc's lines, and the same holds on the
+bailout paths. The history row's summary is still kc's own last line. The doc gate and wrap-up
+gate logs are unchanged.
+
+Why: kc prints only the last lines of a passing command, and `/tmp/kc/project` keeps 20 runs and
+does not survive a restart. The reviewer dispatch called the gate log the full output, but in two
+reviews (KubeCoder and PilotApp, 2026-10-18) the reviewer had to open the /tmp log to see that
+the code under review had been tested. (AIWF-85)
+
 ## 2026-10-20 — `close_out.py settle` settles an owed-after criterion and strikes its action (v0.9.119)
 
 The new verb `close_out.py settle <slice> <Vid> --verdict pass|fail --evidence "…"` settles a

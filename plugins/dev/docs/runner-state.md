@@ -120,7 +120,9 @@ per repo a phase merged or committed into, a section per merged phase over its `
 one per commit its `Review:` ledger gained past `review_set_start`, rewritten at
 every doc-writer dispatch — git's answer written down, not an agent's copy, with every `kind:
 Secret`'s data lines stubbed; the folder's own `.gitignore`, `*`, keeps it out of any `git add -A`
-in the spec repo). A review round whose range changes Secret data leaves `review_r<N>.diff`
+in the spec repo). A phase gate's `gate_r<N>.log` holds kc's own lines and, below them, the full
+output kc keeps under `/tmp/kc/project`, inlined whole, so the log stands on its own once that
+file is gone. A review round whose range changes Secret data leaves `review_r<N>.diff`
 beside its review, the range redacted the same way. What a dead round left uncommitted, set aside
 by the resume before it resets the tree, is under `phases/P<id>/set-aside/` (`r<N>.patch` and
 `r<N>-untracked/`, unredacted, so that folder ignores itself the same way;

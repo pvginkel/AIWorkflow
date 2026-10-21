@@ -2967,6 +2967,9 @@ TOOL_USE_RE = re.compile(r"(?:-\s*)?use:\s*[\"']?([A-Za-z0-9][A-Za-z0-9_.-]*)")
 # What cexec prints when the sidecar it is asked for does not exist — the
 # line a gate log carries when a statement met a missing tool mid-run.
 CEXEC_MISSING_RE = re.compile(r'cexec: tool "([^"]+)" is not available')
+# The line `kc project <verb>` ends on: it prints a status line and the last
+# few lines per statement, and keeps the whole run in a file it names here.
+KC_FULL_OUTPUT_RE = re.compile(r"^full output: (/\S+)\s*$", re.M)
 
 MANIFEST_REL = Path(".kubecoder") / "project.yaml"
 ENV_CONFIG_REL = Path(".kubecoder") / "config.yaml"
@@ -3282,9 +3285,53 @@ def unavailable_tool(log_path: Path, start: int = 0) -> str | None:
     return match.group(1) if match else None
 
 
+def kc_full_output(log_path: Path, start: int = 0) -> str | None:
+    """The file kc's last `full output:` line in a gate log names
+    (KC_FULL_OUTPUT_RE), reading from byte `start` on — the pointer of the
+    command that began there, never one an earlier command printed. The
+    last, because kc's pointer closes its output and a statement's own
+    lines above it may quote another kc run's."""
+    try:
+        with open(log_path, "rb") as f:
+            f.seek(start)
+            text = f.read().decode(errors="replace")
+    except OSError:
+        return None
+    matches = KC_FULL_OUTPUT_RE.findall(text)
+    return matches[-1] if matches else None
+
+
+def _inline_kc_full_output(log_file, log_path: Path, start: int) -> None:
+    """Append the file the command that began at byte `start` points at
+    (`kc_full_output`) to its gate log: a blank line, a marker naming it,
+    its text verbatim. No pointer, no block; a file kc has rotated out or
+    a restart took is one line saying so, never a raise."""
+    path = kc_full_output(log_path, start)
+    if path is None:
+        return
+    try:
+        text = Path(path).read_text(errors="replace")
+    except OSError:
+        log_file.write(f"\n=== kc's full output ({path}) is gone — "
+                       "not inlined ===\n")
+    else:
+        log_file.write(f"\n=== kc's full output ({path}) ===\n{text}")
+    log_file.flush()
+
+
+def _last_line(path: Path) -> str:
+    """A log's last non-empty line, '' when it has none or cannot be
+    read."""
+    try:
+        lines = [ln for ln in path.read_text().splitlines() if ln.strip()]
+    except OSError:
+        return ""
+    return lines[-1] if lines else ""
+
+
 def _file_size(path: Path) -> int:
     """Where a gate log ends now — the offset its next command's output
-    starts at, for `unavailable_tool`."""
+    starts at, for `unavailable_tool` and `kc_full_output`."""
     try:
         return path.stat().st_size
     except OSError:
@@ -5138,7 +5185,9 @@ class RunLoop:
                   target: ResolvedTarget) -> tuple[bool, Path | None]:
         """Run the target's test gate as a subprocess: (passed, its log).
         The exit code decides; full output goes to gate_r<N>.log in the
-        phase's outputs dir. A target with no deterministic gate (a sibling
+        phase's outputs dir, kc's full-output file inlined after kc's own
+        lines (`_gate_cmd_outcome`) — the log is the review's artifact and
+        must stand on its own. A target with no deterministic gate (a sibling
         repo whose phase tree has no manifest now — looked for at gate time,
         so a manifest the phase itself added gates it) passes by definition
         — but records no green commit, so the reviewer is told the state is
@@ -5175,8 +5224,8 @@ class RunLoop:
         self.log(f"[P{phase_id}] gate #{n} running ({' '.join(argv)})")
         t0 = time.monotonic()
         with open(log_path, "w") as log_file:
-            outcome = self._gate_cmd_outcome(phase_id, argv, target, log_file,
-                                             log_path)
+            outcome, tail = self._gate_cmd_outcome(phase_id, argv, target,
+                                                   log_file, log_path)
             if outcome == "nothing_ran" and self._is_root(target):
                 self.log(f"[P{phase_id}] `{' '.join(argv)}` ran nothing — "
                          "root declares no tests, so the gate is the whole "
@@ -5186,18 +5235,11 @@ class RunLoop:
                                "nothing (exit 3) — the gate is the whole repo:"
                                f" `{' '.join(argv)}` ===\n")
                 log_file.flush()
-                outcome = self._gate_cmd_outcome(phase_id, argv, target,
-                                                 log_file, log_path)
+                outcome, tail = self._gate_cmd_outcome(phase_id, argv, target,
+                                                       log_file, log_path)
         duration_s = int(time.monotonic() - t0)
         gate_cmd = " ".join(argv)
         ps["gate_cmd"] = gate_cmd
-        tail = ""
-        try:
-            lines = [ln for ln in log_path.read_text().splitlines()
-                     if ln.strip()]
-            tail = lines[-1] if lines else ""
-        except OSError:
-            pass
         if outcome == "green":
             ps["gate_green_commit"] = self.git("rev-parse", "HEAD",
                                                root=target.work_root)
@@ -5217,8 +5259,9 @@ class RunLoop:
 
     def _gate_cmd_outcome(self, phase_id: str, argv: list[str],
                           target: ResolvedTarget, log_file,
-                          log_path: Path) -> str:
-        """One phase-gate command run into `log_file`, as a gate outcome. A
+                          log_path: Path) -> tuple[str, str]:
+        """One phase-gate command run into `log_file`: its gate outcome, and
+        the log's last line as kc left it — the history row's summary. A
         timeout bails; so does rc 2, kc's usage error — an unknown
         --project, and the name came from kc's own project list, so that is
         a driver bug, not a red suite. A red whose output is cexec's
@@ -5228,7 +5271,15 @@ class RunLoop:
         the pod does not run — `missing_services`, the gate and its log
         named. A refused connection on localhost:5432 has no fixed line to
         match, so it is the repo's declaration against `running_services`,
-        asked on a red alone; kc not answering leaves the red as it was."""
+        asked on a red alone; kc not answering leaves the red as it was.
+
+        kc prints only each statement's last lines and keeps the whole run
+        in the file its closing `full output:` line names, under
+        /tmp/kc/project — which holds 20 runs and does not survive a
+        restart — so that file is appended to the log once the command is
+        classified, on a bailout too. After, because the scans read kc's
+        own lines alone: a failing test's output quoting cexec's line is
+        not a missing tool."""
         log_file.flush()
         start = _file_size(log_path)
         try:
@@ -5239,28 +5290,32 @@ class RunLoop:
                 details=f"gate `{' '.join(argv)}` exceeded {GATE_TIMEOUT}s "
                         f"(output in {log_path})",
             ) from None
-        if returncode == 2:
-            raise Bailout(
-                "protocol_failure", phase=phase_id,
-                details=f"`{' '.join(argv)}` rejected its arguments "
-                        f"(output in {log_path})",
-            )
-        outcome = kc_outcome(returncode)
-        if outcome == "red":
-            log_file.flush()
-            tool = unavailable_tool(log_path, start)
-            if tool is not None:
+        log_file.flush()
+        tail = _last_line(log_path)
+        try:
+            if returncode == 2:
                 raise Bailout(
-                    "missing_tools", phase=phase_id, question=True,
-                    details=self._missing_tool_details(
-                        tool, target.git_root, argv, log_path))
-            services = self._unrun_services(target.git_root)
-            if services:
-                raise Bailout(
-                    "missing_services", phase=phase_id, question=True,
-                    details=self._missing_service_details(
-                        services, target.git_root, argv, log_path))
-        return outcome
+                    "protocol_failure", phase=phase_id,
+                    details=f"`{' '.join(argv)}` rejected its arguments "
+                            f"(output in {log_path})",
+                )
+            outcome = kc_outcome(returncode)
+            if outcome == "red":
+                tool = unavailable_tool(log_path, start)
+                if tool is not None:
+                    raise Bailout(
+                        "missing_tools", phase=phase_id, question=True,
+                        details=self._missing_tool_details(
+                            tool, target.git_root, argv, log_path))
+                services = self._unrun_services(target.git_root)
+                if services:
+                    raise Bailout(
+                        "missing_services", phase=phase_id, question=True,
+                        details=self._missing_service_details(
+                            services, target.git_root, argv, log_path))
+        finally:
+            _inline_kc_full_output(log_file, log_path, start)
+        return outcome, tail
 
     def _unrun_services(self, root: Path) -> list[MissingService]:
         """The services the repo at `root` declares and the pod does not
