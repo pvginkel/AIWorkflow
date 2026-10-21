@@ -14,8 +14,11 @@ or a gone GitHub origin is skipped. Given `--slice`, plan and run fail on a
 pending phase's Target that config.yaml declares and the pod has not cloned,
 and on nothing kc cannot place. The phase pointers and the devlock
 follow, and the retired spec-tree guard: its removal from the spec repo's git
-dir, over real git. The kc/manifest/baseline checks and the rest of clean-tree
-are not covered here.
+dir, over real git. The run baseline runs `kc project setup` before its build,
+from the repo root under the run loop's setup timeout; setup never decides: a
+red or timed-out one is a warning line under a green build and part of a red
+build's message. The kc/manifest checks and the rest of clean-tree are not
+covered here.
 
 Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_preflight.py` or via pytest.
 """
@@ -1214,34 +1217,176 @@ def test_under_plan_a_repo_whose_github_origin_is_gone_is_skipped_with_one_warni
 
 # -- check_baseline_build ----------------------------------------------------
 
+SETUP = ["kc", "project", "setup"]
+BUILD = ["kc", "project", "build"]
+
+
+class kc_verbs:
+    """Stands in for the `subprocess` module under the baseline: answers each
+    `kc project <verb>` from `answers` by verb — `(rc, stdout, stderr)`, or an
+    exception to raise — `(0, "", "")` by default, and records every call's
+    argv in `.calls` and its keyword arguments in `.kwargs`."""
+
+    TimeoutExpired = subprocess.TimeoutExpired
+
+    def __init__(self, **answers):
+        self.answers = answers
+        self.calls = []
+        self.kwargs = []
+
+    def run(self, argv, **kwargs):
+        self.calls.append(list(argv))
+        self.kwargs.append(kwargs)
+        answer = self.answers.get(argv[2], (0, "", ""))
+        if isinstance(answer, BaseException):
+            raise answer
+        return subprocess.CompletedProcess(argv, *answer)
+
+
+def setup_timed_out(output=None):
+    return subprocess.TimeoutExpired(
+        SETUP, preflight.run_loop.SETUP_TIMEOUT, output=output)
+
+
+def baseline(subproc):
+    """check_baseline_build in /work/MyApp over `subproc`. Returns
+    (exit_code, stdout, stderr) — exit_code None when it passed."""
+    stdout, stderr = io.StringIO(), io.StringIO()
+    with patched(preflight, subprocess=subproc), \
+            contextlib.redirect_stdout(stdout), \
+            contextlib.redirect_stderr(stderr):
+        try:
+            preflight.check_baseline_build(Path("/work/MyApp"))
+        except SystemExit as exit_:
+            return exit_.code, stdout.getvalue(), stderr.getvalue()
+    return None, stdout.getvalue(), stderr.getvalue()
+
+
+def numbered(name, count):
+    return "".join(f"{name} line {n}\n" for n in range(1, count + 1))
+
+
 def test_a_green_baseline_build_passes_silently():
-    subproc = fake_subprocess(0, "root: ok\n")
-    with patched(preflight, subprocess=subproc):
-        preflight.check_baseline_build(Path("/work/MyApp"))
-    assert subproc.calls == [["kc", "project", "build"]]
+    subproc = kc_verbs(setup=(0, "root: ok\n", ""), build=(0, "root: ok\n", ""))
+    assert baseline(subproc) == (None, "", "")
+    assert subproc.calls == [SETUP, BUILD]
+
+
+def test_setup_runs_from_the_repo_root_before_the_build_under_its_timeout():
+    """The run loop's own bound on a hung setup; the build keeps none."""
+    subproc = kc_verbs()
+    baseline(subproc)
+    assert subproc.calls == [SETUP, BUILD]
+    setup, build = subproc.kwargs
+    assert setup["cwd"] == build["cwd"] == "/work/MyApp"
+    assert setup["timeout"] == preflight.run_loop.SETUP_TIMEOUT
+    assert setup["capture_output"] and setup["text"]
+    assert "timeout" not in build
 
 
 def test_a_manifest_with_no_build_statement_passes():
     """kc exits 3 (KC-81) when no component has a build statement — nothing
     ran, so there is no baseline to break (Ansible slice 026)."""
-    subproc = fake_subprocess(
+    subproc = kc_verbs(build=(
         3, "root: no build statements — skipped\n"
-           "ansible: no build statements — skipped\n")
-    with patched(preflight, subprocess=subproc):
-        preflight.check_baseline_build(Path("/work/MyApp"))
+           "ansible: no build statements — skipped\n", ""))
+    assert baseline(subproc) == (None, "", "")
+
+
+def test_a_repo_with_no_setup_and_a_green_build_passes_silently():
+    """Exit 3 from setup is a repo that defines none — not red."""
+    subproc = kc_verbs(setup=(3, "root: no setup statements — skipped\n", ""))
+    assert baseline(subproc) == (None, "", "")
+    assert subproc.calls == [SETUP, BUILD]
+
+
+def test_a_red_setup_under_a_green_build_passes_with_one_warning_line():
+    """Setup does not decide, the build does — as in the run loop's
+    `_setup_targets`; what setup could not install is the phase gates'."""
+    subproc = kc_verbs(setup=(1, "npm ERR! code E404\nnpm ERR! 404 pg\n\n", ""))
+    code, stdout, stderr = baseline(subproc)
+    assert code is None and stderr == ""
+    assert stdout.count("\n") == 1, "one line"
+    assert stdout.startswith("warning: ")
+    assert "`kc project setup` failed (exit 1)" in stdout
+    assert "`kc project build` was green, so the run goes on" in stdout
+    assert stdout.rstrip("\n").endswith("(setup's last line: npm ERR! 404 pg)")
+
+
+def test_a_timed_out_setup_under_a_green_build_passes_with_a_warning():
+    """A hung setup is killed at SETUP_TIMEOUT; its partial output arrives
+    as bytes, or not at all."""
+    timeout = preflight.run_loop.SETUP_TIMEOUT
+    for output, last in ((b"resolving deps\nfetching pg\n",
+                          " (setup's last line: fetching pg)"),
+                         (None, "")):
+        subproc = kc_verbs(setup=setup_timed_out(output))
+        code, stdout, stderr = baseline(subproc)
+        assert code is None and stderr == "", output
+        assert subproc.calls == [SETUP, BUILD]
+        assert stdout.count("\n") == 1, output
+        assert stdout.startswith(
+            f"warning: `kc project setup` timed out after {timeout}s, ")
+        assert "`kc project build` was green" in stdout
+        assert stdout.rstrip("\n").endswith(
+            "could not install" + last), stdout
 
 
 def test_a_red_baseline_build_is_the_projects_to_fix():
-    subproc = fake_subprocess(1, "ansible: FAILED\n")
-    stderr = io.StringIO()
-    with patched(preflight, subprocess=subproc):
-        with contextlib.redirect_stderr(stderr):
-            try:
-                preflight.check_baseline_build(Path("/work/MyApp"))
-                raise AssertionError("expected SystemExit")
-            except SystemExit as exit_:
-                assert exit_.code == 1
-    assert "ansible: FAILED" in stderr.getvalue()
+    code, stdout, message = baseline(kc_verbs(build=(1, "ansible: FAILED\n", "")))
+    assert code == 1 and stdout == ""
+    assert message.startswith(
+        "Baseline `kc project build` failed — the suite must be green before "
+        "a slice runs")
+    assert "ansible: FAILED" in message
+
+
+def test_a_green_setup_under_a_red_build_carries_setups_last_lines():
+    """A green setup tells the reader the red is not install state."""
+    subproc = kc_verbs(setup=(0, numbered("setup", 30), ""),
+                       build=(1, numbered("build", 50), ""))
+    code, _, message = baseline(subproc)
+    assert code == 1
+    prose = message.splitlines()[0]
+    assert "ran green before it, so the red is not install state" in prose
+    assert "fix setup's own failure first" not in message
+    assert "`kc project setup` → GREEN (exit 0):" in message
+    assert "setup line 30" in message and "setup line 11" in message
+    assert "setup line 10\n" not in message
+    assert "`kc project build` → RED (exit 1):" in message
+    assert "build line 50" in message and "build line 11" in message
+    assert "build line 10\n" not in message
+    assert message.index("setup line 30") < message.index("build line 11")
+
+
+def test_a_red_setup_under_a_red_build_names_setup_as_the_first_fix():
+    subproc = kc_verbs(setup=(1, numbered("setup", 30), "npm ERR! 404 pg\n"),
+                       build=(1, "TS2307: Cannot find module 'pg'\n", ""))
+    code, stdout, message = baseline(subproc)
+    assert code == 1 and stdout == ""
+    prose = message.splitlines()[0]
+    assert prose.startswith("Baseline `kc project build` failed")
+    assert ("`kc project setup`, run before it, failed (exit 1): fix setup's "
+            "own failure first") in prose
+    assert "`kc project setup` → RED (exit 1):" in message
+    assert "npm ERR! 404 pg" in message and "setup line 12" in message
+    assert "setup line 11\n" not in message
+    assert "TS2307: Cannot find module 'pg'" in message
+    assert (message.index("npm ERR! 404 pg")
+            < message.index("`kc project build` → RED")
+            < message.index("TS2307"))
+
+
+def test_a_timed_out_setup_under_a_red_build_says_so():
+    timeout = preflight.run_loop.SETUP_TIMEOUT
+    subproc = kc_verbs(setup=setup_timed_out("fetching pg\n"),
+                       build=(1, "TS2307: Cannot find module 'pg'\n", ""))
+    code, _, message = baseline(subproc)
+    assert code == 1
+    assert (f"`kc project setup`, run before it, timed out after {timeout}s: "
+            "fix setup's own failure first") in message.splitlines()[0]
+    assert f"`kc project setup` → timed out after {timeout}s:" in message
+    assert "fetching pg" in message and "TS2307" in message
 
 
 def test_against_the_real_kc_status():

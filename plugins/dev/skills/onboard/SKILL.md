@@ -208,14 +208,16 @@ the operator, per component:
 - **`test:`** — what proves this component works? This is a decision, not a discovery. A component
   that declares no test statements is **green by definition**, and for a docs-only or config-only
   component that is the right answer, not a gap. Say so plainly rather than inventing a gate.
-- **`build:`** — preflight's run profile runs `kc project build` repo-wide as the baseline gate, so
-  a component whose build is red blocks every slice. Confirm it is green now.
+- **`build:`** — preflight's run profile runs `kc project setup`, then `kc project build`
+  repo-wide as the baseline gate, so a component whose build is red after a setup blocks every
+  slice. Confirm it is green now.
 - **`lint:`** — the `code-writer` runs the project's lint before handing back.
 
 Verify rather than assume — a manifest that parses but does not run is worse than none:
 
 ```bash
 kc project list --output=json      # names + cwds resolve
+kc project setup                   # what preflight runs before its baseline
 kc project build                   # the baseline preflight will demand
 kc project test --project <name>   # per component: does it do what the operator just described?
 ```

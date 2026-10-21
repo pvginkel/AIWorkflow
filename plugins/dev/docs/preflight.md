@@ -3,13 +3,15 @@
 `${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage|plan|run` is one repo-shipped,
 **stdlib-only** script each pipeline skill runs as **step one**. The checks are `kc` primitives
 plus the repo's `.aiworkflowrc` contract from [`project-contract.md`](project-contract.md) — and
-two steps that act rather than check: removing the spec-tree guard an older plugin installed in
-the spec repo (§ Notes on the spec-tree guard), and the sync that brings the environment's repos
-up to their origins (§ Notes on the sync).
+three steps that act rather than check: removing the spec-tree guard an older plugin installed in
+the spec repo (§ Notes on the spec-tree guard), the sync that brings the environment's repos up
+to their origins (§ Notes on the sync), and the `kc project setup` the run baseline runs before
+its build (§ Notes on the run baseline).
 
 **Silent on success** — but for one line, on a pass, when the session's plugin copy is stale
-(§ Notes on the plugin check), and under `plan` a `warning:` line for each repo the sync passed
-over (§ Notes on the sync). On failure it prints **one** actionable message — what is missing,
+(§ Notes on the plugin check), under `plan` a `warning:` line for each repo the sync passed
+over (§ Notes on the sync), and under `run` a `warning:` line when the baseline's setup went red
+or timed out and its build was green (§ Notes on the run baseline). On failure it prints **one** actionable message — what is missing,
 the exact line/fix, and a pointer to `project-contract.md` — so a new repo self-onboards from the
 error text. Each skill relays that message verbatim on a non-zero exit and stops; the run loop
 does **not** re-run preflight, so `/dev:run-slice` is the gate.
@@ -39,7 +41,7 @@ does **not** re-run preflight, so `/dev:run-slice` is the gate.
 | Declared Target repos cloned: no pending phase of the `--slice` plan targets a repo path `.kubecoder/config.yaml` declares and the pod has not cloned — only with `--slice` | – | ✓ | ✓ |
 | Clean working tree | – | – | ✓ |
 | Synced with origin: fetch, then fast-forward or rebase the checked-out branch — the target repo, every checkout beside it, the spec repo; under `plan` only the target repo, the spec repo and the `--slice` plan's Target repos block | – | ✓ | ✓ |
-| Baseline: `kc project build` (all components) | – | – | ✓ |
+| Baseline: `kc project setup`, then `kc project build` (all components) | – | – | ✓ |
 | The session's plugin is the installed one — else a line naming the installed loop, still a pass | – | ✓ | ✓ |
 
 Checks run in that order (cheapest first, the baseline build last). `kc` is checked before anything
@@ -161,11 +163,21 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
 
 ## Notes on the run baseline
 
-- The baseline is **`kc project build` only, always on** (no skip flag). A baseline-broken suite
+- The baseline gates on **`kc project build` only, always on** (no skip flag). A baseline-broken suite
   screams on the first phase's gate run anyway, and a project that cares can put a cheap collect
   step in its manifest's `build` list. A manifest with no `build` statement passes: kc exits 3
   (nothing ran), and there is no baseline to break. Full `kc project test` is **not** a preflight
   step — it is the per-phase gate the run loop owns.
+- **`kc project setup` runs first**, bare, from the repo root, capped at the run loop's 900 s
+  setup timeout. Otherwise an install that is behind its lockfile reads as a red baseline. In
+  PilotApp (2026-10-18), a template sync had added `pg` to `package.json` and the lockfile while
+  `node_modules` was older. The frontend type-check failed with `TS2307 Cannot find module 'pg'`,
+  and `kc project setup` made it green. Setup takes seconds on an install that is already current:
+  0–8 s across the run loop's run-start setups. The build decides, as it does after the run
+  loop's own setup ([run-loop.md](run-loop.md) § Protocol invariants, *The loop sets up its
+  Target repos*). A repo that defines no setup (exit 3) passes. A red or timed-out setup with a
+  green build passes, with a `warning:` line. A red build's failure message carries setup's
+  outcome and its last lines, so it shows whether install state is the cause.
 
 ## Notes on the plugin check
 

@@ -9,23 +9,23 @@ Contract, expressed over `kc` primitives plus the repo's `.aiworkflowrc` (see
 ${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md and `project_config.py` for the
 schema):
 
-| Check                                          | triage | plan | run |
-|------------------------------------------------|:------:|:----:|:---:|
-| kc on PATH                                      |   x    |  x   |  x  |
-| Control plane healthy (kc status)               |        |  x   |  x  |
-| Manifest valid (kc project list >=1 component)  |        |  x   |  x  |
-| `.aiworkflowrc` present and valid               |   x    |  x   |  x  |
-| `spec_repo` set, directory exists               |   x    |  x   |  x  |
-| Retired spec-tree guard removed (spec repo)     |   x    |  x   |  x  |
-| `design_philosophy` set, file exists            |        |      |  x  |
-| `test_phase.strategy` set + exists, when on     |        |      |  x  |
-| `doc_phase.plan` set + exists, when on          |        |      |  x  |
-| `devlock.lease` resolvable, when set            |        |      |  x  |
-| Declared Target repos cloned (`--slice` only)   |        |  x   |  x  |
-| Clean working tree                              |        |      |  x  |
-| Synced with origin (ff / rebase; refuse dirty)  |        |  x*  |  x  |
-| Baseline `kc project build` (all components)    |        |      |  x  |
-| Session plugin = installed (else print loop)    |        |  x   |  x  |
+| Check                                                | triage | plan | run |
+|------------------------------------------------------|:------:|:----:|:---:|
+| kc on PATH                                           |   x    |  x   |  x  |
+| Control plane healthy (kc status)                    |        |  x   |  x  |
+| Manifest valid (kc project list >=1 component)       |        |  x   |  x  |
+| `.aiworkflowrc` present and valid                    |   x    |  x   |  x  |
+| `spec_repo` set, directory exists                    |   x    |  x   |  x  |
+| Retired spec-tree guard removed (spec repo)          |   x    |  x   |  x  |
+| `design_philosophy` set, file exists                 |        |      |  x  |
+| `test_phase.strategy` set + exists, when on          |        |      |  x  |
+| `doc_phase.plan` set + exists, when on               |        |      |  x  |
+| `devlock.lease` resolvable, when set                 |        |      |  x  |
+| Declared Target repos cloned (`--slice` only)        |        |  x   |  x  |
+| Clean working tree                                   |        |      |  x  |
+| Synced with origin (ff / rebase; refuse dirty)       |        |  x*  |  x  |
+| Baseline `kc project setup`, then `kc project build` |        |      |  x  |
+| Session plugin = installed (else print loop)         |        |  x   |  x  |
 
 A phase the project switched off is not checked: its pointer is absent by
 contract, and checking it would make an optional phase mandatory again.
@@ -40,17 +40,22 @@ A pending phase of the `--slice` plan whose repo-path Target
 environment fault (exit 2), named as such (`check_targets_cloned`); without
 `--slice` there is no plan to read, and the check passes.
 
-Two steps *act* rather than check. The sync pulls a clean base onto its own
+Three steps *act* rather than check. The sync pulls a clean base onto its own
 origin, which destroys nothing, while a repo with uncommitted work is refused,
 never pulled over (docs/preflight.md, "Notes on the sync"). The guard removal
 deletes the pre-commit hook an older plugin installed in the spec repo's git
 dir — only a hook carrying the guard's marker; anyone else's is left alone.
+Under run, the baseline's `kc project setup` installs what the repo's lockfiles
+ask for before the build, so an install behind its lockfile does not read as a
+red baseline; a red or timed-out setup is a `warning:` line when the build is
+green (docs/preflight.md, "Notes on the run baseline").
 
 **Silent on success** (exit 0) — but for a line when it removed that hook, a
-`warning:` line under plan for each repo the sync passed over (*, above), and
-one, printed last, when the plugin this session runs from is not the installed
-one: the installed copy of the loop the command launches, which the session
-launches instead. On failure, prints ONE
+`warning:` line under plan for each repo the sync passed over (*, above), one
+under run when the baseline's setup was red or timed out and its build green,
+and one, printed last, when the plugin this session runs from is not the
+installed one: the installed copy of the loop the command launches, which the
+session launches instead. On failure, prints ONE
 actionable message — what is missing, the exact line/fix, and a pointer to the
 project contract — so a new repo self-onboards from the error text. Exit codes:
 
@@ -791,17 +796,80 @@ def check_synced(root: Path, cfg: project_config.ProjectConfig | None,
 # whose manifest has no build statement has no baseline to break — it passes.
 KC_NOTHING_RAN = 3
 
+# How much of each command's output a red baseline's message carries.
+SETUP_TAIL = 20
+BUILD_TAIL = 40
+
+
+def _captured(stream: str | bytes | None) -> str:
+    """A captured stream as text: a TimeoutExpired's partial output may be
+    bytes, or None when nothing was read before the kill."""
+    if isinstance(stream, bytes):
+        return stream.decode(errors="replace")
+    return stream or ""
+
 
 def check_baseline_build(root: Path) -> None:
+    """`kc project setup`, then the baseline `kc project build`. Setup runs
+    first so a dependency added since the last setup does not read as a red
+    baseline — PilotApp's type-check met TS2307 "Cannot find module 'pg'"
+    after a template sync added `pg` to its lockfile, and setup made it
+    green. As in the run loop's `_setup_targets`, setup does not decide, the
+    build does: a red or timed-out setup is one `warning:` line under a green
+    build, and a red build's message carries setup's outcome and last lines,
+    a failed setup named as the first thing to fix. SETUP_TIMEOUT bounds a
+    hung setup; exit 3 (nothing ran) passes for both verbs."""
+    try:
+        setup = subprocess.run(
+            ["kc", "project", "setup"], cwd=str(root), capture_output=True,
+            text=True, timeout=run_loop.SETUP_TIMEOUT)
+    except subprocess.TimeoutExpired as expired:
+        setup_output = _captured(expired.stdout) + _captured(expired.stderr)
+        outcome = "timed_out"
+        setup_said = setup_failed = f"timed out after {run_loop.SETUP_TIMEOUT}s"
+    else:
+        setup_output = setup.stdout + setup.stderr
+        outcome = run_loop.kc_outcome(setup.returncode)
+        setup_said = (f"{run_loop.GATE_OUTCOME_LABELS[outcome]} "
+                      f"(exit {setup.returncode})")
+        setup_failed = (f"failed (exit {setup.returncode})"
+                        if outcome == "red" else None)
+    setup_lines = setup_output.strip().splitlines()
+
     result = subprocess.run(
         ["kc", "project", "build"], cwd=str(root), capture_output=True, text=True)
-    if result.returncode not in (0, KC_NOTHING_RAN):
-        tail = (result.stdout + result.stderr).strip().splitlines()[-40:]
-        fail(1,
-             "Baseline `kc project build` failed — the suite must be green before a "
-             "slice runs (a baseline-broken build screams on task 1 otherwise). Fix "
-             "the baseline, or narrow the manifest's build list, then retry.\n"
-             + "\n".join(tail))
+    if result.returncode in (0, KC_NOTHING_RAN):
+        if setup_failed:
+            built = ("was green" if result.returncode == 0
+                     else f"had nothing to build (exit {KC_NOTHING_RAN})")
+            last = next((line.strip() for line in reversed(setup_lines)
+                         if line.strip()), "")
+            print(f"warning: `kc project setup` {setup_failed}, but the "
+                  f"baseline `kc project build` {built}, so the run goes on — "
+                  f"the phase gates meet what setup could not install"
+                  + (f" (setup's last line: {last})" if last else ""))
+        return
+
+    if setup_failed:
+        about_setup = (f"`kc project setup`, run before it, {setup_failed}: "
+                       f"fix setup's own failure first — the build may be red "
+                       f"only for what setup could not install. ")
+    elif outcome == "green":
+        about_setup = ("`kc project setup` ran green before it, so the red is "
+                       "not install state. ")
+    else:
+        about_setup = ("The repo defines no `kc project setup`, so none ran "
+                       "before it. ")
+    tail = (result.stdout + result.stderr).strip().splitlines()[-BUILD_TAIL:]
+    fail(1, "\n\n".join([
+        "Baseline `kc project build` failed — the suite must be green before a "
+        "slice runs (a baseline-broken build screams on task 1 otherwise). "
+        + about_setup + "Fix the baseline, or narrow the manifest's build "
+        "list, then retry.",
+        "\n".join([f"`kc project setup` → {setup_said}:",
+                   *setup_lines[-SETUP_TAIL:]]),
+        "\n".join([f"`kc project build` → RED (exit {result.returncode}):",
+                   *tail])]))
 
 
 # Triage deliberately has no `kc_status`: it dispatches nothing and touches no
@@ -889,7 +957,7 @@ def main() -> None:
     # Last, so it is printed only on a pass, never beside a failure's message.
     if "plugin_current" in checks:
         check_plugin_current(args.profile)
-    # Silent on success, but for that line and the sync's warnings.
+    # Silent on success, but for that line and the sync's and baseline's warnings.
 
 
 if __name__ == "__main__":

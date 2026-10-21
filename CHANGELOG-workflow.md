@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-21 — Preflight runs `kc project setup` before its baseline build (v0.9.121)
+
+`preflight.py --for run` now runs a bare `kc project setup` from the repo root before its
+baseline `kc project build`, capped by the run loop's 900 s setup timeout. Exit 3 means the repo
+defines no setup, and passes. The build still decides, as it does after the run
+loop's run-start setup. If setup goes red or times out and the build is green, preflight passes
+and prints a `warning:` line. A red build's failure message also carries setup's outcome and last
+lines. preflight.md (the profile table, the success output, § Notes on the run baseline), the
+script's docstring and the onboard skill's `build:` step say so.
+
+Why: an install behind its lockfile read as a red baseline. In PilotApp (2026-10-18), a template
+sync had added `pg` to `package.json` and the lockfile while `node_modules` was older. The
+frontend type-check failed with `TS2307 Cannot find module 'pg'`, and preflight answered "Baseline
+`kc project build` failed — the suite must be green before a slice runs". `kc project setup` made
+it green. On an install that is already current, setup takes seconds: 0–8 s across the run loop's
+logged run-start setups. (AIWF-86)
+
 ## 2026-10-21 — A phase gate's `gate_r<N>.log` carries kc's full output (v0.9.120)
 
 The run loop now copies kc's full-output log into the phase gate's `gate_r<N>.log`. It reads the
