@@ -4,6 +4,20 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-23 — The plan-writer gives a criterion owed after an operator action its `owed_after` key (v0.9.123)
+
+The plan-writer's definition now names `owed_after`. A criterion that slice.md, a ruling or an
+adjudicated finding makes owed after a held push or another operator action carries that as its
+`owed_after` key, per plan-template.md § verification.json, and never only in its description.
+This holds on the initial pass and the fix pass alike. The shape the agent quotes gains the
+optional key.
+
+Why: the key lived only in plan-template.md, and the agent's own shape left it out. In PilotApp
+(2026-10-19), an adjudicated ruling made V21 and V22 owed after the operator's first sign-in in
+production. The fix pass wrote that into their descriptions with no key, so `plan_loop.py` exited
+0 without seeding a `Settle Vnn after …` action, and the operator's runbook would not have
+carried it. The session caught it on its own sanity read. (AIWF-89)
+
 ## 2026-10-21 — The run loop commits its own close-out entries before a dispatch (v0.9.122)
 
 Before every dispatch and every nudge, the run loop now commits the slice's close-out store when

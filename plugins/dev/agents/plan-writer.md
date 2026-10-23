@@ -57,8 +57,12 @@ criterion rests on a code fact, cite `file:line` evidence you verified this pass
 criterion's `description`; `evidence` stays `[]` for the test phase.
 Coverage-preservation criteria are allowed ("no coverage is lost; every deleted test has a named
 successor" — phrased as an outcome, never an inventory of paths). Doc-truth universals are
-banned. Shape: `{"items": [{"id": "V01", "area": "…", "description": "…", "verdict": null,
-"rationale": "", "evidence": []}]}`.
+banned. A criterion that slice.md, a ruling or an adjudicated finding makes owed after a held push
+or another operator action carries that as its `owed_after` key, per
+`${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md` § verification.json — never only in its
+`description`: the key is what seeds the operator's `Settle <id> after …` action, and a fix pass
+applies such a ruling the same way. Shape: `{"items": [{"id": "V01", "area": "…", "description":
+"…", "owed_after": "<optional>", "verdict": null, "rationale": "", "evidence": []}]}`.
 
 ## Method
 
