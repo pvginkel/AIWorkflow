@@ -68,7 +68,12 @@ worktree, from its creation to the merge that removes it), `executor_rounds`, `g
 `gate_green_log`, `gate_nothing_ran_commit` (the head the gate last ran nothing on — the
 reviewer is told the target defines no tests only when it is the commit under review),
 `gate_cmd` (the command whose outcome stands — bare `kc project test` when a root phase's
-`--project root` ran nothing; what the reviewer's gate line and a fix round's prompt name),
+`--project root` ran nothing), `gate_projects` (a component Target's last gate run, one entry
+per kc project it ran or waived — the Target first, then every other component the phase's diff
+touches — each with its `project`, `cmd` and `outcome`, `green` | `red` | `nothing_ran` |
+`waived`; the reviewer's gate line names the green ones as covered and the rest as not, a fix
+round's prompt names the red ones; absent or `null` for a whole-repo Target and on a phase begun
+before 0.9.125, where `gate_cmd` is what both name),
 `rebase_requested` (set when a merge-time rebase bails `blocked` and hands the
 rebase to the operator — `base`, `from` (the branch head it asked to rebase), `ts`; cleared when
 the resume takes the rebased branch, and at the merge), `set_aside` (what a resume set aside

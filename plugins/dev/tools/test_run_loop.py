@@ -460,6 +460,7 @@ class ScriptedLoop(RunLoop):
         self.prompts = []    # (role, prompt)
         self.gates = list(gates or [])
         self.gate_calls = []
+        self.gate_merge_bases = []   # the review range's base each gate took
         self.doc_gates = list(doc_gates or [])
         self.doc_gate_calls = []
         self.sweep_reds = set(sweep_reds or [])   # (component, verb) → red
@@ -561,9 +562,10 @@ class ScriptedLoop(RunLoop):
         return (self.fake_git.attempts.pop(0) if self.fake_git.attempts
                 else (0, "Fast-forward"))
 
-    def _run_gate(self, phase_id, ps, outputs, target):
+    def _run_gate(self, phase_id, ps, outputs, target, merge_base):
         if target.gate_argv is None:
             return True, None
+        self.gate_merge_bases.append(merge_base)
         ps["gate_runs"] += 1
         green = self.gates.pop(0) if self.gates else True
         self.gate_calls.append((phase_id, green))
@@ -2179,7 +2181,7 @@ def test_a_red_whole_repo_gate_after_an_empty_root_is_a_red_gate():
         assert [h["outcome"] for h in state["history"]
                 if h["role"] == "gate"] == ["red", "green"]
         writers = [p for role, p in r.prompts if role == "code-writer"]
-        assert "The gate command was `kc project test`;" in writers[1]
+        assert "The gate went red on `kc project test`;" in writers[1]
         # the one review came after the fix round's green, never the red
         reviews = [p for role, p in r.prompts if role == "code-reviewer"]
         assert len(reviews) == 1
@@ -2232,13 +2234,390 @@ def test_every_component_gate_hint_says_what_exit_3_means():
         r.project_dirs = root_components(repo)
         component = r._gate_hint(r._resolve_target(PROJECT))
         root = r._gate_hint(r._resolve_target("root"))
-        assert component == (f" (`kc project test --project {PROJECT}`). "
+        assert component == (f" (`kc project test --project {PROJECT}` — "
+                             "and the same for every other component the "
+                             "phase's diff touches). "
                              + run_loop.NOTHING_RAN_HINT)
         assert root == (" (`kc project test --project root`; when that runs "
                         "nothing — exit 3 — the gate is bare `kc project "
                         "test`, every component once). "
                         + run_loop.NOTHING_RAN_HINT)
         assert "Exit 3 is kc's \"nothing ran\"" in run_loop.NOTHING_RAN_HINT
+
+
+# -- a component Target gates every component its diff touches (AIWF-91) -----
+#
+# PilotApp's `Target: frontend` phase committed backend code and tests too; the
+# gate ran frontend's suite alone, and its reviewer was told GREEN about it.
+# The gate now runs each component the phase's diff touches after the
+# Target's own, and the reviewer is told which projects the green covers.
+
+def split_components(cwd):
+    """A manifest whose components sit in directories of their own — one
+    nested in another's — beside root, in manifest order."""
+    cwd = Path(cwd)
+    return {"root": cwd, "frontend": cwd / "frontend",
+            "backend": cwd / "backend", "worker": cwd / "backend" / "worker"}
+
+
+def component_argv(name):
+    return ["kc", "project", "test", "--project", name]
+
+
+def gate_entry(name, outcome):
+    return {"project": name, "cmd": " ".join(component_argv(name)),
+            "outcome": outcome}
+
+
+def touched_gate_run(tmp, script, gate_rcs, touched, target="frontend",
+                     rulings=(), components=split_components, setup=None):
+    """One phase on `target` whose diff touches the files `touched`, gated
+    by the driver's own gate over scripted kc exit codes."""
+    slice_dir, repo = make_slice(tmp, phases=[("1", "First phase", target)])
+    if rulings:
+        ruled_plan(slice_dir, *rulings,
+                   body=phase_section("1", "First phase", target))
+    r = KcExitLoop(slice_dir, script, repo_root=repo, gate_rcs=gate_rcs)
+    r.fake_git.diff_files = "\n".join(touched)
+    if setup is not None:
+        setup(r)
+    with patched(run_loop, load_project_dirs=components):
+        code = run_to_exit(r)
+    return slice_dir, repo, r, code
+
+
+def reviewer_prompt(loop):
+    return next(p for role, p in loop.prompts
+                if role == "code-reviewer").replace("\n", " ")
+
+
+def gate_diffs(loop):
+    """The `diff --name-only` calls the phase gate made for its touched
+    components — `<base>..HEAD`, where the reviewer's secrets scan reads
+    `<base>..<sha>`."""
+    return [c for _, c in loop.fake_git.calls
+            if c[:3] == ("diff", "--name-only", "--no-renames")
+            and c[-1].endswith("..HEAD")]
+
+
+def test_a_component_gate_runs_every_component_its_diff_touches():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r, code = touched_gate_run(
+            tmp, [V["exec_done"], V["review_signoff"], *TAIL], [0, 0, 0],
+            ["frontend/src/App.tsx", "backend/app/api.py",
+             "backend/worker/job.py", "backend/worker/test_job.py"])
+        assert code == 0 and not r.script
+        # the Target first, then each touched component in manifest order —
+        # a file is the deepest component's that holds it, from the phase's
+        # own tree
+        assert [(argv, cwd) for argv, cwd, _ in r.phase_gate_runs] == [
+            (component_argv("frontend"), repo),
+            (component_argv("backend"), repo),
+            (component_argv("worker"), repo)]
+        state = load_state(slice_dir)
+        ps = state["phases"]["1"]
+        assert ps["gate_cmd"] == "kc project test --project frontend"
+        assert ps["gate_projects"] == [gate_entry("frontend", "green"),
+                                       gate_entry("backend", "green"),
+                                       gate_entry("worker", "green")]
+        # one gate run, one history row, one log holding every command
+        assert [h["outcome"] for h in state["history"]
+                if h["role"] == "gate"] == ["green"]
+        log = Path(ps["gate_green_log"]).read_text()
+        assert log.index("--project frontend: exit 0") < log.index(
+            "=== the phase's diff touches backend: "
+            "`kc project test --project backend` ===") \
+            < log.index("--project backend: exit 0") \
+            < log.index("--project worker: exit 0")
+        prompt = reviewer_prompt(r)
+        assert ("ran GREEN on this exact commit "
+                f"({r.fake_git.head[:12]}): `kc project test --project "
+                "frontend`, `kc project test --project backend`, `kc project "
+                f"test --project worker` in {repo} — with full output in "
+                f"{ps['gate_green_log']}. It covers frontend, backend, "
+                "worker: the phase's Target and every project its diff "
+                "touches. The tests pass;") in prompt
+        assert "does not cover" not in prompt
+        writer = next(p for role, p in r.prompts
+                      if role == "code-writer").replace("\n", " ")
+        assert ("(`kc project test --project frontend` — and the same for "
+                "every other component the phase's diff touches)") in writer
+        narration = (slice_dir / "log.txt").read_text()
+        assert ("gate #1 running (kc project test --project frontend), and "
+                "for the components the phase's diff touches: backend, "
+                "worker") in narration
+        assert ("kc project test --project frontend GREEN; kc project test "
+                "--project backend GREEN; kc project test --project worker "
+                "GREEN)") in narration
+
+
+def test_a_red_touched_component_fails_the_gate_into_a_fix_round_naming_it():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r, code = touched_gate_run(
+            tmp, [V["exec_done"], V["exec_done"], V["review_signoff"], *TAIL],
+            [0, 1, 0, 0], ["frontend/src/App.tsx", "backend/app/api.py"])
+        assert code == 0 and not r.script
+        state = load_state(slice_dir)
+        ps = state["phases"]["1"]
+        assert ps["gate_fix_rounds"] == 1
+        gates = [h for h in state["history"] if h["role"] == "gate"]
+        assert [h["outcome"] for h in gates] == ["red", "green"]
+        # the red row's summary is the red command's, not the Target's
+        assert gates[0]["summary"] == "kc project test --project backend: " \
+            "exit 1"
+        writers = [p for role, p in r.prompts if role == "code-writer"]
+        assert ("The gate went red on `kc project test --project backend`; "
+                "its output is in") in writers[1].replace("\n", " ")
+        reviews = [p for role, p in r.prompts if role == "code-reviewer"]
+        assert len(reviews) == 1, "the review came after the fix round's green"
+    # every touched component runs whatever the Target did, so every red is
+    # known to the fix round
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r, code = touched_gate_run(
+            tmp, [V["exec_done"], V["exec_done"], V["review_signoff"], *TAIL],
+            [1, 1, 0, 0], ["frontend/src/App.tsx", "backend/app/api.py"])
+        assert code == 0
+        assert [argv for argv, _, _ in r.phase_gate_runs] == [
+            component_argv("frontend"), component_argv("backend")] * 2
+        writers = [p for role, p in r.prompts if role == "code-writer"]
+        assert ("The gate went red on `kc project test --project frontend`, "
+                "`kc project test --project backend`;") \
+            in writers[1].replace("\n", " ")
+
+
+def test_a_touched_component_with_no_tests_is_named_not_covered_never_red():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r, code = touched_gate_run(
+            tmp, [V["exec_done"], V["review_signoff"], *TAIL], [0, 3],
+            ["frontend/src/App.tsx", "backend/app/api.py"])
+        assert code == 0 and not r.script, "no fix round was spawned"
+        state = load_state(slice_dir)
+        ps = state["phases"]["1"]
+        assert ps["gate_fix_rounds"] == 0
+        assert ps["gate_green_commit"] == r.fake_git.head
+        assert ps["gate_projects"] == [gate_entry("frontend", "green"),
+                                       gate_entry("backend", "nothing_ran")]
+        assert [h["outcome"] for h in state["history"]
+                if h["role"] == "gate"] == ["green"]
+        prompt = reviewer_prompt(r)
+        assert ("`kc project test --project frontend` in "
+                f"{repo} — with full output in") in prompt
+        assert "`kc project test --project backend` in" not in prompt
+        assert "It covers frontend: the phase's Target" in prompt
+        assert ("The gate does not cover backend (defines no tests): their "
+                "test state is unverified by the driver — say so in your "
+                "review where it bears on a finding, and probe it with "
+                "targeted runs.") in prompt
+    # nothing ran anywhere: the gate ran nothing, and says so of every one
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r, code = touched_gate_run(
+            tmp, [V["exec_done"], V["review_signoff"], *TAIL], [3, 3, 3, 3],
+            ["frontend/src/App.tsx", "backend/app/api.py"])
+        assert code == 0 and not r.script
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["gate_green_commit"] is None
+        assert ps["gate_nothing_ran_commit"] == r.fake_git.head
+        assert ("`kc project test --project frontend`, `kc project test "
+                f"--project backend` in {repo} ran nothing on this exact "
+                "commit") in reviewer_prompt(r)
+        assert "frontend, backend defines no tests — proceeding" \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_a_file_outside_every_component_is_roots():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r, code = touched_gate_run(
+            tmp, [V["exec_done"], V["review_signoff"], *TAIL], [0, 3],
+            ["frontend/src/App.tsx", "README.md"])
+        assert code == 0 and not r.script
+        assert [argv for argv, _, _ in r.phase_gate_runs] == [
+            component_argv("frontend"), component_argv("root")]
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["gate_projects"] == [gate_entry("frontend", "green"),
+                                       gate_entry("root", "nothing_ran")]
+        assert "The gate does not cover root (defines no tests)" \
+            in reviewer_prompt(r)
+    # a manifest that lists no root: nothing gates such a file, and the
+    # log says so rather than asking kc for a component it does not have
+
+    def rootless(cwd):
+        components = split_components(cwd)
+        del components["root"]
+        return components
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r, code = touched_gate_run(
+            tmp, [V["exec_done"], V["review_signoff"], *TAIL], [0],
+            ["frontend/src/App.tsx", "README.md"], components=rootless)
+        assert code == 0
+        assert [argv for argv, _, _ in r.phase_gate_runs] == [
+            component_argv("frontend")]
+        assert ("the phase's diff touches files outside every component and "
+                "kc lists no root — no gate covers them") \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_a_gate_ruling_waives_a_touched_component_unrun():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r, code = touched_gate_run(
+            tmp, [V["exec_done"], V["review_signoff"], *TAIL], [0],
+            ["frontend/src/App.tsx", "backend/app/api.py"],
+            rulings=["gate backend — Jenkins validation build — suites need "
+                     "Postgres"])
+        assert code == 0 and not r.script
+        assert [argv for argv, _, _ in r.phase_gate_runs] == [
+            component_argv("frontend")]
+        state = load_state(slice_dir)
+        ps = state["phases"]["1"]
+        assert ps["gate_projects"] == [gate_entry("frontend", "green"),
+                                       gate_entry("backend", "waived")]
+        prompt = reviewer_prompt(r)
+        assert "It covers frontend: the phase's Target" in prompt
+        assert ("The gate does not cover backend (waived by plan.md's `## "
+                "Driver rulings`): their test state is unverified by the "
+                "driver") in prompt
+        narration = (slice_dir / "log.txt").read_text()
+        assert ("test gate for backend (the phase's diff touches it) waived "
+                "by plan.md's `## Driver rulings` (substitute: Jenkins "
+                "validation build) — not run") in narration
+        assert "Gate waived by ruling: backend — Jenkins validation build" \
+            in entries_in_full(slice_dir)
+        assert state["rulings_reported"] == ["gate backend"]
+
+
+def test_a_waived_target_runs_none_of_the_components_its_diff_touches():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r, code = touched_gate_run(
+            tmp, [V["exec_done"], V["review_signoff"], *TAIL], [1] * 4,
+            ["frontend/src/App.tsx", "backend/app/api.py"],
+            rulings=["gate frontend — Jenkins validation build — suites "
+                     "need Postgres"])
+        assert code == 0 and not r.script
+        assert r.phase_gate_runs == [] and gate_diffs(r) == []
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["gate_projects"] is None
+        prompt = reviewer_prompt(r)
+        assert ("The driver did not run the test gate on this commit: "
+                "plan.md's `## Driver rulings` waives it for frontend") \
+            in prompt
+        assert "does not cover" not in prompt
+
+
+def test_a_whole_repo_target_gates_no_touched_component():
+    touched = ["frontend/src/App.tsx", "backend/app/api.py"]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r, code = touched_gate_run(
+            tmp, [V["exec_done"], V["review_signoff"], *TAIL], [0], touched,
+            target="root")
+        assert code == 0
+        assert [argv for argv, _, _ in r.phase_gate_runs] == [ROOT_ARGV]
+        assert gate_diffs(r) == []
+        assert load_state(slice_dir)["phases"]["1"]["gate_projects"] is None
+        prompt = reviewer_prompt(r)
+        assert ("`kc project test --project root` in "
+                f"{repo} — with full output in") in prompt
+        assert "It covers" not in prompt
+    with tempfile.TemporaryDirectory() as tmp:
+        sib = make_sibling(tmp)
+        slice_dir, repo, r, code = touched_gate_run(
+            tmp, [V["exec_done"], V["review_signoff"], *TAIL], [0], touched,
+            target="../Sibling")
+        assert code == 0
+        assert [(argv, cwd) for argv, cwd, _ in r.phase_gate_runs] == [
+            (BARE_ARGV, sib)]
+        assert gate_diffs(r) == []
+        assert load_state(slice_dir)["phases"]["1"]["gate_projects"] is None
+        assert "It covers" not in reviewer_prompt(r)
+
+
+def test_the_gate_takes_its_components_from_the_reviews_merge_base():
+    """The diff the gate reads its components from is the range the reviewer
+    is handed — and, after a rebase onto a moved base, the range as the
+    rebase re-took it, which the merge's re-gate reads."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r, code = touched_gate_run(
+            tmp, [V["exec_done"], V["review_signoff"], *TAIL], [],
+            ["frontend/src/App.tsx", "backend/app/api.py"],
+            setup=lambda loop: (
+                moved_base(loop, "2"),
+                setattr(loop.fake_git, "merge_bases",
+                        ["mb-before", "mb-old", "mb-after"])))
+        assert code == 0 and not r.script
+        assert "git diff mb-before..HEAD on branch phase/074-P1" \
+            in reviewer_prompt(r)
+        assert [c[-1] for c in gate_diffs(r)] == ["mb-before..HEAD",
+                                                 "mb-after..HEAD"]
+        # both the first gate and the merge's re-gate took backend in
+        assert [argv for argv, _, _ in r.phase_gate_runs] == [
+            component_argv("frontend"), component_argv("backend")] * 2
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["landed"]["base"] == "mb-after"
+        assert ps["gate_green_commit"] == "new222"
+
+
+def test_a_shared_sibling_components_gate_takes_touched_components_in_its_worktree():
+    with tempfile.TemporaryDirectory() as tmp:
+        sib = make_sibling(tmp, name="Shared")
+
+        def lists(cwd):
+            cwd = Path(cwd)
+            return (split_components(cwd) if cwd.name != "repo"
+                    else {PROJECT: cwd})
+
+        slice_dir, repo = make_slice(tmp, phases=[("1", "Web", "frontend")])
+        r = KcExitLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                   *TAIL], repo_root=repo)
+        r.fake_git.diff_files = "frontend/src/App.tsx\nbackend/app/api.py"
+        work = r.worktree_root / "Shared" / "074-P1"
+        with patched(run_loop, load_project_dirs=lists,
+                     shared_repo_dirs=lambda: {sib.resolve()}):
+            assert run_to_exit(r) == 0
+        assert [(argv, cwd) for argv, cwd, _ in r.phase_gate_runs] == [
+            (component_argv("frontend"), work),
+            (component_argv("backend"), work)]
+        assert [root for root, c in r.fake_git.calls
+                if c[:3] == ("diff", "--name-only", "--no-renames")
+                and c[-1].endswith("..HEAD")] == [work]
+        assert "It covers frontend, backend: the phase's Target" \
+            in reviewer_prompt(r)
+
+
+def test_a_gate_with_no_projects_on_record_reads_as_it_always_did():
+    """A phase begun on a plugin before AIWF-91 has no `gate_projects`: the
+    reviewer's line and the fix round's are the Target's command alone."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        target = run_loop.ResolvedTarget(
+            PROJECT, "project", Path(repo),
+            ["kc", "project", "test", "--project", PROJECT], Path(repo))
+        old = {"gate_green_commit": "deadbeefcafe0",
+               "gate_green_log": "/g/gate_r1.log",
+               "gate_cmd": f"kc project test --project {PROJECT}"}
+        line = r._gate_line(old, "deadbeefcafe0", target)
+        assert line.startswith(
+            "The deterministic test gate ran GREEN on this exact commit "
+            f"(deadbeefcafe):\n`kc project test --project {PROJECT}` in "
+            f"{repo} — with full output in /g/gate_r1.log. The tests\n"
+            "pass; that is an established input to your review")
+        assert "It covers" not in line and "does not cover" not in line
+        # an entry off-shape is no record either
+        torn = dict(old, gate_projects=[{"project": PROJECT}])
+        assert r._gate_line(torn, "deadbeefcafe0", target) == line
+        assert r._gate_line(dict(old, gate_projects=None), "deadbeefcafe0",
+                            target) == line
+        nothing = {"gate_nothing_ran_commit": "deadbeefcafe0",
+                   "gate_cmd": old["gate_cmd"]}
+        assert r._gate_line(nothing, "deadbeefcafe0", target).startswith(
+            f"`kc project test --project {PROJECT}` in {repo} ran nothing on "
+            "this exact commit (deadbeefcafe):\nthe target defines no tests")
+        assert r._red_cmds({"gate_cmd": "kc project test"}, target) \
+            == "`kc project test`"
+        assert r._red_cmds({}, target) \
+            == f"`kc project test --project {PROJECT}`"
+        # a state.json from before the key gets it as None
+        r.state = {"phases": {"1": {"status": "in_progress"}}}
+        assert r._phase_state("1")["gate_projects"] is None
 
 
 # -- kc's full output inlined into the gate log (AIWF-85) ---------------------
@@ -3903,7 +4282,8 @@ def test_a_sibling_repos_component_resolves_in_that_repo():
                                     "--project", "aac-tools"]
         assert r._executor_where(target) == f" in the sibling repo {sib}"
         assert r._gate_hint(target) == (
-            f" (`kc project test --project aac-tools` from {sib}). "
+            f" (`kc project test --project aac-tools` from {sib} — and the "
+            "same for every other component the phase's diff touches). "
             + run_loop.NOTHING_RAN_HINT)
         # a checkout without a manifest has no components to ask for, and
         # the spec repo beside it has none either

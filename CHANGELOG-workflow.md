@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-24 — The phase gate also runs every kc project the phase's diff touches, and the reviewer is told which it covered (v0.9.125)
+
+A component Target's phase gate now also runs `kc project test --project <c>` for every other
+component the phase's diff touches. It runs them after the Target's own, into the same
+`gate_r<N>.log`, and runs all of them so that every red is known. The touched files come from
+the diff the reviewer reads, `git diff --name-only <merge-base>..HEAD` from the same merge-base.
+A file belongs to the component whose directory holds it most deeply, and a file no other
+component holds belongs to `root`, where kc lists one. Any red is the gate's red, and the fix round's prompt names
+the red commands. A touched component that runs nothing (kc's exit 3, a `root` with no `test:`
+among them) is not red. Neither is one a `gate` ruling covers: it is not run. The reviewer's gate
+paragraph names the projects the green covers, and each touched project it does not cover with
+the reason. The code-writer's gate hint says the driver gates the touched components too.
+`state.json` records each run's projects as the phase's `gate_projects`. A waived Target still
+runs nothing, and whole-repo Targets and review-set clones are unchanged.
+
+Why: in PilotApp (2026-10-19), a `Target: frontend` phase's commit also added a backend endpoint
+and its tests. The reviewer was told the gate was GREEN about the frontend suite alone, and it
+re-ran the backend tests only because it noticed. (AIWF-91)
+
 ## 2026-10-24 — `close_out.py amend` lets an entry's appender correct it while it is uncommitted (v0.9.124)
 
 `close_out.py amend <close-out.md> <id> --by <who>` corrects an entry in place. Each content flag

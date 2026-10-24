@@ -2149,11 +2149,14 @@ branch was cut from{own}; {touches}. The driver has neither merged nor
 rebased.
 """
 
+# `{red_cmds}` is every gate command that went red, each in backticks: a
+# component Target's gate also runs each component its diff touches (AIWF-91),
+# and the red may be one of those rather than the Target's own.
 EXECUTOR_GATE_FIX_PROMPT = """\
 The test gate for phase P{phase_id} of slice {slice_name} is red (branch
 {branch}, fix round {round}). The plan: {plan_path}, digested below.
 
-The gate command was `{gate_cmd}`; its output is in {gate_log}. The gate is
+The gate went red on {red_cmds}; its output is in {gate_log}. The gate is
 fail-fast and terse, so the log ends at the FIRST failing statement — there
 may be more behind it. The phase's work so far is git diff
 {merge_base}..HEAD{where}. Make the gate green without weakening what it
@@ -2356,10 +2359,16 @@ nothing toward its outcome.\
 # Stated in every reviewer dispatch so the review does not spend turns
 # re-running the suite the driver already ran. The green claim is only made
 # when it is backed by this commit (see _gate_line) — a reviewer told "green"
-# about a different commit would be worse than one told nothing.
+# about a different commit would be worse than one told nothing. `{gate_cmds}`
+# is the green commands, each in backticks; `{covers}` names the projects they
+# cover (GATE_COVERS_SENTENCE) — a component Target's gate also runs every
+# component its diff touches (AIWF-91: PilotApp's `Target: frontend` phase
+# committed backend code and tests, and its reviewer was told GREEN about
+# frontend's suite alone) — and is empty for a gate that recorded no projects
+# (a whole-repo Target, or a phase begun on an older plugin).
 GATE_GREEN_LINE = """\
 The deterministic test gate ran GREEN on this exact commit ({green_at}):
-`{gate_cmd}` in {gate_repo} — with full output in {gate_log}. The tests
+{gate_cmds} in {gate_repo} — with full output in {gate_log}.{covers} The tests
 pass; that is an established input to your review, not something to
 re-derive. Do not re-run the suite to confirm it. Targeted runs remain
 yours to make where they buy a finding: a single test you suspect is vacuous,
@@ -2367,6 +2376,24 @@ a case the diff leaves uncovered, a mutation that proves a test actually
 catches the behavior it claims. The green says the tests pass, never that
 they are adequate.\
 """
+
+GATE_COVERS_SENTENCE = """ It covers
+{covered}: the phase's Target and every project its diff touches."""
+
+# Closes the GREEN paragraph when a project the gate took in is not green: one
+# that ran nothing, or one a gate ruling waived (AIWF-91). A red one never
+# reaches a reviewer — a red gate is a fix round.
+GATE_UNCOVERED_LINE = """\
+The gate does not cover {uncovered}: their test state is unverified by
+the driver — say so in your review where it bears on a finding, and probe
+it with targeted runs.\
+"""
+
+# Why a project in GATE_UNCOVERED_LINE is not covered, by its gate outcome.
+GATE_UNCOVERED_WHY = {
+    "nothing_ran": "defines no tests",
+    "waived": "waived by plan.md's `## Driver rulings`",
+}
 
 GATE_UNVERIFIED_LINE = """\
 No deterministic test gate is recorded green against this commit — the
@@ -2376,9 +2403,11 @@ run.\
 """
 
 # The unverified line's reason, when kc itself said why: the gate ran on this
-# commit and found nothing to run (KC_NOTHING_RAN).
+# commit and found nothing to run (KC_NOTHING_RAN). `{gate_cmd}` is every
+# command that ran nothing, each in backticks — the Target's and those of the
+# components its diff touches (AIWF-91).
 GATE_NOTHING_RAN_LINE = """\
-`{gate_cmd}` in {gate_repo} ran nothing on this exact commit ({ran_at}):
+{gate_cmd} in {gate_repo} ran nothing on this exact commit ({ran_at}):
 the target defines no tests, so the branch's test state is unverified — say
 so in your review where it bears on a finding, and probe it with targeted
 runs.\
@@ -3339,6 +3368,12 @@ def _file_size(path: Path) -> int:
         return 0
 
 
+def _ticked(cmds: Sequence[str]) -> str:
+    """Gate commands as a dispatch names them: each in backticks, joined
+    ", "."""
+    return ", ".join(f"`{cmd}`" for cmd in cmds)
+
+
 # ---------------------------------------------------------------------------
 # Services — a Target repo's `.kubecoder/config.yaml` `services:` against the
 # pod's (AIWF-38). A repo's suites reach its backing services on localhost,
@@ -3628,6 +3663,7 @@ class RunLoop:
             "review_rounds": 0, "gate_runs": 0,
             "gate_green_commit": None, "gate_green_log": None,
             "gate_nothing_ran_commit": None, "gate_cmd": None,
+            "gate_projects": None,
             "reviewed_head": None, "landed": None, "review_set_start": None,
             "review_set_ambiguous_start": None,
         }
@@ -5192,12 +5228,20 @@ class RunLoop:
     # -- the deterministic test gate -----------------------------------------
 
     def _phase_gate(self, phase_id: str, ps: dict, outputs: Path,
-                    target: ResolvedTarget) -> tuple[bool, Path | None]:
+                    target: ResolvedTarget,
+                    merge_base: str) -> tuple[bool, Path | None]:
         """The phase's gate as every caller takes it — the first gate, a fix
         round's re-gate, the merge's re-gate. A target plan.md's `## Driver
         rulings` waives passes unrun, like a target with no deterministic
         gate: no green commit is recorded, the reviewer is told why, and no
-        fix round is spent on a red the operator already ruled on.
+        fix round is spent on a red the operator already ruled on — nor are
+        the components its diff touches run, which gate beside the Target's
+        own and not instead of it.
+
+        `merge_base` is the base of the range the review reads — the one
+        `_run_phase` takes, re-taken by a rebase onto a moved base — so the
+        components a component Target's gate takes in are those of the diff
+        its reviewer is handed (`_touched_components`).
 
         A GitHub clone still without a manifest here is a phase that said
         (`Creates:`) it would add one and did not: nothing would verify it,
@@ -5206,7 +5250,7 @@ class RunLoop:
         ruling = self._gate_ruling(target)
         if ruling is None:
             self._refuse_ungated_github(phase_id, target)
-            return self._run_gate(phase_id, ps, outputs, target)
+            return self._run_gate(phase_id, ps, outputs, target, merge_base)
         self.log(f"[P{phase_id}] test gate for {target.name} waived by "
                  f"plan.md's `## Driver rulings` (substitute: "
                  f"{ruling.substitute_text}) — not run, proceeding "
@@ -5215,7 +5259,8 @@ class RunLoop:
         return True, None
 
     def _run_gate(self, phase_id: str, ps: dict, outputs: Path,
-                  target: ResolvedTarget) -> tuple[bool, Path | None]:
+                  target: ResolvedTarget,
+                  merge_base: str) -> tuple[bool, Path | None]:
         """Run the target's test gate as a subprocess: (passed, its log).
         The exit code decides; full output goes to gate_r<N>.log in the
         phase's outputs dir, kc's full-output file inlined after kc's own
@@ -5244,18 +5289,34 @@ class RunLoop:
         component suites itself), the whole repo is the gate instead of an
         unverified pass. Either way no suite runs twice. The second run
         appends to the same log, and `gate_cmd` records the command whose
-        outcome stands, for the reviewer's line and the fix round's."""
+        outcome stands, for the reviewer's line and the fix round's.
+
+        Any other component Target gates every component its diff touches
+        as well (AIWF-91 — PilotApp's `Target: frontend` phase committed
+        backend code and tests, and its reviewer was told GREEN about
+        frontend's suite alone): each `kc project test --project <c>` after
+        the Target's own, into the same log, every one run so every red is
+        known; one a gate ruling covers is waived, not run. `gate_projects`
+        records each project's command and outcome, the Target first, and
+        the gate's outcome is theirs together: red on any red, else green on
+        any green, else nothing ran. A whole-repo Target records none."""
         if target.gate_argv is None:
             self.log(f"[P{phase_id}] no deterministic gate for "
                      f"{target.name} — proceeding (reviewer told unverified)")
             return True, None
         ps["gate_runs"] += 1
         n = ps["gate_runs"]
+        ps["gate_projects"] = None
         self._save_state()
         log_path = outputs / f"gate_r{n}.log"
         argv = target.gate_argv
-        self.log(f"[P{phase_id}] gate #{n} running ({' '.join(argv)})")
+        touched = (self._touched_components(phase_id, target, merge_base)
+                   if self._gates_touched(target) else None)
+        self.log(f"[P{phase_id}] gate #{n} running ({' '.join(argv)})"
+                 + (f", and for the components the phase's diff touches: "
+                    f"{', '.join(touched)}" if touched else ""))
         t0 = time.monotonic()
+        projects = None
         with open(log_path, "w") as log_file:
             outcome, tail = self._gate_cmd_outcome(phase_id, argv, target,
                                                    log_file, log_path)
@@ -5270,9 +5331,34 @@ class RunLoop:
                 log_file.flush()
                 outcome, tail = self._gate_cmd_outcome(phase_id, argv, target,
                                                        log_file, log_path)
+            if touched is not None:
+                projects = [{"project": target.name, "cmd": " ".join(argv),
+                             "outcome": outcome}]
+                tails = [tail]
+                gates = [(r, t) for r, t in self._current_rulings()
+                         if r.kind == "gate"]
+                for component in touched:
+                    entry, extra_tail = self._gate_touched_component(
+                        phase_id, component, target, gates, log_file,
+                        log_path)
+                    projects.append(entry)
+                    tails.append(extra_tail)
         duration_s = int(time.monotonic() - t0)
         gate_cmd = " ".join(argv)
         ps["gate_cmd"] = gate_cmd
+        ran = gate_cmd
+        if projects is not None:
+            ps["gate_projects"] = projects
+            outcomes = [p["outcome"] for p in projects]
+            outcome = ("red" if "red" in outcomes
+                       else "green" if "green" in outcomes else "nothing_ran")
+            # the first red command's tail, else the Target's
+            tail = next((t for p, t in zip(projects, tails, strict=True)
+                         if p["outcome"] == "red"), tails[0])
+            if len(projects) > 1:
+                ran = "; ".join(
+                    f"{p['cmd']} {GATE_OUTCOME_LABELS[p['outcome']]}"
+                    for p in projects if p["outcome"] != "waived")
         if outcome == "green":
             ps["gate_green_commit"] = self.git("rev-parse", "HEAD",
                                                root=target.work_root)
@@ -5283,12 +5369,93 @@ class RunLoop:
         self._record(phase_id, "gate", n, outcome, tail, None, duration_s)
         self.log(f"[P{phase_id}] gate #{n} → "
                  f"{GATE_OUTCOME_LABELS[outcome]} ({duration_s}s, "
-                 f"{gate_cmd}) {tail[:120]}")
+                 f"{ran}) {tail[:120]}")
         if outcome == "nothing_ran":
-            what = "the repo" if self._is_root(target) else target.name
+            what = ("the repo" if self._is_root(target) else
+                    ", ".join(p["project"] for p in projects
+                              if p["outcome"] == "nothing_ran")
+                    if projects else target.name)
             self.log(f"[P{phase_id}] {what} defines no tests — "
                      "proceeding as with no gate (reviewer told unverified)")
         return outcome != "red", log_path
+
+    @staticmethod
+    def _gates_touched(target: ResolvedTarget) -> bool:
+        """Whether this Target's gate also runs the components its diff
+        touches (AIWF-91): a component that is not `root` — in the invoking
+        repo or a sibling's, worked in place or in a shared repo's worktree.
+        A whole repo (`root`, a repo path, a GitHub clone) already gates the
+        repo, all of it."""
+        return target.kind == "project" and target.name != ROOT_COMPONENT
+
+    def _touched_components(self, phase_id: str, target: ResolvedTarget,
+                            merge_base: str) -> list[str]:
+        """The components other than the Target that the phase's diff
+        touches, in manifest order. The diff is `<merge_base>..HEAD` in the
+        phase's tree — the range its reviewer reads — and the components are
+        kc's list there, so one the phase registered is seen. A file is the
+        component's whose cwd is the deepest directory holding it, `root`
+        aside (components sharing that cwd all have it); a file outside
+        every other component is root's. Where kc lists no root, no gate
+        holds such a file, and the log says so. `--no-renames` names both
+        ends of a rename, so a file moved out of a component touches it."""
+        components = load_project_dirs(target.gate_cwd)
+        changed = self.git("diff", "--name-only", "--no-renames",
+                           f"{merge_base}..HEAD", root=target.work_root)
+        work = Path(target.work_root).resolve()
+        dirs = {name: Path(cwd).resolve() for name, cwd in components.items()
+                if name != ROOT_COMPONENT}
+        touched: set[str] = set()
+        for name in changed.splitlines():
+            # a name git C-quoted (core.quotePath) keeps its directories
+            name = name.strip().strip('"')
+            if not name:
+                continue
+            path = work / name
+            owners = [(len(d.parts), c) for c, d in dirs.items()
+                      if path.is_relative_to(d)]
+            if not owners:
+                touched.add(ROOT_COMPONENT)
+                continue
+            deepest = max(depth for depth, _ in owners)
+            touched.update(c for depth, c in owners if depth == deepest)
+        if ROOT_COMPONENT in touched and ROOT_COMPONENT not in components:
+            self.log(f"[P{phase_id}] the phase's diff touches files outside "
+                     "every component and kc lists no root — no gate "
+                     "covers them")
+        return [name for name in components
+                if name in touched and name != target.name]
+
+    def _gate_touched_component(self, phase_id: str, component: str,
+                                target: ResolvedTarget, gates: list,
+                                log_file, log_path: Path
+                                ) -> tuple[dict, str]:
+        """One component the phase's diff touches, gated as the Target is —
+        `kc project test --project <c>` from the Target's tree, into the
+        same log under a header — or, where a gate ruling covers it, waived
+        unrun as `_phase_gate` waives a Target: its `gate_projects` entry,
+        and the log's last line for the history row's summary."""
+        argv = ["kc", "project", "test", "--project", component]
+        cmd = " ".join(argv)
+        ruling = self._covering(gates, target.git_root, component)
+        if ruling is not None:
+            self.log(f"[P{phase_id}] test gate for {component} (the phase's "
+                     "diff touches it) waived by plan.md's `## Driver "
+                     f"rulings` (substitute: {ruling.substitute_text}) — not "
+                     "run")
+            self._report_ruling(ruling, "phase gate")
+            log_file.write(f"\n=== the phase's diff touches {component}: "
+                           f"`{cmd}` waived by plan.md's `## Driver rulings` "
+                           f"(substitute: {ruling.substitute_text}) — not run "
+                           "===\n")
+            log_file.flush()
+            return {"project": component, "cmd": cmd, "outcome": "waived"}, ""
+        log_file.write(f"\n=== the phase's diff touches {component}: "
+                       f"`{cmd}` ===\n")
+        log_file.flush()
+        outcome, tail = self._gate_cmd_outcome(phase_id, argv, target,
+                                               log_file, log_path)
+        return {"project": component, "cmd": cmd, "outcome": outcome}, tail
 
     def _gate_cmd_outcome(self, phase_id: str, argv: list[str],
                           target: ResolvedTarget, log_file,
@@ -5413,29 +5580,76 @@ class RunLoop:
         case — no gate, a green or an empty run on an earlier commit — is
         plainly unverified. A gate that ran names the repo it ran in; with a
         review set outside the Target (`review_repos`, its distinct clones)
-        the paragraph closes on the gate being that repo's suite alone."""
+        the paragraph closes on the gate being that repo's suite alone.
+
+        A component Target's gate covers the components its diff touches
+        too (AIWF-91): the green names every green command and the projects
+        they cover, and closes on those the gate does not cover — ran
+        nothing, or waived — by name; the nothing-ran reason names every
+        command that ran nothing. No `gate_projects` on record (a whole-repo
+        Target, a phase begun on an older plugin) is the Target's command
+        alone, as before."""
         gate_cmd = ps.get("gate_cmd") or " ".join(target.gate_argv or [])
+        projects = self._gate_projects(ps)
         green_at = ps.get("gate_green_commit")
         gate_log = ps.get("gate_green_log")
         if green_at and gate_log and green_at == head:
+            green = [p for p in projects if p["outcome"] == "green"]
+            covers = (GATE_COVERS_SENTENCE.format(
+                covered=", ".join(p["project"] for p in green))
+                if green else "")
             line = GATE_GREEN_LINE.format(
-                green_at=green_at[:12], gate_cmd=gate_cmd,
-                gate_repo=target.gate_cwd, gate_log=gate_log)
+                green_at=green_at[:12],
+                gate_cmds=_ticked([p["cmd"] for p in green] or [gate_cmd]),
+                covers=covers, gate_repo=target.gate_cwd, gate_log=gate_log)
+            uncovered = [f"{p['project']} ({GATE_UNCOVERED_WHY[p['outcome']]})"
+                         for p in projects
+                         if p["outcome"] in GATE_UNCOVERED_WHY]
+            if green and uncovered:
+                line += "\n" + GATE_UNCOVERED_LINE.format(
+                    uncovered=", ".join(uncovered))
         elif (ruling := self._gate_ruling(target)) is not None:
             line = GATE_WAIVED_LINE.format(
                 target=target.name, why=ruling.why,
                 substitute=(f"`{ruling.substitute}`" if ruling.substitute
                             else "no substitute"))
         elif target.gate_argv and ps.get("gate_nothing_ran_commit") == head:
+            empty = [p["cmd"] for p in projects
+                     if p["outcome"] == "nothing_ran"]
             line = GATE_NOTHING_RAN_LINE.format(
-                gate_cmd=gate_cmd, gate_repo=target.gate_cwd,
-                ran_at=head[:12])
+                gate_cmd=_ticked(empty or [gate_cmd]),
+                gate_repo=target.gate_cwd, ran_at=head[:12])
         else:
             line = GATE_UNVERIFIED_LINE
         if review_repos:
             line += "\n" + GATE_REVIEW_SET_LINE.format(
                 gate_repo=target.gate_cwd, clones=", ".join(review_repos))
         return line
+
+    @staticmethod
+    def _gate_projects(ps: dict) -> list[dict]:
+        """The projects the phase's last gate run took in (`gate_projects`),
+        read leniently: none recorded — a whole-repo Target, a phase begun
+        on a plugin before AIWF-91 — or a record off-shape is none, and
+        every reader falls back to the Target's `gate_cmd` alone."""
+        projects = ps.get("gate_projects")
+        if not isinstance(projects, list) or not all(
+                isinstance(p, dict) and isinstance(p.get("project"), str)
+                and isinstance(p.get("cmd"), str)
+                and p.get("outcome") in ("green", "red", "nothing_ran",
+                                         "waived")
+                for p in projects):
+            return []
+        return projects
+
+    def _red_cmds(self, ps: dict, target: ResolvedTarget) -> str:
+        """The gate commands that went red, each in backticks, for the fix
+        round's prompt — the Target's command when no project is on record
+        (`_gate_projects`)."""
+        red = [p["cmd"] for p in self._gate_projects(ps)
+               if p["outcome"] == "red"]
+        return _ticked(red or [ps.get("gate_cmd")
+                               or " ".join(target.gate_argv or [])])
 
     def _review_set_now(self, phase: Phase) -> tuple[
             list[tuple[str, str]], list[tuple[str, tuple[str, ...]]]] | None:
@@ -5748,9 +5962,12 @@ class RunLoop:
                     "runs nothing — exit 3 — the gate is bare `kc project "
                     f"test`, every component once). {NOTHING_RAN_HINT}")
         if target.kind == "project":
+            # The driver gates every component the diff touches beside the
+            # Target's own (AIWF-91), so the writer is told to as well.
             where = "" if work == self.repo_root else f" from {work}"
-            return (f" (`kc project test --project {target.name}`{where}). "
-                    f"{NOTHING_RAN_HINT}")
+            return (f" (`kc project test --project {target.name}`{where} — "
+                    "and the same for every other component the phase's "
+                    f"diff touches). {NOTHING_RAN_HINT}")
         if target.gate_argv:
             return (f" (`kc project test` from {work})")
         return (f" ({work} has no kc manifest — gate per that repo's own "
@@ -6122,7 +6339,7 @@ class RunLoop:
         if ps["stage"] == "merging":
             if work != root:
                 head = self._merge_shared(phase_id, ps, outputs, target, base,
-                                          branch)
+                                          branch, merge_base)
             else:
                 if self._worktree_dirty(root):
                     raise Bailout(
@@ -6136,7 +6353,8 @@ class RunLoop:
                     merge_base = self._rebase_onto_moved_base(
                         phase_id, ps, root, base, branch, behind)
                 head = self.git("rev-parse", "HEAD", root=root)
-                self._regate_for_merge(phase_id, ps, outputs, target, head)
+                self._regate_for_merge(phase_id, ps, outputs, target, head,
+                                       merge_base)
                 self.git("checkout", base, root=root)
                 self.git("merge", "--ff-only", branch, root=root)
                 self.git("branch", "-D", branch, root=root)
@@ -6157,12 +6375,15 @@ class RunLoop:
         return bool(r and r.get("session") and r.get("phase") == phase_id)
 
     def _regate_for_merge(self, phase_id: str, ps: dict, outputs: Path,
-                          target: ResolvedTarget, head: str) -> None:
+                          target: ResolvedTarget, head: str,
+                          merge_base: str) -> None:
         """The gate again, before the merge, when its recorded green no
-        longer speaks for the head about to merge; red bails."""
+        longer speaks for the head about to merge; red bails. `merge_base`
+        is the review's, as a rebase onto a moved base re-took it."""
         if target.gate_argv is None or self._green_covers(ps, head):
             return
-        green, gate_log = self._phase_gate(phase_id, ps, outputs, target)
+        green, gate_log = self._phase_gate(phase_id, ps, outputs, target,
+                                           merge_base)
         if not green:
             raise Bailout(
                 "gate_red", phase=phase_id,
@@ -6329,7 +6550,8 @@ class RunLoop:
         return result.returncode, (result.stdout + result.stderr).strip()
 
     def _merge_shared(self, phase_id: str, ps: dict, outputs: Path,
-                      target: ResolvedTarget, base: str, branch: str) -> str:
+                      target: ResolvedTarget, base: str, branch: str,
+                      merge_base: str) -> str:
         """Merge a shared repo's phase branch into its base, in the shared
         checkout, and clear its worktree; return the head that merged.
 
@@ -6359,7 +6581,8 @@ class RunLoop:
         if self._is_spec_root(root):
             self._revert_slice_tree(phase_id, work, base, branch)
         head = self.git("rev-parse", "HEAD", root=work)
-        self._regate_for_merge(phase_id, ps, outputs, target, head)
+        self._regate_for_merge(phase_id, ps, outputs, target, head,
+                               merge_base)
         message = f"slice {self.slice_num}: merge {branch} (P{phase_id})"
         last = ""
         for _ in range(MERGE_ATTEMPTS):
@@ -6564,7 +6787,7 @@ class RunLoop:
         twice."""
         while True:
             passed, gate_log = self._phase_gate(phase.id, ps, outputs,
-                                                target)
+                                                target, merge_base)
             if passed:
                 return
             if ps["gate_fix_rounds"] >= GATE_FIX_CAP:
@@ -6577,13 +6800,12 @@ class RunLoop:
                 ps["gate_fix_rounds"] += 1
             r = ps["gate_fix_rounds"]
             self._save_state()
-            spawn_executor(lambda vp, _r=r, _log=gate_log:
+            red_cmds = self._red_cmds(ps, target)
+            spawn_executor(lambda vp, _r=r, _log=gate_log, _red=red_cmds:
                            EXECUTOR_GATE_FIX_PROMPT.format(
                                phase_id=phase.id, slice_name=self.slice_name,
                                branch=branch, round=_r,
-                               plan_path=self.plan_path,
-                               gate_cmd=(ps.get("gate_cmd") or " ".join(
-                                   target.gate_argv or [])),
+                               plan_path=self.plan_path, red_cmds=_red,
                                gate_log=_log, merge_base=merge_base,
                                where=where, verdict_path=vp,
                                pointers=self._pointers(target, phase.id)))

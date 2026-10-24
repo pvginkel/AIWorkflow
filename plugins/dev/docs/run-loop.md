@@ -24,7 +24,8 @@ Phases are `### P<id> — <title>` headings, id free-form `[A-Za-z0-9]+` — `P3
 one-line **`Target:`** naming where it lands — a `kc project list` component, or a sibling repo
 path (`../SiblingRepo`) — from which the driver roots its git operations (branch, merge,
 dirty-checks in that repo) and picks the gate: `kc project test --project <name>` for a
-component, run from the root of the repo that lists it; `kc project test` from the sibling's own
+component, run from the root of the repo that lists it, and the same for every other component
+the phase's diff touches (§ The per-phase round); `kc project test` from the sibling's own
 root when it carries a manifest, looked for at gate time in the phase's own tree, so the phase
 that adds the manifest is gated by it; no
 deterministic gate otherwise (the reviewer is told the state is unverified). **`Target: root` is
@@ -217,6 +218,20 @@ whole plan is a feature of the review, not a cost. Then:
   gate, no green is recorded, and the reviewer is told the target defines no tests, so the
   state is unverified. A `gate` ruling in the plan waives the gate outright (§ After the last
   phase, operator rulings).
+- **The gate covers what the diff touches** — a component Target's gate also runs every other
+  kc project the phase's diff touches, after the Target's own: `kc project test --project <c>`
+  each, into the same `gate_r<N>.log`, every one run so that every red is known. The diff is the
+  one the reviewer reads, `git diff --name-only <merge-base>..HEAD` from the same merge-base, so
+  what the gate covers and what the review reads are one set. A file belongs to the component
+  whose directory holds it most deeply, and a file no other component holds to `root` where kc
+  lists one. Any red
+  is the gate's red, and the fix round's prompt names the red commands; a touched component
+  that ran nothing (exit 3, a `root` with no `test:` among them) is not red, nor is one a `gate`
+  ruling covers, which is not run. The reviewer's gate paragraph names the projects the green
+  covers and each touched one it does not, and why. A waived Target runs nothing at all, as
+  before, and a whole-repo Target's gate is already the repo's. A frontend phase in PilotApp
+  (2026-10-19) also added a backend endpoint and its tests; the reviewer was told GREEN about
+  the frontend suite alone and ran the backend's itself only because it noticed (AIWF-91).
 - **Review** — fresh **code-reviewer** per round against the phase's outcome, the acceptance
   criteria (`verification.json`) and repo conventions. Round 1 full branch diff; rounds 2+ are
   delta-scoped to the fix range. A phase whose body declares `Review: <file>`
@@ -240,8 +255,9 @@ whole plan is a feature of the review, not a cost. Then:
   ([plan-template.md](plan-template.md)) are held out of that file, and the dispatch gives the
   command shape over them: `--stat` first, then the diff with them held out, through the
   redactor. A range the redactor cannot redact bails `redaction` before the reviewer is
-  spawned ([runner-state.md](runner-state.md)). The gate paragraph names the suite and the repo
-  it ran in, and with a review set adds that no suite ran in the review set's repos. A
+  spawned ([runner-state.md](runner-state.md)). The gate paragraph names the suites and the repo
+  they ran in, the projects the green covers and those the diff touches that it does not, and
+  with a review set adds that no suite ran in the review set's repos. A
   `blocking` tag needs an anchor from the closed list in the reviewer's contract (no anchor is
   advisory by construction), and the verdict reports every finding machine-readably —
   severity, impact, category, anchor — which the driver persists into `state.json`'s history.
