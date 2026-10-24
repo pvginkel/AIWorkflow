@@ -8695,7 +8695,7 @@ def test_a_green_wrap_up_lands_with_the_doc_phase():
         assert prompt.count(run_loop.NOTHING_RAN_HINT) == 2
         verbs = "\n".join("  " + v for v in close_out.verb_usage(
             "worklist", "show", "list", "relabel", "propose", "request-card",
-            "leave").splitlines())
+            "leave", "fold").splitlines())
         assert ("  The other verbs the wrap-up uses, with their arguments:\n"
                 + verbs + "\n") in prompt
         # note and strike are the dispatch line's, once

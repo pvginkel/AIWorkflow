@@ -112,8 +112,11 @@ slice directory.
      request they say yes to is filed the same way.
    - `fix now` — do it here only if the project's `CLAUDE.md` classes the change as ad hoc
      work; otherwise say so and offer `fold into`.
-   - `fold into <slice>` — append the entry verbatim as an ask to that slice's `slice.md` under
-     `slices/backlog/`; a slice that does not exist yet becomes a `/dev:triage` item instead.
+   - `fold into <slice>` — `close_out.py fold <slice> <id> --into <that slice>` appends the entry
+     verbatim as an ask to that slice's `slice.md` and stages it; commit it, then record what was
+     done. It refuses a slice that is planned or running — its run never reads `slice.md` again:
+     say so, and offer a phase in its plan or a ruling on its run. A slice that does not exist yet
+     becomes a `/dev:triage` item instead.
    - `close` — there is nothing to do but record it; the operator's reason, if given, is part
      of their words.
    - an owed-after action (`Settle <Vnn> after …`, or a push hold's action listing criteria),

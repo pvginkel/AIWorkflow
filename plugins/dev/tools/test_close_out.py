@@ -2054,6 +2054,219 @@ def test_a_for_folds_only_into_a_slice_still_unplanned_and_a_finished_one_drops_
         assert FOR_PLANNED[1] in close_out.show_view(slice_dir, ["B2"])
 
 
+# -- fold: an entry into a later slice's slice.md ------------------------------------
+
+FOLD_SLICE = "018_dev_and_prd_stages"
+PROSE = with_flags(DEFECT, kind="prose", headline="design/engine-and-sync.md names "
+                   "the wrong table", body="line one\n\nline two", area=None,
+                   fix="one-edit", repo="PilotAppSpecs")
+
+
+def _fold_repo(tmp, git_init=True):
+    """A spec repo with slice 018 reporting, an unplanned 011 in the backlog
+    whose slice.md ends in blank lines, and the tree committed."""
+    slice_dir = make_slice(tmp, name=FOLD_SLICE, later=("012_later_slice",))
+    target = slice_dir.parent / "backlog" / "011_x" / "slice.md"
+    target.parent.mkdir()
+    target.write_text("# Slice 011\n\nthe ask\n\n\n")
+    close_out.init_report(slice_dir)
+    if git_init:
+        git(slice_dir.parent.parent, "init", "-q")
+        git(slice_dir.parent.parent, "add", ".")
+        git(slice_dir.parent.parent, "commit", "-q", "--no-verify", "-m", "seed")
+    return slice_dir, target
+
+
+def _staged(spec):
+    return subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=spec,
+                          check=True, capture_output=True, text=True).stdout.split()
+
+
+def _fold(slice_dir, eid, *flags):
+    return run_cli("fold", slice_dir / "close-out.md", eid, *flags)
+
+
+def _fold_refused(slice_dir, eid, flags, *needles):
+    spec = slice_dir.parent.parent
+    before = {p: p.read_bytes() for p in spec.rglob("*") if p.is_file()
+              and ".git" not in p.parts}
+    code, out, err = _fold(slice_dir, eid, *flags)
+    assert code == 2 and not out, (code, out, err)
+    for needle in needles:
+        assert needle in err, (needle, err)
+    after = {p: p.read_bytes() for p in spec.rglob("*") if p.is_file()
+             and ".git" not in p.parts}
+    assert after == before
+    return err
+
+
+def _quoted(slice_dir, eid):
+    return "\n".join(f"> {line}" if line else ">"
+                     for line in close_out.show_view(slice_dir, [eid]).split("\n"))
+
+
+def test_fold_appends_the_entry_verbatim_under_its_intro_and_stages_it():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, target = _fold_repo(tmp)
+        spec = slice_dir.parent.parent
+        assert run_cli("append", slice_dir, *with_flags(PROSE, **{"for": "11"}))[0] == 0
+        files = _files(slice_dir)
+        code, out, err = _fold(slice_dir, "P1", "--date", "2026-10-20")
+        assert code == 0, err
+        report_arg = slice_dir / "close-out.md"
+        assert out == (
+            "folded P1 into slices/backlog/011_x/slice.md (staged) — commit it, then: "
+            f"close_out.py strike {report_arg} P1 --reason \"folded into slice 011\" "
+            "--commit <sha> --by <you>\n")
+        quoted = _quoted(slice_dir, "P1")
+        assert target.read_text() == (
+            "# Slice 011\n\nthe ask\n"
+            "\n"
+            "Slice 018's close-out, entry P1, verbatim (`close_out.py show`, 2026-10-20; "
+            "report\n`slices/018_dev_and_prd_stages/close-out.md`):\n"
+            "\n" + quoted + "\n")
+        assert quoted.startswith("> ### P1 — design/engine-and-sync.md names the wrong "
+                                 "table\n>\n> line one\n>\n> line two\n")
+        assert "> **Route:** the wrap-up — fold into slice 011\n> **Disposition:**" in quoted
+        assert "> \n" not in target.read_text()
+        assert _staged(spec) == ["slices/backlog/011_x/slice.md"]
+        # neither the store nor the report is written: the strike is the caller's
+        assert _files(slice_dir) == files
+        assert entry_of(slice_dir, "P1")["strike"] is None
+        # the printed strike works as printed, once the placeholders are filled
+        code, _, err = run_cli("strike", report_arg, "P1", "--reason",
+                               "folded into slice 011", "--commit", "abc123",
+                               "--by", "wrap-up")
+        assert code == 0, err
+
+
+def test_fold_into_names_the_slice_for_an_entry_without_for_or_another_one():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, target = _fold_repo(tmp)
+        spec = slice_dir.parent.parent
+        backlog = slice_dir.parent / "backlog" / "031_in_the_backlog" / "slice.md"
+        backlog.write_text("the ask\n")
+        git(spec, "add", ".")
+        git(spec, "commit", "-q", "--no-verify", "-m", "031")
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        run_cli("append", slice_dir, *with_flags(PROSE, **{"for": "11"}))        # P1
+        code, out, err = _fold(slice_dir, "B1", "--into", "031_in_the_backlog")
+        assert code == 0, err
+        assert out.startswith("folded B1 into slices/backlog/031_in_the_backlog/slice.md "
+                              "(staged)")
+        assert '--reason "folded into slice 031"' in out
+        text = backlog.read_text()
+        assert text.startswith("the ask\n\nSlice 018's close-out, entry B1, verbatim "
+                               f"(`close_out.py show`, {close_out._today()}; report\n")
+        assert text.endswith("\n\n" + _quoted(slice_dir, "B1") + "\n")
+        # --into stands in for a `for` that names another slice
+        code, out, err = _fold(slice_dir, "P1", "--into", "31")
+        assert code == 0, err
+        assert backlog.read_text().endswith(_quoted(slice_dir, "P1") + "\n")
+        assert "entry P1" not in target.read_text()
+        assert _staged(spec) == ["slices/backlog/031_in_the_backlog/slice.md"]
+
+
+def test_fold_refuses_what_it_cannot_fold_and_writes_nothing():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _ = _fold_repo(tmp)
+        root = slice_dir.parent
+        for name in ("051_planned", "052_seeded"):
+            (root / "backlog" / name).mkdir()
+            (root / "backlog" / name / "slice.md").write_text("the ask\n")
+        plan(root / "backlog" / "051_planned")
+        plan(root / "backlog" / "052_seeded", how="plan")
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "11"}))       # B2
+        run_cli("strike", slice_dir, "B2", "--reason", "fixed in abc")
+        run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "12"}))       # B3
+        _fold_refused(slice_dir, "B1", [], "B1 has no `for` label", "--into")
+        _fold_refused(slice_dir, "B2", [], "B2 is struck", "fixed in abc")
+        _fold_refused(slice_dir, "B1", ["--into", "18"], "the report's own slice")
+        _fold_refused(slice_dir, "B1", ["--into", "018_dev_and_prd_stages"],
+                      "the report's own slice")
+        for gone in ("99", "2"):                    # none, and one completed since
+            _fold_refused(slice_dir, "B1", ["--into", gone],
+                          f"--into {gone}: no other slice still to run has that number")
+        _fold_refused(slice_dir, "B1", ["--into", "next"], "--into next names no slice")
+        for planned in ("51", "052"):               # a state.json, a seeded plan.md
+            _fold_refused(slice_dir, "B1", ["--into", planned],
+                          "is planned or running", "never reads slice.md again",
+                          "add a phase or rule on its run")
+        # the entry's own for, naming a folder without a slice.md
+        _fold_refused(slice_dir, "B3", [], "slices/012_later_slice/slice.md does not "
+                                           "exist")
+        _fold_refused(slice_dir, "B9", ["--into", "11"], "no entry B9")
+        _fold_refused(slice_dir, "B1", ["--into", "11", "--date", "20-10-2026"],
+                      "is not YYYY-MM-DD")
+
+
+def test_fold_refuses_an_entry_the_slice_md_holds_already_wherever_the_report_moved():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, target = _fold_repo(tmp)
+        spec = slice_dir.parent.parent
+        run_cli("append", slice_dir, *with_flags(PROSE, **{"for": "11"}))        # P1
+        assert _fold(slice_dir, "P1", "--date", "2026-10-20")[0] == 0
+        _fold_refused(slice_dir, "P1", [], "holds this fold already",
+                      "slice 018's entry P1")
+        # the slice is completed and its report moves: still the same fold
+        git(spec, "commit", "-q", "--no-verify", "-m", "fold")
+        moved = spec / "slices" / "completed" / FOLD_SLICE
+        slice_dir.rename(moved)
+        _fold_refused(moved, "P1", [], "holds this fold already")
+        # the same id from another slice's report, or another id, is another fold
+        assert close_out._folded_already(target.read_text(), "018", "P1", FOLD_SLICE)
+        assert not close_out._folded_already(target.read_text(), "019", "P1", "019_other")
+        assert not close_out._folded_already(target.read_text(), "018", "P2", FOLD_SLICE)
+
+
+def test_fold_reports_a_staging_that_fails_and_leaves_the_fold():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, target = _fold_repo(tmp, git_init=False)
+        run_cli("append", slice_dir, *with_flags(PROSE, **{"for": "011_x"}))     # P1
+        code, out, err = _fold(slice_dir, "P1")
+        assert code == 2 and not out, (code, out, err)
+        assert "folded P1 into slices/backlog/011_x/slice.md, but staging it failed" in err
+        assert "git -C" in err and "add -- slices/backlog/011_x/slice.md" in err
+        assert "The fold stays in slice.md, unstaged" in err
+        assert "close_out.py strike" in err
+        assert target.read_text().endswith(_quoted(slice_dir, "P1") + "\n")
+
+        def hang(argv, **kw):
+            raise subprocess.TimeoutExpired(argv, kw.get("timeout"))
+
+        target.write_text("the ask\n")
+        real = close_out.subprocess.run
+        close_out.subprocess.run = hang
+        try:
+            code, _, err = _fold(slice_dir, "P1")
+        finally:
+            close_out.subprocess.run = real
+        assert code == 2 and "did not answer within 30s" in err, err
+        assert "entry P1" in target.read_text()
+
+
+def test_fold_intro_wraps_at_100_without_breaking_a_backticked_span():
+    short = close_out._fold_intro("7", "B1", "2026-10-20", "x/close-out.md")
+    assert short == ("Slice 7's close-out, entry B1, verbatim (`close_out.py show`, "
+                     "2026-10-20; report `x/close-out.md`):")
+    for n in range(40):
+        intro = close_out._fold_intro("0" * n + "18", "P1", "2026-10-20",
+                                      "slices/completed/018_a-b_c/close-out.md")
+        lines = intro.split("\n")
+        assert all(len(line) <= 100 for line in lines), intro
+        assert all(line.count("`") % 2 == 0 for line in lines), intro
+        assert " ".join(lines) == close_out.FOLD_INTRO.format(
+            own="0" * n + "18", eid="P1", date="2026-10-20",
+            report="slices/completed/018_a-b_c/close-out.md")
+
+
+def test_fold_is_in_the_verb_block_and_writes_no_store():
+    assert close_out.verb_usage("fold").splitlines()[0] == (
+        "close_out.py fold <close-out.md> <id> [--into SLICE] [--date DATE]")
+    assert "fold" not in close_out.WRITING_VERBS
+
+
 # -- rule, the read-back, close ------------------------------------------------------
 
 def test_rule_records_the_words_and_what_was_done_on_them():

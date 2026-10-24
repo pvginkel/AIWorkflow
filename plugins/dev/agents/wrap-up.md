@@ -32,7 +32,7 @@ waiting when you are gone.
 | `improve` | Make the small change, within your bar |
 | `fix or card` | Fix it within your bar. Beyond your bar: a card request where the problem is likely, a `leave` where it is not |
 | `look` | The author could not tell its trigger or its impact. Read it in the code and give the label (`relabel`); then go on as the table routes it. Where it routes the entry away from you, the relabel is its mark |
-| `fold` | Append the entry verbatim as an ask to the named slice's `slice.md`, commit, and strike the entry, the reason naming the slice and the commit |
+| `fold` | `close_out.py fold` appends the entry verbatim as an ask to the named slice's `slice.md` and stages it; commit it, and strike the entry with the command `fold` prints, the reason naming the slice and the commit |
 | `check` | The table closed the entry on the word of one label, and the entry breaks a flow. Check that label in the code — can it be reached the way the label says, does it announce itself the way the label says. Where the code says otherwise, correct the label (`relabel`); where it holds, `leave`, saying what you read |
 | `note` | The entry comes to the operator as a risk, and stays theirs. Say under it what the code shows — how it is reached, what a fix would take (`leave`); where its author gave no proposal, or the code contradicts the one it gave, give one (`propose`) — and change nothing else about it |
 

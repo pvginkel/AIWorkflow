@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-24 — close_out.py fold appends an entry verbatim to a later slice's slice.md and stages it (v0.9.131)
+
+The wrap-up's `fold` row said to append the entry verbatim as an ask to the named slice's
+`slice.md`, but `close_out.py` had no verb for it. Each wrap-up found the target path, copied the
+house format from earlier folds and piped `close_out.py show` through sed (PilotAppSpecs slice
+005's wrap-up built the append by hand four times). `close_out.py fold <close-out.md> <id>
+[--into <slice>]` now appends the entry in that established format and stages the file: a line
+naming the slice, the entry and the report (`Slice NNN's close-out, entry X, verbatim
+(`close_out.py show`, <date>; report `<path>`):`), then `show`'s output quoted. It prints the
+strike to run once the wrap-up has committed. The target is the entry's `for`, or `--into` for
+the close-out session executing an operator's "fold into 009". It has to be a slice still to run
+and unplanned. A planned or running one is refused, since its run never reads `slice.md` again.
+So are the report's own slice, a struck entry and a fold the target already holds; the match
+finds a fold made before the report moved to `completed/`. `fold` writes neither the store nor
+the report. The wrap-up's dispatch names it, and `agents/wrap-up.md`, `docs/close-out.md`,
+`close-out-template.md` § The verbs and `/dev:close-out` step 7 use it. AIWF-97.
+
 ## 2026-10-24 — A project's doc plan that gives a kind of doc work to the doc phase wins over "a doc task is a phase" (v0.9.130)
 
 `plan-template.md` said that a requirement which is a doc change, such as a decision to close,

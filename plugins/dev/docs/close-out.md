@@ -19,7 +19,8 @@ it writes every author's entries (`append`), notes (`note`) and strikes (`strike
 the last two back (`unnote`, `unstrike`), the
 corrections of an entry by its appender (`amend`), of a label (`relabel`) and of a proposal
 (`propose`), what the wrap-up asked for and
-left (`request-card`, `leave`), the operator's rulings (`rule`), the criterion an owed-after
+left (`request-card`, `leave`), the fold of an entry into a later slice's `slice.md` (`fold`,
+which stages that file and writes nothing else), the operator's rulings (`rule`), the criterion an owed-after
 action settles (`settle`, which writes `verification.json` too), prints an entry in full
 (`show`), renders the report and counts it. Both
 loops import it, and every dispatch names it beside the report's path — which the tool takes as
@@ -395,7 +396,7 @@ operator is theirs, and no card is filed without their word.
 | a likely problem it cannot fix within its bar | a card request: how it is reached, what the fix takes (`request-card`) — it becomes the entry's proposal |
 | a trigger or an impact the author could not tell | the label, from the code |
 | an entry without labels | its labels, from its text |
-| input for a slice still unplanned | the entry appended to that slice's `slice.md`, and a strike naming the slice |
+| input for a slice still unplanned | the entry appended to that slice's `slice.md` (`fold`), and a strike naming the slice |
 | a close that rests on one label, on an entry that breaks a flow | that label checked in the code — its trigger, or its signal — and corrected where the code says otherwise |
 | a risk that comes to the operator | a proposal, where its author gave none or the code says otherwise (`propose`), and what the code shows under it (`leave`); the entry stays theirs |
 | a gate that goes red on its fix | the fix taken back, and a card request or a note that says so |
@@ -488,7 +489,7 @@ lands.
    what comes to them and rules. The `close-out` skill (or an ad hoc session following it) executes:
    `card` files a tracker card with the entry in full (`show`) as its body, `fix now` does the small
    thing and strikes the entry with the commit, or bails to a slice, `fold into` appends the entry
-   to that slice's `slice.md`, `close` strikes, `defer` leaves it — then renders. Git in the spec
+   to that slice's `slice.md` (`close_out.py fold --into`), `close` strikes, `defer` leaves it — then renders. Git in the spec
    repo holds the history. **The card's closure is the report's.** The operator does not treat a
    blank `Disposition:` as pending work, and a report is never a queue they work from: when they are
    done with it the report is closed (`close_out.py close`), the close-out card with it, and every

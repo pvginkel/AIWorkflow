@@ -38,6 +38,11 @@ is judgment — and nobody edits either file by hand; importable by both loops
   request-card the wrap-up asks for a card on an entry; its words become the
                entry's proposal.
   leave        the wrap-up looked at an entry and changed nothing.
+  fold         append an entry verbatim — its `show`, quoted, under a line
+               naming the slice, the entry and the report — to the slice.md
+               of the slice still unplanned it is `for` (or `--into`), and
+               stage that file; prints the strike that follows its commit.
+               Writes neither the store nor the report.
   worklist     what waits for the wrap-up, with what is asked of each.
   show         one or more entries in full — the view a reader of the
                evidence takes, now that the report carries the ask alone.
@@ -107,6 +112,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import string
 import subprocess
 import sys
@@ -1596,17 +1602,23 @@ def _stage(folder: Path) -> str:
         else "unplanned"
 
 
-def slices_to_run(slice_dir: Path | str) -> dict[int, tuple[str, str]] | None:
-    """Number → (folder number as written, stage), of every slice still to
-    run: a `<number>_*` folder directly under the nearest `slices` ancestor
-    of the slice folder, or under its `backlog/` — the slice itself left
-    out. The stage is `planned` or `unplanned` (`_stage`). None without
-    such an ancestor."""
+def _slices_root(slice_dir: Path | str) -> Path | None:
+    """The nearest `slices` ancestor of the slice folder, resolved; None
+    without one. Its parent is the spec repo's root."""
     here = Path(slice_dir).resolve()
-    root = next((p for p in here.parents if p.name == "slices"), None)
+    return next((p for p in here.parents if p.name == "slices"), None)
+
+
+def _folders_to_run(slice_dir: Path | str) -> dict[int, Path] | None:
+    """Number → folder of every slice still to run: a `<number>_*` folder
+    directly under the nearest `slices` ancestor of the slice folder, or
+    under its `backlog/` — the slice itself left out, the first folder
+    found for a number taken. None without such an ancestor."""
+    here = Path(slice_dir).resolve()
+    root = _slices_root(here)
     if root is None:
         return None
-    out: dict[int, tuple[str, str]] = {}
+    out: dict[int, Path] = {}
     for parent in (root, root / "backlog"):
         try:
             children = list(parent.iterdir())
@@ -1616,8 +1628,19 @@ def slices_to_run(slice_dir: Path | str) -> dict[int, tuple[str, str]] | None:
             m = re.match(r"(\d+)_", child.name)
             if m and child.is_dir() and child.resolve() != here \
                     and int(m.group(1)) not in out:
-                out[int(m.group(1))] = (m.group(1), _stage(child))
+                out[int(m.group(1))] = child
     return out
+
+
+def slices_to_run(slice_dir: Path | str) -> dict[int, tuple[str, str]] | None:
+    """Number → (folder number as written, stage), of every slice still to
+    run (`_folders_to_run`). The stage is `planned` or `unplanned`
+    (`_stage`). None without a `slices` ancestor."""
+    folders = _folders_to_run(slice_dir)
+    if folders is None:
+        return None
+    return {n: (re.match(r"(\d+)_", folder.name).group(1), _stage(folder))
+            for n, folder in folders.items()}
 
 
 def _slice_number(target) -> int | None:
@@ -2518,6 +2541,128 @@ def show_view(slice_dir: Path | str, ids: list[str] | None = None) -> str:
     return "\n\n".join(out) or "no live entries"
 
 
+# -- fold: an entry into a later slice's slice.md ----------------------------------
+
+FOLD_INTRO = ("Slice {own}'s close-out, entry {eid}, verbatim (`close_out.py show`, "
+              "{date}; report `{report}`):")
+FOLD_WIDTH = 100
+# How long staging the fold may take before it is reported as failed.
+GIT_ADD_TIMEOUT = 30
+_BACKTICKED_RE = re.compile(r"`[^`]*`")
+
+
+def _fold_intro(own: str, eid: str, day: str, report: str) -> str:
+    """The paragraph a fold opens with, wrapped at FOLD_WIDTH without
+    breaking a word, a hyphenated name or a backticked span."""
+    text = FOLD_INTRO.format(own=own, eid=eid, date=day, report=report)
+    glued = _BACKTICKED_RE.sub(lambda m: m.group(0).replace(" ", "\0"), text)
+    return textwrap.fill(glued, width=FOLD_WIDTH, break_long_words=False,
+                         break_on_hyphens=False).replace("\0", " ")
+
+
+def _folded_already(text: str, own: str, eid: str, folder: str) -> bool:
+    """Whether `text` holds the intro of a fold of entry `eid` of slice
+    `own` — the report the slice folder `folder` holds, wherever in the
+    spec tree it stood when it was folded (`slices/` or
+    `slices/completed/`), however the line was wrapped."""
+    flat = " ".join(text.split())
+    return re.search(re.escape(f"Slice {own}'s close-out, entry {eid}, verbatim (")
+                     + r"[^)]*?; report `(?:[^`]*/)?"
+                     + re.escape(f"{folder}/{REPORT_NAME}`):"), flat) is not None
+
+
+def fold_entry(slice_dir: Path | str, eid: str, into: str | None = None,
+               date: str | None = None) -> str:
+    """Append entry `eid` verbatim to the slice.md of the slice it is for —
+    its `for` label, or `into` in its place — under the intro FOLD_INTRO
+    gives, as `show` prints it, every line quoted; then stage that file in
+    the spec repo (`git add`, by name). The target is a slice still to run
+    and unplanned: one planned or running never reads slice.md again. The
+    report's own slice, a struck entry, an entry with no target, and a
+    slice.md that holds this fold already are refused, and nothing is
+    written. Neither the store nor the report is written — the strike that
+    follows the commit is the caller's. Returns what was done and the
+    strike to run; a staging that fails is a ReportError that says so, the
+    fold left in slice.md."""
+    day = _date(date)
+    here = Path(slice_dir).resolve()
+    with _locked(slice_dir):
+        entry = _find(_load(slice_dir), eid)
+        eid = entry["id"]
+        if entry.get("strike"):
+            raise ReportError(f"{eid} is struck — a struck entry is settled: "
+                              + _struck_heading(entry)[4:])
+        target = into if into is not None else (entry.get("labels") or {}).get("for")
+        target = _collapse(None if target is None else str(target))
+        if not target:
+            raise ReportError(f"{eid} has no `for` label: name the slice to fold it "
+                              "into with --into")
+        named = f"--into {target}" if into is not None else f"{eid}'s `for` {target}"
+        number = _slice_number(target)
+        if number is None:
+            raise ReportError(f"{named} names no slice: a slice is named by its number "
+                              "— 12, 012 or 012_slug")
+        own_m = re.match(r"(\d+)_", here.name)
+        own = own_m.group(1) if own_m else here.name
+        if own_m and number == int(own):
+            raise ReportError(f"{named} is the report's own slice: an entry folds into "
+                              "another slice, still to run")
+        root = _slices_root(here)
+        if root is None:
+            raise ReportError(f"{here} has no `slices` ancestor, so no slice still to "
+                              "run can be folded into")
+        folder = (_folders_to_run(here) or {}).get(number)
+        if folder is None:
+            raise ReportError(f"{named}: no other slice still to run has that number "
+                              "(a <number>_* folder in slices/ or slices/backlog/)")
+        written = re.match(r"(\d+)_", folder.name).group(1)
+        if _stage(folder) == "planned":
+            raise ReportError(f"slice {written} is planned or running, and its run never "
+                              "reads slice.md again: add a phase or rule on its run — "
+                              "nothing was folded")
+        spec_root = root.parent
+        path = folder / "slice.md"
+        rel = path.relative_to(spec_root)
+        try:
+            data = path.read_bytes()
+        except FileNotFoundError:
+            raise ReportError(f"{rel} does not exist: slice {written} has no slice.md "
+                              "to fold into — nothing was folded") from None
+        except OSError as e:
+            raise ReportError(f"{rel} is unreadable: {e}") from None
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            raise ReportError(f"{rel} is not UTF-8 — nothing was folded") from None
+        if _folded_already(text, own, eid, here.name):
+            raise ReportError(f"{rel} holds this fold already — slice {own}'s entry "
+                              f"{eid}; nothing was folded")
+        intro = _fold_intro(own, eid, day, str((here / REPORT_NAME).relative_to(spec_root)))
+        shown = show_view(slice_dir, [eid]).rstrip("\n").split("\n")
+        quoted = "\n".join(f"> {line}" if line.strip() else ">" for line in shown)
+        head = data.rstrip(b"\n")
+        path.write_bytes((head + b"\n\n" if head.strip() else b"")
+                         + f"{intro}\n\n{quoted}\n".encode())
+    strike = (f"close_out.py strike {shlex.quote(str(report_path(slice_dir)))} {eid} "
+              f'--reason "folded into slice {written}" --commit <sha> --by <you>')
+    add = ["git", "-C", str(spec_root), "add", "--", str(rel)]
+    try:
+        result = subprocess.run(add, capture_output=True, text=True,
+                                timeout=GIT_ADD_TIMEOUT,
+                                env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+        failed = None if result.returncode == 0 else (
+            result.stderr.strip() or f"exit {result.returncode}")
+    except subprocess.TimeoutExpired:
+        failed = f"it did not answer within {GIT_ADD_TIMEOUT}s"
+    except OSError as e:
+        failed = str(e)
+    if failed:
+        raise ReportError(f"folded {eid} into {rel}, but staging it failed — "
+                          f"`{shlex.join(add)}`: {failed}. The fold stays in slice.md, "
+                          f"unstaged: stage it by name, commit it, then: {strike}")
+    return f"folded {eid} into {rel} (staged) — commit it, then: {strike}"
+
+
 def _read_back(store: dict, text: str | None) -> list[tuple[str, str]]:
     """Take into the store every `Disposition:` line of close-out.md (`text`,
     None when there is none) that differs from what the store would render
@@ -3127,6 +3272,15 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p.add_argument("--text", required=True, help="why it stays, or - for stdin")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
+    p = verb("fold", "append an entry verbatim to the slice.md of the slice still "
+                     "unplanned it is for, and stage it; prints the strike that follows "
+                     "its commit", entry=True)
+    p.add_argument("--into", metavar="SLICE",
+                   help="the slice to fold it into, by its number (12, 012 or "
+                        "012_slug), in place of the one its for label names")
+    p.add_argument("--date", help="YYYY-MM-DD, the date the fold's first line "
+                                  "carries; today when omitted")
+
     verb("worklist", "what waits for the wrap-up, with what is asked of each")
 
     p = verb("show", "one or more entries in full — body, notes, labels, marks; "
@@ -3345,6 +3499,8 @@ def _main(args) -> int:
         elif command == "leave":
             print(leave_entry(slice_dir, args.id, args.by, _stdin_or(args.text),
                               date=args.date))
+        elif command == "fold":
+            print(fold_entry(slice_dir, args.id, into=args.into, date=args.date))
         elif command == "worklist":
             print(worklist_view(slice_dir))
         elif command == "show":
