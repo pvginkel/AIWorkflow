@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-24 — `close_out.py amend` lets an entry's appender correct it while it is uncommitted (v0.9.124)
+
+`close_out.py amend <close-out.md> <id> --by <who>` corrects an entry in place. Each content flag
+it is given (any of `append`'s flags except `--kind`) replaces that field. The result goes
+through `append`'s label and proposal checks, and no note is left. The guard is `unstrike`'s:
+`amend` refuses an entry that `HEAD`'s `close-out.json` holds in any version, and an entry whose
+appender is not the same `--by`. `append` gains an optional `--by` that records the appender as
+the entry's `by`. Passing it is what makes an entry amendable. An entry appended without it,
+including every entry the loops enter, has no appender, and nobody amends it. Every existing
+`append` call works unchanged. The dispatch line names `amend`, and close-out.md and
+close-out-template.md document it and the `by` field.
+
+Why: nothing could edit or withdraw an `append`. In PilotApp (2026-10-19), an entry had just
+been appended and not yet committed when its author found two off-by-one line references in it.
+The only fix was a `note`, so the report carried the wrong body plus a correction for the
+operator to read cold. (AIWF-90)
+
 ## 2026-10-23 — The plan-writer gives a criterion owed after an operator action its `owed_after` key (v0.9.123)
 
 The plan-writer's definition now names `owed_after`. A criterion that slice.md, a ruling or an

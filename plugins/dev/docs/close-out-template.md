@@ -25,6 +25,7 @@ lifecycle — are [close-out.md](close-out.md); this doc is the shape.
       "proposal": "<what its author would do about it and why, in a sentence or two>",
       "evidence": "witnessed",
       "author": "code-reviewer, P3 r1",
+      "by": "code-reviewer P3 r1",
       "labels": {"trigger": "ordinary-condition", "impact": "broken", "signal": "silent",
                  "fix": "design", "area": "sensitive", "repo": "KubeCoder"},
       "notes": [{"by": "consult 1", "date": "2026-09-30", "text": ["<one string per line>"]}],
@@ -47,6 +48,10 @@ lifecycle — are [close-out.md](close-out.md); this doc is the shape.
   in a ruling's words — the line the operator rules on, with the headline and the Consequence.
   `append --proposal` writes it; `propose` and `request-card` replace it, the one before kept
   as a note. `null` on an entry that has none.
+- **`by`** is the `--by` the entry was appended with: its appender, the one `amend` lets correct
+  it while it is not committed. Passing `--by` to `append` is what makes an entry amendable;
+  `null` on an entry appended without it, which nobody amends. `author` is the provenance's own
+  text and is never matched.
 - **`wrap_up`** is what the wrap-up did with an entry it did not strike: `{"outcome", "by",
   "date", "text"}`, the outcome being `card` (it asks for a card) or `left` (it looked and
   changed nothing).
@@ -194,13 +199,14 @@ Every verb takes the slice directory or the report's path as its first argument.
 |---|---|---|
 | `init` | the loops | creates the store and renders it; an existing store is never touched |
 | `labels` | an author | prints [the labels](close-out.md#the-labels) |
-| `append` | an author | adds one entry with its labels and its proposal; prints its id |
+| `append` | an author | adds one entry with its labels and its proposal; prints its id — `--by` records the appender, which makes the entry amendable |
 | `show` | the wrap-up, the close-out session | one or more entries in full — body, notes, labels, marks; without an id, every live entry |
 | `list` | an author | ids, headlines and Consequence lines by kind, struck entries marked |
 | `note` | anyone | adds a dated paragraph to one entry |
 | `strike` | whoever resolved the entry | strikes it, with the reason and the commit |
 | `unnote` | the note's author | withdraws the latest note they wrote with `note` or `relabel` while it is not committed — a relabel's kind and labels go back with it |
 | `unstrike` | the strike's author | withdraws a strike they made while it is not committed |
+| `amend` | the entry's appender | corrects an entry they appended with `--by` while it is not committed — each field given replaces the entry's, checked as `append` checks it; no note is left, and the id and the kind stay |
 | `relabel` | the wrap-up | gives an entry its labels or corrects them, with a note of what it found; `--for none` clears a `for`; `--dry-run` prints the note and the route, and writes nothing |
 | `propose` | the wrap-up, the close-out session | gives an entry its proposal, or replaces it — the one before is kept as a note |
 | `request-card` | the wrap-up | asks for a card on an entry, with how it is reached and what the fix takes — which becomes the entry's proposal |

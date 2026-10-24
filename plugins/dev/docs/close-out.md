@@ -17,7 +17,8 @@ consequence — with the body, the newest note and the evidence they need to rul
 `${CLAUDE_PLUGIN_ROOT}/tools/close_out.py` is the one pen:
 it writes every author's entries (`append`), notes (`note`) and strikes (`strike`), and takes
 the last two back (`unnote`, `unstrike`), the
-corrections of a label (`relabel`) and of a proposal (`propose`), what the wrap-up asked for and
+corrections of an entry by its appender (`amend`), of a label (`relabel`) and of a proposal
+(`propose`), what the wrap-up asked for and
 left (`request-card`, `leave`), the operator's rulings (`rule`), the criterion an owed-after
 action settles (`settle`, which writes `verification.json` too), prints an entry in full
 (`show`), renders the report and counts it. Both
@@ -25,7 +26,8 @@ loops import it, and every dispatch names it beside the report's path — which 
 its positional, the slice directory or the report itself, so the first call works — with
 the labels each kind carries and how they pair, from the tables `append` refuses by, and the
 arguments of `append`, `note`, `strike`, `unnote` and `unstrike`, rendered from the tool's own parser
-(`close_out.verb_usage`), so no `--help` turn or refused call is spent. No agent edits either
+(`close_out.verb_usage`), so no `--help` turn or refused call is spent; `amend`, whose flags are
+`append`'s, is named without them. No agent edits either
 file by hand. The `Disposition:` lines of `close-out.md` are the operator's, and the one thing
 in that file that is read back. Every verb that changes the store renders the report as it
 saves, under the same lock, and takes those lines back first: the report never lags its store.
@@ -40,10 +42,15 @@ words already: `--append` adds the session's record of what the operator said af
 they wrote, `--replace` is for when they say the new words replace the old.
 **An author takes back only their own words, and only before they are committed.** `unnote`
 withdraws the latest note an author wrote with `note` or `relabel` — a relabel's note puts back
-the kind and labels it changed, and is refused once a later relabel changed them again — and
-`unstrike` withdraws an author's strike. Both refuse what `HEAD`'s `close-out.json` already
-holds, and what another `--by` signed: a strike made without `--by`, or by a ruling, has no
-author to take it back. Amending is withdrawing, then writing again. `relabel --dry-run`
+the kind and labels it changed, and is refused once a later relabel changed them again —
+`unstrike` withdraws an author's strike, and `amend` corrects an entry its author appended:
+each field it is given (any of `append`'s flags but `--kind`) replaces the entry's, checked as
+`append` checks it, and no note is left. **Passing `--by` to `append` is what makes an entry
+amendable:** it records the appender, and `amend` takes the same `--by`; an entry appended
+without it — every one the loops enter — has no appender, and a note corrects it. All three
+refuse what `HEAD`'s `close-out.json` already holds, and what another `--by` signed: a strike
+made without `--by`, or by a ruling, has no author to take it back. Amending a note or a strike
+is withdrawing it, then writing again. `relabel --dry-run`
 prints the note and the route a relabel would give the entry, and writes nothing.
 
 ## What it is — and is not

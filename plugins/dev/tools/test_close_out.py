@@ -865,7 +865,7 @@ def test_append_stores_the_entry_in_the_store_shape():
             "body": ["  first line", "", "second paragraph"],
             "consequence": "an operator reads a wrong status",
             "proposal": "Card it: the fix needs a design.",
-            "evidence": "witnessed", "author": "code-reviewer, P3 r1",
+            "evidence": "witnessed", "author": "code-reviewer, P3 r1", "by": None,
             "labels": {"trigger": "ordinary-condition", "impact": "broken",
                        "signal": "silent", "fix": "design", "area": "sensitive",
                        "repo": "KubeCoder"},
@@ -1617,6 +1617,242 @@ def test_unnote_of_a_relabel_is_refused_when_a_later_relabel_changed_it_again():
         code, _, err = run_cli("unnote", slice_dir, "B1", "--by", "w1")
         assert code == 2
         assert ("it left fix one-edit, and the entry carries unknown now") in err
+
+
+# -- amend: the appender corrects an entry that is not committed -------------------
+
+BY = "code-reviewer P3 r1"
+
+
+def _amend(slice_dir, eid, *flags, by=BY, stdin=None):
+    return run_cli("amend", slice_dir, eid, *(("--by", by) if by is not None else ()),
+                   *flags, stdin=stdin)
+
+
+def _amend_refused(slice_dir, eid, flags, *needles, by=BY):
+    before = _files(slice_dir)
+    code, out, err = _amend(slice_dir, eid, *flags, by=by)
+    assert code == 2 and not out, (code, out, err)
+    for needle in needles:
+        assert needle in err, (needle, err)
+    assert _files(slice_dir) == before
+    return err
+
+
+def test_append_by_records_the_appender_and_without_it_the_entry_has_none():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        code, out, err = run_cli("append", slice_dir, *DEFECT, "--by", " code-reviewer  P3 r1 ")
+        assert code == 0 and out.strip() == "B1", err
+        b1 = entry_of(slice_dir, "B1")
+        assert b1["by"] == BY
+        # right after the provenance's author, which it is not matched against
+        assert list(b1)[8:10] == ["author", "by"]
+        assert b1["author"] == "code-reviewer, P3 r1"
+        # without --by, append is what it was, and the key is there all the same
+        code, out, err = run_cli("append", slice_dir, *DEFECT)
+        assert code == 0 and out.strip() == "B2", err
+        b2 = entry_of(slice_dir, "B2")
+        assert "by" in b2 and b2["by"] is None
+        assert {k: v for k, v in b2.items() if k != "id"} == {
+            **{k: v for k, v in b1.items() if k != "id"}, "by": None}
+        # the loops' call takes no `by`, and the API's is optional
+        e1 = close_out.append_entry(slice_dir, "event", "resumed", "b", consequence="none")
+        assert entry_of(slice_dir, e1)["by"] is None
+        a1 = close_out.append_entry(slice_dir, "action", "Do X", "b", consequence="none",
+                                    proposal="Do it.", by="the driver")
+        assert entry_of(slice_dir, a1)["by"] == "the driver"
+        # the dispatch line names amend, without its flags and without --overwrite
+        line = close_out.dispatch_line("/s/close-out.md")
+        assert "`amend <id> --by\n<who>` corrects an entry you appended with that --by" in line
+        assert "close_out.py amend" not in line and "overwrite" not in line
+
+
+def test_amend_replaces_each_field_given_and_leaves_no_note():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT, "--by", BY)                           # B1
+        code, out, err = _amend(slice_dir, "B1", "--headline",
+                                "controller: the  roll's status line is wrong",
+                                "--body", "-", "--provenance",
+                                "read — code-reviewer, P3 r2", by=" code-reviewer P3  r1",
+                                stdin="\n  new first line\n\nsecond  \n\n")
+        assert code == 0, err
+        assert out == "### B1 — controller: the roll's status line is wrong\n"
+        b1 = entry_of(slice_dir, "B1")
+        assert b1["headline"] == "controller: the roll's status line is wrong"
+        assert b1["body"] == ["  new first line", "", "second"]
+        assert (b1["evidence"], b1["author"]) == ("read", "code-reviewer, P3 r2")
+        assert b1["notes"] == [] and (b1["id"], b1["kind"], b1["by"]) == ("B1", "defect", BY)
+        assert "controller: the roll's status line is wrong" in report(slice_dir)
+        assert store(slice_dir)["rendered"] == sha256(report(slice_dir))
+        # the rest, the same way: the entry is what an append of it would be
+        code, out, err = _amend(slice_dir, "B1", "--consequence", "an  operator misreads",
+                                "--proposal", "Card it:\n a design.", "--severity", "NIT")
+        assert code == 0, err
+        assert out == "### B1 — controller: the roll's status line is wrong · nit\n"
+        run_cli("append", slice_dir, *with_flags(
+            DEFECT, headline="controller: the roll's status line is wrong",
+            body="  new first line\n\nsecond", provenance="read — code-reviewer, P3 r2",
+            consequence="an operator misreads", proposal="Card it: a design.",
+            severity="nit", by=BY))                                                 # B2
+        b1, b2 = entry_of(slice_dir, "B1"), entry_of(slice_dir, "B2")
+        assert {**b1, "id": "B2"} == b2
+        # a defect owes no proposal: an empty one takes it off
+        assert _amend(slice_dir, "B1", "--proposal", "")[0] == 0
+        assert entry_of(slice_dir, "B1")["proposal"] is None
+        # the Python API is the same call
+        assert close_out.amend_entry(slice_dir, "B1", BY, headline="h") == "### B1 — h · nit"
+        assert entry_of(slice_dir, "B1")["headline"] == "h"
+
+
+def test_amend_is_refused_once_the_entry_is_committed():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT, "--by", BY)                           # B1
+        # a repository with no commit yet holds nothing
+        git(slice_dir.parent.parent, "init", "-q")
+        assert _amend(slice_dir, "B1", "--body", "amended")[0] == 0
+        commit_store(slice_dir)
+        _amend_refused(slice_dir, "B1", ["--body", "again"],
+                       "B1 is committed, and a committed entry stays; a note adds to it")
+        # an entry appended since is the appender's to amend
+        run_cli("append", slice_dir, *DEFECT, "--by", BY)                           # B2
+        assert _amend(slice_dir, "B2", "--body", "amended")[0] == 0
+        # HEAD holding the entry in any version is committed
+        committed = store(slice_dir)
+        committed["entries"][1]["body"] = ["what was committed"]
+        commit_store(slice_dir, text=json.dumps(committed))
+        _amend_refused(slice_dir, "B2", ["--body", "again"], "B2 is committed")
+        assert entry_of(slice_dir, "B2")["body"] == ["amended"]
+
+
+def test_amend_is_refused_to_another_by_and_on_an_entry_appended_without_one():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT, "--by", BY)                           # B1
+        run_cli("append", slice_dir, *DEFECT)                                       # B2
+        _amend_refused(slice_dir, "B1", ["--body", "x"],
+                       f"B1 was appended by {BY}, not wrap-up: only its appender amends "
+                       "an entry", by="wrap-up")
+        _amend_refused(slice_dir, "B2", ["--body", "x"],
+                       "B2 has no recorded appender (it was appended without --by), so "
+                       "nobody amends it; a note adds to it")
+        _amend_refused(slice_dir, "B9", ["--body", "x"], "no entry B9")
+        # --by is required, and an empty one is none
+        assert _amend(slice_dir, "B1", "--body", "x", by=None)[0] == 2
+        _amend_refused(slice_dir, "B1", ["--body", "x"],
+                       "amend needs --by: who appended the entry", by=" ")
+        # nothing to replace, or nothing that changes
+        _amend_refused(slice_dir, "B1", [], "amend needs a field to replace: any of "
+                       "`append`'s flags but --kind")
+        try:
+            close_out.amend_entry(slice_dir, "B1", BY, labels={"fix": None})
+            raise AssertionError("an amend that gives nothing must raise")
+        except ReportError as e:
+            assert "amend needs a field to replace" in str(e)
+        _amend_refused(slice_dir, "B1", ["--body", "the body", "--trigger",
+                                         "ordinary-condition", "--headline",
+                                         "controller:  the status line is wrong"],
+                       "amend changes nothing on B1")
+        # there is no --kind to amend
+        assert _amend(slice_dir, "B1", "--kind", "prose")[0] == 2
+        # a store written before the key reads as an entry without an appender
+        data = store(slice_dir)
+        del data["entries"][0]["by"]
+        (slice_dir / "close-out.json").write_text(json.dumps(data))
+        _amend_refused(slice_dir, "B1", ["--body", "x"], "B1 has no recorded appender")
+        assert "### B1 — controller: the status line is wrong" in close_out.show_view(
+            slice_dir, ["B1"])
+
+
+def test_amend_runs_appends_checks_on_the_entry_as_it_would_be():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT, "--by", BY)                           # B1
+        assert _amend(slice_dir, "B1", "--impact", "degraded")[0] == 0
+        # the Consequence against the impact, either way round — which relabel skips
+        _amend_refused(slice_dir, "B1", ["--consequence", "none"],
+                       "--impact degraded over a --consequence that opens with none")
+        _amend_refused(slice_dir, "B1", ["--impact", "none", "--signal", "none"],
+                       "--impact none over a --consequence that is not none")
+        _amend_refused(slice_dir, "B1", ["--signal", "none"],
+                       "--signal none with --impact degraded")
+        code, _, err = _amend(slice_dir, "B1", "--consequence", "none", "--impact", "none",
+                              "--signal", "none")
+        assert code == 0, err
+        _amend_refused(slice_dir, "B1", ["--signal", "loud"], "--signal loud with --impact none")
+        # a field append requires is not emptied
+        for flag in ("--headline", "--body", "--consequence"):
+            _amend_refused(slice_dir, "B1", [flag, " \n "], f"{flag} needs text")
+        # a label of the other family, and a for naming no slice still to run
+        _amend_refused(slice_dir, "B1", ["--benefit", "user"],
+                       "--benefit: not a label of a defect")
+        _amend_refused(slice_dir, "B1", ["--for", "77"], "--for 77: no other slice still to run")
+        run_cli("append", slice_dir, *IMPROVEMENT, "--by", BY)                      # I1
+        _amend_refused(slice_dir, "I1", ["--trigger", "fault"],
+                       "--trigger: not a label of an improvement")
+        # an action, a decision and an improvement keep their proposal
+        run_cli("append", slice_dir, *ACTION, "--by", BY)                           # A1
+        run_cli("append", slice_dir, *DECISION, "--by", BY)                         # D1
+        for eid, article in (("A1", "an action"), ("D1", "a decision"),
+                             ("I1", "an improvement")):
+            for empty in ("", " \n "):
+                _amend_refused(slice_dir, eid, ["--proposal", empty],
+                               f"Error: {article} needs --proposal: what you would do "
+                               "about it and why, in a sentence or two")
+        # every refusal in one error
+        err = _amend_refused(slice_dir, "A1", ["--proposal", "", "--benefit", "user"],
+                             "--benefit: not a label", "an action needs --proposal")
+        assert err.count("Error:") == 1
+
+
+def test_amend_merges_the_labels_over_the_entrys_and_for_none_clears_for():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "12"}), "--by", BY)
+        code, _, err = _amend(slice_dir, "B1", "--fix", "one-edit", "--area", "Plain")
+        assert code == 0, err
+        b1 = entry_of(slice_dir, "B1")
+        assert b1["labels"] == {"trigger": "ordinary-condition", "impact": "broken",
+                                "signal": "silent", "fix": "one-edit", "area": "plain",
+                                "repo": "KubeCoder", "for": "012"}
+        assert list(b1["labels"]) == [k for k in close_out.LABELS if k in b1["labels"]]
+        assert b1["notes"] == []
+        assert _amend(slice_dir, "B1", "--for", "none")[0] == 0
+        assert "for" not in entry_of(slice_dir, "B1")["labels"]
+        _amend_refused(slice_dir, "B1", ["--for", "NONE"], "amend changes nothing on B1")
+        # a given for is written as the folder's number
+        assert _amend(slice_dir, "B1", "--for", "31")[0] == 0
+        assert entry_of(slice_dir, "B1")["labels"]["for"] == "031"
+        # the CLI documents the clearing value
+        _, subs = close_out.build_parser()
+        assert "--for none clears it" in " ".join(subs["amend"].format_help().split())
+
+
+def test_amend_takes_overwrite_and_stops_at_an_edit_without_it():
+    _, subs = close_out.build_parser()
+    assert "amend" in close_out.WRITING_VERBS
+    assert "--overwrite" in subs["amend"].format_help()
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT, "--by", BY)                           # B1
+        _edit(slice_dir, "### B1 — controller: the status line is wrong",
+              "### B1 — controller: the status line is wrong, the operator says")
+        err = _amend_refused(slice_dir, "B1", ["--body", "amended"],
+                             "close-out.md was edited since")
+        assert "the operator says" in err
+        code, _, err = _amend(slice_dir, "B1", "--body", "amended", "--overwrite")
+        assert code == 0, err
+        assert entry_of(slice_dir, "B1")["body"] == ["amended"]
+        assert "the operator says" not in report(slice_dir)
 
 
 # -- the wrap-up: marks and worklist ---------------------------------------------
@@ -3285,8 +3521,10 @@ def test_dispatch_line_is_the_text_with_the_labels_and_the_verbs_usage_in_it():
     assert line.startswith(f"The slice's close-out report is {report_md}, rendered from "
                            "its store,\nclose-out.json. Write to it only through "
                            f"`python3 {tool} <verb> {report_md} …` —\n")
-    assert ("`append`, `note`, `strike`, and `unnote` or `unstrike` to take back your\n"
-            "own note or strike while it is not committed; `list` shows what is there\n"
+    assert ("`append`, `note`, `strike`; while it is not committed, `amend <id> --by\n"
+            "<who>` corrects an entry you appended with that --by (any of `append`'s\n"
+            "flags but --kind, each replacing its field), and `unnote` or `unstrike`\n"
+            "takes back your own note or strike; `list` shows what is there\n"
             ) in line
     assert ("what you would do\n— never where the entry goes. "
             f"`python3 {tool} labels` prints what each\nlabel means —") in line
@@ -3316,7 +3554,7 @@ def test_verb_usage_renders_append_compactly_with_its_help_strings():
     assert "[--repo NAME]" in lines[0] and "[--for SLICE]" in lines[0]
     assert "[--product-call {yes,no}]" in lines[0]
     assert "--consequence CONSEQUENCE [--proposal PROPOSAL] [--provenance" in lines[0]
-    assert len(lines) == 1 + 20
+    assert len(lines) == 1 + 21
     for flag, help_ in (
             ("--kind", "what the entry is — it decides which of the labels below the "
                        "entry carries"),
@@ -3334,6 +3572,9 @@ def test_verb_usage_renders_append_compactly_with_its_help_strings():
                            "decision and an improvement"),
             ("--provenance", "witnessed | read, then role, phase, round, and the "
                              "artifact with the full record"),
+            ("--by", "who appends — role, phase and round; an entry appended with --by "
+                     "can be corrected with amend until it is committed, one without it "
+                     "cannot"),
             ("--severity", "the grade, where the entry has one"),
             ("--trigger", "what has to happen for the problem to show"),
             ("--impact", "what is then experienced"),

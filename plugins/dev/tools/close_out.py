@@ -15,7 +15,8 @@ is judgment — and nobody edits either file by hand; importable by both loops
   append       add one entry with the labels its kind carries — refused,
                naming the flag, when one is missing, belongs to the other
                family, or contradicts the Consequence line. Prints the id:
-               the kind's letter and the next number under it.
+               the kind's letter and the next number under it. `--by`
+               records the appender `amend` asks for.
   list         the view an agent takes before it appends: per kind, ids,
                headlines and Consequence lines, struck entries marked.
   note         add a dated paragraph `<who>, <date> — <text>` to one entry.
@@ -24,6 +25,10 @@ is judgment — and nobody edits either file by hand; importable by both loops
                `relabel` — a relabel's kind and labels put back — while it
                is not committed, and only on its own --by.
   unstrike     withdraw an author's own strike while it is not committed.
+  amend        correct an entry its appender wrote with `append --by`, while
+               it is not committed: each field given replaces the entry's,
+               the labels and the proposal checked as `append` checks them,
+               no note left. The id and the kind never change.
   relabel      give an entry its labels or correct them, with a note of what
                changed and why. The id never changes, not even with the kind.
                `--dry-run` prints the note and the route it would give the
@@ -132,8 +137,10 @@ LABELS_HEADING = "## The labels"
 DISPATCH_LINE = """\
 The slice's close-out report is {report}, rendered from its store,
 {store}. Write to it only through `python3 {tool} <verb> {report} …` —
-`append`, `note`, `strike`, and `unnote` or `unstrike` to take back your
-own note or strike while it is not committed; `list` shows what is there
+`append`, `note`, `strike`; while it is not committed, `amend <id> --by
+<who>` corrects an entry you appended with that --by (any of `append`'s
+flags but --kind, each replacing its field), and `unnote` or `unstrike`
+takes back your own note or strike; `list` shows what is there
 (ids, headlines, Consequence lines) — never edit either file by hand, and
 commit the store with your own commit, staged by name. An entry carries
 labels that say what it is, and the tool routes it from them: you state
@@ -355,8 +362,9 @@ EDITED_TAIL = ("Ask the operator about every line here that is not yours to take
                "A role the run loop dispatched never passes --overwrite: say in your "
                "verdict's summary what you meant to write, and carry on.")
 # The verbs that write close-out.md, each taking `--overwrite`.
-WRITING_VERBS = ("append", "note", "strike", "unnote", "unstrike", "relabel", "propose",
-                 "request-card", "leave", "rule", "settle", "close", "render", "stamp")
+WRITING_VERBS = ("append", "note", "strike", "unnote", "unstrike", "amend", "relabel",
+                 "propose", "request-card", "leave", "rule", "settle", "close", "render",
+                 "stamp")
 OVERWRITE_HELP = ("write close-out.md although it was edited since its last render "
                   "(after the refusal's list is dealt with)")
 
@@ -401,8 +409,9 @@ def slice_dir_of(arg: Path | str) -> Path:
 def dispatch_line(report: Path | str) -> str:
     """The report pointer a dispatch prompt carries — the path, the store,
     the tool, the labels each kind carries and how they pair, as
-    `check_labels` holds them, and the arguments of the five verbs it
-    names, rendered from the parser."""
+    `check_labels` holds them, and the arguments of five of the verbs it
+    names, rendered from the parser; `amend`, whose flags are `append`'s,
+    is named without them."""
     return DISPATCH_LINE.format(report=report, store=STORE_NAME, tool=TOOL_PATH,
                                 kind_labels=kind_labels_text(),
                                 label_pairing=LABEL_PAIRING,
@@ -590,8 +599,8 @@ GIT_SHOW_TIMEOUT = 30
 
 def _committed_entry(slice_dir: Path | str, eid: str) -> dict | None:
     """The entry as HEAD's store holds it — `git show HEAD:./close-out.json`
-    from the slice directory — the line `unnote` and `unstrike` do not
-    cross: what a commit holds stays. None when nothing is committed: no
+    from the slice directory — the line `unnote`, `unstrike` and `amend` do
+    not cross: what a commit holds stays. None when nothing is committed: no
     git, no repository, no commit yet, no store or no such entry in it. A
     git that does not answer, or a committed store that is not JSON, is a
     ReportError — a withdrawal is never let through on a store that could
@@ -782,14 +791,14 @@ def _split_provenance(provenance: str | None) -> tuple[str | None, str | None]:
 def _entry(eid: str, kind: str | None, headline: str, body: list[str],
            consequence: str | None, provenance: str | None,
            severity: str | None, labels: dict | None,
-           proposal: str | None = None) -> dict:
+           proposal: str | None = None, by: str | None = None) -> dict:
     evidence, author = _split_provenance(provenance)
     return {
         "id": eid, "kind": kind, "grade": severity,
         "headline": _collapse(headline), "body": body,
         "consequence": _collapse(consequence) or None,
         "proposal": _collapse(proposal) or None,
-        "evidence": evidence, "author": author,
+        "evidence": evidence, "author": author, "by": _collapse(by) or None,
         "labels": _ordered_labels(labels) if labels is not None else None,
         "notes": [], "wrap_up": None, "strike": None, "ruling": None,
     }
@@ -817,12 +826,15 @@ def append_entry(slice_dir: Path | str, section: str, headline: str,
                  provenance: str | None = None,
                  severity: str | None = None,
                  labels: dict | None = None,
-                 proposal: str | None = None) -> str:
+                 proposal: str | None = None,
+                 by: str | None = None) -> str:
     """Append one entry; returns its id. `section` is a kind or one of the
     old section names. The loops' path, and it refuses nothing about labels
     or the proposal: without labels, an action, an event or a decision gets
     the tool's own (`tool_labels`) and any other kind is stored unlabelled.
-    The CLI checks an author's labels and proposal before it gets here."""
+    The CLI checks an author's labels and proposal before it gets here.
+    `by` is the appender, the one `amend_entry` lets correct the entry
+    while it is not committed; None — the loops' — leaves it unamendable."""
     kind = _kind_of(section)
     if severity is not None and severity not in SEVERITIES:
         raise ReportError(f"unknown severity {severity!r}; one of "
@@ -833,7 +845,7 @@ def append_entry(slice_dir: Path | str, section: str, headline: str,
         eid = _next_id(store, KINDS[kind])
         store["entries"].append(_entry(eid, kind, headline, _lines(body),
                                        consequence, provenance, severity,
-                                       labels, proposal))
+                                       labels, proposal, by))
     return eid
 
 
@@ -1126,6 +1138,101 @@ def unnote_entry(slice_dir: Path | str, eid: str, by: str) -> str:
             _undo_relabel(entry, i)
         del notes[i]
         return _note_text(note)
+
+
+def _amended(entry: dict, slice_dir: Path | str, headline: str | None,
+             body: str | None, consequence: str | None, proposal: str | None,
+             provenance: str | None, severity: str | None,
+             labels: dict | None) -> dict:
+    """A copy of `entry` with each field given in place of its own, and the
+    checks `append` makes run on the result: the labels as they would be
+    stored (the given merged over the entry's, `for` given as `none`
+    removed), against the Consequence line as it would read, and the
+    proposal an action, a decision and an improvement owe. Refused — every
+    refusal in one error — when it would not pass them."""
+    kind = entry["kind"]
+    new = dict(entry)
+    errors: list[str] = []
+    if headline is not None:
+        new["headline"] = _collapse(headline)
+        if not new["headline"]:
+            errors.append("--headline needs text: the claim itself")
+    if body is not None:
+        new["body"] = _lines(body)
+        if not new["body"]:
+            errors.append("--body needs text")
+    if consequence is not None:
+        new["consequence"] = _collapse(consequence)
+        if not new["consequence"]:
+            errors.append("--consequence needs text: what an operator or user "
+                          "experiences, or none")
+    if proposal is not None:
+        new["proposal"] = _collapse(proposal) or None
+    if provenance is not None:
+        new["evidence"], new["author"] = _split_provenance(provenance)
+    if severity is not None:
+        if severity not in SEVERITIES:
+            errors.append(f"unknown severity {severity!r}; one of " + ", ".join(SEVERITIES))
+        new["grade"] = severity
+    given = {k: v for k, v in (labels or {}).items() if v is not None}
+    merged = dict(entry.get("labels") or {})
+    if given:
+        clear = _clears_for(given)
+        if clear:
+            del given["for"]
+            merged.pop("for", None)
+        given = normalise_for(given, slice_dir)
+        merged.update(given)
+        new["labels"] = merged = _ordered_labels(merged)
+    errors += check_labels(kind, merged, new["consequence"], slice_dir, given=given)
+    if kind in PROPOSAL_KINDS and not new["proposal"]:
+        errors.append(f"a{'n' if kind[0] in 'aeiou' else ''} {kind} needs "
+                      f"--proposal: {PROPOSAL_HELP}")
+    if errors:
+        raise ReportError("\n".join(errors))
+    return new
+
+
+def amend_entry(slice_dir: Path | str, eid: str, by: str, *,
+                headline: str | None = None, body: str | None = None,
+                consequence: str | None = None, proposal: str | None = None,
+                provenance: str | None = None, severity: str | None = None,
+                labels: dict | None = None) -> str:
+    """Correct an entry its appender wrote: each field given replaces the
+    entry's, the labels merged over its own (`for` given as `none`, the
+    FOR_CLEAR, removes the label), and the result checked as `append`
+    checks an author's entry (`_amended`). Only on the `by` the entry was
+    appended with — an entry appended without one has no appender, and a
+    note corrects it — and only while HEAD's store does not hold the entry
+    at all: what a commit holds stays. No note is left; the id and the kind
+    never change. Returns the entry's heading."""
+    who = _collapse(by)
+    if not who:
+        raise ReportError("amend needs --by: who appended the entry")
+    fields = (headline, body, consequence, proposal, provenance, severity)
+    if all(f is None for f in fields) and not any(
+            v is not None for v in (labels or {}).values()):
+        raise ReportError("amend needs a field to replace: any of `append`'s flags "
+                          "but --kind")
+    with _writing(slice_dir) as store:
+        entry = _find(store, eid)
+        eid = entry["id"]
+        appender = entry.get("by")
+        if not appender:
+            raise ReportError(f"{eid} has no recorded appender (it was appended without "
+                              "--by), so nobody amends it; a note adds to it")
+        if appender != who:
+            raise ReportError(f"{eid} was appended by {appender}, not {who}: only its "
+                              "appender amends an entry")
+        if _committed_entry(slice_dir, eid) is not None:
+            raise ReportError(f"{eid} is committed, and a committed entry stays; a note "
+                              "adds to it")
+        new = _amended(entry, slice_dir, headline, body, consequence, proposal,
+                       provenance, severity, labels)
+        if new == entry:
+            raise ReportError(f"amend changes nothing on {eid}: it already holds that")
+        entry.update(new)
+        return _heading(entry)
 
 
 def _set_proposal(entry: dict, who: str, day: str, text: str) -> None:
@@ -2917,30 +3024,37 @@ def build_parser() -> tuple[argparse.ArgumentParser,
 
     sub.add_parser("labels", help="print what each label means")
 
+    # `append`'s content flags, which `amend` takes too: one definition each.
+    headline_help = ("one line, the claim itself — the ask, as the operator reads it: "
+                     "a defect names its repo or component, an action is an "
+                     "imperative, a decision asks its question, an improvement says "
+                     "what it proposes")
+    body_help = "entry body, or - for stdin"
+    consequence_help = ("what an operator or user experiences if this stays as it is, "
+                        "or none — the line the operator triages on")
+    proposal_help = (f"{PROPOSAL_HELP}, in a ruling's words (card · fix now · "
+                     "fold into <slice> · close · do it) — the operator reads it "
+                     "with the headline and the Consequence and nothing else; "
+                     "required for an action, a decision and an improvement")
+    provenance_help = ("witnessed | read, then role, phase, round, and the artifact "
+                       "with the full record")
+    severity_help = "the grade, where the entry has one"
+
     p = verb("append", "add one entry with its labels; prints its id")
     p.add_argument("--kind", choices=list(KINDS), type=_label_value,
                    help="what the entry is — it decides which of the labels "
                         "below the entry carries")
     p.add_argument("--section", help=argparse.SUPPRESS)
-    p.add_argument("--headline", required=True,
-                   help="one line, the claim itself — the ask, as the operator reads it: "
-                        "a defect names its repo or component, an action is an "
-                        "imperative, a decision asks its question, an improvement says "
-                        "what it proposes")
-    p.add_argument("--body", required=True, help="entry body, or - for stdin")
-    p.add_argument("--consequence", required=True,
-                   help="what an operator or user experiences if this stays as it is, "
-                        "or none — the line the operator triages on")
-    p.add_argument("--proposal",
-                   help=f"{PROPOSAL_HELP}, in a ruling's words (card · fix now · "
-                        "fold into <slice> · close · do it) — the operator reads it "
-                        "with the headline and the Consequence and nothing else; "
-                        "required for an action, a decision and an improvement")
-    p.add_argument("--provenance",
-                   help="witnessed | read, then role, phase, round, and the artifact "
-                        "with the full record")
-    p.add_argument("--severity", choices=SEVERITIES, type=_label_value,
-                   help="the grade, where the entry has one")
+    p.add_argument("--headline", required=True, help=headline_help)
+    p.add_argument("--body", required=True, help=body_help)
+    p.add_argument("--consequence", required=True, help=consequence_help)
+    p.add_argument("--proposal", help=proposal_help)
+    p.add_argument("--provenance", help=provenance_help)
+    p.add_argument("--by",
+                   help="who appends — role, phase and round; an entry appended with "
+                        "--by can be corrected with amend until it is committed, one "
+                        "without it cannot")
+    p.add_argument("--severity", choices=SEVERITIES, type=_label_value, help=severity_help)
     _add_label_args(p)
     # `--kind` is required unless the suppressed `--section` stands in for
     # it; the usage line an author reads says it is required.
@@ -2971,6 +3085,17 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p = verb("unstrike", "withdraw a strike you made, not yet committed; prints "
                          "the entry's heading", entry=True)
     p.add_argument("--by", required=True, help="the --by the strike was made with")
+
+    p = verb("amend", "correct an entry you appended with --by, not yet committed: each "
+                      "field given replaces the entry's; prints its heading", entry=True)
+    p.add_argument("--by", required=True, help="the --by the entry was appended with")
+    p.add_argument("--headline", help=headline_help)
+    p.add_argument("--body", help=body_help)
+    p.add_argument("--consequence", help=consequence_help)
+    p.add_argument("--proposal", help=proposal_help)
+    p.add_argument("--provenance", help=provenance_help)
+    p.add_argument("--severity", choices=SEVERITIES, type=_label_value, help=severity_help)
+    _add_label_args(p, relabel=True)
 
     p = verb("relabel", "give an entry its labels or correct them", entry=True)
     p.add_argument("--by", required=True, help="who relabels")
@@ -3144,7 +3269,15 @@ def _append_cli(slice_dir: Path, args) -> str:
     return append_entry(slice_dir, kind, args.headline, _stdin_or(args.body),
                         consequence=args.consequence, provenance=args.provenance,
                         severity=args.severity, labels=labels,
-                        proposal=args.proposal)
+                        proposal=args.proposal, by=args.by)
+
+
+def _amend_cli(slice_dir: Path, args) -> str:
+    return amend_entry(slice_dir, args.id, args.by, headline=args.headline,
+                       body=None if args.body is None else _stdin_or(args.body),
+                       consequence=args.consequence, proposal=args.proposal,
+                       provenance=args.provenance, severity=args.severity,
+                       labels=_labels_from(args))
 
 
 def _rule_cli(slice_dir: Path, args) -> str:
@@ -3196,6 +3329,8 @@ def _main(args) -> int:
             print(f"{args.id} unnoted: {para}")
         elif command == "unstrike":
             print(unstrike_entry(slice_dir, args.id, args.by))
+        elif command == "amend":
+            print(_amend_cli(slice_dir, args))
         elif command == "relabel":
             print(relabel_entry(slice_dir, args.id, args.by, _stdin_or(args.note),
                                 kind=args.kind,
