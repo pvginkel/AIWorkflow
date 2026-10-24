@@ -60,7 +60,14 @@ slice directory.
    commit. That is the whole of the checking: whether the claim still holds today, never whether
    it was right. An entry that comes to them with no `Proposal:` gets one from you
    (`close_out.py propose <slice> <id> --by "close-out session" --text "…"`): what you would do
-   about it and why, in a ruling's words, from the entry and what you found. The same pass
+   about it and why, in a ruling's words, from the entry and what you found. **Check every
+   proposal's vehicle the same way**: one that folds into a slice, or leaves the work to one, has
+   to name a slice that is still to run — an entry written mid-run can name the report's own
+   slice, or another that has shipped since. Where it names a shipped one, propose a replacement
+   with the reason (`propose`, which keeps the old proposal as a note): usually `fix now`, or
+   `card` where the work is more than a fix; a slice that is still to run where one fits. The
+   operator's assent executes the proposal as it stands, so it has to be one that can be carried
+   out. The same pass
    removes what the run left behind: the record's events name a scratch clone the driver left
    for a `github:` Target — when its tree is clean and level with its origin, delete it and say
    so under the event (`note`); otherwise say what you found and leave it.

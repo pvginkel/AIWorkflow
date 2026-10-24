@@ -4,6 +4,17 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-24 — The close-out session checks each proposal's vehicle, and replaces one that names a shipped slice (v0.9.128)
+
+A close-out entry raised mid-run can propose "fold into <slice>" for the report's own slice, or
+for one that has shipped by the time the close-out runs (PilotApp slice 005's D2 said "fold into
+005"). The operator's assent executes the proposal as worded, and such a proposal cannot be
+carried out. `/dev:close-out` step 4 now checks every proposal's vehicle as it checks the
+entry's claim. Where a proposal names a slice that is no longer to run, the session proposes a
+replacement with the reason before presenting the report: usually `fix now`, `card` where the
+work is more than a fix, or a slice still to run where one fits. `propose` keeps the old
+proposal as a note. AIWF-98.
+
 ## 2026-10-24 — The phase gate takes the writer's own green run when the tree has not changed (v0.9.127)
 
 Each round ran the full suite twice on one tree. The code-writer ran the gate, as its prompt
