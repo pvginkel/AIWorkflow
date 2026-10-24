@@ -49,15 +49,21 @@ conversation and the operator's rulings. Your value:
 ### 1. Absorb the slice
 
 Read `slice.md` and every attachment in the slice folder. Its numbered requirements list is the
-authoritative statement of intent — and deliberately thin. Treat every claim or citation the
-slice carries as **unverified input** — a pinned requirement included. Triage read no code, and
-what a card cites rots between filing and planning: the sentence a requirement exists to fix was
-removed by an earlier slice, the file it names as a home never existed, the spawn path its steer
-targets never carries the variable. So before anything is absorbed as spec, one read-only
-sub-agent over the whole slice checks what each requirement rests on — does the thing it cites
-still exist, and say what the slice says it says — and reports per requirement. A premise that
-no longer holds is a finding the refinement doc carries as settled — one sentence, with what
-changes, inside the decision it produces or in the settled list; its evidence goes to `plan.md`
+authoritative statement of intent — and deliberately thin. **Then read the tracker for what was
+routed to the slice after triage**: the open cards that link to the slice's card (`issue:` in
+`slice.md`'s frontmatter) or mention it, by its id or by the slice's number, as your host convention
+queries them — a card the inbox left to be decided with this slice is one. Each is input as
+`slice.md` is: its ask comes into the refinement in its card's words, with the card it came from.
+One the plan carries is the slice's, closed as the convention closes an absorbed task; one the
+operator rules out of this slice stays open, with a comment that says so. Treat every claim or
+citation the slice and those cards carry as **unverified input** — a pinned requirement included.
+Triage read no code, and what a card cites rots between filing and planning: the sentence a
+requirement exists to fix was removed by an earlier slice, the file it names as a home never
+existed, the spawn path its steer targets never carries the variable. So before anything is absorbed
+as spec, one read-only sub-agent over the whole slice checks what each requirement rests on — does
+the thing it cites still exist, and say what the slice says it says — and reports per requirement. A
+premise that no longer holds is a finding the refinement doc carries as settled — one sentence, with
+what changes, inside the decision it produces or in the settled list; its evidence goes to `plan.md`
 in §3 — not a phase; about a fifth of a backlog slice goes that way.
 
 ### 2. Pin the requirements with the operator

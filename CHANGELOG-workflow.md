@@ -4,6 +4,18 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-24 — /dev:plan-slice reads the tracker for cards routed to the slice after triage (v0.9.129)
+
+`/dev:plan-slice` read only the slice folder for its asks, so a card the inbox routed to a
+slice's planning through the tracker never reached the refinement. In PilotApp, P-23 and P-24
+were Accepted with an inbox comment saying they were decided with slice 008, its first
+refinement missed them, and the plan loop ran again. Step 1 now also reads the open cards that
+link to the slice's card or mention it, by id or by the slice's number, as the host convention
+queries them. Each is input as `slice.md` is: its ask comes into the refinement in its card's
+words, and its claims are unverified input for the premise check like the slice's own. A card
+the plan carries is closed as the convention closes an absorbed task. One the operator rules out
+of the slice stays open, with a comment that says so. AIWF-100.
+
 ## 2026-10-24 — The close-out session checks each proposal's vehicle, and replaces one that names a shipped slice (v0.9.128)
 
 A close-out entry raised mid-run can propose "fold into <slice>" for the report's own slice, or
