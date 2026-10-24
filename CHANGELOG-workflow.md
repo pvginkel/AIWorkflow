@@ -4,6 +4,16 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-24 — A relabel that routes a look entry away from the wrap-up is its mark (v0.9.126)
+
+The wrap-up's brief demanded a strike, a card request or a `leave` of every entry, so a `look`
+entry it relabelled out of its own route still got a `leave`. That `leave` became the newest
+note, and the report shows only the newest note: the relabel's reasoning left the operator's
+page. The brief (`agents/wrap-up.md`, the mark and the `look` row) and the contract
+(`docs/close-out.md` § The wrap-up) now say that on a `look`, a relabel after which `worklist`
+no longer names the entry is its mark, with no `leave` after it. No code changes:
+`close_out.py worklist` already stopped naming such an entry. AIWF-92.
+
 ## 2026-10-24 — The phase gate also runs every kc project the phase's diff touches, and the reviewer is told which it covered (v0.9.125)
 
 A component Target's phase gate now also runs `kc project test --project <c>` for every other

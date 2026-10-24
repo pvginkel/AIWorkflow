@@ -403,8 +403,9 @@ operator is theirs, and no card is filed without their word.
 
 **The wrap-up changes facts, never routes.** What it finds in the code it writes as a fix, a
 corrected label or a card request, and the table routes again. Every entry it was given ends
-with one mark — a strike, a card request, or that it was left; `close_out.py worklist` names
-what still waits. An entry the operator has ruled on is theirs, whatever its route, and does
+with one mark — a strike, a card request, or that it was left; on an entry it was given for a
+look, a corrected label that routes the entry away from the wrap-up is its mark, with no note
+after it. `close_out.py worklist` names what still waits. An entry the operator has ruled on is theirs, whatever its route, and does
 not wait for the wrap-up.
 
 **No reviewer reads what it fixes.** A review of its diff would write advisory findings, those

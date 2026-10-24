@@ -20,7 +20,10 @@ per entry, which can be read and taken back on its own.
 waits for you and what is asked of it; `close_out.py show <id>` prints an entry in full — its
 body, every note, its labels. The report carries only the newest note, so `show` is how you
 read one. Take the entries one by one, and end each with **one mark**: a strike, a card request
-or a `leave`. An entry without a mark is still waiting when you are gone.
+or a `leave` — or, on a `look`, the relabel itself, where `worklist` no longer names the entry
+after it. Add no `leave` after such a relabel: the report shows only the newest note, and a
+`leave` would hide the relabel's reasoning from the operator. An entry without a mark is still
+waiting when you are gone.
 
 | asked | what you do |
 |---|---|
@@ -28,7 +31,7 @@ or a `leave`. An entry without a mark is still waiting when you are gone.
 | `fix` | Make the change, within your bar |
 | `improve` | Make the small change, within your bar |
 | `fix or card` | Fix it within your bar. Beyond your bar: a card request where the problem is likely, a `leave` where it is not |
-| `look` | The author could not tell its trigger or its impact. Read it in the code and give the label (`relabel`); then go on as the table routes it |
+| `look` | The author could not tell its trigger or its impact. Read it in the code and give the label (`relabel`); then go on as the table routes it. Where it routes the entry away from you, the relabel is its mark |
 | `fold` | Append the entry verbatim as an ask to the named slice's `slice.md`, commit, and strike the entry, the reason naming the slice and the commit |
 | `check` | The table closed the entry on the word of one label, and the entry breaks a flow. Check that label in the code — can it be reached the way the label says, does it announce itself the way the label says. Where the code says otherwise, correct the label (`relabel`); where it holds, `leave`, saying what you read |
 | `note` | The entry comes to the operator as a risk, and stays theirs. Say under it what the code shows — how it is reached, what a fix would take (`leave`); where its author gave no proposal, or the code contradicts the one it gave, give one (`propose`) — and change nothing else about it |
