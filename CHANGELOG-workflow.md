@@ -4,6 +4,28 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-24 — Every spec-repo phase is gated by the plugin's spec check (v0.9.136)
+
+A spec repo had no manifest, script or CI. So a phase targeting it had no deterministic gate: its
+writer wrote a throwaway check, and the driver's re-run had nothing to run (AnsibleSpecs,
+2026-10-10). The plugin now ships `tools/spec_check.py --base <rev> [<repo>]`. It checks what
+changed since the base, committed, staged, unstaged and untracked alike, and lists each problem
+as `path:line: what`: whitespace errors and leftover conflict markers on added lines (`git diff
+--check`), ragged Markdown tables, unclosed code fences, and JSON that does not parse. Problems
+that predate the change in a file the phase touched are not its red: a table is checked only
+when one of its lines changed, and a fence or a JSON file only when it was sound at the base.
+
+Every phase whose Target is the spec repo is gated by `python3 <tools>/spec_check.py --base
+<merge-base> <the phase's worktree>`. The merge-base is the one the review reads. The gate then
+runs `kc project test` there when the spec repo carries a manifest of its own, which is where a
+project's own spec-repo rules (AnsibleSpecs' ruling ids) go. Either command red is the gate's
+red. The writer's gate wrapper runs the same commands, so 0.9.127's reuse holds. The dispatch
+names the check in place of "gate per that repo's own conventions", and the reviewer is told the
+check proves the shape of what changed and nothing of what it says. `gate_spec.json` gains
+`check`, and `gate_projects` lists `spec_check` first. The operator ruled the check is the
+plugin's (2026-10-24), so there is nothing to copy into each spec repo. The wrap-up's and the doc
+phase's commits in the spec repo stay ungated, because neither cuts a branch there. AIWF-68.
+
 ## 2026-10-24 — A close-out entry can be for a slice triage has not created; it is held, and /dev:triage carries it in (v0.9.135)
 
 `close_out.py append --for 011` refused a slice that a project's plan names but triage has not

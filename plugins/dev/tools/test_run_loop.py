@@ -2239,8 +2239,9 @@ def test_every_component_gate_hint_says_what_exit_3_means():
         r = ScriptedLoop(slice_dir, [], repo_root=repo)
         r.project_dirs = root_components(repo)
         outputs = slice_dir / "phases" / "P1"
-        component = r._gate_hint(r._resolve_target(PROJECT), outputs)
-        root = r._gate_hint(r._resolve_target("root"), outputs)
+        component = r._gate_hint(r._resolve_target(PROJECT), outputs,
+                                 "base123")
+        root = r._gate_hint(r._resolve_target("root"), outputs, "base123")
         assert component == (
             f" — through {wrapper_cmd(outputs)}, which runs the driver's own "
             f"gate: `kc project test --project {PROJECT}`, and the same for "
@@ -3000,8 +3001,8 @@ def test_every_code_writer_dispatch_writes_the_gate_spec_with_its_round():
         assert [s["round"] for s in specs] == [1, 2, 3]
         assert specs[0] == {
             "phase": "1", "round": 1, "work_root": str(repo),
-            "gate_cwd": str(repo), "argv": component_argv(PROJECT),
-            "fallback": None,
+            "gate_cwd": str(repo), "check": None,
+            "argv": component_argv(PROJECT), "fallback": None,
             "touched": {"merge_base": "base123", "target": PROJECT,
                         "waived": []}}
         assert all(run_loop.gate_spec_problem(s) is None for s in specs)
@@ -3133,14 +3134,15 @@ def wrapper_repo(tmp):
     return repo, sh(repo, "rev-parse", "HEAD")
 
 
-def write_spec(tmp, repo, argv, fallback=None, touched=None, round_=1):
+def write_spec(tmp, repo, argv, fallback=None, touched=None, round_=1,
+               check=None):
     outputs = Path(tmp) / "phases" / "P1"
     outputs.mkdir(parents=True, exist_ok=True)
     spec = outputs / "gate_spec.json"
     spec.write_text(json.dumps({
         "phase": "1", "round": round_, "work_root": str(repo),
-        "gate_cwd": str(repo), "argv": argv, "fallback": fallback,
-        "touched": touched}))
+        "gate_cwd": str(repo), "check": check, "argv": argv,
+        "fallback": fallback, "touched": touched}))
     return spec
 
 
@@ -3426,6 +3428,355 @@ def test_the_drivers_gate_is_the_wrappers_own_run_on_the_tree_handed_back():
             == str(outputs_of(r) / "writer_gate_r1.json")
         assert load_state(slice_dir)["phases"]["1"]["gate_green_commit"] \
             == r.fake_git.head
+
+
+# -- a spec-repo phase's gate: the plugin's spec check (AIWF-68) -------------
+#
+# AnsibleSpecs has no manifest, script or CI, so every phase there wrote a
+# throwaway check of its own, and the driver's gate had nothing to run. A
+# phase on the spec repo is gated by the plugin's spec_check.py over what it
+# changed since the review's base, then by the repo's own `kc project test`
+# where the phase's tree has a manifest.
+
+def spec_gate_run(tmp, script, gate_rcs=(), manifest=False):
+    """One phase on the spec repo, in its worktree, gated by the driver's
+    own gate over scripted exit codes: (the slice, the worktree, the loop,
+    the exit code)."""
+    slice_dir, repo = make_slice(tmp)
+    if manifest:
+        gated_specs(tmp)
+    specs_phase(slice_dir, tmp)
+    r = KcExitLoop(slice_dir, script, repo_root=repo, gate_rcs=gate_rcs)
+    code = run_to_exit(r)
+    return slice_dir, specs_worktree(r), r, code
+
+
+def spec_entry(work, outcome, base="base123"):
+    return {"project": run_loop.SPEC_CHECK_NAME,
+            "cmd": spec_check_cmd(work, base), "outcome": outcome}
+
+
+def ran_spec_gate(loop):
+    """A code-writer step's effect: it ran a spec-repo phase's gate through
+    the wrapper — the check its spec names, then the repo's own command
+    where there is one — and every command passed."""
+    spec = gate_spec(loop)
+    ran_gate(*[(argv, 0) for argv in (spec["check"], spec["argv"])
+               if argv])(loop)
+
+
+def test_a_spec_repo_phase_is_gated_by_the_spec_check_against_its_base():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, work, r, code = spec_gate_run(
+            tmp, [V["exec_done"], V["review_signoff"], *TAIL])
+        assert code == 0 and not r.script
+        check = run_loop.spec_check_argv("base123", work)
+        assert check == ["python3", str(run_loop.TOOLS_DIR / "spec_check.py"),
+                         "--base", "base123", str(work)]
+        assert [(argv, cwd) for argv, cwd, _ in r.phase_gate_runs] \
+            == [(check, work)]
+        cmd = " ".join(check)
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["gate_cmd"] == cmd
+        assert ps["gate_projects"] == [spec_entry(work, "green")]
+        assert ps["gate_green_commit"] == r.fake_git.head
+        assert Path(ps["gate_green_log"]).read_text() \
+            == f"=== the spec check: `{cmd}` ===\n{cmd}: exit 0\n"
+        prompt = reviewer_prompt(r)
+        assert ("The deterministic test gate ran GREEN on this exact commit "
+                f"({r.fake_git.head[:12]}): `{cmd}` in {work} — with full "
+                f"output in {ps['gate_green_log']}. "
+                + " ".join(run_loop.GATE_SPEC_CHECK_SENTENCE.split())
+                + " The tests pass;") in prompt
+        assert "It covers" not in prompt
+        assert f"[P1] gate #1 running ({cmd})\n" \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_a_spec_repo_with_a_manifest_runs_its_own_gate_after_the_check():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, work, r, code = spec_gate_run(
+            tmp, [V["exec_done"], V["review_signoff"], *TAIL], manifest=True)
+        assert code == 0 and not r.script
+        check = run_loop.spec_check_argv("base123", work)
+        assert [(argv, cwd) for argv, cwd, _ in r.phase_gate_runs] \
+            == [(check, work), (BARE_ARGV, work)]
+        cmd = " ".join(check)
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["gate_cmd"] == "kc project test"
+        assert ps["gate_projects"] == [
+            spec_entry(work, "green"),
+            {"project": "../specs", "cmd": "kc project test",
+             "outcome": "green"}]
+        assert Path(ps["gate_green_log"]).read_text() == (
+            f"=== the spec check: `{cmd}` ===\n{cmd}: exit 0\n"
+            f"\n=== `kc project test` from {work} ===\n"
+            "kc project test: exit 0\n")
+        prompt = reviewer_prompt(r)
+        assert (f"`{cmd}`, `kc project test` in {work} — with full output "
+                "in") in prompt
+        assert "It covers" not in prompt
+        assert f"[P1] gate #1 running ({cmd}, then kc project test)\n" \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_a_spec_gate_is_red_on_either_red_and_the_fix_round_names_it():
+    def writers(loop):
+        return [p for role, p in loop.prompts if role == "code-writer"]
+
+    script = [V["exec_done"], V["exec_done"], V["review_signoff"], *TAIL]
+    # the check red: a fix round, told what went red and how to re-gate
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, work, r, code = spec_gate_run(tmp, script, [1, 0])
+        assert code == 0 and not r.script
+        assert [h["outcome"] for h in gate_rows(slice_dir)] == ["red", "green"]
+        assert load_state(slice_dir)["phases"]["1"]["gate_fix_rounds"] == 1
+        fix = writers(r)[1]
+        assert f"The gate went red on `{spec_check_cmd(work)}`;" in fix
+        assert spec_check_hint(work) in fix
+    # the check green, the repo's own red: red on that alone
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, work, r, code = spec_gate_run(tmp, script, [0, 1, 0, 0],
+                                                 manifest=True)
+        assert code == 0 and not r.script
+        assert [h["outcome"] for h in gate_rows(slice_dir)] == ["red", "green"]
+        assert "The gate went red on `kc project test`;" in writers(r)[1]
+    # both red: both ran, and both are named
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, work, r, code = spec_gate_run(tmp, script, [1, 1, 0, 0],
+                                                 manifest=True)
+        assert code == 0
+        assert len(r.phase_gate_runs) == 4
+        assert (f"The gate went red on `{spec_check_cmd(work)}`, `kc project "
+                "test`;") in writers(r)[1]
+    # the repo's own ran nothing: green on the check, the repo unverified
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, work, r, code = spec_gate_run(
+            tmp, [V["exec_done"], V["review_signoff"], *TAIL], [0, 3],
+            manifest=True)
+        assert code == 0 and not r.script
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert [p["outcome"] for p in ps["gate_projects"]] \
+            == ["green", "nothing_ran"]
+        assert ps["gate_green_commit"] == r.fake_git.head
+        assert ("The gate does not cover ../specs (defines no tests)"
+                in reviewer_prompt(r))
+    # the check's usage error is the driver's bug, never a red
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, work, r, code = spec_gate_run(tmp, [V["exec_done"]], [2])
+        assert code == 3
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "protocol_failure"
+        assert f"`{spec_check_cmd(work)}` rejected its arguments" \
+            in bail["details"]
+
+
+def test_a_spec_check_red_is_never_asked_as_a_missing_service():
+    """The spec repo's config may declare a service the pod does not run;
+    a red of the check, which calls none, is a fix round all the same."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        (Path(tmp) / "specs" / ".kubecoder").mkdir()
+        (Path(tmp) / "specs" / ".kubecoder" / "config.yaml").write_text(
+            "services:\n  - use: postgres\n")
+        specs_phase(slice_dir, tmp)
+        r = KcExitLoop(slice_dir, [V["exec_done"], V["exec_done"],
+                                   V["review_signoff"], *TAIL],
+                       repo_root=repo, gate_rcs=[1, 0])
+        with patched(run_loop, running_services=set):
+            assert run_to_exit(r) == 0
+        assert not (slice_dir / "bailout.json").exists()
+        assert [h["outcome"] for h in gate_rows(slice_dir)] == ["red", "green"]
+
+
+def test_a_spec_repo_phases_gate_spec_carries_its_check_for_the_wrapper():
+    specs = []
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, work, r, code = spec_gate_run(tmp, [
+            ("code-writer", DONE, lambda loop: specs.append(gate_spec(loop))),
+            V["review_signoff"], *TAIL])
+        assert code == 0
+        assert specs == [{
+            "phase": "1", "round": 1, "work_root": str(work),
+            "gate_cwd": str(work),
+            "check": run_loop.spec_check_argv("base123", work),
+            "argv": None, "fallback": None, "touched": None}]
+        assert run_loop.gate_spec_problem(specs[0]) is None
+    specs.clear()
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, work, r, code = spec_gate_run(tmp, [
+            ("code-writer", DONE, lambda loop: specs.append(gate_spec(loop))),
+            V["review_signoff"], *TAIL], manifest=True)
+        assert code == 0
+        assert (specs[0]["check"], specs[0]["argv"]) \
+            == (run_loop.spec_check_argv("base123", work), BARE_ARGV)
+
+
+def test_the_writers_run_of_a_spec_gate_is_the_drivers_gate():
+    for manifest in (False, True):
+        with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
+            slice_dir, work, r, code = spec_gate_run(tmp, [
+                ("code-writer", DONE, ran_spec_gate), V["review_signoff"],
+                *TAIL], manifest=manifest)
+            assert code == 0 and not r.script
+            assert r.phase_gate_runs == [], "the driver ran nothing itself"
+            record = outputs_of(r) / "writer_gate_r1.json"
+            assert [h.get("reused") for h in gate_rows(slice_dir)] \
+                == [str(record)]
+            ps = load_state(slice_dir)["phases"]["1"]
+            assert ps["gate_projects"][0] == spec_entry(work, "green")
+            assert len(ps["gate_projects"]) == (2 if manifest else 1)
+            assert ps["gate_green_commit"] == r.fake_git.head
+
+
+def test_a_writer_run_without_the_spec_check_is_not_the_drivers_gate():
+    """A run of the repo's own gate alone — the wrapper of a plugin before
+    the check, or `kc project test` by hand — is not the gate: the driver
+    runs it, check first."""
+    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
+        slice_dir, work, r, code = spec_gate_run(tmp, [
+            wrote_gate((BARE_ARGV, 0)), V["review_signoff"], *TAIL],
+            manifest=True)
+        assert code == 0
+        check = run_loop.spec_check_argv("base123", work)
+        assert [argv for argv, _, _ in r.phase_gate_runs] == [check, BARE_ARGV]
+        assert ("[P1] the writer's gate run (writer_gate_r1.json) not reused "
+                "— it ran `kc project test`, the gate is "
+                f"`{' '.join(check)}`, `kc project test`; running the gate") \
+            in (slice_dir / "log.txt").read_text()
+    # an older base in the check is another command
+    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
+        def stale(loop):
+            ran_gate((run_loop.spec_check_argv("0ld", specs_worktree(loop)),
+                      0))(loop)
+
+        slice_dir, work, r, code = spec_gate_run(tmp, [
+            ("code-writer", DONE, stale), V["review_signoff"], *TAIL])
+        assert code == 0
+        assert [argv for argv, _, _ in r.phase_gate_runs] \
+            == [run_loop.spec_check_argv("base123", work)]
+
+
+def test_the_gate_wrapper_runs_a_spec_repos_check_first():
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        repo, base = wrapper_repo(tmp)
+        check = run_loop.spec_check_argv(base, repo)
+        cmd = " ".join(check)
+        # no manifest: the check is the gate, and its red is the gate's
+        spec = write_spec(tmp, repo, None, check=check)
+        tee = FakeTee(rcs=[1])
+        code, out, _ = run_wrapper(spec, tee)
+        assert code == 1
+        assert tee.calls == [(check, repo)]
+        record = record_of(spec)
+        assert run_loop.writer_gate_record_problem(record) is None
+        assert ([c["argv"] for c in record["commands"]], record["outcome"]) \
+            == ([check], "red")
+        assert out.startswith(f"=== the spec check: `{cmd}` ===\n")
+        assert out.rstrip("\n").endswith(f"=== gate RED: `{cmd}` ===")
+        # a manifest: the check, then the repo's own
+        spec = write_spec(tmp, repo, BARE_ARGV, check=check)
+        tee = FakeTee()
+        code, out, _ = run_wrapper(spec, tee)
+        assert code == 0
+        assert tee.calls == [(check, repo), (BARE_ARGV, repo)]
+        assert out.index(f"=== the spec check: `{cmd}` ===") \
+            < out.index(f"{cmd}: exit 0") \
+            < out.index(f"\n=== `kc project test` from {repo} ===") \
+            < out.index("kc project test: exit 0")
+        # a spec with no command at all, or a check that is none, is no spec
+        for argv, bad in ((None, None), (BARE_ARGV, "spec_check.py")):
+            spec = write_spec(tmp, repo, argv, check=bad)
+            code, _, err = run_wrapper(spec, FakeTee())
+            assert code == 2 and "is not a gate spec" in err, err
+
+
+def test_the_drivers_spec_gate_runs_the_real_check_on_the_phases_tree():
+    """No scripted exit code: the driver's gate runs spec_check.py itself,
+    in a real tree, and reads its exit code."""
+    class RealCheckLoop(ScriptedLoop):
+        _run_gate = RunLoop._run_gate
+
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo = make_slice(tmp)
+        work = Path(tmp) / "scratch" / "worktrees" / "specs" / "074-P1"
+        work.mkdir(parents=True)
+        (work / "README.md").write_text("# specs\n")
+        sh(work, "init", "-q", "-b", "main")
+        sh(work, "add", "-A")
+        sh(work, "commit", "-qm", "base")
+        base = sh(work, "rev-parse", "HEAD")
+        r = RealCheckLoop(slice_dir, [], repo_root=repo)
+        r.state = {"phases": {}, "history": []}
+        specs = run_loop.spec_root_for(slice_dir)
+        target = run_loop.ResolvedTarget(
+            "../specs", "sibling", specs, None, specs,
+            manifest_gate=True).in_worktree(work)
+        ps = r._phase_state("1")
+        outputs = outputs_of(r)
+        outputs.mkdir(parents=True)
+        (work / "page.md").write_text("| a | b |\n|---|---|\n| 1 |\n")
+        green, log = r._run_gate("1", ps, outputs, target, base)
+        assert not green
+        assert "page.md:3: a table row with 1 cell, its header 2\n" \
+            in log.read_text()
+        assert ps["gate_projects"] == [spec_entry(work, "red", base)]
+        assert ps["gate_green_commit"] is None
+        (work / "page.md").write_text("| a | b |\n|---|---|\n| 1 | 2 |\n")
+        green, log = r._run_gate("1", ps, outputs, target, base)
+        assert green
+        assert (f"spec_check: clean — 1 file changed since {base[:12]}\n"
+                in log.read_text())
+        assert [h["outcome"] for h in r.state["history"]] == ["red", "green"]
+
+
+def test_a_spec_repo_phases_dispatch_names_the_spec_check_as_its_gate():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, work, r, code = spec_gate_run(
+            tmp, [V["exec_done"], V["review_signoff"], *TAIL])
+        assert code == 0
+        writer = next(p for role, p in r.prompts if role == "code-writer")
+        outputs = slice_dir / "phases" / "P1"
+        assert ("Run the phase's test gate yourself before handing back — "
+                f"through {wrapper_cmd(outputs)}, which runs the driver's own "
+                f"gate: {spec_check_hint(work)}; and `kc project test` from "
+                f"{work} after it, once this phase adds "
+                f"`.kubecoder/project.yaml`. {run_loop.GATE_REUSE_HINT}.") \
+            in writer
+        assert "own conventions" not in writer
+    # a sibling repo with no manifest keeps its own conventions
+    with tempfile.TemporaryDirectory() as tmp:
+        sib = make_sibling(tmp, manifest=False)
+        slice_dir, repo = make_slice(tmp)
+        (slice_dir / "plan.md").write_text(
+            "# plan\n\n" + phase_section("1", "Chart", "../Sibling"))
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0
+        writer = next(p for role, p in r.prompts if role == "code-writer")
+        assert (f"handing back ({sib.resolve()} has no kc manifest — gate per "
+                "that repo's own conventions; if this phase adds "
+                "`.kubecoder/project.yaml`, the driver's gate is `kc project "
+                f"test` from {sib.resolve()}).") in writer
+        assert "spec check" not in writer
+
+
+def test_a_dry_run_names_the_spec_check_as_a_spec_repo_phases_gate():
+    check = (f"python3 {run_loop.TOOLS_DIR / 'spec_check.py'} --base <the "
+             "phase's base> <its worktree>")
+    for manifest, gate in ((False, check),
+                           (True, f"{check}, then kc project test")):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp)
+            if manifest:
+                gated_specs(tmp)
+            specs = specs_phase(slice_dir, tmp)
+            loop = RunLoop(slice_dir, resume=False)
+            loop._spec_root = specs
+            rc_, out, err = dry_run_from(loop, repo)
+            assert rc_ == 0, err
+            assert f"target=../specs [sibling]  root={specs}  gate: {gate}\n" \
+                in out
 
 
 # -- kc's full output inlined into the gate log (AIWF-85) ---------------------
@@ -5090,7 +5441,7 @@ def test_a_sibling_repos_component_resolves_in_that_repo():
                                     "--project", "aac-tools"]
         assert r._executor_where(target) == f" in the sibling repo {sib}"
         outputs = slice_dir / "phases" / "P1"
-        assert r._gate_hint(target, outputs) == (
+        assert r._gate_hint(target, outputs, "base123") == (
             f" — through {wrapper_cmd(outputs)}, which runs the driver's own "
             f"gate: `kc project test --project aac-tools` from {sib}, and the "
             "same for every other component the phase's diff touches. "
@@ -5115,7 +5466,7 @@ def test_the_invoking_repos_components_shadow_a_siblings():
         assert target.git_root == repo and target.gate_cwd == repo
         assert r._executor_where(target) == ""
         outputs = slice_dir / "phases" / "P1"
-        assert r._gate_hint(target, outputs).startswith(
+        assert r._gate_hint(target, outputs, "base123").startswith(
             f" — through {wrapper_cmd(outputs)}, which runs the driver's own "
             "gate: `kc project test --project root`, and bare")
         assert lists.asked == ["repo"]
@@ -5262,6 +5613,16 @@ def specs_worktree(loop, pid="1"):
     return loop.worktree_root / "specs" / f"074-P{pid}"
 
 
+def spec_check_cmd(work, base="base123"):
+    """The spec check a spec-repo phase's gate opens with (AIWF-68), as a
+    command line: the plugin's own tool, against the review's base."""
+    return " ".join(run_loop.spec_check_argv(base, Path(work)))
+
+
+def spec_check_hint(work, base="base123"):
+    return run_loop.SPEC_CHECK_HINT.format(argv=spec_check_cmd(work, base))
+
+
 def where_clause(work, root, base="main"):
     return (f" in the worktree {work} — a linked checkout of {root}; "
             f"{root}'s own tree stays on {base}, and the plan is edited "
@@ -5292,8 +5653,9 @@ def test_a_shared_repos_phase_is_dispatched_gated_and_checked_in_its_worktree():
                 assert "git add -A" not in prompt
         writer = next(p for role, p in r.prompts if role == "code-writer")
         assert (f" — through {wrapper_cmd(slice_dir / 'phases' / 'P1')}, "
-                "which runs the driver's own gate: `kc project test` from "
-                f"{work}. {run_loop.GATE_REUSE_HINT}.") in writer
+                f"which runs the driver's own gate: {spec_check_hint(work)}, "
+                f"then `kc project test` from {work}. "
+                f"{run_loop.GATE_REUSE_HINT}.") in writer
         assert r.gate_cwds and set(r.gate_cwds) == {work}
         adds = [c for root, c in r.fake_git.calls
                 if c[:2] == ("worktree", "add")]

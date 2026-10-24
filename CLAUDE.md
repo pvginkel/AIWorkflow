@@ -86,7 +86,8 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   its labels, the rendering; imported by both loops), `github_target.py`
   (the `github:` Target's scratch clone), `preflight.py`,
   `sweep_slice.py`, `close_slice.py`, `redact_secrets.py` (the `kind: Secret` stubbing of
-  every diff the driver hands an agent), `slice_cost.py` (with
+  every diff the driver hands an agent), `spec_check.py` (the spec repo's phase gate),
+  `slice_cost.py` (with
   `turn_profile.py`, the transcript replay behind its turn table), `allocate-next-slice.sh`.
   Suites load their subject via `importlib.util.spec_from_file_location` (`tools/` is not a
   package) and fake sessions, git, `kc` and the gate — no agent is ever spawned by a test.

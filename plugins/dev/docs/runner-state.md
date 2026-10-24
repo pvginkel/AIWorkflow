@@ -71,10 +71,12 @@ worktree, from its creation to the merge that removes it), `executor_rounds`, `g
 `gate_green_log`, `gate_nothing_ran_commit` (the head the gate last ran nothing on — the
 reviewer is told the target defines no tests only when it is the commit under review),
 `gate_cmd` (the command whose outcome stands — bare `kc project test` when a root phase's
-`--project root` ran nothing), `gate_projects` (a component Target's last gate run, one entry
+`--project root` ran nothing; on a spec-repo phase the repo's own command, or the spec check's
+where it has no manifest), `gate_projects` (a component Target's last gate run, one entry
 per kc project it ran or waived — the Target first, then every other component the phase's diff
 touches — each with its `project`, `cmd` and `outcome`, `green` | `red` | `nothing_ran` |
-`waived`; the reviewer's gate line names the green ones as covered and the rest as not, a fix
+`waived`; on a spec-repo phase the spec check's entry first, `project` `spec_check`, then the
+repo's own `kc project test` where it has a manifest; the reviewer's gate line names the green ones as covered and the rest as not, a fix
 round's prompt names the red ones; absent or `null` for a whole-repo Target and on a phase begun
 before 0.9.125, where `gate_cmd` is what both name),
 `rebase_requested` (set when a merge-time rebase bails `blocked` and hands the
@@ -133,7 +135,8 @@ in the spec repo). A phase gate's `gate_r<N>.log` holds kc's own lines and, belo
 output kc keeps under `/tmp/kc/project`, inlined whole, so the log stands on its own once that
 file is gone; when the driver took the writer's own run instead, it says so at its top. Beside
 it, `gate_spec.json` is what the writer's gate wrapper runs, rewritten at every code-writer
-dispatch, and `writer_gate_r<N>.json` the wrapper's record of its last run in code-writer round
+dispatch — on a spec-repo phase with the spec check's command as its `check`, its `argv` the
+repo's own `kc project test` or `null` — and `writer_gate_r<N>.json` the wrapper's record of its last run in code-writer round
 `N`: the commands with their exit codes and output, and the tree's content hash when the run
 began and ended ([run-loop.md](run-loop.md) § The per-phase round). A review round whose range
 changes Secret data leaves `review_r<N>.diff` beside its review, the range redacted the same

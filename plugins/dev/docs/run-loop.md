@@ -28,7 +28,17 @@ component, run from the root of the repo that lists it, and the same for every o
 the phase's diff touches (§ The per-phase round); `kc project test` from the sibling's own
 root when it carries a manifest, looked for at gate time in the phase's own tree, so the phase
 that adds the manifest is gated by it; no
-deterministic gate otherwise (the reviewer is told the state is unverified). **`Target: root` is
+deterministic gate otherwise (the reviewer is told the state is unverified). **The spec repo
+always has one**: the plugin's own spec check, `python3 <tools>/spec_check.py --base
+<merge-base> <the phase's worktree>`, then `kc project test` there when the spec repo carries a
+manifest of its own — where a project's own rules for its spec repo go. The check reads only
+what the phase changed since the merge-base the review reads, and lists every whitespace error,
+conflict marker, ragged Markdown table, unclosed code fence and unparseable JSON file in it, one
+`path:line: what` each; a table, a fence or a JSON file that was already broken at the base and
+that the phase did not touch is not its red. Either command red is the gate's red. Spec repos
+had no manifest, script or CI, so every doc writer wrote a throwaway check and the driver's
+re-run had nothing to run (AnsibleSpecs, 2026-10-10). The wrap-up's and the doc phase's commits
+in the spec repo stay ungated: neither cuts a branch there. **`Target: root` is
 the repo as a whole**: its gate is `--project root` first, and when that ran nothing — kc's exit
 3, a root that declares no `test:` — bare `kc project test`, every component once. Root's own
 `test:` is what a manifest's author made the whole-repo gate (KubeCoder's `root` is the uv
