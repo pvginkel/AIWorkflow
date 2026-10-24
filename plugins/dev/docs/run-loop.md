@@ -232,6 +232,30 @@ whole plan is a feature of the review, not a cost. Then:
   before, and a whole-repo Target's gate is already the repo's. A frontend phase in PilotApp
   (2026-10-19) also added a backend endpoint and its tests; the reviewer was told GREEN about
   the frontend suite alone and ran the backend's itself only because it noticed (AIWF-91).
+- **The writer's green run stands for an unchanged tree** — the writer runs the gate through
+  the driver: every code-writer dispatch names `python3 run_loop.py gate
+  phases/P<id>/gate_spec.json`, a spec the driver rewrites at each dispatch with the round, the
+  phase's tree, the Target's command, root's fallback, the merge-base and the components a
+  `gate` ruling covers. The wrapper runs what the driver's gate would run — the touched
+  components from the merge-base against the tree as it stands, uncommitted work included — and
+  records the run in `writer_gate_r<N>.json` (`N` the code-writer round): each command with its
+  exit code and output, and the tree's content hash when the run began and when it ended. At
+  gate time the driver takes the latest round's record in place of running the suites when its
+  commands are those it would run now, none went red, and the tree's hash now equals the hash at
+  both ends of the run. It replays the record through the gate's own code, so the log, the
+  green commit, `gate_projects` and the history row come out as from a run: `gate_r<N>.log`
+  says at its top that it is the writer's run, and the row names the record (`reused`). No
+  record, an edit after the run began, another set of touched components or a red, and the
+  driver gates as before, its log saying why it did not take the record. The content hash is
+  git's tree id for the working tree, staged into a throwaway copy of the index: tracked files
+  as they are on disk and untracked files git does not ignore, never ignored files or
+  timestamps, so a commit of the tree after the run changes nothing. The green is not taken on
+  an agent's word: the commands are the driver's, run and recorded by its code, and the driver
+  checks the tree itself. Only this re-run is spared: an earlier round's record is never read,
+  and every other gate runs. A flake that passes the writer's run is an accepted risk; a second
+  run could pass it just the same, and CI catches it. Across ten PilotApp slices, 93 of 124
+  driver gates (133 of their 170 minutes) re-ran a green the writer had seen on an unchanged
+  tree.
 - **Review** — fresh **code-reviewer** per round against the phase's outcome, the acceptance
   criteria (`verification.json`) and repo conventions. Round 1 full branch diff; rounds 2+ are
   delta-scoped to the fix range. A phase whose body declares `Review: <file>`

@@ -11,11 +11,12 @@ order: fetch the target repo (nothing else in a run refreshes a
 remote-tracking ref, so an unfetched clone dates an agent's read of
 `origin/<base>` to the day it was cloned) and fast-forward a base with no
 commits of its own → branch → executor session (fresh code-writer) →
-deterministic gate (red spawns a fresh executor fix round, capped) →
-code-reviewer loop (round 1's fix is automatic; from round 2 a consult funds
-each further round against a bar that rises per round; backstop cap) →
-gate-checked merge → the driver stamps `✅ DONE <date>` on the phase heading.
-Only the driver stamps.
+deterministic gate (red spawns a fresh executor fix round, capped; the
+writer's own green run of it, through `gate`, stands in for it on the tree it
+ran on) → code-reviewer loop (round 1's fix is automatic; from round 2 a
+consult funds each further round against a bar that rises per round;
+backstop cap) → gate-checked merge → the driver stamps `✅ DONE <date>` on
+the phase heading. Only the driver stamps.
 
 After the last phase the driver runs the loop-tail gate sweep — `kc project
 lint` + `build` + `test`, per component, across every touched repo with a kc
@@ -105,6 +106,13 @@ Usage:
     run_loop.py wait <slice-dir> [--for SECONDS] [--from OFFSET]
     run_loop.py stop <slice-dir>
     run_loop.py status <slice-dir>
+    run_loop.py gate <phase-outputs>/gate_spec.json
+
+`gate` is the code-writer's, not the operator's: it runs the phase gate the
+driver would run, from the spec the driver wrote at the dispatch, and records
+the run beside it; a green the driver can prove was on the tree it is handed
+is its gate, not run again. It exits 0 green · 1 red · 3 nothing ran · 2 no
+run (an unreadable spec, a tree git cannot hash).
 
 Exit codes of run: 0 slice complete · 3 bailed on an error (bailout.json
 written) · 4 bailed with an operator question (bailout.json written) ·
@@ -245,6 +253,24 @@ KC_NOTHING_RAN = 3
 NOTHING_RAN_HINT = ("Exit 3 is kc's \"nothing ran\" — not red, nothing to "
                     "fix: the component declares no statement for the verb; "
                     "say what you checked instead")
+
+# Closes every gate hint that names the wrapper: what a green run of it buys.
+GATE_REUSE_HINT = ("When its last run is green on the tree you hand back — "
+                   "unchanged since that run began; committing changes "
+                   "nothing, any edit does — the driver takes that run as "
+                   "its gate and runs no suite again")
+
+# The writer runs the phase gate through the driver's own wrapper (`run_loop.py
+# gate <spec>`, `run_writer_gate`): the spec, written into the phase's outputs
+# dir at every code-writer dispatch, says what the gate is; each run records
+# what it ran and on what tree beside it, one record per round, so only the
+# latest round's can stand in for the driver's gate (`_reusable_writer_gate`).
+GATE_SPEC_NAME = "gate_spec.json"
+
+
+def writer_gate_record_name(round_: int) -> str:
+    return f"writer_gate_r{round_}.json"
+
 
 # The component `Target: root` names — the repo as a whole to a plan's
 # authors — and the gate it falls back to when root declares no tests.
@@ -509,6 +535,23 @@ def _write_state(path: Path, state: dict) -> None:
         json.dump(state, f, indent=2)
         f.write("\n")
     os.replace(tmp, path)
+
+
+def _write_json_atomic(path: Path, data: dict) -> None:
+    """`data` as JSON at `path`, through a temp file of its own in the same
+    directory: a reader never sees it half-written, and two writers never
+    share a temp file."""
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.",
+                               suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
 
 
 def _exit_status(exc: BaseException) -> int:
@@ -1561,6 +1604,145 @@ def kc_outcome(returncode: int) -> str:
     return "nothing_ran" if returncode == KC_NOTHING_RAN else "red"
 
 
+def component_gate_argv(name: str) -> list[str]:
+    """The test gate of one `kc project list` component."""
+    return ["kc", "project", "test", "--project", name]
+
+
+def touched_components(components: dict[str, Path], work_root: Path,
+                       changed_names: str,
+                       target_name: str) -> tuple[list[str], bool]:
+    """The components other than `target_name` that a `git diff
+    --name-only` listing (`changed_names`, paths relative to `work_root`)
+    touches, in manifest order — and whether it touches a file no gate
+    holds. A file is the component's whose cwd is the deepest directory
+    holding it, `root` aside (components sharing that cwd all have it); a
+    file outside every other component is root's, and where `components`
+    lists no root, no gate holds it."""
+    work = Path(work_root).resolve()
+    dirs = {name: Path(cwd).resolve() for name, cwd in components.items()
+            if name != ROOT_COMPONENT}
+    touched: set[str] = set()
+    for name in changed_names.splitlines():
+        # a name git C-quoted (core.quotePath) keeps its directories
+        name = name.strip().strip('"')
+        if not name:
+            continue
+        path = work / name
+        owners = [(len(d.parts), c) for c, d in dirs.items()
+                  if path.is_relative_to(d)]
+        if not owners:
+            touched.add(ROOT_COMPONENT)
+            continue
+        deepest = max(depth for depth, _ in owners)
+        touched.update(c for depth, c in owners if depth == deepest)
+    uncovered = ROOT_COMPONENT in touched and ROOT_COMPONENT not in components
+    return ([name for name in components
+             if name in touched and name != target_name], uncovered)
+
+
+def _git_in(root: Path, *args: str, env: dict | None = None) -> str:
+    """`git <args>` in `root`, its stdout stripped; ValueError carrying git's
+    own message when it fails. For callers outside the driver — and one
+    inside it that needs an environment of its own — where `RunLoop.git`
+    and its Bailout do not fit."""
+    try:
+        result = subprocess.run(["git", *args], cwd=str(root), env=env,
+                                capture_output=True, text=True)
+    except OSError as e:   # no such directory, no git
+        raise ValueError(f"`git {' '.join(args)}` failed in {root}: "
+                         f"{e}") from None
+    if result.returncode != 0:
+        raise ValueError(f"`git {' '.join(args)}` failed in {root}: "
+                         f"{(result.stderr or result.stdout).strip()}")
+    return result.stdout.strip()
+
+
+def content_tree(root: Path) -> str:
+    """git's tree id of what the working tree at `root` holds now: tracked
+    files as they are on disk, and untracked files git does not ignore —
+    the tree `git add -A` and a commit would make. So it equals
+    `HEAD^{tree}` on a clean tree, committing what is there leaves it as it
+    was, and ignored files and timestamps are no part of it: it changes
+    exactly when the content a gate would run on does.
+
+    Hashed through a copy of the index, never the index itself — the
+    writer's own gate runs this mid-session, and staging behind its back
+    would change what it commits. A linked worktree's index is its own,
+    which `--git-path` names. No index yet is an empty one. ValueError,
+    with git's message, when git cannot say."""
+    root = Path(root)
+    index = Path(_git_in(root, "rev-parse", "--git-path", "index"))
+    if not index.is_absolute():
+        index = root / index
+    try:
+        with tempfile.TemporaryDirectory(prefix="content-tree-") as tmp:
+            scratch = Path(tmp) / "index"
+            if index.is_file():
+                shutil.copyfile(index, scratch)
+            env = {**os.environ, "GIT_INDEX_FILE": str(scratch)}
+            _git_in(root, "add", "-A", env=env)
+            return _git_in(root, "write-tree", env=env)
+    except OSError as e:
+        raise ValueError(f"the index of {root} could not be copied: "
+                         f"{e}") from None
+
+
+def _is_argv(value) -> bool:
+    return (isinstance(value, list) and bool(value)
+            and all(isinstance(a, str) for a in value))
+
+
+def _shape_problem(data, keys: dict[str, type]) -> str | None:
+    """What keeps `data` from being an object with `keys`, each of its
+    type — None when nothing does."""
+    if not isinstance(data, dict):
+        return "not a JSON object"
+    for key, kind in keys.items():
+        if not isinstance(data.get(key), kind) \
+                or (kind is int and isinstance(data[key], bool)):
+            return f"no `{key}` of type {kind.__name__}"
+    return None
+
+
+def gate_spec_problem(spec) -> str | None:
+    """What makes `spec` no gate spec (`RunLoop._write_gate_spec`), None
+    when it is one."""
+    problem = _shape_problem(spec, {"phase": str, "round": int,
+                                    "work_root": str, "gate_cwd": str})
+    if problem:
+        return problem
+    if not _is_argv(spec.get("argv")):
+        return "`argv` is not a command"
+    if spec.get("fallback") is not None and not _is_argv(spec["fallback"]):
+        return "`fallback` is not a command"
+    touched = spec.get("touched")
+    if touched is not None:
+        problem = _shape_problem(touched, {"merge_base": str, "target": str,
+                                           "waived": list})
+        if problem or not all(isinstance(c, str) for c in touched["waived"]):
+            return f"`touched` is off-shape: {problem or 'waived'}"
+    return None
+
+
+def writer_gate_record_problem(record) -> str | None:
+    """What makes `record` no record of the `gate` wrapper's run
+    (`run_writer_gate`), None when it is one."""
+    problem = _shape_problem(record, {
+        "phase": str, "round": int, "work_root": str, "gate_cwd": str,
+        "start_tree": str, "end_tree": str, "started": str, "finished": str,
+        "commands": list, "outcome": str})
+    if problem:
+        return problem
+    if not record["commands"]:
+        return "`commands` is empty"
+    for command in record["commands"]:
+        if _shape_problem(command, {"rc": int, "output": str}) \
+                or not _is_argv(command.get("argv")):
+            return "a command is off-shape"
+    return None
+
+
 def sweep_row_outcome(row: dict) -> str:
     """A sweep row's outcome — read off its `green` for a row recorded
     before rows carried one (a resume over an older plugin's sweep)."""
@@ -2160,9 +2342,9 @@ The gate went red on {red_cmds}; its output is in {gate_log}. The gate is
 fail-fast and terse, so the log ends at the FIRST failing statement — there
 may be more behind it. The phase's work so far is git diff
 {merge_base}..HEAD{where}. Make the gate green without weakening what it
-checks; test your own work before handing back. Commit your fixes, update the
-phase's done-record if what landed changed, then write your verdict to
-{verdict_path}.
+checks; run the gate yourself before handing back{gate_hint}. Commit your
+fixes, update the phase's done-record if what landed changed, then write your
+verdict to {verdict_path}.
 {pointers}"""
 
 EXECUTOR_REVIEW_FIX_PROMPT = """\
@@ -5299,7 +5481,20 @@ class RunLoop:
         known; one a gate ruling covers is waived, not run. `gate_projects`
         records each project's command and outcome, the Target first, and
         the gate's outcome is theirs together: red on any red, else green on
-        any green, else nothing ran. A whole-repo Target records none."""
+        any green, else nothing ran. A whole-repo Target records none.
+
+        The writer runs this same gate before it hands back, through the
+        `gate` wrapper, and the driver used to run it again on the tree the
+        writer had just seen green (AIWF-93 — on PilotApp, 75 % of driver
+        gates re-ran such a green). So the latest code-writer round's record
+        of that run, where it passes `_reusable_writer_gate` — the commands
+        this gate would run, none red, on a tree unchanged since the run
+        began — is replayed in place of running anything: the same code
+        lays out the log, records the outcome and the green or empty head,
+        and only the log's header, the narration and the history row's
+        `reused` say it was the writer's run. A record that fails a check is
+        logged with why, and the gate runs as it always did. A flaky suite
+        green once on that tree is taken as green: an accepted risk."""
         if target.gate_argv is None:
             self.log(f"[P{phase_id}] no deterministic gate for "
                      f"{target.name} — proceeding (reviewer told unverified)")
@@ -5312,14 +5507,40 @@ class RunLoop:
         argv = target.gate_argv
         touched = (self._touched_components(phase_id, target, merge_base)
                    if self._gates_touched(target) else None)
-        self.log(f"[P{phase_id}] gate #{n} running ({' '.join(argv)})"
-                 + (f", and for the components the phase's diff touches: "
-                    f"{', '.join(touched)}" if touched else ""))
+        gates = ([(r, t) for r, t in self._current_rulings()
+                  if r.kind == "gate"] if touched is not None else [])
+        record_path = outputs / writer_gate_record_name(ps["executor_rounds"])
+        replay = tree = None
+        if record_path.exists():
+            record, found = self._reusable_writer_gate(record_path, target,
+                                                       touched, gates)
+            if record is None:
+                self.log(f"[P{phase_id}] the writer's gate run "
+                         f"({record_path.name}) not reused — {found}; "
+                         "running the gate")
+            else:
+                tree = found
+                replay = self._writer_gate_replay(phase_id, record_path,
+                                                  record)
+        also = (f", and for the components the phase's diff touches: "
+                f"{', '.join(touched)}" if touched else "")
+        if replay is None:
+            self.log(f"[P{phase_id}] gate #{n} running ({' '.join(argv)})"
+                     + also)
+        else:
+            self.log(f"[P{phase_id}] gate #{n} reusing the writer's run "
+                     f"({record_path.name}) — tree {tree[:12]} unchanged "
+                     "since it began" + also)
         t0 = time.monotonic()
         projects = None
         with open(log_path, "w") as log_file:
+            if replay is not None:
+                log_file.write(f"=== the writer's run of this gate, reused: "
+                               f"{record_path} — the tree ({tree}) is the one "
+                               "it ran on, unchanged since it began; its "
+                               "output follows ===\n")
             outcome, tail = self._gate_cmd_outcome(phase_id, argv, target,
-                                                   log_file, log_path)
+                                                   log_file, log_path, replay)
             if outcome == "nothing_ran" and self._is_root(target):
                 self.log(f"[P{phase_id}] `{' '.join(argv)}` ran nothing — "
                          "root declares no tests, so the gate is the whole "
@@ -5330,17 +5551,16 @@ class RunLoop:
                                f" `{' '.join(argv)}` ===\n")
                 log_file.flush()
                 outcome, tail = self._gate_cmd_outcome(phase_id, argv, target,
-                                                       log_file, log_path)
+                                                       log_file, log_path,
+                                                       replay)
             if touched is not None:
                 projects = [{"project": target.name, "cmd": " ".join(argv),
                              "outcome": outcome}]
                 tails = [tail]
-                gates = [(r, t) for r, t in self._current_rulings()
-                         if r.kind == "gate"]
                 for component in touched:
                     entry, extra_tail = self._gate_touched_component(
                         phase_id, component, target, gates, log_file,
-                        log_path)
+                        log_path, replay)
                     projects.append(entry)
                     tails.append(extra_tail)
         duration_s = int(time.monotonic() - t0)
@@ -5366,7 +5586,8 @@ class RunLoop:
         elif outcome == "nothing_ran":
             ps["gate_nothing_ran_commit"] = self.git("rev-parse", "HEAD",
                                                      root=target.work_root)
-        self._record(phase_id, "gate", n, outcome, tail, None, duration_s)
+        self._record(phase_id, "gate", n, outcome, tail, None, duration_s,
+                     extra=({"reused": str(record_path)} if replay else None))
         self.log(f"[P{phase_id}] gate #{n} → "
                  f"{GATE_OUTCOME_LABELS[outcome]} ({duration_s}s, "
                  f"{ran}) {tail[:120]}")
@@ -5378,6 +5599,76 @@ class RunLoop:
             self.log(f"[P{phase_id}] {what} defines no tests — "
                      "proceeding as with no gate (reviewer told unverified)")
         return outcome != "red", log_path
+
+    def _reusable_writer_gate(self, path: Path, target: ResolvedTarget,
+                              touched: list[str] | None,
+                              gates: list) -> tuple[dict | None, str]:
+        """(the record, the tree it ran on) when the writer's recorded gate
+        run at `path` can stand for this gate, else (None, why not) — the
+        checks cheapest first, the tree's hash last. It stands only where it
+        ran in the phase's tree, ran exactly the commands this gate would
+        run now — the Target's, the whole repo after an empty root, each
+        touched component no gate ruling covers, in that order — none of
+        them red, and on a tree that has not changed since it began: a
+        change during the run, or after it, is a tree the run did not see."""
+        try:
+            record = json.loads(path.read_text())
+        except (OSError, ValueError) as e:
+            return None, f"unreadable: {e}"
+        problem = writer_gate_record_problem(record)
+        if problem:
+            return None, f"unreadable: {problem}"
+        for key, here in (("work_root", target.work_root),
+                          ("gate_cwd", target.gate_cwd)):
+            if record[key] != str(here):
+                return None, f"it ran in {record[key]}, the gate runs in {here}"
+        commands = record["commands"]
+        expected = [list(target.gate_argv)]
+        if self._is_root(target) and commands[0]["rc"] == KC_NOTHING_RAN:
+            expected.append(list(REPO_GATE_ARGV))
+        expected += [component_gate_argv(c) for c in touched or ()
+                     if self._covering(gates, target.git_root, c) is None]
+        ran = [c["argv"] for c in commands]
+        if ran != expected:
+            return None, (f"it ran {_ticked([' '.join(a) for a in ran])}, "
+                          "the gate is "
+                          f"{_ticked([' '.join(a) for a in expected])}")
+        red = next((c for c in commands
+                    if c["rc"] not in (0, KC_NOTHING_RAN)), None)
+        if red is not None:
+            return None, f"`{' '.join(red['argv'])}` went red"
+        try:
+            now = content_tree(target.work_root)
+        except ValueError as e:
+            return None, f"the tree could not be hashed: {e}"
+        start, end = record["start_tree"], record["end_tree"]
+        if not start == end == now:
+            return None, (f"the tree changed after it began (began "
+                          f"{start[:12]}, ended {end[:12]}, now {now[:12]})")
+        return record, now
+
+    @staticmethod
+    def _writer_gate_replay(phase_id: str, path: Path,
+                            record: dict) -> Callable:
+        """`_gate_cmd_outcome`'s replay over a record `_reusable_writer_gate`
+        passed: each call takes the next recorded command, writes its output
+        into the log and answers its exit code. The check made the record's
+        commands the gate's own, so a call out of step is a driver bug."""
+        commands = list(record["commands"])
+
+        def replay(argv: list[str], log_file) -> int:
+            if not commands or commands[0]["argv"] != list(argv):
+                raise Bailout(
+                    "protocol_failure", phase=phase_id,
+                    details=f"replaying the writer's gate run ({path}) went "
+                            f"out of step at `{' '.join(argv)}` — a driver "
+                            "bug: the record was checked against the gate's "
+                            "commands before the replay began")
+            command = commands.pop(0)
+            log_file.write(command["output"])
+            return command["rc"]
+
+        return replay
 
     @staticmethod
     def _gates_touched(target: ResolvedTarget) -> bool:
@@ -5391,51 +5682,36 @@ class RunLoop:
     def _touched_components(self, phase_id: str, target: ResolvedTarget,
                             merge_base: str) -> list[str]:
         """The components other than the Target that the phase's diff
-        touches, in manifest order. The diff is `<merge_base>..HEAD` in the
+        touches, in manifest order (`touched_components`, which the writer's
+        `gate` wrapper shares). The diff is `<merge_base>..HEAD` in the
         phase's tree — the range its reviewer reads — and the components are
-        kc's list there, so one the phase registered is seen. A file is the
-        component's whose cwd is the deepest directory holding it, `root`
-        aside (components sharing that cwd all have it); a file outside
-        every other component is root's. Where kc lists no root, no gate
-        holds such a file, and the log says so. `--no-renames` names both
-        ends of a rename, so a file moved out of a component touches it."""
+        kc's list there, so one the phase registered is seen. Where kc lists
+        no root, no gate holds a file outside every component, and the log
+        says so. `--no-renames` names both ends of a rename, so a file moved
+        out of a component touches it."""
         components = load_project_dirs(target.gate_cwd)
         changed = self.git("diff", "--name-only", "--no-renames",
                            f"{merge_base}..HEAD", root=target.work_root)
-        work = Path(target.work_root).resolve()
-        dirs = {name: Path(cwd).resolve() for name, cwd in components.items()
-                if name != ROOT_COMPONENT}
-        touched: set[str] = set()
-        for name in changed.splitlines():
-            # a name git C-quoted (core.quotePath) keeps its directories
-            name = name.strip().strip('"')
-            if not name:
-                continue
-            path = work / name
-            owners = [(len(d.parts), c) for c, d in dirs.items()
-                      if path.is_relative_to(d)]
-            if not owners:
-                touched.add(ROOT_COMPONENT)
-                continue
-            deepest = max(depth for depth, _ in owners)
-            touched.update(c for depth, c in owners if depth == deepest)
-        if ROOT_COMPONENT in touched and ROOT_COMPONENT not in components:
+        touched, uncovered = touched_components(
+            components, target.work_root, changed, target.name)
+        if uncovered:
             self.log(f"[P{phase_id}] the phase's diff touches files outside "
                      "every component and kc lists no root — no gate "
                      "covers them")
-        return [name for name in components
-                if name in touched and name != target.name]
+        return touched
 
     def _gate_touched_component(self, phase_id: str, component: str,
                                 target: ResolvedTarget, gates: list,
-                                log_file, log_path: Path
+                                log_file, log_path: Path,
+                                replay: Callable | None = None
                                 ) -> tuple[dict, str]:
         """One component the phase's diff touches, gated as the Target is —
         `kc project test --project <c>` from the Target's tree, into the
         same log under a header — or, where a gate ruling covers it, waived
         unrun as `_phase_gate` waives a Target: its `gate_projects` entry,
-        and the log's last line for the history row's summary."""
-        argv = ["kc", "project", "test", "--project", component]
+        and the log's last line for the history row's summary. `replay` is
+        `_gate_cmd_outcome`'s."""
+        argv = component_gate_argv(component)
         cmd = " ".join(argv)
         ruling = self._covering(gates, target.git_root, component)
         if ruling is not None:
@@ -5454,12 +5730,13 @@ class RunLoop:
                        f"`{cmd}` ===\n")
         log_file.flush()
         outcome, tail = self._gate_cmd_outcome(phase_id, argv, target,
-                                               log_file, log_path)
+                                               log_file, log_path, replay)
         return {"project": component, "cmd": cmd, "outcome": outcome}, tail
 
     def _gate_cmd_outcome(self, phase_id: str, argv: list[str],
                           target: ResolvedTarget, log_file,
-                          log_path: Path) -> tuple[str, str]:
+                          log_path: Path,
+                          replay: Callable | None = None) -> tuple[str, str]:
         """One phase-gate command run into `log_file`: its gate outcome, and
         the log's last line as kc left it — the history row's summary. A
         timeout bails; so does rc 2, kc's usage error — an unknown
@@ -5479,11 +5756,17 @@ class RunLoop:
         restart — so that file is appended to the log once the command is
         classified, on a bailout too. After, because the scans read kc's
         own lines alone: a failing test's output quoting cexec's line is
-        not a missing tool."""
+        not a missing tool.
+
+        `replay(argv, log_file) → rc`, when given, stands in for running
+        the command: the writer's recorded run of it, its output written
+        into the log as the run would have (`_run_gate`), and everything
+        after classifies it as it would a run."""
         log_file.flush()
         start = _file_size(log_path)
         try:
-            returncode = self._gate_exec(argv, target.gate_cwd, log_file)
+            returncode = (replay(argv, log_file) if replay is not None else
+                          self._gate_exec(argv, target.gate_cwd, log_file))
         except subprocess.TimeoutExpired:
             raise Bailout(
                 "timeout", phase=phase_id,
@@ -5951,25 +6234,58 @@ class RunLoop:
             return ""
         return PHILOSOPHY_LINE.format(philosophy=self.cfg.design_philosophy)
 
-    def _gate_hint(self, target: ResolvedTarget) -> str:
+    def _write_gate_spec(self, phase_id: str, round_: int, outputs: Path,
+                         target: ResolvedTarget, merge_base: str) -> None:
+        """The phase's gate as the `gate` wrapper runs it for code-writer
+        round `round_` (`run_writer_gate`): where, which command, the whole
+        repo after an empty root, and — for a component Target — what it
+        needs to find the components the diff touches: the review's merge
+        base, and those a gate ruling covers, which the driver's gate waives
+        unrun. Rewritten at every dispatch, so it is the gate as it stands
+        then; the driver checks a run against its gate as it stands at gate
+        time anyway (`_reusable_writer_gate`)."""
+        touched = None
+        if self._gates_touched(target):
+            gates = [(r, t) for r, t in self._current_rulings()
+                     if r.kind == "gate"]
+            waived = ([c for c in load_project_dirs(target.gate_cwd)
+                       if self._covering(gates, target.git_root, c)
+                       is not None] if gates else [])
+            touched = {"merge_base": merge_base, "target": target.name,
+                       "waived": waived}
+        _write_json_atomic(outputs / GATE_SPEC_NAME, {
+            "phase": phase_id, "round": round_,
+            "work_root": str(target.work_root),
+            "gate_cwd": str(target.gate_cwd), "argv": target.gate_argv,
+            "fallback": list(REPO_GATE_ARGV) if self._is_root(target) else None,
+            "touched": touched})
+
+    def _gate_hint(self, target: ResolvedTarget, outputs: Path) -> str:
         """The gate the executor runs itself, from the phase's working tree —
         a shared repo's worktree, where it has one: kc's verbs are
-        cwd-bound."""
+        cwd-bound. Where the driver has a gate, the executor is pointed at
+        the `gate` wrapper over the phase's spec (`_write_gate_spec`): it
+        runs exactly what the driver's gate would, and the driver reuses its
+        green rather than running the suite a second time."""
         work = target.work_root
+        wrapper = f"`python3 {SCRIPT} gate {outputs / GATE_SPEC_NAME}`"
         if self._is_root(target):
             where = "" if work == self.repo_root else f" from {work}"
-            return (f" (`kc project test --project root`{where}; when that "
-                    "runs nothing — exit 3 — the gate is bare `kc project "
-                    f"test`, every component once). {NOTHING_RAN_HINT}")
+            return (f" — through {wrapper}, which runs the driver's own gate: "
+                    f"`kc project test --project root`{where}, and bare `kc "
+                    "project test`, every component once, when that runs "
+                    f"nothing (exit 3). {GATE_REUSE_HINT}. {NOTHING_RAN_HINT}")
         if target.kind == "project":
             # The driver gates every component the diff touches beside the
-            # Target's own (AIWF-91), so the writer is told to as well.
+            # Target's own (AIWF-91), and so does the wrapper.
             where = "" if work == self.repo_root else f" from {work}"
-            return (f" (`kc project test --project {target.name}`{where} — "
-                    "and the same for every other component the phase's "
-                    f"diff touches). {NOTHING_RAN_HINT}")
+            return (f" — through {wrapper}, which runs the driver's own gate: "
+                    f"`kc project test --project {target.name}`{where}, and "
+                    "the same for every other component the phase's diff "
+                    f"touches. {GATE_REUSE_HINT}. {NOTHING_RAN_HINT}")
         if target.gate_argv:
-            return (f" (`kc project test` from {work})")
+            return (f" — through {wrapper}, which runs the driver's own gate: "
+                    f"`kc project test` from {work}. {GATE_REUSE_HINT}")
         return (f" ({work} has no kc manifest — gate per that repo's own "
                 "conventions; if this phase adds `.kubecoder/project.yaml`, "
                 f"the driver's gate is `kc project test` from {work})")
@@ -6239,7 +6555,7 @@ class RunLoop:
         self._save_state()
         work = target.work_root
         where = self._executor_where(target)
-        gate_hint = self._gate_hint(target)
+        gate_hint = self._gate_hint(target, outputs)
 
         merge_base = self.git("merge-base", base, branch, root=root)
 
@@ -6254,12 +6570,18 @@ class RunLoop:
             interrupted keeps its number: the in-flight record banked it.
             What a resume set aside rides the first round after it, and is
             dropped from the state only once that round's session returns:
-            a run that dies mid-dispatch hands it to the next one."""
+            a run that dies mid-dispatch hands it to the next one. The gate
+            spec the round's `gate` wrapper reads is written first, carrying
+            the round's number — the driver reuses a run of that round
+            alone."""
             pending = self._reattach_round("code-writer", phase_id)
             if pending is None:
                 ps["executor_rounds"] += 1
             r = ps["executor_rounds"] if pending is None else pending
             self._save_state()
+            if target.gate_argv is not None:
+                self._write_gate_spec(phase_id, r, outputs, target,
+                                      merge_base)
             prompt = (build_prompt(executor_verdict_path(r)) + "\n"
                       + self._phase_digest(phase_id))
             if ps.get("set_aside"):
@@ -6807,7 +7129,9 @@ class RunLoop:
                                branch=branch, round=_r,
                                plan_path=self.plan_path, red_cmds=_red,
                                gate_log=_log, merge_base=merge_base,
-                               where=where, verdict_path=vp,
+                               where=where,
+                               gate_hint=self._gate_hint(target, outputs),
+                               verdict_path=vp,
                                pointers=self._pointers(target, phase.id)))
             self._after_session_plan_check()
 
@@ -10104,6 +10428,143 @@ def cmd_status(args) -> None:
               f"  {h['role']} r{h['round']} → {h['outcome']}")
 
 
+def _tee_exec(argv: list[str], cwd: Path) -> tuple[int, str]:
+    """One gate command run from `cwd`, its stdout and stderr passed
+    through to ours as they come and kept: (its exit code, its output) —
+    the seam the `gate` wrapper runs its commands through, isolated for
+    tests. No timeout: the session running the wrapper owns its clock."""
+    sys.stdout.flush()
+    out = sys.stdout.buffer
+    kept = bytearray()
+    with subprocess.Popen(argv, cwd=str(cwd), stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT) as proc:
+        while chunk := proc.stdout.read1(65536):
+            out.write(chunk)
+            out.flush()
+            kept += chunk
+        returncode = proc.wait()
+    return returncode, kept.decode(errors="replace")
+
+
+def run_writer_gate(spec_path: Path) -> int:
+    """The `gate` subcommand: the phase gate as the driver runs it
+    (`RunLoop._run_gate`), from the spec the driver wrote for this
+    code-writer round (`RunLoop._write_gate_spec`) — the Target's command,
+    the whole repo when an empty root ran nothing, then each component the
+    phase's diff touches that no gate ruling waives — its output passed
+    through as it runs, and the run recorded beside the spec for the driver
+    to reuse (`RunLoop._reusable_writer_gate`). The exit code is the gate's:
+    0 green, 1 red, 3 nothing ran; 2 is no run at all.
+
+    The touched components are the diff from the review's merge base to the
+    tree as it is when the run begins — committed or not, as the gate sees
+    it, where `<merge_base>..HEAD` would miss what the writer has yet to
+    commit. The tree is hashed (`content_tree`) before the first command and
+    after the last, so the record says whether it changed while the run
+    went on. A later run in the same round replaces the record: the driver
+    takes the last one or none."""
+    try:
+        spec = json.loads(Path(spec_path).read_text())
+    except (OSError, ValueError) as e:
+        print(f"gate: cannot read the gate spec {spec_path}: {e}",
+              file=sys.stderr)
+        return 2
+    problem = gate_spec_problem(spec)
+    if problem:
+        print(f"gate: {spec_path} is not a gate spec: {problem}",
+              file=sys.stderr)
+        return 2
+    work_root, gate_cwd = Path(spec["work_root"]), Path(spec["gate_cwd"])
+    touched = spec.get("touched")
+    started = _now_iso()
+    try:
+        start = content_tree(work_root)
+        components: list[str] = []
+        uncovered = False
+        if touched is not None:
+            changed = _git_in(work_root, "diff", "--name-only",
+                              "--no-renames", touched["merge_base"], start)
+            components, uncovered = touched_components(
+                load_project_dirs(gate_cwd), work_root, changed,
+                touched["target"])
+    except ValueError as e:
+        print(f"gate: {e}", file=sys.stderr)
+        return 2
+    except Bailout as e:
+        print(f"gate: {e.details}", file=sys.stderr)
+        return 2
+
+    commands: list[dict] = []
+    outcomes: list[tuple[str, str]] = []   # (command, outcome)
+
+    def run(argv: list[str], header: str) -> str:
+        print(header, flush=True)
+        returncode, output = _tee_exec(argv, gate_cwd)
+        commands.append({"argv": list(argv), "rc": returncode,
+                         "output": output})
+        return kc_outcome(returncode)
+
+    argv = spec["argv"]
+    own, outcome = argv, run(argv, f"=== `{' '.join(argv)}` from "
+                                   f"{gate_cwd} ===")
+    if spec.get("fallback") and outcome == "nothing_ran":
+        own = spec["fallback"]
+        outcome = run(own, f"\n=== `{' '.join(argv)}` ran nothing (exit 3) — "
+                           f"the gate is the whole repo: `{' '.join(own)}` "
+                           "===")
+    outcomes.append((" ".join(own), outcome))
+    for component in components:
+        component_argv = component_gate_argv(component)
+        cmd = " ".join(component_argv)
+        if component in touched["waived"]:
+            print(f"\n=== the phase's diff touches {component}: `{cmd}` "
+                  "waived by plan.md's `## Driver rulings` — not run ===",
+                  flush=True)
+            continue
+        outcomes.append((cmd, run(component_argv, "\n=== the phase's diff "
+                                  f"touches {component}: `{cmd}` ===")))
+    if uncovered:
+        print("\n=== the phase's diff touches files outside every component "
+              "and kc lists no root — no gate covers them ===", flush=True)
+    try:
+        end = content_tree(work_root)
+    except ValueError as e:
+        # no tree to vouch for: the record stands, and the driver gates
+        print(f"gate: {e}", file=sys.stderr)
+        end = ""
+    labels = [o for _, o in outcomes]
+    outcome = ("red" if "red" in labels
+               else "green" if "green" in labels else "nothing_ran")
+    record = Path(spec_path).parent / writer_gate_record_name(spec["round"])
+    _write_json_atomic(record, {
+        "phase": spec["phase"], "round": spec["round"],
+        "work_root": spec["work_root"], "gate_cwd": spec["gate_cwd"],
+        "start_tree": start, "end_tree": end,
+        "started": started, "finished": _now_iso(),
+        "commands": commands, "outcome": outcome})
+    print(flush=True)
+    if outcome == "green" and start == end:
+        print(f"=== gate GREEN on tree {start[:12]}, recorded in {record}. "
+              "Hand back this tree — committing it changes nothing — and the "
+              "driver takes this run as its gate; edit anything first and it "
+              "runs the gate again. ===")
+    elif outcome == "green":
+        print(f"=== gate GREEN, but the tree changed while it ran "
+              f"({start[:12]} → {end[:12]}): the driver will run the gate "
+              "again. Run this once more on the finished tree to spare it "
+              "that. ===")
+    elif outcome == "red":
+        print("=== gate RED: "
+              + _ticked([c for c, o in outcomes if o == "red"]) + " ===")
+    else:
+        print("=== gate: nothing ran (exit 3) — not red, nothing to fix ===")
+    return {"green": 0, "red": 1}.get(outcome, KC_NOTHING_RAN)
+
+
+def cmd_gate(args) -> None:
+    sys.exit(run_writer_gate(Path(args.spec)))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -10144,6 +10605,14 @@ def main() -> None:
     status_p = sub.add_parser("status", help="print a slice's run state")
     status_p.add_argument("slice_dir")
     status_p.set_defaults(func=cmd_status)
+
+    gate_p = sub.add_parser(
+        "gate", help="run a phase's test gate as the driver does and record "
+                     "the run for the driver; exit 0 green, 1 red, 3 nothing "
+                     "ran, 2 no run")
+    gate_p.add_argument("spec", help="the phase's gate_spec.json, as its "
+                                     "code-writer dispatch names it")
+    gate_p.set_defaults(func=cmd_gate)
 
     args = parser.parse_args()
     args.func(args)

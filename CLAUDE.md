@@ -236,3 +236,9 @@ instead of reopening it.
   (`docs/research/shared-repo-worktree-plan-2026-10-11.md`). Agents sweeping one another's
   uncommitted edits into a commit is accepted ("I have no problem one agent sweeping up a change
   of a different agent"); pristine commits in the shared tree are not a goal.
+- **No test-result cache keyed on tree state**, in kc or the plugin (2026-10-24, AIWF-93): "it
+  will bite" — a suite's result rests on more than the tree (a database not reset), and nobody
+  can tell why a suite did not run. The one reuse is the phase gate taking the writer's own run
+  of its commands, in the same round, on an unchanged tree. A flake that passes there is an
+  accepted risk, not a cost to design for: a second run can pass it just the same, and CI
+  catches it.

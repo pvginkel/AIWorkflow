@@ -2227,21 +2227,29 @@ def test_a_component_gate_that_ran_nothing_never_falls_back():
         assert "whole repo" not in (slice_dir / "log.txt").read_text()
 
 
+def wrapper_cmd(outputs):
+    """The `gate` wrapper over a phase's spec, as a gate hint names it."""
+    return f"`python3 {run_loop.SCRIPT} gate {Path(outputs) / 'gate_spec.json'}`"
+
+
 def test_every_component_gate_hint_says_what_exit_3_means():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         r = ScriptedLoop(slice_dir, [], repo_root=repo)
         r.project_dirs = root_components(repo)
-        component = r._gate_hint(r._resolve_target(PROJECT))
-        root = r._gate_hint(r._resolve_target("root"))
-        assert component == (f" (`kc project test --project {PROJECT}` — "
-                             "and the same for every other component the "
-                             "phase's diff touches). "
-                             + run_loop.NOTHING_RAN_HINT)
-        assert root == (" (`kc project test --project root`; when that runs "
-                        "nothing — exit 3 — the gate is bare `kc project "
-                        "test`, every component once). "
-                        + run_loop.NOTHING_RAN_HINT)
+        outputs = slice_dir / "phases" / "P1"
+        component = r._gate_hint(r._resolve_target(PROJECT), outputs)
+        root = r._gate_hint(r._resolve_target("root"), outputs)
+        assert component == (
+            f" — through {wrapper_cmd(outputs)}, which runs the driver's own "
+            f"gate: `kc project test --project {PROJECT}`, and the same for "
+            "every other component the phase's diff touches. "
+            f"{run_loop.GATE_REUSE_HINT}. {run_loop.NOTHING_RAN_HINT}")
+        assert root == (
+            f" — through {wrapper_cmd(outputs)}, which runs the driver's own "
+            "gate: `kc project test --project root`, and bare `kc project "
+            "test`, every component once, when that runs nothing (exit 3). "
+            f"{run_loop.GATE_REUSE_HINT}. {run_loop.NOTHING_RAN_HINT}")
         assert "Exit 3 is kc's \"nothing ran\"" in run_loop.NOTHING_RAN_HINT
 
 
@@ -2340,8 +2348,9 @@ def test_a_component_gate_runs_every_component_its_diff_touches():
         assert "does not cover" not in prompt
         writer = next(p for role, p in r.prompts
                       if role == "code-writer").replace("\n", " ")
-        assert ("(`kc project test --project frontend` — and the same for "
-                "every other component the phase's diff touches)") in writer
+        assert ("which runs the driver's own gate: `kc project test --project "
+                "frontend`, and the same for every other component the "
+                "phase's diff touches.") in writer
         narration = (slice_dir / "log.txt").read_text()
         assert ("gate #1 running (kc project test --project frontend), and "
                 "for the components the phase's diff touches: backend, "
@@ -2618,6 +2627,804 @@ def test_a_gate_with_no_projects_on_record_reads_as_it_always_did():
         # a state.json from before the key gets it as None
         r.state = {"phases": {"1": {"status": "in_progress"}}}
         assert r._phase_state("1")["gate_projects"] is None
+
+
+# -- the writer's gate run, reused as the driver's (AIWF-93) -------------------
+#
+# The code-writer runs the phase gate before it hands back, and the driver ran
+# the same commands again on the same tree: on PilotApp, 75 % of driver gates
+# re-ran a green the writer had just seen. The writer now runs it through the
+# driver's `gate` wrapper, which records what it ran and on what tree, and the
+# driver replays a run it can prove stands for its own gate — and otherwise
+# gates exactly as before.
+
+TREE = "7ee0" * 10        # what a stubbed content_tree answers
+OTHER_TREE = "0e1d" * 10
+DONE = {"outcome": "done", "summary": "built"}
+
+
+def outputs_of(loop, pid="1"):
+    return loop.slice_dir / "phases" / f"P{pid}"
+
+
+def gate_spec(loop, pid="1"):
+    return json.loads((outputs_of(loop, pid) / "gate_spec.json").read_text())
+
+
+def writer_record(spec, ran, start=TREE, end=TREE, **over):
+    """What the `gate` wrapper records over `spec` for a run of `ran` —
+    (argv, rc) pairs, each with the output KcExitLoop's kc writes — on a tree
+    that was `start` when it began and `end` when it finished; `over` sets
+    any key outright."""
+    record = {"phase": spec["phase"], "round": spec["round"],
+              "work_root": spec["work_root"], "gate_cwd": spec["gate_cwd"],
+              "start_tree": start, "end_tree": end,
+              "started": "2026-10-24T09:00:00+02:00",
+              "finished": "2026-10-24T09:01:00+02:00",
+              "commands": [{"argv": list(argv), "rc": rc_,
+                            "output": f"{' '.join(argv)}: exit {rc_}\n"}
+                           for argv, rc_ in ran],
+              "outcome": "green"}
+    record.update(over)
+    return record
+
+
+def ran_gate(*commands, text=None, **over):
+    """A code-writer step's effect: it ran the gate through the wrapper,
+    which recorded `commands` for the round the spec names — or left `text`
+    in the record instead."""
+    def effect(loop):
+        spec = gate_spec(loop)
+        path = outputs_of(loop) / f"writer_gate_r{spec['round']}.json"
+        path.write_text(text if text is not None else json.dumps(
+            writer_record(spec, commands, **over)))
+    return effect
+
+
+def wrote_gate(*commands, **over):
+    """A code-writer step that ran the gate through the wrapper."""
+    return ("code-writer", DONE, ran_gate(*commands, **over))
+
+
+def tree_is(tree):
+    return patched(run_loop, content_tree=lambda root: tree)
+
+
+def gate_rows(slice_dir):
+    return [h for h in load_state(slice_dir)["history"] if h["role"] == "gate"]
+
+
+def reused_header(record, tree=TREE):
+    return (f"=== the writer's run of this gate, reused: {record} — the tree "
+            f"({tree}) is the one it ran on, unchanged since it began; its "
+            "output follows ===\n")
+
+
+def test_a_green_writer_run_on_the_tree_handed_back_is_the_drivers_gate():
+    app = component_argv(PROJECT)
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = KcExitLoop(slice_dir, [wrote_gate((app, 0)), V["review_signoff"],
+                                   *TAIL], repo_root=repo)
+        with tree_is(TREE):
+            assert run_to_exit(r) == 0
+        assert not r.script
+        assert r.phase_gate_runs == [], "the driver ran no suite of its own"
+        record = outputs_of(r) / "writer_gate_r1.json"
+        rows = gate_rows(slice_dir)
+        assert [(h["outcome"], h.get("reused")) for h in rows] == [
+            ("green", str(record))]
+        assert rows[0]["summary"] == f"{' '.join(app)}: exit 0"
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["gate_runs"] == 1
+        assert ps["gate_green_commit"] == r.fake_git.head
+        assert ps["gate_cmd"] == " ".join(app)
+        assert ps["gate_projects"] == [gate_entry(PROJECT, "green")]
+        assert Path(ps["gate_green_log"]).read_text() == (
+            reused_header(record) + f"{' '.join(app)}: exit 0\n")
+        assert ("The deterministic test gate ran GREEN on this exact commit "
+                f"({r.fake_git.head[:12]}): `{' '.join(app)}` in {repo} — "
+                f"with full output in {ps['gate_green_log']}") \
+            in reviewer_prompt(r)
+        narration = (slice_dir / "log.txt").read_text()
+        assert ("[P1] gate #1 reusing the writer's run (writer_gate_r1.json) "
+                f"— tree {TREE[:12]} unchanged since it began\n") in narration
+        assert "gate #1 running" not in narration
+        assert "[P1] gate #1 → GREEN" in narration
+
+
+def test_a_reused_gate_inlines_kcs_full_output_as_a_run_does():
+    app = component_argv(PROJECT)
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        full = kc_full_log(tmp, "test-1.log", "every line kc ran\n")
+
+        def effect(loop):
+            spec = gate_spec(loop)
+            record = writer_record(spec, [(app, 0)])
+            record["commands"][0]["output"] += f"full output: {full}\n"
+            (outputs_of(loop) / "writer_gate_r1.json").write_text(
+                json.dumps(record))
+
+        r = KcExitLoop(slice_dir, [("code-writer", DONE, effect),
+                                   V["review_signoff"], *TAIL],
+                       repo_root=repo)
+        with tree_is(TREE):
+            assert run_to_exit(r) == 0
+        log = Path(load_state(slice_dir)["phases"]["1"]["gate_green_log"])
+        assert log.read_text().endswith(
+            f"full output: {full}\n\n=== kc's full output ({full}) ===\n"
+            "every line kc ran\n")
+
+
+def test_a_reused_touched_gate_records_what_a_run_of_it_would():
+    touched = ["frontend/src/App.tsx", "backend/app/api.py"]
+    frontend, backend = component_argv("frontend"), component_argv("backend")
+    with tempfile.TemporaryDirectory() as tmp:
+        real_dir, _, real, code = touched_gate_run(
+            tmp, [V["exec_done"], V["review_signoff"], *TAIL], [0, 0],
+            touched)
+        assert code == 0 and len(real.phase_gate_runs) == 2
+        real_ps = load_state(real_dir)["phases"]["1"]
+        real_log = Path(real_ps["gate_green_log"]).read_text()
+    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
+        slice_dir, repo, r, code = touched_gate_run(
+            tmp, [wrote_gate((frontend, 0), (backend, 0)),
+                  V["review_signoff"], *TAIL], [], touched)
+        assert code == 0 and not r.script
+        assert r.phase_gate_runs == []
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["gate_projects"] == real_ps["gate_projects"] == [
+            gate_entry("frontend", "green"), gate_entry("backend", "green")]
+        assert ps["gate_cmd"] == real_ps["gate_cmd"]
+        # the log is the real run's, laid out by the same code, under the
+        # reuse's header
+        record = outputs_of(r) / "writer_gate_r1.json"
+        assert Path(ps["gate_green_log"]).read_text() \
+            == reused_header(record) + real_log
+        assert ("It covers frontend, backend: the phase's Target and every "
+                "project its diff touches.") in reviewer_prompt(r)
+        assert ("gate #1 reusing the writer's run (writer_gate_r1.json) — "
+                f"tree {TREE[:12]} unchanged since it began, and for the "
+                "components the phase's diff touches: backend") \
+            in (slice_dir / "log.txt").read_text()
+    # a component a gate ruling waives is in no run, the writer's or the
+    # driver's: the record without it is the gate
+    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
+        slice_dir, repo, r, code = touched_gate_run(
+            tmp, [wrote_gate((frontend, 0)), V["review_signoff"], *TAIL], [],
+            touched, rulings=["gate backend — Jenkins validation build — "
+                              "suites need Postgres"])
+        assert code == 0 and r.phase_gate_runs == []
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["gate_projects"] == [gate_entry("frontend", "green"),
+                                       gate_entry("backend", "waived")]
+        assert gate_rows(slice_dir)[0]["reused"]
+
+
+def test_a_reused_root_gate_that_fell_back_is_the_whole_repos():
+    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
+        slice_dir, repo, r, code = root_gate_run(
+            tmp, [wrote_gate((ROOT_ARGV, 3), (BARE_ARGV, 0)),
+                  V["review_signoff"], *TAIL], [])
+        assert code == 0 and not r.script
+        assert r.phase_gate_runs == []
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["gate_cmd"] == "kc project test"
+        assert ps["gate_green_commit"] == r.fake_git.head
+        log = Path(ps["gate_green_log"]).read_text()
+        assert log.index("--project root: exit 3") < log.index(
+            "=== `kc project test --project root` ran nothing (exit 3) — the "
+            "gate is the whole repo: `kc project test` ===") \
+            < log.index("kc project test: exit 0")
+        assert f"`kc project test` in {repo} — with full output in" \
+            in reviewer_prompt(r)
+    # nothing ran anywhere is reused as nothing ran
+    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
+        slice_dir, repo, r, code = root_gate_run(
+            tmp, [wrote_gate((ROOT_ARGV, 3), (BARE_ARGV, 3)),
+                  V["review_signoff"], *TAIL], [3, 3])
+        assert code == 0 and not r.script
+        rows = gate_rows(slice_dir)
+        # the merge re-gates: no green on record, and the tree, still the
+        # writer's, takes its run again
+        assert [(h["outcome"], bool(h.get("reused"))) for h in rows] == [
+            ("nothing_ran", True), ("nothing_ran", True)]
+        assert r.phase_gate_runs == []
+
+
+def reuse_miss_run(tmp, effect, tree=TREE):
+    """One phase on PROJECT whose code-writer leaves `effect` behind, gated
+    by the driver's own gate on a tree that hashes to `tree`."""
+    slice_dir, repo = make_slice(tmp)
+    r = KcExitLoop(slice_dir, [("code-writer", DONE, effect),
+                               V["review_signoff"], *TAIL], repo_root=repo)
+    with tree_is(tree):
+        code = run_to_exit(r)
+    return slice_dir, repo, r, code
+
+
+def assert_gate_ran(slice_dir, r, why=None):
+    """The driver ran its own gate, reusing nothing — and logged `why` it
+    did not reuse round 1's record, or nothing at all with no `why`."""
+    assert r.phase_gate_runs, "the driver ran its own gate"
+    assert not any("reused" in h for h in gate_rows(slice_dir))
+    narration = (slice_dir / "log.txt").read_text()
+    assert "[P1] gate #1 running (" in narration
+    assert "reusing the writer's run" not in narration
+    if why is None:
+        assert "not reused" not in narration
+    else:
+        assert ("[P1] the writer's gate run (writer_gate_r1.json) not reused "
+                f"— {why}; running the gate\n") in narration
+
+
+def test_a_writer_run_on_another_tree_is_never_the_drivers_gate():
+    app = component_argv(PROJECT)
+    # the tree changed after the run
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _, r, code = reuse_miss_run(tmp, ran_gate((app, 0)),
+                                               tree=OTHER_TREE)
+        assert code == 0
+        assert_gate_ran(slice_dir, r, (
+            f"the tree changed after it began (began {TREE[:12]}, ended "
+            f"{TREE[:12]}, now {OTHER_TREE[:12]})"))
+    # ... or while it ran, and is back where it began
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _, r, code = reuse_miss_run(
+            tmp, ran_gate((app, 0), end=OTHER_TREE))
+        assert code == 0
+        assert_gate_ran(slice_dir, r, (
+            f"the tree changed after it began (began {TREE[:12]}, ended "
+            f"{OTHER_TREE[:12]}, now {TREE[:12]})"))
+
+    # a tree git cannot hash is no tree to vouch for
+    def unhashable(root):
+        raise ValueError("git is gone")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = KcExitLoop(slice_dir, [wrote_gate((app, 0)), V["review_signoff"],
+                                   *TAIL], repo_root=repo)
+        with patched(run_loop, content_tree=unhashable):
+            assert run_to_exit(r) == 0
+        assert_gate_ran(slice_dir, r,
+                        "the tree could not be hashed: git is gone")
+
+
+def test_a_writer_run_of_other_commands_or_a_red_is_never_the_drivers_gate():
+    app = component_argv(PROJECT)
+    frontend, backend = component_argv("frontend"), component_argv("backend")
+    touched = ["frontend/src/App.tsx", "backend/app/api.py"]
+    # a red is never reused, whatever the tree
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _, r, code = reuse_miss_run(tmp, ran_gate((app, 1)))
+        assert code == 0
+        assert_gate_ran(slice_dir, r, f"`{' '.join(app)}` went red")
+    # the diff touches a component the run did not gate
+    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
+        slice_dir, _, r, code = touched_gate_run(
+            tmp, [wrote_gate((frontend, 0)), V["review_signoff"], *TAIL],
+            [0, 0], touched)
+        assert code == 0
+        assert_gate_ran(slice_dir, r, (
+            "it ran `kc project test --project frontend`, the gate is `kc "
+            "project test --project frontend`, `kc project test --project "
+            "backend`"))
+    # the run gated a component a gate ruling waives
+    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
+        slice_dir, _, r, code = touched_gate_run(
+            tmp, [wrote_gate((frontend, 0), (backend, 0)),
+                  V["review_signoff"], *TAIL], [0], touched,
+            rulings=["gate backend — Jenkins validation build — suites need "
+                     "Postgres"])
+        assert code == 0
+        assert_gate_ran(slice_dir, r, (
+            "it ran `kc project test --project frontend`, `kc project test "
+            "--project backend`, the gate is `kc project test --project "
+            "frontend`"))
+    # a root that ran nothing is the whole repo's gate too
+    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
+        slice_dir, _, r, code = root_gate_run(
+            tmp, [wrote_gate((ROOT_ARGV, 3)), V["review_signoff"], *TAIL],
+            [3, 0])
+        assert code == 0
+        assert_gate_ran(slice_dir, r, (
+            "it ran `kc project test --project root`, the gate is `kc "
+            "project test --project root`, `kc project test`"))
+
+
+def test_a_writer_record_off_shape_or_from_elsewhere_is_not_reused():
+    app = component_argv(PROJECT)
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _, r, code = reuse_miss_run(tmp, ran_gate(text="{torn"))
+        assert code == 0
+        assert_gate_ran(slice_dir, r, (
+            "unreadable: Expecting property name enclosed in double quotes: "
+            "line 1 column 2 (char 1)"))
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _, r, code = reuse_miss_run(
+            tmp, ran_gate((app, 0), commands=[]))
+        assert code == 0
+        assert_gate_ran(slice_dir, r, "unreadable: `commands` is empty")
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _, r, code = reuse_miss_run(
+            tmp, ran_gate((app, 0), start_tree=None))
+        assert code == 0
+        assert_gate_ran(slice_dir, r, "unreadable: no `start_tree` of type str")
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r, code = reuse_miss_run(
+            tmp, ran_gate((app, 0), work_root="/elsewhere"))
+        assert code == 0
+        assert_gate_ran(slice_dir, r,
+                        f"it ran in /elsewhere, the gate runs in {repo}")
+
+
+def test_only_the_latest_writer_rounds_run_can_be_the_drivers_gate():
+    """A review-fix round that never ran the wrapper leaves round 1's record
+    the only one: the gate after it runs, and says nothing of round 1's."""
+    app = component_argv(PROJECT)
+    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
+        slice_dir, repo = make_slice(tmp)
+        r = KcExitLoop(slice_dir, [wrote_gate((app, 0)), V["review_issues"],
+                                   V["exec_done"], V["review_signoff"],
+                                   *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0 and not r.script
+        rows = gate_rows(slice_dir)
+        assert [bool(h.get("reused")) for h in rows] == [True, False]
+        assert [argv for argv, _, _ in r.phase_gate_runs] == [app]
+        assert gate_spec(r)["round"] == 2
+        assert (outputs_of(r) / "writer_gate_r1.json").exists()
+        assert not (outputs_of(r) / "writer_gate_r2.json").exists()
+        narration = (slice_dir / "log.txt").read_text()
+        assert "not reused" not in narration
+        assert "[P1] gate #2 running (" in narration
+
+
+def test_every_code_writer_dispatch_writes_the_gate_spec_with_its_round():
+    specs = []
+
+    def seen(loop):
+        specs.append(gate_spec(loop))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [("code-writer", DONE, seen),
+                                     ("code-writer", DONE, seen),
+                                     V["review_issues"],
+                                     ("code-writer", DONE, seen),
+                                     V["review_signoff"], *TAIL],
+                         repo_root=repo, gates=[False, True, True])
+        assert run_to_exit(r) == 0 and not r.script
+        assert [s["round"] for s in specs] == [1, 2, 3]
+        assert specs[0] == {
+            "phase": "1", "round": 1, "work_root": str(repo),
+            "gate_cwd": str(repo), "argv": component_argv(PROJECT),
+            "fallback": None,
+            "touched": {"merge_base": "base123", "target": PROJECT,
+                        "waived": []}}
+        assert all(run_loop.gate_spec_problem(s) is None for s in specs)
+    # root: the whole repo after an empty root, and no touched components
+    specs.clear()
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First", "root")])
+        r = ScriptedLoop(slice_dir, [("code-writer", DONE, seen),
+                                     V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        with patched(run_loop, load_project_dirs=root_components):
+            assert run_to_exit(r) == 0
+        assert (specs[0]["argv"], specs[0]["fallback"], specs[0]["touched"]) \
+            == (ROOT_ARGV, BARE_ARGV, None)
+    # a gate ruling's component is named, so the wrapper waives it too
+    specs.clear()
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[("1", "Web", "frontend")])
+        ruled_plan(slice_dir, "gate backend — Jenkins validation build — "
+                   "suites need Postgres",
+                   body=phase_section("1", "Web", "frontend"))
+        r = ScriptedLoop(slice_dir, [("code-writer", DONE, seen),
+                                     V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        with patched(run_loop, load_project_dirs=split_components):
+            assert run_to_exit(r) == 0
+        assert specs[0]["touched"] == {"merge_base": "base123",
+                                       "target": "frontend",
+                                       "waived": ["backend"]}
+
+
+def test_a_shared_repos_gate_spec_is_its_worktrees():
+    specs = []
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        gated_specs(tmp)
+        shared = specs_phase(slice_dir, tmp)
+        r = ScriptedLoop(slice_dir, [
+            ("code-writer", DONE, lambda loop: specs.append(gate_spec(loop))),
+            V["review_signoff"], *TAIL], repo_root=repo)
+        work = specs_worktree(r)
+        with patched(run_loop, shared_repo_dirs=lambda: {shared}):
+            assert run_to_exit(r) == 0
+        assert (specs[0]["work_root"], specs[0]["gate_cwd"]) \
+            == (str(work), str(work))
+        assert (specs[0]["argv"], specs[0]["fallback"], specs[0]["touched"]) \
+            == (BARE_ARGV, None, None)
+
+
+def test_a_phase_with_no_gate_gets_no_gate_spec():
+    with tempfile.TemporaryDirectory() as tmp:
+        make_sibling(tmp, manifest=False)
+        slice_dir, repo = make_slice(tmp)
+        written = []
+        r = ScriptedLoop(slice_dir, [
+            ("code-writer", DONE, lambda loop: written.append(
+                (outputs_of(loop) / "gate_spec.json").exists())),
+            V["review_signoff"], *TAIL], repo_root=repo)
+        (slice_dir / "plan.md").write_text(
+            "# plan\n\n" + phase_section("1", "Chart", "../Sibling"))
+        assert run_to_exit(r) == 0
+        assert written == [False]
+        writer = next(p for role, p in r.prompts if role == "code-writer")
+        assert " gate " + str(outputs_of(r)) not in writer
+        assert "has no kc manifest" in writer
+
+
+def test_every_code_writer_prompt_names_the_gate_wrapper():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["exec_done"],
+                                     V["review_issues"], V["exec_done"],
+                                     V["review_signoff"], *TAIL],
+                         repo_root=repo, gates=[False, True, True])
+        assert run_to_exit(r) == 0 and not r.script
+        writers = [p.replace("\n", " ") for role, p in r.prompts
+                   if role == "code-writer"]
+        assert len(writers) == 3
+        assert writers[0].startswith("Execute phase P1")
+        assert writers[1].startswith("The test gate for phase P1")
+        assert writers[2].startswith("You are resolving review findings")
+        hint = (f"before handing back — through {wrapper_cmd(outputs_of(r))}, "
+                "which runs the driver's own gate: `kc project test --project "
+                f"{PROJECT}`, and the same for every other component the "
+                f"phase's diff touches. {run_loop.GATE_REUSE_HINT}. "
+                f"{run_loop.NOTHING_RAN_HINT}.")
+        for writer in writers:
+            assert hint in writer
+        assert ("checks; run the gate yourself before handing back — "
+                "through") in writers[1]
+        assert "test your own work" not in writers[1]
+
+
+# The wrapper itself, over real git: `_tee_exec` is the only seam faked.
+
+class FakeTee:
+    """`_tee_exec` scripted by exit code, in order (0 once spent): each
+    call's output passed through to stdout and returned, as the real one's
+    is; `effect`, when given, runs once, before the first call's output."""
+
+    def __init__(self, rcs=(), effect=None):
+        self.rcs = list(rcs)
+        self.calls = []      # (argv, cwd)
+        self.effect = effect
+
+    def __call__(self, argv, cwd):
+        if self.effect is not None:
+            self.effect()
+            self.effect = None
+        rc_ = self.rcs.pop(0) if self.rcs else 0
+        self.calls.append((list(argv), Path(cwd)))
+        output = f"{' '.join(argv)}: exit {rc_}\n"
+        sys.stdout.write(output)
+        return rc_, output
+
+
+def wrapper_repo(tmp):
+    """A real repo laid out as split_components lays its components out,
+    everything committed on main: (the repo, that commit)."""
+    repo = Path(tmp) / "repo"
+    for rel in ("frontend/App.tsx", "backend/api.py",
+                "backend/worker/job.py", "README.md", ".gitignore"):
+        path = repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("*.log\n" if rel == ".gitignore" else f"{rel}\n")
+    sh(repo, "init", "-q", "-b", "main")
+    sh(repo, "add", "-A")
+    sh(repo, "commit", "-qm", "init")
+    return repo, sh(repo, "rev-parse", "HEAD")
+
+
+def write_spec(tmp, repo, argv, fallback=None, touched=None, round_=1):
+    outputs = Path(tmp) / "phases" / "P1"
+    outputs.mkdir(parents=True, exist_ok=True)
+    spec = outputs / "gate_spec.json"
+    spec.write_text(json.dumps({
+        "phase": "1", "round": round_, "work_root": str(repo),
+        "gate_cwd": str(repo), "argv": argv, "fallback": fallback,
+        "touched": touched}))
+    return spec
+
+
+def run_wrapper(spec, tee, components=split_components):
+    with patched(run_loop, _tee_exec=tee, load_project_dirs=components):
+        return call(run_loop.cmd_gate, spec=str(spec))
+
+
+def record_of(spec, round_=1):
+    return json.loads((spec.parent / f"writer_gate_r{round_}.json").read_text())
+
+
+def test_the_gate_wrapper_runs_the_drivers_gate_and_records_the_run():
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        repo, base = wrapper_repo(tmp)
+        # since the base: worker committed, backend an untracked file and
+        # frontend (the Target) an edit — uncommitted work is the gate's too
+        (repo / "backend" / "worker" / "job.py").write_text("changed\n")
+        sh(repo, "commit", "-qam", "worker")
+        (repo / "backend" / "new.py").write_text("new\n")
+        (repo / "frontend" / "App.tsx").write_text("changed\n")
+        spec = write_spec(tmp, repo, component_argv("frontend"), touched={
+            "merge_base": base, "target": "frontend", "waived": []})
+        tee = FakeTee()
+        code, out, err = run_wrapper(spec, tee)
+        assert code == 0, err
+        names = ("frontend", "backend", "worker")
+        assert tee.calls == [(component_argv(c), repo) for c in names]
+        record = record_of(spec)
+        assert run_loop.writer_gate_record_problem(record) is None
+        tree = run_loop.content_tree(repo)
+        assert record["start_tree"] == record["end_tree"] == tree
+        assert (record["phase"], record["round"], record["work_root"],
+                record["gate_cwd"], record["outcome"]) \
+            == ("1", 1, str(repo), str(repo), "green")
+        assert record["commands"] == [
+            {"argv": component_argv(c), "rc": 0,
+             "output": f"kc project test --project {c}: exit 0\n"}
+            for c in names]
+        assert out.index(f"=== `kc project test --project frontend` from "
+                         f"{repo} ===") \
+            < out.index("kc project test --project frontend: exit 0") \
+            < out.index("=== the phase's diff touches backend: `kc project "
+                        "test --project backend` ===") \
+            < out.index("kc project test --project backend: exit 0") \
+            < out.index("=== the phase's diff touches worker:")
+        record_path = spec.parent / "writer_gate_r1.json"
+        assert out.rstrip("\n").endswith(
+            f"\n=== gate GREEN on tree {tree[:12]}, recorded in "
+            f"{record_path}. Hand back this tree — committing it changes "
+            "nothing — and the driver takes this run as its gate; edit "
+            "anything first and it runs the gate again. ===")
+        # what it vouched for survives the commit
+        sh(repo, "add", "-A")
+        sh(repo, "commit", "-qm", "P1")
+        assert run_loop.content_tree(repo) == tree
+        # a component a gate ruling waives is named, not run — and the
+        # round's later run replaces its record
+        spec = write_spec(tmp, repo, component_argv("frontend"), touched={
+            "merge_base": base, "target": "frontend", "waived": ["backend"]})
+        tee = FakeTee()
+        code, out, _ = run_wrapper(spec, tee)
+        assert code == 0
+        assert [argv for argv, _ in tee.calls] == [
+            component_argv("frontend"), component_argv("worker")]
+        assert ("=== the phase's diff touches backend: `kc project test "
+                "--project backend` waived by plan.md's `## Driver rulings` "
+                "— not run ===") in out
+        assert [c["argv"] for c in record_of(spec)["commands"]] == [
+            component_argv("frontend"), component_argv("worker")]
+
+
+def test_the_gate_wrapper_exits_with_the_gates_outcome():
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        repo, base = wrapper_repo(tmp)
+        (repo / "backend" / "api.py").write_text("changed\n")
+        spec = write_spec(tmp, repo, component_argv("frontend"), touched={
+            "merge_base": base, "target": "frontend", "waived": []})
+        code, out, _ = run_wrapper(spec, FakeTee([0, 1]))
+        assert code == 1
+        assert out.rstrip("\n").endswith(
+            "\n=== gate RED: `kc project test --project backend` ===")
+        assert record_of(spec)["outcome"] == "red"
+        # kc's usage error is red here, never a pass
+        code, out, _ = run_wrapper(spec, FakeTee([2, 0]))
+        assert code == 1
+        assert "=== gate RED: `kc project test --project frontend` ===" in out
+        code, out, _ = run_wrapper(spec, FakeTee([3, 3]))
+        assert code == 3
+        assert out.rstrip("\n").endswith(
+            "\n=== gate: nothing ran (exit 3) — not red, nothing to fix ===")
+        assert record_of(spec)["outcome"] == "nothing_ran"
+        code, _, _ = run_wrapper(spec, FakeTee([3, 0]))
+        assert code == 0 and record_of(spec)["outcome"] == "green"
+        # a file no component holds, where kc lists no root: said, not run
+
+        def rootless(cwd):
+            components = split_components(cwd)
+            del components["root"]
+            return components
+
+        (repo / "README.md").write_text("changed\n")
+        tee = FakeTee()
+        code, out, _ = run_wrapper(spec, tee, components=rootless)
+        assert code == 0
+        assert [argv for argv, _ in tee.calls] == [
+            component_argv("frontend"), component_argv("backend")]
+        assert ("=== the phase's diff touches files outside every component "
+                "and kc lists no root — no gate covers them ===") in out
+
+
+def test_the_gate_wrapper_falls_back_to_the_whole_repo_only_after_an_empty_root():
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        repo, _ = wrapper_repo(tmp)
+        spec = write_spec(tmp, repo, ROOT_ARGV, fallback=BARE_ARGV)
+        tee = FakeTee([3, 0])
+        code, out, _ = run_wrapper(spec, tee)
+        assert code == 0
+        assert [argv for argv, _ in tee.calls] == [ROOT_ARGV, BARE_ARGV]
+        assert ("=== `kc project test --project root` ran nothing (exit 3) — "
+                "the gate is the whole repo: `kc project test` ===") in out
+        for rcs in ([0], [1]):
+            tee = FakeTee(rcs)
+            code, _, _ = run_wrapper(spec, tee)
+            assert code == rcs[0]
+            assert [argv for argv, _ in tee.calls] == [ROOT_ARGV]
+        code, out, _ = run_wrapper(spec, FakeTee([3, 1]))
+        assert code == 1 and "=== gate RED: `kc project test` ===" in out
+
+
+def test_a_tree_that_changed_while_the_wrapper_ran_is_recorded_so():
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        repo, _ = wrapper_repo(tmp)
+        spec = write_spec(tmp, repo, component_argv(PROJECT))
+        start = run_loop.content_tree(repo)
+        tee = FakeTee(effect=lambda: (repo / "mid_run.py").write_text("x\n"))
+        code, out, _ = run_wrapper(spec, tee)
+        assert code == 0
+        record = record_of(spec)
+        end = run_loop.content_tree(repo)
+        assert record["start_tree"] == start != end == record["end_tree"]
+        assert out.rstrip("\n").endswith(
+            f"\n=== gate GREEN, but the tree changed while it ran "
+            f"({start[:12]} → {end[:12]}): the driver will run the gate "
+            "again. Run this once more on the finished tree to spare it "
+            "that. ===")
+        assert "recorded in" not in out
+
+
+def test_the_gate_wrapper_without_a_usable_spec_runs_and_records_nothing():
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        repo, base = wrapper_repo(tmp)
+        outputs = Path(tmp) / "phases" / "P1"
+        outputs.mkdir(parents=True)
+        tee = FakeTee()
+        code, _, err = run_wrapper(outputs / "gate_spec.json", tee)
+        assert code == 2 and err.startswith("gate: cannot read the gate spec")
+        for text in ("{torn", json.dumps([1]), json.dumps({"phase": "1"})):
+            (outputs / "gate_spec.json").write_text(text)
+            code, _, err = run_wrapper(outputs / "gate_spec.json", tee)
+            assert code == 2 and err.startswith("gate: "), err
+        touched = {"merge_base": base, "target": "frontend", "waived": []}
+        # kc cannot list the components
+        spec = write_spec(tmp, repo, component_argv("frontend"),
+                          touched=touched)
+        code, _, err = run_wrapper(spec, tee,
+                                   components=kc_lists(repo="kc is down"))
+        assert (code, err) == (2, "gate: kc is down\n")
+        # a merge base git does not know
+        spec = write_spec(tmp, repo, component_argv("frontend"),
+                          touched=dict(touched, merge_base="f" * 40))
+        code, _, err = run_wrapper(spec, tee)
+        assert code == 2 and "git diff" in err
+        # a tree git cannot hash
+        (Path(tmp) / "plain").mkdir()
+        spec = write_spec(tmp, Path(tmp) / "plain", component_argv(PROJECT))
+        code, _, err = run_wrapper(spec, tee)
+        assert code == 2 and "git rev-parse" in err
+        assert tee.calls == []
+        assert not list(outputs.glob("writer_gate_r*.json"))
+
+
+def test_tee_exec_passes_a_commands_output_through_and_keeps_it():
+    with tempfile.TemporaryDirectory() as tmp:
+        raw = io.BytesIO()
+        out = io.TextIOWrapper(raw, encoding="utf-8")
+        argv = [sys.executable, "-c",
+                "import os, sys; print(os.getcwd()); "
+                "print('to err', file=sys.stderr); sys.exit(3)"]
+        with patched(sys, stdout=out):
+            print("before", flush=True)
+            code, output = run_loop._tee_exec(argv, Path(tmp))
+        out.flush()
+        assert code == 3
+        assert os.path.realpath(tmp) in output and "to err" in output
+        assert raw.getvalue().decode() == "before\n" + output
+
+
+def test_content_tree_is_the_tree_a_commit_of_the_working_tree_makes():
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        repo, _ = wrapper_repo(tmp)
+        clean = run_loop.content_tree(repo)
+        assert clean == sh(repo, "rev-parse", "HEAD^{tree}")
+        index = repo / ".git" / "index"
+        before = index.read_bytes()
+        (repo / "README.md").write_text("changed\n")
+        (repo / "new.py").write_text("new\n")
+        dirty = run_loop.content_tree(repo)
+        assert dirty != clean
+        assert index.read_bytes() == before, "the real index is untouched"
+        # an ignored file, or a timestamp, is no part of it
+        (repo / "run.log").write_text("noise\n")
+        os.utime(repo / "README.md", (0, 0))
+        assert run_loop.content_tree(repo) == dirty
+        assert index.read_bytes() == before
+        sh(repo, "add", "-A")
+        sh(repo, "commit", "-qm", "work")
+        assert sh(repo, "rev-parse", "HEAD^{tree}") == dirty
+        assert run_loop.content_tree(repo) == dirty
+        # a linked worktree has an index of its own, and a tree of its own
+        work = Path(tmp) / "work"
+        sh(repo, "worktree", "add", "-q", "-b", "side", str(work))
+        assert run_loop.content_tree(work) == dirty
+        (work / "side.py").write_text("side\n")
+        work_index = Path(sh(work, "rev-parse", "--git-path", "index"))
+        assert work_index.is_absolute()
+        before = work_index.read_bytes()
+        side = run_loop.content_tree(work)
+        assert side != dirty and work_index.read_bytes() == before
+        assert run_loop.content_tree(repo) == dirty
+        sh(work, "add", "-A")
+        sh(work, "commit", "-qm", "side")
+        assert sh(work, "rev-parse", "HEAD^{tree}") == side
+    # no index yet: what is there, as the first commit will hold it
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        repo = Path(tmp)
+        sh(repo, "init", "-q", "-b", "main")
+        (repo / "a.py").write_text("a\n")
+        first = run_loop.content_tree(repo)
+        assert not (repo / ".git" / "index").exists()
+        sh(repo, "add", "-A")
+        sh(repo, "commit", "-qm", "first")
+        assert sh(repo, "rev-parse", "HEAD^{tree}") == first
+    # outside git, or nowhere at all: git's own message, never a hash
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        for where in (Path(tmp), Path(tmp) / "gone"):
+            try:
+                run_loop.content_tree(where)
+            except ValueError as e:
+                assert "git rev-parse --git-path index" in str(e), e
+            else:
+                raise AssertionError(f"{where} hashed")
+
+
+def test_the_drivers_gate_is_the_wrappers_own_run_on_the_tree_handed_back():
+    """End to end over real git: the writer runs the wrapper on its spec,
+    commits what it ran on, and hands back; the driver replays that run."""
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo = make_slice(tmp)
+        sh(repo, "init", "-q", "-b", "main")
+        sh(repo, "add", "-A")
+        sh(repo, "commit", "-qm", "init")
+        ran = []
+
+        def works_and_gates(loop):
+            (repo / "src.py").write_text("the phase's\n")
+            ran.append(call(run_loop.cmd_gate, spec=str(
+                outputs_of(loop) / "gate_spec.json")))
+            sh(repo, "add", "-A")
+            sh(repo, "commit", "-qm", "P1")
+
+        r = KcExitLoop(slice_dir, [("code-writer", DONE, works_and_gates),
+                                   V["review_signoff"], *TAIL],
+                       repo_root=repo)
+        r.fake_git.merge_bases = [sh(repo, "rev-parse", "HEAD")]
+        tee = FakeTee()
+        with patched(run_loop, _tee_exec=tee):
+            assert run_to_exit(r) == 0
+        assert ran[0][0] == 0, ran
+        assert [argv for argv, _ in tee.calls] == [component_argv(PROJECT)]
+        assert r.phase_gate_runs == []
+        assert gate_rows(slice_dir)[0]["reused"] \
+            == str(outputs_of(r) / "writer_gate_r1.json")
+        assert load_state(slice_dir)["phases"]["1"]["gate_green_commit"] \
+            == r.fake_git.head
 
 
 # -- kc's full output inlined into the gate log (AIWF-85) ---------------------
@@ -4281,10 +5088,12 @@ def test_a_sibling_repos_component_resolves_in_that_repo():
         assert target.gate_argv == ["kc", "project", "test",
                                     "--project", "aac-tools"]
         assert r._executor_where(target) == f" in the sibling repo {sib}"
-        assert r._gate_hint(target) == (
-            f" (`kc project test --project aac-tools` from {sib} — and the "
-            "same for every other component the phase's diff touches). "
-            + run_loop.NOTHING_RAN_HINT)
+        outputs = slice_dir / "phases" / "P1"
+        assert r._gate_hint(target, outputs) == (
+            f" — through {wrapper_cmd(outputs)}, which runs the driver's own "
+            f"gate: `kc project test --project aac-tools` from {sib}, and the "
+            "same for every other component the phase's diff touches. "
+            f"{run_loop.GATE_REUSE_HINT}. {run_loop.NOTHING_RAN_HINT}")
         # a checkout without a manifest has no components to ask for, and
         # the spec repo beside it has none either
         assert lists.asked == ["repo", "ArgoCDTools"]
@@ -4304,8 +5113,10 @@ def test_the_invoking_repos_components_shadow_a_siblings():
             target = r._resolve_target("root")
         assert target.git_root == repo and target.gate_cwd == repo
         assert r._executor_where(target) == ""
-        assert r._gate_hint(target).startswith(
-            " (`kc project test --project root`; when that runs nothing")
+        outputs = slice_dir / "phases" / "P1"
+        assert r._gate_hint(target, outputs).startswith(
+            f" — through {wrapper_cmd(outputs)}, which runs the driver's own "
+            "gate: `kc project test --project root`, and bare")
         assert lists.asked == ["repo"]
 
 
@@ -4479,7 +5290,9 @@ def test_a_shared_repos_phase_is_dispatched_gated_and_checked_in_its_worktree():
                 assert where in prompt, role
                 assert "git add -A" not in prompt
         writer = next(p for role, p in r.prompts if role == "code-writer")
-        assert f"(`kc project test` from {work})" in writer
+        assert (f" — through {wrapper_cmd(slice_dir / 'phases' / 'P1')}, "
+                "which runs the driver's own gate: `kc project test` from "
+                f"{work}. {run_loop.GATE_REUSE_HINT}.") in writer
         assert r.gate_cwds and set(r.gate_cwds) == {work}
         adds = [c for root, c in r.fake_git.calls
                 if c[:2] == ("worktree", "add")]

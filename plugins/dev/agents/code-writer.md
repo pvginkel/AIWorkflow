@@ -52,8 +52,9 @@ author prose docs.
    a value was chosen, or why the diff is correct.
 7. **Run the gate yourself before handing back** — your dispatch names it. Iterate on targeted
    runs (single tests, the linter **once**, collecting every violation and fixing all of them in
-   one message); the full gate confirms at the end. The driver re-runs it after you hand back; a
-   red gate comes back as a fix round.
+   one message); the full gate confirms at the end, as your last run on the finished tree. The
+   driver runs it again after you hand back only when that run was not green on the tree you
+   hand back; a red gate comes back as a fix round.
 8. **Never work around an environmental problem** (broken harness, missing tool or credential).
    Report `blocked` — that is correct behavior, not failure.
 9. **Never call a commit missing from a tree you have not fetched.** The driver fetches your

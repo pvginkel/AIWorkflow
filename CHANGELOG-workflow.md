@@ -4,6 +4,32 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-24 — The phase gate takes the writer's own green run when the tree has not changed (v0.9.127)
+
+Each round ran the full suite twice on one tree. The code-writer ran the gate, as its prompt
+told it to, and then the driver ran it again. Across ten PilotApp slices, 93 of 124 driver gates
+(133 of their 170 minutes) re-ran a green the writer had just seen on an unchanged tree. On
+slice 008 it was 42 of 56 minutes. The cost grows with suite size, and with 0.9.125's gate over
+every touched component.
+
+The writer now runs the gate through `run_loop.py gate phases/P<id>/gate_spec.json`, a spec the
+driver writes at every code-writer dispatch. The wrapper runs the driver's own gate commands:
+the Target's, root's fallback, and every touched component the gate would run. It records the
+run in `writer_gate_r<N>.json`: each command's exit code and output, and the tree's content
+hash when the run began and when it ended. At gate time the driver takes the latest round's
+record instead of running the suites, on three conditions: its commands are the ones the driver
+would run now, none went red, and the tree's hash now equals the hash at both ends of the run.
+It replays the record through the gate's own code. The log says so at its top and the history
+row names the record (`reused`); everything else reads as after a run. In any other case the
+driver gates as before, and its log says why it did not take the record. The content hash is
+git's tree id for the working tree, staged into a throwaway copy of the index, so committing
+after the run changes nothing. The first-round, gate-fix and review-fix dispatches name the
+wrapper and say what a green last run on the handed-back tree buys. The gate-fix round is now
+told to run the gate as well.
+
+Ruled with it (CLAUDE.md § Settled rulings): there is no test-result cache keyed on tree state,
+in kc or in the plugin, and a flake that passes the writer's run is an accepted risk. AIWF-93.
+
 ## 2026-10-24 — A relabel that routes a look entry away from the wrap-up is its mark (v0.9.126)
 
 The wrap-up's brief demanded a strike, a card request or a `leave` of every entry, so a `look`

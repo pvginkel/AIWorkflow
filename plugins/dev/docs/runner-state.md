@@ -92,10 +92,11 @@ loop-tail sweep (role `sweep`), one per doc gate (role `doc-gate`), one per gate
 branch outside the primary repo (role `wrap-up-gate`) and one per consult: `ts`,
 `phase`, `role`, `round`, `outcome`, `summary`, `session`, `transcript`, `duration_s` (a gate,
 sweep or doc-gate row's outcome is `green`, `red` or `nothing_ran`; a `wrap-up-gate` row names
-its `repo`). A wrap-up row carries the id lists of its verdict. A
-code-reviewer row additionally carries the verdict's `findings` list (id, severity, impact,
-category, anchor per finding — the review contract's telemetry) and a review-fix executor row
-its `refuted` list, exactly as the agent reported them. The
+its `repo`; a gate row taken from the writer's own run of the gate names that run's record in
+`reused`, and its `duration_s` is the replay's). A wrap-up row carries the id lists of its
+verdict. A code-reviewer row additionally carries the verdict's `findings` list (id, severity,
+impact, category, anchor per finding — the review contract's telemetry) and a review-fix executor
+row its `refuted` list, exactly as the agent reported them. The
 **transcript path** points at that session's conversation JSONL under
 `~/.claude/projects/`, with its own sub-agents beside it under `<session-id>/subagents/`, so any
 later session can research exactly what an agent saw and did. That is why `/dev:run-slice` commits
@@ -127,12 +128,16 @@ every doc-writer dispatch — git's answer written down, not an agent's copy, wi
 Secret`'s data lines stubbed; the folder's own `.gitignore`, `*`, keeps it out of any `git add -A`
 in the spec repo). A phase gate's `gate_r<N>.log` holds kc's own lines and, below them, the full
 output kc keeps under `/tmp/kc/project`, inlined whole, so the log stands on its own once that
-file is gone. A review round whose range changes Secret data leaves `review_r<N>.diff`
-beside its review, the range redacted the same way. What a dead round left uncommitted, set aside
-by the resume before it resets the tree, is under `phases/P<id>/set-aside/` (`r<N>.patch` and
-`r<N>-untracked/`, unredacted, so that folder ignores itself the same way;
-[run-loop.md](run-loop.md) § The per-phase round). Executor inputs come from `plan.md`, never
-from copies.
+file is gone; when the driver took the writer's own run instead, it says so at its top. Beside
+it, `gate_spec.json` is what the writer's gate wrapper runs, rewritten at every code-writer
+dispatch, and `writer_gate_r<N>.json` the wrapper's record of its last run in code-writer round
+`N`: the commands with their exit codes and output, and the tree's content hash when the run
+began and ended ([run-loop.md](run-loop.md) § The per-phase round). A review round whose range
+changes Secret data leaves `review_r<N>.diff` beside its review, the range redacted the same
+way. What a dead round left uncommitted, set aside by the resume before it resets the tree, is under
+`phases/P<id>/set-aside/` (`r<N>.patch` and `r<N>-untracked/`, unredacted, so that folder ignores
+itself the same way; [run-loop.md](run-loop.md) § The per-phase round). Executor inputs come from
+`plan.md`, never from copies.
 
 ## bailout.json and exit codes
 
