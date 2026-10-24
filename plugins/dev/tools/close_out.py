@@ -51,6 +51,10 @@ is judgment — and nobody edits either file by hand; importable by both loops
                of the slice still unplanned it is `for` (or `--into`), and
                stage that file; prints the strike that follows its commit.
                Writes neither the store nor the report.
+  held         the live entries of every report in the spec repo held for a
+               slice triage has not created — or, with `--for`, those for
+               one slice: what /dev:triage carries into the slice.md it
+               creates. Read-only.
   worklist     what waits for the wrap-up, with what is asked of each.
   show         one or more entries in full — the view a reader of the
                evidence takes, now that the report carries the ask alone.
@@ -76,7 +80,8 @@ is judgment — and nobody edits either file by hand; importable by both loops
 
 The route is computed at every render, never stored: `route()` reads an
 entry's kind and labels, the repositories the slice touched, and the stage
-of the slice a `for` names (still unplanned, or planned or running) against
+of the slice a `for` names (still unplanned, planned or running, or not
+created yet — held until triage creates it) against
 the two tables of the contract (§ The routes) — the policy is the operator's
 and lives here only. So do the run loop's triggers for what is owed before the
 push (`owed_before_push()`) and what a test phase would fail as worded
@@ -312,10 +317,10 @@ UNFELT = ("after-change", "after-incident", "not-observable")
 # -- the report (docs/close-out-template.md § The report) ---------------------
 
 REPORT_SECTIONS = ("Comes to you", "Card requests", "For the wrap-up",
-                   "Unlabelled", "Closed", "Record")
+                   "Unlabelled", "Closed", "Held for a later slice", "Record")
 # The counts line's word for each section, in the same order.
 COUNT_NAMES = ("to you", "card requests", "wrap-up", "unlabelled", "closed",
-               "record")
+               "held", "record")
 # The smoke counts that trail the counts line when there are any.
 NO_CONSEQUENCE = "no_consequence"
 NO_PROVENANCE = "no_provenance"
@@ -1080,7 +1085,7 @@ def relabel_entry(slice_dir: Path | str, eid: str, by: str, note: str,
     if dry_run:
         entry = _find(_read_store(slice_dir), eid)
         record = _relabel(entry, who, day, note_lines, kind, labels, slice_dir)
-        key, words = route(entry, touched_repos(slice_dir), slices_to_run(slice_dir))
+        key, words = route(entry, touched_repos(slice_dir), slice_stages(slice_dir))
         return f"{_note_text(record)}\nroute: {report_section(key)} — {words}"
     with _writing(slice_dir) as store:
         entry = _find(store, eid)
@@ -1575,12 +1580,15 @@ def rule_entry(slice_dir: Path | str, eid: str, words: str | None = None,
 
 
 def close_report(slice_dir: Path | str, words: str,
-                 date: str | None = None) -> tuple[int, list[str]]:
+                 date: str | None = None) -> tuple[int, list[str], list[str]]:
     """Close the report on the operator's word: every live entry without a
     ruling takes the words as its ruling and is struck. An entry that
     carries a ruling nobody executed — a `defer`, words read back and not
     acted on yet — stays live, and a report that keeps a live entry is not
-    closed. Returns how many entries were closed, and the ids that stay."""
+    closed. An entry held for a slice not created yet stays live too, and
+    the report closes over it: /dev:triage carries it into that slice, and
+    folds and strikes it in the closed report. Returns how many entries
+    were closed, the ids that stay, and the ids held."""
     words = (words or "").strip()
     if not words:
         raise ReportError("close needs the operator's --words")
@@ -1590,9 +1598,13 @@ def close_report(slice_dir: Path | str, words: str,
             raise ReportError(f"the report was closed on "
                               f"{store['closed']['date']} — "
                               f"{store['closed']['words']}")
-        n, stay = 0, []
+        touched, stages = touched_repos(slice_dir), slice_stages(slice_dir)
+        n, stay, held = 0, [], []
         for entry in store["entries"]:
             if entry.get("strike"):
+                continue
+            if route(entry, touched, stages)[0].startswith("held:"):
+                held.append(entry["id"])
                 continue
             if _ruled(entry):
                 stay.append(entry["id"])
@@ -1602,7 +1614,7 @@ def close_report(slice_dir: Path | str, words: str,
             n += 1
         if not stay:
             store["closed"] = {"date": day, "words": words}
-        return n, stay
+        return n, stay, held
 
 
 VERIFICATION_NAME = "verification.json"
@@ -1833,6 +1845,68 @@ def slices_to_run(slice_dir: Path | str) -> dict[int, tuple[str, str]] | None:
             for n, folder in folders.items()}
 
 
+_FOLDER_RE = re.compile(r"(\d+)_")
+# The stage of a slice folder that exists and is no longer to run: it has
+# run, or was cancelled (`slice_stages`).
+PAST = "past"
+# The width a `for` naming a slice not created yet is padded to when the
+# spec repo has no slice folder to take it from.
+FOR_WIDTH = 3
+
+
+def _slice_folders(root: Path) -> list[Path]:
+    """Every slice folder under the `slices` root, at any depth: a
+    `<number>_*` directory, whose own contents are not searched — every
+    other directory (backlog/, completed/, cancelled/ …) is. Hidden
+    directories and symlinked ones that are no slice folder are skipped."""
+    out: list[Path] = []
+    stack = [root]
+    while stack:
+        try:
+            children = sorted(stack.pop().iterdir())
+        except OSError:
+            continue
+        for child in children:
+            if child.name.startswith(".") or not child.is_dir():
+                continue
+            if _FOLDER_RE.match(child.name):
+                out.append(child)
+            elif not child.is_symlink():
+                stack.append(child)
+    return out
+
+
+def slice_stages(slice_dir: Path | str) -> dict[int, tuple[str, str]] | None:
+    """Number → (folder number as written, stage) of every slice folder
+    under the nearest `slices` ancestor (`_slice_folders`): `planned` or
+    `unplanned` (`_stage`) for one still to run (`_folders_to_run`), `own`
+    for the slice itself, PAST for any other — it has run, or was
+    cancelled. A number no folder holds is not in it: a slice not created
+    yet, which an entry's `for` holds it for. The routes take this map.
+    None without a `slices` ancestor."""
+    here = Path(slice_dir).resolve()
+    to_run = _folders_to_run(here)
+    if to_run is None:
+        return None
+    out = {n: (_FOLDER_RE.match(f.name).group(1), _stage(f)) for n, f in to_run.items()}
+    own = _FOLDER_RE.match(here.name)
+    if own:
+        out.setdefault(int(own.group(1)), (own.group(1), "own"))
+    for folder in _slice_folders(_slices_root(here)):
+        m = _FOLDER_RE.match(folder.name)
+        out.setdefault(int(m.group(1)), (m.group(1), PAST))
+    return out
+
+
+def _for_width(stages: dict[int, tuple[str, str]]) -> int:
+    """The width the spec repo writes its folder numbers in: the most
+    common, the wider of a tie; FOR_WIDTH without a folder."""
+    widths: dict[int, int] = {}
+    for written, _ in stages.values():
+        widths[len(written)] = widths.get(len(written), 0) + 1
+    return max(widths, key=lambda w: (widths[w], w)) if widths else FOR_WIDTH
+
+
 def _slice_number(target) -> int | None:
     """The slice number a `for` names — `12`, `012` and `012_slug` all
     name 12 — or None for a value that names none."""
@@ -1877,10 +1951,11 @@ none; --impact none takes --signal none, and --signal none takes
 --impact none or unknown.\
 """
 
-FOR_RULE = ("--for names another slice, still to run, that should take the "
-            "entry, never the slice being run — leave it out for an entry "
-            "about this one; an entry for a slice already planned or running "
-            "comes to the operator, since that run never reads slice.md")
+FOR_RULE = ("--for names another slice that should take the entry — one still "
+            "to run, or one triage has not created yet, which holds the entry "
+            "until it does — never the slice being run: leave it out for an "
+            "entry about this one; an entry for a slice already planned or "
+            "running comes to the operator, since that run never reads slice.md")
 
 # What `relabel --for` takes to remove the label.
 FOR_CLEAR = "none"
@@ -1942,32 +2017,40 @@ def check_labels(kind: str, labels: dict, consequence: str | None,
     target = labels.get("for")
     if target is not None and (not relabel or (given or {}).get("for") is not None):
         number = _slice_number(target)
-        pending = slices_to_run(slice_dir)
-        if pending is None:
+        stages = slice_stages(slice_dir)
+        slot = None if stages is None else stages.get(number)
+        if stages is None:
             errors.append(f"--for {target}: the slice folder has no `slices` "
                           "ancestor, so no slice still to run can be named")
-        elif number not in pending:
-            own = re.match(r"(\d+)_", Path(slice_dir).resolve().name)
-            if number is not None and own and number == int(own.group(1)):
-                errors.append(f"--for {target} is the slice being run: {FOR_RULE}")
-            else:
-                errors.append(f"--for {target}: no other slice still to run has "
-                              "that number (a <number>_* folder in slices/ or "
-                              f"slices/backlog/): {FOR_RULE}")
+        elif number is None:
+            errors.append(f"--for {target} names no slice — a slice is named by its "
+                          f"number: {FOR_RULE}")
+        elif slot and slot[1] == "own":
+            errors.append(f"--for {target} is the slice being run: {FOR_RULE}")
+        elif slot and slot[1] == PAST:
+            errors.append(f"--for {target}: slice {slot[0]} is no longer to run — its "
+                          "folder is outside slices/ and slices/backlog/ (it has run, "
+                          f"or was cancelled): {FOR_RULE}")
     return errors
 
 
 def normalise_for(labels: dict, slice_dir: Path | str) -> dict:
     """`for` as the folder's number is written (`12`, `012` and `012_slug`
-    all name 012)."""
+    all name 012); a slice not created yet at the width the spec repo
+    writes its folder numbers in (`_for_width`), so 11 and 011 store
+    alike. One `check_labels` refuses — the slice itself, one no longer to
+    run — stays as given, so the refusal names it."""
     target = labels.get("for")
     if target is None:
         return labels
     number = _slice_number(target)
-    pending = slices_to_run(slice_dir) or {}
-    if number in pending:
-        return {**labels, "for": pending[number][0]}
-    return labels
+    stages = slice_stages(slice_dir)
+    if number is None or stages is None:
+        return labels
+    if number not in stages:
+        return {**labels, "for": str(number).zfill(_for_width(stages))}
+    written, stage = stages[number]
+    return {**labels, "for": written} if stage in ("planned", "unplanned") else labels
 
 
 # -- the routes (close-out.md § The routes) ------------------------------------
@@ -2036,25 +2119,38 @@ def _fold(lab: dict) -> tuple[str, str]:
     return "wrap-up:fold", f"the wrap-up — fold into slice {lab['for']}"
 
 
-def _for_route(lab: dict, pending: dict | None) -> tuple[str, str] | None:
-    """Where the entry's `for` sends it, at the row the fold sits at: a
-    fold into a slice still unplanned; to the operator for one planned or
-    running, whose run never reads slice.md again; None — the table's next
-    rows, as if the label were not there — for a slice no longer to run.
-    Without `pending` (no `slices` ancestor, no context given), a fold."""
+def _held(lab: dict) -> tuple[str, str]:
+    return ("held:later", f"held for slice {lab['for']}, which triage has not created "
+            "yet — /dev:triage carries it into that slice's slice.md")
+
+
+def _for_route(lab: dict, stages: dict | None) -> tuple[str, str] | None:
+    """Where the entry's `for` sends it, at the row the fold sits at, by the
+    stage `slice_stages` gives the slice it names: a fold into a slice
+    still unplanned; to the operator for one planned or running, whose run
+    never reads slice.md again; held for one no folder holds, not created
+    yet; None — the table's next rows, as if the label were not there —
+    for a slice no longer to run, the slice itself, or a value that names
+    no slice. Without `stages` (no `slices` ancestor, no context given), a
+    fold."""
     target = lab.get("for")
     if not target:
         return None
-    if pending is None:
+    if stages is None:
         return _fold(lab)
-    slot = pending.get(_slice_number(target))
-    if slot is None:
+    number = _slice_number(target)
+    if number is None:
         return None
+    slot = stages.get(number)
+    if slot is None:
+        return _held(lab)
     if slot[1] == "planned":
         return ("operator:action",
                 f"to you — an action: slice {target} is planned or running and its run "
                 "never reads slice.md; add a phase or rule on its run")
-    return _fold(lab)
+    if slot[1] == "unplanned":
+        return _fold(lab)
+    return None
 
 
 def _card_or_close(repo: str, card: bool) -> tuple[str, str]:
@@ -2064,7 +2160,7 @@ def _card_or_close(repo: str, card: bool) -> tuple[str, str]:
 
 
 def _route_fix(entry: dict, lab: dict, touched: set[str] | None,
-               pending: dict | None = None) -> tuple[str, str]:
+               stages: dict | None = None) -> tuple[str, str]:
     """What should be fixed — every kind but `improvement`: the first row
     that fits."""
     kind = entry.get("kind")
@@ -2083,7 +2179,7 @@ def _route_fix(entry: dict, lab: dict, touched: set[str] | None,
         return "operator:decision", "to you — a decision"
     if kind == "event" and no_impact:                               # 3
         return "record", "the record"
-    taken = _for_route(lab, pending)
+    taken = _for_route(lab, stages)
     if taken:                                                       # 4
         return taken
     repo = _elsewhere(lab, touched)
@@ -2117,9 +2213,9 @@ def _route_fix(entry: dict, lab: dict, touched: set[str] | None,
 
 
 def _route_improvement(entry: dict, lab: dict, touched: set[str] | None,
-                       pending: dict | None = None) -> tuple[str, str]:
+                       stages: dict | None = None) -> tuple[str, str]:
     """What could be better: the first row that fits."""
-    taken = _for_route(lab, pending)
+    taken = _for_route(lab, stages)
     if taken:                                                       # 1
         return taken
     change = lab.get("change")
@@ -2140,21 +2236,21 @@ def _route_improvement(entry: dict, lab: dict, touched: set[str] | None,
 
 
 def table_route(entry: dict, touched: set[str] | None = None,
-                pending: dict | None = None) -> tuple[str, str]:
+                stages: dict | None = None) -> tuple[str, str]:
     """(key, the Route line's words) of a live entry by the tables alone —
     the wrap-up's mark not applied. `unlabelled` when the entry has no
     labels and is not a kind the tool labels itself. `touched` is
-    `touched_repos()`, `pending` `slices_to_run()`, of the slice."""
+    `touched_repos()`, `stages` `slice_stages()`, of the slice."""
     lab = effective_labels(entry)
     if lab is None or entry.get("kind") not in KINDS:
         return "unlabelled", "none yet — the entry has no labels"
     if entry["kind"] == "improvement":
-        return _route_improvement(entry, lab, touched, pending)
-    return _route_fix(entry, lab, touched, pending)
+        return _route_improvement(entry, lab, touched, stages)
+    return _route_fix(entry, lab, touched, stages)
 
 
 def route(entry: dict, touched: set[str] | None = None,
-          pending: dict | None = None) -> tuple[str, str]:
+          stages: dict | None = None) -> tuple[str, str]:
     """(key, the Route line's words) of an entry — computed, never stored.
     A struck entry has none: it is in the record. The wrap-up's mark
     overrides the table: a card asked for makes a card request; the
@@ -2163,7 +2259,7 @@ def route(entry: dict, touched: set[str] | None = None,
     table sent it to the wrap-up."""
     if entry.get("strike"):
         return "record", "the record"
-    key, words = table_route(entry, touched, pending)
+    key, words = table_route(entry, touched, stages)
     mark = (entry.get("wrap_up") or {}).get("outcome")
     if mark == "card":
         return "card:wrap-up", "card request — the wrap-up asks for a card"
@@ -2179,7 +2275,8 @@ def report_section(key: str) -> str:
     head = key.split(":", 1)[0]
     return {"operator": "Comes to you", "card": "Card requests",
             "wrap-up": "For the wrap-up", "unlabelled": "Unlabelled",
-            "closed": "Closed", "record": "Record"}[head]
+            "closed": "Closed", "held": "Held for a later slice",
+            "record": "Record"}[head]
 
 
 # What the slice's push must not carry. The report is worked after the doc
@@ -2266,13 +2363,13 @@ def _ruled(entry: dict) -> bool:
 
 
 def _asked(entry: dict, touched: set[str] | None,
-           pending: dict | None = None) -> str | None:
+           stages: dict | None = None) -> str | None:
     """What the wrap-up is asked to do with an entry, None when it waits for
     nothing. An entry the operator has ruled on is theirs, whatever its
     route: it does not wait."""
     if entry.get("strike") or entry.get("wrap_up") or _ruled(entry):
         return None
-    key, _ = table_route(entry, touched, pending)
+    key, _ = table_route(entry, touched, stages)
     if key == "unlabelled":
         return "label — give it its labels from its text"
     if key == "wrap-up:fold":
@@ -2298,10 +2395,10 @@ def worklist(slice_dir: Path | str) -> list[tuple[dict, str]]:
     """(entry, what is asked) for every entry that waits for the wrap-up,
     in order of arrival."""
     store = _read_store(slice_dir)
-    touched, pending = touched_repos(slice_dir), slices_to_run(slice_dir)
+    touched, stages = touched_repos(slice_dir), slice_stages(slice_dir)
     out = []
     for entry in store["entries"]:
-        asked = _asked(entry, touched, pending)
+        asked = _asked(entry, touched, stages)
         if asked:
             out.append((entry, asked))
     return out
@@ -2336,7 +2433,7 @@ def entry_counts(slice_dir: Path | str) -> dict[str, int]:
     those that come to the operator (to you, card requests) without a
     proposal."""
     store = _read_store(slice_dir)
-    touched, pending = touched_repos(slice_dir), slices_to_run(slice_dir)
+    touched, stages = touched_repos(slice_dir), slice_stages(slice_dir)
     counts = dict.fromkeys(COUNT_NAMES, 0)
     by_name = dict(zip(REPORT_SECTIONS, COUNT_NAMES, strict=True))
     letters = dict.fromkeys(KINDS.values(), 0)
@@ -2348,7 +2445,7 @@ def entry_counts(slice_dir: Path | str) -> dict[str, int]:
     for entry in store["entries"]:
         if entry.get("strike"):
             continue
-        key, _ = route(entry, touched, pending)
+        key, _ = route(entry, touched, stages)
         counts[by_name[report_section(key)]] += 1
         letter = _ID_RE.fullmatch(entry["id"]).group(1)
         letters[letter] = letters.get(letter, 0) + 1
@@ -2674,12 +2771,12 @@ def _placed(store: dict, slice_dir: Path | str,
     sections as REPORT_SECTIONS, a section's entries as the render sorts
     them — the record's events first, then what was struck. With
     `live_only`, struck entries are left out."""
-    touched, pending = touched_repos(slice_dir), slices_to_run(slice_dir)
+    touched, stages = touched_repos(slice_dir), slice_stages(slice_dir)
     placed: dict[str, list[tuple[dict, str]]] = {s: [] for s in REPORT_SECTIONS}
     for entry in store["entries"]:
         if live_only and entry.get("strike"):
             continue
-        key, words = route(entry, touched, pending)
+        key, words = route(entry, touched, stages)
         placed[report_section(key)].append((entry, words))
     out = []
     for section in REPORT_SECTIONS:
@@ -2705,7 +2802,8 @@ def _render(store: dict, slice_dir: Path | str) -> tuple[str, dict[str, int]]:
     for section, items in _placed(store, slice_dir):
         if not items:
             continue
-        form = {"Record": "record", "Closed": "closed"}.get(section, "ask")
+        form = {"Record": "record", "Closed": "closed",
+                "Held for a later slice": "closed"}.get(section, "ask")
         out += ["", f"## {section}"]
         for entry, words in items:
             out += ["", _render_entry(entry, form, words, vmap)]
@@ -2721,9 +2819,9 @@ def show_view(slice_dir: Path | str, ids: list[str] | None = None) -> str:
     entry, under its section's `## ` line, in the report's order."""
     store = _read_store(slice_dir)
     if ids:
-        touched, pending = touched_repos(slice_dir), slices_to_run(slice_dir)
+        touched, stages = touched_repos(slice_dir), slice_stages(slice_dir)
         entries = [_find(store, eid) for eid in ids]
-        return "\n\n".join(_render_entry(e, "full", route(e, touched, pending)[1])
+        return "\n\n".join(_render_entry(e, "full", route(e, touched, stages)[1])
                             for e in entries)
     out: list[str] = []
     for section, items in _placed(store, slice_dir, live_only=True):
@@ -2805,6 +2903,11 @@ def fold_entry(slice_dir: Path | str, eid: str, into: str | None = None,
             raise ReportError(f"{here} has no `slices` ancestor, so no slice still to "
                               "run can be folded into")
         folder = (_folders_to_run(here) or {}).get(number)
+        stages = slice_stages(here) or {}
+        if folder is None and number not in stages:
+            raise ReportError(f"{named}: slice {str(number).zfill(_for_width(stages))} is "
+                              "not created yet — the entry is held for it, and "
+                              "/dev:triage folds it when it creates that slice")
         if folder is None:
             raise ReportError(f"{named}: no other slice still to run has that number "
                               "(a <number>_* folder in slices/ or slices/backlog/)")
@@ -2854,6 +2957,71 @@ def fold_entry(slice_dir: Path | str, eid: str, into: str | None = None,
                           f"`{shlex.join(add)}`: {failed}. The fold stays in slice.md, "
                           f"unstaged: stage it by name, commit it, then: {strike}")
     return f"folded {eid} into {rel} (staged) — commit it, then: {strike}"
+
+
+# -- held: what waits for a slice triage has not created --------------------------
+
+def _slices_root_of(path: Path | str) -> Path | None:
+    """The `slices` directory a `held` path names: the spec repo, its
+    `slices/`, or a folder or file anywhere inside it."""
+    here = Path(path).resolve()
+    if here.suffix in (".md", ".json") or here.is_file():
+        here = here.parent
+    if here.name == "slices":
+        return here
+    if (here / "slices").is_dir():
+        return here / "slices"
+    return _slices_root(here)
+
+
+def held_entries(path: Path | str, for_: str | None = None) -> list[str]:
+    """One line per live entry of every store under the `slices` root
+    `path` names, at any depth, whose `for` names slice `for_` — created or
+    not; or, without `for_`, a slice no folder holds: held for a slice
+    triage has not created. `<report> <id> for <slice> — <headline>`, the
+    report's path relative to the spec repo, the reports in path order and
+    each one's entries in order of arrival; a store that cannot be read is
+    a line that says so. Read-only."""
+    root = _slices_root_of(path)
+    if root is None:
+        raise ReportError(f"{path} is in no spec repo: no `slices` directory at it or "
+                          "above it")
+    number = None
+    if for_ is not None:
+        number = _slice_number(_collapse(for_))
+        if number is None:
+            raise ReportError(f"--for {for_} names no slice — a slice is named by its "
+                              "number: 12, 012 or 012_slug")
+    folders = {int(_FOLDER_RE.match(f.name).group(1)) for f in _slice_folders(root)}
+    spec = root.parent
+    out: list[str] = []
+    for found in sorted(root.rglob(STORE_NAME)):
+        if any(part.startswith(".") for part in found.relative_to(root).parts):
+            continue
+        report = (found.parent / REPORT_NAME).relative_to(spec)
+        try:
+            store = json.loads(found.read_text(encoding="utf-8"))
+            entries = store["entries"]
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError):
+            out.append(f"{found.relative_to(spec)}: not a close-out store — skipped")
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict) or entry.get("strike"):
+                continue
+            target = (entry.get("labels") or {}).get("for")
+            n = _slice_number(target) if target else None
+            if n is None or (n != number if number is not None else n in folders):
+                continue
+            out.append(f"{report} {entry['id']} for {target} — "
+                       f"{_collapse(entry.get('headline'))}")
+    return out
+
+
+def held_view(path: Path | str, for_: str | None = None) -> str:
+    lines = held_entries(path, for_)
+    if lines:
+        return "\n".join(lines)
+    return "nothing is held" + (f" for slice {_collapse(for_)}" if for_ else "")
 
 
 def _read_back(store: dict, text: str | None) -> list[tuple[str, str]]:
@@ -3300,10 +3468,11 @@ LABEL_HELP = {
     "area": "sensitive: concurrency or timing, stored data, a wire contract, "
             "authentication or secrets",
     "repo": "the repository the fix lives in, by its directory name",
-    "for": "the number of another slice, still to run, that should take the "
-           "entry — never the slice being run; leave it out for an entry about "
-           "this one. One already planned or running brings the entry to the "
-           "operator, since that run never reads slice.md",
+    "for": "the number of another slice that should take the entry — one still "
+           "to run, or one the plan names that triage has not created yet, which "
+           "holds the entry until it does — never the slice being run; leave it "
+           "out for an entry about this one. One already planned or running "
+           "brings the entry to the operator, since that run never reads slice.md",
     "benefit": "improvement: who is better off",
     "felt": "improvement: when that is felt",
     "change": "improvement: whether it removes, adjusts or adds",
@@ -3492,6 +3661,16 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p.add_argument("--date", help="YYYY-MM-DD, the date the fold's first line "
                                   "carries; today when omitted")
 
+    p = sub.add_parser("held", help="the live entries of every report in the spec repo "
+                                    "held for a slice triage has not created; with "
+                                    "--for, those for one slice, created or not")
+    p.add_argument("path", metavar="<path>",
+                   help="the spec repo, its slices/ directory, or a slice directory or "
+                        "report in it")
+    p.add_argument("--for", dest="for_", metavar="SLICE",
+                   help="the slice, by its number (12, 012 or 012_slug): list the live "
+                        "entries whose for names it")
+
     verb("worklist", "what waits for the wrap-up, with what is asked of each")
 
     p = verb("show", "one or more entries in full — body, notes, labels, marks; "
@@ -3671,6 +3850,9 @@ def _main(args) -> int:
         if args.command == "labels":
             print(labels_text())
             return 0
+        if args.command == "held":
+            print(held_view(args.path, args.for_))
+            return 0
         slice_dir = slice_dir_of(args.slice)
         if not slice_dir.is_dir():
             print(f"Error: slice directory not found: {slice_dir}", file=sys.stderr)
@@ -3730,12 +3912,15 @@ def _main(args) -> int:
                                              [_stdin_or(e) for e in args.evidence],
                                              rationale=args.rationale, by=args.by)))
         elif command == "close":
-            n, stay = close_report(slice_dir, args.words, date=args.date)
+            n, stay, held = close_report(slice_dir, args.words, date=args.date)
             if stay:
                 print(f"{_plural(n, 'entry', 'entries')} closed; the report stays "
                       f"open over {', '.join(stay)}, ruled and not executed")
             else:
                 print(f"closed, {_plural(n, 'entry', 'entries')} with it")
+            if held:
+                print(f"held for a later slice, live: {', '.join(held)} — /dev:triage "
+                      "carries each into its slice")
         elif command == "render":
             print(render_report(slice_dir))
         elif command == "stamp":

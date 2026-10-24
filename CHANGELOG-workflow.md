@@ -4,6 +4,29 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-24 — A close-out entry can be for a slice triage has not created; it is held, and /dev:triage carries it in (v0.9.135)
+
+`close_out.py append --for 011` refused a slice that a project's plan names but triage has not
+created, because it has no folder: "no other slice still to run has that number". The author
+dropped `--for`, and nothing carried the entry into 011's `slice.md` when 011 was filed. This
+happened twice in PilotApp: a planner's ruling for 011, and a code reviewer's entry for row 020.
+
+Now a `for` naming a number no folder under `slices/` holds, at any stage, is taken as a slice
+not created yet, zero-padded to the width the spec repo's folders use. `relabel` and `amend` take
+it the same way. Such an entry routes to a new report section, **Held for a later slice**
+(count `held`), and waits for nobody in its report: `close` leaves it live and the report
+closes over it. When triage creates the slice, `close_out.py held <spec-repo> --for <N>` lists
+what every report under `slices/` holds for it. `close_out.py fold` appends each entry to the new
+`slice.md`, `fold` and `strike` work on a closed report, and the triage skill (step 7) gives each
+a line on the numbered requirements and strikes it in its own report after the commit. Once the
+folder exists, the entry routes as an ordinary fold. Refused as before: the slice being run, and
+a number whose folder has left `slices/` and `slices/backlog/`.
+
+The operator ruled the rule (2026-10-24): any unused number is accepted, because `close_out.py`
+cannot read a project's plan. A mistyped number waits unseen, listed only by `held`. The counts
+line gains `held`. `route()` and `table_route()` take a stage map (`slice_stages`) in place of
+`slices_to_run()`. AIWF-96.
+
 ## 2026-10-24 — The loop-tail gate sweep keeps what a red test row left, and reruns it once to mark it reproduced or flaky (v0.9.134)
 
 A red sweep row gave the consult too little to judge it. The row said only kc's summary line.

@@ -348,9 +348,12 @@ def test_improvement_rows_in_order():
     assert R(E("improvement", labels={**add, "prevents": "severe"})) == "operator:risk"
 
 
-# The slices still to run as `slices_to_run` gives them: 012 unplanned, 051
-# planned or running.
-PENDING = {12: ("012", "unplanned"), 51: ("051", "planned")}
+# The slice folders as `slice_stages` gives them: 012 unplanned, 051 planned
+# or running, 002 run already, 007 the slice itself; no folder holds 077.
+PENDING = {12: ("012", "unplanned"), 51: ("051", "planned"), 2: ("002", "past"),
+           7: ("007", "own")}
+HELD_77 = ("held:later", "held for slice 077, which triage has not created yet — "
+           "/dev:triage carries it into that slice's slice.md")
 FOR_PLANNED = ("operator:action", "to you — an action: slice 051 is planned or running "
                "and its run never reads slice.md; add a phase or rule on its run")
 
@@ -373,6 +376,10 @@ def test_a_for_routes_by_the_stage_of_the_slice_it_names_in_both_tables():
         assert at("002") == close_out.route(E(kind, labels=lab), None, PENDING)
         # ...down to the rows below the fold: the repo elsewhere
         assert at("002", touched={"Ansible"})[0] in ("card:table", "closed:elsewhere")
+        # the slice itself, and a value that names no slice: as without `for`
+        assert at("007")[0] == at("none")[0] == without
+        # no folder at all: held until triage creates the slice
+        assert at("077") == HELD_77
         # without the slices to look at, every `for` folds
         assert R(E(kind, labels={**lab, "for": "051"})) == "wrap-up:fold"
         assert close_out.table_route(E(kind, labels={**lab, "for": "051"}), None,
@@ -739,23 +746,23 @@ def test_append_refuses_an_improvement_of_the_workflow_and_says_where_it_goes():
                  "`fieldnotes` MCP tool `post`", "category `idea`")
 
 
-def test_append_refuses_a_for_that_names_no_slice_still_to_run():
+def test_append_refuses_a_for_naming_the_slice_itself_or_one_no_longer_to_run():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         close_out.init_report(slice_dir)
-        _refused(slice_dir, with_flags(DEFECT, **{"for": "99"}),
-                 "--for 99: no other slice still to run has that number",
-                 "--for names another slice, still to run, that should take the "
-                 "entry, never the slice being run — leave it out for an entry "
-                 "about this one; an entry for a slice already planned or running "
-                 "comes to the operator, since that run never reads slice.md")
         # `none` clears a relabel's `for`; an append stores no "none"
-        _refused(slice_dir, with_flags(DEFECT, **{"for": "none"}), "--for none",
-                 "no other slice still to run")
+        _refused(slice_dir, with_flags(DEFECT, **{"for": "none"}),
+                 "--for none names no slice",
+                 "--for names another slice that should take the entry — one still "
+                 "to run, or one triage has not created yet, which holds the entry "
+                 "until it does — never the slice being run: leave it out for an "
+                 "entry about this one; an entry for a slice already planned or "
+                 "running comes to the operator, since that run never reads slice.md")
         # a completed slice is not still to run, and neither is the slice
         # itself — which the refusal names as the slice being run
-        _refused(slice_dir, with_flags(DEFECT, **{"for": "002"}), "--for 002",
-                 "no other slice still to run")
+        _refused(slice_dir, with_flags(DEFECT, **{"for": "2"}),
+                 "--for 2: slice 002 is no longer to run — its folder is outside "
+                 "slices/ and slices/backlog/ (it has run, or was cancelled)")
         for own in ("007", "7", "007_argocd_tools_presync_hook"):
             _refused(slice_dir, with_flags(DEFECT, **{"for": own}),
                      f"--for {own} is the slice being run: --for names another "
@@ -1111,8 +1118,8 @@ def test_relabel_applies_the_refusals_but_not_the_consequence_check():
         assert code == 0, err
         code, _, err = run_cli(*relabel, "--benefit", "user")
         assert code == 2 and "--benefit: not a label of a defect" in err
-        code, _, err = run_cli(*relabel, "--for", "77")
-        assert code == 2 and "--for 77" in err
+        code, _, err = run_cli(*relabel, "--for", "002")
+        assert code == 2 and "--for 002: slice 002 is no longer to run" in err
         code, _, err = run_cli("relabel", slice_dir, "I1", "--by", "w", "--note", "n",
                                "--benefit", "workflow")
         assert code == 2 and "Fieldnotes" in err
@@ -1188,7 +1195,7 @@ def test_relabel_dry_run_prints_the_note_and_the_route_and_writes_nothing():
         # what relabel refuses, the dry run refuses — and writes nothing either
         for flags, needle in ((("--benefit", "user"), "--benefit: not a label of a defect"),
                               (("--fix", "design"), "changes nothing"),
-                              (("--for", "77"), "--for 77")):
+                              (("--for", "002"), "--for 002")):
             code, out, err = run_cli(*relabel, *flags, "--dry-run")
             assert code == 2 and not out and needle in err, (flags, err)
             assert _files(slice_dir) == before
@@ -1268,10 +1275,15 @@ def test_a_relabel_checks_for_only_where_the_call_gives_one():
         code, _, err = run_cli(*relabel, "--impact", "degraded")
         assert code == 0, err
         assert entry_of(slice_dir, "B1")["labels"]["for"] == "012"
-        # a `for` the call gives is checked, the slice that ran refused
-        for target in ("12", "77"):
+        # a `for` the call gives is checked, the slices that ran refused
+        for target, written in (("12", "012"), ("2", "002")):
             code, _, err = run_cli(*relabel, "--for", target)
-            assert code == 2 and f"--for {target}: no other slice still to run" in err
+            assert code == 2 and f"--for {target}: slice {written} is no longer to " \
+                "run" in err, err
+        # one no folder holds is taken, at the width the folders are written in
+        code, _, err = run_cli(*relabel, "--for", "77")
+        assert code == 0, err
+        assert entry_of(slice_dir, "B1")["labels"]["for"] == "077"
         code, _, err = run_cli(*relabel, "--for", "31")
         assert code == 0, err
         assert entry_of(slice_dir, "B1")["labels"]["for"] == "031"
@@ -1793,7 +1805,8 @@ def test_amend_runs_appends_checks_on_the_entry_as_it_would_be():
         # a label of the other family, and a for naming no slice still to run
         _amend_refused(slice_dir, "B1", ["--benefit", "user"],
                        "--benefit: not a label of a defect")
-        _amend_refused(slice_dir, "B1", ["--for", "77"], "--for 77: no other slice still to run")
+        _amend_refused(slice_dir, "B1", ["--for", "002"],
+                       "--for 002: slice 002 is no longer to run")
         run_cli("append", slice_dir, *IMPROVEMENT, "--by", BY)                      # I1
         _amend_refused(slice_dir, "I1", ["--trigger", "fault"],
                        "--trigger: not a label of an improvement")
@@ -2298,6 +2311,173 @@ def test_unmark_takes_back_a_request_for_the_word_and_unpropose_refuses_it():
         assert _files(slice_dir) == before
 
 
+# -- held: an entry for a slice triage has not created --------------------------------
+
+HELD_11 = ("held:later", "held for slice 011, which triage has not created yet — "
+           "/dev:triage carries it into that slice's slice.md")
+
+
+def test_a_for_naming_a_slice_not_created_yet_is_taken_and_held():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        # no folder holds 11 or 20: taken, at the width the folders are written in
+        for given, kept in (("11", "011"), ("0020_rollout", "020")):
+            code, out, err = run_cli("append", slice_dir,
+                                     *with_flags(DEFECT, **{"for": given}))
+            assert code == 0, err
+            assert entry_of(slice_dir, out.strip())["labels"]["for"] == kept
+        run_cli("append", slice_dir, *with_flags(IMPROVEMENT, **{"for": "11"}))  # I1
+        run_cli("append", slice_dir, *DEFECT, "--by", BY)                        # B3
+        assert _amend(slice_dir, "B3", "--for", "11")[0] == 0
+        assert entry_of(slice_dir, "B3")["labels"]["for"] == "011"
+        stages = close_out.slice_stages(slice_dir)
+        assert stages == {12: ("012", "unplanned"), 31: ("031", "unplanned"),
+                          7: ("007", "own"), 2: ("002", "past")}
+        for eid in ("B1", "I1", "B3"):
+            assert close_out.route(entry_of(slice_dir, eid), None, stages) == HELD_11
+        assert close_out.route(entry_of(slice_dir, "B2"), None, stages)[1] == (
+            "held for slice 020, which triage has not created yet — /dev:triage "
+            "carries it into that slice's slice.md")
+        # a held entry waits for nothing; its section follows Closed
+        assert close_out.worklist(slice_dir) == []
+        text = _as_rendered(slice_dir)
+        held = _section(text, "Held for a later slice")
+        assert _heads(held) == ["### B1 — controller: the status line is wrong",
+                                "### B2 — controller: the status line is wrong",
+                                "### B3 — controller: the status line is wrong",
+                                "### I1 — drop the duplicate helper"]
+        assert held.count(f"**Route:** {HELD_11[1]}\n") == 3
+        assert "**Proposal:**" not in held          # the closed form
+        counts = close_out.entry_counts(slice_dir)
+        assert (counts["held"], counts["to you"], counts[close_out.NO_PROPOSAL]) == (4, 0, 0)
+        assert close_out.counts_line(counts).startswith(
+            "to you 0 · card requests 0 · wrap-up 0 · unlabelled 0 · closed 0 · held 4 · "
+            "record 0 — ")
+        assert close_out.report_section("held:later") == "Held for a later slice"
+        # the width is the folders' most common one, 3 without any
+        assert close_out._for_width({1: ("0001", "past"), 2: ("0002", "own"),
+                                     300: ("300", "past")}) == 4
+        assert close_out._for_width({}) == 3
+
+
+def test_close_leaves_a_held_entry_live_and_closes_the_report_over_it():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "11"}))       # B1
+        run_cli("append", slice_dir, *EASY)                                      # B2
+        code, out, err = run_cli("close", slice_dir, "--words", "done with it",
+                                 "--date", "2026-10-24")
+        assert code == 0, err
+        assert out == ("closed, 1 entry with it\nheld for a later slice, live: B1 — "
+                       "/dev:triage carries each into its slice\n")
+        data = store(slice_dir)
+        assert data["closed"] == {"date": "2026-10-24", "words": "done with it"}
+        b1, b2 = data["entries"]
+        assert (b1["strike"], b1["ruling"]) == (None, None)
+        assert b2["strike"]["reason"] == "closed with the report, 2026-10-24"
+        text = _as_rendered(slice_dir)
+        assert "\nClosed: 2026-10-24 — done with it\n" in text
+        assert _heads(_section(text, "Held for a later slice")) == [
+            "### B1 — controller: the status line is wrong"]
+        assert close_out.held_entries(slice_dir) == [
+            "slices/007_argocd_tools_presync_hook/close-out.md B1 for 011 — controller: "
+            "the status line is wrong"]
+
+
+def test_held_lists_the_entries_held_across_the_spec_repo():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        spec = slice_dir.parent.parent
+        old = spec / "slices" / "completed" / "005_old_one"
+        old.mkdir()
+        for d in (slice_dir, old):
+            close_out.init_report(d)
+        run_cli("append", old, *with_flags(DEFECT, **{"for": "11"}))             # 005 B1
+        run_cli("append", old, *with_flags(DEFECT, **{"for": "11"}))             # 005 B2
+        run_cli("strike", old, "B2", "--reason", "dup of B1")
+        run_cli("append", slice_dir, *with_flags(IMPROVEMENT, **{"for": "11"}))  # 007 I1
+        run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "31"}))       # 007 B1
+        run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "77"}))       # 007 B2
+        before = {d: _files(d) for d in (slice_dir, old)}
+        every = ["slices/007_argocd_tools_presync_hook/close-out.md I1 for 011 — drop the "
+                 "duplicate helper",
+                 "slices/007_argocd_tools_presync_hook/close-out.md B2 for 077 — controller: "
+                 "the status line is wrong",
+                 "slices/completed/005_old_one/close-out.md B1 for 011 — controller: the "
+                 "status line is wrong"]
+        # the spec repo, its slices/, a slice folder or a report: the same root
+        for path in (spec, spec / "slices", old, slice_dir / "close-out.md"):
+            code, out, err = run_cli("held", path)
+            assert code == 0, err
+            assert out.splitlines() == every, (path, out)
+        # --for names one slice, created or not; struck entries are not held
+        code, out, _ = run_cli("held", spec, "--for", "11")
+        assert out.splitlines() == [every[0], every[2]]
+        code, out, _ = run_cli("held", spec, "--for", "031_in_the_backlog")
+        assert out == ("slices/007_argocd_tools_presync_hook/close-out.md B1 for 031 — "
+                       "controller: the status line is wrong\n")
+        assert run_cli("held", spec, "--for", "99")[1] == "nothing is held for slice 99\n"
+        assert {d: _files(d) for d in (slice_dir, old)} == before
+        # a store that cannot be read says so and stops nothing
+        (spec / "slices" / "backlog" / "031_in_the_backlog" / "close-out.json").write_text("{")
+        assert run_cli("held", spec)[1].splitlines() == [
+            every[0], every[1], "slices/backlog/031_in_the_backlog/close-out.json: not a "
+            "close-out store — skipped", every[2]]
+        code, _, err = run_cli("held", spec, "--for", "next")
+        assert code == 2 and "--for next names no slice" in err
+        assert close_out.verb_usage("held").splitlines()[:3] == [
+            "close_out.py held <path> [--for SLICE]",
+            "    <path>: the spec repo, its slices/ directory, or a slice directory or "
+            "report in it",
+            "    --for: the slice, by its number (12, 012 or 012_slug): list the live "
+            "entries whose for names it"]
+        assert "held" not in close_out.WRITING_VERBS
+    with tempfile.TemporaryDirectory() as tmp:
+        empty = Path(tmp) / "specs" / "slices" / "001_first"
+        empty.mkdir(parents=True)
+        close_out.init_report(empty)
+        assert run_cli("held", Path(tmp) / "specs")[1] == "nothing is held\n"
+        code, _, err = run_cli("held", tmp)
+        assert code == 2 and "is in no spec repo" in err
+
+
+def test_once_triage_creates_the_slice_the_held_entry_folds_into_it_in_the_closed_report():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        spec = slice_dir.parent.parent
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *with_flags(PROSE, **{"for": "11"}))        # P1
+        assert run_cli("close", slice_dir, "--words", "done")[0] == 0
+        # /dev:triage creates 011, unplanned: the entry is a fold now
+        created = spec / "slices" / "backlog" / "011_new_one"
+        created.mkdir()
+        (created / "slice.md").write_text("# 011\n\nthe ask\n")
+        git(spec, "init", "-q")
+        git(spec, "add", ".")
+        git(spec, "commit", "-q", "--no-verify", "-m", "seed")
+        p1 = entry_of(slice_dir, "P1")
+        assert close_out.route(p1, None, close_out.slice_stages(slice_dir)) == (
+            "wrap-up:fold", "the wrap-up — fold into slice 011")
+        assert run_cli("held", spec)[1] == "nothing is held\n"
+        assert run_cli("held", spec, "--for", "11")[1].startswith(
+            "slices/007_argocd_tools_presync_hook/close-out.md P1 for 011 — ")
+        code, out, err = _fold(slice_dir, "P1", "--date", "2026-10-24")
+        assert code == 0, err
+        assert out.startswith("folded P1 into slices/backlog/011_new_one/slice.md (staged)")
+        assert "Slice 007's close-out, entry P1, verbatim" in (created / "slice.md").read_text()
+        code, out, err = run_cli("strike", slice_dir, "P1", "--reason",
+                                 "folded into slice 011", "--commit", "abc123",
+                                 "--by", "triage")
+        assert code == 0, err
+        data = store(slice_dir)
+        assert data["closed"]["words"] == "done"
+        assert data["entries"][0]["strike"]["reason"] == "folded into slice 011"
+        assert "### ~~P1 — " in _section(_as_rendered(slice_dir), "Record")
+        assert run_cli("held", spec, "--for", "11")[1] == "nothing is held for slice 11\n"
+
+
 def test_worklist_names_what_waits_and_what_is_asked():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
@@ -2514,9 +2694,12 @@ def test_fold_refuses_what_it_cannot_fold_and_writes_nothing():
         _fold_refused(slice_dir, "B1", ["--into", "18"], "the report's own slice")
         _fold_refused(slice_dir, "B1", ["--into", "018_dev_and_prd_stages"],
                       "the report's own slice")
-        for gone in ("99", "2"):                    # none, and one completed since
-            _fold_refused(slice_dir, "B1", ["--into", gone],
-                          f"--into {gone}: no other slice still to run has that number")
+        # no folder at all: not created yet, and the entry waits for triage
+        _fold_refused(slice_dir, "B1", ["--into", "99"], "--into 99: slice 099 is not "
+                      "created yet — the entry is held for it, and /dev:triage folds it "
+                      "when it creates that slice")
+        _fold_refused(slice_dir, "B1", ["--into", "2"],                  # completed since
+                      "--into 2: no other slice still to run has that number")
         _fold_refused(slice_dir, "B1", ["--into", "next"], "--into next names no slice")
         for planned in ("51", "052"):               # a state.json, a seeded plan.md
             _fold_refused(slice_dir, "B1", ["--into", planned],
@@ -3149,7 +3332,8 @@ def test_close_rules_and_strikes_every_live_entry_once():
         assert text.index("Run: ") < text.index("Closed: ") < text.index("## Record")
         counts = close_out.entry_counts(slice_dir)
         assert close_out.counts_line(counts).startswith(
-            "to you 0 · card requests 0 · wrap-up 0 · unlabelled 0 · closed 0 · record 0")
+            "to you 0 · card requests 0 · wrap-up 0 · unlabelled 0 · closed 0 · held 0 · "
+            "record 0")
 
 
 # -- settle: a criterion owed after an operator's action ------------------------------
@@ -3431,11 +3615,12 @@ def test_render_writes_the_sections_in_order_and_the_entries_in_their_forms():
         run_cli("append", slice_dir, *DEFECT)                                    # B6
         close_out.strike_entry(slice_dir, "B6", "dup of B2", by="consult 1",
                                commit="19640d9")
-        for eid in ("A1", "B1", "B3", "B5", "E1", "B6"):
+        run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "77"}))      # B7
+        for eid in ("A1", "B1", "B3", "B5", "E1", "B6", "B7"):
             close_out.add_note(slice_dir, eid, "consult 1", "a note for the record")
         line = close_out.render_report(slice_dir)
         assert line == ("Comes to you 2 · Card requests 1 · For the wrap-up 1 · "
-                        "Unlabelled 1 · Closed 1 · Record 2")
+                        "Unlabelled 1 · Closed 1 · Held for a later slice 1 · Record 2")
         text = report(slice_dir)
         assert text.startswith("# Close-out — slice 007 argocd_tools_presync_hook\n\n"
                                "<!-- Generated by `close_out.py render` from "
@@ -3494,6 +3679,14 @@ def test_render_writes_the_sections_in_order_and_the_entries_in_their_forms():
             "· sensitive\narea · in KubeCoder\n"
             "**Provenance:** witnessed — code-reviewer, P3 r1\n"
             "**Route:** closed — it needs a fault\n**Disposition:**\n")
+        # held for a slice triage has not created: the closed form, its route
+        assert _section(text, "Held for a later slice") == (
+            "\n## Held for a later slice\n\n### B7 — controller: the status line is wrong\n\n"
+            "**Consequence:** an operator reads a wrong status\n\n"
+            "**Triage:** defect · shows on an ordinary condition · breaks a flow · silent · "
+            "fix needs\ndesign · sensitive area · in KubeCoder · for slice 077\n"
+            "**Provenance:** witnessed — code-reviewer, P3 r1\n"
+            f"**Route:** {HELD_77[1]}\n**Disposition:**\n")
         # the record: headings alone, the events first, then what was struck
         assert _section(text, "Record") == (
             "\n## Record\n\n### E1 — resumed\n\n"
@@ -3646,7 +3839,8 @@ def test_counts_live_entries_per_section_and_per_letter_on_one_line():
         slice_dir = make_slice(tmp)
         close_out.init_report(slice_dir)
         assert close_out.counts_line(close_out.entry_counts(slice_dir)) == (
-            "to you 0 · card requests 0 · wrap-up 0 · unlabelled 0 · closed 0 · record 0 "
+            "to you 0 · card requests 0 · wrap-up 0 · unlabelled 0 · closed 0 · held 0 · "
+            "record 0 "
             "— A 0 · D 0 · E 0 · B 0 · P 0 · T 0 · I 0")
         run_cli("append", slice_dir, *ACTION)
         run_cli("append", slice_dir, *DEFECT)
@@ -3659,7 +3853,8 @@ def test_counts_live_entries_per_section_and_per_letter_on_one_line():
         close_out.strike_entry(slice_dir, "E2", "dup")
         code, out, _ = run_cli("counts", slice_dir)
         assert out.strip() == (
-            "to you 1 · card requests 0 · wrap-up 1 · unlabelled 1 · closed 1 · record 1 "
+            "to you 1 · card requests 0 · wrap-up 1 · unlabelled 1 · closed 1 · held 0 · "
+            "record 1 "
             "— A 1 · D 0 · E 1 · B 3 · P 0 · T 0 · I 0 · 1 entry without a Consequence "
             "line · 2 entries without a Provenance line")
         # what comes to the operator without a proposal: an action entered
@@ -4125,10 +4320,12 @@ def test_verb_usage_renders_append_compactly_with_its_help_strings():
             ("--area", "sensitive: concurrency or timing, stored data, a wire contract, "
                        "authentication or secrets"),
             ("--repo", "the repository the fix lives in, by its directory name"),
-            ("--for", "the number of another slice, still to run, that should take "
-                      "the entry — never the slice being run; leave it out for an "
-                      "entry about this one. One already planned or running brings "
-                      "the entry to the operator, since that run never reads slice.md"),
+            ("--for", "the number of another slice that should take the entry — one "
+                      "still to run, or one the plan names that triage has not created "
+                      "yet, which holds the entry until it does — never the slice being "
+                      "run; leave it out for an entry about this one. One already "
+                      "planned or running brings the entry to the operator, since that "
+                      "run never reads slice.md"),
             ("--benefit", "improvement: who is better off"),
             ("--felt", "improvement: when that is felt"),
             ("--change", "improvement: whether it removes, adjusts or adds"),

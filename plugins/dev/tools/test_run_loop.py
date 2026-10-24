@@ -4051,7 +4051,7 @@ def test_report_is_rendered_before_the_doc_phase_and_at_completion():
         assert "<not yet stamped>" not in final
         log = (slice_dir / "log.txt").read_text()
         assert ("close-out report: to you 0 · card requests 0 · wrap-up 0 · "
-                "unlabelled 2 · closed 0 · record 0 — A 0 · D 0 · E 0 · B 2 · "
+                "unlabelled 2 · closed 0 · held 0 · record 0 — A 0 · D 0 · E 0 · B 2 · "
                 "P 0 · T 0 · I 0") in log
         assert log.count("close-out rendered: ") == 3
         assert "close-out rendered: Unlabelled 2 · Record 1" in log
@@ -4097,7 +4097,7 @@ def test_bail_outs_and_appended_phases_are_recorded_for_the_header():
         log = (slice_dir / "log.txt").read_text()
         # the one event is that bail, written by the resume, in the record
         assert ("close-out report: to you 0 · card requests 0 · wrap-up 0 · "
-                "unlabelled 0 · closed 0 · record 1 — A 0 · D 0 · E 1 · B 0") in log
+                "unlabelled 0 · closed 0 · held 0 · record 1 — A 0 · D 0 · E 1 · B 0") in log
 
 
 def test_a_bail_renders_the_report_and_commits_nothing():

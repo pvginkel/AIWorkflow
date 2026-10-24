@@ -131,7 +131,7 @@ does not rename the entry.
 | | `design` | a choice with consequences is open, or the change adds behaviour — a code path, a piece of state, a process, a gate |
 | `area` | `plain` · `sensitive` | sensitive: the change touches concurrency or timing, the layout of stored data, a wire contract, or authentication and secrets |
 | `repo` | a name | the repository the fix lives in, by its directory name |
-| `for` | a slice, optional | the slice still to run that should take the entry, by its number; `relabel --for none` clears it |
+| `for` | a slice, optional | the slice still to run that should take the entry, by its number — one a project's plan names that no folder holds yet among them; `relabel --for none` clears it |
 
 **What could be better** — the labels of an `improvement`, which says what the change would
 bring and what it would take:
@@ -227,7 +227,8 @@ happens to it.
 - an action, a decision or an improvement without a proposal;
 - an entry without the labels its kind carries;
 - an impact other than `none` over a `Consequence:` that opens with "none", and the reverse;
-- a `for` that names no slice that is still to run — on a relabel, only a `for` the call gives;
+- a `for` that names the slice being run, or one whose folder has left `slices/` and
+  `slices/backlog/` — it has run, or was cancelled; on a relabel, only a `for` the call gives;
 - an improvement whose benefit is `workflow`.
 
 ## The routes
@@ -245,7 +246,7 @@ What should be fixed — every kind but `improvement` — takes the first row th
 | 1 | an action | to the operator |
 | 2 | a decision | to the operator |
 | 3 | an event that describes no problem | to the record |
-| 4 | input for a slice that is still to run | to the wrap-up, to fold into that slice; to the operator, as an action, once that slice is planned or running |
+| 4 | input for a slice that is still to run | to the wrap-up, to fold into that slice; to the operator, as an action, once that slice is planned or running; held for it while no folder holds it |
 | 5 | fixable only in a repository the slice did not touch | to the operator as a card request when it shows and has an impact as row 8 says, or is `severe` or graded major; closed otherwise |
 | 6 | prose; or fixed by one edit or in several known places, outside a sensitive area | to the wrap-up, to fix |
 | 7 | anything else, with a trigger or an impact `unknown` | to the wrap-up, to look |
@@ -257,7 +258,7 @@ An improvement takes the first of these that fits:
 
 | | an improvement that | goes |
 |--:|---|---|
-| 1 | is input for a slice that is still to run | to the wrap-up, to fold into that slice; to the operator, as an action, once that slice is planned or running |
+| 1 | is input for a slice that is still to run | to the wrap-up, to fold into that slice; to the operator, as an action, once that slice is planned or running; held for it while no folder holds it |
 | 2 | adjusts or removes, in one edit or in several known places, and is no product call | to the wrap-up, within its bar. In a repository the slice did not touch: to the operator as a card request when it prevents something `severe` or is graded major, closed otherwise |
 | 3 | adds something, for a benefit that is not felt in use, and prevents something `severe` or is graded major | to the operator, as a risk |
 | 4 | adds something, for a benefit that is not felt in use | closed |
@@ -267,7 +268,13 @@ An improvement takes the first of these that fits:
   into its `slice.md`. Planned or running — a `state.json`, or a `plan.md` with a phase
   heading, a seeded one in the backlog too — its run never reads `slice.md` again, so the
   entry comes to the operator as an action, to add a phase or rule on that run. No longer
-  still to run — it has run since — the entry routes as if it had no `for`.
+  still to run — it has run since — the entry routes as if it had no `for`. **Not created yet**
+  — a number no folder under `slices/` holds, at any stage: a slice the project's plan names
+  that triage has not filed — the entry is held for it, under a section of its own, and waits
+  for nobody in this report: `close` leaves it live and the report closes over it.
+  `/dev:triage`, creating that slice, lists what is held for it (`close_out.py held --for`)
+  and folds each entry into its `slice.md`. The number is not checked against any plan — a
+  mistyped one waits unseen, the risk the operator took for not reading a project's plan.
 - **Severity stands where the close would have been, and nowhere else** (row 9, and row 3 of
   the second table). What is severe is not closed for being unlikely; where the table would fix
   it or ask for a card, it does.
@@ -503,7 +510,7 @@ lands.
    blank `Disposition:` as pending work, and a report is never a queue they work from: when they are
    done with it the report is closed (`close_out.py close`), the close-out card with it, and every
    entry still live is closed by that act — what the table closed among it, which stays live until
-   then. `defer` is the one word that keeps the card open.
+   then — but one held for a slice not created yet, which stays live for `/dev:triage`. `defer` is the one word that keeps the card open.
 5. While the card is open, `/dev:triage` reads the report it names — the `defer` entries and
    what came to the operator and is not ruled — one item per entry. A finding that deserves a
    life of its own gets there by a `card` disposition, never by the report sitting unread.

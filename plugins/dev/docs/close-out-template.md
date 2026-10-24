@@ -94,6 +94,8 @@ Run: <not yet stamped>
 
 ## Closed
 
+## Held for a later slice
+
 ## Record
 ```
 
@@ -104,6 +106,7 @@ Run: <not yet stamped>
 | For the wrap-up | what waits for the wrap-up; empty once it has run | as its ask |
 | Unlabelled | entries without labels, until they have them | as its ask |
 | Closed | what the table closed, and what the wrap-up looked at and left | heading, `Consequence:` unless it says none, `Triage:`, `Provenance:`, `Route:` |
+| Held for a later slice | what is `for` a slice no folder holds yet — one a project's plan names and triage has not created; it waits for that slice, not for anyone here, and `/dev:triage` folds it in when it creates the slice | as Closed |
 | Record | the run's events that describe no problem; then what was struck — by the run, by the wrap-up, on the operator's word | heading only; a struck one's reason up to its first `; ` |
 
 `render` writes the sections that hold something, in this order. Inside a section the order is
@@ -220,7 +223,8 @@ Every verb takes the slice directory or the report's path as its first argument.
 | `request-word` | the wrap-up | hands the operator an entry whose edit a rule of the project makes only on their word, with the exact edit and the rule — which becomes the entry's proposal; the entry comes to them, whatever the table's route |
 | `leave` | the wrap-up | records that it looked at an entry and changed nothing, and why |
 | `unmark` | the mark's author | withdraws the wrap-up's mark on an entry — a `leave`, a card request or a request for the operator's word — while it is not committed: the mark it replaced comes back, and a request's proposal gives way to the one before it |
-| `fold` | the wrap-up, the close-out session | appends an entry verbatim — its `show`, quoted, under a line naming the slice, the entry and the report — to the `slice.md` of the slice it is `for` (or `--into`), which has to be still to run and unplanned, and stages that file; prints the strike that follows the commit. Refused on a struck entry, on the report's own slice and on a fold `slice.md` holds already; writes neither the store nor the report |
+| `held` | `/dev:triage` | lists, across every report under the spec repo's `slices/`, the live entries `for` a slice — `--for NNN` — or, without it, every entry held for a slice no folder holds yet: the report, the id, the `for`, the headline; writes nothing |
+| `fold` | the wrap-up, the close-out session, `/dev:triage` | appends an entry verbatim — its `show`, quoted, under a line naming the slice, the entry and the report — to the `slice.md` of the slice it is `for` (or `--into`), which has to be still to run and unplanned, and stages that file; prints the strike that follows the commit. Refused on a struck entry, on the report's own slice and on a fold `slice.md` holds already; writes neither the store nor the report |
 | `worklist` | the wrap-up, the close-out session | what waits for the wrap-up, entry by entry, with what is asked of each |
 | `rule` | the close-out session | records the operator's words on an entry and what was done on them — refused on an entry that holds other words, unless `--append` or `--replace`; without an id, reads the `Disposition:` lines of `close-out.md` back into the store |
 | `settle` | the close-out session | settles a criterion owed after an operator's action: writes its `pass` or `fail`, rationale and evidence into `verification.json` in the file's own escaping, `owed_after` kept ([plan-template.md](plan-template.md) § verification.json), and strikes the action that waited on it — a push hold's action listing several criteria takes a note until the last of them is settled; refused on a criterion without `owed_after` or already settled |

@@ -297,6 +297,18 @@ verdicts. **Attachments** that arrive with the work (a debugging write-up, a pri
 proposal — including anything already in `handovers/`) move into the slice folder as input,
 unvalidated; you author none of your own.
 
+**Carry what other reports hold for the slice.** A close-out entry may be `for` a slice that
+no folder held yet — a planner's ruling, or a reviewer's finding, for a slice the project's plan
+names — and it waited in its report, held, for this moment. Once the folder and its `slice.md`
+exist, `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py held <spec-repo> --for <N>` lists what
+is held for it, and `close_out.py fold <its report> <id>` appends each entry verbatim to the new
+`slice.md` and stages it. Give each a line on the numbered requirements — `Slice <M>'s
+close-out, entry <id>`, its ask in the entry's own words, quoted whole below — since the planner
+seeds its criteria from that list alone. The folds ride the slice folder's commit; then strike
+each entry in its own report with the command `fold` printed, its reason naming the slice and
+that commit, and commit those stores (`close-out.json` and `close-out.md`, staged by name). Do
+it before the slice is planned: a planned slice's run never reads `slice.md`.
+
 Add each slice to the **Pending** section of `<spec-repo>/README.md` — one line matching the
 existing entries, `- **NNN** — <short title>: <one-clause summary>`, placed inside that section,
 above the heading that ends it. The line names no card: a README outlives its cards as handles,
