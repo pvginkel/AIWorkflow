@@ -323,7 +323,19 @@ whole plan is a feature of the review, not a cost. Then:
   for that verb) is its own row, `nothing ran`: it neither reds the sweep nor holds the push,
   and the green stance claims only the rows that ran. A sweep in which nothing ran at all is
   unverified, not green. Rows a `gate` or `accept` ruling covers are shown as waived or
-  accepted and don't count as red (below). The completion consult and the test phase both receive
+  accepted and don't count as red (below). **A red `test` row is run once more, and what each run
+  left is kept.** Right after each component's test command the driver copies the
+  `test_results.md` that run wrote — the component's directory first, then the repo root, only a
+  file the command changed — into `sweeps/r<N>/` as `<Repo>_<component>_test_results.md`: two
+  suites writing one file at the repo root no longer overwrite each other's cause. On a red run
+  it copies the component's Playwright `test-results/` too (the files that run wrote, smallest
+  first under a 50 MB cap; the folder ignores itself, so videos and traces never reach the spec
+  repo), then reruns the same `kc project test --project <c>` once, into `…_test_rerun.log`, and
+  keeps that run's files the same way. The row stays red either way and is marked `RED
+  (reproduced)` or `RED (flaky: passed on re-run)` — a flaky row is reported, never dropped: one
+  apparent flake was a real bug in a template's test setup. kc takes no extra arguments,
+  so the rerun is the whole component, not `--lf` or `--last-failed`; a rerun that times out is
+  its outcome, not a bail. Lint, build and waived rows are not rerun. The completion consult and the test phase both receive
   it as deterministic fact — green suites are not re-run by agents — under one principle, stated
   in both dispatches with no special cases: **a branch whose gates are red is not pushed**. A
   red sweep is the consult's to act on — append a fixing phase, or bail with the question — and

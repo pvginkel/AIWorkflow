@@ -35,7 +35,10 @@ order, as last parsed), `target_roots` (the repo roots the unfinished phases' `T
 resolved to at the last plan load, replaced at every load — a phase that is done drops out and
 its `landed` root stands for it; never written by a dry run), `generation` (follow-up generations spent), `test_rounds`, `sweep_runs`,
 `gate_sweep` (the loop-tail sweep's record: per-command `results` with log paths and an
-`outcome` — `green`, `red` or `nothing_ran` (kc's exit 3), with `green` kept beside it — the
+`outcome` — `green`, `red` or `nothing_ran` (kc's exit 3), with `green` kept beside it; a test
+row that ran also lists the files it kept (`artifacts`), and a red one its single re-run
+(`rerun`: `outcome` — `green`, `red`, `nothing_ran`, `unrunnable` or `timeout` — `log`,
+`duration_s`, `artifacts`), which marks it reproduced or flaky and never changes its outcome — the
 sweep's own `outcome` (red on any red row, else green on any green row, else `nothing_ran`) and
 `green`, and the exact `commits` it ran on — reused while every swept HEAD matches, re-run
 otherwise),

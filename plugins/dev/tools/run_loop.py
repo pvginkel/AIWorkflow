@@ -137,6 +137,7 @@ import shlex
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -238,6 +239,23 @@ SESSION_ID_POLL = 5
 # gate stays test-only (lint/build breakage there surfaces at loop tail,
 # where fixing it costs one phase instead of a per-phase tax).
 SWEEP_VERBS = ("lint", "build", "test")
+
+# What a sweep `test` row keeps of its run beside kc's lines (AIWF-94). A
+# suite's own report is `test_results.md`, in the component's directory or at
+# the repo root — where a ModernAppTemplate repo's backend and frontend suites
+# both write it, so the second overwrote the first's failure cause; and
+# Playwright keeps a failing test's logs and error-context.md under the
+# component's `test-results/`, which its next run empties. Template
+# conventions, not a project's names.
+TEST_RESULTS_NAME = "test_results.md"
+TEST_RESULTS_DIR = "test-results"
+# A red row's test-results/ copy stops at this many bytes: it can hold videos
+# and traces. The smallest files are copied first, so the text survives.
+TEST_RESULTS_DIR_CAP = 50 * 1024 * 1024
+# A file's mtime comes off the kernel's coarse clock, which runs up to a tick
+# behind time.time(): a file a command wrote at once can read as older than
+# the command's start by that much, which "at or after the start" allows.
+MTIME_SLACK_S = 1.0
 
 # kc's exit code for "nothing ran in the requested scope" (KC-81): `kc
 # project test|build|lint` exits 3 when its selection holds no statement for
@@ -1749,6 +1767,30 @@ def sweep_row_outcome(row: dict) -> str:
     return row.get("outcome") or ("green" if row.get("green") else "red")
 
 
+# A red sweep `test` row's mark from its one re-run, by the re-run's outcome:
+# in the dispatch label as `RED (<mark>)` and — in the short form where one
+# exists — in the sweep's history summary and announce line. Whatever the
+# mark, the row is red.
+RERUN_MARKS = {"red": "reproduced",
+               "green": "flaky: passed on re-run",
+               "nothing_ran": "re-run ran nothing",
+               "unrunnable": "re-run unrunnable: tool missing",
+               "timeout": "re-run timed out"}
+RERUN_SHORT_MARKS = {"green": "flaky"}
+
+
+def rerun_mark(row: dict, short: bool = False) -> str | None:
+    """A sweep row's re-run mark, None for a row with no `rerun` — lint and
+    build, a row that was not red, one recorded before red rows re-ran."""
+    rerun = row.get("rerun")
+    if not rerun:
+        return None
+    outcome = rerun.get("outcome")
+    if short and outcome in RERUN_SHORT_MARKS:
+        return RERUN_SHORT_MARKS[outcome]
+    return RERUN_MARKS.get(outcome, f"re-run {outcome}")
+
+
 class SessionResult:
     """The bits of a driven turn the driver consumes downstream: the claude
     sessionId (for --resume across rounds and the transcript locator) and the
@@ -2857,6 +2899,17 @@ the tool (a `.kubecoder/config.yaml` line and `kc env restart`, which ends
 every session here) is the operator's — never this session's.\
 """
 
+# Appended to the red stance when a RED row carries its re-run (AIWF-94), so
+# the consult and the test phase read the mark as information, never as a
+# reason to drop the row, and know where the failure cause was kept.
+SWEEP_RERUN_NOTE = """\
+The driver re-ran each RED test row once: `reproduced` failed again, `flaky:
+passed on re-run` passed. A flaky row is still RED and yours to judge — a
+flake can be a real bug. Under a RED row are its re-run log and copies of
+what each run left (`{results_name}`, Playwright's `{results_dir}/`), taken
+before anything else ran: read the failure there.\
+"""
+
 SWEEP_STANCE_NONE = """\
 Nothing ran — no swept repo carries a kc manifest, or no swept component
 defines a lint, build or test statement — so treat the tree's
@@ -3548,6 +3601,93 @@ def _file_size(path: Path) -> int:
         return path.stat().st_size
     except OSError:
         return 0
+
+
+def _file_sig(path: Path) -> tuple[int, int, int] | None:
+    """A regular file's (mtime_ns, size, inode), None where there is none —
+    what the sweep compares across a command to tell a file it wrote from
+    one an earlier command left."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    if not stat.S_ISREG(st.st_mode):
+        return None
+    return st.st_mtime_ns, st.st_size, st.st_ino
+
+
+def fresh_file(candidates: Sequence[Path],
+               before: dict[Path, tuple[int, int, int] | None],
+               since_ns: int) -> Path | None:
+    """The first of `candidates` the command just run wrote: changed since
+    `before` (each one's `_file_sig` taken just before it ran) and modified
+    at or after `since_ns`. A file another command left — another
+    component's, at a repo root several suites write to — is unchanged, so
+    it is never this command's, however recent."""
+    for path in candidates:
+        sig = _file_sig(path)
+        if sig is not None and sig != before.get(path) and sig[0] >= since_ns:
+            return path
+    return None
+
+
+def tree_sigs(root: Path) -> dict[str, tuple[int, int, int]]:
+    """Every regular file under `root`, by its path relative to it, with
+    its `_file_sig`; symlinks are not followed, and a missing directory has
+    none."""
+    sigs: dict[str, tuple[int, int, int]] = {}
+    if not root.is_dir():
+        return sigs
+    for dirpath, _dirs, names in os.walk(root):
+        for name in names:
+            path = Path(dirpath) / name
+            try:
+                st = path.lstat()
+            except OSError:
+                continue
+            if stat.S_ISREG(st.st_mode):
+                sigs[str(path.relative_to(root))] = (
+                    st.st_mtime_ns, st.st_size, st.st_ino)
+    return sigs
+
+
+def copy_fresh_tree(src: Path, dest: Path,
+                    before: dict[str, tuple[int, int, int]], since_ns: int,
+                    cap: int) -> tuple[int, int, int, int]:
+    """Copy the files under `src` the command just run wrote — changed
+    since `before` (its `tree_sigs` taken just before it ran) and modified
+    at or after `since_ns`, as `fresh_file` judges one — into `dest`,
+    keeping their layout, smallest first while the total stays within
+    `cap` bytes. Returns (copied, over the cap, bytes over the cap,
+    failed). A missing or empty `src` copies nothing and creates no
+    `dest`.
+
+    `dest` ignores itself (`.gitignore`, `*`), written as it is created:
+    the copies are evidence for this run's dispatches, not record, and a
+    slice folder's sweep logs are committed with it. A top-level
+    `.gitignore` under `src` is never copied over it."""
+    fresh = sorted((sig[1], rel) for rel, sig in tree_sigs(src).items()
+                   if sig != before.get(rel) and sig[0] >= since_ns
+                   and rel != ".gitignore")
+    copied = over = over_bytes = failed = total = 0
+    for size, rel in fresh:
+        if total + size > cap:
+            over += 1
+            over_bytes += size
+            continue
+        target = dest / rel
+        try:
+            if not dest.is_dir():
+                dest.mkdir(parents=True)
+                (dest / ".gitignore").write_text("*\n")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src / rel, target)
+        except OSError:
+            failed += 1
+            continue
+        copied += 1
+        total += size
+    return copied, over, over_bytes, failed
 
 
 def _ticked(cmds: Sequence[str]) -> str:
@@ -7466,14 +7606,15 @@ class RunLoop:
             # a phase may have registered a component since the run started,
             # and a sweep that skipped it would leave it untested (#746).
             components = load_project_dirs(root)
-            for component in components:
+            for component, component_dir in components.items():
                 for verb in SWEEP_VERBS:
                     ruling = (self._covering(gates, root, component)
                               if verb == "test" else None)
                     results.append(
                         self._waived_row(root, component, ruling)
                         if ruling is not None else
-                        self._run_sweep_cmd(root, component, verb, out_dir))
+                        self._run_sweep_cmd(root, component, verb, out_dir,
+                                            component_dir))
         duration_s = int(time.monotonic() - t0)
         # Red only on a red row: a row that ran nothing is not a failure,
         # and a sweep in which nothing ran at all proved nothing — it is not
@@ -7486,7 +7627,7 @@ class RunLoop:
             "green": outcome == "green", "ran_at": _now_iso(),
             "results": results,
         }
-        reds = [f"{Path(r['repo']).name}/{r['component']} {r['verb']}"
+        reds = [self._red_name(r)
                 for r, o in zip(results, outcomes, strict=True) if o == "red"]
         empty = outcomes.count("nothing_ran")
         waived = outcomes.count("waived")
@@ -7518,7 +7659,8 @@ class RunLoop:
                 "log": None, "duration_s": 0}
 
     def _run_sweep_cmd(self, root: Path, component: str, verb: str,
-                       out_dir: Path) -> dict:
+                       out_dir: Path, component_dir: Path | None = None
+                       ) -> dict:
         """One sweep command, per component so a red in one suite never
         hides a red in the next (the kc verbs are fail-fast across their
         selection). A component with no statement for the verb makes a
@@ -7527,30 +7669,26 @@ class RunLoop:
         proving nothing and asking no session to fix it (the tool check at
         startup names it to the operator; this is a repo that slipped past
         it, or a call a script makes). `green` stays on the row beside
-        `outcome`, true for a green row only."""
+        `outcome`, true for a green row only.
+
+        A `test` row also keeps what its suite left, as `artifacts`
+        (`_keep_test_artifacts`, AIWF-94), and a red one re-runs once, as
+        `rerun` (`_rerun_sweep_test`); lint and build are deterministic and
+        do neither. `component_dir` is the component's directory as kc
+        lists it — where the suite's own files are looked for first."""
         argv = ["kc", "project", verb, "--project", component]
         log_path = out_dir / f"{root.name}_{component}_{verb}.log"
+        snapshot = (self._results_snapshot(root, component_dir)
+                    if verb == "test" else None)
         t0 = time.monotonic()
         try:
-            with open(log_path, "w") as log_file:
-                returncode = self._gate_exec(argv, root, log_file)
+            outcome, tool = self._sweep_exec(argv, root, log_path)
         except subprocess.TimeoutExpired:
             raise Bailout(
                 "timeout",
                 details=f"sweep `{' '.join(argv)}` in {root} exceeded "
                         f"{GATE_TIMEOUT}s (output in {log_path})",
             ) from None
-        # rc 2 is kc's usage error — the component name came from kc's own
-        # project list, so that is a driver bug, not a red suite.
-        if returncode == 2:
-            raise Bailout(
-                "protocol_failure",
-                details=f"sweep `{' '.join(argv)}` in {root} rejected its "
-                        f"arguments (output in {log_path})")
-        outcome = kc_outcome(returncode)
-        tool = unavailable_tool(log_path) if outcome == "red" else None
-        if tool is not None:
-            outcome = "unrunnable"
         duration_s = int(time.monotonic() - t0)
         self.log(f"[sweep] {root.name}/{component} {verb} → "
                  f"{GATE_OUTCOME_LABELS[outcome]} ({duration_s}s)"
@@ -7561,7 +7699,137 @@ class RunLoop:
                "log": str(log_path), "duration_s": duration_s}
         if tool is not None:
             row["tool"] = tool
+        if snapshot is None:
+            return row
+        row["artifacts"] = self._keep_test_artifacts(
+            snapshot, root, component, component_dir, out_dir,
+            red=outcome == "red")
+        if outcome == "red":
+            row["rerun"] = self._rerun_sweep_test(argv, root, component,
+                                                  component_dir, out_dir)
         return row
+
+    def _sweep_exec(self, argv: list[str], root: Path,
+                    log_path: Path) -> tuple[str, str | None]:
+        """One sweep command's outcome and, for an `unrunnable` one, the
+        missing tool — its output into `log_path`. A timeout propagates:
+        the first run bails on it, a re-run records it."""
+        with open(log_path, "w") as log_file:
+            returncode = self._gate_exec(argv, root, log_file)
+        # rc 2 is kc's usage error — the component name came from kc's own
+        # project list, so that is a driver bug, not a red suite.
+        if returncode == 2:
+            raise Bailout(
+                "protocol_failure",
+                details=f"sweep `{' '.join(argv)}` in {root} rejected its "
+                        f"arguments (output in {log_path})")
+        outcome = kc_outcome(returncode)
+        tool = unavailable_tool(log_path) if outcome == "red" else None
+        return ("unrunnable" if tool is not None else outcome), tool
+
+    def _rerun_sweep_test(self, argv: list[str], root: Path, component: str,
+                          component_dir: Path | None, out_dir: Path) -> dict:
+        """A red sweep `test` row's one re-run (AIWF-94): the same command,
+        the whole component again — `kc project test` takes no argument
+        that narrows it to the failures, and the driver never reads the
+        manifest to build one. Its outcome marks the row (`rerun_mark`);
+        the row stays red whatever it is, since a flake can be a real bug.
+        A re-run that times out records that as its outcome and bails
+        nothing — the first run's red already stands; its rc 2 is the
+        driver bug it always is."""
+        log_path = out_dir / f"{root.name}_{component}_test_rerun.log"
+        snapshot = self._results_snapshot(root, component_dir)
+        t0 = time.monotonic()
+        tool = None
+        try:
+            outcome, tool = self._sweep_exec(argv, root, log_path)
+        except subprocess.TimeoutExpired:
+            outcome = "timeout"
+        duration_s = int(time.monotonic() - t0)
+        rerun = {"outcome": outcome, "log": str(log_path),
+                 "duration_s": duration_s}
+        if tool is not None:
+            rerun["tool"] = tool
+        self.log(f"[sweep] {root.name}/{component} test → RED "
+                 f"({rerun_mark({'rerun': rerun})}) after its re-run "
+                 f"({duration_s}s)"
+                 + (f" — cexec tool `{tool}` is not in this environment"
+                    if tool else ""))
+        rerun["artifacts"] = self._keep_test_artifacts(
+            snapshot, root, component, component_dir, out_dir,
+            red=outcome == "red", suffix="_rerun")
+        return rerun
+
+    @staticmethod
+    def _results_snapshot(root: Path, component_dir: Path | None) -> dict:
+        """Taken just before a sweep `test` command, so that only what it
+        writes is its own: where its suite may write `test_results.md` — the
+        component's directory first, then the repo root — with each one's
+        `_file_sig`; the component directory's `test-results/` files'
+        `tree_sigs`; and the command's start as the earliest mtime a file it
+        wrote may carry (MTIME_SLACK_S)."""
+        files = ([Path(component_dir) / TEST_RESULTS_NAME]
+                 if component_dir is not None else [])
+        root_file = Path(root) / TEST_RESULTS_NAME
+        if root_file not in files:
+            files.append(root_file)
+        return {
+            "files": files, "before": {p: _file_sig(p) for p in files},
+            "tree_before": (tree_sigs(Path(component_dir) / TEST_RESULTS_DIR)
+                            if component_dir is not None else {}),
+            "since_ns": time.time_ns() - int(MTIME_SLACK_S * 1_000_000_000),
+        }
+
+    def _keep_test_artifacts(self, snapshot: dict, root: Path,
+                             component: str, component_dir: Path | None,
+                             out_dir: Path, red: bool,
+                             suffix: str = "") -> list[str]:
+        """Copy what a sweep `test` command left into `out_dir`, before
+        anything else runs in the checkout, and return the copies' paths
+        (AIWF-94). Every run: the `test_results.md` it wrote, named
+        `<Repo>_<component>_test_results<suffix>.md` — so the next
+        component's suite, writing the same file at the repo root, cannot
+        overwrite its cause. A red run: the component directory's
+        `test-results/` too, as `<Repo>_<component>_test-results<suffix>/`,
+        the files the run wrote within TEST_RESULTS_DIR_CAP, in a folder
+        that ignores itself (`copy_fresh_tree`) — the `test_results.md`
+        copy, small text, stays committable with the logs. Only a file
+        the command wrote is its own (`snapshot`); nothing to copy is not an
+        error, and a copy that fails is logged — the row stands on its
+        log."""
+        since_ns = snapshot["since_ns"]
+        name = f"{root.name}/{component} test"
+        base = f"{root.name}_{component}"
+        kept: list[str] = []
+        src = fresh_file(snapshot["files"], snapshot["before"], since_ns)
+        if src is not None:
+            results = Path(TEST_RESULTS_NAME)
+            dest = out_dir / f"{base}_{results.stem}{suffix}{results.suffix}"
+            try:
+                shutil.copy2(src, dest)
+                kept.append(str(dest))
+            except OSError as e:
+                self.log(f"[sweep] {name}: {src} not copied ({e})")
+        if red and component_dir is not None:
+            src_dir = Path(component_dir) / TEST_RESULTS_DIR
+            dest = out_dir / f"{base}_{TEST_RESULTS_DIR}{suffix}"
+            copied, over, over_bytes, failed = copy_fresh_tree(
+                src_dir, dest, snapshot["tree_before"], since_ns,
+                TEST_RESULTS_DIR_CAP)
+            if copied:
+                kept.append(str(dest))
+            if over:
+                self.log(f"[sweep] {name}: {src_dir} is over the "
+                         f"{TEST_RESULTS_DIR_CAP / 2**20:g} MB cap — "
+                         f"{copied} file(s) copied, smallest first; {over} "
+                         f"({over_bytes / 2**20:.1f} MB) left out")
+            if failed:
+                self.log(f"[sweep] {name}: {failed} file(s) under {src_dir} "
+                         "could not be copied")
+        if kept:
+            self.log(f"[sweep] {name}: copied "
+                     + ", ".join(Path(p).name for p in kept))
+        return kept
 
     def _ruled_rows(self, results: list[dict]
                     ) -> list[tuple[str, Ruling | None]]:
@@ -7594,8 +7862,16 @@ class RunLoop:
 
     @staticmethod
     def _row_label(row: dict, outcome: str, ruling: Ruling | None) -> str:
+        """A row's label in the sweep block. A red row carries its re-run's
+        mark — `RED (reproduced)`, `RED (flaky: passed on re-run)` — where
+        it has one, under a ruling too; a row recorded before red rows
+        re-ran reads plain `RED`."""
+        mark = rerun_mark(row)
+        red = GATE_OUTCOME_LABELS["red"] + (f" ({mark})" if mark else "")
         if outcome == "accepted":
-            return f"RED, accepted by ruling ({ruling.why})"
+            return f"{red}, accepted by ruling ({ruling.why})"
+        if outcome == "red":
+            return red
         if outcome == "unrunnable":
             return (f"{GATE_OUTCOME_LABELS[outcome]} — cexec tool "
                     f"`{row.get('tool')}` is not in this environment")
@@ -7604,9 +7880,32 @@ class RunLoop:
         substitute = (ruling.substitute_text if ruling is not None
                       else row.get("substitute") or "no substitute")
         why = ruling.why if ruling is not None else row.get("why", "")
-        ran = " (ran RED)" if sweep_row_outcome(row) == "red" else ""
+        ran = ((f" (ran RED, {mark})" if mark else " (ran RED)")
+               if sweep_row_outcome(row) == "red" else "")
         return (f"WAIVED by ruling{ran} — substitute: {substitute}"
                 + (f" ({why})" if why else ""))
+
+    @staticmethod
+    def _red_name(row: dict) -> str:
+        """A red sweep row as the sweep's history summary and announce line
+        name it, its re-run's short mark beside it: `PilotApp/frontend test
+        (flaky)`."""
+        mark = rerun_mark(row, short=True)
+        return (f"{Path(row['repo']).name}/{row['component']} {row['verb']}"
+                + (f" ({mark})" if mark else ""))
+
+    @staticmethod
+    def _kept_lines(row: dict) -> list[str]:
+        """A RED row's sub-lines in the sweep block: its re-run's log and
+        the copies both runs kept — none for a row recorded without them."""
+        rerun = row.get("rerun") or {}
+        kept = [*(row.get("artifacts") or []), *(rerun.get("artifacts") or [])]
+        lines = []
+        if rerun.get("log"):
+            lines.append(f"    - re-run: {rerun['log']}")
+        if kept:
+            lines.append(f"    - copied: {', '.join(kept)}")
+        return lines
 
     def _sweep_block(self, sweep: dict, green_stance: str,
                      red_stance: str) -> str:
@@ -7622,13 +7921,15 @@ class RunLoop:
             lines = []
             for repo, sha in sweep["commits"].items():
                 lines.append(f"- {Path(repo).name} @ {sha[:12]}:")
-                lines.extend(
-                    f"  - {r['component']} {r['verb']} → "
-                    f"{self._row_label(r, outcome, ruling)}"
-                    + (f" — {r['log']}" if r.get("log") else "")
-                    for r, (outcome, ruling)
-                    in zip(sweep["results"], ruled, strict=True)
-                    if r["repo"] == repo)
+                for r, (outcome, ruling) in zip(sweep["results"], ruled,
+                                                strict=True):
+                    if r["repo"] != repo:
+                        continue
+                    lines.append(f"  - {r['component']} {r['verb']} → "
+                                 f"{self._row_label(r, outcome, ruling)}"
+                                 + (f" — {r['log']}" if r.get("log") else ""))
+                    if outcome == "red":
+                        lines.extend(self._kept_lines(r))
             rows = "\n".join(lines)
             outcomes = [outcome for outcome, _ in ruled]
             outcome = ("red" if "red" in outcomes
@@ -7639,6 +7940,11 @@ class RunLoop:
             stance = {"green": green_stance.format(every_row=every_row),
                       "red": red_stance,
                       "nothing_ran": SWEEP_STANCE_NONE}[outcome]
+            if any(o == "red" and r.get("rerun") for r, (o, _)
+                   in zip(sweep["results"], ruled, strict=True)):
+                stance += "\n\n" + SWEEP_RERUN_NOTE.format(
+                    results_name=TEST_RESULTS_NAME,
+                    results_dir=TEST_RESULTS_DIR)
             if ruled_any:
                 stance += "\n\n" + SWEEP_RULINGS_NOTE
             if "unrunnable" in outcomes:

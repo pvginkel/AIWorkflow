@@ -590,7 +590,8 @@ class ScriptedLoop(RunLoop):
                      "green" if green else "red", "", None, 0)
         return green, log_path
 
-    def _run_sweep_cmd(self, root, component, verb, out_dir):
+    def _run_sweep_cmd(self, root, component, verb, out_dir,
+                       component_dir=None):
         green = (component, verb) not in self.sweep_reds
         self.sweep_calls.append((str(root), component, verb))
         log_path = out_dir / f"{root.name}_{component}_{verb}.log"
@@ -6972,6 +6973,434 @@ def test_a_sweep_recorded_before_rows_had_an_outcome_still_renders():
         block = r._sweep_block(old, "GREEN-STANCE", "RED-STANCE")
         assert f"{PROJECT} test → RED — t.log" in block
         assert block.endswith("RED-STANCE")
+
+
+# -- a sweep test row keeps its suite's files; a red one re-runs (AIWF-94) -----
+#
+# The sweep kept kc's lines alone. A ModernAppTemplate repo's frontend suite
+# overwrote the backend's test_results.md at the repo root; the consult's own
+# re-run deleted Playwright's test-results/ minutes after; and nothing said
+# whether a red reproduced — a flake got a phase appended, and another
+# "flake" was a real bug. Every test row now keeps the files its run wrote,
+# and a red one re-runs once, whole, and stays red either way.
+
+LONG_AGO = 1_600_000_000   # an mtime from 2020: a file no run here wrote
+
+
+class SweepRunLoop(KcExitLoop):
+    """KcExitLoop whose sweep commands are scripted per (component, verb)
+    as a list of steps, one per run in order (exit 0 once spent): an exit
+    code, TIMED_OUT, or a callable standing in for the suite — it does on
+    disk what the suite would and returns the exit code."""
+
+    def __init__(self, slice_dir, script, sweep_steps=None, **kw):
+        super().__init__(slice_dir, script, **kw)
+        self.sweep_steps = {k: list(v) for k, v in (sweep_steps or {}).items()}
+        self.sweep_argvs = []
+
+    def _gate_exec(self, argv, cwd, log_file):
+        if not self._sweeping:
+            return super()._gate_exec(argv, cwd, log_file)
+        steps = self.sweep_steps.get((argv[4], argv[2]), [])
+        step = steps.pop(0) if steps else 0
+        self.sweep_argvs.append(list(argv))
+        if step is TIMED_OUT:
+            raise subprocess.TimeoutExpired(argv, run_loop.GATE_TIMEOUT)
+        rc_ = step() if callable(step) else step
+        log_file.write(f"{' '.join(argv)}: exit {rc_}\n")
+        return rc_
+
+
+def suite_writes(rc_, files, mtime=None):
+    """A sweep step: the suite writes `files` ({path: text or bytes}) and
+    exits `rc_`; `mtime` back-dates what it wrote."""
+    def step():
+        for path, content in files.items():
+            path = Path(path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if isinstance(content, bytes):
+                path.write_bytes(content)
+            else:
+                path.write_text(content)
+            if mtime is not None:
+                os.utime(path, (mtime, mtime))
+        return rc_
+    return step
+
+
+def run_sweep(loop, repo, components=None):
+    """One gate sweep over `repo`, outside a run, with `components` as `kc
+    project list` gives them (the suite's one component at the repo root
+    by default): the sweep record and what it announced."""
+    loop.state.setdefault("history", [])
+    out = io.StringIO()
+    listed = components or {PROJECT: Path(repo)}
+    with patched(run_loop, load_project_dirs=lambda cwd: dict(listed)), \
+            contextlib.redirect_stdout(out):
+        sweep = loop._run_gate_sweep([repo], {str(repo): "abc123def4567"})
+    return sweep, out.getvalue()
+
+
+def sweep_row(sweep, component, verb="test"):
+    return next(row for row in sweep["results"]
+                if row["component"] == component and row["verb"] == verb)
+
+
+def test_a_red_sweep_test_row_that_passes_its_rerun_is_red_and_flaky():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = SweepRunLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo,
+                         sweep_steps={(PROJECT, "test"): [1, 0]})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            assert run_to_exit(r) == 0
+        test_argv = ["kc", "project", "test", "--project", PROJECT]
+        # the whole component, the same command, once more — and only once
+        assert r.sweep_argvs.count(test_argv) == 2
+        state = load_state(slice_dir)
+        sweep = state["gate_sweep"]
+        assert sweep["outcome"] == "red" and sweep["green"] is False
+        row = sweep_row(sweep, PROJECT)
+        assert row["outcome"] == "red" and row["green"] is False
+        rerun = row["rerun"]
+        assert rerun["outcome"] == "green"
+        out_dir = slice_dir / "sweeps" / "r1"
+        assert rerun["log"] == str(out_dir / f"repo_{PROJECT}_test_rerun.log")
+        assert Path(rerun["log"]).is_file()
+        assert isinstance(rerun["duration_s"], int)
+        assert rerun["artifacts"] == [] and row["artifacts"] == []
+        summary = next(h for h in state["history"]
+                       if h["role"] == "sweep")["summary"]
+        assert summary == f"repo/{PROJECT} test (flaky)"
+        assert f"gate sweep r1 → RED (repo/{PROJECT} test (flaky))" \
+            in out.getvalue()
+        for role in ("consult", "test-agent"):
+            prompt = next(p for rl, p in r.prompts if rl == role)
+            assert (f"  - {PROJECT} test → RED (flaky: passed on re-run) — "
+                    f"{row['log']}\n    - re-run: {rerun['log']}") in prompt
+            flat = prompt.replace("\n", " ")
+            assert "A flaky row is still RED and yours to judge" in flat
+            assert "`test_results.md`, Playwright's `test-results/`" in flat
+        assert "append a phase that fixes it" in next(
+            p for rl, p in r.prompts if rl == "consult").replace("\n", " ")
+        assert "test → RED (flaky: passed on re-run) after its re-run" \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_a_red_sweep_test_row_that_fails_its_rerun_is_reproduced():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = SweepRunLoop(slice_dir, [], repo_root=repo,
+                         sweep_steps={(PROJECT, "test"): [1, 1]})
+        sweep, out = run_sweep(r, repo)
+        row = sweep_row(sweep, PROJECT)
+        assert row["outcome"] == "red" and row["rerun"]["outcome"] == "red"
+        assert f"gate sweep r1 → RED (repo/{PROJECT} test (reproduced))" in out
+        block = r._sweep_block(sweep, "GREEN-STANCE", "RED-STANCE")
+        assert f"{PROJECT} test → RED (reproduced) — " in block
+        assert "A flaky row is still RED" in block.replace("\n", " ")
+
+
+def test_a_sweep_rerun_that_times_out_is_recorded_not_bailed():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = SweepRunLoop(slice_dir, [], repo_root=repo,
+                         sweep_steps={(PROJECT, "test"): [1, TIMED_OUT]})
+        sweep, out = run_sweep(r, repo)
+        row = sweep_row(sweep, PROJECT)
+        assert row["outcome"] == "red" and row["green"] is False
+        assert row["rerun"]["outcome"] == "timeout"
+        assert sweep["outcome"] == "red"
+        assert f"repo/{PROJECT} test (re-run timed out)" in out
+        block = r._sweep_block(sweep, "GREEN-STANCE", "RED-STANCE")
+        assert f"{PROJECT} test → RED (re-run timed out) — " in block
+    # the first run's timeout still bails, as before
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = SweepRunLoop(slice_dir, [], repo_root=repo,
+                         sweep_steps={(PROJECT, "test"): [TIMED_OUT]})
+        try:
+            run_sweep(r, repo)
+        except Bailout as e:
+            assert e.reason == "timeout"
+        else:
+            raise AssertionError("a first run that timed out did not bail")
+    # and a re-run kc refuses as a usage error is the driver bug it always is
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = SweepRunLoop(slice_dir, [], repo_root=repo,
+                         sweep_steps={(PROJECT, "test"): [1, 2]})
+        try:
+            run_sweep(r, repo)
+        except Bailout as e:
+            assert e.reason == "protocol_failure"
+            assert "test_rerun.log" in e.details
+        else:
+            raise AssertionError("a re-run's rc 2 did not bail")
+
+
+def test_each_test_row_keeps_the_test_results_md_its_own_run_wrote():
+    """ModernAppTemplate: backend and frontend both write the repo root's
+    test_results.md, so each is copied before the next suite runs; a
+    component whose suite writes none is never handed another's."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        root_md = repo / run_loop.TEST_RESULTS_NAME
+        stale = repo / "worker" / run_loop.TEST_RESULTS_NAME
+        stale.parent.mkdir()
+        stale.write_text("worker: from some earlier run")
+        os.utime(stale, (LONG_AGO, LONG_AGO))
+        components = {"backend": repo / "backend",
+                      "frontend": repo / "frontend",
+                      "worker": repo / "worker"}
+        r = SweepRunLoop(slice_dir, [], repo_root=repo, sweep_steps={
+            ("backend", "test"): [
+                suite_writes(1, {root_md: "backend: test_login failed"}),
+                suite_writes(1, {root_md: "backend: test_login failed again"})],
+            ("frontend", "test"): [
+                suite_writes(0, {root_md: "frontend: all passed"})],
+        })
+        sweep, _ = run_sweep(r, repo, components)
+        out_dir = slice_dir / "sweeps" / "r1"
+        backend = sweep_row(sweep, "backend")
+        kept = out_dir / "repo_backend_test_results.md"
+        kept_rerun = out_dir / "repo_backend_test_results_rerun.md"
+        assert backend["artifacts"] == [str(kept)]
+        assert kept.read_text() == "backend: test_login failed"
+        assert backend["rerun"]["artifacts"] == [str(kept_rerun)]
+        assert kept_rerun.read_text() == "backend: test_login failed again"
+        # a green row keeps its own too
+        frontend = sweep_row(sweep, "frontend")
+        assert frontend["artifacts"] == [
+            str(out_dir / "repo_frontend_test_results.md")]
+        assert (out_dir / "repo_frontend_test_results.md").read_text() \
+            == "frontend: all passed"
+        # the worker's suite wrote nothing: neither its own stale file nor
+        # the frontend's, a moment old at the root, is its
+        assert sweep_row(sweep, "worker")["artifacts"] == []
+        assert not (out_dir / "repo_worker_test_results.md").exists()
+        # the dispatch lists a red row's copies, never a green row's
+        block = r._sweep_block(sweep, "GREEN-STANCE", "RED-STANCE")
+        assert f"    - copied: {kept}, {kept_rerun}" in block
+        assert "repo_frontend_test_results.md" not in block
+
+
+def test_the_component_directory_is_looked_in_before_the_repo_root():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        name = run_loop.TEST_RESULTS_NAME
+        components = {"docs": repo / "docs", "legacy": repo / "legacy"}
+        r = SweepRunLoop(slice_dir, [], repo_root=repo, sweep_steps={
+            ("docs", "test"): [suite_writes(0, {
+                repo / "docs" / name: "docs: its own",
+                repo / name: "docs: at the root"})],
+            # written by the run, but back-dated: older than its start
+            ("legacy", "test"): [suite_writes(
+                0, {repo / "legacy" / name: "legacy: back-dated"},
+                mtime=LONG_AGO)],
+        })
+        sweep, _ = run_sweep(r, repo, components)
+        out_dir = slice_dir / "sweeps" / "r1"
+        assert (out_dir / "repo_docs_test_results.md").read_text() \
+            == "docs: its own"
+        assert sweep_row(sweep, "legacy")["artifacts"] == []
+
+
+def test_a_red_test_row_keeps_its_test_results_dir_within_the_cap():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        results = repo / "frontend" / run_loop.TEST_RESULTS_DIR
+        old = results / "old-run" / "trace.zip"
+        old.parent.mkdir(parents=True)
+        old.write_bytes(b"t" * 20)
+        os.utime(old, (LONG_AGO, LONG_AGO))
+        spec = results / "login-spec-chromium"
+        r = SweepRunLoop(slice_dir, [], repo_root=repo, sweep_steps={
+            ("frontend", "test"): [
+                suite_writes(1, {spec / "error-context.md": "x" * 10,
+                                 spec / "test-failed-1.png": b"p" * 50,
+                                 spec / "video.webm": b"v" * 500}),
+                suite_writes(1, {spec / "error-context.md": "again"})],
+        })
+        with patched(run_loop, TEST_RESULTS_DIR_CAP=100):
+            sweep, _ = run_sweep(r, repo, {"frontend": repo / "frontend"})
+        out_dir = slice_dir / "sweeps" / "r1"
+        row = sweep_row(sweep, "frontend")
+        kept = out_dir / "repo_frontend_test-results"
+        assert row["artifacts"] == [str(kept)]
+        copied = kept / "login-spec-chromium"
+        assert (copied / "error-context.md").read_text() == "x" * 10
+        assert (copied / "test-failed-1.png").is_file()
+        # the cap: the smallest first, the video left out and logged
+        assert not (copied / "video.webm").exists()
+        log = (slice_dir / "log.txt").read_text()
+        assert f"{results} is over the" in log and "MB cap" in log
+        assert "2 file(s) copied, smallest first; 1 (0.0 MB) left out" in log
+        # a file no run here wrote is not this one's
+        assert not (kept / "old-run").exists()
+        # still red on its re-run: that run's own files, in a folder of its own
+        kept_rerun = out_dir / "repo_frontend_test-results_rerun"
+        assert row["rerun"]["artifacts"] == [str(kept_rerun)]
+        assert sorted(p.name for p in kept_rerun.rglob("*") if p.is_file()) \
+            == [".gitignore", "error-context.md"]
+        assert (kept_rerun / "login-spec-chromium"
+                / "error-context.md").read_text() == "again"
+
+
+def test_a_kept_test_results_dir_ignores_itself_in_the_spec_repo():
+    """The slice folder's sweep logs are committed with it; the copied
+    test-results/ are evidence for this run, not record — and may hold
+    videos and traces. The test_results.md copies, small text, stay."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        specs = Path(tmp) / "specs"
+        shutil.rmtree(specs / ".git")
+        sh(specs, "init", "-q", "-b", "main")
+        spec = repo / "frontend" / run_loop.TEST_RESULTS_DIR / "a-spec"
+        md = repo / run_loop.TEST_RESULTS_NAME
+        r = SweepRunLoop(slice_dir, [], repo_root=repo, sweep_steps={
+            ("frontend", "test"): [
+                suite_writes(1, {spec / "error-context.md": "failed",
+                                 spec / ".gitignore": "!*\n", md: "1 failed"}),
+                suite_writes(1, {spec / "error-context.md": "failed again",
+                                 md: "1 failed again"})],
+        })
+        sweep, _ = run_sweep(r, repo, {"frontend": repo / "frontend"})
+        out_dir = slice_dir / "sweeps" / "r1"
+        for name in ("repo_frontend_test-results",
+                     "repo_frontend_test-results_rerun"):
+            assert (out_dir / name / ".gitignore").read_text() == "*\n"
+        status = sh(specs, "status", "--porcelain", "--untracked-files=all")
+        assert "test-results" not in status
+        assert "sweeps/r1/repo_frontend_test_results.md" in status
+        assert "sweeps/r1/repo_frontend_test_results_rerun.md" in status
+        assert "sweeps/r1/repo_frontend_test.log" in status
+
+
+def test_a_test_rerun_that_passes_keeps_no_test_results_dir():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        spec = repo / "frontend" / run_loop.TEST_RESULTS_DIR / "a-spec"
+        r = SweepRunLoop(slice_dir, [], repo_root=repo, sweep_steps={
+            ("frontend", "test"): [
+                suite_writes(1, {spec / "error-context.md": "failed"}),
+                suite_writes(0, {spec / "trace.zip": b"passed"})],
+        })
+        sweep, _ = run_sweep(r, repo, {"frontend": repo / "frontend"})
+        row = sweep_row(sweep, "frontend")
+        assert row["rerun"]["outcome"] == "green"
+        assert row["rerun"]["artifacts"] == []
+        out_dir = slice_dir / "sweeps" / "r1"
+        assert not (out_dir / "repo_frontend_test-results_rerun").exists()
+
+
+def test_a_red_test_row_without_a_test_results_dir_is_no_error():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        (repo / "frontend" / run_loop.TEST_RESULTS_DIR).mkdir(parents=True)
+        r = SweepRunLoop(slice_dir, [], repo_root=repo, sweep_steps={
+            ("frontend", "test"): [1, 1], ("backend", "test"): [1, 1]})
+        sweep, _ = run_sweep(r, repo, {"frontend": repo / "frontend",
+                                       "backend": repo / "backend"})
+        for component in ("frontend", "backend"):   # empty, then missing
+            row = sweep_row(sweep, component)
+            assert row["artifacts"] == [] and row["rerun"]["artifacts"] == []
+        assert not list((slice_dir / "sweeps" / "r1").glob("*test-results*"))
+
+
+def test_a_green_test_row_does_not_rerun_or_keep_its_test_results_dir():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        spec = repo / "frontend" / run_loop.TEST_RESULTS_DIR / "a-spec"
+        r = SweepRunLoop(slice_dir, [], repo_root=repo, sweep_steps={
+            ("frontend", "test"): [
+                suite_writes(0, {spec / "trace.zip": b"t",
+                                 repo / run_loop.TEST_RESULTS_NAME: "ok"})]})
+        sweep, _ = run_sweep(r, repo, {"frontend": repo / "frontend"})
+        assert r.sweep_argvs.count(
+            ["kc", "project", "test", "--project", "frontend"]) == 1
+        row = sweep_row(sweep, "frontend")
+        assert row["outcome"] == "green" and "rerun" not in row
+        out_dir = slice_dir / "sweeps" / "r1"
+        assert row["artifacts"] == [str(out_dir
+                                        / "repo_frontend_test_results.md")]
+        assert not (out_dir / "repo_frontend_test-results").exists()
+
+
+def test_lint_and_build_rows_never_rerun_or_keep_files():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        spec = repo / run_loop.TEST_RESULTS_DIR / "a-spec"
+        md = repo / run_loop.TEST_RESULTS_NAME
+        r = SweepRunLoop(slice_dir, [], repo_root=repo, sweep_steps={
+            (PROJECT, "lint"): [suite_writes(1, {md: "lint", spec / "l": "l"})],
+            (PROJECT, "build"): [suite_writes(1, {md: "b", spec / "b": "b"})]})
+        sweep, out = run_sweep(r, repo)
+        for verb in ("lint", "build"):
+            assert r.sweep_argvs.count(
+                ["kc", "project", verb, "--project", PROJECT]) == 1
+            row = sweep_row(sweep, PROJECT, verb)
+            assert row["outcome"] == "red"
+            assert "rerun" not in row and "artifacts" not in row
+        assert not list((slice_dir / "sweeps" / "r1").glob("*test_results*"))
+        assert not list((slice_dir / "sweeps" / "r1").glob("*test-results*"))
+        assert f"RED (repo/{PROJECT} lint, repo/{PROJECT} build)" in out
+        block = r._sweep_block(sweep, "GREEN-STANCE", "RED-STANCE")
+        assert f"{PROJECT} lint → RED — " in block
+        assert "re-run" not in block and "copied:" not in block
+
+
+def test_a_red_row_an_accept_ruling_covers_reruns_and_carries_its_mark():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        ruled_plan(slice_dir, "accept app test — flaky before this slice, "
+                              "ANS-7")
+        r = SweepRunLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo,
+                         sweep_steps={(PROJECT, "test"): [1, 0]})
+        assert run_to_exit(r) == 0
+        row = sweep_row(load_state(slice_dir)["gate_sweep"], PROJECT)
+        assert row["rerun"]["outcome"] == "green"
+        consult = next(p for rl, p in r.prompts if rl == "consult")
+        assert (f"{PROJECT} test → RED (flaky: passed on re-run), accepted "
+                "by ruling (flaky before this slice, ANS-7) — ") in consult
+        # accepted is not red: no copies listed, no note about them
+        assert "re-run:" not in consult
+        assert "A flaky row is still RED" not in consult.replace("\n", " ")
+
+
+def test_sweep_rows_recorded_before_reruns_still_render():
+    """A resume reuses a sweep an older plugin recorded while the heads
+    match: its red rows carry no `rerun` and no `artifacts`."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = SweepRunLoop(slice_dir, [], repo_root=repo)
+        old = {"commits": {str(repo): "abc123def4567"}, "outcome": "red",
+               "green": False,
+               "results": [{"repo": str(repo), "component": PROJECT,
+                            "verb": verb, "outcome": "red", "green": False,
+                            "log": f"{verb}.log", "duration_s": 3}
+                           for verb in ("build", "test")]}
+        block = r._sweep_block(old, "GREEN-STANCE", "RED-STANCE")
+        assert f"  - {PROJECT} build → RED — build.log\n" in block
+        assert f"  - {PROJECT} test → RED — test.log\n" in block
+        assert "    - " not in block
+        assert block.endswith("RED-STANCE")
+        assert r._red_name(old["results"][1]) == f"repo/{PROJECT} test"
+        assert run_loop.rerun_mark(old["results"][1]) is None
+        # beside a row recorded with its re-run, each renders as it was kept
+        new = {**old["results"][1], "log": "new.log",
+               "rerun": {"outcome": "red", "log": "rerun.log",
+                         "duration_s": 3, "artifacts": []},
+               "artifacts": ["kept.md"]}
+        block = r._sweep_block({**old, "results": [old["results"][1], new]},
+                               "GREEN-STANCE", "RED-STANCE")
+        assert f"  - {PROJECT} test → RED — test.log\n  - {PROJECT} test" \
+            in block
+        assert (f"  - {PROJECT} test → RED (reproduced) — new.log\n"
+                "    - re-run: rerun.log\n    - copied: kept.md") in block
+        assert "A flaky row is still RED" in block.replace("\n", " ")
 
 
 def test_doc_gate_sweeps_lint_build_test_fail_fast():

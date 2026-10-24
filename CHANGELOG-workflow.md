@@ -4,6 +4,31 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-24 — The loop-tail gate sweep keeps what a red test row left, and reruns it once to mark it reproduced or flaky (v0.9.134)
+
+A red sweep row gave the consult too little to judge it. The row said only kc's summary line.
+Two suites writing one `test_results.md` at the repo root left only the second's cause: an
+ElectronicsInventory sweep lost the backend's `S3 storage is not reachable`. A consult's own
+rerun deleted Playwright's `test-results/`, and with it the logs that showed the cause (PilotApp
+slice 010, about 30 runs to rebuild it). And nothing said whether the red reproduced: a phase was
+appended for an apparent flake that was a real bug in the template's test setup.
+
+Now, right after each component's test command, the driver copies the `test_results.md` that run
+wrote into `sweeps/r<N>/` as `<Repo>_<component>_test_results.md`. It looks in the component's
+directory first, then the repo root, and takes only a file the command changed. On a red run it
+also copies the files that run wrote into the component's `test-results/`, smallest first under
+a 50 MB cap, into a folder that ignores itself, so videos and traces never reach the spec repo.
+Then it reruns the same `kc project test --project <c>` once, into `…_test_rerun.log`, and keeps
+that run's files the same way. The row stays red and is marked `RED (reproduced)` or `RED
+(flaky: passed on re-run)`. A flaky row is still reported and still the consult's to judge.
+
+The operator ruled the whole-component rerun (2026-10-24): `kc project test` takes no extra
+arguments and the plugin never reads a manifest, so `pytest --lf` and `playwright
+--last-failed` are out of reach. A rerun that times out is recorded as its outcome, not a bail.
+Lint, build and waived rows are not rerun. The red rows in the consult's and the test phase's
+sweep block list the rerun log and the copies, under one shared note. Rows gain `artifacts` and,
+when red, `rerun` (`runner-state.md`), and rows recorded before this render as before. AIWF-94.
+
 ## 2026-10-24 — A wrap-up mark that hands an edit reserved for the operator's word to them: close_out.py request-word (v0.9.133)
 
 The table sends every prose entry to the wrap-up to fix (row 6), even one a project's rule
