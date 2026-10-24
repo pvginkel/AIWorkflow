@@ -35,9 +35,14 @@ is judgment — and nobody edits either file by hand; importable by both loops
                entry, and writes nothing.
   propose      give an entry its proposal — what the author would do about
                it — or replace it, the old one kept as a note.
+  unpropose    withdraw a proposal `propose` set, while it is not committed
+               and only on its own --by: the one it replaced comes back.
   request-card the wrap-up asks for a card on an entry; its words become the
                entry's proposal.
   leave        the wrap-up looked at an entry and changed nothing.
+  unmark       withdraw the wrap-up's mark on an entry, while it is not
+               committed and only on its own --by: the mark before it and
+               the proposal it replaced come back.
   fold         append an entry verbatim — its `show`, quoted, under a line
                naming the slice, the entry and the report — to the slice.md
                of the slice still unplanned it is `for` (or `--into`), and
@@ -369,8 +374,8 @@ EDITED_TAIL = ("Ask the operator about every line here that is not yours to take
                "verdict's summary what you meant to write, and carry on.")
 # The verbs that write close-out.md, each taking `--overwrite`.
 WRITING_VERBS = ("append", "note", "strike", "unnote", "unstrike", "amend", "relabel",
-                 "propose", "request-card", "leave", "rule", "settle", "close", "render",
-                 "stamp")
+                 "propose", "unpropose", "request-card", "leave", "unmark", "rule",
+                 "settle", "close", "render", "stamp")
 OVERWRITE_HELP = ("write close-out.md although it was edited since its last render "
                   "(after the refusal's list is dealt with)")
 
@@ -1237,20 +1242,61 @@ def amend_entry(slice_dir: Path | str, eid: str, by: str, *,
                        provenance, severity, labels)
         if new == entry:
             raise ReportError(f"amend changes nothing on {eid}: it already holds that")
+        if new["proposal"] != entry.get("proposal"):
+            # the proposal is the appender's again: no `propose` set it
+            new.pop("proposed", None)
+            entry.pop("proposed", None)
         entry.update(new)
         return _heading(entry)
 
 
-def _set_proposal(entry: dict, who: str, day: str, text: str) -> None:
+def _proposal_note(who: str, day: str, old: str) -> dict:
+    return {"by": who, "date": day, "text": [f"proposal replaced — was: {old}"],
+            "history": "proposal"}
+
+
+def _set_proposal(entry: dict, who: str, day: str, text: str, via: str) -> None:
     """Give the entry `text` as its proposal; one it already had, and that
     says something else, stays as a note signed by whoever replaced it —
-    a history note, which `unnote` never takes."""
+    a history note, which `unnote` never takes. `proposed` records who set
+    it, when, through which verb (`via`), the proposal it replaced (None:
+    none) and the record before it (`prior`) — what `unpropose` and
+    `unmark` restore from."""
     old = entry.get("proposal")
     if old and old != text:
-        entry["notes"].append({"by": who, "date": day,
-                               "text": [f"proposal replaced — was: {old}"],
-                               "history": "proposal"})
+        entry["notes"].append(_proposal_note(who, day, old))
+    entry["proposed"] = {"by": who, "date": day, "via": via, "replaced": old,
+                         "prior": entry.get("proposed")}
     entry["proposal"] = text
+
+
+def _drop_note(entry: dict, note: dict) -> None:
+    """Remove the latest note equal to `note` — the history note a write
+    that is taken back added. Nothing when there is none."""
+    notes = entry["notes"]
+    for i in reversed(range(len(notes))):
+        if notes[i] == note:
+            del notes[i]
+            return
+
+
+def _unset_proposal(entry: dict, record: dict) -> None:
+    """Take back the proposal `record` set — the entry's current `proposed`:
+    the proposal it replaced comes back (or none), with the record before
+    it, and the history note it added goes."""
+    old = record.get("replaced")
+    if old and old != entry.get("proposal"):
+        _drop_note(entry, _proposal_note(record["by"], record["date"], old))
+    entry["proposal"] = old
+    if record.get("prior") is None:
+        entry.pop("proposed", None)
+    else:
+        entry["proposed"] = record["prior"]
+
+
+def _proposal_back(entry: dict) -> str:
+    return (f"back: **Proposal:** {entry['proposal']}" if entry.get("proposal")
+            else "back: no proposal")
 
 
 def propose_entry(slice_dir: Path | str, eid: str, by: str, text: str,
@@ -1269,8 +1315,44 @@ def propose_entry(slice_dir: Path | str, eid: str, by: str, text: str,
         entry = _find(store, eid)
         if entry.get("strike"):
             raise ReportError(f"{eid} is struck — a struck entry is settled")
-        _set_proposal(entry, who, day, proposal)
+        _set_proposal(entry, who, day, proposal, "propose")
     return f"**Proposal:** {proposal}"
+
+
+def unpropose_entry(slice_dir: Path | str, eid: str, by: str) -> str:
+    """Withdraw a proposal `propose` set: only on its own --by, and only
+    while HEAD's store does not hold its record. The proposal it replaced
+    comes back — or none — and the note that kept it goes. The appender's
+    own proposal has no record, and `amend` corrects it; a card request's
+    goes with its mark (`unmark`). Returns what was withdrawn and what is
+    back."""
+    who = _collapse(by)
+    if not who:
+        raise ReportError("unpropose needs --by: who proposed")
+    with _writing(slice_dir) as store:
+        entry = _find(store, eid)
+        eid = entry["id"]
+        record = entry.get("proposed")
+        if not record:
+            if not entry.get("proposal"):
+                raise ReportError(f"{eid} has no proposal")
+            raise ReportError(f"{eid}'s proposal was not set by `propose` — it is its "
+                              "appender's, which `amend` corrects, or older than the "
+                              "tool's record of who proposed; `propose` replaces it")
+        if record["via"] != "propose":
+            raise ReportError(f"{eid}'s proposal is {record['by']}'s card request of "
+                              f"{record['date']}, and it goes with that mark: `unmark "
+                              f"{eid} --by {record['by']}`")
+        if record["by"] != who:
+            raise ReportError(f"{eid}'s proposal was set by {record['by']}, not {who}: "
+                              "only its proposer withdraws a proposal")
+        committed = _committed_entry(slice_dir, eid)
+        if committed is not None and committed.get("proposed") == record:
+            raise ReportError(f"{eid}'s proposal is committed, and a committed proposal "
+                              "stays; `propose` replaces it")
+        withdrawn = entry["proposal"]
+        _unset_proposal(entry, record)
+        return f"withdrawn: {withdrawn}\n{_proposal_back(entry)}"
 
 
 def _mark_wrap_up(slice_dir: Path | str, eid: str, outcome: str, by: str,
@@ -1286,17 +1368,27 @@ def _mark_wrap_up(slice_dir: Path | str, eid: str, outcome: str, by: str,
         entry = _find(store, eid)
         if entry.get("strike"):
             raise ReportError(f"{eid} is struck — a struck entry is settled")
-        if entry.get("wrap_up"):
+        prior = entry.get("wrap_up") or None
+        if prior:
             # A second mark replaces the first; the first stays, as a history note.
-            prior = entry["wrap_up"]
-            entry["notes"].append({"by": prior["by"], "date": prior["date"],
-                                   "text": _wrap_up_lines(prior), "history": "wrap-up"})
+            entry["notes"].append(_mark_note(prior))
+        # `prior` and `set_proposal` are what `unmark` restores from.
         entry["wrap_up"] = {"outcome": outcome, "by": who, "date": day,
-                            "text": lines}
+                            "text": lines, "prior": prior, "set_proposal": propose}
         if propose:
-            _set_proposal(entry, who, day, _collapse(text))
-        return _note_text({"by": who, "date": day,
-                           "text": _wrap_up_lines(entry["wrap_up"])})
+            _set_proposal(entry, who, day, _collapse(text), "request-card")
+        return _mark_text(entry["wrap_up"])
+
+
+def _mark_note(mark: dict) -> dict:
+    """The history note a mark becomes when a later mark replaces it."""
+    return {"by": mark["by"], "date": mark["date"], "text": _wrap_up_lines(mark),
+            "history": "wrap-up"}
+
+
+def _mark_text(mark: dict) -> str:
+    return _note_text({"by": mark["by"], "date": mark["date"],
+                       "text": _wrap_up_lines(mark)})
 
 
 def request_card(slice_dir: Path | str, eid: str, by: str, text: str,
@@ -1312,6 +1404,80 @@ def leave_entry(slice_dir: Path | str, eid: str, by: str, text: str,
     """The wrap-up looked at an entry and changed nothing: what waited for
     it is closed; every other route stands."""
     return _mark_wrap_up(slice_dir, eid, "left", by, text, date)
+
+
+def _unrecorded(entry: dict, mark: dict) -> list[str]:
+    """What a mark of a store written before marks recorded what they
+    replace leaves as it is, in the words `unmark` returns: the proposal,
+    where the mark's words are it (a card request set it), and an earlier
+    mark the notes hold."""
+    out = []
+    if entry.get("proposal") and entry["proposal"] == _collapse(" ".join(mark["text"])):
+        out.append("not restored: the proposal the mark replaced — the store does not "
+                   "record it, so the mark's words stay the proposal; `propose` "
+                   "replaces them")
+    # a mark that replaced another always left it as a history note
+    earlier = [n for n in entry["notes"] if n.get("history") == "wrap-up"]
+    if earlier:
+        out.append(f"not restored: the earlier mark ({earlier[-1]['by']}, "
+                   f"{earlier[-1]['date']}) — the store does not record which mark this "
+                   "one replaced; it stays a note, and the entry carries no mark")
+    else:
+        out.append("back: no mark")
+    return out
+
+
+def unmark_entry(slice_dir: Path | str, eid: str, by: str) -> str:
+    """Withdraw the wrap-up's mark on an entry — whichever verb made it —
+    only on its own --by, and only while HEAD's store does not hold it:
+    a committed mark stays, and a new mark replaces it. What the mark
+    replaced comes back: the mark before it (`prior`, its history note
+    gone), and — where the mark set the proposal (`set_proposal`) — the
+    proposal before it, from the `proposed` record the mark wrote, which a
+    later `propose` must be withdrawn from first. A mark of a store written
+    before marks recorded that is dropped, and what could not be restored
+    is said. Returns the withdrawn mark's text, then what is back."""
+    who = _collapse(by)
+    if not who:
+        raise ReportError("unmark needs --by: who marked the entry")
+    with _writing(slice_dir) as store:
+        entry = _find(store, eid)
+        eid = entry["id"]
+        mark = entry.get("wrap_up")
+        if not mark:
+            raise ReportError(f"{eid} carries no wrap-up mark")
+        if mark["by"] != who:
+            raise ReportError(f"{eid} was marked by {mark['by']}, not {who}: only its "
+                              "marker withdraws a mark")
+        committed = _committed_entry(slice_dir, eid)
+        if committed is not None and committed.get("wrap_up") == mark:
+            raise ReportError(f"{eid}'s mark is committed, and a committed mark stays; "
+                              "a new mark replaces it")
+        said = [_mark_text(mark)]
+        if "prior" not in mark:
+            entry["wrap_up"] = None
+            return "\n".join(said + _unrecorded(entry, mark))
+        if mark.get("set_proposal"):
+            record = entry.get("proposed") or {}
+            if (record.get("via"), record.get("by"), record.get("date")) != \
+                    ("request-card", mark["by"], mark["date"]):
+                if record.get("via") == "propose":
+                    raise ReportError(
+                        f"{eid}'s mark set its proposal, and {record['by']}'s `propose` "
+                        f"of {record['date']} replaced it since; that is withdrawn first "
+                        f"(`unpropose {eid} --by {record['by']}`)")
+                raise ReportError(f"{eid}'s mark set its proposal, and the proposal was "
+                                  "changed since, so the mark stays; a new mark replaces it")
+            _unset_proposal(entry, record)
+            said.append(_proposal_back(entry))
+        prior = mark["prior"]
+        if prior:
+            _drop_note(entry, _mark_note(prior))
+            said.append(f"back: the mark before it — {_mark_text(prior)}")
+        else:
+            said.append("back: no mark")
+        entry["wrap_up"] = prior
+        return "\n".join(said)
 
 
 RULE_MODES = ("append", "replace")
@@ -3260,6 +3426,10 @@ def build_parser() -> tuple[argparse.ArgumentParser,
                    help="what you would do about it and why, or - for stdin")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
+    p = verb("unpropose", "withdraw a proposal you set with propose, not yet committed; "
+                          "the one it replaced comes back", entry=True)
+    p.add_argument("--by", required=True, help="the --by the proposal was set with")
+
     p = verb("request-card", "the wrap-up asks for a card on an entry", entry=True)
     p.add_argument("--by", required=True, help="who asks")
     p.add_argument("--text", required=True,
@@ -3271,6 +3441,11 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p.add_argument("--by", required=True, help="who looked")
     p.add_argument("--text", required=True, help="why it stays, or - for stdin")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
+
+    p = verb("unmark", "withdraw the wrap-up mark you made on an entry, not yet "
+                       "committed; the mark and the proposal it replaced come back",
+             entry=True)
+    p.add_argument("--by", required=True, help="the --by the mark was made with")
 
     p = verb("fold", "append an entry verbatim to the slice.md of the slice still "
                      "unplanned it is for, and stage it; prints the strike that follows "
@@ -3493,6 +3668,10 @@ def _main(args) -> int:
         elif command == "propose":
             print(propose_entry(slice_dir, args.id, args.by, _stdin_or(args.text),
                                 date=args.date))
+        elif command == "unpropose":
+            print(f"{args.id} unproposed: {unpropose_entry(slice_dir, args.id, args.by)}")
+        elif command == "unmark":
+            print(f"{args.id} unmarked: {unmark_entry(slice_dir, args.id, args.by)}")
         elif command == "request-card":
             print(request_card(slice_dir, args.id, args.by, _stdin_or(args.text),
                                date=args.date))

@@ -23,7 +23,9 @@ read one. Take the entries one by one, and end each with **one mark**: a strike,
 or a `leave` — or, on a `look`, the relabel itself, where `worklist` no longer names the entry
 after it. Add no `leave` after such a relabel: the report shows only the newest note, and a
 `leave` would hide the relabel's reasoning from the operator. An entry without a mark is still
-waiting when you are gone.
+waiting when you are gone. A mark or a proposal of yours that turns out wrong before you commit
+the store, you take back (`unmark`, `unpropose`) and write again, so that the report carries
+one version of it, not two.
 
 | asked | what you do |
 |---|---|

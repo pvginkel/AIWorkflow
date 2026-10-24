@@ -16,7 +16,8 @@ what the operator is shown of it: each entry's ask — its headline, its proposa
 consequence — with the body, the newest note and the evidence they need to rule on it.
 `${CLAUDE_PLUGIN_ROOT}/tools/close_out.py` is the one pen:
 it writes every author's entries (`append`), notes (`note`) and strikes (`strike`), and takes
-the last two back (`unnote`, `unstrike`), the
+the last two back (`unnote`, `unstrike`) as it takes back the wrap-up's marks and a proposal
+(`unmark`, `unpropose`), the
 corrections of an entry by its appender (`amend`), of a label (`relabel`) and of a proposal
 (`propose`), what the wrap-up asked for and
 left (`request-card`, `leave`), the fold of an entry into a later slice's `slice.md` (`fold`,
@@ -46,9 +47,12 @@ withdraws the latest note an author wrote with `note` or `relabel` — a relabel
 the kind and labels it changed, and is refused once a later relabel changed them again —
 `unstrike` withdraws an author's strike, and `amend` corrects an entry its author appended:
 each field it is given (any of `append`'s flags but `--kind`) replaces the entry's, checked as
-`append` checks it, and no note is left. **Passing `--by` to `append` is what makes an entry
+`append` checks it, and no note is left. `unmark` withdraws the wrap-up's mark, putting back
+the mark it replaced and, for a card request, the proposal before it; `unpropose` withdraws a
+proposal `propose` set and puts back the one before. Neither leaves a note: the entry reads as
+before the write. **Passing `--by` to `append` is what makes an entry
 amendable:** it records the appender, and `amend` takes the same `--by`; an entry appended
-without it — every one the loops enter — has no appender, and a note corrects it. All three
+without it — every one the loops enter — has no appender, and a note corrects it. All five
 refuse what `HEAD`'s `close-out.json` already holds, and what another `--by` signed: a strike
 made without `--by`, or by a ruling, has no author to take it back. Amending a note or a strike
 is withdrawing it, then writing again. `relabel --dry-run`

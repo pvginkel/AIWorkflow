@@ -9072,7 +9072,8 @@ class RunLoop:
             close_out_line=dispatch_line(self.report_path),
             close_out_verbs=textwrap.indent(
                 verb_usage("worklist", "show", "list", "relabel", "propose",
-                           "request-card", "leave", "fold"), "  "),
+                           "request-card", "leave", "fold", "unmark", "unpropose"),
+                "  "),
             worklist=textwrap.indent(worklist_view(self.slice_dir), "  "),
             repo_rows="\n".join(rows) or "  (none — the plan holds every code "
                                          "repo this slice touched)",

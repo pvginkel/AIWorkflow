@@ -1875,7 +1875,8 @@ def test_request_card_and_leave_mark_the_entry_and_the_card_is_its_proposal():
         b1 = entry_of(slice_dir, "B1")
         assert b1["wrap_up"] == {
             "outcome": "card", "by": "wrap-up", "date": "2026-09-30",
-            "text": ["reached on every restart;", "needs a design"]}
+            "text": ["reached on every restart;", "needs a design"], "prior": None,
+            "set_proposal": True}
         # the card request is the entry's proposal; the one it replaced is a note
         assert b1["proposal"] == "reached on every restart; needs a design"
         assert b1["notes"] == [{"by": "wrap-up", "date": "2026-09-30",
@@ -1967,6 +1968,246 @@ def test_a_store_written_before_the_proposal_reads_as_without_one():
         close_out.propose_entry(slice_dir, "A1", "the operator", "Do it.")
         assert entry_of(slice_dir, "A1")["proposal"] == "Do it."
         assert entry_of(slice_dir, "A1")["notes"] == []
+
+
+# -- unmark, unpropose: the wrap-up takes back its own uncommitted marks -------------
+
+WU = "wrap-up"
+EASY = with_flags(DEFECT, fix="one-edit", area="plain")     # the wrap-up's, to fix
+CARD = "reached on every restart"
+
+
+def _as_rendered(slice_dir):
+    """The report as the last write left it, which is what render writes."""
+    text = report(slice_dir)
+    close_out.render_report(slice_dir)
+    assert report(slice_dir) == text
+    return text
+
+
+def _undo(verb, slice_dir, eid, by=WU):
+    return run_cli(verb, slice_dir, eid, "--by", by)
+
+
+def _undo_refused(verb, slice_dir, eid, *needles, by=WU):
+    before = _files(slice_dir)
+    code, out, err = _undo(verb, slice_dir, eid, by=by)
+    assert code == 2 and not out, (code, out, err)
+    for needle in needles:
+        assert needle in err, (needle, err)
+    assert _files(slice_dir) == before
+    return err
+
+
+def _mark(verb, slice_dir, eid, text, date="2026-10-24", by=WU):
+    code, _, err = run_cli(verb, slice_dir, eid, "--by", by, "--text", text,
+                           "--date", date)
+    assert code == 0, err
+
+
+def test_unmark_takes_back_a_leave_and_the_entry_waits_again():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *EASY)                                      # B1
+        before = _files(slice_dir)
+        _mark("leave", slice_dir, "B1", "dead code")
+        assert "**Route:** closed — the wrap-up looked and left it" in report(slice_dir)
+        code, out, err = _undo("unmark", slice_dir, "B1")
+        assert code == 0, err
+        assert out == ("B1 unmarked: wrap-up, 2026-10-24 — looked and left it: dead code\n"
+                       "back: no mark\n")
+        # the store and the report are as they were before the mark
+        assert _files(slice_dir) == before
+        assert [(e["id"], a) for e, a in close_out.worklist(slice_dir)] == [("B1", "fix")]
+        assert "**Route:** the wrap-up — fix" in _as_rendered(slice_dir)
+
+
+def test_unmark_takes_back_a_card_request_and_the_proposal_it_replaced():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *EASY)                                      # B1
+        run_cli("append", slice_dir, *IMPROVEMENT)                               # I1
+        before = _files(slice_dir)
+        _mark("request-card", slice_dir, "B1", CARD)
+        _mark("request-card", slice_dir, "I1", CARD)
+        # the mark says it set the proposal; the record says what it replaced
+        i1 = entry_of(slice_dir, "I1")
+        assert i1["wrap_up"] == {"outcome": "card", "by": WU, "date": "2026-10-24",
+                                 "text": [CARD], "prior": None, "set_proposal": True}
+        assert i1["proposed"] == {"by": WU, "date": "2026-10-24", "via": "request-card",
+                                  "replaced": "Drop it now: one caller, one edit.",
+                                  "prior": None}
+        assert entry_of(slice_dir, "B1")["proposed"]["replaced"] is None
+        assert _heads(_section(_as_rendered(slice_dir), "Card requests")) == [
+            "### B1 — controller: the status line is wrong",
+            "### I1 — drop the duplicate helper"]
+        code, out, err = _undo("unmark", slice_dir, "I1")
+        assert code == 0, err
+        assert out == (f"I1 unmarked: wrap-up, 2026-10-24 — asks for a card: {CARD}\n"
+                       "back: **Proposal:** Drop it now: one caller, one edit.\n"
+                       "back: no mark\n")
+        i1 = entry_of(slice_dir, "I1")
+        assert (i1["proposal"], i1["notes"], i1["wrap_up"]) == (
+            "Drop it now: one caller, one edit.", [], None)
+        assert "proposed" not in i1
+        text = _as_rendered(slice_dir)
+        assert "**Proposal:** Drop it now: one caller, one edit." in text
+        code, out, err = _undo("unmark", slice_dir, "B1")
+        assert code == 0, err
+        assert out.endswith("\nback: no proposal\nback: no mark\n")
+        assert _files(slice_dir) == before
+        assert "Card requests" not in _heads(_as_rendered(slice_dir))
+
+
+def test_unmark_of_a_second_mark_makes_the_first_current_again():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *EASY)                                      # B1
+        before = _files(slice_dir)
+        _mark("leave", slice_dir, "B1", "dead code", date="2026-10-23")
+        left = _files(slice_dir)
+        _mark("request-card", slice_dir, "B1", CARD)
+        b1 = entry_of(slice_dir, "B1")
+        assert b1["wrap_up"]["prior"] == {"outcome": "left", "by": WU, "date": "2026-10-23",
+                                          "text": ["dead code"], "prior": None,
+                                          "set_proposal": False}
+        assert b1["notes"] == [{"by": WU, "date": "2026-10-23",
+                                "text": ["looked and left it: dead code"],
+                                "history": "wrap-up"}]
+        code, out, err = _undo("unmark", slice_dir, "B1")
+        assert code == 0, err
+        assert out == (f"B1 unmarked: wrap-up, 2026-10-24 — asks for a card: {CARD}\n"
+                       "back: no proposal\n"
+                       "back: the mark before it — wrap-up, 2026-10-23 — looked and left "
+                       "it: dead code\n")
+        assert _files(slice_dir) == left
+        assert "**Route:** closed — the wrap-up looked and left it" in _as_rendered(slice_dir)
+        assert _undo("unmark", slice_dir, "B1")[0] == 0
+        assert _files(slice_dir) == before
+
+
+def test_unpropose_takes_back_a_propose_and_the_proposal_it_replaced():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *IMPROVEMENT)                               # I1
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        before = _files(slice_dir)
+        _mark("propose", slice_dir, "I1", "Keep both.", date="2026-10-23")
+        first = _files(slice_dir)
+        _mark("propose", slice_dir, "I1", "Drop both.")
+        assert entry_of(slice_dir, "I1")["proposed"] == {
+            "by": WU, "date": "2026-10-24", "via": "propose", "replaced": "Keep both.",
+            "prior": {"by": WU, "date": "2026-10-23", "via": "propose",
+                      "replaced": "Drop it now: one caller, one edit.", "prior": None}}
+        code, out, err = _undo("unpropose", slice_dir, "I1")
+        assert code == 0, err
+        assert out == "I1 unproposed: withdrawn: Drop both.\nback: **Proposal:** Keep both.\n"
+        assert _files(slice_dir) == first
+        assert "**Proposal:** Keep both.\n" in _as_rendered(slice_dir)
+        code, out, err = _undo("unpropose", slice_dir, "I1")
+        assert code == 0, err
+        assert out.endswith("\nback: **Proposal:** Drop it now: one caller, one edit.\n")
+        # a proposal on an entry that had none goes back to none
+        _mark("propose", slice_dir, "B1", "Card it.")
+        code, out, err = _undo("unpropose", slice_dir, "B1")
+        assert code == 0, err
+        assert out == "B1 unproposed: withdrawn: Card it.\nback: no proposal\n"
+        assert _files(slice_dir) == before
+        _as_rendered(slice_dir)
+        assert "**Proposal:**" not in close_out.show_view(slice_dir, ["B1"])
+
+
+def test_unmark_and_unpropose_refuse_what_is_not_theirs_to_take_back():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *EASY)                                      # B1
+        run_cli("append", slice_dir, *IMPROVEMENT)                               # I1
+        run_cli("append", slice_dir, *EASY)                                      # B2
+        run_cli("append", slice_dir, *EASY, "--by", BY)                          # B3
+        _undo_refused("unmark", slice_dir, "B1", "B1 carries no wrap-up mark")
+        _undo_refused("unpropose", slice_dir, "B1", "B1 has no proposal")
+        _undo_refused("unpropose", slice_dir, "I1", "I1's proposal was not set by "
+                      "`propose`", "its appender's, which `amend` corrects")
+        _mark("request-card", slice_dir, "B1", CARD)
+        _undo_refused("unmark", slice_dir, "B1", "B1 was marked by wrap-up, not "
+                      "consult 1: only its marker withdraws a mark", by="consult 1")
+        _undo_refused("unpropose", slice_dir, "B1", "B1's proposal is wrap-up's card "
+                      "request of 2026-10-24", "`unmark B1 --by wrap-up`")
+        # a later propose replaced the card's proposal: it is withdrawn first
+        _mark("propose", slice_dir, "B1", "Card it in KubeCoder.", by="close-out")
+        _undo_refused("unmark", slice_dir, "B1", "close-out's `propose` of 2026-10-24 "
+                      "replaced it since", "`unpropose B1 --by close-out`")
+        _undo_refused("unpropose", slice_dir, "B1", "B1's proposal was set by close-out, "
+                      "not wrap-up: only its proposer withdraws a proposal")
+        assert _undo("unpropose", slice_dir, "B1", by="close-out")[0] == 0
+        assert _undo("unmark", slice_dir, "B1")[0] == 0
+        # the appender's amend replaced the card's proposal: the mark stays
+        _mark("request-card", slice_dir, "B3", CARD)
+        assert _amend(slice_dir, "B3", "--proposal", "Fix it in the next slice.")[0] == 0
+        assert "proposed" not in entry_of(slice_dir, "B3")
+        _undo_refused("unmark", slice_dir, "B3", "the proposal was changed since, so "
+                      "the mark stays")
+        # what HEAD's store holds stays
+        _mark("leave", slice_dir, "B2", "dead code")
+        _mark("propose", slice_dir, "I1", "Keep both.")
+        commit_store(slice_dir)
+        _undo_refused("unmark", slice_dir, "B2", "B2's mark is committed, and a committed "
+                      "mark stays; a new mark replaces it")
+        _undo_refused("unpropose", slice_dir, "I1", "I1's proposal is committed, and a "
+                      "committed proposal stays")
+        # a mark made after the commit is withdrawn; the committed one under it stays
+        _mark("request-card", slice_dir, "B2", CARD)
+        assert _undo("unmark", slice_dir, "B2")[0] == 0
+        assert entry_of(slice_dir, "B2")["wrap_up"]["outcome"] == "left"
+        _undo_refused("unmark", slice_dir, "B2", "committed")
+        _undo_refused("unmark", slice_dir, "B2", "unmark needs --by", by=" ")
+        _undo_refused("unpropose", slice_dir, "I1", "unpropose needs --by", by=" ")
+        _undo_refused("unmark", slice_dir, "B9", "no entry B9")
+
+
+def test_unmark_on_a_store_written_before_marks_recorded_what_they_replace():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *EASY)                                      # B1
+        run_cli("append", slice_dir, *EASY)                                      # B2
+        # as 0.9.127 wrote them: B1 left, then carded over its proposal; B2 left
+        data = store(slice_dir)
+        b1, b2 = data["entries"]
+        b1["proposal"] = CARD
+        b1["notes"] = [{"by": WU, "date": "2026-10-20",
+                        "text": ["looked and left it: dead code"], "history": "wrap-up"},
+                       {"by": WU, "date": "2026-10-21",
+                        "text": ["proposal replaced — was: Close it."],
+                        "history": "proposal"}]
+        b1["wrap_up"] = {"outcome": "card", "by": WU, "date": "2026-10-21", "text": [CARD]}
+        b2["wrap_up"] = {"outcome": "left", "by": WU, "date": "2026-10-21",
+                         "text": ["dead code"]}
+        (slice_dir / "close-out.json").write_text(json.dumps(data, indent=2))
+        close_out.render_report(slice_dir)
+        code, out, err = _undo("unmark", slice_dir, "B1")
+        assert code == 0, err
+        lines = out.splitlines()
+        assert lines[0] == f"B1 unmarked: wrap-up, 2026-10-21 — asks for a card: {CARD}"
+        assert lines[1].startswith("not restored: the proposal the mark replaced — the "
+                                   "store does not record it")
+        assert lines[2].startswith("not restored: the earlier mark (wrap-up, 2026-10-20)")
+        assert len(lines) == 3
+        # the mark is dropped and nothing is guessed: the proposal and the notes stay
+        after = entry_of(slice_dir, "B1")
+        assert after["wrap_up"] is None and after["proposal"] == CARD
+        assert after["notes"] == b1["notes"]
+        code, out, err = _undo("unmark", slice_dir, "B2")
+        assert code == 0, err
+        assert out == ("B2 unmarked: wrap-up, 2026-10-21 — looked and left it: dead code\n"
+                       "back: no mark\n")
+        assert [e["id"] for e, _ in close_out.worklist(slice_dir)] == ["B1", "B2"]
+        _as_rendered(slice_dir)
 
 
 def test_worklist_names_what_waits_and_what_is_asked():

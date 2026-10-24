@@ -4,6 +4,29 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-24 — The wrap-up takes back its own uncommitted mark or proposal: close_out.py unmark and unpropose (v0.9.132)
+
+`unnote` refused an uncommitted `leave`, because a mark is not a note. So a wrap-up that got a
+mark wrong could only add a second one, and the report carried both versions (PilotApp slice
+006's wrap-up, twice). Two new verbs carry `amend`'s guard: only on the writer's own `--by`, and
+only while `HEAD`'s store does not hold the write.
+- `close_out.py unmark <close-out.md> <id> --by` withdraws the wrap-up's mark (a `leave` or a
+  card request). The mark it replaced comes back, and a card request's proposal gives way to the
+  proposal before it, or none.
+- `close_out.py unpropose <close-out.md> <id> --by` withdraws a proposal `propose` set, and the
+  one it replaced comes back. It refuses the appender's own proposal, which `amend` corrects,
+  and a card request's, which goes with its mark.
+
+Neither leaves a note: a write and its withdrawal leave the store and the report as they were.
+To make that exact, the store now records what each write replaced. A mark carries `prior` (the
+mark before it) and `set_proposal`. An entry whose proposal `propose` or `request-card` set
+carries `proposed` (who, when, which verb, the proposal replaced, the record before). A store
+written before this has neither: `unmark` drops such a mark and says what it could not restore.
+When `amend` changes an entry's proposal, the `proposed` record goes, because the proposal is the
+appender's again. The wrap-up's dispatch names both verbs, and its brief says to take a wrong mark
+back rather than mark twice. Also: 0.9.131's entry quoted the fold line inside backticks it
+contains. AIWF-95.
+
 ## 2026-10-24 — close_out.py fold appends an entry verbatim to a later slice's slice.md and stages it (v0.9.131)
 
 The wrap-up's `fold` row said to append the entry verbatim as an ask to the named slice's
@@ -11,8 +34,8 @@ The wrap-up's `fold` row said to append the entry verbatim as an ask to the name
 house format from earlier folds and piped `close_out.py show` through sed (PilotAppSpecs slice
 005's wrap-up built the append by hand four times). `close_out.py fold <close-out.md> <id>
 [--into <slice>]` now appends the entry in that established format and stages the file: a line
-naming the slice, the entry and the report (`Slice NNN's close-out, entry X, verbatim
-(`close_out.py show`, <date>; report `<path>`):`), then `show`'s output quoted. It prints the
+naming the slice, the entry and the report ("Slice NNN's close-out, entry X, verbatim
+(`close_out.py show`, <date>; report `<path>`):"), then `show`'s output quoted. It prints the
 strike to run once the wrap-up has committed. The target is the entry's `for`, or `--into` for
 the close-out session executing an operator's "fold into 009". It has to be a slice still to run
 and unplanned. A planned or running one is refused, since its run never reads `slice.md` again.
