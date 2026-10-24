@@ -24,6 +24,9 @@ plan cites.
    substituted requirement without a ruling in plan.md's rulings section is the worst defect this
    review exists to catch. Every criterion must be earnable by a phase: one whose work the plan
    hands to the loop's doc phase (auto docs, no slice task) can never be checked off — flag it.
+   Doc work the project's slice-doc-plan doc gives the doc phase is the exception: a ruling that
+   sends such work there, citing the doc plan's line, is no finding, and the work earns no
+   criterion — check that the doc plan does give the doc phase that kind of work.
    Doc-truth universals (a criterion asserting prose claims hold everywhere) are banned — flag
    any.
 2. **Task shape.** The `## Task shape` declaration names `pre-settled`, `localized`, or
@@ -43,7 +46,8 @@ plan cites.
 5. **Phase boundaries.** Phases are roughly PR-sized and independently reviewable, ordered
    producers-first; a phase whose outcome cannot be judged on its own diff is a finding, as is a
    planned end-to-end testing phase or auto-doc pass (the loop owns those). A phase whose
-   outcome *is* a doc change is a phase like any other, not a finding.
+   outcome *is* a doc change is a phase like any other, not a finding; nor is doc work the
+   project's doc plan gives the doc phase, sent there by a ruling (item 1).
 6. **Attachment altitude.** Attachments exist only where the executor genuinely cannot derive
    the design, and sit at the smart-dev altitude — functional success descriptions. Prescribed
    symbol names, pseudo-code, or specced implementations are findings; so is an attachment a

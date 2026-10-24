@@ -185,7 +185,12 @@ The mechanical rules the parser holds every author to:
   carries no slice task. So a requirement that *is* a doc change — a decision to close, a
   design fact to record, a page to correct — is a phase like any other work, with its own
   `Target:` (the spec repo resolves as a sibling, `../<SpecRepo>`), reviewed and merged by the
-  loop. A plan that hands such work to the doc phase is a defect the plan review flags. When
+  loop. A plan that hands such work to the doc phase is a defect the plan review flags — unless
+  the project says otherwise: **where the project's slice-doc-plan doc (`.aiworkflowrc`'s
+  `[doc_phase] plan`) gives a kind of doc work to the doc phase** — a decision ruled in the slice
+  recorded as a row of the project's decision log, say — that kind is the doc phase's, as the doc
+  plan says, and no phase writes it. The ruling that sends it there cites the doc plan's line, and
+  the plan review does not flag it. The doc plan wins for the kinds it names and no others. When
   later phases cite a record's new id (a decision that supersedes another, cited by a
   supersession marker or a code comment), a phase targeting the spec repo, placed before every
   phase that cites the id, writes that record and allocates the id at append time. The later
@@ -228,7 +233,9 @@ The mechanical rules the parser holds every author to:
   universals are banned** (a criterion asserting prose claims hold everywhere).
 - **Every criterion is earned by the plan's phases.** One whose work no phase delivers — a doc
   change assigned to the loop's doc phase, which carries no slice task — is a planning defect
-  the plan review flags, not a verdict the test phase can write.
+  the plan review flags, not a verdict the test phase can write. Doc work the project's doc plan
+  gives the doc phase (above) earns no criterion at all: the test phase runs before the doc
+  phase, and the ruling that sends the work there is its record.
 - **`owed_after` marks a criterion the run cannot settle** because it waits on an action no role
   in the run may take: a push the plan holds (the hold's target exactly as `## Push holds`
   writes it, e.g. `../HelmCharts`), or, as free text, another operator action. Leave it out

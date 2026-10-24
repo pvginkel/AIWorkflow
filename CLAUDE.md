@@ -184,7 +184,9 @@ instead of reopening it.
   a round (0.4.2 — "bickering on comments, beyond my patience"). The same taste applies to work in
   this repo: don't relitigate wording.
 - **The doc phase is auto docs only** — existing surfaces updated from the shipped diff. A doc
-  requirement (close a decision, correct a page) is a plan phase targeting the spec repo (0.9.2).
+  requirement (close a decision, correct a page) is a plan phase targeting the spec repo (0.9.2),
+  except a kind of doc work the project's slice-doc-plan gives the doc phase: the project's doc
+  plan wins for the kinds it names (2026-10-24, AIWF-101).
 - **No lanes, literal-edit bundles or no-research plan variant** in the plugin: the 2026-08-14
   lanes were a one-off board clear-out ("if I need this again, I'll ask for it directly").
   `apply the suggested edit` survives only as a triage scope ceiling.

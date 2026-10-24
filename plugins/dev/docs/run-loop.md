@@ -430,7 +430,8 @@ whole plan is a feature of the review, not a cost. Then:
   across scopes as a named last step, gates once and commits (`agents/doc-writer.md`). The phase
   carries no slice task and owes no acceptance criterion: a doc change a requirement names is a
   phase of the plan ([plan-template.md](plan-template.md)), merged before this point like any
-  other. Its dispatch carries the driver's deterministic facts, in the phase digest's spirit: the
+  other — unless the slice-doc-plan doc gives that kind of doc work to this phase, which then
+  does it as the doc plan says. Its dispatch carries the driver's deterministic facts, in the phase digest's spirit: the
   slice's diff **on disk**, one `<slice>/doc_phase/<repo>.diff` per repo a phase merged or
   committed into, a section per merged phase (`git diff --stat` on top, then the diff, over the
   phase's landed range — the sha its branch was cut from to the head that fast-forwarded the base

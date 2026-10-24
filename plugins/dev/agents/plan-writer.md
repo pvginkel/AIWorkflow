@@ -41,7 +41,10 @@ outcomes, not implementations.
   drafted prose, no doc-content attachments — the rulings, in the operator's words, are the
   only steering it gets. It carries no slice task: a requirement that *is* a doc change (a
   decision to close, a design fact to record, a page to correct) is a phase with its own
-  `Target:`, like any other work.
+  `Target:`, like any other work — unless the project's slice-doc-plan doc (`.aiworkflowrc`'s
+  `[doc_phase] plan`) gives that kind of doc work to the doc phase. Then it is the doc phase's,
+  as that doc says: a ruling sends it there, citing the doc plan's line, and it earns no
+  criterion (`plan-template.md`).
 
 **`attachments/`** — API/UI/algorithm/protocol designs, only where the executor genuinely cannot
 derive them (a rename ask needs nothing; a wire protocol does). Written **at the altitude a smart

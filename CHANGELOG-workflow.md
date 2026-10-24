@@ -4,6 +4,19 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-24 — A project's doc plan that gives a kind of doc work to the doc phase wins over "a doc task is a phase" (v0.9.130)
+
+`plan-template.md` said that a requirement which is a doc change, such as a decision to close,
+is a phase with its own Target, and the plan review flagged a plan that handed it to the doc
+phase. A project's slice-doc-plan can give a kind of doc work to the doc phase instead: PilotApp's
+records every decision ruled in a slice as a row of its decision log. Slice 008's planning
+followed that doc plan and expected the review to flag it. Now the doc plan wins for the kinds of
+doc work it names, and no others. The ruling that sends such work to the doc phase cites the doc
+plan's line, the work earns no criterion (the test phase runs before the doc phase), and the plan
+review does not flag it. It does check that the doc plan gives the doc phase that kind of work.
+Changed: `plan-template.md`, `agents/plan-writer.md`, `agents/plan-reviewer.md` items 1 and 5,
+`run-loop.md` § the doc phase, and the CLAUDE.md settled ruling on the doc phase. AIWF-101.
+
 ## 2026-10-24 — /dev:plan-slice reads the tracker for cards routed to the slice after triage (v0.9.129)
 
 `/dev:plan-slice` read only the slice folder for its asks, so a card the inbox routed to a
