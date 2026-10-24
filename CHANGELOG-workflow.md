@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-24 — A wrap-up mark that hands an edit reserved for the operator's word to them: close_out.py request-word (v0.9.133)
+
+The table sends every prose entry to the wrap-up to fix (row 6), even one a project's rule
+makes only on the operator's word. PilotApp slice 010's P3 is an example: a design-record
+correction that the project's D015 reserves for the operator's word. The wrap-up may not give
+that word, and none of its marks fit. A strike bypasses the word. A card request misstates a
+one-line correction. A `leave` closes the entry, so the ask never reaches the operator.
+`close_out.py request-word <close-out.md> <id> --by --text` is a fourth mark (outcome `word`).
+Its text is the exact edit and the rule that reserves it, and it becomes the entry's proposal.
+The entry comes to the operator under Comes to you whatever the table's route, so their assent
+is the ruling the close-out session makes the edit on. The wrap-up makes no edit itself.
+`unmark` takes it back like the other marks, and `unpropose` refuses its proposal. One `MARKS`
+table in `close_out.py` now names each outcome's verb and words. The wrap-up's verdict gains a
+`words` list, which the driver copies onto the history row with the others. Changed:
+`agents/wrap-up.md` (the mark, the rule it is the one exception to, the verdict),
+`docs/close-out.md` § The wrap-up and § The routes, `close-out-template.md` (§ The verbs, the
+section table, and the store's `wrap_up` and `proposed` keys, which 0.9.132 had left
+undocumented), and `/dev:close-out` step 3. AIWF-99.
+
 ## 2026-10-24 — The wrap-up takes back its own uncommitted mark or proposal: close_out.py unmark and unpropose (v0.9.132)
 
 `unnote` refused an uncommitted `leave`, because a mark is not a note. So a wrap-up that got a

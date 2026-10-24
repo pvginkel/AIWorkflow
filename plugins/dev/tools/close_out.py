@@ -39,6 +39,9 @@ is judgment — and nobody edits either file by hand; importable by both loops
                and only on its own --by: the one it replaced comes back.
   request-card the wrap-up asks for a card on an entry; its words become the
                entry's proposal.
+  request-word the wrap-up hands the operator an entry whose edit a rule
+               reserves for their word; its words — the edit and the rule —
+               become the entry's proposal, and the entry comes to them.
   leave        the wrap-up looked at an entry and changed nothing.
   unmark       withdraw the wrap-up's mark on an entry, while it is not
                committed and only on its own --by: the mark before it and
@@ -374,8 +377,8 @@ EDITED_TAIL = ("Ask the operator about every line here that is not yours to take
                "verdict's summary what you meant to write, and carry on.")
 # The verbs that write close-out.md, each taking `--overwrite`.
 WRITING_VERBS = ("append", "note", "strike", "unnote", "unstrike", "amend", "relabel",
-                 "propose", "unpropose", "request-card", "leave", "unmark", "rule",
-                 "settle", "close", "render", "stamp")
+                 "propose", "unpropose", "request-card", "request-word", "leave",
+                 "unmark", "rule", "settle", "close", "render", "stamp")
 OVERWRITE_HELP = ("write close-out.md although it was edited since its last render "
                   "(after the refusal's list is dealt with)")
 
@@ -1250,6 +1253,16 @@ def amend_entry(slice_dir: Path | str, eid: str, by: str, *,
         return _heading(entry)
 
 
+# The wrap-up's marks: outcome → (the verb that makes it, what its note says
+# the wrap-up did, what a `proposed` record it wrote is called in a refusal —
+# None for a mark that sets no proposal).
+MARKS = {
+    "left": ("leave", "looked and left it", None),
+    "card": ("request-card", "asks for a card", "card request"),
+    "word": ("request-word", "asks for the operator's word", "request for your word"),
+}
+
+
 def _proposal_note(who: str, day: str, old: str) -> dict:
     return {"by": who, "date": day, "text": [f"proposal replaced — was: {old}"],
             "history": "proposal"}
@@ -1340,7 +1353,9 @@ def unpropose_entry(slice_dir: Path | str, eid: str, by: str) -> str:
                               "appender's, which `amend` corrects, or older than the "
                               "tool's record of who proposed; `propose` replaces it")
         if record["via"] != "propose":
-            raise ReportError(f"{eid}'s proposal is {record['by']}'s card request of "
+            what = next((m[2] for m in MARKS.values() if m[0] == record["via"]),
+                        f"`{record['via']}`")
+            raise ReportError(f"{eid}'s proposal is {record['by']}'s {what} of "
                               f"{record['date']}, and it goes with that mark: `unmark "
                               f"{eid} --by {record['by']}`")
         if record["by"] != who:
@@ -1376,7 +1391,7 @@ def _mark_wrap_up(slice_dir: Path | str, eid: str, outcome: str, by: str,
         entry["wrap_up"] = {"outcome": outcome, "by": who, "date": day,
                             "text": lines, "prior": prior, "set_proposal": propose}
         if propose:
-            _set_proposal(entry, who, day, _collapse(text), "request-card")
+            _set_proposal(entry, who, day, _collapse(text), MARKS[outcome][0])
         return _mark_text(entry["wrap_up"])
 
 
@@ -1404,6 +1419,15 @@ def leave_entry(slice_dir: Path | str, eid: str, by: str, text: str,
     """The wrap-up looked at an entry and changed nothing: what waited for
     it is closed; every other route stands."""
     return _mark_wrap_up(slice_dir, eid, "left", by, text, date)
+
+
+def request_word(slice_dir: Path | str, eid: str, by: str, text: str,
+                 date: str | None = None) -> str:
+    """The wrap-up hands the operator an entry whose edit a rule reserves
+    for their word: its route becomes `to you`, whatever the table's, and
+    what it asks — the exact edit it would make, and the rule — becomes
+    the entry's proposal, so their assent executes it."""
+    return _mark_wrap_up(slice_dir, eid, "word", by, text, date, propose=True)
 
 
 def _unrecorded(entry: dict, mark: dict) -> list[str]:
@@ -1460,7 +1484,7 @@ def unmark_entry(slice_dir: Path | str, eid: str, by: str) -> str:
         if mark.get("set_proposal"):
             record = entry.get("proposed") or {}
             if (record.get("via"), record.get("by"), record.get("date")) != \
-                    ("request-card", mark["by"], mark["date"]):
+                    (MARKS.get(mark["outcome"], (None,))[0], mark["by"], mark["date"]):
                 if record.get("via") == "propose":
                     raise ReportError(
                         f"{eid}'s mark set its proposal, and {record['by']}'s `propose` "
@@ -2133,15 +2157,18 @@ def route(entry: dict, touched: set[str] | None = None,
           pending: dict | None = None) -> tuple[str, str]:
     """(key, the Route line's words) of an entry — computed, never stored.
     A struck entry has none: it is in the record. The wrap-up's mark
-    overrides the table: a card asked for makes a card request; an entry
-    it looked at and left is closed, where the table sent it to the
-    wrap-up."""
+    overrides the table: a card asked for makes a card request; the
+    operator's word asked for brings the entry to them, whatever the
+    table's route; an entry it looked at and left is closed, where the
+    table sent it to the wrap-up."""
     if entry.get("strike"):
         return "record", "the record"
     key, words = table_route(entry, touched, pending)
     mark = (entry.get("wrap_up") or {}).get("outcome")
     if mark == "card":
         return "card:wrap-up", "card request — the wrap-up asks for a card"
+    if mark == "word":
+        return "operator:word", "to you — the wrap-up asks for your word on its edit"
     if mark == "left" and key.startswith("wrap-up:"):
         return "closed:left", "closed — the wrap-up looked and left it"
     return key, words
@@ -2423,7 +2450,7 @@ def _note_text(note: dict) -> str:
 
 
 def _wrap_up_lines(mark: dict) -> list[str]:
-    said = "asks for a card" if mark["outcome"] == "card" else "looked and left it"
+    said = MARKS.get(mark["outcome"], MARKS["left"])[1]
     return [f"{said}: {mark['text'][0]}", *mark["text"][1:]]
 
 
@@ -3437,6 +3464,15 @@ def build_parser() -> tuple[argparse.ArgumentParser,
                         "entry's proposal; or - for stdin")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
+    p = verb("request-word", "the wrap-up hands the operator an entry whose edit a rule "
+                             "reserves for their word", entry=True)
+    p.add_argument("--by", required=True, help="who asks")
+    p.add_argument("--text", required=True,
+                   help="the exact edit you would make, and the rule that reserves it for "
+                        "the operator's word — it becomes the entry's proposal; or - for "
+                        "stdin")
+    p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
+
     p = verb("leave", "the wrap-up looked at an entry and changed nothing", entry=True)
     p.add_argument("--by", required=True, help="who looked")
     p.add_argument("--text", required=True, help="why it stays, or - for stdin")
@@ -3674,6 +3710,9 @@ def _main(args) -> int:
             print(f"{args.id} unmarked: {unmark_entry(slice_dir, args.id, args.by)}")
         elif command == "request-card":
             print(request_card(slice_dir, args.id, args.by, _stdin_or(args.text),
+                               date=args.date))
+        elif command == "request-word":
+            print(request_word(slice_dir, args.id, args.by, _stdin_or(args.text),
                                date=args.date))
         elif command == "leave":
             print(leave_entry(slice_dir, args.id, args.by, _stdin_or(args.text),

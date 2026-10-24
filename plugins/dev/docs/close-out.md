@@ -20,7 +20,7 @@ the last two back (`unnote`, `unstrike`) as it takes back the wrap-up's marks an
 (`unmark`, `unpropose`), the
 corrections of an entry by its appender (`amend`), of a label (`relabel`) and of a proposal
 (`propose`), what the wrap-up asked for and
-left (`request-card`, `leave`), the fold of an entry into a later slice's `slice.md` (`fold`,
+left (`request-card`, `request-word`, `leave`), the fold of an entry into a later slice's `slice.md` (`fold`,
 which stages that file and writes nothing else), the operator's rulings (`rule`), the criterion an owed-after
 action settles (`settle`, which writes `verification.json` too), prints an entry in full
 (`show`), renders the report and counts it. Both
@@ -288,7 +288,10 @@ An improvement takes the first of these that fits:
 
 **A card request** is an entry that comes to the operator with a card asked for: by the table
 where the fix lives elsewhere (row 5), by the wrap-up where a likely problem is more than it
-can fix responsibly (row 8). Nothing is filed before the operator's word.
+can fix responsibly (row 8). Nothing is filed before the operator's word. **A request for the
+operator's word** is the wrap-up's for an edit it would make but a rule of the project reserves
+for them: it comes to them under Comes to you, whatever the table's route, with the edit as its
+proposal, so that their assent is the ruling and the close-out session makes the edit.
 
 ## The report
 
@@ -398,6 +401,7 @@ operator is theirs, and no card is filed without their word.
 | the change is within its bar | the edit, the gate, one commit for the entry, a strike naming it |
 | the label said one edit and the code says otherwise | the label corrected, with a note of what it found (`relabel`) |
 | a likely problem it cannot fix within its bar | a card request: how it is reached, what the fix takes (`request-card`) — it becomes the entry's proposal |
+| an edit within its bar that a rule of the project makes only on the operator's word — a decision record, its `CLAUDE.md` | a request for their word: the exact edit and the rule (`request-word`) — it becomes the entry's proposal, and the entry comes to the operator; the edit is not made |
 | a trigger or an impact the author could not tell | the label, from the code |
 | an entry without labels | its labels, from its text |
 | input for a slice still unplanned | the entry appended to that slice's `slice.md` (`fold`), and a strike naming the slice |
@@ -408,7 +412,8 @@ operator is theirs, and no card is filed without their word.
 
 **The wrap-up changes facts, never routes.** What it finds in the code it writes as a fix, a
 corrected label or a card request, and the table routes again. Every entry it was given ends
-with one mark — a strike, a card request, or that it was left; on an entry it was given for a
+with one mark — a strike, a card request, a request for the operator's word, or that it was
+left; on an entry it was given for a
 look, a corrected label that routes the entry away from the wrap-up is its mark, with no note
 after it. `close_out.py worklist` names what still waits. An entry the operator has ruled on is theirs, whatever its route, and does
 not wait for the wrap-up.

@@ -2210,6 +2210,94 @@ def test_unmark_on_a_store_written_before_marks_recorded_what_they_replace():
         _as_rendered(slice_dir)
 
 
+# -- request-word: the wrap-up hands the operator an edit that waits on their word ----
+
+WORD = ("design/engine-and-sync.md:706 — say the engine syncs on start; a design record "
+        "is corrected on the operator's word (CLAUDE.md § Design records)")
+WORD_ROUTE = ("operator:word", "to you — the wrap-up asks for your word on its edit")
+
+
+def test_request_word_brings_the_entry_to_the_operator_whatever_the_table_said():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *EASY)                                      # B1
+        run_cli("append", slice_dir, *with_flags(DEFECT, trigger="fault"))       # B2
+        touched, pending = None, close_out.slices_to_run(slice_dir)
+        assert close_out.route(entry_of(slice_dir, "B1"), touched, pending)[0] == \
+            "wrap-up:fix"
+        assert close_out.route(entry_of(slice_dir, "B2"), touched, pending)[0] \
+            .startswith("closed:")
+        code, out, err = run_cli("request-word", slice_dir, "B1", "--by", WU, "--text",
+                                 "-", "--date", "2026-10-24", stdin=WORD + "\n")
+        assert code == 0, err
+        assert out == f"wrap-up, 2026-10-24 — asks for the operator's word: {WORD}\n"
+        _mark("request-word", slice_dir, "B2", WORD)
+        b1 = entry_of(slice_dir, "B1")
+        assert b1["wrap_up"] == {"outcome": "word", "by": WU, "date": "2026-10-24",
+                                 "text": [WORD], "prior": None, "set_proposal": True}
+        # its words are the proposal the operator's assent executes
+        assert b1["proposal"] == WORD
+        assert b1["proposed"] == {"by": WU, "date": "2026-10-24", "via": "request-word",
+                                  "replaced": None, "prior": None}
+        for eid in ("B1", "B2"):
+            assert close_out.route(entry_of(slice_dir, eid), touched, pending) == \
+                WORD_ROUTE
+        text = _as_rendered(slice_dir)
+        comes = _section(text, "Comes to you")
+        assert _heads(comes) == ["### B1 — controller: the status line is wrong",
+                                 "### B2 — controller: the status line is wrong"]
+        assert (f"**Proposal:** {WORD} **Consequence:** an operator reads a wrong status "
+                f"**Latest** (wrap-up, 2026-10-24): asks for the operator's word: {WORD}"
+                ) in " ".join(comes.split())
+        assert comes.count(f"**Route:** {WORD_ROUTE[1]}\n**Disposition:**") == 2
+        assert "## For the wrap-up" not in text and "## Closed" not in text
+        counts = close_out.entry_counts(slice_dir)
+        assert (counts["to you"], counts["wrap-up"], counts["closed"],
+                counts[close_out.NO_PROPOSAL]) == (2, 0, 0, 0)
+        assert close_out.counts_line(counts).startswith(
+            "to you 2 · card requests 0 · wrap-up 0 · unlabelled 0 · closed 0")
+        # a marked entry waits for nothing
+        assert close_out.worklist(slice_dir) == []
+        assert f"**Route:** {WORD_ROUTE[1]}" in close_out.show_view(slice_dir, ["B1"])
+        assert close_out.verb_usage("request-word").splitlines()[0] == (
+            "close_out.py request-word <close-out.md> <id> --by BY --text TEXT "
+            "[--date DATE]")
+        assert "request-word" in close_out.WRITING_VERBS
+
+
+def test_unmark_takes_back_a_request_for_the_word_and_unpropose_refuses_it():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *with_flags(EASY, proposal="Fix now: one edit."))
+        before = _files(slice_dir)
+        _mark("request-word", slice_dir, "B1", WORD)
+        _undo_refused("unpropose", slice_dir, "B1", "B1's proposal is wrap-up's request "
+                      "for your word of 2026-10-24", "`unmark B1 --by wrap-up`")
+        code, out, err = _undo("unmark", slice_dir, "B1")
+        assert code == 0, err
+        assert out == (f"B1 unmarked: wrap-up, 2026-10-24 — asks for the operator's word: "
+                       f"{WORD}\nback: **Proposal:** Fix now: one edit.\nback: no mark\n")
+        assert _files(slice_dir) == before
+        assert [(e["id"], a) for e, a in close_out.worklist(slice_dir)] == [("B1", "fix")]
+        # marks stacked on one another come off one by one, each with its proposal
+        _mark("leave", slice_dir, "B1", "dead code", date="2026-10-22")
+        left = _files(slice_dir)
+        _mark("request-word", slice_dir, "B1", WORD, date="2026-10-23")
+        word = _files(slice_dir)
+        _mark("request-card", slice_dir, "B1", CARD)
+        assert _undo("unmark", slice_dir, "B1")[0] == 0
+        assert _files(slice_dir) == word
+        assert close_out.route(entry_of(slice_dir, "B1"))[0] == WORD_ROUTE[0]
+        assert _undo("unmark", slice_dir, "B1")[0] == 0
+        assert _files(slice_dir) == left
+        assert "**Route:** closed — the wrap-up looked and left it" in \
+            _as_rendered(slice_dir)
+        assert _undo("unmark", slice_dir, "B1")[0] == 0
+        assert _files(slice_dir) == before
+
+
 def test_worklist_names_what_waits_and_what_is_asked():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)

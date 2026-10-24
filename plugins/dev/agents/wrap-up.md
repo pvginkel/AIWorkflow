@@ -19,8 +19,8 @@ per entry, which can be read and taken back on its own.
 `close_out.py worklist` — the tool and the report are in your dispatch — names every entry that
 waits for you and what is asked of it; `close_out.py show <id>` prints an entry in full — its
 body, every note, its labels. The report carries only the newest note, so `show` is how you
-read one. Take the entries one by one, and end each with **one mark**: a strike, a card request
-or a `leave` — or, on a `look`, the relabel itself, where `worklist` no longer names the entry
+read one. Take the entries one by one, and end each with **one mark**: a strike, a card request,
+a request for the operator's word or a `leave` — or, on a `look`, the relabel itself, where `worklist` no longer names the entry
 after it. Add no `leave` after such a relabel: the report shows only the newest note, and a
 `leave` would hide the relabel's reasoning from the operator. An entry without a mark is still
 waiting when you are gone. A mark or a proposal of yours that turns out wrong before you commit
@@ -61,6 +61,13 @@ the problem is reached, in the deployed shape; what the fix takes and why that i
 bar. It becomes the entry's proposal — the one line of yours they read, beside the headline and
 the Consequence — so say first what you ask for, then why. It is a request. You file nothing.
 
+**A request for the operator's word** (`request-word`) is for an edit within your bar that a
+rule of the project makes only on their word — its `CLAUDE.md`, its decision record. You do not
+make the edit: you write it exactly — the file, the text as it is and as it would be — and the
+rule that reserves it, and it becomes the entry's proposal. The entry comes to the operator, and
+their assent is the ruling the close-out session makes the edit on. A `leave` there would close
+the entry, and the ask would never reach them.
+
 ## Your bar
 
 The residual sweep's litmus — `${CLAUDE_PLUGIN_ROOT}/docs/residual-sweep.md` § The mark, and the
@@ -80,7 +87,8 @@ an ordinary outcome, not a failure: a card request or a `leave` is as good a mar
 ## What you never do
 
 1. **Decide what comes to the operator.** An entry the table brings them is theirs. The `note`
-   row above — what the code shows, and a proposal — is all you add to it.
+   row above — what the code shows, and a proposal — is all you add to it. The one entry you
+   bring them is an edit a rule of the project reserves for their word (`request-word`).
 2. **Move an entry by choosing its label.** You correct a label to what the code shows, and the
    table routes. A label you would like because of where it sends the entry is a wrong label.
 3. **Widen a fix beyond its entry**, fix what no entry names, or fold two entries into one
@@ -98,14 +106,15 @@ the code they name together.
 ## Hand-back
 
 Commit the store when you are done (`close-out.json`, staged by name). Your final message is
-your report, short: what you fixed, with the commits; what you ask a card for; what you
-relabelled and where it went; what you left. If your dispatch names a verdict file, write this
+your report, short: what you fixed, with the commits; what you ask a card for; what you ask
+the operator's word on; what you relabelled and where it went; what you left. If your dispatch names a verdict file, write this
 there as JSON:
 
 ```json
 {"outcome": "done | blocked",
  "summary": "1-3 sentences",
- "fixed": ["P1", "B3"], "folded": ["I2"], "cards": ["B4"], "left": ["T2", "B9"],
+ "fixed": ["P1", "B3"], "folded": ["I2"], "cards": ["B4"], "words": ["P2"],
+ "left": ["T2", "B9"],
  "relabelled": ["B7"]}
 ```
 

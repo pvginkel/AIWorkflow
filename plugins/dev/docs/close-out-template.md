@@ -46,15 +46,21 @@ lifecycle — are [close-out.md](close-out.md); this doc is the shape.
   (`relabel`) changes them in place and leaves a note that says what changed and why.
 - **`proposal`** is what its author would do about the entry and why, in a sentence or two,
   in a ruling's words — the line the operator rules on, with the headline and the Consequence.
-  `append --proposal` writes it; `propose` and `request-card` replace it, the one before kept
-  as a note. `null` on an entry that has none.
+  `append --proposal` writes it; `propose`, `request-card` and `request-word` replace it, the
+  one before kept as a note. `null` on an entry that has none. **`proposed`** is there only while
+  one of those three set the proposal in effect: `{"by", "date", "via", "replaced", "prior"}` —
+  who set it, when, with which verb, the proposal it replaced (`null`: none) and the record
+  before it — which `unpropose` and `unmark` restore from. `amend` changing the proposal removes
+  it: the proposal is the appender's again.
 - **`by`** is the `--by` the entry was appended with: its appender, the one `amend` lets correct
   it while it is not committed. Passing `--by` to `append` is what makes an entry amendable;
   `null` on an entry appended without it, which nobody amends. `author` is the provenance's own
   text and is never matched.
 - **`wrap_up`** is what the wrap-up did with an entry it did not strike: `{"outcome", "by",
-  "date", "text"}`, the outcome being `card` (it asks for a card) or `left` (it looked and
-  changed nothing).
+  "date", "text", "prior", "set_proposal"}`, the outcome being `card` (it asks for a card),
+  `word` (it asks for the operator's word on an edit) or `left` (it looked and changed
+  nothing). `prior` is the mark it replaced, whole, or `null`; `set_proposal` says the mark set
+  the entry's proposal. A mark written before 0.9.132 has neither.
 - **`strike`** is `{"reason", "by", "date", "commit"}`, the commit where a fix resolved the
   entry; **`ruling`** is `{"words", "did", "date"}` — the operator's words, never edited, and
   what the session did on them.
@@ -93,7 +99,7 @@ Run: <not yet stamped>
 
 | section | holds | shown |
 |---|---|---|
-| Comes to you | actions, decisions, risks, and the improvements that are the operator's to weigh | as its ask: heading, body, `Proposal:`, `Consequence:`, the newest note, `Triage:`, `Provenance:`, `Route:` |
+| Comes to you | actions, decisions, risks, the improvements that are the operator's to weigh, and the edits the wrap-up asks their word on | as its ask: heading, body, `Proposal:`, `Consequence:`, the newest note, `Triage:`, `Provenance:`, `Route:` |
 | Card requests | what the table or the wrap-up asks a card for | as its ask; the `Proposal:` is the card request |
 | For the wrap-up | what waits for the wrap-up; empty once it has run | as its ask |
 | Unlabelled | entries without labels, until they have them | as its ask |
@@ -211,8 +217,9 @@ Every verb takes the slice directory or the report's path as its first argument.
 | `propose` | the wrap-up, the close-out session | gives an entry its proposal, or replaces it — the one before is kept as a note |
 | `unpropose` | the proposal's author | withdraws a proposal they set with `propose` while it is not committed — the one it replaced comes back, or none; refused on the appender's own proposal, which `amend` corrects, and on a card request's, which goes with its mark |
 | `request-card` | the wrap-up | asks for a card on an entry, with how it is reached and what the fix takes — which becomes the entry's proposal |
+| `request-word` | the wrap-up | hands the operator an entry whose edit a rule of the project makes only on their word, with the exact edit and the rule — which becomes the entry's proposal; the entry comes to them, whatever the table's route |
 | `leave` | the wrap-up | records that it looked at an entry and changed nothing, and why |
-| `unmark` | the mark's author | withdraws the wrap-up's mark on an entry — a `leave` or a card request — while it is not committed: the mark it replaced comes back, and a card request's proposal gives way to the one before it |
+| `unmark` | the mark's author | withdraws the wrap-up's mark on an entry — a `leave`, a card request or a request for the operator's word — while it is not committed: the mark it replaced comes back, and a request's proposal gives way to the one before it |
 | `fold` | the wrap-up, the close-out session | appends an entry verbatim — its `show`, quoted, under a line naming the slice, the entry and the report — to the `slice.md` of the slice it is `for` (or `--into`), which has to be still to run and unplanned, and stages that file; prints the strike that follows the commit. Refused on a struck entry, on the report's own slice and on a fold `slice.md` holds already; writes neither the store nor the report |
 | `worklist` | the wrap-up, the close-out session | what waits for the wrap-up, entry by entry, with what is asked of each |
 | `rule` | the close-out session | records the operator's words on an entry and what was done on them — refused on an entry that holds other words, unless `--append` or `--replace`; without an id, reads the `Disposition:` lines of `close-out.md` back into the store |

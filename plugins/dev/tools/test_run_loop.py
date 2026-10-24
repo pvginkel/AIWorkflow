@@ -8585,7 +8585,7 @@ def test_a_sibling_rebase_that_conflicts_is_aborted_and_blocks():
 WRAP = "phase/074-wrap-up"
 DOCS = "phase/074-docs"
 WRAP_DONE = {"outcome": "done", "summary": "fixed B1", "fixed": ["B1"],
-             "left": [], "unknown_key": "ignored"}
+             "words": ["P2"], "left": [], "unknown_key": "ignored"}
 
 
 def plant_waiting(slice_dir):
@@ -8695,7 +8695,7 @@ def test_a_green_wrap_up_lands_with_the_doc_phase():
         assert prompt.count(run_loop.NOTHING_RAN_HINT) == 2
         verbs = "\n".join("  " + v for v in close_out.verb_usage(
             "worklist", "show", "list", "relabel", "propose", "request-card",
-            "leave", "fold", "unmark", "unpropose").splitlines())
+            "request-word", "leave", "fold", "unmark", "unpropose").splitlines())
         assert ("  The other verbs the wrap-up uses, with their arguments:\n"
                 + verbs + "\n") in prompt
         # note and strike are the dispatch line's, once
@@ -8730,6 +8730,7 @@ def test_a_green_wrap_up_lands_with_the_doc_phase():
         assert [(h["role"], h["outcome"]) for h in rows] == \
             [("wrap-up", "done"), ("wrap-up-gate", "green")]
         assert rows[0]["fixed"] == ["B1"] and rows[0]["left"] == []
+        assert rows[0]["words"] == ["P2"]
         assert "unknown_key" not in rows[0]
         assert rows[0]["session"] == "sess-wrap-1" and rows[0]["transcript"]
         assert rows[1]["repo"] == str(sib)

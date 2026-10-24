@@ -49,7 +49,8 @@ slice directory.
    within two limits: you change nothing in a repository it works in until it has returned — a
    ruling is recorded at once and executed after — and the card requests are presented when it
    has returned, because most of them are its own. When it returns, render, and say in a line or
-   two what it did: what it fixed, with the commits, what it asks a card for, what it left. A
+   two what it did: what it fixed, with the commits, what it asks a card for, what it asks the
+operator's word on, what it left. A
    wrap-up that fails changes nothing else in this procedure: what waited for it comes to the
    operator with the rest, said as what it is — an entry nobody looked at.
 4. **Check what can have moved.** A report ages: a later phase, slice or ad hoc commit may have
