@@ -4,6 +4,27 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-26 — The format of a document Pilot reads is a skill, /dev:document-format (v0.9.138)
+
+Pilot is the project manager PilotApp builds. It puts the documents its work items register to
+the operator, and its brain writes items and answer lines in its store. Both are Markdown, and
+Pilot's record reads their front matter and their fenced decision, question and action blocks. A
+text that breaks the grammar is refused at `register_document` or held at the save. No skill said
+how such a document is written. The grammar was PilotApp's `docs/block-dsl.md`, which a session
+in another environment does not have.
+
+`/dev:document-format` is that skill. It gives the front matter, the blocks and their answer
+lines, the faults, and what a person's answer freezes. It says how an ask is written: the lead
+first, the shape the operator asked for, and one ask to a heading section in a document of more
+than one, so that Pilot can collapse a settled one to its heading. It names `reference.json` for
+every closed list and lists no value, so the skill and the record cannot drift. Its examples parse
+clean under Pilot's own reader. The skill is in the plugin and not in Pilot's store because a work
+item runs in its own project's environment, where it sees the plugin but not the store (PilotApp
+D051). It is the plugin's first Pilot-specific content: Pilot's standard becomes the plugin's own
+when the workflow is reworked to it (PilotApp D057). Until then its `description` limits it to
+documents Pilot reads, so sessions in other projects never load it. Nothing in the loops changes.
+PilotApp slice 021 (P-65).
+
 ## 2026-10-25 — Planning knows a phase's gate runs every component its diff touches (v0.9.137)
 
 Since 0.9.125 (AIWF-91) a phase's gate has also run `kc project test` for every component its

@@ -14,7 +14,9 @@ a KubeCoder pod).
 The validated slice pipeline: **`/dev:triage` → `/dev:plan-slice` → `/dev:run-slice` →
 `/dev:close-out`**, plus `/dev:slice-dag`, `/dev:arch-design`, plus `/dev:onboard` to bring a
 repo onto the pipeline in the first place, and `/dev:inbox`, which sorts every project's tracker
-inbox with the operator ahead of triage — tracker-only, from any environment. `plan-slice`
+inbox with the operator ahead of triage — tracker-only, from any environment.
+`/dev:document-format` is no workflow: it is the format of a document Pilot, the project manager,
+reads, which a session loads before it writes one. `plan-slice`
 settles the design with the operator, then
 drives a plan-writer/plan-reviewer round (`plan_loop.py`) to a reviewed **phase queue**;
 `run-slice` launches a kc-native run loop (`run_loop.py`) that takes each phase through a bounded
@@ -36,7 +38,7 @@ goes): nothing from a run is carded per finding. The author of an entry labels w
 table in the tool routes it, the operator rules on what comes to them and `/dev:close-out`
 executes.
 
-- **`plugins/dev/`** — the plugin: 8 skills, 11 agents, the tools (`run_loop.py`,
+- **`plugins/dev/`** — the plugin: 9 skills, 11 agents, the tools (`run_loop.py`,
   `plan_loop.py`, `close_out.py`, `sweep_slice.py`, `close_slice.py`, `slice_cost.py`,
   `turn_profile.py`, `preflight.py`, `project_config.py`, `redact_secrets.py`,
   `spec_check.py`, `allocate-next-slice.sh`, with their suites), and the

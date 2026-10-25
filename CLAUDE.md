@@ -6,8 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AIWorkflow is a **Claude Code plugin marketplace**, not an application — nothing is built or
 deployed from here. It hosts the `dev` plugin (the slice pipeline: `/dev:triage` →
-`/dev:plan-slice` → `/dev:run-slice` → `/dev:close-out`, plus `/dev:onboard`, `/dev:slice-dag`,
-`/dev:arch-design`), and it is the workshop where that pipeline is measured and improved. The
+`/dev:plan-slice` → `/dev:run-slice` → `/dev:close-out`, plus `/dev:onboard`, `/dev:inbox`,
+`/dev:slice-dag`, `/dev:arch-design`, and `/dev:document-format`, the format of a document Pilot
+reads), and it is the workshop where that pipeline is measured and improved. The
 plugin is **kc-native**: it targets the KubeCoder environment and expects `kc` on PATH, with no
 non-`kc` fallback.
 
@@ -91,8 +92,9 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   `turn_profile.py`, the transcript replay behind its turn table), `allocate-next-slice.sh`.
   Suites load their subject via `importlib.util.spec_from_file_location` (`tools/` is not a
   package) and fake sessions, git, `kc` and the gate — no agent is ever spawned by a test.
-- **`plugins/dev/agents/`** (11) and **`plugins/dev/skills/<name>/SKILL.md`** (7) — the dispatched
-  roles and the operator-triggered workflows.
+- **`plugins/dev/agents/`** (11) and **`plugins/dev/skills/<name>/SKILL.md`** (9) — the dispatched
+  roles, the operator-triggered workflows and `document-format`, which a session loads to write a
+  document Pilot reads.
 - **`plugins/dev/docs/`** — the **canonical contract** for all of the above: `run-loop.md`,
   `plan-loop.md`, `runner-state.md`, `plan-template.md`, `refinement.md`, `agent-dispatch.md`, `close-out.md`,
   `close-out-template.md`, `project-contract.md`, `preflight.md`, `residual-sweep.md`,
