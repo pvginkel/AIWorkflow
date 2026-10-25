@@ -120,14 +120,16 @@ run cannot take, a held push above all ([plan-template.md](plan-template.md)).
 ACs outcome-level and complete against slice.md; the task shape declared and justified from
 slice.md facts that hold; detailed designs correct (load-bearing citations
 verified against the code); every phase's `Target:` present and real; phases independently
-reviewable and roughly PR-sized; attachments at the altitude above; no auto-doc content (an
-altitude finding — flagged, never fact-checked claim by claim) and no criterion only the doc
-phase could earn; no correction-chained rulings; nothing load-bearing silently uncertain; no
-phase `Target:` or push hold on a scratch clone another slice in flight holds without an
-ordering constraint putting this slice after that push — an operator-decidable finding. For that
-last one the reviewer's dispatch, alone of the loop's, lists the push holds the other plans
-under `slices/` and `slices/backlog/` declare. A step an ordering constraint shares with a named
-sibling slice is compared with that slice's `plan.md`, its done-record too once it has run; each
-difference is an operator-decidable finding that names no winner. Findings describe problems,
-never corrections.
+reviewable and roughly PR-sized; no phase or ordering note that expects a suite the phase's diff
+touches to stay red until a later phase — a blocking finding, since the gate runs every touched
+component ([run-loop.md](run-loop.md) § The per-phase round); attachments at the altitude
+above; no auto-doc content (an altitude finding — flagged, never fact-checked claim by claim)
+and no criterion only the doc phase could earn; no correction-chained rulings; nothing
+load-bearing silently uncertain; no phase `Target:` or push hold on a scratch clone another
+slice in flight holds without an ordering constraint putting this slice after that push — an
+operator-decidable finding. For that last one the reviewer's dispatch, alone of the loop's,
+lists the push holds the other plans under `slices/` and `slices/backlog/` declare. A step an
+ordering constraint shares with a named sibling slice is compared with that slice's `plan.md`,
+its done-record too once it has run; each difference is an operator-decidable finding that
+names no winner. Findings describe problems, never corrections.
 One round, ever — the findings go to the operator. Verdicts: `go` / `issues` / `questions`.

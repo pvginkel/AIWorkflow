@@ -47,7 +47,10 @@ plan cites.
    producers-first; a phase whose outcome cannot be judged on its own diff is a finding, as is a
    planned end-to-end testing phase or auto-doc pass (the loop owns those). A phase whose
    outcome *is* a doc change is a phase like any other, not a finding; nor is doc work the
-   project's doc plan gives the doc phase, sent there by a ruling (item 1).
+   project's doc plan gives the doc phase, sent there by a ruling (item 1). A phase's gate runs
+   every component its committed files touch, generated and cached files included
+   (`${CLAUDE_PLUGIN_ROOT}/docs/run-loop.md` § The per-phase round): an ordering note or a phase
+   that expects a suite the phase touches to stay red until a later phase is a blocking finding.
 6. **Attachment altitude.** Attachments exist only where the executor genuinely cannot derive
    the design, and sit at the smart-dev altitude — functional success descriptions. Prescribed
    symbol names, pseudo-code, or specced implementations are findings; so is an attachment a

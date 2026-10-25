@@ -176,7 +176,8 @@ The mechanical rules the parser holds every author to:
   whole section.
   A find that affects a later phase is edited *into that phase*, where its reader will trip
   over it, not left in the done-record.
-- **Phases are roughly PR-sized and independently reviewable** — one branch, one gate run, one
+- **Phases are roughly PR-sized and independently reviewable** — one branch, one gate run over
+  every component the diff touches ([run-loop.md](run-loop.md) § The per-phase round), one
   reviewable diff. A phase outgrowing that splits; a phase *section* outgrowing ~a page
   overflows into `attachments/` (referenced, never inlined). No end-to-end testing phase and
   no auto-doc phase — the loop owns those; a phase's own tests ride the phase.

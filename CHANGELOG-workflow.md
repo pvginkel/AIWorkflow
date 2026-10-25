@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-25 — Planning knows a phase's gate runs every component its diff touches (v0.9.137)
+
+Since 0.9.125 (AIWF-91) a phase's gate has also run `kc project test` for every component its
+diff touches, but only run-loop.md said so. PilotApp slice 020 was planned the old way: "Each
+phase is gated on its own Target; the frontend is green again from P6 and P9". Its P3 was a
+backend phase. It regenerated the committed OpenAPI cache under `frontend/`, so the frontend
+suite was pulled into its gate. That suite went red on specs P6 was planned to fix, and the run
+paused on an operator question. PilotApp fixed its side by moving the cache into `backend/`.
+
+The plan-writer is now told that a phase's gate runs every component its committed files touch,
+generated and cached files included. So the first phase whose diff reaches a consumer after a
+wire change is the one that adapts it. Where all that reaches across is a generated or cached
+file kept in another component's directory, the writer prefers moving that file into the
+component that generates it, as a phase of its own or inside the phase that would otherwise
+reach across. The plan-reviewer flags as blocking an ordering note or a phase that expects a
+suite the phase touches to stay red until a later phase. The plan loop's reviewer charter
+carries the same check, and plan-template.md's "one gate run" now points at the rule. Nothing
+in the driver changes. AIWF-103.
+
 ## 2026-10-24 — Every spec-repo phase is gated by the plugin's spec check (v0.9.136)
 
 A spec repo had no manifest, script or CI. So a phase targeting it had no deterministic gate: its

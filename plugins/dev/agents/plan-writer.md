@@ -28,6 +28,13 @@ outcomes, not implementations.
   section outgrowing ~a page overflows into an attachment.
 - **Order so producers land before consumers**; each phase assumes every earlier phase is merged.
   There is no other dependency mechanism.
+- **A phase's gate runs every component its committed files touch**, not its Target's alone
+  (`${CLAUDE_PLUGIN_ROOT}/docs/run-loop.md` § The per-phase round), generated and cached files
+  included. So the first phase whose diff reaches a consumer after a wire change is the one that
+  adapts it: no phase leaves a suite it touches red for a later phase to fix. Where all that
+  reaches across is a generated or cached file kept in another component's directory, prefer
+  moving it into the component that generates it — as a phase of its own, or inside the phase
+  that would otherwise reach across.
 - **Cross-repo work is its own phase** targeting the sibling repo. `github:<owner>/<repo>` is
   only for a repo the environment does not check out under `/work`; the phase says so in a line
   of its own, since the driver clones the repo for this slice alone. A repo you cloned to research
