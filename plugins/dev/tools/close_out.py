@@ -164,7 +164,7 @@ The slice's close-out report is {report}, rendered from its store,
 `append`, `note`, `strike`; while it is not committed, `amend <id> --by
 <who>` corrects an entry you appended with that --by (any of `append`'s
 flags but --kind, each replacing its field), and `unnote` or `unstrike`
-takes back your own note or strike; `list` shows what is there
+takes back your own note or strike;{relabel_line} `list` shows what is there
 (ids, headlines, Consequence lines) — never edit either file by hand, and
 commit the store with your own commit, staged by name. An entry carries
 labels that say what it is, and the tool routes it from them: you state
@@ -180,6 +180,12 @@ The report is about the work; what got in your way while working, and any
 improvement of the workflow itself, goes to the `fieldnotes` MCP tool
 `post` instead.\
 """
+# What DISPATCH_LINE says of `relabel` where a dispatch offers it (`dispatch_line(...,
+# relabel=True)`) — wrapped where it falls in the paragraph.
+DISPATCH_RELABEL = """ `relabel <id> --by <who> --note
+<what you found>` corrects an entry's labels where you can show they are
+wrong, whoever appended it: the tool routes an entry from its labels,
+never from a note;"""
 
 # -- the vocabulary (close-out.md § The labels) -------------------------------
 
@@ -432,17 +438,21 @@ def slice_dir_of(arg: Path | str) -> Path:
     return path.parent if path.suffix in (".md", ".json") else path
 
 
-def dispatch_line(report: Path | str) -> str:
+def dispatch_line(report: Path | str, *, relabel: bool = False) -> str:
     """The report pointer a dispatch prompt carries — the path, the store,
     the tool, the labels each kind carries and how they pair, as
     `check_labels` holds them, and the arguments of five of the verbs it
     names, rendered from the parser; `amend`, whose flags are `append`'s,
-    is named without them."""
+    is named without them. With `relabel`, it offers `relabel` too, for
+    an entry whose labels the role can show wrong, and gives its
+    arguments."""
+    verbs = ("append", "note", "strike", "unnote", "unstrike") + (
+        ("relabel",) if relabel else ())
     return DISPATCH_LINE.format(report=report, store=STORE_NAME, tool=TOOL_PATH,
+                                relabel_line=DISPATCH_RELABEL if relabel else "",
                                 kind_labels=kind_labels_text(),
                                 label_pairing=LABEL_PAIRING,
-                                verb_usage=verb_usage("append", "note", "strike",
-                                                      "unnote", "unstrike"))
+                                verb_usage=verb_usage(*verbs))
 
 
 def _collapse(text: str | None) -> str:
@@ -2432,11 +2442,33 @@ def _ruled(entry: dict) -> bool:
     return bool((entry.get("ruling") or {}).get("words"))
 
 
+# The --by the wrap-up signs with: its dispatch names none, and it writes
+# `wrap-up`, at times with the slice after it (`wrap-up, slice 022`).
+_WRAP_UP_BY_RE = re.compile(r"(the )?wrap[- ]up\b", re.I)
+
+
+def _noted_since(entry: dict) -> bool:
+    """Whether someone but the wrap-up wrote a note with `note` on the
+    entry since its labels last changed. A relabel's note re-routed the
+    entry already, and settles every note before it; a note the tool
+    keeps as history (a replaced
+    proposal, an earlier mark, the operator's earlier words, which the
+    read-back writes too) is nobody's finding."""
+    for note in reversed(entry.get("notes") or []):
+        if note.get("relabel"):
+            return False
+        if not note.get("history") and not _WRAP_UP_BY_RE.match(_collapse(note.get("by"))):
+            return True
+    return False
+
+
 def _asked(entry: dict, touched: set[str] | None,
            stages: dict | None = None) -> str | None:
     """What the wrap-up is asked to do with an entry, None when it waits for
     nothing. An entry the operator has ruled on is theirs, whatever its
-    route: it does not wait."""
+    route: it does not wait. One the table closed is asked a `check` where
+    it breaks a flow, else a `recheck` where it was noted since its labels
+    last changed (`_noted_since`)."""
     if entry.get("strike") or entry.get("wrap_up") or _ruled(entry):
         return None
     key, _ = table_route(entry, touched, stages)
@@ -2456,6 +2488,9 @@ def _asked(entry: dict, touched: set[str] | None,
     if key.startswith("closed:") and lab.get("impact") == "broken":
         what = "signal" if key == "closed:loud" else "trigger"
         return f"check — the {what} the close rests on"
+    if key.startswith("closed:") and _noted_since(entry):
+        return ("recheck — a note came after the table closed it; check its labels "
+                "against the note")
     if key == "operator:risk":
         return "note — note what the code says under it; the entry stays the operator's"
     return None
@@ -3529,7 +3564,8 @@ def _label_value(value: str) -> str:
 
 
 # The help strings are prompt text: `verb_usage("append", "note",
-# "strike", "unnote", "unstrike")` is rendered into every dispatch.
+# "strike", "unnote", "unstrike")` is rendered into every dispatch, and
+# `relabel`'s into those that offer it.
 LABEL_HELP = {
     "trigger": "what has to happen for the problem to show",
     "impact": "what is then experienced",

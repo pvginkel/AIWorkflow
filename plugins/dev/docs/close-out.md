@@ -416,6 +416,7 @@ operator is theirs, and no card is filed without their word.
 | an entry without labels | its labels, from its text |
 | input for a slice still unplanned | the entry appended to that slice's `slice.md` (`fold`), and a strike naming the slice |
 | a close that rests on one label, on an entry that breaks a flow | that label checked in the code — its trigger, or its signal — and corrected where the code says otherwise |
+| a closed entry that someone other than the wrap-up noted after the table closed it | its labels checked against the note, and corrected where the note shows them wrong (`relabel`), else that it left it, and why (`leave`) |
 | a risk that comes to the operator | a proposal, where its author gave none or the code says otherwise (`propose`), and what the code shows under it (`leave`); the entry stays theirs |
 | a gate that goes red on its fix | the fix taken back, and a card request or a note that says so |
 | anything else it looked at and does not change | that it left it, and why (`leave`) |
@@ -424,7 +425,7 @@ operator is theirs, and no card is filed without their word.
 corrected label or a card request, and the table routes again. Every entry it was given ends
 with one mark — a strike, a card request, a request for the operator's word, or that it was
 left; on an entry it was given for a
-look, a corrected label that routes the entry away from the wrap-up is its mark, with no note
+look or a recheck, a corrected label that routes the entry away from the wrap-up is its mark, with no note
 after it. `close_out.py worklist` names what still waits. An entry the operator has ruled on is theirs, whatever its route, and does
 not wait for the wrap-up.
 

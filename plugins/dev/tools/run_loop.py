@@ -5570,7 +5570,7 @@ class RunLoop:
             situation=situation,
             phase_line=phase_line,
             slice_dir=self.slice_dir,
-            close_out_line=dispatch_line(self.report_path),
+            close_out_line=dispatch_line(self.report_path, relabel=True),
             material="\n".join(f"- {p}" for p in material) or "- (state.json only)",
             actions="\n".join(f"- `{a}` — {why}" for a, why in actions.items()),
             verdict_path=verdict_path,
@@ -6425,9 +6425,12 @@ class RunLoop:
         return (self._gate_waived_note(target) + self._philosophy_line()
                 + self._skill_line(phase_id) + self._close_out_line())
 
-    def _close_out_line(self) -> str:
+    def _close_out_line(self, *, relabel: bool = False) -> str:
+        """CLOSE_OUT_LINE; `relabel` offers that verb too — the reviewer's
+        (AIWF-106: PilotApp slice 008's P15 reviewer could only note that a
+        closed entry's labels were wrong, and the note left it closed)."""
         return CLOSE_OUT_LINE.format(
-            dispatch_line=dispatch_line(self.report_path))
+            dispatch_line=dispatch_line(self.report_path, relabel=relabel))
 
     def _skill_line(self, phase_id: str) -> str:
         """The skills the phase's executor, fix rounds and reviewer are
@@ -7541,7 +7544,7 @@ class RunLoop:
                     gate_line=gate_line,
                     philosophy_line=self._philosophy_line(),
                     skill_line=self._skill_line(phase_id),
-                    close_out_line=self._close_out_line(),
+                    close_out_line=self._close_out_line(relabel=True),
                 )
             else:
                 prompt = REVIEWER_PROMPT.format(
@@ -7554,7 +7557,7 @@ class RunLoop:
                     gate_line=gate_line,
                     philosophy_line=self._philosophy_line(),
                     skill_line=self._skill_line(phase_id),
-                    close_out_line=self._close_out_line(),
+                    close_out_line=self._close_out_line(relabel=True),
                 )
             verdict, _ = self._spawn(
                 "code-reviewer", prompt, self.repo_root, verdict_path,

@@ -577,7 +577,8 @@ loop did not act on is in the slice's close-out report — who writes what there
 [close-out.md](close-out.md). The driver's own part is deterministic: it creates the report at
 run start when planning left none, names the report and `close_out.py` (the only way to write to
 it) in every dispatch, with the labels each kind carries and the arguments of `append`, `note`
-and `strike`, enters refuted findings, funding-consult
+and `strike` — and, to the code-reviewer and the consult, `relabel`, for an entry whose labels
+they can show wrong — enters refuted findings, funding-consult
 merges and every stop of the run (written by the resume that follows the stop, from
 `state.json`'s `bailouts`, at that resume's first dispatch), dispatches the wrap-up, and renders the report — before the doc
 phase, after the wrap-up, whenever the run stops, and when it completes, the run header from

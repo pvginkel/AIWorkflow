@@ -2727,6 +2727,65 @@ def test_worklist_names_what_waits_and_what_is_asked():
         assert code == 0 and out.strip() == "nothing waits for the wrap-up"
 
 
+RECHECK = ("recheck — a note came after the table closed it; check its labels against "
+           "the note")
+REVIEWER = "code-reviewer P15 r1"
+
+
+def test_a_note_on_a_closed_entry_by_anyone_but_the_wrap_up_asks_a_recheck():
+    """PilotApp slice 008: a reviewer's note on B16, which the table closed,
+    said its labels were wrong, and the worklist never named it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        closed = with_flags(DEFECT, trigger="fault", impact="degraded")
+        for _ in range(7):
+            run_cli("append", slice_dir, *closed)                                # B1–B7
+        run_cli("append", slice_dir, *with_flags(DEFECT, trigger="fault"))       # B8
+        assert [e["id"] for e, _ in close_out.worklist(slice_dir)] == ["B8"]
+        assert close_out.table_route(entry_of(slice_dir, "B1"))[0] == "closed:fault"
+
+        def asked():
+            return {e["id"]: a for e, a in close_out.worklist(slice_dir)}
+
+        def note(eid, by, text="its impact is wrong: the flow breaks"):
+            assert run_cli("note", slice_dir, eid, "--by", by, "--text", text)[0] == 0
+
+        def relabel(eid, by):
+            code, _, err = run_cli("relabel", slice_dir, eid, "--by", by, "--note",
+                                   "it says so itself", "--signal", "loud")
+            assert code == 0, err
+
+        note("B1", REVIEWER)
+        # the wrap-up's own note, signed as it signs, asks nothing
+        note("B2", "wrap-up")
+        note("B2", "wrap-up, slice 022")
+        # a relabel re-routed the entry already; a proposal replaced is history
+        relabel("B3", REVIEWER)
+        close_out.propose_entry(slice_dir, "B4", REVIEWER, "Card it.")
+        close_out.propose_entry(slice_dir, "B4", REVIEWER, "Close it.")
+        assert entry_of(slice_dir, "B4")["notes"][-1]["history"] == "proposal"
+        # noted, then struck: settled
+        note("B5", REVIEWER)
+        close_out.strike_entry(slice_dir, "B5", "dup of B1")
+        assert asked() == {"B1": RECHECK, "B8": "check — the trigger the close rests on"}
+        # the existing check comes first
+        note("B8", REVIEWER)
+        assert asked()["B8"] == "check — the trigger the close rests on"
+        code, out, _ = run_cli("worklist", slice_dir)
+        assert f"B1 · {RECHECK}\n" in out
+        # the wrap-up's leave takes it off; so does a relabel after the note
+        note("B6", REVIEWER)
+        note("B7", "close-out session")
+        assert set(asked()) == {"B1", "B6", "B7", "B8"}
+        close_out.leave_entry(slice_dir, "B1", "wrap-up", "the labels hold")
+        relabel("B6", "wrap-up")
+        assert set(asked()) == {"B7", "B8"}
+        # a note after that relabel asks again
+        note("B6", REVIEWER, "still loud?")
+        assert asked()["B6"] == RECHECK
+
+
 def test_a_for_folds_only_into_a_slice_still_unplanned_and_a_finished_one_drops_out():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp, later=("012_later_slice", "051_planned"))
@@ -4470,6 +4529,33 @@ def test_dispatch_line_is_the_text_with_the_labels_and_the_verbs_usage_in_it():
     assert "close_out.py unnote <close-out.md> <id> --by BY\n" in line
     assert "close_out.py unstrike <close-out.md> <id> --by BY\n" in line
     assert line.endswith("goes to the `fieldnotes` MCP tool\n`post` instead.")
+
+
+def test_dispatch_line_without_relabel_does_not_offer_it():
+    report_md = "/specs/slices/007_x/close-out.md"
+    line = close_out.dispatch_line(report_md)
+    assert close_out.dispatch_line(report_md, relabel=False) == line
+    assert "takes back your own note or strike; `list` shows what is there\n" in line
+    assert "`relabel <id>" not in line and "close_out.py relabel" not in line
+
+
+def test_dispatch_line_with_relabel_offers_it_and_its_arguments():
+    report_md = "/specs/slices/007_x/close-out.md"
+    line = close_out.dispatch_line(report_md, relabel=True)
+    assert ("flags but --kind, each replacing its field), and `unnote` or `unstrike`\n"
+            "takes back your own note or strike; `relabel <id> --by <who> --note\n"
+            "<what you found>` corrects an entry's labels where you can show they are\n"
+            "wrong, whoever appended it: the tool routes an entry from its labels,\n"
+            "never from a note; `list` shows what is there\n"
+            "(ids, headlines, Consequence lines) — never edit") in line
+    assert ("\nThe verbs take:\n"
+            + close_out.verb_usage("append", "note", "strike", "unnote", "unstrike",
+                                   "relabel")
+            + "\nThe report is about the work;") in line
+    assert "close_out.py relabel <close-out.md> <id> --by BY --note NOTE" in line
+    # the rest is the line without it
+    assert line.replace(close_out.DISPATCH_RELABEL, "", 1).replace(
+        "\n" + close_out.verb_usage("relabel"), "", 1) == close_out.dispatch_line(report_md)
 
 
 def test_verb_usage_renders_append_compactly_with_its_help_strings():

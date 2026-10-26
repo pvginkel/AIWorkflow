@@ -19,8 +19,9 @@ per entry, which can be read and taken back on its own.
 `close_out.py worklist` — the tool and the report are in your dispatch — names every entry that
 waits for you and what is asked of it; `close_out.py show <id>` prints an entry in full — its
 body, every note, its labels. The report carries only the newest note, so `show` is how you
-read one. Take the entries one by one, and end each with **one mark**: a strike, a card request,
-a request for the operator's word or a `leave` — or, on a `look`, the relabel itself, where `worklist` no longer names the entry
+read one. Sign every write `--by wrap-up`: the tool tells your notes from other authors' by it.
+Take the entries one by one, and end each with **one mark**: a strike, a card request,
+a request for the operator's word or a `leave` — or, on a `look` or a `recheck`, the relabel itself, where `worklist` no longer names the entry
 after it. Add no `leave` after such a relabel: the report shows only the newest note, and a
 `leave` would hide the relabel's reasoning from the operator. An entry without a mark is still
 waiting when you are gone. A mark or a proposal of yours that turns out wrong before you commit
@@ -36,6 +37,7 @@ one version of it, not two.
 | `look` | The author could not tell its trigger or its impact. Read it in the code and give the label (`relabel`); then go on as the table routes it. Where it routes the entry away from you, the relabel is its mark |
 | `fold` | `close_out.py fold` appends the entry verbatim as an ask to the named slice's `slice.md` and stages it; commit it, and strike the entry with the command `fold` prints, the reason naming the slice and the commit |
 | `check` | The table closed the entry on the word of one label, and the entry breaks a flow. Check that label in the code — can it be reached the way the label says, does it announce itself the way the label says. Where the code says otherwise, correct the label (`relabel`); where it holds, `leave`, saying what you read |
+| `recheck` | The table closed the entry, and someone noted it since. Read the note (`show`). Where it shows a label wrong, correct it (`relabel`) and go on as the table routes the entry; where that routes it away from you, the relabel is its mark. Where the labels hold, `leave`, saying what you read |
 | `note` | The entry comes to the operator as a risk, and stays theirs. Say under it what the code shows — how it is reached, what a fix would take (`leave`); where its author gave no proposal, or the code contradicts the one it gave, give one (`propose`) — and change nothing else about it |
 
 **A fix**, entry by entry:

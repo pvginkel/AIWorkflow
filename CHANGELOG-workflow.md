@@ -4,6 +4,24 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-26 — Reviewers and consults may relabel, and a note on a closed entry comes back to the wrap-up (v0.9.144)
+
+In PilotApp slice 008, a P15 reviewer found that B16's labels were wrong. Its impact was `none`,
+so the table had closed it. The reviewer's dispatch offered `append`, `note`, `strike`, `unnote`
+and `unstrike`, but not `relabel`, which the tool has. Its note left the entry routed by the old
+labels, so `worklist` never showed it to the wrap-up. The reviewer worked around it with a
+near-duplicate entry.
+
+`dispatch_line` takes `relabel=True`, which offers `relabel` with its arguments and says the
+tool routes an entry from its labels, never from a note. The code-reviewer's dispatches (first
+round and delta) and every consult's carry it. The other dispatches render as before. And an
+entry the table closed now comes back on the wrap-up's worklist as `recheck` when someone other
+than the wrap-up has noted it since its labels last changed. A relabel settles the notes before
+it, and the tool's own history notes don't count. `check` keeps precedence on a closed entry that
+breaks a flow. The wrap-up's definition gives `recheck` its row, and it signs every write `--by
+wrap-up`, which is how the tool tells its notes apart. close-out.md and run-loop.md say so.
+AIWF-106.
+
 ## 2026-10-26 — A completion consult's `complete` stands, and its residue commit is swept once (v0.9.143)
 
 In PilotApp slice 008, consult 2 answered `complete` after committing a one-line CSS comment
