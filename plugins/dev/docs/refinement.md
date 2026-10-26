@@ -17,7 +17,7 @@ Three parties, one artifact:
   `plan.md`'s requirements/rulings section in the operator's words, and carries the grounding
   that binds the plan into that same section for the plan-writer. It writes no decision prose
   of its own.
-- **The `refinement-writer`** (Fable, a sub-agent of the session) writes `refinement.md` — the
+- **The `refinement-writer`** (Opus at `xhigh`, a sub-agent of the session) writes `refinement.md` — the
   one operator-facing document — **from** the material, selecting what the operator needs to
   rule and leaving the evidence behind. It writes only what the material supports; it does no
   research and repairs no gap.

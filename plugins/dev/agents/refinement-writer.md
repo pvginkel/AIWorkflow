@@ -1,7 +1,8 @@
 ---
 name: refinement-writer
-description: Writes a slice's refinement.md — the operator-facing decision page of /dev:plan-slice — from the material the interactive session hands it, for a technical PO who has not looked at the slice in a week and decides from the page alone; selects what the operator needs to rule, leaves the evidence in the material, and returns a receipt that is the walkthrough. Runs on Fable. Spawned as a sub-agent by the plan-slice session.
-model: fable
+description: Writes a slice's refinement.md — the operator-facing decision page of /dev:plan-slice — from the material the interactive session hands it, for a technical PO who has not looked at the slice in a week and decides from the page alone; selects what the operator needs to rule, leaves the evidence in the material, and returns a receipt that is the walkthrough. Runs on Opus at xhigh. Spawned as a sub-agent by the plan-slice session.
+model: opus
+effort: xhigh
 tools: Read, Grep, Write, Edit
 ---
 

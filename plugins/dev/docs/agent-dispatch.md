@@ -82,13 +82,13 @@ inherit from the dispatching session — the intended mechanism; ambient inherit
 
 The only exceptions are the **always-Sonnet agents**, which additionally pin `model: sonnet` in
 their own definitions so they stay Sonnet even as sub-agents: **test-agent** (the test phase),
-**test-fixer** (mechanical suite repair), and the **rebase-agent** — and the one always-Fable
-agent, the **refinement-writer**, which pins `model: fable`: it writes the operator's decision
+**test-fixer** (mechanical suite repair), and the **rebase-agent**. Two Opus agents pin their
+model too, because the interactive session that dispatches each may run on any model. The
+**refinement-writer** pins `model: opus` and `effort: xhigh`: it writes the operator's decision
 document from the plan-slice session's material and nothing else
-([refinement.md](refinement.md)); the interactive session that dispatches it runs whatever the
-operator chose. The **wrap-up** pins `model: opus` for the same reason turned round: the
-close-out session that dispatches it may run on any model, and what fixes code unreviewed does
-not inherit it ([close-out.md](close-out.md#the-wrap-up)).
+([refinement.md](refinement.md)), and the page does not inherit the operator's choice of model
+for the session. The **wrap-up** pins `model: opus`: what fixes code unreviewed does not inherit
+the close-out session's model ([close-out.md](close-out.md#the-wrap-up)).
 
 There is no per-task grading and no model routing by difficulty — the graded lane measured out:
 the premium tier bought nothing on an inflated base, and "mechanical" routing produced Opus redos

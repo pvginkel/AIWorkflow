@@ -4,6 +4,14 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-26 — The refinement writer runs on Opus at xhigh (v0.9.141)
+
+The `refinement-writer` pinned `model: fable`, the one role outside Opus and the always-Sonnet
+three. It now pins `model: opus` and `effort: xhigh`, the uniform setting of every Opus role. It
+keeps its own pin because it is a sub-agent of the interactive plan-slice session, which runs
+whatever model the operator chose. agent-dispatch.md and refinement.md say so, and the repo's
+settled ruling is now "no Fable for any role". AIWF-112.
+
 ## 2026-10-26 — The consult fixes residue already in the report, and a flaky old test owes its fix (v0.9.140)
 
 The completion consult's prompt said mechanical residue is fixed in the session, neither reported

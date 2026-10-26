@@ -178,8 +178,9 @@ instead of reopening it.
   tunable (`docs/research/turns-plan.md` § T7) — except Explore: **no Sonnet or Haiku pin for Explore and
   no plugin-owned Explore agent**; the ≈ 2–3 % saving does not weigh against the quality risk
   (rejected 2026-09-09, `docs/research/platform-cost-read-2026-09-09.md` § 4).
-- **No Fable for any role beyond the refinement-writer** while Fable has its own quota: "once
-  that goes away, I will start to consider it" (2026-09-09, the same read's S8).
+- **No Fable for any role** while Fable has its own quota: "once that goes away, I will start to
+  consider it" (2026-09-09, the same read's S8). The refinement-writer, the one Fable role, moved
+  to Opus at `xhigh` in 0.9.141 (2026-10-26, AIWF-112).
 - **No context compression, auto-compact windows, turn or token caps, or history summarisation**
   for writers and reviewers (`docs/research/turns-plan.md` § Deliberately not in this plan). The
   turns plan itself is exhausted (`docs/research/readout-2026-09-01.md` § 7).
