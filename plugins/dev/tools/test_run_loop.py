@@ -7473,6 +7473,240 @@ def test_red_sweep_states_the_principle_and_never_blocks_by_itself():
         assert "does not leave the machine" in test_prompt
 
 
+# -- after the consult's `complete` -------------------------------------------
+#
+# PilotApp slice 008: consult 2 answered `complete` with a one-line comment
+# fix committed (the generation rider's residue), the driver was killed in
+# the re-sweep, and the resume dispatched a third consult on the same plan —
+# a full sweep first, and the same `complete` out of it. A `complete` is
+# recorded before anything else runs; the residue commit is re-swept before
+# the test phase (or, with none, the push and the doc phase), and only a red
+# re-sweep goes to a fresh consult. None of it spends a generation.
+
+def residue_commit(red=None):
+    """A consult step's effect: it committed mechanical residue — HEAD moves
+    — and, given a (component, verb), that commit turns the row red."""
+    def effect(loop):
+        loop.fake_git.head = "def456"
+        if red is not None:
+            loop.sweep_reds.add(red)
+    return effect
+
+
+def killed_at_sweep_call(loop, n):
+    """The driver dies at its sweep command number `n` (from 0), as slice
+    008's was killed from outside mid-sweep."""
+    real = loop._run_sweep_cmd
+
+    def cmd(*args, **kw):
+        if len(loop.sweep_calls) == n:
+            raise KeyboardInterrupt
+        return real(*args, **kw)
+    loop._run_sweep_cmd = cmd
+
+
+def killed_in_the_resweep(slice_dir, repo):
+    """A first run whose consult answers `complete` with a residue commit,
+    killed in the re-sweep that commit owes (its second command)."""
+    r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                 (*V["consult_complete"], residue_commit())],
+                     repo_root=repo)
+    killed_at_sweep_call(r, 4)
+    with contextlib.redirect_stderr(io.StringIO()):
+        assert run_to_exit(r) == 130
+    return r
+
+
+def test_a_resume_after_complete_dispatches_no_consult():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        killed_in_the_resweep(slice_dir, repo)
+        state = load_state(slice_dir)
+        assert state["run_phase"] == "consult"
+        assert state["consult_complete"] == {"consult": 1, "phases": ["1"],
+                                             "sweep": 1}
+
+        r = ScriptedLoop(slice_dir, [V["test_clean"], V["doc_done"]],
+                         resume=True, repo_root=repo)
+        r.fake_git.head = "def456"   # the residue commit is still there
+        assert run_to_exit(r) == 0
+        assert [role for role, *_ in r.spawned] == ["test-agent", "doc-writer"]
+        assert len(r.sweep_calls) == 3, "the residue commit is swept, once"
+        state = load_state(slice_dir)
+        assert state["consult_seq"] == 1
+        assert state["generation"] == 0
+        assert state["gate_sweep"]["commits"] == {str(repo): "def456"}
+        log = (slice_dir / "log.txt").read_text()
+        assert ("the completion consult already answered `complete` (consult "
+                "1) and the plan has gained nothing since — not dispatched "
+                "again") in log
+        assert (f"the completion consult answered `complete` with a commit in "
+                f"{repo.name} — re-sweeping before the test phase") in log
+        test_prompt = next(p for role, p in r.prompts if role == "test-agent")
+        assert str(slice_dir / "sweeps" / "r3") in test_prompt
+        assert GEN_BAR_OPENING in test_prompt
+
+
+def test_a_residue_commit_swept_green_goes_on_to_the_test_phase():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [V["exec_done"], V["review_signoff"],
+                  (*V["consult_complete"], residue_commit()),
+                  V["test_clean"], V["doc_done"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert not r.script
+        assert [role for role, *_ in r.spawned].count("consult") == 1
+        assert len(r.sweep_calls) == 6
+        state = load_state(slice_dir)
+        assert state["sweep_runs"] == 2
+        assert state["generation"] == 0
+        log = (slice_dir / "log.txt").read_text()
+        assert "re-sweeping before the test phase" in log
+        assert ("gate sweep r2 after the consult's `complete` → GREEN — on to "
+                "the test phase, no new consult") in log
+        test_prompt = next(p for role, p in r.prompts if role == "test-agent")
+        assert str(slice_dir / "sweeps" / "r2") in test_prompt
+        assert GEN_BAR_OPENING in test_prompt
+
+    # A `complete` that committed nothing re-sweeps nothing.
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert len(r.sweep_calls) == 3
+        log = (slice_dir / "log.txt").read_text()
+        assert "re-sweeping" not in log
+        assert "after the consult's `complete`" not in log
+
+
+def test_with_no_test_phase_a_residue_commit_is_swept_before_the_push():
+    """Before this, the commit went unswept: the test phase's own re-check
+    runs only where there is one, so the driver pushed it, and the doc gate
+    saw it after the push in the primary repo alone."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc(test=False))
+        script = [V["exec_done"], V["review_signoff"],
+                  (*V["consult_complete"], residue_commit()), V["doc_done"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert not r.script
+        assert [role for role, *_ in r.spawned][-2:] == ["consult",
+                                                         "doc-writer"]
+        assert len(r.sweep_calls) == 6
+        state = load_state(slice_dir)
+        assert state["gate_sweep"]["commits"] == {str(repo): "def456"}
+        assert state["generation"] == 0
+        log = (slice_dir / "log.txt").read_text()
+        resweep = log.index("re-sweeping before the push and the doc phase")
+        green = log.index("gate sweep r2 after the consult's `complete` → "
+                          "GREEN — on to the push and the doc phase, no new "
+                          "consult")
+        pushed = log.index(f"pushed main in {repo}")
+        assert resweep < green < pushed
+
+
+def test_a_residue_commit_swept_red_goes_to_a_fresh_consult():
+    """The red a loop-tail sweep always takes: a completion consult handed
+    it, whose stance makes a red outstanding work — at the bar the first
+    consult had, since its `complete` spent no generation."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [V["exec_done"], V["review_signoff"],
+                  (*V["consult_complete"],
+                   residue_commit(red=(PROJECT, "lint"))),
+                  V["consult_complete"],
+                  V["test_clean"], V["doc_done"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert not r.script
+        consults = [p for role, p in r.prompts if role == "consult"]
+        assert len(consults) == 2
+        assert f"{PROJECT} lint → GREEN" in consults[0]
+        assert f"{PROJECT} lint → RED" in consults[1]
+        assert str(slice_dir / "sweeps" / "r2") in consults[1]
+        assert "append a phase that fixes it" in consults[1].replace("\n", " ")
+        assert GEN_BAR_OPENING in consults[0]
+        assert GEN_BAR_OPENING in consults[1]
+        state = load_state(slice_dir)
+        assert state["generation"] == 0
+        # the second consult committed nothing, so its `complete` over the
+        # red it was handed goes on to a test phase handed the same red
+        assert state["sweep_runs"] == 2
+        assert state["consult_complete"] == {"consult": 2, "phases": ["1"],
+                                             "sweep": 2}
+        test_prompt = next(p for role, p in r.prompts if role == "test-agent")
+        assert "does not leave the machine" in test_prompt.replace("\n", " ")
+        log = (slice_dir / "log.txt").read_text()
+        assert ("gate sweep r2 after the consult's `complete` → RED — a fresh "
+                "completion consult is handed it; no generation spent") in log
+
+    # A fresh consult that appends the fix spends the generation it always
+    # would — the first.
+    def fixes_lint(loop):
+        loop.fake_git.head = "fed789"
+        loop.sweep_reds.clear()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [V["exec_done"], V["review_signoff"],
+                  (*V["consult_complete"],
+                   residue_commit(red=(PROJECT, "lint"))),
+                  ("consult", {"outcome": "appended", "summary": "lint red"},
+                   append_phase("2", "Fix the lint")),
+                  (*V["exec_done"], fixes_lint), V["review_signoff"],
+                  *TAIL]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert not r.script
+        state = load_state(slice_dir)
+        assert state["generation"] == 1
+        consults = [p for role, p in r.prompts if role == "consult"]
+        assert GEN_BAR_OPENING in consults[1]
+        assert "BLOCKING work only" in consults[2]
+
+
+def test_a_state_from_before_the_record_dispatches_the_consult_again():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        killed_in_the_resweep(slice_dir, repo)
+        state = load_state(slice_dir)
+        del state["consult_complete"]
+        (slice_dir / "state.json").write_text(json.dumps(state))
+
+        r = ScriptedLoop(slice_dir, [V["consult_complete"], V["test_clean"],
+                                     V["doc_done"]],
+                         resume=True, repo_root=repo)
+        r.fake_git.head = "def456"
+        assert run_to_exit(r) == 0
+        assert [role for role, *_ in r.spawned] == ["consult", "test-agent",
+                                                    "doc-writer"]
+        assert len(r.sweep_calls) == 3, "the consult's sweep, reused after it"
+        assert load_state(slice_dir)["generation"] == 0
+        assert "already answered" not in (slice_dir / "log.txt").read_text()
+
+
+def test_a_phase_appended_after_complete_drops_the_record():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r1 = killed_in_the_resweep(slice_dir, repo)
+        append_phase("2", "The operator's own")(r1)
+
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], resume=True, repo_root=repo)
+        r.fake_git.head = "def456"
+        assert run_to_exit(r) == 0
+        assert [role for role, *_ in r.spawned] == [
+            "code-writer", "code-reviewer", "consult", "test-agent",
+            "doc-writer"]
+        state = load_state(slice_dir)
+        assert state["consult_complete"]["consult"] == 2
+        assert state["consult_complete"]["phases"] == ["1", "2"]
+        assert state["generation"] == 0
+        assert "already answered" not in (slice_dir / "log.txt").read_text()
+
+
 def test_sweep_targets_exclude_the_spec_repo_and_manifestless_repos():
     with tempfile.TemporaryDirectory() as tmp:
         sib_m = make_sibling(tmp, name="WithManifest")

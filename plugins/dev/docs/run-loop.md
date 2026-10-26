@@ -383,7 +383,14 @@ whole plan is a feature of the review, not a cost. Then:
   rulings show the wording wrong, the consult rewords the criterion to what they require, no
   further, commits and strikes the entry; where the wording is right and the slice falls short,
   that is outstanding work; otherwise it notes why. Without a test phase the entry stays with
-  the wrap-up.
+  the wrap-up. **A `complete` is final on the plan it judged.** The driver records it in
+  `state.json` before anything else runs, and a resume that finds it, with the plan's phase ids
+  unchanged, dispatches no consult (PilotApp slice 008: a driver killed in the re-sweep after a
+  `complete` resumed into a full sweep and a third consult that answered the same). Where the
+  consult's session committed — the residue rider's comment fix — the driver sweeps again before
+  the test phase or, with none, before its push and the doc phase. Green, or nothing ran, goes
+  straight on with no new consult. Red goes to a fresh consult handed that red, as a red sweep
+  always does. No generation is spent either way. A phase appended since drops the record.
 - **Test phase** — a fresh `test-agent` session told to read the project's slice-testing-strategy
   doc (`.aiworkflowrc`'s `test_phase.strategy`) and execute it. **The driver holds the devlock**
   for this phase (a `flock` on the inode `devlock.lease` names; it releases on crash): taken

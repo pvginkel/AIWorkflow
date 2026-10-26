@@ -42,7 +42,11 @@ row that ran also lists the files it kept (`artifacts`), and a red one its singl
 sweep's own `outcome` (red on any red row, else green on any green row, else `nothing_ran`) and
 `green`, and the exact `commits` it ran on — reused while every swept HEAD matches, re-run
 otherwise),
-`consult_seq`, `in_flight`, `exit` (how the run ended — its exit `code` and `ts`, the driver's last
+`consult_seq`, `consult_complete` (the completion consult's `complete`: the `consult` number,
+the `phases` it judged, as `known_phases`, and the `sweep` run it was handed; a resume finds it
+and dispatches no consult while `phases` matches. Dropped when a phase is pending again or the
+re-sweep after the consult's commit is red; absent on a run older than 0.9.143, which dispatches
+the consult as before), `in_flight`, `exit` (how the run ended — its exit `code` and `ts`, the driver's last
 write, after `bailout.json`; cleared when a `--resume` starts, so a run that is not running and
 has none was killed from outside), `bailouts` (every stop this run made — `reason`, `phase`,
 `question`, `ts`, the `run_phase` it stopped in and its `details` clipped to 600 characters —

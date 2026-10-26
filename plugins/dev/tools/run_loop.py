@@ -6394,6 +6394,11 @@ class RunLoop:
             pending = next((p for p in phases if not p.done), None)
             if pending is None:
                 return
+            # A plan with work in it again — appended by a consult, the test
+            # phase or the operator — is no longer the one a recorded
+            # `complete` judged.
+            if self.state.pop("consult_complete", None) is not None:
+                self._save_state()
             self._run_phase(pending)
 
     def _executor_where(self, target: ResolvedTarget) -> str:
@@ -7800,13 +7805,18 @@ class RunLoop:
         the tree that dispatch sees. Interrupted mid-sweep there is simply
         no record yet; the next call re-runs it."""
         targets = self._sweep_targets()
-        heads = {str(root): self.git("rev-parse", "HEAD", root=root)
-                 for root in targets}
+        heads = self._sweep_heads(targets)
         sweep = self.state.get("gate_sweep")
         if sweep and sweep.get("commits") == heads \
                 and not self._unruled_waivers(sweep):
             return sweep
         return self._run_gate_sweep(targets, heads)
+
+    def _sweep_heads(self, targets: list[Path]) -> dict[str, str]:
+        """Each sweep target's HEAD, keyed as a sweep record's `commits`
+        keys it."""
+        return {str(root): self.git("rev-parse", "HEAD", root=root)
+                for root in targets}
 
     def _unruled_waivers(self, sweep: dict) -> bool:
         """Whether the record holds a WAIVED row no gate ruling covers any
@@ -8259,37 +8269,116 @@ class RunLoop:
         """After all phases are done: one fresh consult — 'does the plan
         describe outstanding work?' — carrying the loop-tail sweep and the
         close-out entries owed before the push and before the test phase.
-        True → phases were appended, loop again."""
+        True → loop again: phases were appended, or the consult's own commit
+        turned the sweep red (`_resweep_after_complete`).
+
+        A `complete` is put in state.json (`consult_complete`) before
+        anything else runs, and a resume that finds it, on the plan it was
+        given, dispatches no consult: the answer stands. Called only once
+        `_run_phases` found nothing unfinished, so the plan is unchanged
+        exactly while its phase ids are those the consult judged. PilotApp
+        slice 008: consult 2 answered `complete` with a one-line comment fix
+        committed, the driver was killed in the re-sweep, and the resume
+        re-entered here — a full sweep, then a third consult on the same
+        plan, which answered the same `complete`."""
         self.state["run_phase"] = "consult"
         self._save_state()
+        if not self._consult_already_complete():
+            sweep = self._ensure_gate_sweep()
+            choice = self._consult(
+                "completion",
+                COMPLETION_CONSULT_SITUATION.format(
+                    verification_path=self.verification_path,
+                    plan_path=self.plan_path,
+                    sweep_block=self._sweep_block(sweep,
+                                                  SWEEP_STANCE_CONSULT_GREEN,
+                                                  SWEEP_STANCE_CONSULT_RED),
+                    push_owed_block=self._push_owed_block(),
+                    test_owed_block=self._test_owed_block(),
+                    generation_bar=self._generation_bar()),
+                {
+                    "complete": "the plan describes no outstanding work",
+                    "appended": "you appended phases for outstanding work "
+                                "that clears the bar; the loop re-enters",
+                    "bail": "something is wrong enough to stop the slice",
+                },
+                [self.plan_path, self.verification_path], None,
+            )
+            if choice["outcome"] != "complete":
+                self._after_session_plan_check()
+                if self._has_unfinished_phase():
+                    self._spend_generation("the completion consult")
+                    return True
+                self.log("consult answered `appended` but no unfinished "
+                         "phase exists — treating as complete")
+            self.state["consult_complete"] = {
+                "consult": self.state.get("consult_seq"),
+                "phases": list(self.state.get("known_phases") or []),
+                "sweep": sweep.get("run")}
+            self._save_state()
+        return self._resweep_after_complete()
+
+    def _consult_already_complete(self) -> bool:
+        """Whether the completion consult already answered `complete` on the
+        plan as it stands. A record from before the plan gained a phase is
+        dropped; a state without one (a run older than the record) is
+        dispatched as it always was."""
+        done = self.state.get("consult_complete")
+        if not isinstance(done, dict):
+            return False
+        if done.get("phases") != self.state.get("known_phases"):
+            self.state.pop("consult_complete")
+            self._save_state()
+            return False
+        self.log(f"the completion consult already answered `complete` "
+                 f"(consult {done.get('consult')}) and the plan has gained "
+                 "nothing since — not dispatched again")
+        return True
+
+    def _resweep_after_complete(self) -> bool:
+        """After a `complete`: the sweep again where the consult's session
+        moved a swept HEAD — GENERATION_RIDER has it commit mechanical
+        residue — before the test phase or, with none, before the driver's
+        push and the doc phase. Before this, a project with no test phase
+        pushed that commit unswept (`_test_phase_under_lock` sweeps only
+        where there is one), and the doc gate saw it after the push, in the
+        primary repo alone.
+
+        Green, or nothing ran: the run goes on with no new consult. Red:
+        True, the record dropped, so the loop hands a fresh completion
+        consult the red sweep, as a red loop-tail sweep always is
+        (SWEEP_STANCE_CONSULT_RED). No generation is spent — `complete`
+        spends none — so that consult's bar is the one this consult had. A
+        sweep the consult was itself handed is never a reason for another:
+        a `complete` over a red that commits nothing goes on, as it always
+        did, to a test phase handed the red."""
+        done = self.state["consult_complete"]
+        after = ("the test phase" if self.cfg.test_phase
+                 else "the push and the doc phase")
+        swept = (self.state.get("gate_sweep") or {}).get("commits") or {}
+        moved = [Path(repo).name for repo, sha
+                 in self._sweep_heads(self._sweep_targets()).items()
+                 if swept.get(repo) != sha]
+        if moved:
+            self.log("the completion consult answered `complete` with a "
+                     f"commit in {', '.join(moved)} — re-sweeping before "
+                     f"{after}")
         sweep = self._ensure_gate_sweep()
-        choice = self._consult(
-            "completion",
-            COMPLETION_CONSULT_SITUATION.format(
-                verification_path=self.verification_path,
-                plan_path=self.plan_path,
-                sweep_block=self._sweep_block(sweep,
-                                              SWEEP_STANCE_CONSULT_GREEN,
-                                              SWEEP_STANCE_CONSULT_RED),
-                push_owed_block=self._push_owed_block(),
-                test_owed_block=self._test_owed_block(),
-                generation_bar=self._generation_bar()),
-            {
-                "complete": "the plan describes no outstanding work",
-                "appended": "you appended phases for outstanding work that "
-                            "clears the bar; the loop re-enters",
-                "bail": "something is wrong enough to stop the slice",
-            },
-            [self.plan_path, self.verification_path], None,
-        )
-        if choice["outcome"] == "complete":
+        if sweep.get("run") == done.get("sweep"):
             return False
-        self._after_session_plan_check()
-        if not self._has_unfinished_phase():
-            self.log("consult answered `appended` but no unfinished phase "
-                     "exists — treating as complete")
+        outcomes = [o for o, _ in self._ruled_rows(sweep["results"])]
+        if "red" not in outcomes:
+            self.log(f"gate sweep r{sweep.get('run')} after the consult's "
+                     "`complete` → "
+                     + GATE_OUTCOME_LABELS["green" if "green" in outcomes
+                                           else "nothing_ran"]
+                     + f" — on to {after}, no new consult")
             return False
-        self._spend_generation("the completion consult")
+        self.log(f"gate sweep r{sweep.get('run')} after the consult's "
+                 "`complete` → RED — a fresh completion consult is handed "
+                 "it; no generation spent")
+        self.state.pop("consult_complete")
+        self._save_state()
         return True
 
     def _test_phase(self) -> bool:
@@ -10299,10 +10388,11 @@ class RunLoop:
         test round — the slice keeps its occupancy while it converges."""
         if not self.cfg.test_phase:
             return False
-        # Re-checked here, before the lock, so a consult's commits (the
-        # mechanical-residue rider) never let the test phase read a report
-        # about a tree that no longer exists — and the sweep's minute is
-        # spent outside the hold.
+        # Re-checked here, before the lock, so the test phase never reads a
+        # report about a tree that no longer exists — and the sweep's minute
+        # is spent outside the hold. After a consult's residue commit the
+        # sweep has already run again (`_resweep_after_complete`); this is
+        # for a resume into the test stage over a moved tree.
         self._ensure_gate_sweep()
         self._acquire_devlock("test phase")
         return self._test_phase()

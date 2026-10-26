@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-26 — A completion consult's `complete` stands, and its residue commit is swept once (v0.9.143)
+
+In PilotApp slice 008, consult 2 answered `complete` after committing a one-line CSS comment
+fix, as the residue rider tells it to. The driver was killed in the re-sweep that followed. The
+resume re-entered the consult stage, ran a full nine-minute sweep, and dispatched a third consult
+on the same plan, which reached the same `complete`. Where the project ran no test phase, the
+residue commit was not swept at all: `_test_phase_under_lock` sweeps only where there is a test
+phase, so the driver pushed the commit unswept. The doc gate, which runs in the primary repo
+alone, was the first to see it, after the push.
+
+The driver now records a `complete` in `state.json` (`consult_complete`) before anything else
+runs. A resume that finds it, with the plan's phase ids unchanged, dispatches no consult. Where
+the consult's session moved a swept HEAD, the driver sweeps again before the test phase or,
+with none, before its push and the doc phase. Green, or nothing ran, goes straight on with no
+new consult. Red goes to a fresh completion consult handed the red, the path a red loop-tail
+sweep takes; before, that red went to the test agent. No generation is spent either way, so
+that consult's bar is the one before it. A phase appended since, by a consult, the test phase or
+the operator, drops the record. run-loop.md and runner-state.md say so. AIWF-107.
+
 ## 2026-10-26 — `close_out.py unrule` takes back words recorded wrong, and `render -h` says what it reads back (v0.9.142)
 
 `close_out.py` had `unnote`, `unstrike`, `unmark` and `unpropose`, but nothing took back words
