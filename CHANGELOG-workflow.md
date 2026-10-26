@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-27 — Every role is told it is a headless session, not a sub-agent (v0.9.146)
+
+A code-writer the run loop dispatched backgrounded a 4-minute gate and could not tell how to wait
+for it (PilotApp, 2026-10-23). The managed CLAUDE.md gives two rules. A session waits on
+backgrounded work by ending its turn. A sub-agent waits in the foreground, because its ended
+turn is its report. A role the driver "dispatches" matches both descriptions, so it hand-built
+a waiter.
+
+`run_kc_session` now opens the first prompt of every fresh session, in both loops, with
+`HEADLESS_WAIT_LINE`. The line says the role runs as a headless session of its own, so a command
+it backgrounds re-invokes it. It runs a gate in the foreground under `timeout(1)` when the gate
+fits the Bash tool's 10-minute cap, backgrounds only what can outrun that, and waits by ending
+its turn, never by polling or a waiter it builds. A resumed session's prompt (a nudge, a
+reattach) is sent as given, because the line is already in its history. agent-dispatch.md says
+so. The operator took the line and left the proposal's KubeCoder managed-CLAUDE.md line for
+later ("let's start with the added line"). AIWF-102.
+
 ## 2026-10-27 — The phase gate lints what it tests (v0.9.145)
 
 The run loop's phase gate ran only `kc project test` for each project it gated, Playwright for a

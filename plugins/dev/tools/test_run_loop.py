@@ -12342,6 +12342,46 @@ def test_the_session_id_is_learned_during_the_turn():
     assert result.session_id == "sess-mid"
 
 
+def _sent_prompt(**kwargs) -> str:
+    """Run run_kc_session against a created session and return the prompt
+    it handed `kc session send`."""
+    sent = []
+
+    class Created:
+        returncode, stdout, stderr = 0, "headless-1\n", ""
+
+    class FakeSubprocess:
+        @staticmethod
+        def run(args, **_):
+            return Created()
+
+    def fake_send(name, prompt, cwd, timeout, progress, tick=None):
+        sent.append(prompt)
+        return 0, ""
+
+    with patched(run_loop, subprocess=FakeSubprocess, _kc_send=fake_send,
+                 _kc_session_id=lambda name, cwd: None):
+        run_loop.run_kc_session("the role's prompt", "/tmp", 60, **kwargs)
+    assert len(sent) == 1
+    return sent[0]
+
+
+def test_a_fresh_session_opens_with_the_headless_wait_line():
+    """AIWF-102: a role is a headless session of its own, so a command it
+    backgrounds re-invokes it — the first prompt says so, ahead of the
+    role's own, for an agent role and a consult alike."""
+    expected = f"{run_loop.HEADLESS_WAIT_LINE}\n\nthe role's prompt"
+    assert _sent_prompt(agent="code-writer") == expected
+    assert _sent_prompt() == expected
+
+
+def test_a_resumed_session_is_sent_its_prompt_as_given():
+    """A resumed session's history already holds the line: a nudge or a
+    reattach goes as written."""
+    assert _sent_prompt(resume_session="sess-1",
+                        agent="code-writer") == "the role's prompt"
+
+
 # -- dry run ------------------------------------------------------------------
 
 def dry_run_repo(tmp):

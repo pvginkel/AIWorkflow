@@ -153,6 +153,17 @@ context at cache-read price. Slice 197's doc-writer wrote "ending the turn until
 (`docs/research/doc-phase-read-2026-09-04.md` § 5, finding 19). A role that has dispatched and
 has nothing else to do replies in prose and stops.
 
+**Every role is told it is not a sub-agent.** The managed CLAUDE.md gives two rules: a session
+waits on backgrounded work by ending its turn, and a sub-agent waits in the foreground, because
+its ended turn is its report. A role the driver dispatches matches both descriptions, and a
+PilotApp code-writer that backgrounded a 4-minute gate could not tell which was its own and
+built a waiter by hand (2026-10-23). So the first prompt `run_kc_session` sends a fresh session,
+in either loop, opens with one line (`HEADLESS_WAIT_LINE`). It says the role is its own headless
+session, so a command it backgrounds re-invokes it. It runs a gate in the foreground under
+`timeout(1)` when the gate fits the Bash tool's 10-minute cap, backgrounds only what can outrun
+that, and waits on it by ending the turn, never by polling or a waiter of its own. Foreground is
+the default because it has no race, unlike the wait below.
+
 The wait has one race, the harness's, not the role's. A completion that lands while the session
 is mid-turn is queued for its next turn, but the engine counts it delivered; a session that then
 ends that turn to wait for the very task that has already finished ends the send, and the queued

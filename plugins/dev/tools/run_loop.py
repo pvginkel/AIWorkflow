@@ -1962,6 +1962,23 @@ def _kc_send(name: str, prompt: str, cwd: Path, timeout: int,
                 pass
 
 
+# Opens the first prompt of every session run_kc_session starts (AIWF-102).
+# A role is a headless session of its own, yet the managed CLAUDE.md has two
+# wait rules — a session ends its turn on backgrounded work, a sub-agent
+# waits in the foreground — and a role the driver "dispatches" matches both:
+# a PilotApp code-writer that backgrounded a 4-minute gate (2026-10-23) could
+# not tell which was its own, and hand-built a waiter. A resumed session
+# already carries the line in its history, so a nudge or a reattach is sent
+# as given.
+HEADLESS_WAIT_LINE = """\
+You run as a headless session of your own, not as a sub-agent: a command
+you background re-invokes you when it exits. Run a gate in the foreground
+under `timeout(1)` when it fits the Bash tool's 10-minute cap. Background
+only what can outrun it, and then wait by ending your turn, with a reply and
+no tool call. Never poll it, and never build a waiter.\
+"""
+
+
 def run_kc_session(
     prompt: str,
     cwd: str,
@@ -1988,9 +2005,13 @@ def run_kc_session(
     (`dev:code-writer`) and resolves to the plugin's own definition wherever
     `cwd` sits. A falsy `agent` spawns with no agent at all (consults).
     `flags` are claude flags kc passes through verbatim (`spawn_flags`).
+    A fresh session's prompt opens with HEADLESS_WAIT_LINE and a blank line;
+    a resumed session's is sent as given.
     Raises subprocess.TimeoutExpired on timeout — the turn is interrupted
     and the session torn down before it propagates."""
     result = SessionResult()
+    if not resume_session:
+        prompt = f"{HEADLESS_WAIT_LINE}\n\n{prompt}"
 
     create_args = ["session", "create-headless", "--cwd", str(cwd)]
     if resume_session:

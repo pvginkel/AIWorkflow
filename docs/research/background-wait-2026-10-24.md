@@ -1,6 +1,6 @@
 ---
 issue: AIWF-102
-status: proposal, unruled
+status: ruled 2026-10-26 — "let's start with the added line"; the managed-CLAUDE.md line not taken yet
 ---
 
 # How a run-loop role waits on a backgrounded command — proposal
