@@ -63,6 +63,11 @@ is judgment — and nobody edits either file by hand; importable by both loops
                `--append` adds to them, `--replace` puts the new ones in
                their place (the old kept in a note); without an id, the
                `Disposition:` lines of close-out.md read back into the store.
+  unrule       withdraw the words and what was done on them, as `rule` wrote
+               them, while they are not committed: a `--did` takes its strike
+               with it, words a `--replace` put in place give back the ones
+               its note kept and the note goes, other words give back HEAD's
+               or none. No note is left.
   settle       settle a criterion owed after an operator's action, once it
                has happened: its verdict, rationale and evidence written
                into verification.json in the file's own escaping, and the
@@ -346,6 +351,8 @@ PROPOSAL_HELP = "what you would do about it and why, in a sentence or two"
 HEADER_WIDTH = 96
 
 RULED_BY = "the operator's ruling"
+# What the history note a ruling's replaced words are kept in opens with.
+RULED_EARLIER = "ruled earlier: "
 
 _SECTION_RE = re.compile(r"^## (?P<name>.+?)\s*$")
 _ENTRY_RE = re.compile(r"^### (~~)?(?P<letter>[A-Z])(?P<num>\d+)\b")
@@ -383,7 +390,7 @@ EDITED_TAIL = ("Ask the operator about every line here that is not yours to take
 # The verbs that write close-out.md, each taking `--overwrite`.
 WRITING_VERBS = ("append", "note", "strike", "unnote", "unstrike", "amend", "relabel",
                  "propose", "unpropose", "request-card", "request-word", "leave",
-                 "unmark", "rule", "settle", "close", "render", "stamp")
+                 "unmark", "rule", "unrule", "settle", "close", "render", "stamp")
 OVERWRITE_HELP = ("write close-out.md although it was edited since its last render "
                   "(after the refusal's list is dealt with)")
 
@@ -1532,12 +1539,13 @@ def _rule(entry: dict, words: str | None, did: str | None,
                     f"\"{_collapse(old)}\". --append adds these after them — what the "
                     "operator said in the session about an entry they had ruled on "
                     "already; --replace puts these in their place, the old words kept "
-                    "in a note — only when the operator says so.")
+                    "in a note — only when the operator says so. Words recorded wrong "
+                    f"and not committed yet, `unrule {entry['id']}` takes back.")
             if mode == "append":
                 words = f"{old}; {words}"
             else:
                 entry["notes"].append({"by": "the operator", "date": day,
-                                       "text": _lines("ruled earlier: " + old),
+                                       "text": _lines(RULED_EARLIER + old),
                                        "history": "ruling"})
             ruling = entry["ruling"] = {"words": words, "did": ruling.get("did"),
                                         "date": day}
@@ -1577,6 +1585,68 @@ def rule_entry(slice_dir: Path | str, eid: str, words: str | None = None,
         entry = _find(store, eid)
         _rule(entry, words, did, commit, day, mode)
         return f"{entry['id']}: {_disposition(entry)}"
+
+
+def unrule_entry(slice_dir: Path | str, eid: str) -> str:
+    """Withdraw the operator's words on an entry and what was done on them,
+    as `rule` wrote them, while HEAD's store does not hold them — `rule`
+    records no --by, so there is nobody to check. A did HEAD does not hold
+    goes back to HEAD's, or none, and the strike it made goes with it;
+    words HEAD does not hold give back those the latest `--replace` kept in
+    its note, the note gone, and without such a note HEAD's words, or none.
+    What a commit holds stays, and so do the words the report's `close`
+    gave. A `Disposition:` line this write's read-back took is the
+    operator's, on the report: refused, nothing written. The render that
+    follows carries the withdrawal, so no read-back brings the words back.
+    No note is left. Returns what was withdrawn and what is back."""
+    with _writing(slice_dir) as store:
+        entry = _find(store, eid)
+        eid = entry["id"]
+        ruling = entry.get("ruling") or {}
+        # the read-back ran first; the store as saved is what it found
+        if (_find(_load(slice_dir), eid).get("ruling") or {}) != ruling:
+            raise ReportError(f"close-out.md's Disposition line on {eid} carries words the "
+                              "store had not taken — the operator's, on the report, which "
+                              "unrule never withdraws; nothing was written. `rule` without "
+                              "an id takes them into the store")
+        if not ruling.get("words"):
+            raise ReportError(f"{eid} carries no ruling")
+        strike = entry.get("strike") or {}
+        if not ruling.get("did") and not strike.get("by") and \
+                strike.get("reason") == f"closed with the report, {ruling.get('date')}":
+            raise ReportError(f"{eid}'s words are the report's close of {ruling['date']}, "
+                              "and the close owns them")
+        committed = _committed_entry(slice_dir, eid)
+        head = (committed or {}).get("ruling") or {}
+        words, did = ruling["words"], ruling.get("did")
+        if committed is not None and (words, did) == (head.get("words"), head.get("did")):
+            raise ReportError(f"{eid}'s ruling is committed, and a committed ruling stays; "
+                              "`rule --replace` puts the operator's other words in its place")
+        said = [f"withdrawn: {_disposition(entry)}"]
+        unstruck = False
+        if did != head.get("did"):
+            did = head.get("did")
+            if strike.get("by") == RULED_BY and (committed or {}).get("strike") != strike:
+                entry["strike"], unstruck = None, True
+        if words != head.get("words"):
+            notes = entry["notes"]
+            i = next((i for i in reversed(range(len(notes)))
+                      if notes[i].get("history") == "ruling"), None)
+            kept = (committed or {}).get("notes") or []
+            if i is not None and kept.count(notes[i]) < notes[:i + 1].count(notes[i]):
+                words = "\n".join(notes[i]["text"]).removeprefix(RULED_EARLIER)
+                del notes[i]
+            else:
+                words = head.get("words")
+        if (words, did) == (head.get("words"), head.get("did")):
+            entry["ruling"] = (committed or {}).get("ruling")
+        else:
+            entry["ruling"] = {"words": words, "did": did, "date": ruling["date"]}
+        said.append(f"back: **Disposition:** {_disposition(entry)}" if _ruled(entry)
+                    else "back: no ruling")
+        if unstruck:
+            said.append("back: not struck — the strike the did made went with it")
+        return "\n".join(said)
 
 
 def close_report(slice_dir: Path | str, words: str,
@@ -3521,7 +3591,8 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     id_help = "the entry's id, like B3"
 
     def verb(name: str, help_: str, entry: bool = False) -> argparse.ArgumentParser:
-        p = sub.add_parser(name, help=help_)
+        # `help` is the line under the tool's own -h; `description`, the verb's -h
+        p = sub.add_parser(name, help=help_, description=help_)
         p.add_argument("slice", metavar="<close-out.md>", help=slice_help)
         if entry:
             p.add_argument("id", metavar="<id>", help=id_help)
@@ -3696,6 +3767,10 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p.add_argument("--commit", help="the commit of what was done")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
+    verb("unrule", "withdraw the operator's words and the did that rule recorded on an "
+                   "entry, not yet committed; the words a --replace kept in its note come "
+                   "back, or else the committed ones, or none; leaves no note", entry=True)
+
     p = verb("settle", "settle a criterion owed after an operator's action — writes its "
                        "verdict into verification.json and strikes the action that waited "
                        "on it")
@@ -3717,7 +3792,8 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p.add_argument("--words", required=True, help="the operator's words, verbatim")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
-    verb("render", "read the Disposition lines back, then write close-out.md")
+    verb("render", "read close-out.md's Disposition lines back into the store — a hand edit "
+                   "of close-out.json they contradict is undone — then write close-out.md")
     verb("stamp", "render, printing the run header from state.json")
     verb("counts", "live entries per section and per id letter, one line")
     verb("import", "read a close-out.md of the old shape into a new store")
@@ -3907,6 +3983,8 @@ def _main(args) -> int:
             print(show_view(slice_dir, args.ids))
         elif command == "rule":
             print(_rule_cli(slice_dir, args))
+        elif command == "unrule":
+            print(f"{args.id} unruled: {unrule_entry(slice_dir, args.id)}")
         elif command == "settle":
             print("\n".join(settle_criterion(slice_dir, args.vid, args.verdict,
                                              [_stdin_or(e) for e in args.evidence],

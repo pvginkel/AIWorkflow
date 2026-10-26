@@ -90,7 +90,9 @@ operator's word on, what it left. A
    in the file, `close_out.py rule <slice>` reads back: run it again before you execute anything
    when they tell you they wrote there. An entry that holds their words already refuses new
    ones: what they add to it in the session goes on with `--append`, and `--replace` only when
-   they say the new words replace the old. Free form; the usual vocabulary is `card [project]` ·
+   they say the new words replace the old. Words you recorded wrong, `close_out.py unrule <slice>
+   <id>` takes back while they are not committed. Never edit `close-out.json` by hand: the next
+   render reads the `Disposition:` lines back and undoes the edit. Free form; the usual vocabulary is `card [project]` ·
    `fix now` · `fold into <slice>` · `close` · `defer`. A blanket ruling ("close the rest", "I'm
    not progressing anything else") is a `close` on every entry that came to them and has no
    ruling yet, each carrying those words. A ruling may name any entry of the report: "card B7"

@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-26 — `close_out.py unrule` takes back words recorded wrong, and `render -h` says what it reads back (v0.9.142)
+
+`close_out.py` had `unnote`, `unstrike`, `unmark` and `unpropose`, but nothing took back words
+recorded with `rule --words` or `--did` while they were still uncommitted. `--replace` kept the
+wrong words as a "ruled earlier" note. A PilotAppSpecs session hand-edited `close-out.json`
+instead, and the next `render` undid the edit without warning: it read close-out.md's
+`Disposition:` lines back into the store and added spurious "ruled earlier" notes. The repair
+took four steps.
+
+`unrule <slice> <id>` withdraws the ruling while HEAD's store does not hold it, and leaves no
+note. Words a `--replace` put in place give back the ones its note kept, and the note goes.
+Other words give back the committed ones, or none. A strike the `--did` made goes with it. It
+takes no `--by`, because `rule` records none. It is refused on a committed ruling, on the words
+of the report's `close`, and on a `Disposition:` line the same write's read-back just took,
+which is the operator's. `rule`'s refusal of an entry that holds words now names `unrule`. Every
+verb's `-h` now prints its line, and `render`'s says it reads the Disposition lines back into
+the store, undoing a hand edit of `close-out.json` they contradict. close-out.md,
+close-out-template.md and the close-out skill say the same. AIWF-108.
+
 ## 2026-10-26 — The refinement writer runs on Opus at xhigh (v0.9.141)
 
 The `refinement-writer` pinned `model: fable`, the one role outside Opus and the always-Sonnet

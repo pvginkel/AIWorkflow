@@ -41,7 +41,10 @@ goes through once repeated with `--overwrite`, which a role the run loop dispatc
 passes; the driver bails `report_edited` instead ([run-loop.md](run-loop.md) § Protocol
 invariants). **Nor does a ruling replace one.** `rule --words` refuses an entry that holds other
 words already: `--append` adds the session's record of what the operator said after the words
-they wrote, `--replace` is for when they say the new words replace the old.
+they wrote, `--replace` is for when they say the new words replace the old. Words the session
+recorded wrong, `unrule` takes back while they are not committed: the words a `--replace` put
+aside come back, or else the committed ones, or none, a strike the `--did` made goes with it,
+and no note is left.
 **An author takes back only their own words, and only before they are committed.** `unnote`
 withdraws the latest note an author wrote with `note` or `relabel` — a relabel's note puts back
 the kind and labels it changed, and is refused once a later relabel changed them again —

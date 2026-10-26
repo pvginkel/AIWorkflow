@@ -2311,6 +2311,197 @@ def test_unmark_takes_back_a_request_for_the_word_and_unpropose_refuses_it():
         assert _files(slice_dir) == before
 
 
+# -- unrule: the session takes back a ruling it recorded ---------------------------------
+
+UNSTRUCK = "back: not struck — the strike the did made went with it\n"
+
+
+def _unrule(slice_dir, eid):
+    return run_cli("unrule", slice_dir, eid)
+
+
+def _unrule_refused(slice_dir, eid, *needles):
+    before = _files(slice_dir)
+    code, out, err = _unrule(slice_dir, eid)
+    assert code == 2 and not out, (code, out, err)
+    for needle in needles:
+        assert needle in err, (needle, err)
+    assert _files(slice_dir) == before
+
+
+def test_unrule_takes_back_the_words_and_the_did_rule_recorded():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        run_cli("append", slice_dir, *DEFECT)                                    # B2
+        before = _files(slice_dir)
+        close_out.rule_entry(slice_dir, "B1", words="card it, KC")
+        # `rule` points at it where the words are refused
+        code, _, err = run_cli("rule", slice_dir, "B1", "--words", "fix now")
+        assert code == 2 and "not committed yet, `unrule B1` takes back." in err
+        code, out, err = _unrule(slice_dir, "B1")
+        assert code == 0, err
+        assert out == "B1 unruled: withdrawn: card it, KC\nback: no ruling\n"
+        assert _files(slice_dir) == before
+        # the words and the did of one call go together, and the strike with them
+        close_out.rule_entry(slice_dir, "B1", words="fix now", did="fixed in abc123",
+                             commit="abc123")
+        assert entry_of(slice_dir, "B1")["strike"]["by"] == close_out.RULED_BY
+        code, out, err = _unrule(slice_dir, "B1")
+        assert code == 0, err
+        assert out == ("B1 unruled: withdrawn: fix now — fixed in abc123\nback: no ruling\n"
+                       + UNSTRUCK)
+        assert _files(slice_dir) == before
+        # a did on committed words: the did and its strike go, the words stay
+        close_out.rule_entry(slice_dir, "B2", words="fix now", date="2026-10-25")
+        commit_store(slice_dir)
+        committed = _files(slice_dir)
+        close_out.rule_entry(slice_dir, "B2", did="fixed in abc123")
+        code, out, err = _unrule(slice_dir, "B2")
+        assert code == 0, err
+        assert out == ("B2 unruled: withdrawn: fix now — fixed in abc123\n"
+                       "back: **Disposition:** fix now\n" + UNSTRUCK)
+        assert _files(slice_dir) == committed
+        assert "### B2 — controller: the status line is wrong\n" in _as_rendered(slice_dir)
+        # a did on an entry struck before it leaves that strike alone
+        close_out.strike_entry(slice_dir, "B2", "fixed", by="consult 1")
+        close_out.rule_entry(slice_dir, "B2", did="fixed in abc123")
+        code, out, err = _unrule(slice_dir, "B2")
+        assert code == 0, err
+        assert out == ("B2 unruled: withdrawn: fix now — fixed in abc123\n"
+                       "back: **Disposition:** fix now\n")
+        assert entry_of(slice_dir, "B2")["strike"]["by"] == "consult 1"
+
+
+def test_unrule_after_replace_gives_back_the_words_its_note_kept_and_no_note():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DECISION)                                  # D1
+        run_cli("append", slice_dir, *DECISION)                                  # D2
+        before = _files(slice_dir)
+        close_out.rule_entry(slice_dir, "D1", words="keep it locked", date="2026-10-26")
+        first = _files(slice_dir)
+        close_out.rule_entry(slice_dir, "D1", words="card it", mode="replace",
+                             date="2026-10-26")
+        assert entry_of(slice_dir, "D1")["notes"][-1]["history"] == "ruling"
+        code, out, err = _unrule(slice_dir, "D1")
+        assert code == 0, err
+        assert out == "D1 unruled: withdrawn: card it\nback: **Disposition:** keep it locked\n"
+        assert _files(slice_dir) == first
+        assert entry_of(slice_dir, "D1")["notes"] == []
+        # replaced twice, the words come off one at a time, down to none
+        close_out.rule_entry(slice_dir, "D1", words="card it", mode="replace",
+                             date="2026-10-26")
+        close_out.rule_entry(slice_dir, "D1", words="defer", mode="replace",
+                             date="2026-10-26")
+        assert _unrule(slice_dir, "D1")[1].endswith("back: **Disposition:** card it\n")
+        assert _unrule(slice_dir, "D1")[0] == 0
+        assert _files(slice_dir) == first
+        assert _unrule(slice_dir, "D1")[1] == ("D1 unruled: withdrawn: keep it locked\n"
+                                              "back: no ruling\n")
+        assert _files(slice_dir) == before
+        # over committed words: they come back, and the ruling is what HEAD holds
+        close_out.rule_entry(slice_dir, "D2", words="keep it locked", date="2026-10-25")
+        commit_store(slice_dir)
+        committed = _files(slice_dir)
+        close_out.rule_entry(slice_dir, "D2", words="card it", mode="replace",
+                             did="carded KC-9")
+        code, out, err = _unrule(slice_dir, "D2")
+        assert code == 0, err
+        assert out == ("D2 unruled: withdrawn: card it — carded KC-9\n"
+                       "back: **Disposition:** keep it locked\n" + UNSTRUCK)
+        assert _files(slice_dir) == committed
+
+
+def test_unrule_after_append_returns_to_the_words_head_holds():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DECISION)                                  # D1
+        run_cli("append", slice_dir, *DECISION)                                  # D2
+        before = _files(slice_dir)
+        close_out.rule_entry(slice_dir, "D1", words="keep it locked")
+        close_out.rule_entry(slice_dir, "D1", words="and say why", mode="append")
+        code, out, err = _unrule(slice_dir, "D1")
+        assert code == 0, err
+        assert out == ("D1 unruled: withdrawn: keep it locked; and say why\n"
+                       "back: no ruling\n")
+        assert _files(slice_dir) == before
+        close_out.rule_entry(slice_dir, "D2", words="keep it locked", date="2026-10-25")
+        commit_store(slice_dir)
+        committed = _files(slice_dir)
+        close_out.rule_entry(slice_dir, "D2", words="and say why", mode="append")
+        code, out, err = _unrule(slice_dir, "D2")
+        assert code == 0, err
+        assert out == ("D2 unruled: withdrawn: keep it locked; and say why\n"
+                       "back: **Disposition:** keep it locked\n")
+        assert _files(slice_dir) == committed
+
+
+def test_unrule_is_refused_on_a_committed_ruling_and_on_an_entry_without_one():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        for _ in range(4):
+            run_cli("append", slice_dir, *DEFECT)                                # B1–B4
+        _unrule_refused(slice_dir, "B1", "B1 carries no ruling")
+        close_out.rule_entry(slice_dir, "B1", words="card it")
+        close_out.rule_entry(slice_dir, "B2", words="fix now", did="fixed in abc123")
+        commit_store(slice_dir)
+        _unrule_refused(slice_dir, "B1", "B1's ruling is committed, and a committed ruling "
+                        "stays; `rule --replace` puts the operator's other words in its place")
+        _unrule_refused(slice_dir, "B2", "B2's ruling is committed")
+        # what was ruled after the commit is withdrawn; the committed ruling under it stays
+        close_out.rule_entry(slice_dir, "B1", words="in KC", mode="append")
+        assert _unrule(slice_dir, "B1")[0] == 0
+        assert entry_of(slice_dir, "B1")["ruling"]["words"] == "card it"
+        _unrule_refused(slice_dir, "B1", "committed")
+        # the words the report's close gave stay with the close
+        close_out.close_report(slice_dir, "close the rest", date="2026-10-26")
+        _unrule_refused(slice_dir, "B3", "B3's words are the report's close of 2026-10-26, "
+                        "and the close owns them")
+        # a Disposition line the operator wrote on the report is theirs: nothing is written
+        _write_disposition(slice_dir, "B1", "no, defer it")
+        _unrule_refused(slice_dir, "B1", "close-out.md's Disposition line on B1 carries "
+                        "words the store had not taken", "`rule` without an id takes them")
+        assert entry_of(slice_dir, "B1")["ruling"]["words"] == "card it"
+        assert close_out.read_back(slice_dir) == [("B1", "no, defer it")]
+        _unrule_refused(slice_dir, "B9", "no entry B9")
+        code, _, _ = run_cli("unrule", slice_dir, "B1", "--by", "the operator")
+        assert code == 2
+
+
+def test_the_render_after_unrule_carries_the_withdrawal_and_the_next_one_keeps_it():
+    """AIWF-108: words taken out of close-out.json by hand came back at the
+    next render, from the Disposition line close-out.md still carried, with
+    a ruled-earlier note."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DECISION)                                  # D1
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        close_out.rule_entry(slice_dir, "D1", words="keep it locked", date="2026-10-26")
+        close_out.rule_entry(slice_dir, "D1", words="card it", mode="replace",
+                             date="2026-10-26")
+        close_out.rule_entry(slice_dir, "B1", words="fix now")
+        close_out.render_report(slice_dir)
+        assert "**Disposition:** card it\n" in report(slice_dir)
+        assert _unrule(slice_dir, "D1")[0] == 0 and _unrule(slice_dir, "B1")[0] == 0
+        text = report(slice_dir)
+        assert "**Disposition:** keep it locked\n" in text
+        assert "card it" not in text and "ruled earlier" not in text
+        assert "fix now" not in text and "**Disposition:**\n" in text
+        after = _files(slice_dir)
+        close_out.render_report(slice_dir)
+        assert _files(slice_dir) == after
+        assert close_out.read_back(slice_dir) == []
+        d1, b1 = entry_of(slice_dir, "D1"), entry_of(slice_dir, "B1")
+        assert d1["ruling"]["words"] == "keep it locked" and d1["notes"] == []
+        assert b1["ruling"] is None and b1["notes"] == []
+
+
 # -- held: an entry for a slice triage has not created --------------------------------
 
 HELD_11 = ("held:later", "held for slice 011, which triage has not created yet — "
