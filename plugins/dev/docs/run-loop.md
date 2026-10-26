@@ -186,7 +186,16 @@ whole plan is a feature of the review, not a cost. Then:
   recreates it and again after every executor round: a commit the record vouches for that the
   branch no longer carries is a `lost_work` bail, not a branch to rebuild from base
   ([runner-state.md](runner-state.md), which also carries the one-driver-per-slice lock the
-  first such loss came from). A resume that does not reattach resets the branch's tree to its
+  first such loss came from). The phase's range is `<merge-base>..HEAD`, and the driver takes
+  the merge base (`git merge-base <base> <branch>`) afresh at every read — each code-writer
+  dispatch's gate spec and gate hint, each gate, each review round, the merge's landed record —
+  never once for the phase: a writer that rebases the branch onto a moved base, or merges the
+  base in, moves the range with it, and the log says the merge base moved. PilotApp slice
+  020's P3 writer rebased onto `main` as the operator's ruling asked; the range the driver had
+  taken before the rebase carried main's own commit, the gate took in the frontend suite the
+  phase never touched, and the run stopped (AIWF-104). Had that suite been green, the stale
+  range would have gone on unsaid into the review, the spec check and the landed record. A
+  resume that does not reattach resets the branch's tree to its
   last commit, so a fresh round never builds on half-applied edits without knowing it — and sets
   the dead round's uncommitted work aside first: `git diff HEAD --binary` as
   `phases/P<id>/set-aside/r<N>.patch` (`N` the phase's last code-writer round) and a copy of its
@@ -245,9 +254,11 @@ whole plan is a feature of the review, not a cost. Then:
 - **The writer's green run stands for an unchanged tree** — the writer runs the gate through
   the driver: every code-writer dispatch names `python3 run_loop.py gate
   phases/P<id>/gate_spec.json`, a spec the driver rewrites at each dispatch with the round, the
-  phase's tree, the Target's command, root's fallback, the merge-base and the components a
+  phase's tree, the Target's command, root's fallback, the base branch and the components a
   `gate` ruling covers. The wrapper runs what the driver's gate would run — the touched
-  components from the merge-base against the tree as it stands, uncommitted work included — and
+  components, and a spec-repo phase's spec check, from the merge base it takes itself as the run
+  begins (`git merge-base <base> HEAD`, so a rebase earlier in the round is the range it gates)
+  against the tree as it stands, uncommitted work included — and
   records the run in `writer_gate_r<N>.json` (`N` the code-writer round): each command with its
   exit code and output, and the tree's content hash when the run began and when it ended. At
   gate time the driver takes the latest round's record in place of running the suites when its
@@ -268,7 +279,9 @@ whole plan is a feature of the review, not a cost. Then:
   tree.
 - **Review** — fresh **code-reviewer** per round against the phase's outcome, the acceptance
   criteria (`verification.json`) and repo conventions. Round 1 full branch diff; rounds 2+ are
-  delta-scoped to the fix range. A phase whose body declares `Review: <file>`
+  delta-scoped to the fix range, save after a merge base that moved since the last review (the
+  writer merged or rebased onto the base), when the round reads the whole range again: the fix
+  range would carry the base's commits as the fix. A phase whose body declares `Review: <file>`
   ([plan-template.md](plan-template.md)) also has its review set listed, one
   `git -C <clone> show <sha>` per clone and commit pair the file gained or changed since the
   phase began — the driver records the file's pairs when the phase starts. A line the file
@@ -456,8 +469,8 @@ whole plan is a feature of the review, not a cost. Then:
   does it as the doc plan says. Its dispatch carries the driver's deterministic facts, in the phase digest's spirit: the
   slice's diff **on disk**, one `<slice>/doc_phase/<repo>.diff` per repo a phase merged or
   committed into, a section per merged phase (`git diff --stat` on top, then the diff, over the
-  phase's landed range — the sha its branch was cut from to the head that fast-forwarded the base
-  — with the spec repo's `slices/` tree held out; never the base branch since the slice began,
+  phase's landed range — its branch's merge base as it merged to the head that fast-forwarded
+  the base — with the spec repo's `slices/` tree held out; never the base branch since the slice began,
   which in parallel lanes carried the other lanes' merges and the slice's own run record, and
   never HEAD, which is the doc branch, so a redispatched writer's own commits never read as
   shipped work) and, after its repo's landings, one per commit a phase's `Review:` ledger gained

@@ -124,6 +124,10 @@ class FakeGit:
         # its commit does not have.
         self.blobs = {}
         self.merge_bases = []    # `merge-base` answers, consumed in order
+        self.merge_base = "base123"   # the answer once `merge_bases` is spent
+        # What `merge_base` becomes once `rebase` ran, when set: the branch
+        # rebased onto its moved base has a merge base of its own.
+        self.rebased_merge_base = None
         self.dirty = ""          # what `status --porcelain` reports
         self.dirty_roots = {}    # str(root) → porcelain, overriding `dirty`
         self.branch_files = ""   # what `log --name-only` and `ls-tree` report
@@ -228,7 +232,8 @@ class FakeGit:
         if args[0] == "rev-parse":
             return self.revs.get(args[-1], self.head)
         if args[0] == "merge-base":
-            return self.merge_bases.pop(0) if self.merge_bases else "base123"
+            return (self.merge_bases.pop(0) if self.merge_bases
+                    else self.merge_base)
         if args[0] in ("log", "ls-tree"):
             return self.branch_files
         if args[0] == "status":
@@ -247,6 +252,8 @@ class FakeGit:
             return ""
         if args[0] == "rebase" and args[1] != "--abort" and self.rebased_head:
             self.head = self.rebased_head
+            if self.rebased_merge_base:
+                self.merge_base = self.rebased_merge_base
             return ""
         if args[0] == "commit" and "--" in args:
             self._commit_paths(args, root)
@@ -2551,8 +2558,8 @@ def test_the_gate_takes_its_components_from_the_reviews_merge_base():
             ["frontend/src/App.tsx", "backend/app/api.py"],
             setup=lambda loop: (
                 moved_base(loop, "2"),
-                setattr(loop.fake_git, "merge_bases",
-                        ["mb-before", "mb-old", "mb-after"])))
+                setattr(loop.fake_git, "merge_base", "mb-before"),
+                setattr(loop.fake_git, "rebased_merge_base", "mb-after")))
         assert code == 0 and not r.script
         assert "git diff mb-before..HEAD on branch phase/074-P1" \
             in reviewer_prompt(r)
@@ -2564,6 +2571,135 @@ def test_the_gate_takes_its_components_from_the_reviews_merge_base():
         ps = load_state(slice_dir)["phases"]["1"]
         assert ps["landed"]["base"] == "mb-after"
         assert ps["gate_green_commit"] == "new222"
+        # the driver's own rebase narrates itself, never as a writer's move
+        assert "merge base moved" not in (slice_dir / "log.txt").read_text()
+
+
+# -- a writer that moves the merge base (AIWF-104) ----------------------------
+#
+# PilotApp slice 020 P3: the writer rebased its branch onto a moved base inside
+# its round, and the driver, still on the merge base it took when the phase
+# began, gated the frontend suite of the base's own commits — red, and the
+# writer handed back blocked. The driver re-takes the merge base at every read.
+
+OLD_MB = "7bfad05c1234" + "5" * 28
+NEW_MB = "9fab4cb01234" + "6" * 28
+MOVED_LINE = ("[P1] merge base moved 7bfad05c1234 → 9fab4cb01234 — "
+              "phase/074-P1 was rebased onto or merged main; the phase's "
+              "range is re-taken")
+
+
+def moves_the_merge_base(to, head=None):
+    """A code-writer step's effect: it rebased its branch onto a moved base,
+    or merged the base into it — the branch's merge base is now `to`, and
+    its head `head` where given."""
+    def effect(loop):
+        loop.fake_git.merge_base = to
+        if head is not None:
+            loop.fake_git.head = head
+    return effect
+
+
+def test_a_writer_that_moves_the_merge_base_moves_the_phases_range():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, r, code = touched_gate_run(
+            tmp, [("code-writer", DONE, moves_the_merge_base(NEW_MB)),
+                  V["review_signoff"], *TAIL], [],
+            ["frontend/src/App.tsx", "backend/app/api.py"],
+            setup=lambda loop: setattr(loop.fake_git, "merge_base", OLD_MB))
+        assert code == 0 and not r.script
+        # the gate's touched components, the review and the landed record
+        # all read the range from the merge base the writer left
+        assert [c[-1] for c in gate_diffs(r)] == [f"{NEW_MB}..HEAD"]
+        prompt = reviewer_prompt(r)
+        assert f"git diff {NEW_MB}..HEAD on branch phase/074-P1" in prompt
+        assert OLD_MB not in prompt
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["landed"]["base"] == NEW_MB
+        assert ps["reviewed_base"] == NEW_MB
+        # the spec the writer's wrapper read named the base branch alone
+        assert gate_spec(r)["base"] == "main"
+        log = (slice_dir / "log.txt").read_text()
+        assert log.count(MOVED_LINE) == 1, log
+        # the first read, when the phase began, logged nothing
+        assert log.index("[P1] start (") < log.index(MOVED_LINE) \
+            < log.index("[P1] gate #1 running (")
+
+
+def test_a_review_after_the_merge_base_moved_reads_the_whole_range():
+    """A delta review reads the fix range against the head the last round
+    read — but a branch rebased onto a moved base rewrote every commit that
+    round read, so the round after the move is a full review, from the new
+    merge base, and banks the base it read beside the head."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [
+            V["exec_done"], V["review_issues"],
+            ("code-writer", DONE, moves_the_merge_base(NEW_MB, head="head2")),
+            V["review_signoff"], *TAIL], repo_root=repo)
+        r.fake_git.merge_base = OLD_MB
+        assert run_to_exit(r) == 0 and not r.script
+        first, second = (" ".join(p.split()) for p in reviews_of(r))
+        assert first.startswith("Review the complete branch diff")
+        assert second.startswith(
+            "Review the complete branch diff for phase P1 of slice "
+            f"074_test_slice (review round 2): git diff {NEW_MB}..HEAD on "
+            "branch phase/074-P1")
+        assert OLD_MB not in second and "abc123" not in second
+        # the secrets scan read the whole range alone, never a fix range
+        scans = [c[3] for _, c in r.fake_git.calls
+                 if c[:3] == ("diff", "--name-only", "--no-renames")]
+        assert scans == [f"{OLD_MB}..abc123", f"{NEW_MB}..head2"]
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert (ps["reviewed_head"], ps["reviewed_base"]) == ("head2", NEW_MB)
+        log = (slice_dir / "log.txt").read_text()
+        assert ("[P1] review round 2 reads the whole range — the merge base "
+                "moved since round 1 (7bfad05c1234 → 9fab4cb01234)") in log
+        assert MOVED_LINE in log
+    # the merge base stood still: the round is the delta review it was
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+
+        def move_head(loop):
+            loop.fake_git.head = "head2"
+
+        r = ScriptedLoop(slice_dir, [
+            V["exec_done"], V["review_issues"],
+            ("code-writer", DONE, move_head),
+            V["review_signoff"], *TAIL], repo_root=repo)
+        r.fake_git.merge_base = OLD_MB
+        assert run_to_exit(r) == 0 and not r.script
+        delta = " ".join(reviews_of(r)[1].split())
+        assert delta.startswith("Re-review phase P1")
+        assert "git diff abc123..HEAD" in delta
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert (ps["reviewed_head"], ps["reviewed_base"]) == ("head2", OLD_MB)
+        log = (slice_dir / "log.txt").read_text()
+        assert "reads the whole range" not in log
+        assert "merge base moved" not in log
+
+
+def test_a_phase_with_no_reviewed_base_on_record_reviews_as_it_always_did():
+    """A phase begun on a plugin before AIWF-104 banked no `reviewed_base`:
+    its next round is the delta review it would have been, whatever the
+    merge base is now, and it banks the base it read."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        state = resume_state(PROJECT)
+        state["phases"]["1"].update(review_rounds=1, reviewed_head="old111")
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        r = ScriptedLoop(slice_dir, [V["review_signoff"], *TAIL],
+                         resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        r.fake_git.merge_base = NEW_MB
+        assert run_to_exit(r) == 0 and not r.script
+        review = " ".join(reviews_of(r)[0].split())
+        assert review.startswith("Re-review phase P1 of slice 074_test_slice "
+                                 "(review round 2)")
+        assert "git diff old111..HEAD" in review
+        assert load_state(slice_dir)["phases"]["1"]["reviewed_base"] == NEW_MB
+        assert "reads the whole range" not in \
+            (slice_dir / "log.txt").read_text()
 
 
 def test_a_shared_sibling_components_gate_takes_touched_components_in_its_worktree():
@@ -2999,12 +3135,13 @@ def test_every_code_writer_dispatch_writes_the_gate_spec_with_its_round():
                          repo_root=repo, gates=[False, True, True])
         assert run_to_exit(r) == 0 and not r.script
         assert [s["round"] for s in specs] == [1, 2, 3]
+        # the base branch, never a merge base: the wrapper resolves that
+        # itself when its run begins (AIWF-104)
         assert specs[0] == {
             "phase": "1", "round": 1, "work_root": str(repo),
-            "gate_cwd": str(repo), "check": None,
+            "gate_cwd": str(repo), "base": "main", "spec_check": False,
             "argv": component_argv(PROJECT), "fallback": None,
-            "touched": {"merge_base": "base123", "target": PROJECT,
-                        "waived": []}}
+            "touched": {"target": PROJECT, "waived": []}}
         assert all(run_loop.gate_spec_problem(s) is None for s in specs)
     # root: the whole repo after an empty root, and no touched components
     specs.clear()
@@ -3029,8 +3166,7 @@ def test_every_code_writer_dispatch_writes_the_gate_spec_with_its_round():
                          repo_root=repo)
         with patched(run_loop, load_project_dirs=split_components):
             assert run_to_exit(r) == 0
-        assert specs[0]["touched"] == {"merge_base": "base123",
-                                       "target": "frontend",
+        assert specs[0]["touched"] == {"target": "frontend",
                                        "waived": ["backend"]}
 
 
@@ -3135,14 +3271,14 @@ def wrapper_repo(tmp):
 
 
 def write_spec(tmp, repo, argv, fallback=None, touched=None, round_=1,
-               check=None):
+               spec_check=False, base="main"):
     outputs = Path(tmp) / "phases" / "P1"
     outputs.mkdir(parents=True, exist_ok=True)
     spec = outputs / "gate_spec.json"
     spec.write_text(json.dumps({
         "phase": "1", "round": round_, "work_root": str(repo),
-        "gate_cwd": str(repo), "check": check, "argv": argv,
-        "fallback": fallback, "touched": touched}))
+        "gate_cwd": str(repo), "base": base, "spec_check": spec_check,
+        "argv": argv, "fallback": fallback, "touched": touched}))
     return spec
 
 
@@ -3157,15 +3293,17 @@ def record_of(spec, round_=1):
 
 def test_the_gate_wrapper_runs_the_drivers_gate_and_records_the_run():
     with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, base = wrapper_repo(tmp)
-        # since the base: worker committed, backend an untracked file and
-        # frontend (the Target) an edit — uncommitted work is the gate's too
+        repo, _ = wrapper_repo(tmp)
+        # since the base: worker committed on the phase's branch, backend an
+        # untracked file and frontend (the Target) an edit — uncommitted
+        # work is the gate's too
+        sh(repo, "checkout", "-qb", "phase/074-P1")
         (repo / "backend" / "worker" / "job.py").write_text("changed\n")
         sh(repo, "commit", "-qam", "worker")
         (repo / "backend" / "new.py").write_text("new\n")
         (repo / "frontend" / "App.tsx").write_text("changed\n")
         spec = write_spec(tmp, repo, component_argv("frontend"), touched={
-            "merge_base": base, "target": "frontend", "waived": []})
+            "target": "frontend", "waived": []})
         tee = FakeTee()
         code, out, err = run_wrapper(spec, tee)
         assert code == 0, err
@@ -3202,7 +3340,7 @@ def test_the_gate_wrapper_runs_the_drivers_gate_and_records_the_run():
         # a component a gate ruling waives is named, not run — and the
         # round's later run replaces its record
         spec = write_spec(tmp, repo, component_argv("frontend"), touched={
-            "merge_base": base, "target": "frontend", "waived": ["backend"]})
+            "target": "frontend", "waived": ["backend"]})
         tee = FakeTee()
         code, out, _ = run_wrapper(spec, tee)
         assert code == 0
@@ -3217,10 +3355,10 @@ def test_the_gate_wrapper_runs_the_drivers_gate_and_records_the_run():
 
 def test_the_gate_wrapper_exits_with_the_gates_outcome():
     with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, base = wrapper_repo(tmp)
+        repo, _ = wrapper_repo(tmp)
         (repo / "backend" / "api.py").write_text("changed\n")
         spec = write_spec(tmp, repo, component_argv("frontend"), touched={
-            "merge_base": base, "target": "frontend", "waived": []})
+            "target": "frontend", "waived": []})
         code, out, _ = run_wrapper(spec, FakeTee([0, 1]))
         assert code == 1
         assert out.rstrip("\n").endswith(
@@ -3294,7 +3432,7 @@ def test_a_tree_that_changed_while_the_wrapper_ran_is_recorded_so():
 
 def test_the_gate_wrapper_without_a_usable_spec_runs_and_records_nothing():
     with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, base = wrapper_repo(tmp)
+        repo, _ = wrapper_repo(tmp)
         outputs = Path(tmp) / "phases" / "P1"
         outputs.mkdir(parents=True)
         tee = FakeTee()
@@ -3304,18 +3442,20 @@ def test_the_gate_wrapper_without_a_usable_spec_runs_and_records_nothing():
             (outputs / "gate_spec.json").write_text(text)
             code, _, err = run_wrapper(outputs / "gate_spec.json", tee)
             assert code == 2 and err.startswith("gate: "), err
-        touched = {"merge_base": base, "target": "frontend", "waived": []}
+        touched = {"target": "frontend", "waived": []}
         # kc cannot list the components
         spec = write_spec(tmp, repo, component_argv("frontend"),
                           touched=touched)
         code, _, err = run_wrapper(spec, tee,
                                    components=kc_lists(repo="kc is down"))
         assert (code, err) == (2, "gate: kc is down\n")
-        # a merge base git does not know
-        spec = write_spec(tmp, repo, component_argv("frontend"),
-                          touched=dict(touched, merge_base="f" * 40))
-        code, _, err = run_wrapper(spec, tee)
-        assert code == 2 and "git diff" in err
+        # a base branch git does not know: no merge base to read a range from
+        for spec_check, touched_ in ((False, touched), (True, None)):
+            spec = write_spec(tmp, repo, component_argv("frontend"),
+                              touched=touched_, spec_check=spec_check,
+                              base="gone")
+            code, _, err = run_wrapper(spec, tee)
+            assert code == 2 and "git merge-base gone HEAD" in err, err
         # a tree git cannot hash
         (Path(tmp) / "plain").mkdir()
         spec = write_spec(tmp, Path(tmp) / "plain", component_argv(PROJECT))
@@ -3458,11 +3598,14 @@ def spec_entry(work, outcome, base="base123"):
 
 def ran_spec_gate(loop):
     """A code-writer step's effect: it ran a spec-repo phase's gate through
-    the wrapper — the check its spec names, then the repo's own command
+    the wrapper — the check its spec says it opens with, against the merge
+    base the wrapper resolves (the fake git's), then the repo's own command
     where there is one — and every command passed."""
     spec = gate_spec(loop)
-    ran_gate(*[(argv, 0) for argv in (spec["check"], spec["argv"])
-               if argv])(loop)
+    check = (run_loop.spec_check_argv(loop.fake_git.merge_base,
+                                      Path(spec["work_root"]))
+             if spec["spec_check"] else None)
+    ran_gate(*[(argv, 0) for argv in (check, spec["argv"]) if argv])(loop)
 
 
 def test_a_spec_repo_phase_is_gated_by_the_spec_check_against_its_base():
@@ -3596,10 +3739,11 @@ def test_a_spec_repo_phases_gate_spec_carries_its_check_for_the_wrapper():
             ("code-writer", DONE, lambda loop: specs.append(gate_spec(loop))),
             V["review_signoff"], *TAIL])
         assert code == 0
+        # the check, not its command: the wrapper builds that over the
+        # merge base it resolves from `base` (AIWF-104)
         assert specs == [{
             "phase": "1", "round": 1, "work_root": str(work),
-            "gate_cwd": str(work),
-            "check": run_loop.spec_check_argv("base123", work),
+            "gate_cwd": str(work), "base": "main", "spec_check": True,
             "argv": None, "fallback": None, "touched": None}]
         assert run_loop.gate_spec_problem(specs[0]) is None
     specs.clear()
@@ -3608,8 +3752,7 @@ def test_a_spec_repo_phases_gate_spec_carries_its_check_for_the_wrapper():
             ("code-writer", DONE, lambda loop: specs.append(gate_spec(loop))),
             V["review_signoff"], *TAIL], manifest=True)
         assert code == 0
-        assert (specs[0]["check"], specs[0]["argv"]) \
-            == (run_loop.spec_check_argv("base123", work), BARE_ARGV)
+        assert (specs[0]["spec_check"], specs[0]["argv"]) == (True, BARE_ARGV)
 
 
 def test_the_writers_run_of_a_spec_gate_is_the_drivers_gate():
@@ -3663,7 +3806,7 @@ def test_the_gate_wrapper_runs_a_spec_repos_check_first():
         check = run_loop.spec_check_argv(base, repo)
         cmd = " ".join(check)
         # no manifest: the check is the gate, and its red is the gate's
-        spec = write_spec(tmp, repo, None, check=check)
+        spec = write_spec(tmp, repo, None, spec_check=True)
         tee = FakeTee(rcs=[1])
         code, out, _ = run_wrapper(spec, tee)
         assert code == 1
@@ -3675,7 +3818,7 @@ def test_the_gate_wrapper_runs_a_spec_repos_check_first():
         assert out.startswith(f"=== the spec check: `{cmd}` ===\n")
         assert out.rstrip("\n").endswith(f"=== gate RED: `{cmd}` ===")
         # a manifest: the check, then the repo's own
-        spec = write_spec(tmp, repo, BARE_ARGV, check=check)
+        spec = write_spec(tmp, repo, BARE_ARGV, spec_check=True)
         tee = FakeTee()
         code, out, _ = run_wrapper(spec, tee)
         assert code == 0
@@ -3684,11 +3827,81 @@ def test_the_gate_wrapper_runs_a_spec_repos_check_first():
             < out.index(f"{cmd}: exit 0") \
             < out.index(f"\n=== `kc project test` from {repo} ===") \
             < out.index("kc project test: exit 0")
-        # a spec with no command at all, or a check that is none, is no spec
-        for argv, bad in ((None, None), (BARE_ARGV, "spec_check.py")):
-            spec = write_spec(tmp, repo, argv, check=bad)
+        # a spec with no command at all, or a check flag that is none, is
+        # no spec
+        for argv, bad in ((None, False), (BARE_ARGV, "spec_check.py")):
+            spec = write_spec(tmp, repo, argv, spec_check=bad)
             code, _, err = run_wrapper(spec, FakeTee())
             assert code == 2 and "is not a gate spec" in err, err
+
+
+def test_the_gate_wrapper_resolves_the_merge_base_when_its_run_begins():
+    """AIWF-104: the spec names the base branch, and the wrapper takes `git
+    merge-base <base> HEAD` itself at every run — so a writer that rebases
+    its branch onto a moved base, or merges the base into it, mid-round
+    gates the phase's own range: the base's commits touch no component, and
+    the spec check reads from the new merge base."""
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        repo, fork = wrapper_repo(tmp)
+        sh(repo, "checkout", "-qb", "phase/074-P1")
+        (repo / "frontend" / "App.tsx").write_text("the phase's\n")
+        sh(repo, "commit", "-qam", "P1")
+        spec = write_spec(tmp, repo, component_argv("frontend"),
+                          touched={"target": "frontend", "waived": []},
+                          spec_check=True)
+
+        def gated(base):
+            return [(run_loop.spec_check_argv(base, repo), repo),
+                    (component_argv("frontend"), repo)]
+
+        def base_moves(path, text):
+            sh(repo, "checkout", "-q", "main")
+            (repo / path).write_text(text)
+            sh(repo, "commit", "-qam", f"main: {path}")
+            moved = sh(repo, "rev-parse", "HEAD")
+            sh(repo, "checkout", "-q", "phase/074-P1")
+            return moved
+
+        tee = FakeTee()
+        assert run_wrapper(spec, tee)[0] == 0
+        assert tee.calls == gated(fork)
+        # another session lands backend work on main; the writer rebases
+        moved = base_moves("backend/api.py", "main's\n")
+        sh(repo, "rebase", "-q", "main")
+        tee = FakeTee()
+        assert run_wrapper(spec, tee)[0] == 0
+        assert tee.calls == gated(moved), "backend is main's, not the phase's"
+        assert [c["argv"] for c in record_of(spec)["commands"]] \
+            == [argv for argv, _ in gated(moved)]
+        # merged rather than rebased: the merge base is main's tip all the same
+        again = base_moves("backend/worker/job.py", "main's again\n")
+        sh(repo, "merge", "-q", "--no-edit", "main")
+        tee = FakeTee()
+        assert run_wrapper(spec, tee)[0] == 0
+        assert tee.calls == gated(again)
+
+
+def test_a_gate_spec_names_its_base_branch_and_whether_it_checks_the_spec():
+    problem = run_loop.gate_spec_problem
+    good = {"phase": "1", "round": 1, "work_root": "/w", "gate_cwd": "/w",
+            "base": "main", "spec_check": False,
+            "argv": component_argv(PROJECT), "fallback": None,
+            "touched": {"target": PROJECT, "waived": []}}
+    assert problem(good) is None
+    # a spec repo with no manifest: its spec check is the whole gate
+    assert problem(dict(good, spec_check=True, argv=None)) is None
+    assert problem(dict(good, argv=None)) == "`argv` is not a command"
+    assert problem({k: v for k, v in good.items() if k != "base"}) \
+        == "no `base` of type str"
+    assert problem(dict(good, base="")) == "`base` is empty"
+    assert problem(dict(good, spec_check="yes")) \
+        == "no `spec_check` of type bool"
+    # the shape before AIWF-104 — a merge base baked in, the check's command
+    # in place of the flag — is no spec the wrapper runs
+    before = {k: v for k, v in good.items() if k not in ("base", "spec_check")}
+    before.update(check=None, touched={"merge_base": "abc123",
+                                       "target": PROJECT, "waived": []})
+    assert problem(before) == "no `base` of type str"
 
 
 def test_the_drivers_spec_gate_runs_the_real_check_on_the_phases_tree():
@@ -6300,6 +6513,26 @@ def test_a_base_that_moved_under_the_phase_gets_a_merge_commit():
             in (slice_dir / "log.txt").read_text()
 
 
+def test_a_shared_repos_landed_base_is_where_the_branch_forked():
+    """The landed range starts where the branch forked from the base, taken
+    before the merge (AIWF-104) — after it, the merge base is the branch's
+    own head — whether the merge fast-forwards or makes a merge commit."""
+    if shutil.which("git") is None:
+        return
+    for also in ((), (base_commit(10, "line 10, another session's"),)):
+        with tempfile.TemporaryDirectory() as tmp, plain_git():
+            slice_dir, repo, specs = real_shared_slice(tmp)
+            r, code = shared_run(slice_dir, repo, specs, *also)
+            assert code == 0
+            landed = load_state(slice_dir)["phases"]["1"]["landed"]
+            # the phase's one commit, from the commit it was made on
+            assert landed["base"] \
+                == sh(specs, "rev-parse", f"{landed['head']}^")
+            assert sh(specs, "log", "--format=%s",
+                      f"{landed['base']}..{landed['head']}") \
+                == "P1: the contract"
+
+
 def test_another_writers_edit_in_the_merges_way_is_swept_and_the_merge_goes_on():
     if shutil.which("git") is None:
         return
@@ -8447,6 +8680,37 @@ def test_merge_records_the_phases_landed_range():
             "root": str(repo), "base": "base123", "head": "abc123"}
 
 
+def merge_base_is_the_branch_once_merged(loop):
+    """The fake git answering `merge-base <base> <branch>` as git does once
+    the branch is in the base: with the branch's own head."""
+    fake = loop.fake_git
+
+    def git(*args, root=None, check=True):
+        if args[0] == "merge-base" and fake.mutations("merge"):
+            fake.calls.append((root, args))
+            return fake.head
+        return fake(*args, root=root, check=check)
+
+    loop.git = git
+
+
+def test_the_landed_base_is_the_merge_base_before_the_merge():
+    """The landed record's base is re-taken at the merge (AIWF-104), and
+    taken before it: after the merge, the merge base is the branch's head,
+    and the range would be empty."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir,
+                         [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        r.fake_git.merge_base = NEW_MB
+        merge_base_is_the_branch_once_merged(r)
+        assert run_to_exit(r) == 0
+        assert r.fake_git.mutations("merge")
+        assert load_state(slice_dir)["phases"]["1"]["landed"] == {
+            "root": str(repo), "base": NEW_MB, "head": "abc123"}
+
+
 # -- a base that moved under the branch ---------------------------------------
 #
 # The merge is `checkout <base>` + `merge --ff-only`, so a parallel session
@@ -8469,15 +8733,18 @@ def test_a_moved_base_is_rebased_and_the_record_repointed_before_the_merge():
                          [V["exec_done"], V["review_signoff"], *TAIL],
                          repo_root=repo)
         moved_base(r, "2")
-        r.fake_git.merge_bases = ["mb-before", "mb-old", "mb-after"]
+        r.fake_git.merge_base = "mb-before"
+        r.fake_git.rebased_merge_base = "mb-after"
         assert run_to_exit(r) == 0
         # the phase's own rebase, before the doc landing's later one
         assert [c for _, c in r.fake_git.mutations("rebase")][0] \
             == ("rebase", "main")
         ps = load_state(slice_dir)["phases"]["1"]
-        # the review's head follows the rebase; the gate's green does not —
-        # it is dropped, so the merge stage re-gates the reordered commits
+        # the review's head and base follow the rebase; the gate's green
+        # does not — it is dropped, so the merge stage re-gates the
+        # reordered commits
         assert ps["reviewed_head"] == "new222"
+        assert ps["reviewed_base"] == "mb-after"
         assert r.gate_calls == [("1", True), ("1", True)]
         assert ps["gate_green_commit"] == "new222"
         # the landed range is measured from the merge base as it is AFTER

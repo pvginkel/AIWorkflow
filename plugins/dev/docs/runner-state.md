@@ -67,7 +67,10 @@ and may be rebased), `phases`, and `history`.
 Per phase: `status` (`pending` | `in_progress` | `merged`), `stage` (`executor` | `gate` |
 `review` | `merging` | `null`), `branch`, `target`, `worktree` (a shared target's linked
 worktree, from its creation to the merge that removes it), `executor_rounds`, `gate_fix_rounds`,
-`review_rounds`, `reviewed_head`, `gate_runs`, the gate's evidence pair `gate_green_commit` /
+`review_rounds`, `reviewed_head`, `reviewed_base` (the merge base that review read; one that
+has moved since makes the next review read the whole range, not the fix range — absent on a
+phase begun before 0.9.139, whose next review takes the fix range as before), `gate_runs`, the
+gate's evidence pair `gate_green_commit` /
 `gate_green_log`, `gate_nothing_ran_commit` (the head the gate last ran nothing on — the
 reviewer is told the target defines no tests only when it is the commit under review),
 `gate_cmd` (the command whose outcome stands — bare `kc project test` when a root phase's
@@ -84,8 +87,9 @@ rebase to the operator — `base`, `from` (the branch head it asked to rebase), 
 the resume takes the rebased branch, and at the merge), `set_aside` (what a resume set aside
 from a dead round's tree — each entry's `round`, `patch`, `untracked` and `files`; named in the
 phase's next code-writer prompt, and cleared once that session returns), and `landed` — set at
-the merge: the phase's `root` (the shared repo, for a worktree phase), the `base` sha its branch
-was cut from
+the merge: the phase's `root` (the shared repo, for a worktree phase), the `base` — the
+branch's merge base with the base branch, taken before the merge, since after it that is the
+branch's own head: the sha it was cut from, or the base commit a rebase carried it onto —
 and the `head` of the branch that merged — fast-forwarded into the base, or taken by a merge
 commit for a shared target. That range is the phase's
 own commits and nothing else, which is what the executor digest's touched list and the doc
@@ -265,8 +269,8 @@ clear the name takes them with it. Rounds spent before the first gate or review 
 they leave no commit on the record to check. A base that moved under an unshared target's branch
 by merge time is the one case the driver rewrites the record itself (a shared target merges
 instead, [run-loop.md](run-loop.md) § The plan is the queue): the branch is rebased onto it, the phase's
-diff proven identical before and after, `reviewed_head` repointed at the rebased commit and the
-gate's green cleared so it re-runs. When that rebase does not apply cleanly, or changes the
+diff proven identical before and after, `reviewed_head` repointed at the rebased commit (and
+`reviewed_base` at the merge base it now has) and the gate's green cleared so it re-runs. When that rebase does not apply cleanly, or changes the
 phase's diff, the driver bails `blocked` and hands the rebase to the operator, marking the phase
 `rebase_requested`. A hand rebase leaves both recorded commits on neither branch nor base, the
 `lost_work` shape, so the mark is what tells the resume the rewrite was asked for: a branch that

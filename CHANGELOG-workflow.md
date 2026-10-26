@@ -4,6 +4,30 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-26 — A phase's merge base is re-taken at every read, so a writer's rebase moves its range (v0.9.139)
+
+The driver took a phase's merge base once, when it entered the phase, and re-took it only after
+a rebase it made itself. A writer that rebased the branch onto a moved base inside its round left
+the driver on the old one, and `{merge_base}..HEAD` then carried the base's commits as the
+phase's. In PilotApp slice 020, P3's writer rebased onto `main`'s 9fab4cb as the operator's ruling
+on its question asked. The range from before the rebase took in main's commit, which touched the
+frontend, so the gate pulled in the frontend suite, red on specs P6 was planned to fix. The writer
+handed back blocked. When the base's suites are green, which is the ordinary case, nothing shows:
+the review reads the base's commits as the phase's work, and so do the spec check and the
+`landed` record that later phases' digests and the doc phase's diffs read.
+
+The driver now runs `git merge-base <base> <branch>` again at every read. That covers each
+code-writer dispatch's gate spec and gate hint, each pass of the gate loop and the review loop,
+and the merge's `landed` record, which is taken before the merge into the base. When the merge
+base moves, the log says so. The gate spec carries the base branch, not a sha. The `gate` wrapper
+takes the merge base itself when its run begins, both for the touched components and for a
+spec-repo phase's spec check, so a rebase earlier in the round is the range the writer gates.
+Each review records the merge base it read as `reviewed_base`. When that base has moved by the
+next round, the round reads the whole range and not the fix range, because the fix range would
+carry the base's commits too. A phase begun on an older plugin has no `reviewed_base` and keeps
+the fix range. A writer's rebase after a review or a green gate still bails `lost_work`, as before:
+the record's commits are gone from the branch. AIWF-104.
+
 ## 2026-10-26 — The format of a document Pilot reads is a skill, /dev:document-format (v0.9.138)
 
 Pilot is the project manager PilotApp builds. It puts the documents its work items register to

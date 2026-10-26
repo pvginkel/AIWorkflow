@@ -1645,8 +1645,11 @@ def component_gate_argv(name: str) -> list[str]:
 def spec_check_argv(base: str, work_root: Path) -> list[str]:
     """The spec check over what a spec-repo phase changed since `base` in
     the tree at `work_root` (AIWF-68): the plugin's own tool, from the tools
-    dir this driver runs from. `base` is a sha, never a ref that moves, so
-    the writer's `gate` wrapper and the driver run the very same command."""
+    dir this driver runs from. `base` is a sha, never a ref that moves: the
+    writer's `gate` wrapper and the driver each resolve the phase's merge
+    base when their run begins (AIWF-104), so the two run the very same
+    command over the same base, and a writer's run against a base that has
+    since moved is another command, which the driver does not reuse."""
     return ["python3", str(TOOLS_DIR / "spec_check.py"), "--base", base,
             str(work_root)]
 
@@ -1749,24 +1752,25 @@ def _shape_problem(data, keys: dict[str, type]) -> str | None:
 
 def gate_spec_problem(spec) -> str | None:
     """What makes `spec` no gate spec (`RunLoop._write_gate_spec`), None
-    when it is one."""
+    when it is one. `base` is the base branch the wrapper resolves the
+    phase's merge base against (AIWF-104), and `spec_check` whether the
+    gate opens with the spec check."""
     problem = _shape_problem(spec, {"phase": str, "round": int,
-                                    "work_root": str, "gate_cwd": str})
+                                    "work_root": str, "gate_cwd": str,
+                                    "base": str, "spec_check": bool})
     if problem:
         return problem
-    check = spec.get("check")
-    if check is not None and not _is_argv(check):
-        return "`check` is not a command"
+    if not spec["base"]:
+        return "`base` is empty"
     # a spec repo with no manifest is gated by its spec check alone
     if not _is_argv(spec.get("argv")) \
-            and not (spec.get("argv") is None and check is not None):
+            and not (spec.get("argv") is None and spec["spec_check"]):
         return "`argv` is not a command"
     if spec.get("fallback") is not None and not _is_argv(spec["fallback"]):
         return "`fallback` is not a command"
     touched = spec.get("touched")
     if touched is not None:
-        problem = _shape_problem(touched, {"merge_base": str, "target": str,
-                                           "waived": list})
+        problem = _shape_problem(touched, {"target": str, "waived": list})
         if problem or not all(isinstance(c, str) for c in touched["waived"]):
             return f"`touched` is off-shape: {problem or 'waived'}"
     return None
@@ -3931,6 +3935,9 @@ class RunLoop:
         self._sibling_owners: dict[str, list[Path]] | None = None
         self._siblings_listed: list[str] = []
         self._siblings_unlisted: list[str] = []
+        # phase id → the merge base `_merge_base` last answered for it, so a
+        # move between two reads is logged; this run's alone, never state.
+        self._merge_bases: dict[str, str] = {}
 
     def reroot(self, root: Path) -> None:
         """Point the loop at another code repo — the dry run's, started from
@@ -5595,10 +5602,13 @@ class RunLoop:
         the components its diff touches run, which gate beside the Target's
         own and not instead of it.
 
-        `merge_base` is the base of the range the review reads — the one
-        `_run_phase` takes, re-taken by a rebase onto a moved base — so the
-        components a component Target's gate takes in are those of the diff
-        its reviewer is handed (`_touched_components`).
+        `merge_base` is the base of the range the review reads, as the
+        caller has just re-taken it (`_merge_base`, AIWF-104): a writer that
+        rebased the branch onto a moved base, or merged the base into it,
+        moved it, and a base taken once would have the gate run the
+        components of the base's own commits. So the components a component
+        Target's gate takes in are those of the diff its reviewer is handed
+        (`_touched_components`).
 
         A GitHub clone still without a manifest here is a phase that said
         (`Creates:`) it would add one and did not: nothing would verify it,
@@ -5812,7 +5822,10 @@ class RunLoop:
         Target's, the whole repo after an empty root, each touched component
         no gate ruling covers, in that order — none of them red, and on a
         tree that has not changed since it began: a change during the run,
-        or after it, is a tree the run did not see."""
+        or after it, is a tree the run did not see. The check's `--base` and
+        the touched set both come from the merge base this gate re-took, so
+        a run against a base that has moved since is not this gate's
+        commands (AIWF-104)."""
         try:
             record = json.loads(path.read_text())
         except (OSError, ValueError) as e:
@@ -5879,8 +5892,9 @@ class RunLoop:
     def _spec_check_argv(self, target: ResolvedTarget,
                          merge_base: str) -> list[str] | None:
         """The spec check a phase on `target` opens its gate with — over
-        the phase's tree, against the base the review reads — or None for a
-        phase on any repo other than the spec repo (AIWF-68)."""
+        the phase's tree, against `merge_base`, the base the review reads
+        as the caller just re-took it — or None for a phase on any repo
+        other than the spec repo (AIWF-68)."""
         if not self._is_spec_root(target.git_root):
             return None
         return spec_check_argv(merge_base, target.work_root)
@@ -5906,11 +5920,13 @@ class RunLoop:
         """The components other than the Target that the phase's diff
         touches, in manifest order (`touched_components`, which the writer's
         `gate` wrapper shares). The diff is `<merge_base>..HEAD` in the
-        phase's tree — the range its reviewer reads — and the components are
-        kc's list there, so one the phase registered is seen. Where kc lists
-        no root, no gate holds a file outside every component, and the log
-        says so. `--no-renames` names both ends of a rename, so a file moved
-        out of a component touches it."""
+        phase's tree — the range its reviewer reads, from the merge base the
+        caller just re-took (AIWF-104), as the wrapper resolves its own when
+        its run begins — and the components are kc's list there, so one the
+        phase registered is seen. Where kc lists no root, no gate holds a
+        file outside every component, and the log says so. `--no-renames`
+        names both ends of a rename, so a file moved out of a component
+        touches it."""
         components = load_project_dirs(target.gate_cwd)
         changed = self.git("diff", "--name-only", "--no-renames",
                            f"{merge_base}..HEAD", root=target.work_root)
@@ -6469,17 +6485,26 @@ class RunLoop:
         return PHILOSOPHY_LINE.format(philosophy=self.cfg.design_philosophy)
 
     def _write_gate_spec(self, phase_id: str, round_: int, outputs: Path,
-                         target: ResolvedTarget, merge_base: str) -> None:
+                         target: ResolvedTarget, base: str) -> None:
         """The phase's gate as the `gate` wrapper runs it for code-writer
         round `round_` (`run_writer_gate`): where, which command, the whole
         repo after an empty root, and — for a component Target — what it
-        needs to find the components the diff touches: the review's merge
-        base, and those a gate ruling covers, which the driver's gate waives
-        unrun. Rewritten at every dispatch, so it is the gate as it stands
-        then; the driver checks a run against its gate as it stands at gate
-        time anyway (`_reusable_writer_gate`). A spec-repo phase's spec
-        carries its spec check (`check`), run first — and, with no manifest
-        in the phase's tree, no `argv` at all."""
+        needs to find the components the diff touches: the Target, and those
+        a gate ruling covers, which the driver's gate waives unrun.
+        Rewritten at every dispatch, so it is the gate as it stands then;
+        the driver checks a run against its gate as it stands at gate time
+        anyway (`_reusable_writer_gate`). A spec-repo phase's spec says it
+        opens with the spec check (`spec_check`) — and, with no manifest in
+        the phase's tree, has no `argv` at all.
+
+        The spec names the phase's base branch (`base`), never a merge base:
+        the wrapper resolves `git merge-base <base> HEAD` itself when its run
+        begins (AIWF-104). A sha baked in here went stale the moment the
+        writer rebased the branch onto a moved base, or merged the base into
+        it, inside its round — and the wrapper then ran the components, and
+        the spec check, of the base's own commits (PilotApp slice 020 P3: a
+        frontend suite the phase never touched, red, and the writer handed
+        back blocked)."""
         touched = None
         if self._gates_touched(target):
             gates = [(r, t) for r, t in self._current_rulings()
@@ -6487,13 +6512,13 @@ class RunLoop:
             waived = ([c for c in load_project_dirs(target.gate_cwd)
                        if self._covering(gates, target.git_root, c)
                        is not None] if gates else [])
-            touched = {"merge_base": merge_base, "target": target.name,
-                       "waived": waived}
+            touched = {"target": target.name, "waived": waived}
         _write_json_atomic(outputs / GATE_SPEC_NAME, {
             "phase": phase_id, "round": round_,
             "work_root": str(target.work_root),
             "gate_cwd": str(target.gate_cwd),
-            "check": self._spec_check_argv(target, merge_base),
+            "base": base,
+            "spec_check": self._is_spec_root(target.git_root),
             "argv": target.gate_argv,
             "fallback": list(REPO_GATE_ARGV) if self._is_root(target) else None,
             "touched": touched})
@@ -6507,9 +6532,11 @@ class RunLoop:
         runs exactly what the driver's gate would, and the driver reuses its
         green rather than running the suite a second time. A spec-repo
         phase's gate opens with the spec check against `merge_base`, the
-        review's base, and is that check alone where the phase's tree has no
-        manifest (AIWF-68); a sibling repo with none has no gate the driver
-        runs."""
+        review's base as the dispatch re-took it (AIWF-104 — the wrapper
+        resolves its own at its run, so a writer that moves the base runs
+        the check against the new one), and is that check alone where the
+        phase's tree has no manifest (AIWF-68); a sibling repo with none has
+        no gate the driver runs."""
         work = target.work_root
         wrapper = f"`python3 {SCRIPT} gate {outputs / GATE_SPEC_NAME}`"
         check = self._spec_check_argv(target, merge_base)
@@ -6620,12 +6647,13 @@ class RunLoop:
         that offers are lossy: restoring the branch undoes the rebase, and
         clearing the record throws away a finished review (one was a signoff
         four rounds in). With the mark, a branch that now carries the base's
-        tip is the rebase: `reviewed_head` follows it and the gate's green is
-        dropped, the move a clean rebase makes in `_rebase_onto_moved_base`
-        (the merge stage re-gates). Which commits the rebase kept is not
-        checked — the operator was asked to carry the phase across, and the
-        re-run gate is the proof the driver has. A branch still short of the
-        tip is the same request, again."""
+        tip is the rebase: `reviewed_head` follows it, and `reviewed_base`
+        with it, and the gate's green is dropped, the move a clean rebase
+        makes in `_rebase_onto_moved_base` (the merge stage re-gates).
+        Which commits the rebase kept is not checked — the operator was
+        asked to carry the phase across, and the re-run gate is the proof
+        the driver has. A branch still short of the tip is the same request,
+        again."""
         req = ps.get("rebase_requested")
         if not req:
             return False
@@ -6641,7 +6669,12 @@ class RunLoop:
                         "re-runs.")
         new_head = self.git("rev-parse", branch, root=root)
         if ps.get("reviewed_head"):
+            # the review's base follows as its head does (AIWF-104): the
+            # review stands, so the base moved by the rebase asked for does
+            # not make the next review round read the whole range again
             ps["reviewed_head"] = new_head
+            ps["reviewed_base"] = self._merge_base(phase_id, root, base,
+                                                   branch, quiet=True)
         ps["gate_green_commit"] = None
         ps.pop("rebase_requested", None)
         self._save_state()
@@ -6744,6 +6777,37 @@ class RunLoop:
             self.git("checkout", base, root=root)
         self.git("branch", "-D", branch, root=root)
 
+    def _merge_base(self, phase_id: str, root: Path, base: str, branch: str,
+                    quiet: bool = False) -> str:
+        """The phase's merge base as it stands now: `git merge-base <base>
+        <branch>`, taken again at every read of it — every code-writer
+        dispatch, every pass of the gate loop and of the review loop, the
+        merge's landed record — never once for the phase (AIWF-104).
+
+        A writer may rebase its branch onto a moved base, or merge the base
+        into it, inside its round: on an operator ruling, or on its own. A
+        base taken once at the phase's start then made `<stale>..HEAD` carry
+        the base's own commits, and everything downstream read them as the
+        phase's: the gate ran components the phase never touched (PilotApp
+        slice 020 P3: the frontend suite, red, made the writer hand back
+        blocked), the review read the base's commits, and the landed record
+        later phases' digests and the doc phase read was wrong.
+
+        A value other than the one this returned last for the phase is
+        logged once, as the move it is — unless `quiet`: the driver's own
+        rebase, which narrates itself. The last value is held for this run
+        of the phase alone, never in state.json (`_run_phase` drops it as
+        it enters), so the first read when a phase starts or resumes logs
+        nothing."""
+        merge_base = self.git("merge-base", base, branch, root=root)
+        last = self._merge_bases.get(phase_id)
+        if not quiet and last is not None and last != merge_base:
+            self.log(f"[P{phase_id}] merge base moved {last[:12]} → "
+                     f"{merge_base[:12]} — {branch} was rebased onto or "
+                     f"merged {base}; the phase's range is re-taken")
+        self._merge_bases[phase_id] = merge_base
+        return merge_base
+
     def _run_phase(self, phase: Phase) -> None:
         phase_id = phase.id
         ps = self._phase_state(phase_id)
@@ -6760,6 +6824,7 @@ class RunLoop:
         self.log(f"[P{phase_id}] start (target={target.name}, "
                  f"branch={branch}, root={root})")
         self._fetch_origin(root)
+        self._merge_bases.pop(phase_id, None)
 
         # Branch setup (fresh or resume) — over a branch reconciled against
         # what the record says is committed on it.
@@ -6807,8 +6872,6 @@ class RunLoop:
         self._save_state()
         work = target.work_root
         where = self._executor_where(target)
-        merge_base = self.git("merge-base", base, branch, root=root)
-        gate_hint = self._gate_hint(target, outputs, merge_base)
 
         def executor_verdict_path(r: int) -> Path:
             return outputs / f"executor_result_r{r}.json"
@@ -6824,15 +6887,15 @@ class RunLoop:
             a run that dies mid-dispatch hands it to the next one. The gate
             spec the round's `gate` wrapper reads is written first, carrying
             the round's number — the driver reuses a run of that round
-            alone."""
+            alone — and the base branch the wrapper resolves the merge base
+            against at its own run (AIWF-104)."""
             pending = self._reattach_round("code-writer", phase_id)
             if pending is None:
                 ps["executor_rounds"] += 1
             r = ps["executor_rounds"] if pending is None else pending
             self._save_state()
             if self._has_gate(target):
-                self._write_gate_spec(phase_id, r, outputs, target,
-                                      merge_base)
+                self._write_gate_spec(phase_id, r, outputs, target, base)
             prompt = (build_prompt(executor_verdict_path(r)) + "\n"
                       + self._phase_digest(phase_id))
             if ps.get("set_aside"):
@@ -6854,7 +6917,13 @@ class RunLoop:
             return verdict
 
         # ---- executor stage ----
+        # Every code-writer dispatch, the gate loop's and review loop's every
+        # pass and the merge each re-take the merge base (`_merge_base`): a
+        # writer may have moved it since the last read.
         if ps["stage"] == "executor":
+            gate_hint = self._gate_hint(
+                target, outputs,
+                self._merge_base(phase_id, root, base, branch))
             spawn_executor(lambda vp: EXECUTOR_PROMPT.format(
                 phase_id=phase_id, plan_path=self.plan_path,
                 slice_name=self.slice_name, target=phase.target,
@@ -6867,8 +6936,8 @@ class RunLoop:
 
         # ---- gate + executor-fix loop ----
         if ps["stage"] == "gate":
-            self._gate_until_green(phase, ps, outputs, target, branch,
-                                   merge_base, where, spawn_executor)
+            self._gate_until_green(phase, ps, outputs, target, base, branch,
+                                   where, spawn_executor)
             ps["stage"] = "review"
             self._save_state()
 
@@ -6888,6 +6957,8 @@ class RunLoop:
                     + OPERATOR_RULING_TAG.format(round=r, question=question))
                 self.log(f"[P{phase_id}] operator ruling tagged onto "
                          f"{review_path.name}; dispatching the writer")
+                merge_base = self._merge_base(phase_id, root, base, branch)
+                gate_hint = self._gate_hint(target, outputs, merge_base)
                 fix_verdict = spawn_executor(
                     lambda vp, _r=r: EXECUTOR_REVIEW_FIX_PROMPT.format(
                         phase_id=phase_id, slice_name=self.slice_name,
@@ -6898,18 +6969,22 @@ class RunLoop:
                         pointers=self._pointers(target, phase_id)))
                 self._after_session_plan_check()
                 self._handle_refutations(outputs, phase_id, r, fix_verdict)
-                self._gate_until_green(phase, ps, outputs, target, branch,
-                                       merge_base, where, spawn_executor)
+                self._gate_until_green(phase, ps, outputs, target, base,
+                                       branch, where, spawn_executor)
 
         # ---- review loop ----
         if ps["stage"] == "review":
-            self._review_loop(phase, ps, outputs, target, branch, merge_base,
-                              where, gate_hint, spawn_executor)
+            self._review_loop(phase, ps, outputs, target, base, branch, where,
+                              spawn_executor)
             ps["stage"] = "merging"
             self._save_state()
 
         # ---- merge + stamp ----
         if ps["stage"] == "merging":
+            # The landed record's base is taken before anything merges into
+            # the base: once the branch is in it, `merge-base <base>
+            # <branch>` is the branch's own head, and the range is empty.
+            merge_base = self._merge_base(phase_id, root, base, branch)
             if work != root:
                 head = self._merge_shared(phase_id, ps, outputs, target, base,
                                           branch, merge_base)
@@ -6952,7 +7027,8 @@ class RunLoop:
                           merge_base: str) -> None:
         """The gate again, before the merge, when its recorded green no
         longer speaks for the head about to merge; red bails. `merge_base`
-        is the review's, as a rebase onto a moved base re-took it."""
+        is the one the merge stage took before anything merged, as a rebase
+        onto a moved base re-took it (AIWF-104)."""
         if not self._has_gate(target) or self._green_covers(ps, head):
             return
         green, gate_log = self._phase_gate(phase_id, ps, outputs, target,
@@ -7143,7 +7219,10 @@ class RunLoop:
         - a conflict: the merge aborted, the shared tree as it was, and a
           `blocked` stop asking for the merge by hand — the resume then
           finds the branch in the base and stamps (`_reconcile_branch`);
-        - anything else is git's own error, a protocol failure."""
+        - anything else is git's own error, a protocol failure.
+
+        `merge_base` is the branch's, taken before the merge (AIWF-104): the
+        re-gate's range, and the landed record's base."""
         root, work = target.git_root, target.work_root
         if self._worktree_dirty(work):
             raise Bailout(
@@ -7311,10 +7390,14 @@ class RunLoop:
                         f"{new_head[:12]}; review it, then resume — the "
                         "resume takes the branch as it then stands as "
                         "reviewed and re-runs the gate")
+        # the driver's own move of the merge base, which its line below
+        # narrates — and which the review's base follows as its head does
+        merge_base = self._merge_base(phase_id, root, base, branch,
+                                      quiet=True)
         if ps.get("reviewed_head"):
             ps["reviewed_head"] = new_head
+            ps["reviewed_base"] = merge_base
         ps["gate_green_commit"] = None
-        merge_base = self.git("merge-base", base, branch, root=root)
         self._save_state()
         self.log(f"[P{phase_id}] {base} moved by {behind} commit(s) under "
                  f"{branch}; rebased {old_head[:12]} → {new_head[:12]}, "
@@ -7346,19 +7429,24 @@ class RunLoop:
         self._load_plan()
 
     def _gate_until_green(self, phase: Phase, ps: dict, outputs: Path,
-                          target: ResolvedTarget, branch: str,
-                          merge_base: str, where: str,
-                          spawn_executor) -> None:
+                          target: ResolvedTarget, base: str, branch: str,
+                          where: str, spawn_executor) -> None:
         """A red gate spawns a fresh executor fix round (the fix rounds are
         the executor's — there is no separate fixer in the phase loop),
         capped; still red at the cap bails. A gate that ran nothing passes
         (`_run_gate`): no round can make a target without tests go green.
+
+        Every pass re-takes the merge base first (`_merge_base`, AIWF-104),
+        and the gate and the fix round it funds both read that one: the
+        round before it may have rebased the branch onto a moved base.
 
         A resume at stage `gate` re-runs the gate before anything else, so a
         fix round a crash interrupted arrives here again — its number was
         banked before the crash, and re-banking it would spend the cap
         twice."""
         while True:
+            merge_base = self._merge_base(phase.id, target.git_root, base,
+                                          branch)
             passed, gate_log = self._phase_gate(phase.id, ps, outputs,
                                                 target, merge_base)
             if passed:
@@ -7374,22 +7462,34 @@ class RunLoop:
             r = ps["gate_fix_rounds"]
             self._save_state()
             red_cmds = self._red_cmds(ps, target)
-            spawn_executor(lambda vp, _r=r, _log=gate_log, _red=red_cmds:
+            hint = self._gate_hint(target, outputs, merge_base)
+            spawn_executor(lambda vp, _r=r, _log=gate_log, _red=red_cmds,
+                           _mb=merge_base, _hint=hint:
                            EXECUTOR_GATE_FIX_PROMPT.format(
                                phase_id=phase.id, slice_name=self.slice_name,
                                branch=branch, round=_r,
                                plan_path=self.plan_path, red_cmds=_red,
-                               gate_log=_log, merge_base=merge_base,
-                               where=where,
-                               gate_hint=self._gate_hint(target, outputs,
-                                                         merge_base),
+                               gate_log=_log, merge_base=_mb,
+                               where=where, gate_hint=_hint,
                                verdict_path=vp,
                                pointers=self._pointers(target, phase.id)))
             self._after_session_plan_check()
 
     def _review_loop(self, phase: Phase, ps: dict, outputs: Path,
-                     target: ResolvedTarget, branch: str, merge_base: str,
-                     where: str, gate_hint: str, spawn_executor) -> None:
+                     target: ResolvedTarget, base: str, branch: str,
+                     where: str, spawn_executor) -> None:
+        """Review rounds until a signoff, a consult's merge, or a review
+        every blocking finding of which was refuted.
+
+        Every pass re-takes the merge base first (`_merge_base`, AIWF-104),
+        and the round's reviewer prompt, review set, secrets, gate line and
+        the fix round it funds all read that one. A round is a delta review
+        of the fix range only while the merge base has stood still since
+        the last review (`reviewed_base`, banked beside `reviewed_head`): a
+        branch rebased onto a moved base, or merged with it, rewrote every
+        commit the last round read, so the round reads the whole range
+        again. A phase begun before the base was banked has none, and is
+        read as it always was."""
         phase_id = phase.id
         root = target.work_root
         while True:
@@ -7399,12 +7499,20 @@ class RunLoop:
             # reviewed nothing.
             pending = self._reattach_round("code-reviewer", phase_id)
             r = ps["review_rounds"] + 1 if pending is None else pending
+            merge_base = self._merge_base(phase_id, target.git_root, base,
+                                          branch)
             head = self.git("rev-parse", "HEAD", root=root)
             prev_head = ps.get("reviewed_head")
+            prev_base = ps.get("reviewed_base")
             review_set, review_repos = self._review_set_paragraph(
                 phase, ps, target, merge_base)
             gate_line = self._gate_line(ps, head, target, review_repos)
             delta = bool(r > 1 and prev_head and prev_head != head)
+            if delta and prev_base and prev_base != merge_base:
+                delta = False
+                self.log(f"[P{phase_id}] review round {r} reads the whole "
+                         f"range — the merge base moved since round {r - 1} "
+                         f"({prev_base[:12]} → {merge_base[:12]})")
             secrets = self._review_secrets(
                 phase, outputs, r, root,
                 [(prev_head, head), (merge_base, head)] if delta
@@ -7448,9 +7556,11 @@ class RunLoop:
                 raise Bailout("blocked", phase=phase_id,
                               details=verdict.get("summary", ""))
             # A real verdict: this round is spent, and its HEAD is what the
-            # next round's fix range is measured against.
+            # next round's fix range is measured against — while its merge
+            # base stands.
             ps["review_rounds"] = r
             ps["reviewed_head"] = head
+            ps["reviewed_base"] = merge_base
             self._save_state()
             if verdict["outcome"] == "signoff":
                 return
@@ -7464,19 +7574,21 @@ class RunLoop:
                     outputs, phase_id, r, verdict, fix_range, root)
                 if choice == "merge":
                     return
+            hint = self._gate_hint(target, outputs, merge_base)
             fix_verdict = spawn_executor(
-                lambda vp, _r=r: EXECUTOR_REVIEW_FIX_PROMPT.format(
+                lambda vp, _r=r, _mb=merge_base, _hint=hint:
+                EXECUTOR_REVIEW_FIX_PROMPT.format(
                     phase_id=phase_id, slice_name=self.slice_name,
                     plan_path=self.plan_path, branch=branch,
-                    merge_base=merge_base, where=where,
+                    merge_base=_mb, where=where,
                     review_path=outputs / f"code_review_r{_r}.md",
-                    gate_hint=gate_hint, verdict_path=vp,
+                    gate_hint=_hint, verdict_path=vp,
                     pointers=self._pointers(target, phase_id)))
             self._after_session_plan_check()
             refuted = self._handle_refutations(outputs, phase_id, r,
                                                fix_verdict)
-            self._gate_until_green(phase, ps, outputs, target, branch,
-                                   merge_base, where, spawn_executor)
+            self._gate_until_green(phase, ps, outputs, target, base, branch,
+                                   where, spawn_executor)
             if self._refutation_settles_review(verdict, refuted, ps, root):
                 self.log(f"[P{phase_id}] every blocking finding of round {r} "
                          "was refuted with no code change — review settled")
@@ -10886,13 +10998,23 @@ def run_writer_gate(spec_path: Path) -> int:
     (`RunLoop._reusable_writer_gate`). The exit code is the gate's:
     0 green, 1 red, 3 nothing ran; 2 is no run at all.
 
-    The touched components are the diff from the review's merge base to the
-    tree as it is when the run begins — committed or not, as the gate sees
-    it, where `<merge_base>..HEAD` would miss what the writer has yet to
-    commit. The tree is hashed (`content_tree`) before the first command and
-    after the last, so the record says whether it changed while the run
-    went on. A later run in the same round replaces the record: the driver
-    takes the last one or none."""
+    The merge base, where the gate reads a range (touched components, the
+    spec check), is resolved here when the run begins — `git merge-base
+    <base> HEAD` in the phase's tree, from the base branch the spec names —
+    never read from the spec (AIWF-104): a writer that rebases its branch
+    onto a moved base, or merges the base into it, mid-round would otherwise
+    gate against a base the branch has left, and the base's own commits
+    would read as the phase's. `HEAD`, not the branch's name: the tree as it
+    stands. A spec-repo phase's spec check runs against that merge base
+    (`spec_check_argv`), as the driver's gate runs it against the one it
+    re-takes, so a run against a base that moved after it is another
+    command, which the driver does not reuse. The touched components are
+    the diff from it to the tree as it is when the run begins — committed
+    or not, as the gate sees it, where `<merge_base>..HEAD` would miss what
+    the writer has yet to commit. The tree is hashed (`content_tree`)
+    before the first command and after the last, so the record says
+    whether it changed while the run went on. A later run in the same round
+    replaces the record: the driver takes the last one or none."""
     try:
         spec = json.loads(Path(spec_path).read_text())
     except (OSError, ValueError) as e:
@@ -10909,11 +11031,14 @@ def run_writer_gate(spec_path: Path) -> int:
     started = _now_iso()
     try:
         start = content_tree(work_root)
+        # only a gate that reads a range needs one — a whole repo's does not
+        merge_base = (_git_in(work_root, "merge-base", spec["base"], "HEAD")
+                      if touched is not None or spec["spec_check"] else "")
         components: list[str] = []
         uncovered = False
         if touched is not None:
             changed = _git_in(work_root, "diff", "--name-only",
-                              "--no-renames", touched["merge_base"], start)
+                              "--no-renames", merge_base, start)
             components, uncovered = touched_components(
                 load_project_dirs(gate_cwd), work_root, changed,
                 touched["target"])
@@ -10934,7 +11059,9 @@ def run_writer_gate(spec_path: Path) -> int:
                          "output": output})
         return kc_outcome(returncode)
 
-    check, argv = spec.get("check"), spec.get("argv")
+    check = (spec_check_argv(merge_base, work_root) if spec["spec_check"]
+             else None)
+    argv = spec.get("argv")
     if check:
         outcomes.append((" ".join(check), run(
             check, f"=== the spec check: `{' '.join(check)}` ===")))
