@@ -133,11 +133,11 @@ and what to report back, and its `options` are what they can report, such as `Wo
 **Values are read as written.** A body is YAML read with no implicit typing, so every scalar is the
 string written — `answer: Yes` matches the option `- Yes`, and `answer: 2` is `"2"` — trimmed, and
 an empty one is absent. A list or a mapping where one value is wanted is a fault. Quote a value
-YAML would read as something else: one holding `: ` or ` #`, or opening with a quote, `- `, `[`,
-`{`, `&`, `*`, `!`, `|`, `>`, `%`, `@` or a backtick. A value of several lines is a literal block
-(`|`). A raw carriage return, U+0085, U+2028 or U+2029 within a line of a body or the front matter
-is a fault, since YAML breaks a line there: write it as its escape, `\r`, `\x85`, `\u2028` or
-`\u2029`, in a double-quoted value.
+YAML would read as something else: one holding `: ` or ` #`, or opening with a quote, `#`, `- `,
+`[`, `{`, `&`, `*`, `!`, `|`, `>`, `%`, `@` or a backtick. A value of several lines is a literal
+block (`|`). A raw carriage return, U+0085, U+2028 or U+2029 within a line of a body or the front
+matter is a fault, since YAML breaks a line there: write it as its escape, `\r`, `\x85`, `\u2028`
+or `\u2029`, in a double-quoted value.
 
 ### The answer lines
 
