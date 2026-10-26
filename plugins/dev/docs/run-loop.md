@@ -362,7 +362,8 @@ whole plan is a feature of the review, not a cost. Then:
   it as deterministic fact — green suites are not re-run by agents — under one principle, stated
   in both dispatches with no special cases: **a branch whose gates are red is not pushed**. A
   red sweep is the consult's to act on — append a fixing phase, or bail with the question — and
-  deliberately not driver-enforced. The incident this front-loads: a known-red docs build
+  deliberately not driver-enforced. A flaky red from a test older than the slice, which no phase
+  names, is no exception: it owes the phase that fixes the test. The incident this front-loads: a known-red docs build
   "owed to the doc phase" was answered `complete`, pushed by the test phase, and failed
   in CI — a spent test session and a failed build for a fact knowable at loop-tail entry. The
   sweep runs before the devlock is taken, so its minute never extends the hold.
@@ -560,7 +561,9 @@ go in the close-out report as they are found. One rider holds at every generatio
 residue — comment or formatting fixes with no behaviour change, in files the slice's diff already
 touched — is neither reported nor appended; the finder fixes it in place and commits, and the
 driver's sweep re-runs on any commit it has not seen, which gates the fix before the loop closes
-but never before a push the test phase's own procedure doc orders.
+but never before a push the test phase's own procedure doc orders. Residue a reviewer already
+entered in the report is fixed the same way: the consult fixes it and strikes the entry as
+resolved by its commit.
 
 **Close-out.** Nothing from a run is carded per finding: everything an agent noticed but the
 loop did not act on is in the slice's close-out report — who writes what there is

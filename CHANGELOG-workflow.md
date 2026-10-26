@@ -4,6 +4,19 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-26 — The consult fixes residue already in the report, and a flaky old test owes its fix (v0.9.140)
+
+The completion consult's prompt said mechanical residue is fixed in the session, neither reported
+nor appended. It was silent on two cases a consult met in PilotApp slice 020 and settled on its
+own judgement. The first was residue a reviewer had already entered in the close-out, which the
+table routes to the wrap-up to fix. The second was a flaky RED row from a test older than the
+slice, which the plan never names.
+
+The prompt now settles both. Mechanical residue that is already an entry is fixed in the session
+like any other, and its entry struck as resolved by the consult's commit. The red stance says a
+test older than the slice, which no phase names, is no exception: a flaky RED row from it owes the
+phase that fixes the test. run-loop.md says the same. AIWF-111.
+
 ## 2026-10-26 — A phase's merge base is re-taken at every read, so a writer's rebase moves its range (v0.9.139)
 
 The driver took a phase's merge base once, when it entered the phase, and re-took it only after

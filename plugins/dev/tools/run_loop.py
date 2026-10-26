@@ -2818,8 +2818,11 @@ close_out.py (its path and its verbs' arguments are in this prompt) and
 never by editing the file: strike, `--by "consult <n>"`, what you absorbed
 into an appended phase (`--reason "absorbed by P<x> (<commit>)"`),
 duplicates you are sure of (`--reason "duplicate of B3"`), and what a phase
-resolved (`--reason "resolved by P<x> (<commit>): <what was re-run>"`);
-record any other observation about an entry with `note`. If nothing is
+resolved (`--reason "resolved by P<x> (<commit>): <what was re-run>"`).
+Mechanical residue that is already an entry, as the exception above defines
+residue, is fixed in this session like any other, and its entry struck as
+resolved by your commit (`--reason "resolved by <commit>: <what changed>"`).
+Record any other observation about an entry with `note`. If nothing is
 outstanding, answer `complete`.\
 """
 
@@ -2893,7 +2896,8 @@ pushed — and the test phase, which runs next, is where this slice is
 pushed. A RED row above is therefore outstanding work on this consult's
 table: append a phase that fixes it, or answer `bail` with the question.
 Either is acceptable; what `complete` asserts is that the tree is pushable
-exactly as it stands.\
+exactly as it stands. A test older than this slice, which no phase names, is
+no exception: a flaky RED row from it owes the phase that fixes the test.\
 """
 
 SWEEP_STANCE_TEST_GREEN = """\
