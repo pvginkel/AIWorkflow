@@ -4,6 +4,31 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-27 — The phase gate lints what it tests (v0.9.145)
+
+The run loop's phase gate ran only `kc project test` for each project it gated, Playwright for a
+frontend. So a frontend's `pnpm check` (eslint, `tsc -b`, knip) was not in it. Plans said "tsc
+is green at this phase's gate", and the code reviewer's dispatch said the gate ran GREEN and was
+not to be re-run. So a reviewer ran lint by hand, or static errors waited for the loop-tail
+sweep (PilotApp slices 008 P10 and 020 P9, whose gate logs show only the Playwright run).
+
+Beside each `kc project test` it runs, the gate now runs the same project's `kc project lint`,
+into the same log. That covers the Target and every touched component. `Target: root` takes
+root's two steps, decided apart from the test's. A whole-repo sibling, and a spec repo that
+carries a manifest, run a bare lint after their test. A red lint is the gate's red and a fix
+round. A lint that ran nothing is skipped: it neither reds the gate nor makes a gate green whose
+tests ran nothing. An `accept` ruling on a component's lint, which is how a repo whose
+environment cannot run that lint already gets past the sweep, keeps the lint from running at
+the phase gate. It is recorded `accepted` and entered once in the report, and an `accept` still
+never covers tests there. `gate_spec.json` carries the lint commands, so the writer's `gate`
+wrapper runs them and the AIWF-93 reuse holds.
+
+`gate_projects` gives each entry a `lint` slot, and a whole-repo Target now records its one
+entry. The reviewer's green paragraph says the lint is clean only where a lint ran green, and
+it names a lint an `accept` ruling kept from running. The fix round's prompt, the gate hint and
+the reuse hint no longer speak of tests alone. run-loop.md, runner-state.md and the
+code-reviewer's definition say so. AIWF-105.
+
 ## 2026-10-26 — Reviewers and consults may relabel, and a note on a closed entry comes back to the wrap-up (v0.9.144)
 
 In PilotApp slice 008, a P15 reviewer found that B16's labels were wrong. Its impact was `none`,

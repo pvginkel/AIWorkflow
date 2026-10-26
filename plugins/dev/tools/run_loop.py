@@ -236,8 +236,8 @@ SETUP_TIMEOUT = 900
 SESSION_ID_POLL = 5
 
 # The loop-tail sweep and the doc gate run all three verbs; the per-phase
-# gate stays test-only (lint/build breakage there surfaces at loop tail,
-# where fixing it costs one phase instead of a per-phase tax).
+# gate runs test and lint (AIWF-105), and build breakage there surfaces at
+# loop tail, where fixing it costs one phase instead of a per-phase tax.
 SWEEP_VERBS = ("lint", "build", "test")
 
 # What a sweep `test` row keeps of its run beside kc's lines (AIWF-94). A
@@ -276,7 +276,7 @@ NOTHING_RAN_HINT = ("Exit 3 is kc's \"nothing ran\" — not red, nothing to "
 GATE_REUSE_HINT = ("When its last run is green on the tree you hand back — "
                    "unchanged since that run began; committing changes "
                    "nothing, any edit does — the driver takes that run as "
-                   "its gate and runs no suite again")
+                   "its gate and runs none of it again")
 
 # The writer runs the phase gate through the driver's own wrapper (`run_loop.py
 # gate <spec>`, `run_writer_gate`): the spec, written into the phase's outputs
@@ -306,9 +306,11 @@ def writer_gate_record_name(round_: int) -> str:
 
 
 # The component `Target: root` names — the repo as a whole to a plan's
-# authors — and the gate it falls back to when root declares no tests.
+# authors — and the gate it falls back to when root declares no tests, or,
+# for the lint beside it, no lint.
 ROOT_COMPONENT = "root"
 REPO_GATE_ARGV = ["kc", "project", "test"]
+REPO_LINT_ARGV = ["kc", "project", "lint"]
 
 GATE_FIX_CAP = 3       # executor fix rounds against a red gate, per phase
 # Nudges at the test session over a repo it committed to but never pushed.
@@ -1642,6 +1644,34 @@ def component_gate_argv(name: str) -> list[str]:
     return ["kc", "project", "test", "--project", name]
 
 
+def component_lint_argv(name: str) -> list[str]:
+    """The lint the phase gate runs beside a component's test (AIWF-105)."""
+    return ["kc", "project", "lint", "--project", name]
+
+
+def lint_twin(test_argv: list[str]) -> list[str]:
+    """The `kc project lint` over the scope a phase-gate `kc project test`
+    covers — one component's, or the whole repo's (AIWF-105). Every test
+    command the phase gate runs is one of those two shapes."""
+    return [*test_argv[:2], "lint", *test_argv[3:]]
+
+
+# A `gate_projects` entry's outcome; its `lint`'s (AIWF-105) is one of these
+# or `accepted`, not run because an accept ruling covers it.
+GATE_ENTRY_OUTCOMES = ("green", "red", "nothing_ran", "waived")
+GATE_LINT_OUTCOMES = (*GATE_ENTRY_OUTCOMES, "accepted")
+
+
+def gate_entry_cmds(entry: dict) -> list[tuple[str, str]]:
+    """A `gate_projects` entry's commands with their outcomes, in the order
+    the gate ran them: the test (or the spec check), then the lint beside
+    it — none on the spec check's entry, nor on one recorded before the
+    gate linted."""
+    lint = entry.get("lint")
+    return [(entry["cmd"], entry["outcome"]),
+            *([(lint["cmd"], lint["outcome"])] if lint else [])]
+
+
 def spec_check_argv(base: str, work_root: Path) -> list[str]:
     """The spec check over what a spec-repo phase changed since `base` in
     the tree at `work_root` (AIWF-68): the plugin's own tool, from the tools
@@ -1754,7 +1784,10 @@ def gate_spec_problem(spec) -> str | None:
     """What makes `spec` no gate spec (`RunLoop._write_gate_spec`), None
     when it is one. `base` is the base branch the wrapper resolves the
     phase's merge base against (AIWF-104), and `spec_check` whether the
-    gate opens with the spec check."""
+    gate opens with the spec check. `lint_argv` and `lint_fallback`, the
+    lint beside the Target's test (AIWF-105), and `touched.lint_accepted`,
+    the components whose lint an accept ruling keeps from running, are
+    absent from a spec an older driver wrote, whose gate lints nothing."""
     problem = _shape_problem(spec, {"phase": str, "round": int,
                                     "work_root": str, "gate_cwd": str,
                                     "base": str, "spec_check": bool})
@@ -1766,13 +1799,19 @@ def gate_spec_problem(spec) -> str | None:
     if not _is_argv(spec.get("argv")) \
             and not (spec.get("argv") is None and spec["spec_check"]):
         return "`argv` is not a command"
-    if spec.get("fallback") is not None and not _is_argv(spec["fallback"]):
-        return "`fallback` is not a command"
+    for key in ("fallback", "lint_argv", "lint_fallback"):
+        if spec.get(key) is not None and not _is_argv(spec[key]):
+            return f"`{key}` is not a command"
     touched = spec.get("touched")
     if touched is not None:
         problem = _shape_problem(touched, {"target": str, "waived": list})
         if problem or not all(isinstance(c, str) for c in touched["waived"]):
             return f"`touched` is off-shape: {problem or 'waived'}"
+        accepted = touched.get("lint_accepted")
+        if accepted is not None and not (
+                isinstance(accepted, list)
+                and all(isinstance(c, str) for c in accepted)):
+            return "`touched` is off-shape: lint_accepted"
     return None
 
 
@@ -2410,11 +2449,11 @@ rebased.
 # component Target's gate also runs each component its diff touches (AIWF-91),
 # and the red may be one of those rather than the Target's own.
 EXECUTOR_GATE_FIX_PROMPT = """\
-The test gate for phase P{phase_id} of slice {slice_name} is red (branch
+The gate for phase P{phase_id} of slice {slice_name} is red (branch
 {branch}, fix round {round}). The plan: {plan_path}, digested below.
 
-The gate went red on {red_cmds}; its output is in {gate_log}. The gate is
-fail-fast and terse, so the log ends at the FIRST failing statement — there
+The gate went red on {red_cmds}; its output is in {gate_log}. Each command is
+fail-fast and terse, so its output ends at its FIRST failing statement — there
 may be more behind it. The phase's work so far is git diff
 {merge_base}..HEAD{where}. Make the gate green without weakening what it
 checks; run the gate yourself before handing back{gate_hint}. Commit your
@@ -2621,21 +2660,35 @@ nothing toward its outcome.\
 # cover (GATE_COVERS_SENTENCE) — a component Target's gate also runs every
 # component its diff touches (AIWF-91: PilotApp's `Target: frontend` phase
 # committed backend code and tests, and its reviewer was told GREEN about
-# frontend's suite alone) — and is empty for a gate that recorded no projects
-# (a whole-repo Target, or a phase begun on an older plugin).
+# frontend's suite alone) — and is empty for a whole-repo Target or a phase
+# begun on an older plugin. The green commands include each project's lint
+# that ran clean beside its test (AIWF-105); the paragraph says the lint is
+# clean only where one did (GATE_LINT_WORDS), and names a lint an accept
+# ruling kept from running (GATE_LINT_ACCEPTED_SENTENCE, `{accepted}`).
 GATE_GREEN_LINE = """\
 The deterministic test gate ran GREEN on this exact commit ({green_at}):
-{gate_cmds} in {gate_repo} — with full output in {gate_log}.{covers} The tests
-pass; that is an established input to your review, not something to
-re-derive. Do not re-run the suite to confirm it. Targeted runs remain
-yours to make where they buy a finding: a single test you suspect is vacuous,
-a case the diff leaves uncovered, a mutation that proves a test actually
-catches the behavior it claims. The green says the tests pass, never that
-they are adequate.\
+{gate_cmds} in {gate_repo} — with full output in {gate_log}.{covers}{accepted} The tests
+pass{lint_clause}; that is an established input to your review, not
+something to re-derive. Do not re-run {rerun_what} to confirm it.
+Targeted runs remain yours to make where they buy a finding: a single test
+you suspect is vacuous, a case the diff leaves uncovered, a mutation that
+proves a test actually catches the behavior it claims. The green says the
+tests pass, never that they are adequate.\
 """
+
+# GATE_GREEN_LINE's `{lint_clause}` and `{rerun_what}`, by whether any lint
+# in the gate's record ran clean.
+GATE_LINT_WORDS = {True: (" and the lint is clean", "the suite or the lint"),
+                   False: ("", "the suite")}
 
 GATE_COVERS_SENTENCE = """ It covers
 {covered}: the phase's Target and every project its diff touches."""
+
+# A lint an `accept` ruling covers is not run at the phase gate (AIWF-105):
+# the green names it, so the reviewer does not read the lint as clean there.
+# `{projects}` is backticked names, joined as GATE_COVERS_SENTENCE joins them.
+GATE_LINT_ACCEPTED_SENTENCE = """ The lint of {projects} was not run:
+plan.md's `## Driver rulings` accepts its red."""
 
 # What a spec-repo phase's green says of its spec check (AIWF-68): shape, not
 # content — so the review of what the files say is still the reviewer's.
@@ -4580,9 +4633,15 @@ class RunLoop:
         elif ruling.kind == "accept":
             headline = (f"Red row accepted by ruling: {ruling.target} "
                         f"{ruling.verb}")
-            consequence = (f"`kc project {ruling.verb}` is red for "
-                           f"{ruling.target} in the tree this slice leaves; "
-                           "the driver let it through on the ruling.")
+            # First met at a phase gate, the lint was not run (AIWF-105):
+            # nothing has shown it red, nor clean.
+            consequence = (
+                f"`kc project {ruling.verb}` for {ruling.target} was not run "
+                "at the phase gate, on the ruling; nothing in this run has "
+                "shown it clean." if where == "phase gate" else
+                f"`kc project {ruling.verb}` is red for {ruling.target} in "
+                "the tree this slice leaves; the driver let it through on "
+                "the ruling.")
         else:
             headline = f"prd authorized by ruling: {ruling.target}"
             consequence = ("the test phase was told pushing and rolling prd "
@@ -5670,7 +5729,29 @@ class RunLoop:
         known; one a gate ruling covers is waived, not run. `gate_projects`
         records each project's command and outcome, the Target first, and
         the gate's outcome is theirs together: red on any red, else green on
-        any green, else nothing ran. A whole-repo Target records none.
+        any green, else nothing ran. A whole-repo Target records its one
+        entry.
+
+        Every project the gate tests is linted beside it (AIWF-105 — PilotApp
+        slices 008 P10 and 020 P9: the gate ran frontend's Playwright suite
+        alone, so its `pnpm check` — eslint, `tsc -b`, knip — was never
+        gated, while the plans said tsc was green at the phase's gate and
+        the reviewer was told not to re-run it): `kc project lint` over the
+        test's own scope right after it, into the same log, recorded as the
+        entry's `lint`. `Target: root` lints in the same two steps as it
+        tests, each step taken on its own verb's outcome. A red lint reds
+        the gate, a fix round like a red test; a lint that ran nothing is a
+        project with no lint to run, and neither reds the gate, nor makes it
+        nothing ran, nor is named uncovered; a clean one never makes green
+        a gate whose tests ran nothing. A waived project's lint is waived
+        with its test — a gate ruling waives the whole gate. A lint an
+        `accept` ruling covers is not run at all (`_lint_accepted`): an
+        environment that cannot run a repo's lint gets past the sweep and
+        the tool check on accept rulings for lint (Ansible slice 033), and
+        without this the phase gate would red, or bail missing_tools, at
+        every phase there. It is recorded `accepted` and, like a lint that
+        ran nothing, plays no part in the gate's outcome. An accept ruling
+        never covers a test here.
 
         The writer runs this same gate before it hands back, through the
         `gate` wrapper, and the driver used to run it again on the tree the
@@ -5707,11 +5788,12 @@ class RunLoop:
                    if self._gates_touched(target) else None)
         gates = ([(r, t) for r, t in self._current_rulings()
                   if r.kind == "gate"] if touched is not None else [])
+        accepts = self._lint_accepts() if argv is not None else []
         record_path = outputs / writer_gate_record_name(ps["executor_rounds"])
         replay = tree = None
         if record_path.exists():
-            record, found = self._reusable_writer_gate(record_path, target,
-                                                       touched, gates, check)
+            record, found = self._reusable_writer_gate(
+                record_path, target, touched, gates, check, accepts)
             if record is None:
                 self.log(f"[P{phase_id}] the writer's gate run "
                          f"({record_path.name}) not reused — {found}; "
@@ -5723,17 +5805,17 @@ class RunLoop:
         also = (f", and for the components the phase's diff touches: "
                 f"{', '.join(touched)}" if touched else "")
         if replay is None:
-            running = ", then ".join(" ".join(a) for a in (check, argv) if a)
+            running = ", then ".join(
+                " ".join(a) for a in (check, argv, argv and lint_twin(argv))
+                if a)
             self.log(f"[P{phase_id}] gate #{n} running ({running})" + also)
         else:
             self.log(f"[P{phase_id}] gate #{n} reusing the writer's run "
                      f"({record_path.name}) — tree {tree[:12]} unchanged "
                      "since it began" + also)
         t0 = time.monotonic()
-        projects: list[dict] | None = None
-        tails: list[str] = []
-        if touched is not None or check is not None:
-            projects = []
+        projects: list[dict] = []
+        runs: list[tuple[str, str]] = []   # (outcome, tail), command by command
         with open(log_path, "w") as log_file:
             if replay is not None:
                 log_file.write(f"=== the writer's run of this gate, reused: "
@@ -5743,56 +5825,48 @@ class RunLoop:
             if check is not None:
                 log_file.write(f"=== the spec check: `{' '.join(check)}` "
                                "===\n")
-                outcome, tail = self._gate_cmd_outcome(
+                runs.append(self._gate_cmd_outcome(
                     phase_id, check, target, log_file, log_path, replay,
-                    kc=False)
+                    kc=False))
                 projects.append({"project": SPEC_CHECK_NAME,
-                                 "cmd": " ".join(check), "outcome": outcome})
-                tails.append(tail)
+                                 "cmd": " ".join(check),
+                                 "outcome": runs[-1][0]})
             if argv is not None:
                 if check is not None:
                     log_file.write(f"\n=== `{' '.join(argv)}` from "
                                    f"{target.gate_cwd} ===\n")
-                outcome, tail = self._gate_cmd_outcome(
-                    phase_id, argv, target, log_file, log_path, replay)
-                if outcome == "nothing_ran" and self._is_root(target):
-                    self.log(f"[P{phase_id}] `{' '.join(argv)}` ran nothing "
-                             "— root declares no tests, so the gate is the "
-                             f"whole repo: `{' '.join(REPO_GATE_ARGV)}`")
-                    argv = REPO_GATE_ARGV
-                    log_file.write(f"\n=== `{' '.join(target.gate_argv)}` ran "
-                                   "nothing (exit 3) — the gate is the whole "
-                                   f"repo: `{' '.join(argv)}` ===\n")
-                    log_file.flush()
-                    outcome, tail = self._gate_cmd_outcome(
-                        phase_id, argv, target, log_file, log_path, replay)
-                if projects is not None:
-                    projects.append({"project": target.name,
-                                     "cmd": " ".join(argv),
-                                     "outcome": outcome})
-                    tails.append(tail)
+                lint = lint_twin(argv)
+                argv, outcome = self._gate_target_verb(
+                    phase_id, argv, target, log_file, log_path, replay, runs)
+                lint, lint_outcome = self._gate_target_verb(
+                    phase_id, lint, target, log_file, log_path, replay, runs,
+                    accepts=accepts)
+                projects.append({"project": target.name,
+                                 "cmd": " ".join(argv), "outcome": outcome,
+                                 "lint": {"cmd": " ".join(lint),
+                                          "outcome": lint_outcome}})
                 for component in touched or ():
-                    entry, extra_tail = self._gate_touched_component(
-                        phase_id, component, target, gates, log_file,
-                        log_path, replay)
-                    projects.append(entry)
-                    tails.append(extra_tail)
+                    projects.append(self._gate_touched_component(
+                        phase_id, component, target, gates, accepts,
+                        log_file, log_path, replay, runs))
         duration_s = int(time.monotonic() - t0)
         gate_cmd = " ".join(argv or check)
         ps["gate_cmd"] = gate_cmd
-        ran = gate_cmd
-        if projects is not None:
-            ps["gate_projects"] = projects
-            outcomes = [p["outcome"] for p in projects]
-            outcome = ("red" if "red" in outcomes
-                       else "green" if "green" in outcomes else "nothing_ran")
-            # the first red command's tail, else the first command's
-            tail = next((t for p, t in zip(projects, tails, strict=True)
-                         if p["outcome"] == "red"), tails[0])
-            if len(projects) > 1:
-                ran = "; ".join(
-                    f"{p['cmd']} {GATE_OUTCOME_LABELS[p['outcome']]}"
-                    for p in projects if p["outcome"] != "waived")
+        ps["gate_projects"] = projects
+        # A lint reds the gate and does nothing else: its green never makes
+        # a gate green whose tests ran nothing, and its nothing-ran is a
+        # project with no lint to run.
+        tests = [p["outcome"] for p in projects]
+        everything = [o for p in projects for _, o in gate_entry_cmds(p)]
+        outcome = ("red" if "red" in everything
+                   else "green" if "green" in tests else "nothing_ran")
+        # the first red command's tail, else the first command's
+        tail = next((t for o, t in runs if o == "red"), runs[0][1])
+        # every test that was run, and every lint that ran green or red
+        ran = [f"{cmd} {GATE_OUTCOME_LABELS[o]}"
+               for p in projects for i, (cmd, o) in enumerate(gate_entry_cmds(p))
+               if o in ("green", "red") or (i == 0 and o == "nothing_ran")]
+        ran_text = "; ".join(ran) if len(ran) > 1 else gate_cmd
         if outcome == "green":
             ps["gate_green_commit"] = self.git("rev-parse", "HEAD",
                                                root=target.work_root)
@@ -5800,36 +5874,114 @@ class RunLoop:
         elif outcome == "nothing_ran":
             ps["gate_nothing_ran_commit"] = self.git("rev-parse", "HEAD",
                                                      root=target.work_root)
+        extra = {"projects": projects}
+        if replay:
+            extra["reused"] = str(record_path)
         self._record(phase_id, "gate", n, outcome, tail, None, duration_s,
-                     extra=({"reused": str(record_path)} if replay else None))
+                     extra=extra)
         self.log(f"[P{phase_id}] gate #{n} → "
                  f"{GATE_OUTCOME_LABELS[outcome]} ({duration_s}s, "
-                 f"{ran}) {tail[:120]}")
+                 f"{ran_text}) {tail[:120]}")
         if outcome == "nothing_ran":
             what = ("the repo" if self._is_root(target) else
                     ", ".join(p["project"] for p in projects
-                              if p["outcome"] == "nothing_ran")
-                    if projects else target.name)
+                              if p["outcome"] == "nothing_ran"))
             self.log(f"[P{phase_id}] {what} defines no tests — "
                      "proceeding as with no gate (reviewer told unverified)")
         return outcome != "red", log_path
 
+    def _gate_target_verb(self, phase_id: str, argv: list[str],
+                          target: ResolvedTarget, log_file, log_path: Path,
+                          replay: Callable | None, runs: list,
+                          accepts: list | None = None
+                          ) -> tuple[list[str], str]:
+        """The Target's test, or — given `accepts`, the accept rulings on
+        lint — the lint beside it (AIWF-105), run into the gate's log, its
+        (outcome, tail) appended to `runs`: (the command whose outcome
+        stands, that outcome). `Target: root` takes two steps on each verb,
+        each on its own outcome — root's own statement, then the bare `kc
+        project <verb>`, every component once, only when that ran nothing;
+        the second step's run takes the first's place in `runs`, so the
+        history row's summary is the standing command's. A lint an accept
+        ruling covers is not run (`_lint_accepted`), and stands `accepted`:
+        root's own by a ruling on root or the repo, the bare one by any
+        ruling in the repo, as `_covering` reads a whole-repo command. The
+        lint is never the gate's first command, so it opens under a header
+        of its own."""
+        lint = accepts is not None
+        if lint:
+            ruling = self._target_lint_ruling(accepts, target)
+            if ruling is not None:
+                self._lint_accepted(phase_id, argv, ruling, log_file)
+                return argv, "accepted"
+            log_file.write(f"\n=== `{' '.join(argv)}` from {target.gate_cwd} "
+                           "===\n")
+        runs.append(self._gate_cmd_outcome(phase_id, argv, target, log_file,
+                                           log_path, replay))
+        if runs[-1][0] != "nothing_ran" or not self._is_root(target):
+            return argv, runs[-1][0]
+        whole, noun, gate = ((REPO_LINT_ARGV, "lint", "the gate lints") if lint
+                             else (REPO_GATE_ARGV, "tests", "the gate is"))
+        if lint and (ruling := self._covering(accepts, target.git_root,
+                                              None)) is not None:
+            self._lint_accepted(phase_id, whole, ruling, log_file)
+            return list(whole), "accepted"
+        self.log(f"[P{phase_id}] `{' '.join(argv)}` ran nothing — root "
+                 f"declares no {noun}, so {gate} the whole repo: "
+                 f"`{' '.join(whole)}`")
+        log_file.write(f"\n=== `{' '.join(argv)}` ran nothing (exit 3) — "
+                       f"{gate} the whole repo: `{' '.join(whole)}` ===\n")
+        log_file.flush()
+        runs[-1] = self._gate_cmd_outcome(phase_id, whole, target, log_file,
+                                          log_path, replay)
+        return list(whole), runs[-1][0]
+
+    def _lint_accepts(self) -> list[tuple[Ruling, ResolvedTarget]]:
+        """The accept rulings on `lint` as plan.md stands now: the phase
+        gate's lint they cover is not run (AIWF-105)."""
+        return [(r, t) for r, t in self._current_rulings()
+                if r.kind == "accept" and r.verb == "lint"]
+
+    def _target_lint_ruling(self, accepts: list,
+                            target: ResolvedTarget) -> Ruling | None:
+        """The accept ruling that keeps the Target's own lint from running,
+        if any — a whole repo's by any ruling in it."""
+        return self._covering(accepts, target.git_root,
+                              target.name if target.kind == "project" else None)
+
+    def _lint_accepted(self, phase_id: str, argv: list[str], ruling: Ruling,
+                       log_file, where: str = "") -> None:
+        """A lint an accept ruling covers, not run at the phase gate
+        (AIWF-105): said in the gate's log — under `where`'s header, a
+        touched component's — and the narration, and the ruling reported
+        the first time it takes effect, as a gate ruling is."""
+        cmd = " ".join(argv)
+        self.log(f"[P{phase_id}] `{cmd}` not run — plan.md's `## Driver "
+                 f"rulings` accepts its red ({ruling.why})")
+        self._report_ruling(ruling, "phase gate")
+        log_file.write(f"\n=== {where}`{cmd}` not run: plan.md's `## Driver "
+                       f"rulings` accepts its red ({ruling.why}) ===\n")
+        log_file.flush()
+
     def _reusable_writer_gate(self, path: Path, target: ResolvedTarget,
                               touched: list[str] | None, gates: list,
-                              check: list[str] | None = None
+                              check: list[str] | None = None,
+                              accepts: list | None = None
                               ) -> tuple[dict | None, str]:
         """(the record, the tree it ran on) when the writer's recorded gate
         run at `path` can stand for this gate, else (None, why not) — the
         checks cheapest first, the tree's hash last. It stands only where it
         ran in the phase's tree, ran exactly the commands this gate would
         run now — the spec check (`check`, a spec-repo phase's), the
-        Target's, the whole repo after an empty root, each touched component
-        no gate ruling covers, in that order — none of them red, and on a
-        tree that has not changed since it began: a change during the run,
-        or after it, is a tree the run did not see. The check's `--base` and
-        the touched set both come from the merge base this gate re-took, so
-        a run against a base that has moved since is not this gate's
-        commands (AIWF-104)."""
+        Target's test and then its lint, each followed by the whole repo's
+        after an empty root, then each touched component no gate ruling
+        covers, its test and then its lint (AIWF-105), in that order, no
+        lint an accept ruling covers (`accepts`) among them — none of them
+        red, and on a tree that has not changed since it began: a
+        change during the run, or after it, is a tree the run did not see.
+        The check's `--base` and the touched set both come from the merge
+        base this gate re-took, so a run against a base that has moved since
+        is not this gate's commands (AIWF-104)."""
         try:
             record = json.loads(path.read_text())
         except (OSError, ValueError) as e:
@@ -5843,14 +5995,25 @@ class RunLoop:
                 return None, f"it ran in {record[key]}, the gate runs in {here}"
         commands = record["commands"]
         expected = [list(check)] if check else []
-        if target.gate_argv is not None:
-            own = len(expected)
-            expected.append(list(target.gate_argv))
-            if self._is_root(target) and len(commands) > own \
-                    and commands[own]["rc"] == KC_NOTHING_RAN:
-                expected.append(list(REPO_GATE_ARGV))
-        expected += [component_gate_argv(c) for c in touched or ()
-                     if self._covering(gates, target.git_root, c) is None]
+        argv, accepts = target.gate_argv, accepts or []
+        root = target.git_root
+        if argv is not None:
+            steps = [(argv, REPO_GATE_ARGV, False)]
+            if self._target_lint_ruling(accepts, target) is None:
+                steps.append((lint_twin(argv), REPO_LINT_ARGV,
+                              self._covering(accepts, root, None) is not None))
+            for own, whole, whole_accepted in steps:
+                at = len(expected)
+                expected.append(list(own))
+                if self._is_root(target) and not whole_accepted \
+                        and len(commands) > at \
+                        and commands[at]["rc"] == KC_NOTHING_RAN:
+                    expected.append(list(whole))
+        for c in touched or ():
+            if self._covering(gates, root, c) is None:
+                expected.append(component_gate_argv(c))
+                if self._covering(accepts, root, c) is None:
+                    expected.append(component_lint_argv(c))
         ran = [c["argv"] for c in commands]
         if ran != expected:
             return None, (f"it ran {_ticked([' '.join(a) for a in ran])}, "
@@ -5944,17 +6107,18 @@ class RunLoop:
 
     def _gate_touched_component(self, phase_id: str, component: str,
                                 target: ResolvedTarget, gates: list,
-                                log_file, log_path: Path,
-                                replay: Callable | None = None
-                                ) -> tuple[dict, str]:
+                                accepts: list, log_file, log_path: Path,
+                                replay: Callable | None, runs: list) -> dict:
         """One component the phase's diff touches, gated as the Target is —
-        `kc project test --project <c>` from the Target's tree, into the
-        same log under a header — or, where a gate ruling covers it, waived
-        unrun as `_phase_gate` waives a Target: its `gate_projects` entry,
-        and the log's last line for the history row's summary. `replay` is
+        `kc project test --project <c>`, then the lint beside it (AIWF-105),
+        from the Target's tree, into the same log, each under a header, each
+        run's (outcome, tail) appended to `runs` — or, where a gate ruling
+        covers it, both waived unrun as `_phase_gate` waives a Target; a
+        lint an accept ruling covers alone is not run (`_lint_accepted`).
+        Its `gate_projects` entry either way. `replay` is
         `_gate_cmd_outcome`'s."""
-        argv = component_gate_argv(component)
-        cmd = " ".join(argv)
+        argv, lint = component_gate_argv(component), component_lint_argv(component)
+        cmd, lint_cmd = " ".join(argv), " ".join(lint)
         ruling = self._covering(gates, target.git_root, component)
         if ruling is not None:
             self.log(f"[P{phase_id}] test gate for {component} (the phase's "
@@ -5963,17 +6127,28 @@ class RunLoop:
                      "run")
             self._report_ruling(ruling, "phase gate")
             log_file.write(f"\n=== the phase's diff touches {component}: "
-                           f"`{cmd}` waived by plan.md's `## Driver rulings` "
-                           f"(substitute: {ruling.substitute_text}) — not run "
-                           "===\n")
+                           f"`{cmd}` and `{lint_cmd}` waived by plan.md's `## "
+                           f"Driver rulings` (substitute: "
+                           f"{ruling.substitute_text}) — not run ===\n")
             log_file.flush()
-            return {"project": component, "cmd": cmd, "outcome": "waived"}, ""
-        log_file.write(f"\n=== the phase's diff touches {component}: "
-                       f"`{cmd}` ===\n")
-        log_file.flush()
-        outcome, tail = self._gate_cmd_outcome(phase_id, argv, target,
-                                               log_file, log_path, replay)
-        return {"project": component, "cmd": cmd, "outcome": outcome}, tail
+            return {"project": component, "cmd": cmd, "outcome": "waived",
+                    "lint": {"cmd": lint_cmd, "outcome": "waived"}}
+        where = f"the phase's diff touches {component}: "
+        outcomes = []
+        for verb_argv, linting in ((argv, False), (lint, True)):
+            ruling = (self._covering(accepts, target.git_root, component)
+                      if linting else None)
+            if ruling is not None:
+                self._lint_accepted(phase_id, lint, ruling, log_file, where)
+                outcomes.append("accepted")
+                continue
+            log_file.write(f"\n=== {where}`{' '.join(verb_argv)}` ===\n")
+            log_file.flush()
+            runs.append(self._gate_cmd_outcome(phase_id, verb_argv, target,
+                                               log_file, log_path, replay))
+            outcomes.append(runs[-1][0])
+        return {"project": component, "cmd": cmd, "outcome": outcomes[0],
+                "lint": {"cmd": lint_cmd, "outcome": outcomes[1]}}
 
     def _gate_cmd_outcome(self, phase_id: str, argv: list[str],
                           target: ResolvedTarget, log_file,
@@ -6117,10 +6292,14 @@ class RunLoop:
         too (AIWF-91): the green names every green command and the projects
         they cover, and closes on those the gate does not cover — ran
         nothing, or waived — by name; the nothing-ran reason names every
-        command that ran nothing. No `gate_projects` on record (a whole-repo
-        Target, a phase begun on an older plugin) is the Target's command
-        alone, as before. A spec-repo phase's green names its spec check
-        among the commands, and says what the check proves (AIWF-68)."""
+        command that ran nothing. No `gate_projects` on record (a phase
+        begun on an older plugin) is the Target's command alone, as before.
+        A spec-repo phase's green names its spec check among the commands,
+        and says what the check proves (AIWF-68). Each project's lint that
+        ran clean is named beside its test (AIWF-105), and the paragraph
+        says the lint is clean only where one did; one that ran nothing is a
+        project with no lint, and is not named at all; one an accept ruling
+        kept from running is named as not run."""
         gate_cmd = ps.get("gate_cmd") or " ".join(target.gate_argv or [])
         projects = self._gate_projects(ps)
         green_at = ps.get("gate_green_commit")
@@ -6135,10 +6314,21 @@ class RunLoop:
                       if covered and self._gates_touched(target) else "")
             if len(covered) < len(green):
                 covers = GATE_SPEC_CHECK_SENTENCE + covers
+            lints = {p["project"]: p["lint"]["outcome"] for p in projects
+                     if p.get("lint")}
+            accepted = [f"`{name}`" for name, o in lints.items()
+                        if o == "accepted"]
+            lint_clause, rerun_what = GATE_LINT_WORDS["green" in lints.values()]
             line = GATE_GREEN_LINE.format(
                 green_at=green_at[:12],
-                gate_cmds=_ticked([p["cmd"] for p in green] or [gate_cmd]),
-                covers=covers, gate_repo=target.gate_cwd, gate_log=gate_log)
+                gate_cmds=_ticked([cmd for p in projects
+                                   for cmd, o in gate_entry_cmds(p)
+                                   if o == "green"] or [gate_cmd]),
+                covers=covers,
+                accepted=(GATE_LINT_ACCEPTED_SENTENCE.format(
+                    projects=", ".join(accepted)) if accepted else ""),
+                lint_clause=lint_clause, rerun_what=rerun_what,
+                gate_repo=target.gate_cwd, gate_log=gate_log)
             uncovered = [f"{p['project']} ({GATE_UNCOVERED_WHY[p['outcome']]})"
                          for p in projects
                          if p["outcome"] in GATE_UNCOVERED_WHY]
@@ -6166,25 +6356,32 @@ class RunLoop:
     @staticmethod
     def _gate_projects(ps: dict) -> list[dict]:
         """The projects the phase's last gate run took in (`gate_projects`),
-        read leniently: none recorded — a whole-repo Target, a phase begun
-        on a plugin before AIWF-91 — or a record off-shape is none, and
-        every reader falls back to the Target's `gate_cmd` alone."""
+        read leniently: none recorded — a phase begun on a plugin before
+        AIWF-91, or a whole-repo Target's before AIWF-105 — or a record
+        off-shape is none, and every reader falls back to the Target's
+        `gate_cmd` alone. An entry without `lint` is one recorded before the
+        gate linted (AIWF-105): its test is all it ran."""
+        def lint_ok(lint) -> bool:
+            return lint is None or (isinstance(lint, dict)
+                                    and isinstance(lint.get("cmd"), str)
+                                    and lint.get("outcome") in GATE_LINT_OUTCOMES)
+
         projects = ps.get("gate_projects")
         if not isinstance(projects, list) or not all(
                 isinstance(p, dict) and isinstance(p.get("project"), str)
                 and isinstance(p.get("cmd"), str)
-                and p.get("outcome") in ("green", "red", "nothing_ran",
-                                         "waived")
+                and p.get("outcome") in GATE_ENTRY_OUTCOMES
+                and lint_ok(p.get("lint"))
                 for p in projects):
             return []
         return projects
 
     def _red_cmds(self, ps: dict, target: ResolvedTarget) -> str:
         """The gate commands that went red, each in backticks, for the fix
-        round's prompt — the Target's command when no project is on record
-        (`_gate_projects`)."""
-        red = [p["cmd"] for p in self._gate_projects(ps)
-               if p["outcome"] == "red"]
+        round's prompt — a lint among them (AIWF-105) — the Target's command
+        when no project is on record (`_gate_projects`)."""
+        red = [cmd for p in self._gate_projects(ps)
+               for cmd, o in gate_entry_cmds(p) if o == "red"]
         return _ticked(red or [ps.get("gate_cmd")
                                or " ".join(target.gate_argv or [])])
 
@@ -6507,7 +6704,13 @@ class RunLoop:
         the driver checks a run against its gate as it stands at gate time
         anyway (`_reusable_writer_gate`). A spec-repo phase's spec says it
         opens with the spec check (`spec_check`) — and, with no manifest in
-        the phase's tree, has no `argv` at all.
+        the phase's tree, has no `argv` at all. The lint beside the
+        Target's test is `lint_argv`, and `lint_fallback` the whole repo's
+        after an empty root's (AIWF-105); a touched component's is the
+        wrapper's to make, as its test is, except for those in
+        `touched.lint_accepted`. A lint an accept ruling covers is in none
+        of them: the wrapper runs it no more than the driver does
+        (`_lint_accepted`).
 
         The spec names the phase's base branch (`base`), never a merge base:
         the wrapper resolves `git merge-base <base> HEAD` itself when its run
@@ -6518,21 +6721,35 @@ class RunLoop:
         frontend suite the phase never touched, red, and the writer handed
         back blocked)."""
         touched = None
+        accepts = self._lint_accepts()
         if self._gates_touched(target):
             gates = [(r, t) for r, t in self._current_rulings()
                      if r.kind == "gate"]
-            waived = ([c for c in load_project_dirs(target.gate_cwd)
-                       if self._covering(gates, target.git_root, c)
-                       is not None] if gates else [])
-            touched = {"target": target.name, "waived": waived}
+            components = (list(load_project_dirs(target.gate_cwd))
+                          if gates or accepts else [])
+            touched = {"target": target.name,
+                       "waived": [c for c in components if self._covering(
+                           gates, target.git_root, c) is not None],
+                       "lint_accepted": [c for c in components
+                                         if self._covering(
+                                             accepts, target.git_root, c)
+                                         is not None]}
+        argv = target.gate_argv
+        root = self._is_root(target)
+        lints = (argv is not None
+                 and self._target_lint_ruling(accepts, target) is None)
+        whole_lints = (lints and root and self._covering(
+            accepts, target.git_root, None) is None)
         _write_json_atomic(outputs / GATE_SPEC_NAME, {
             "phase": phase_id, "round": round_,
             "work_root": str(target.work_root),
             "gate_cwd": str(target.gate_cwd),
             "base": base,
             "spec_check": self._is_spec_root(target.git_root),
-            "argv": target.gate_argv,
-            "fallback": list(REPO_GATE_ARGV) if self._is_root(target) else None,
+            "argv": argv,
+            "fallback": list(REPO_GATE_ARGV) if root else None,
+            "lint_argv": lint_twin(argv) if lints else None,
+            "lint_fallback": list(REPO_LINT_ARGV) if whole_lints else None,
             "touched": touched})
 
     def _gate_hint(self, target: ResolvedTarget, outputs: Path,
@@ -6560,14 +6777,17 @@ class RunLoop:
             return (f" — through {wrapper}, which runs the driver's own gate: "
                     f"{first}`kc project test --project root`{where}, and bare "
                     "`kc project test`, every component once, when that runs "
-                    f"nothing (exit 3). {GATE_REUSE_HINT}. {NOTHING_RAN_HINT}")
+                    "nothing (exit 3), and the same two steps for `kc project "
+                    f"lint`. {GATE_REUSE_HINT}. {NOTHING_RAN_HINT}")
         if target.kind == "project":
             # The driver gates every component the diff touches beside the
-            # Target's own (AIWF-91), and so does the wrapper.
+            # Target's own (AIWF-91), each linted beside its test (AIWF-105),
+            # and so does the wrapper.
             where = "" if work == self.repo_root else f" from {work}"
             return (f" — through {wrapper}, which runs the driver's own gate: "
-                    f"{first}`kc project test --project {target.name}`{where}, "
-                    "and the same for every other component the phase's diff "
+                    f"{first}`kc project test --project {target.name}` and "
+                    f"`kc project lint --project {target.name}`{where}, and "
+                    "both for every other component the phase's diff "
                     f"touches. {GATE_REUSE_HINT}. {NOTHING_RAN_HINT}")
         if target.gate_argv:
             return (f" — through {wrapper}, which runs the driver's own gate: "
@@ -11088,12 +11308,16 @@ def run_writer_gate(spec_path: Path) -> int:
     """The `gate` subcommand: the phase gate as the driver runs it
     (`RunLoop._run_gate`), from the spec the driver wrote for this
     code-writer round (`RunLoop._write_gate_spec`) — a spec-repo phase's
-    spec check, the Target's command, the whole repo when an empty root ran
-    nothing, then each component the phase's diff touches that no gate
-    ruling waives — its output passed through as it runs, and the run
+    spec check, the Target's test and then its lint, each followed by the
+    whole repo's when an empty root's ran nothing, then each component the
+    phase's diff touches that no gate ruling waives, its test and then its
+    lint (AIWF-105), but no lint the spec leaves out because an accept
+    ruling covers it — its output passed through as it runs, and the run
     recorded beside the spec for the driver to reuse
     (`RunLoop._reusable_writer_gate`). The exit code is the gate's:
-    0 green, 1 red, 3 nothing ran; 2 is no run at all.
+    0 green, 1 red, 3 nothing ran; 2 is no run at all. A lint reds the gate
+    and does nothing else, as in the driver's: a spec an older driver wrote
+    names no lint, and its gate lints nothing.
 
     The merge base, where the gate reads a range (touched components, the
     spec check), is resolved here when the run begins — `git merge-base
@@ -11147,7 +11371,7 @@ def run_writer_gate(spec_path: Path) -> int:
         return 2
 
     commands: list[dict] = []
-    outcomes: list[tuple[str, str]] = []   # (command, outcome)
+    outcomes: list[tuple[str, str, bool]] = []   # (command, outcome, a lint?)
 
     def run(argv: list[str], header: str) -> str:
         print(header, flush=True)
@@ -11156,32 +11380,50 @@ def run_writer_gate(spec_path: Path) -> int:
                          "output": output})
         return kc_outcome(returncode)
 
-    check = (spec_check_argv(merge_base, work_root) if spec["spec_check"]
-             else None)
-    argv = spec.get("argv")
-    if check:
-        outcomes.append((" ".join(check), run(
-            check, f"=== the spec check: `{' '.join(check)}` ===")))
-    if argv:
-        lead = "\n" if check else ""
+    def target_verb(argv: list[str], fallback: list[str] | None, lint: bool,
+                    lead: str) -> None:
         own, outcome = argv, run(argv, f"{lead}=== `{' '.join(argv)}` from "
                                        f"{gate_cwd} ===")
-        if spec.get("fallback") and outcome == "nothing_ran":
-            own = spec["fallback"]
+        if fallback and outcome == "nothing_ran":
+            own = fallback
+            gate = "the gate lints" if lint else "the gate is"
             outcome = run(own, f"\n=== `{' '.join(argv)}` ran nothing (exit "
-                               "3) — the gate is the whole repo: "
+                               f"3) — {gate} the whole repo: "
                                f"`{' '.join(own)}` ===")
-        outcomes.append((" ".join(own), outcome))
+        outcomes.append((" ".join(own), outcome, lint))
+
+    check = (spec_check_argv(merge_base, work_root) if spec["spec_check"]
+             else None)
+    argv, lint = spec.get("argv"), spec.get("lint_argv")
+    if check:
+        outcomes.append((" ".join(check), run(
+            check, f"=== the spec check: `{' '.join(check)}` ==="), False))
+    if argv:
+        target_verb(argv, spec.get("fallback"), False, "\n" if check else "")
+    if argv and lint:
+        target_verb(lint, spec.get("lint_fallback"), True, "\n")
+    # a spec from before the gate linted names no `lint_accepted`
+    lint_accepted = (touched or {}).get("lint_accepted")
     for component in components:
-        component_argv = component_gate_argv(component)
-        cmd = " ".join(component_argv)
+        verbs = [(component_gate_argv(component), False)]
+        if lint_accepted is not None:
+            verbs.append((component_lint_argv(component), True))
         if component in touched["waived"]:
-            print(f"\n=== the phase's diff touches {component}: `{cmd}` "
+            cmds = " and ".join(f"`{' '.join(a)}`" for a, _ in verbs)
+            print(f"\n=== the phase's diff touches {component}: {cmds} "
                   "waived by plan.md's `## Driver rulings` — not run ===",
                   flush=True)
             continue
-        outcomes.append((cmd, run(component_argv, "\n=== the phase's diff "
-                                  f"touches {component}: `{cmd}` ===")))
+        for verb_argv, linted in verbs:
+            cmd = " ".join(verb_argv)
+            if linted and component in lint_accepted:
+                print(f"\n=== the phase's diff touches {component}: `{cmd}` "
+                      "not run: plan.md's `## Driver rulings` accepts its red "
+                      "===", flush=True)
+                continue
+            outcomes.append((cmd, run(verb_argv, "\n=== the phase's diff "
+                                      f"touches {component}: `{cmd}` ==="),
+                             linted))
     if uncovered:
         print("\n=== the phase's diff touches files outside every component "
               "and kc lists no root — no gate covers them ===", flush=True)
@@ -11191,9 +11433,9 @@ def run_writer_gate(spec_path: Path) -> int:
         # no tree to vouch for: the record stands, and the driver gates
         print(f"gate: {e}", file=sys.stderr)
         end = ""
-    labels = [o for _, o in outcomes]
-    outcome = ("red" if "red" in labels
-               else "green" if "green" in labels else "nothing_ran")
+    tests = [o for _, o, linted in outcomes if not linted]
+    outcome = ("red" if any(o == "red" for _, o, _ in outcomes)
+               else "green" if "green" in tests else "nothing_ran")
     record = Path(spec_path).parent / writer_gate_record_name(spec["round"])
     _write_json_atomic(record, {
         "phase": spec["phase"], "round": spec["round"],
@@ -11214,7 +11456,7 @@ def run_writer_gate(spec_path: Path) -> int:
               "that. ===")
     elif outcome == "red":
         print("=== gate RED: "
-              + _ticked([c for c, o in outcomes if o == "red"]) + " ===")
+              + _ticked([c for c, o, _ in outcomes if o == "red"]) + " ===")
     else:
         print("=== gate: nothing ran (exit 3) — not red, nothing to fix ===")
     return {"green": 0, "red": 1}.get(outcome, KC_NOTHING_RAN)

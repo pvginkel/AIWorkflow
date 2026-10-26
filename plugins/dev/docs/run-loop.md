@@ -23,8 +23,8 @@ Phases are `### P<id> — <title>` headings, id free-form `[A-Za-z0-9]+` — `P3
 `P3` and `P4`. **Document order is authoritative; ids are labels.** Each phase opens with a
 one-line **`Target:`** naming where it lands — a `kc project list` component, or a sibling repo
 path (`../SiblingRepo`) — from which the driver roots its git operations (branch, merge,
-dirty-checks in that repo) and picks the gate: `kc project test --project <name>` for a
-component, run from the root of the repo that lists it, and the same for every other component
+dirty-checks in that repo) and picks the gate, each test beside its lint (§ The per-phase
+round): `kc project test --project <name>` for a component, run from the root of the repo that lists it, and the same for every other component
 the phase's diff touches (§ The per-phase round); `kc project test` from the sibling's own
 root when it carries a manifest, looked for at gate time in the phase's own tree, so the phase
 that adds the manifest is gated by it; no
@@ -251,6 +251,18 @@ whole plan is a feature of the review, not a cost. Then:
   before, and a whole-repo Target's gate is already the repo's. A frontend phase in PilotApp
   (2026-10-19) also added a backend endpoint and its tests; the reviewer was told GREEN about
   the frontend suite alone and ran the backend's itself only because it noticed (AIWF-91).
+- **The gate lints what it tests** — beside each `kc project test` the gate runs, it runs the
+  same project's `kc project lint`, into the same log: `--project <c>` for the Target and every
+  touched component; root's two steps, `--project root` and then bare where that ran nothing,
+  decided apart from the test's; bare in a whole-repo sibling, and in a spec repo that carries a
+  manifest, after the test. A red lint is the gate's red and a fix round, like a red test. A lint
+  that ran nothing (no lint statement) is skipped: it neither reds the gate nor makes a gate
+  green whose tests ran nothing. A lint an `accept` ruling covers is not run (§ After the last
+  phase, operator rulings). `gate_spec.json` carries the lint commands, so the writer's wrapper
+  runs them and the reuse below holds. The reviewer is told the lint is clean only where a lint
+  ran green. PilotApp slices 008 (P10) and 020 (P9) gated a frontend on Playwright alone, so its
+  `pnpm check` — eslint, `tsc -b`, knip — waited for the loop-tail sweep, while the plans said
+  "tsc is green at this phase's gate" and the reviewer was told the gate was not to be re-run.
 - **The writer's green run stands for an unchanged tree** — the writer runs the gate through
   the driver: every code-writer dispatch names `python3 run_loop.py gate
   phases/P<id>/gate_spec.json`, a spec the driver rewrites at each dispatch with the round, the
@@ -449,8 +461,10 @@ whole plan is a feature of the review, not a cost. Then:
     whole repo is covered by any gate ruling in that repo, because its gate can't leave one
     component out.
   - An **`accept`** ruling turns one red sweep row (target plus verb) non-blocking. It is
-    rendered as accepted and drops out of the stances' red, and the doc gate honours it too. It
-    never covers the per-phase gate: a gate the environment can't pass needs a `gate` ruling.
+    rendered as accepted and drops out of the stances' red, and the doc gate honours it too. At
+    the per-phase gate it covers the lint alone, which is then not run, so a repo whose
+    environment cannot run a lint stays gated on its tests. It never covers a phase gate's
+    tests: a test gate the environment can't pass needs a `gate` ruling.
   - A **`prd`** ruling authorizes the test phase to run the promotion pipeline for that target.
     Every target it doesn't name keeps its promotion operator-gated; a push needs no ruling,
     production included.

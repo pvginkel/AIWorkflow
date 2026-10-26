@@ -79,13 +79,16 @@ gate's evidence pair `gate_green_commit` /
 reviewer is told the target defines no tests only when it is the commit under review),
 `gate_cmd` (the command whose outcome stands — bare `kc project test` when a root phase's
 `--project root` ran nothing; on a spec-repo phase the repo's own command, or the spec check's
-where it has no manifest), `gate_projects` (a component Target's last gate run, one entry
-per kc project it ran or waived — the Target first, then every other component the phase's diff
-touches — each with its `project`, `cmd` and `outcome`, `green` | `red` | `nothing_ran` |
-`waived`; on a spec-repo phase the spec check's entry first, `project` `spec_check`, then the
+where it has no manifest), `gate_projects` (the last gate run, one entry per kc project it ran
+or waived — the Target first, then every other component the phase's diff touches — each with
+its `project`, `cmd` and `outcome`, `green` | `red` | `nothing_ran` | `waived`, and its `lint`
+beside it, `cmd` and `outcome` — `green` | `red` | `nothing_ran` | `waived` | `accepted`; on a
+spec-repo phase the spec check's entry first, `project` `spec_check`, with no `lint`, then the
 repo's own `kc project test` where it has a manifest; the reviewer's gate line names the green ones as covered and the rest as not, a fix
-round's prompt names the red ones; absent or `null` for a whole-repo Target and on a phase begun
-before 0.9.125, where `gate_cmd` is what both name),
+round's prompt names the red ones; each gate history row carries its run's copy as `projects`.
+A whole-repo Target records its one entry from 0.9.145 on; before, it recorded none. Absent or
+`null` on a phase begun before 0.9.125, where `gate_cmd` is what both name, and an entry with
+no `lint` is from before 0.9.145),
 `rebase_requested` (set when a merge-time rebase bails `blocked` and hands the
 rebase to the operator — `base`, `from` (the branch head it asked to rebase), `ts`; cleared when
 the resume takes the rebased branch, and at the merge), `set_aside` (what a resume set aside
@@ -144,7 +147,9 @@ output kc keeps under `/tmp/kc/project`, inlined whole, so the log stands on its
 file is gone; when the driver took the writer's own run instead, it says so at its top. Beside
 it, `gate_spec.json` is what the writer's gate wrapper runs, rewritten at every code-writer
 dispatch — on a spec-repo phase with the spec check's command as its `check`, its `argv` the
-repo's own `kc project test` or `null` — and `writer_gate_r<N>.json` the wrapper's record of its last run in code-writer round
+repo's own `kc project test` or `null`; `lint_argv` and `lint_fallback` beside the test's, and
+each touched component's lint beside its test, none where an `accept` ruling covers the lint,
+which `touched.lint_accepted` names instead — and `writer_gate_r<N>.json` the wrapper's record of its last run in code-writer round
 `N`: the commands with their exit codes and output, and the tree's content hash when the run
 began and ended ([run-loop.md](run-loop.md) § The per-phase round). A review round whose range
 changes Secret data leaves `review_r<N>.diff` beside its review, the range redacted the same
