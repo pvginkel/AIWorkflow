@@ -50,8 +50,8 @@ item per criterion), validates with `run_loop.py run <dir> --dry-run`, appends t
 refuses fewer than five distinct cards without `--force` (a sweep amortises the run's fixed
 consult/test/doc overhead; small sets accumulate, and a short batch the operator wants moved is
 widened over the project's other open intake cards rather than forced — the triage skill), refuses
-more than ten phases without `--force` (a sweep is a slice and sized like one; a larger set splits
-by target into several sweeps of five to ten), and refuses a spec repo that is off `main` (a hand checkout left it there; no run moves the
+more than fourteen phases without `--force` (a sweep is a slice and sized like one; a larger set
+splits by target into several sweeps of five to fourteen), and refuses a spec repo that is off `main` (a hand checkout left it there; no run moves the
 shared tree).
 
 ## Why the run loop needs no changes

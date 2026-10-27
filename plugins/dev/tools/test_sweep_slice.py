@@ -328,18 +328,18 @@ def test_floor_counts_distinct_cards_and_force_overrides(ws):
 @with_workspace
 def test_ceiling_counts_phases_and_force_overrides(ws):
     spec, code = make_workspace(ws)
-    payload = write_payload(ws, make_items(11))  # 11 items, 11 distinct cards
+    payload = write_payload(ws, make_items(15))  # 15 items, 15 distinct cards
     with stubbed_dry_run():
         with raises(Precondition):
             run_sweep(payload, code)
         assert not (spec / "slices" / "117_residual_sweep").exists()
         run_sweep(payload, code, force=True)
-        # Ten phases is the last size that files unforced — in a second
+        # Fourteen phases is the last size that files unforced — in a second
         # workspace, the forced filing above having taken 117 in the first.
-        ten_spec, ten_code = make_workspace(ws / "ten")
-        run_sweep(write_payload(ws / "ten", make_items(10)), ten_code)
+        fourteen_spec, fourteen_code = make_workspace(ws / "fourteen")
+        run_sweep(write_payload(ws / "fourteen", make_items(14)), fourteen_code)
     assert (spec / "slices" / "117_residual_sweep" / "plan.md").is_file()
-    assert (ten_spec / "slices" / "117_residual_sweep" / "plan.md").is_file()
+    assert (fourteen_spec / "slices" / "117_residual_sweep" / "plan.md").is_file()
 
 
 @with_workspace

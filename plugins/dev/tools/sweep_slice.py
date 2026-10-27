@@ -73,7 +73,7 @@ import project_config  # noqa: E402
 from run_loop import parse_plan  # noqa: E402
 
 MIN_CARDS = 5
-MAX_PHASES = 10
+MAX_PHASES = 14
 DEFAULT_SLUG = "residual_sweep"
 SLUG_RE = re.compile(r"^[a-z0-9_]+$")
 # A card id is whatever the tracker writes, so it is only shaped, not parsed:
@@ -356,7 +356,7 @@ def file_sweep(payload_path: Path, code_root: Path, force: bool = False) -> Path
         raise Precondition(
             f"{len(items)} phases — a sweep is a slice and sized like one; "
             f"more than {MAX_PHASES} split by target into several sweeps of "
-            "five to ten (--force overrides).")
+            "five to fourteen (--force overrides).")
 
     spec = spec_repo_for(code_root)
     assert_on_main(spec)

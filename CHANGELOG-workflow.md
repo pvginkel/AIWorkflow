@@ -4,6 +4,20 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-27 — Triage aims a slice at about ten to twelve phases, with fourteen as the ceiling (v0.9.147)
+
+Step 6 of `/dev:triage` aimed a group at about seven phases, with ten as the ceiling. Seven came
+from a measurement of the per-slice overhead taken on Opus 5.1 (0.9.37). A re-measurement on
+81 Opus 5.5 slices found no sweet spot at seven. The cost per 100 changed lines falls from $2.22
+at 5–7 phases to $1.60 at 8–10 and $1.27 at 11–14. At a matched phase size, a 12–14-phase slice
+costs 6–13 % less per phase than a 7-phase one. Of the costs measured, only the wrap-up rises
+with slice size, and only a little.
+
+Step 6 now aims at about ten to twelve phases and sets the ceiling at fourteen, the largest size
+measured. The residual sweep's generator sizes a sweep like a slice, so it now refuses more than
+fourteen phases instead of ten (`sweep_slice.py`'s `MAX_PHASES`, `residual-sweep.md`). The
+evidence is in `docs/research/phase-count-read-2026-10-27.md`. AIWF-113.
+
 ## 2026-10-27 — Every role is told it is a headless session, not a sub-agent (v0.9.146)
 
 A code-writer the run loop dispatched backgrounded a 4-minute gate and could not tell how to wait

@@ -164,13 +164,14 @@ Give every item one fate. Outside the slices:
   has ruled on the record.
 
 Group the rest **by subject, on the asks as written**. Favor larger groups — a slice plans into
-project-local, independently testable, PR-sized phases, and **about seven is the sweet spot**,
-measured on overhead: every slice pays its planning session, its consult and its test and doc
-phases once, whatever its size, so a two- or three-phase slice pays all of that on little work
-and a slice near seven spreads it thin. Aim there where the subject allows it — a group well
-short of seven looks for a neighbouring subject before it is filed alone; unrelated asks are
-never bundled to reach a number. Ten is the ceiling: a group that would clearly blow past it is
-split with the operator now. Don't count API surfaces or applications touched: delivering a
+project-local, independently testable, PR-sized phases, and **about ten to twelve is the
+target**, measured on cost: every slice pays its planning session, its consult and its test and
+doc phases once, whatever its size. A two- or three-phase slice pays all of that on little work,
+and the cost per line shipped keeps falling as a slice grows, as far as fourteen phases. Aim
+there where the subject allows it. A group well short of ten looks for a neighbouring subject
+before it is filed alone, and unrelated asks are never bundled to reach a number. Fourteen is the
+ceiling, the largest size the cost has been measured at: a group that would clearly blow past
+it is split with the operator now. Don't count API surfaces or applications touched: delivering a
 feature end-to-end beats limiting development complexity. Bundling mistakes are fine; the
 planner splits, merges, and kicks items back cheaply during refinement. When in doubt, group
 together.
@@ -368,8 +369,8 @@ imperative title, `target` (a `kc project list` component name or a sibling-repo
 the paths the card itself cites — routing, not code reading), the card description verbatim as
 `body`, and the criteria; a multi-item card whose bullets need different targets becomes several
 items citing the same card (the script's docstring holds the schema). A sweep is a slice and
-sized like one — the generator refuses more than ten phases; a larger set splits by target into
-several payloads of five to ten, each its own sweep, filed one after another — and run:
+sized like one — the generator refuses more than fourteen phases; a larger set splits by target
+into several payloads of five to fourteen, each its own sweep, filed one after another — and run:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/tools/sweep_slice.py <payload.json>

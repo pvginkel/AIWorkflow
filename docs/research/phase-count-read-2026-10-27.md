@@ -1,6 +1,6 @@
 ---
 issue: AIWF-113
-status: proposal, unruled
+status: ruled 2026-10-27 — built as 0.9.147 (target about ten to twelve, ceiling fourteen)
 ---
 
 # Phases per slice and cost on Opus 5.5 (read, 2026-10-27)
