@@ -1,5 +1,5 @@
 ---
-status: proposal, unruled
+status: closed 2026-10-27, not pursued — the operator's aim is cost, and the top 5 % is the cheapest work per line
 ---
 
 # The top 5 % of slice sessions by context size — what they are, and a plan (read, 2026-10-27)
