@@ -1,0 +1,2695 @@
+[
+ {
+  "project": "KubeCoder",
+  "slice": "244_deploy_image_pins",
+  "created": "2026-10-11",
+  "plan_created": "2026-10-11",
+  "plugin": "0.9.88",
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.6834218000000001,
+   "phase": 14.178069199999998,
+   "consult": 1.0639796000000001,
+   "test": 1.3085328999999997,
+   "doc": 4.1617093,
+   "wrap-up": 2.9618096,
+   "plan": 16.0619012
+  },
+  "total": 40.4194236,
+  "old_model_share": 0.0,
+  "lines": [
+   1343,
+   6,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 1351,
+  "review_files": 47,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "239_argocd_read_visibility",
+  "created": "2026-09-30",
+  "plan_created": "2026-09-30",
+  "plugin": "0.9.61",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.7097275999999999,
+   "phase": 16.683433800000003,
+   "consult": 0.9716052,
+   "test": 3.1285181,
+   "doc": 1.3393952000000002,
+   "wrap-up": 1.4402381999999998,
+   "plan": 8.2488773
+  },
+  "total": 32.5217954,
+  "old_model_share": 0.0,
+  "lines": [
+   432,
+   3,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 605,
+  "review_files": 11,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "235_vscode_server_store_pruning",
+  "created": "2026-09-26",
+  "plan_created": "2026-09-26",
+  "plugin": "0.9.48",
+  "planned": 1,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.5551783999999998,
+   "phase": 3.8905776,
+   "consult": 0.567529,
+   "test": 3.0083957000000003,
+   "doc": 1.7311234,
+   "plan": 7.181439649999999
+  },
+  "total": 16.93424375,
+  "old_model_share": 0.0,
+  "lines": [
+   784,
+   1,
+   1
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 774,
+  "review_files": 7,
+  "review_cov": [
+   1,
+   1
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "237_timer_runs_reusable_and_readable",
+  "created": "2026-09-30",
+  "plan_created": "2026-09-30",
+  "plugin": "0.9.61",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.8728414000000001,
+   "phase": 24.543301799999995,
+   "consult": 0.8754086,
+   "test": 0.7106085999999997,
+   "doc": 5.373376599999999,
+   "wrap-up": 0.9057071999999999,
+   "plan": 8.07693525
+  },
+  "total": 41.358179449999994,
+  "old_model_share": 0.0,
+  "lines": [
+   0,
+   0,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 4723,
+  "review_files": 62,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "246_pilot_env_capabilities",
+  "created": "2026-10-16",
+  "plan_created": "2026-10-16",
+  "plugin": "0.9.105",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.698013,
+   "phase": 20.2699854,
+   "consult": 0.7517552,
+   "test": 0.7642928999999999,
+   "doc": 11.673232299999999,
+   "wrap-up": 0.9434611999999998,
+   "plan": 11.176024
+  },
+  "total": 46.276764,
+  "old_model_share": 0.0,
+  "lines": [
+   1703,
+   6,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 1678,
+  "review_files": 73,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "238_env_declarations_readable_while_stopped",
+  "created": "2026-09-30",
+  "plan_created": "2026-09-30",
+  "plugin": "0.9.61",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.7489126000000004,
+   "phase": 21.186449800000002,
+   "consult": 0.9360426000000001,
+   "test": 0.6515721000000001,
+   "doc": 11.668659299999998,
+   "wrap-up": 0.8177774,
+   "plan": 10.1445318
+  },
+  "total": 47.1539456,
+  "old_model_share": 0.0,
+  "lines": [
+   44,
+   1,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 1997,
+  "review_files": 73,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "236_agent_environment_fixes",
+  "created": "2026-09-28",
+  "plan_created": "2026-09-28",
+  "plugin": "0.9.48",
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.6177962000000001,
+   "phase": 19.643422599999997,
+   "consult": 0.9033922000000001,
+   "test": 3.881677599999999,
+   "doc": 7.1693196000000015,
+   "plan": 12.549816049999999
+  },
+  "total": 44.765424249999995,
+  "old_model_share": 0.0,
+  "lines": [
+   1504,
+   6,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1527,
+  "review_files": 25,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "231_images_pinned_after_argocd",
+  "created": "2026-09-23",
+  "plan_created": "2026-09-23",
+  "plugin": "0.9.43",
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.0840081999999998,
+   "phase": 32.980393,
+   "consult": 1.3406683999999998,
+   "test": 6.2999105,
+   "doc": 2.8193066000000004,
+   "plan": 22.90426575
+  },
+  "total": 67.42855245,
+  "old_model_share": 0.0,
+  "lines": [
+   160,
+   1,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 3185,
+  "review_files": 69,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "243_env_last_activity",
+  "created": "2026-10-09",
+  "plan_created": "2026-10-08",
+  "plugin": "0.9.85",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.6990358,
+   "phase": 43.47605900000001,
+   "consult": 1.0149990000000002,
+   "test": 0.5267259000000001,
+   "doc": 9.758674999999998,
+   "wrap-up": 2.03546,
+   "plan": 15.378623099999999
+  },
+  "total": 72.8895778,
+  "old_model_share": 0.0,
+  "lines": [
+   4239,
+   6,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 4014,
+  "review_files": 94,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "250_managed_environments_desktop_default_view",
+  "created": "2026-10-23",
+  "plan_created": "2026-10-23",
+  "plugin": "0.9.105",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.5793012,
+   "phase": 24.805615600000003,
+   "consult": 0.668683,
+   "test": 0.5661591999999999,
+   "doc": 6.397636800000001,
+   "wrap-up": 1.2406332000000002,
+   "plan": 12.676772000000001
+  },
+  "total": 46.93480100000001,
+  "old_model_share": 0.0,
+  "lines": [
+   2882,
+   5,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 2860,
+  "review_files": 72,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "230_catalog_rustfs_and_secret_files",
+  "created": "2026-09-26",
+  "plan_created": "2026-09-26",
+  "plugin": "0.9.48",
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.5699040000000001,
+   "phase": 8.160727599999998,
+   "consult": 0.8320476000000001,
+   "test": 4.1353021000000005,
+   "doc": 6.893277199999999,
+   "plan": 10.6860686
+  },
+  "total": 31.277327099999997,
+  "old_model_share": 0.0,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 358,
+  "review_files": 14,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "242_telegram_action_bar_carrier",
+  "created": "2026-10-04",
+  "plan_created": "2026-10-04",
+  "plugin": "0.9.75",
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.4742447999999999,
+   "phase": 7.5329473999999985,
+   "consult": 1.038443,
+   "test": 0.4605580999999999,
+   "doc": 1.3240626000000002,
+   "plan": 7.44096485
+  },
+  "total": 18.271220749999998,
+  "old_model_share": 0.0,
+  "lines": [
+   561,
+   4,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 561,
+  "review_files": 24,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "249_sandboxed_headless_sessions",
+  "created": "2026-10-20",
+  "plan_created": "2026-10-19",
+  "plugin": "0.9.105",
+  "planned": 10,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.4777500000000001,
+   "phase": 43.94730160000001,
+   "consult": 1.2589752,
+   "test": 1.6356355,
+   "doc": 13.168876999999998,
+   "wrap-up": 2.66847,
+   "plan": 13.679662399999998
+  },
+  "total": 77.83667170000001,
+  "old_model_share": 0.0,
+  "lines": [
+   4968,
+   9,
+   10
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 4864,
+  "review_files": 110,
+  "review_cov": [
+   10,
+   10
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "245_env_files_and_stream_messages",
+  "created": "2026-10-12",
+  "plan_created": "2026-10-12",
+  "plugin": "0.9.93",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.6748138,
+   "phase": 37.61472340000001,
+   "consult": 1.5541736000000002,
+   "test": 0.7617271,
+   "doc": 11.7844139,
+   "wrap-up": 2.9046486000000002,
+   "plan": 13.4377627
+  },
+  "total": 68.73226310000001,
+  "old_model_share": 0.0,
+  "lines": [
+   5651,
+   6,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 5569,
+  "review_files": 77,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "248_viewer_claims_survive_throttled_windows",
+  "created": "2026-10-18",
+  "plan_created": "2026-10-18",
+  "plugin": "0.9.105",
+  "planned": 2,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.5324904,
+   "phase": 5.2943062,
+   "consult": 0.6544699999999999,
+   "test": 0.4546381,
+   "doc": 1.217789,
+   "plan": 5.5390874
+  },
+  "total": 13.6927811,
+  "old_model_share": 0.0,
+  "lines": [
+   393,
+   2,
+   2
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 393,
+  "review_files": 9,
+  "review_cov": [
+   2,
+   2
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "234_orchestrator_push_nudge",
+  "created": "2026-09-25",
+  "plan_created": "2026-09-25",
+  "plugin": "0.9.47",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.6548836,
+   "phase": 27.537737399999997,
+   "consult": 0.9126110000000001,
+   "test": 5.9940894,
+   "doc": 5.64331925,
+   "plan": 11.991943599999999
+  },
+  "total": 52.73458425,
+  "old_model_share": 0.0,
+  "lines": [
+   2954,
+   5,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 2954,
+  "review_files": 59,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "247_headless_raw_response_stream",
+  "created": "2026-10-18",
+  "plan_created": "2026-10-18",
+  "plugin": "0.9.105",
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.8248514000000001,
+   "phase": 21.330057600000004,
+   "consult": 0.7144322,
+   "test": 0.5401797,
+   "doc": 4.404305200000001,
+   "wrap-up": 0.4642632,
+   "plan": 11.356424650000003
+  },
+  "total": 39.634513950000006,
+  "old_model_share": 0.0,
+  "lines": [
+   3162,
+   4,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 3162,
+  "review_files": 47,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "232_deployment_wide_secrets",
+  "created": "2026-09-23",
+  "plan_created": "2026-09-23",
+  "plugin": "0.9.43",
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.8258578,
+   "phase": 8.069316999999998,
+   "consult": 0.7597884,
+   "test": 4.018652000000001,
+   "doc": 5.5530423,
+   "plan": 7.79398535
+  },
+  "total": 27.020642849999998,
+  "old_model_share": 0.0,
+  "lines": [
+   767,
+   4,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 767,
+  "review_files": 20,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "240_timer_overflow_slots",
+  "created": "2026-10-03",
+  "plan_created": "2026-10-03",
+  "plugin": "0.9.71",
+  "planned": 8,
+  "appended": 1,
+  "cost": {
+   "run-orch": 0.5265824,
+   "phase": 20.337750800000002,
+   "consult": 1.0321878,
+   "appended": 0.9699752,
+   "test": 1.287195,
+   "doc": 5.888727899999999,
+   "wrap-up": 0.7305022000000001,
+   "plan": 9.80862485
+  },
+  "total": 40.58154615,
+  "old_model_share": 0.0,
+  "lines": [
+   2373,
+   8,
+   9
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 2297,
+  "review_files": 95,
+  "review_cov": [
+   9,
+   9
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "241_telegram_bot_redesign",
+  "created": "2026-10-04",
+  "plan_created": "2026-10-03",
+  "plugin": "0.9.73",
+  "planned": 9,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.0042790000000001,
+   "phase": 78.5543382,
+   "consult": 1.4072706,
+   "test": 0.7365083999999998,
+   "doc": 20.726858099999998,
+   "wrap-up": 0.9110328000000002,
+   "plan": 11.7436832
+  },
+  "total": 115.0839703,
+  "old_model_share": 0.0,
+  "lines": [
+   53,
+   1,
+   9
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 9598,
+  "review_files": 77,
+  "review_cov": [
+   9,
+   9
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "233_kc_project_nothing_ran_and_args",
+  "created": "2026-09-25",
+  "plan_created": "2026-09-24",
+  "plugin": "0.9.47",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.6893174000000001,
+   "phase": 10.121972799999998,
+   "consult": 0.7684819999999999,
+   "test": 2.8517352999999988,
+   "doc": 2.92494135,
+   "plan": 10.175989950000002
+  },
+  "total": 27.532438799999998,
+  "old_model_share": 0.0,
+  "lines": [
+   1039,
+   5,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1039,
+  "review_files": 41,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "046_secret_rotation_observability",
+  "created": "2026-10-08",
+  "plan_created": "2026-10-08",
+  "plugin": "0.9.80",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.8925550000000001,
+   "phase": 26.8814688,
+   "consult": 0.8595580000000002,
+   "test": 0.2538954,
+   "doc": 3.7054533999999997,
+   "wrap-up": 2.0594976000000003,
+   "plan": 12.9915688
+  },
+  "total": 47.643997,
+  "old_model_share": 0.0,
+  "lines": [
+   3463,
+   4,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 3683,
+  "review_files": 27,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "056_monorepo_tooling",
+  "created": "2026-10-09",
+  "plan_created": "2026-10-09",
+  "plugin": "0.9.88",
+  "planned": 9,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.6645976,
+   "phase": 28.5949754,
+   "consult": 1.1533000000000004,
+   "test": 0.7028366,
+   "doc": 7.883117799999998,
+   "wrap-up": 2.041217,
+   "plan": 16.7200171
+  },
+  "total": 57.7600615,
+  "old_model_share": 0.0,
+  "lines": [
+   1858,
+   9,
+   9
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 1862,
+  "review_files": 44,
+  "review_cov": [
+   9,
+   9
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "048_rotation_terraform_kind",
+  "created": "2026-10-10",
+  "plan_created": "2026-10-10",
+  "plugin": "0.9.88",
+  "planned": 13,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.7518634000000017,
+   "phase": 47.56183799999999,
+   "consult": 1.4562302000000003,
+   "test": 0.5421646999999999,
+   "doc": 3.190439895000001,
+   "wrap-up": 1.9818056000000006,
+   "plan": 15.519098200000004
+  },
+  "total": 73.003439995,
+  "old_model_share": 0.0,
+  "lines": [
+   3588,
+   7,
+   13
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 4011,
+  "review_files": 63,
+  "review_cov": [
+   13,
+   13
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "036_build_and_deploy_pipelines_declarative",
+  "created": "2026-10-02",
+  "plan_created": "2026-10-01",
+  "plugin": "0.9.69",
+  "planned": 11,
+  "appended": 3,
+  "cost": {
+   "run-orch": 1.5081175999999998,
+   "phase": 57.40157299999999,
+   "consult": 5.1787374,
+   "appended": 9.2362814,
+   "test": 3.1634784,
+   "doc": 3.5846194000000002,
+   "wrap-up": 2.281704799999999,
+   "plan": 20.333011900000002
+  },
+  "total": 102.68752389999999,
+  "old_model_share": 0.0,
+  "lines": [
+   3614,
+   14,
+   14
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 4290,
+  "review_files": 83,
+  "review_cov": [
+   14,
+   14
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "068_claude_home_offsite_backup",
+  "created": "2026-10-17",
+  "plan_created": "2026-10-17",
+  "plugin": "0.9.105",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.7300127999999997,
+   "phase": 21.405001600000002,
+   "consult": 0.7247618,
+   "test": 0.7900273000000001,
+   "doc": 1.9863802,
+   "plan": 13.9829291
+  },
+  "total": 40.6191128,
+  "old_model_share": 0.0,
+  "lines": [
+   1539,
+   5,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1509,
+  "review_files": 20,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "031_image_pins_by_tag_and_tracking_label",
+  "created": "2026-09-29",
+  "plan_created": "2026-09-26",
+  "plugin": "0.9.54",
+  "planned": 9,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.7070846,
+   "phase": 23.926745000000004,
+   "consult": 0.988477,
+   "test": 12.742926200000003,
+   "doc": 3.3956489000000007,
+   "plan": 26.208902549999998
+  },
+  "total": 67.96978425,
+  "old_model_share": 0.0,
+  "lines": [
+   264,
+   3,
+   9
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1949,
+  "review_files": 30,
+  "review_cov": [
+   9,
+   9
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "032_track_build_follows_argocd_sync",
+  "created": "2026-09-27",
+  "plan_created": "2026-09-27",
+  "plugin": "0.9.48",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.7703691999999999,
+   "phase": 17.672696200000004,
+   "consult": 0.9614446,
+   "test": 3.1918659000000003,
+   "doc": 2.3254491999999995,
+   "plan": 10.028116999999998
+  },
+  "total": 34.9499421,
+  "old_model_share": 0.0,
+  "lines": [
+   753,
+   3,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 3197,
+  "review_files": 17,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "040_alerting_and_log_access",
+  "created": "2026-10-03",
+  "plan_created": "2026-10-03",
+  "plugin": "0.9.71",
+  "planned": 8,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.132263,
+   "phase": 15.230274599999998,
+   "consult": 0.42478999999999995,
+   "test": 1.5938754000000002,
+   "doc": 1.8400259999999997,
+   "wrap-up": 0.6971168,
+   "plan": 15.1246996
+  },
+  "total": 36.0430454,
+  "old_model_share": 0.0,
+  "lines": [
+   26,
+   1,
+   8
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 1585,
+  "review_files": 34,
+  "review_cov": [
+   8,
+   8
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "061_ceph_credential_rotation",
+  "created": "2026-10-10",
+  "plan_created": "2026-10-10",
+  "plugin": "0.9.88",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.5871850000000007,
+   "phase": 46.4500742,
+   "consult": 1.1376435999999996,
+   "test": 1.0019885000000002,
+   "doc": 2.3810592000000006,
+   "wrap-up": 5.793756,
+   "plan": 20.71437295
+  },
+  "total": 81.06607945,
+  "old_model_share": 0.0,
+  "lines": [
+   237,
+   1,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 4697,
+  "review_files": 39,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "051_secret_rotator_ui",
+  "created": "2026-10-08",
+  "plan_created": "2026-10-08",
+  "plugin": "0.9.80",
+  "planned": 11,
+  "appended": 2,
+  "cost": {
+   "run-orch": 2.0539170000000007,
+   "phase": 82.7743374,
+   "consult": 3.1719799999999996,
+   "test": 1.5713986,
+   "appended": 10.142741999999998,
+   "doc": 3.945602,
+   "wrap-up": 7.062002200000001,
+   "plan": 18.1100629
+  },
+  "total": 128.8320421,
+  "old_model_share": 0.0,
+  "lines": [
+   1206,
+   3,
+   13
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 8207,
+  "review_files": 104,
+  "review_cov": [
+   13,
+   13
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "052_rotation_kinds_wave_3",
+  "created": "2026-10-09",
+  "plan_created": "2026-10-09",
+  "plugin": "0.9.85",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.8254026000000002,
+   "phase": 31.80022080000001,
+   "consult": 0.6764582,
+   "test": 0.43986959999999997,
+   "doc": 1.4276340000000003,
+   "wrap-up": 0.6831456,
+   "plan": 17.82356395
+  },
+  "total": 53.67629475000001,
+  "old_model_share": 0.0,
+  "lines": [
+   3212,
+   6,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 3046,
+  "review_files": 41,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "060_ansible_ssh_key_rotation",
+  "created": "2026-10-10",
+  "plan_created": "2026-10-10",
+  "plugin": "0.9.88",
+  "planned": 10,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.9252682,
+   "phase": 64.24163999999999,
+   "consult": 0.9317009999999999,
+   "test": 0.5943053,
+   "doc": 3.2938060000000005,
+   "wrap-up": 5.734615600000001,
+   "plan": 19.999885300000003
+  },
+  "total": 95.72122139999999,
+  "old_model_share": 0.0,
+  "lines": [
+   5003,
+   10,
+   10
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 4933,
+  "review_files": 88,
+  "review_cov": [
+   10,
+   10
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "047_rotation_kinds_wave_1",
+  "created": "2026-10-08",
+  "plan_created": "2026-10-08",
+  "plugin": "0.9.80",
+  "planned": 11,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.0802356000000002,
+   "phase": 65.00549540000002,
+   "consult": 1.4016390000000007,
+   "test": 0.8435016000000001,
+   "doc": 3.270669949999999,
+   "wrap-up": 5.360908000000003,
+   "plan": 20.630737850000003
+  },
+  "total": 97.59318740000002,
+  "old_model_share": 0.0,
+  "lines": [
+   257,
+   1,
+   11
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 6035,
+  "review_files": 77,
+  "review_cov": [
+   11,
+   11
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "037_destroy_stage_pipeline",
+  "created": "2026-10-02",
+  "plan_created": "2026-10-02",
+  "plugin": "0.9.70",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.6050702000000001,
+   "phase": 25.707724600000002,
+   "consult": 0.9777,
+   "test": 0.8553329999999999,
+   "doc": 6.972434100000001,
+   "wrap-up": 2.8331972000000003,
+   "plan": 12.973789649999999
+  },
+  "total": 50.92524875,
+  "old_model_share": 0.0,
+  "lines": [
+   2403,
+   5,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 2380,
+  "review_files": 19,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "012_kubecoder_argo_cutover",
+  "created": "2026-09-22",
+  "plan_created": "2026-09-22",
+  "plugin": "0.9.42",
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.5824495999999999,
+   "phase": 19.5059356,
+   "consult": 1.4371086000000002,
+   "test": 2.3541549999999996,
+   "doc": 5.0277083000000005,
+   "plan": 24.69119495
+  },
+  "total": 53.59855205,
+  "old_model_share": 0.3528058646502187,
+  "lines": [
+   1384,
+   3,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1384,
+  "review_files": 9,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "027_build_and_test_gates",
+  "created": "2026-09-25",
+  "plan_created": "2026-09-25",
+  "plugin": "0.9.47",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.6254064,
+   "phase": 16.6754208,
+   "consult": 1.1276648,
+   "test": 2.1497475999999995,
+   "doc": 2.5873854,
+   "plan": 16.37373125
+  },
+  "total": 40.53935625,
+  "old_model_share": 0.0,
+  "lines": [
+   357,
+   4,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 888,
+  "review_files": 18,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "034_jenkins_pipeline_style_guide",
+  "created": "2026-09-30",
+  "plan_created": "2026-09-30",
+  "plugin": "0.9.60",
+  "planned": 11,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.2167258000000007,
+   "phase": 61.342192,
+   "consult": 1.6515136000000001,
+   "test": 0.5986454000000001,
+   "doc": 7.6641172,
+   "wrap-up": 3.469846000000001,
+   "plan": 17.666648950000003
+  },
+  "total": 95.60968895,
+  "old_model_share": 0.0,
+  "lines": [
+   7211,
+   11,
+   11
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 7073,
+  "review_files": 124,
+  "review_cov": [
+   11,
+   11
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "045_secret_rotator_platform_core",
+  "created": "2026-10-05",
+  "plan_created": "2026-10-05",
+  "plugin": "0.9.78",
+  "planned": 13,
+  "appended": 1,
+  "cost": {
+   "run-orch": 1.3413021999999994,
+   "phase": 126.9633475,
+   "consult": 2.5081819999999997,
+   "appended": 1.4981490000000002,
+   "test": 0.5411491000000002,
+   "doc": 8.104789199999999,
+   "wrap-up": 7.9988630000000045,
+   "plan": 22.607731800000003
+  },
+  "total": 171.5635138,
+  "old_model_share": 0.0,
+  "lines": [
+   20401,
+   14,
+   14
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 19906,
+  "review_files": 166,
+  "review_cov": [
+   14,
+   14
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "033_jenkins_library_safety_net_and_declarative_trial",
+  "created": "2026-09-30",
+  "plan_created": "2026-09-30",
+  "plugin": "0.9.60",
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.72279,
+   "phase": 11.305697599999998,
+   "consult": 1.5148590000000004,
+   "test": 0.232943,
+   "doc": 1.7713660999999998,
+   "wrap-up": 2.1167202000000005,
+   "plan": 11.143880849999999
+  },
+  "total": 28.808256749999998,
+  "old_model_share": 0.0,
+  "lines": [
+   1313,
+   4,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 1313,
+  "review_files": 11,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "050_secrets_remediation_step_ca_newsfilter_iac_agent",
+  "created": "2026-10-07",
+  "plan_created": "2026-10-06",
+  "plugin": "0.9.80",
+  "planned": 10,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.930597199999999,
+   "phase": 40.023503600000005,
+   "consult": 1.1482091999999997,
+   "test": 0.6501326999999999,
+   "doc": 5.404343800000001,
+   "wrap-up": 3.4714122,
+   "plan": 17.373412000000002
+  },
+  "total": 71.0016107,
+  "old_model_share": 0.0,
+  "lines": [
+   398,
+   2,
+   10
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 2271,
+  "review_files": 44,
+  "review_cov": [
+   10,
+   10
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "057_monorepo_pilots",
+  "created": "2026-10-10",
+  "plan_created": "2026-10-10",
+  "plugin": "0.9.88",
+  "planned": 9,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.8998418000000001,
+   "phase": 35.2853668,
+   "consult": 1.0048652,
+   "test": 0.5221387,
+   "doc": 4.849253440000001,
+   "wrap-up": 1.4484322,
+   "plan": 15.043413450000003
+  },
+  "total": 59.05331159,
+  "old_model_share": 0.0,
+  "lines": [
+   2935,
+   8,
+   9
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 2899,
+  "review_files": 62,
+  "review_cov": [
+   9,
+   9
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "043_gitblit_idle_cpu",
+  "created": "2026-10-03",
+  "plan_created": "2026-10-03",
+  "plugin": "0.9.72",
+  "planned": 1,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.6000416000000001,
+   "phase": 1.1705322000000002,
+   "consult": 0.40306,
+   "test": 0.6037089000000001,
+   "doc": 0.5815363999999998,
+   "plan": 3.9337042999999996
+  },
+  "total": 7.2925834,
+  "old_model_share": 0.0,
+  "lines": [
+   8,
+   1,
+   1
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 8,
+  "review_files": 2,
+  "review_cov": [
+   1,
+   1
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "044_openbao_hygiene_before_rotation",
+  "created": "2026-10-04",
+  "plan_created": "2026-10-04",
+  "plugin": "0.9.75",
+  "planned": 10,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.1322776,
+   "phase": 43.7973652,
+   "consult": 1.1508892,
+   "test": 0.5521320000000001,
+   "doc": 3.912621600000001,
+   "wrap-up": 4.033879800000001,
+   "plan": 18.238153099999998
+  },
+  "total": 72.8173185,
+  "old_model_share": 0.0,
+  "lines": [
+   5622,
+   9,
+   10
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 5860,
+  "review_files": 48,
+  "review_cov": [
+   10,
+   10
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "029_helmcharts_decommission",
+  "created": "2026-09-26",
+  "plan_created": "2026-09-26",
+  "plugin": "0.9.48",
+  "planned": 9,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.8209679999999999,
+   "phase": 59.100739200000014,
+   "consult": 2.0737212,
+   "test": 5.861125099999999,
+   "doc": 6.407286000000001,
+   "plan": 16.5407064
+  },
+  "total": 90.80454590000001,
+  "old_model_share": 0.0,
+  "lines": [
+   5182,
+   9,
+   9
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 5004,
+  "review_files": 83,
+  "review_cov": [
+   9,
+   9
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "026_aac_tools_generator_and_producers",
+  "created": "2026-09-29",
+  "plan_created": "2026-09-25",
+  "plugin": "0.9.54",
+  "planned": 18,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.9273692,
+   "phase": 71.55147939999999,
+   "consult": 1.5270063999999999,
+   "test": 0.7339472,
+   "doc": 2.0145572,
+   "plan": 32.901401299999996
+  },
+  "total": 110.65576069999999,
+  "old_model_share": 0.0,
+  "lines": [
+   991,
+   5,
+   18
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 2546,
+  "review_files": 57,
+  "review_cov": [
+   18,
+   18
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "038_argocd_render_gate_and_terraform_only_pushes",
+  "created": "2026-10-03",
+  "plan_created": "2026-10-03",
+  "plugin": "0.9.71",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.5187896000000001,
+   "phase": 5.2700242,
+   "consult": 0.3825258,
+   "test": 0.8226214000000003,
+   "doc": 0.6483196,
+   "wrap-up": 0.44803200000000004,
+   "plan": 13.030509250000001
+  },
+  "total": 21.120821850000002,
+  "old_model_share": 0.0,
+  "lines": [
+   119,
+   4,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 127,
+  "review_files": 10,
+  "review_cov": [
+   4,
+   5
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "028_argo_cd_and_service_residuals",
+  "created": "2026-09-25",
+  "plan_created": "2026-09-25",
+  "plugin": "0.9.47",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.7929242,
+   "phase": 21.6614534,
+   "consult": 0.8436811999999998,
+   "test": 2.2702742,
+   "doc": 2.8199302,
+   "plan": 14.4480482
+  },
+  "total": 42.8363114,
+  "old_model_share": 0.0,
+  "lines": [
+   285,
+   2,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 957,
+  "review_files": 13,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "035_architecture_producers_declarative",
+  "created": "2026-10-01",
+  "plan_created": "2026-10-01",
+  "plugin": "0.9.62",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.072496,
+   "phase": 15.555285000000001,
+   "consult": 1.0957086,
+   "test": 2.1355775999999995,
+   "doc": 2.7906101000000003,
+   "wrap-up": 1.0532865999999996,
+   "plan": 14.608127849999999
+  },
+  "total": 38.31109175,
+  "old_model_share": 0.0,
+  "lines": [
+   731,
+   5,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 709,
+  "review_files": 19,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "058_homelab_apps_wave",
+  "created": "2026-10-10",
+  "plan_created": "2026-10-10",
+  "plugin": "0.9.88",
+  "planned": 14,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.2157288,
+   "phase": 105.6573676,
+   "consult": 2.1700071999999992,
+   "test": 1.4139923,
+   "doc": 5.4135962,
+   "wrap-up": 2.228672,
+   "plan": 16.31373675
+  },
+  "total": 135.41310085,
+  "old_model_share": 0.0,
+  "lines": [
+   18055,
+   10,
+   14
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 18519,
+  "review_files": 453,
+  "review_cov": [
+   14,
+   14
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "055_deploy_pipeline_fixes",
+  "created": "2026-10-09",
+  "plan_created": "2026-10-09",
+  "plugin": "0.9.85",
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.1561953999999999,
+   "phase": 23.5044126,
+   "consult": 1.2647434000000004,
+   "test": 1.7548787999999997,
+   "doc": 2.5545106,
+   "wrap-up": 1.9135412000000003,
+   "plan": 20.619782500000003
+  },
+  "total": 52.7680645,
+  "old_model_share": 0.0,
+  "lines": [
+   660,
+   4,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 795,
+  "review_files": 23,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "053_kyverno_memory_requests",
+  "created": "2026-10-06",
+  "plan_created": "2026-10-06",
+  "plugin": "0.9.79",
+  "planned": 10,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.7258332000000001,
+   "phase": 53.349517600000006,
+   "consult": 1.2801647999999997,
+   "test": 0.41416729999999996,
+   "doc": 7.9255534999999995,
+   "wrap-up": 2.3692811999999996,
+   "plan": 26.758739199999997
+  },
+  "total": 92.8232568,
+  "old_model_share": 0.0,
+  "lines": [
+   1798,
+   6,
+   10
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 3925,
+  "review_files": 62,
+  "review_cov": [
+   10,
+   10
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "059_platform_addons_wave",
+  "created": "2026-10-11",
+  "plan_created": "2026-10-11",
+  "plugin": "0.9.88",
+  "planned": 14,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.5865007999999998,
+   "phase": 56.43900399999999,
+   "consult": 1.5602910000000003,
+   "test": 0.4908983,
+   "doc": 2.8671068000000006,
+   "wrap-up": 1.0828596000000001,
+   "plan": 18.968734549999997
+  },
+  "total": 82.99539504999998,
+  "old_model_share": 0.0,
+  "lines": [
+   9185,
+   14,
+   14
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 9094,
+  "review_files": 180,
+  "review_cov": [
+   14,
+   14
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "030_retire_modern_app_dev_images",
+  "created": "2026-09-26",
+  "plan_created": "2026-09-26",
+  "plugin": "0.9.48",
+  "planned": 14,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.9532928,
+   "phase": 24.835708000000007,
+   "consult": 1.1094986000000002,
+   "test": 3.3648016000000003,
+   "doc": 2.5507270999999996,
+   "plan": 15.238118550000001
+  },
+  "total": 50.05214665000001,
+  "old_model_share": 0.0,
+  "lines": [
+   533,
+   12,
+   14
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 535,
+  "review_files": 41,
+  "review_cov": [
+   13,
+   14
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "025_architecture_cross_app_resolution",
+  "created": "2026-09-23",
+  "plan_created": "2026-09-23",
+  "plugin": "0.9.43",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.5443389999999999,
+   "phase": 20.237187,
+   "consult": 1.2106438,
+   "test": 3.429838300000001,
+   "doc": 2.1556622000000005,
+   "plan": 14.587737800000001
+  },
+  "total": 42.1654081,
+  "old_model_share": 0.0,
+  "lines": [
+   1899,
+   5,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1834,
+  "review_files": 11,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "041_aac_tools_validation_and_container_wires",
+  "created": "2026-10-03",
+  "plan_created": "2026-10-03",
+  "plugin": "0.9.71",
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.4335112,
+   "phase": 4.223380799999999,
+   "consult": 0.3165774,
+   "test": 0.348712,
+   "doc": 0.5580077999999999,
+   "wrap-up": 0.44210499999999997,
+   "plan": 7.001573649999999
+  },
+  "total": 13.32386785,
+  "old_model_share": 0.0,
+  "lines": [
+   581,
+   4,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 581,
+  "review_files": 18,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "065_notifications_go_live",
+  "created": "2026-10-14",
+  "plan_created": "2026-10-14",
+  "plugin": "0.9.93",
+  "planned": 11,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.571504,
+   "phase": 37.7325082,
+   "consult": 0.8760548,
+   "test": 0.41672760000000003,
+   "doc": 2.2622400300000005,
+   "wrap-up": 2.4594927999999987,
+   "plan": 15.073398850000002
+  },
+  "total": 60.39192628,
+  "old_model_share": 0.0,
+  "lines": [
+   2468,
+   11,
+   11
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 2468,
+  "review_files": 23,
+  "review_cov": [
+   11,
+   11
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "054_secret_rotator_metadata_redesign",
+  "created": "2026-10-07",
+  "plan_created": "2026-10-06",
+  "plugin": "0.9.80",
+  "planned": 10,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.2730902000000004,
+   "phase": 77.78405599999998,
+   "consult": 1.1444522000000001,
+   "test": 0.5007147,
+   "doc": 3.2822612000000007,
+   "wrap-up": 3.9647304000000005,
+   "plan": 12.602371900000001
+  },
+  "total": 101.55167659999998,
+  "old_model_share": 0.0,
+  "lines": [
+   8410,
+   9,
+   10
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 8191,
+  "review_files": 139,
+  "review_cov": [
+   10,
+   10
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "049_rotation_kinds_wave_2",
+  "created": "2026-10-09",
+  "plan_created": "2026-10-09",
+  "plugin": "0.9.85",
+  "planned": 11,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.1872377999999997,
+   "phase": 84.6998724,
+   "consult": 2.5740286,
+   "test": 1.1479673000000001,
+   "doc": 2.0583617999999997,
+   "wrap-up": 3.3807966,
+   "plan": 15.837617449999998
+  },
+  "total": 110.88588195,
+  "old_model_share": 0.0,
+  "lines": [
+   262,
+   1,
+   11
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 11333,
+  "review_files": 97,
+  "review_cov": [
+   11,
+   11
+  ]
+ },
+ {
+  "project": "PilotApp",
+  "slice": "003_sync_protocol_and_sidecar",
+  "created": "2026-10-19",
+  "plan_created": "2026-10-19",
+  "plugin": "0.9.105",
+  "planned": 9,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.8626685999999999,
+   "phase": 55.528609799999984,
+   "consult": 0.7495071999999999,
+   "test": 0.6738081000000001,
+   "doc": 5.5261954000000015,
+   "wrap-up": 4.3481038,
+   "plan": 13.002079850000001
+  },
+  "total": 80.69097274999999,
+  "old_model_share": 0.0,
+  "lines": [
+   11737,
+   9,
+   9
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 11669,
+  "review_files": 111,
+  "review_cov": [
+   9,
+   9
+  ]
+ },
+ {
+  "project": "PilotApp",
+  "slice": "005_timeline_and_items",
+  "created": "2026-10-22",
+  "plan_created": "2026-10-22",
+  "plugin": "0.9.105",
+  "planned": 12,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.1179499999999998,
+   "phase": 91.62150079999998,
+   "consult": 1.9595799999999997,
+   "test": 1.2843412999999997,
+   "doc": 8.897118600000002,
+   "wrap-up": 8.167794599999995,
+   "plan": 19.2555911
+  },
+  "total": 132.30387639999998,
+  "old_model_share": 0.0,
+  "lines": [
+   16019,
+   12,
+   12
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 15833,
+  "review_files": 220,
+  "review_cov": [
+   12,
+   12
+  ]
+ },
+ {
+  "project": "PilotApp",
+  "slice": "010_store_goes_live",
+  "created": "2026-10-23",
+  "plan_created": "2026-10-22",
+  "plugin": "0.9.105",
+  "planned": 6,
+  "appended": 2,
+  "cost": {
+   "run-orch": 1.3187601999999998,
+   "phase": 21.856239600000002,
+   "consult": 3.1887576,
+   "appended": 9.999630999999995,
+   "test": 3.5594389,
+   "doc": 6.35114218,
+   "wrap-up": 2.1454164,
+   "plan": 18.34891765
+  },
+  "total": 66.76830353,
+  "old_model_share": 0.0,
+  "lines": [
+   647,
+   4,
+   8
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 1730,
+  "review_files": 47,
+  "review_cov": [
+   8,
+   8
+  ]
+ },
+ {
+  "project": "PilotApp",
+  "slice": "007_controller_client_and_sessions",
+  "created": "2026-10-19",
+  "plan_created": "2026-10-19",
+  "plugin": "0.9.105",
+  "planned": 10,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.0764240000000007,
+   "phase": 93.0698188,
+   "consult": 1.4994118,
+   "test": 2.4090852000000003,
+   "doc": 5.8230626,
+   "wrap-up": 4.668532400000001,
+   "plan": 14.454327350000002
+  },
+  "total": 124.00066215,
+  "old_model_share": 0.0,
+  "lines": [
+   202,
+   1,
+   10
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 16613,
+  "review_files": 97,
+  "review_cov": [
+   10,
+   10
+  ]
+ },
+ {
+  "project": "PilotApp",
+  "slice": "022_pilot_store_and_the_chat",
+  "created": "2026-10-26",
+  "plan_created": "2026-10-26",
+  "plugin": "0.9.136",
+  "planned": 10,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.4842185999999997,
+   "phase": 124.47881560000005,
+   "consult": 1.6707037999999999,
+   "test": 1.9335675999999997,
+   "doc": 15.954405499999998,
+   "wrap-up": 2.464665000000001,
+   "plan": 22.74681255
+  },
+  "total": 171.73318865000005,
+  "old_model_share": 0.0,
+  "lines": [
+   241,
+   1,
+   10
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 20246,
+  "review_files": 192,
+  "review_cov": [
+   10,
+   10
+  ]
+ },
+ {
+  "project": "PilotApp",
+  "slice": "018_dev_and_prd_stages",
+  "created": "2026-10-20",
+  "plan_created": "2026-10-19",
+  "plugin": "0.9.105",
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.1780355999999996,
+   "phase": 24.979498,
+   "consult": 1.0565776000000002,
+   "test": 1.0849044,
+   "doc": 2.4851086,
+   "wrap-up": 1.8827659999999995,
+   "plan": 14.631259200000002
+  },
+  "total": 47.2981494,
+  "old_model_share": 0.0,
+  "lines": [
+   1904,
+   6,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 1989,
+  "review_files": 26,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "PilotApp",
+  "slice": "004_projects_and_people",
+  "created": "2026-10-19",
+  "plan_created": "2026-10-19",
+  "plugin": "0.9.105",
+  "planned": 11,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.0331716,
+   "phase": 62.293510399999995,
+   "consult": 1.4511148,
+   "test": 1.3130632999999998,
+   "doc": 6.0163682000000005,
+   "wrap-up": 3.4131864000000003,
+   "plan": 19.605185400000003
+  },
+  "total": 95.1256001,
+  "old_model_share": 0.0,
+  "lines": [
+   0,
+   0,
+   11
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 12600,
+  "review_files": 154,
+  "review_cov": [
+   11,
+   11
+  ]
+ },
+ {
+  "project": "PilotApp",
+  "slice": "020_pilots_own_environments",
+  "created": "2026-10-24",
+  "plan_created": "2026-10-24",
+  "plugin": "0.9.136",
+  "planned": 10,
+  "appended": 1,
+  "cost": {
+   "run-orch": 4.3450449,
+   "phase": 93.4987212,
+   "consult": 3.7981818,
+   "appended": 4.0831822,
+   "test": 1.7258454,
+   "doc": 6.944013399999999,
+   "wrap-up": 2.9948059999999996,
+   "plan": 17.26117245
+  },
+  "total": 134.65096735,
+  "old_model_share": 0.0,
+  "lines": [
+   10427,
+   11,
+   11
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 9798,
+  "review_files": 103,
+  "review_cov": [
+   11,
+   11
+  ]
+ },
+ {
+  "project": "PilotApp",
+  "slice": "001_deploy",
+  "created": "2026-10-14",
+  "plan_created": "2026-10-14",
+  "plugin": "0.9.93",
+  "planned": 9,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.8007456000000001,
+   "phase": 30.406658999999998,
+   "consult": 0.9198536,
+   "test": 0.7692322,
+   "doc": 2.2442449999999994,
+   "wrap-up": 2.9065278000000005,
+   "plan": 16.551910649999996
+  },
+  "total": 54.59917384999999,
+  "old_model_share": 0.0,
+  "lines": [
+   2885,
+   9,
+   9
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 2817,
+  "review_files": 39,
+  "review_cov": [
+   9,
+   9
+  ]
+ },
+ {
+  "project": "PilotApp",
+  "slice": "008_work_items",
+  "created": "2026-10-23",
+  "plan_created": "2026-10-23",
+  "plugin": "0.9.105",
+  "planned": 14,
+  "appended": 1,
+  "cost": {
+   "run-orch": 2.0876863999999995,
+   "phase": 134.7456956,
+   "consult": 2.8263842,
+   "test": 4.0536672000000005,
+   "appended": 5.1533038,
+   "doc": 16.091580399999998,
+   "wrap-up": 9.165268400000004,
+   "plan": 20.6012939
+  },
+  "total": 194.72487990000002,
+  "old_model_share": 0.0,
+  "lines": [
+   16628,
+   15,
+   15
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 16471,
+  "review_files": 213,
+  "review_cov": [
+   15,
+   15
+  ]
+ },
+ {
+  "project": "PilotApp",
+  "slice": "009_mcp_server_and_worker_round_trip",
+  "created": "2026-10-25",
+  "plan_created": "2026-10-25",
+  "plugin": "0.9.136",
+  "planned": 10,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.3812327999999994,
+   "phase": 79.45419840000002,
+   "consult": 1.176518,
+   "test": 3.1529471000000004,
+   "doc": 11.741736699999999,
+   "wrap-up": 4.6347528,
+   "plan": 19.70988795
+  },
+  "total": 122.25127375000002,
+  "old_model_share": 0.0,
+  "lines": [
+   282,
+   1,
+   10
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 12639,
+  "review_files": 133,
+  "review_cov": [
+   10,
+   10
+  ]
+ },
+ {
+  "project": "PilotApp",
+  "slice": "021_the_brains_repo",
+  "created": "2026-10-25",
+  "plan_created": "2026-10-25",
+  "plugin": "0.9.136",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.7798941999999999,
+   "phase": 33.728361799999995,
+   "consult": 1.366848,
+   "test": 1.4331816000000002,
+   "doc": 4.262609400000001,
+   "wrap-up": 2.444813000000001,
+   "plan": 15.1884987
+  },
+  "total": 59.2042067,
+  "old_model_share": 0.0,
+  "lines": [
+   4553,
+   5,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 4451,
+  "review_files": 329,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "PilotApp",
+  "slice": "006_documents_and_overlay",
+  "created": "2026-10-23",
+  "plan_created": "2026-10-23",
+  "plugin": "0.9.105",
+  "planned": 11,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.0364708,
+   "phase": 86.2714246,
+   "consult": 1.0913212,
+   "test": 1.4962437999999998,
+   "doc": 7.719185800000001,
+   "wrap-up": 5.444953799999997,
+   "plan": 14.944556350000003
+  },
+  "total": 118.00415635,
+  "old_model_share": 0.0,
+  "lines": [
+   0,
+   0,
+   11
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 12654,
+  "review_files": 167,
+  "review_cov": [
+   11,
+   11
+  ]
+ },
+ {
+  "project": "PilotApp",
+  "slice": "002_record_and_engine",
+  "created": "2026-10-18",
+  "plan_created": "2026-10-17",
+  "plugin": "0.9.105",
+  "planned": 9,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.1626395999999999,
+   "phase": 72.16840320000001,
+   "consult": 1.4716478,
+   "test": 0.7410196999999998,
+   "doc": 4.8105552000000005,
+   "wrap-up": 4.290651399999999,
+   "plan": 16.6940742
+  },
+  "total": 101.33899110000002,
+  "old_model_share": 0.0,
+  "lines": [
+   0,
+   0,
+   9
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 19762,
+  "review_files": 319,
+  "review_cov": [
+   9,
+   9
+  ]
+ },
+ {
+  "project": "FieldnotesApp",
+  "slice": "003_mcp_tool_descriptions_and_logging",
+  "created": "2026-10-02",
+  "plan_created": "2026-10-02",
+  "plugin": "0.9.69",
+  "planned": 2,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.4618169999999999,
+   "phase": 5.7427492,
+   "consult": 0.5716901999999999,
+   "test": 0.6754526000000002,
+   "doc": 1.3477662,
+   "wrap-up": 1.1207882,
+   "plan": 12.58038905
+  },
+  "total": 22.50065245,
+  "old_model_share": 0.0,
+  "lines": [
+   532,
+   2,
+   2
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 517,
+  "review_files": 7,
+  "review_cov": [
+   2,
+   2
+  ]
+ },
+ {
+  "project": "FieldnotesApp",
+  "slice": "001_triage_endpoints",
+  "created": "2026-09-27",
+  "plan_created": "2026-09-27",
+  "plugin": "0.9.48",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.5809184,
+   "phase": 22.3825834,
+   "consult": 1.1569,
+   "test": 4.8622247000000005,
+   "doc": 2.2881614,
+   "plan": 12.322041149999999
+  },
+  "total": 44.59282905,
+  "old_model_share": 0.0,
+  "lines": [
+   2596,
+   6,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 2562,
+  "review_files": 37,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "FieldnotesApp",
+  "slice": "005_inbox_and_actioner_followups",
+  "created": "2026-10-11",
+  "plan_created": "2026-10-11",
+  "plugin": "0.9.88",
+  "planned": 11,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.871179,
+   "phase": 63.534101200000016,
+   "consult": 0.9793850000000001,
+   "test": 0.6177703000000001,
+   "doc": 3.2374742,
+   "wrap-up": 4.409846000000001,
+   "plan": 13.197329500000002
+  },
+  "total": 86.84708520000002,
+  "old_model_share": 0.0,
+  "lines": [
+   5498,
+   11,
+   11
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 5302,
+  "review_files": 77,
+  "review_cov": [
+   11,
+   11
+  ]
+ },
+ {
+  "project": "FieldnotesApp",
+  "slice": "006_inbox_relays_every_message",
+  "created": "2026-10-15",
+  "plan_created": "2026-10-15",
+  "plugin": "0.9.93",
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.729692,
+   "phase": 11.9793868,
+   "consult": 0.4830693999999999,
+   "test": 0.5282226000000001,
+   "doc": 0.9828450000000001,
+   "wrap-up": 0.337026,
+   "plan": 9.135116550000001
+  },
+  "total": 24.175358350000003,
+  "old_model_share": 0.0,
+  "lines": [
+   1274,
+   3,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 1274,
+  "review_files": 17,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "FieldnotesApp",
+  "slice": "004_inbox_sitting",
+  "created": "2026-10-10",
+  "plan_created": "2026-10-10",
+  "plugin": "0.9.88",
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.7576396000000002,
+   "phase": 54.4772748,
+   "consult": 1.5303512,
+   "test": 0.796868,
+   "doc": 3.5202215999999993,
+   "wrap-up": 5.623411400000004,
+   "plan": 11.7122051
+  },
+  "total": 78.41797170000001,
+  "old_model_share": 0.0,
+  "lines": [
+   8633,
+   7,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 8431,
+  "review_files": 68,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "FieldnotesApp",
+  "slice": "002_store_availability",
+  "created": "2026-09-30",
+  "plan_created": "2026-09-30",
+  "plugin": "0.9.61",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.5983855999999999,
+   "phase": 15.863228600000001,
+   "consult": 1.0221334000000002,
+   "test": 5.659503300000002,
+   "doc": 2.1186438,
+   "wrap-up": 2.4686999999999997,
+   "plan": 13.417865600000003
+  },
+  "total": 41.1484603,
+  "old_model_share": 0.0,
+  "lines": [
+   843,
+   4,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 858,
+  "review_files": 17,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "DHCPApp",
+  "slice": "001_dnsmasq_own_repo",
+  "created": "2026-10-09",
+  "plan_created": "2026-10-09",
+  "plugin": "0.9.87",
+  "planned": 9,
+  "appended": 1,
+  "cost": {
+   "run-orch": 1.5264754000000005,
+   "phase": 34.855602600000005,
+   "consult": 2.9562196000000003,
+   "appended": 2.6277492000000002,
+   "test": 0.8243712,
+   "doc": 1.490155,
+   "wrap-up": 2.4374016000000007,
+   "plan": 16.1854829
+  },
+  "total": 62.90345750000001,
+  "old_model_share": 0.0,
+  "lines": [
+   4762,
+   4,
+   10
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 12019,
+  "review_files": 145,
+  "review_cov": [
+   10,
+   10
+  ]
+ },
+ {
+  "project": "Notifications",
+  "slice": "001_notification_bridge",
+  "created": "2026-10-13",
+  "plan_created": "2026-10-12",
+  "plugin": "0.9.93",
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.5939364,
+   "phase": 29.162303599999998,
+   "consult": 0.9156908,
+   "test": 0.29693379999999997,
+   "doc": 2.3201170000000007,
+   "wrap-up": 2.1133382,
+   "plan": 12.16429785
+  },
+  "total": 47.56661765,
+  "old_model_share": 0.0,
+  "lines": [
+   4554,
+   7,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 4547,
+  "review_files": 48,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "Notifications",
+  "slice": "002_notifications_chart",
+  "created": "2026-10-14",
+  "plan_created": "2026-10-14",
+  "plugin": "0.9.93",
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.5812709999999999,
+   "phase": 26.7557426,
+   "consult": 0.7614175999999998,
+   "test": 0.35313189999999994,
+   "doc": 1.5170142,
+   "wrap-up": 2.2065016,
+   "plan": 20.0543069
+  },
+  "total": 52.2293858,
+  "old_model_share": 0.0,
+  "lines": [
+   2949,
+   7,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": true,
+  "review_lines": 2949,
+  "review_files": 44,
+  "review_cov": [
+   7,
+   7
+  ]
+ }
+]

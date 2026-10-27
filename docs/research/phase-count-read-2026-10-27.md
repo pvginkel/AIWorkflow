@@ -119,6 +119,6 @@ phases, 250k at 8–10 and 206k at 11–14; the largest is 488k. The plan-writer
 - **The fits are noisy.** The per-slice intercept's 95 % CI is −16 to +19 in the 5.5
   quadratic. The band tables are the sturdier evidence, and they point the same way.
 
-Scripts: `/work/scratch/phase-count/` (`measure.py`, `review_stat.py`, `report2.py`, `fit.py`;
-uncommitted). They gather and price every slice, read the review stats, and produce the tables
-and fits above.
+Scripts: `docs/research/archive/scripts/phase-count-2026-10-27/` (`measure.py`, `review_stat.py`,
+`report2.py`, `fit.py`, with the slice tables they wrote). They gather and price every slice, read
+the review stats, and produce the tables and fits above.

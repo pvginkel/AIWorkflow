@@ -1,0 +1,3938 @@
+[
+ {
+  "project": "KubeCoder",
+  "slice": "182b_per_client_operator_tokens",
+  "created": "2026-08-25",
+  "plan_created": "2026-08-24",
+  "plugin": "0.9.8",
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.6556107499999997,
+   "phase": 18.3097235,
+   "consult": 2.6895455,
+   "test": 2.1261057000000005,
+   "doc": 7.231102000000002,
+   "plan": 20.60488515
+  },
+  "total": 52.616972600000004,
+  "old_model_share": 0.9576938867820761,
+  "lines": [
+   0,
+   0,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 636,
+  "review_files": 20,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "109_prose_help_drift_sweep",
+  "created": "2026-08-02",
+  "plan_created": "2026-08-02",
+  "plugin": null,
+  "planned": 10,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.2770682500000006,
+   "phase": 59.705880349999994,
+   "consult": 9.469291500000002,
+   "test": 7.604693700000001,
+   "doc": 11.8097396,
+   "plan": 18.0566922
+  },
+  "total": 109.9233656,
+  "old_model_share": 0.8611076019491892,
+  "lines": [
+   0,
+   0,
+   10
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 714,
+  "review_files": 70,
+  "review_cov": [
+   10,
+   10
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "211_north_surface_session_seeding_and_clients",
+  "created": "2026-09-05",
+  "plan_created": "2026-09-05",
+  "plugin": "0.9.29",
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.464155,
+   "phase": 25.179014000000006,
+   "consult": 6.97671175,
+   "test": 5.245624699999998,
+   "doc": 10.111056249999999,
+   "plan": 16.79304455
+  },
+  "total": 65.76960625000001,
+  "old_model_share": 0.8958446896586066,
+  "lines": [
+   1147,
+   4,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1107,
+  "review_files": 51,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "189_session_stream_and_headless",
+  "created": "2026-08-31",
+  "plan_created": "2026-08-31",
+  "plugin": "0.9.8",
+  "planned": 10,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.86858625,
+   "phase": 103.04994500000002,
+   "consult": 5.785391499999999,
+   "test": 3.7034633000000015,
+   "doc": 36.483933249999986,
+   "plan": 44.376585
+  },
+  "total": 196.2679043,
+  "old_model_share": 0.9811305709244283,
+  "lines": [
+   0,
+   0,
+   10
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 5701,
+  "review_files": 94,
+  "review_cov": [
+   10,
+   10
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "070_deployment_seams",
+  "created": "2026-08-02",
+  "plan_created": "2026-08-02",
+  "plugin": null,
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.5817807500000005,
+   "phase": 18.65090845,
+   "consult": 4.21367325,
+   "test": 1.6404395,
+   "doc": 19.159464250000006,
+   "plan": 19.329065499999995
+  },
+  "total": 65.5753317,
+  "old_model_share": 0.9290679424805713,
+  "lines": [
+   0,
+   0,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 150,
+  "review_files": 12,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "170_ssh_transport",
+  "created": "2026-08-22",
+  "plan_created": "2026-08-22",
+  "plugin": null,
+  "planned": 12,
+  "appended": 0,
+  "cost": {
+   "run-orch": 5.303527500000003,
+   "phase": 124.68740724999998,
+   "consult": 3.604196,
+   "test": 4.192825000000001,
+   "doc": 37.467514,
+   "plan": 35.42712375
+  },
+  "total": 210.6825935,
+  "old_model_share": 0.940700169897994,
+  "lines": [
+   0,
+   0,
+   12
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 5788,
+  "review_files": 96,
+  "review_cov": [
+   12,
+   12
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "140_kaniko_build_daemon_streamed_context",
+  "created": "2026-08-07",
+  "plan_created": "2026-08-06",
+  "plugin": null,
+  "planned": 12,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.7840504999999993,
+   "phase": 146.89620875000003,
+   "consult": 10.905617249999999,
+   "test": 18.5991469,
+   "doc": 34.33894899999999,
+   "plan": 43.46805675000001
+  },
+  "total": 256.99202915,
+  "old_model_share": 0.9091614281687539,
+  "lines": [
+   0,
+   0,
+   12
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 5685,
+  "review_files": 64,
+  "review_cov": [
+   12,
+   12
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "135_catalog_terraform_backend_git",
+  "created": "2026-08-06",
+  "plan_created": "2026-08-03",
+  "plugin": null,
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 4.962753500000001,
+   "phase": 29.734161,
+   "consult": 8.929471,
+   "test": 7.5347311,
+   "doc": 8.327930750000002,
+   "plan": 11.238269049999996
+  },
+  "total": 70.72731639999999,
+  "old_model_share": 0.8709348188983459,
+  "lines": [
+   0,
+   0,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 482,
+  "review_files": 10,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "165_cross_repo_sidecar_and_ssh_prereqs",
+  "created": "2026-08-21",
+  "plan_created": "2026-08-21",
+  "plugin": null,
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.10081325,
+   "phase": 41.330211250000005,
+   "consult": 3.20786575,
+   "test": 1.9841744999999995,
+   "doc": 11.655363000000001,
+   "plan": 22.875943649999996
+  },
+  "total": 82.1543714,
+  "old_model_share": 0.9697125136788521,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 83,
+  "review_files": 7,
+  "review_cov": [
+   5,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "166_home_overlay_mountpoints",
+  "created": "2026-08-21",
+  "plan_created": "2026-08-21",
+  "plugin": null,
+  "planned": 1,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.8011905,
+   "phase": 5.10861375,
+   "consult": 1.9248775000000002,
+   "test": 3.2855088999999986,
+   "doc": 6.1095812500000015,
+   "plan": 10.327984050000001
+  },
+  "total": 28.55775595,
+  "old_model_share": 0.8700403944029084,
+  "lines": [
+   0,
+   0,
+   1
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 226,
+  "review_files": 2,
+  "review_cov": [
+   1,
+   1
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "158_problem_documents_and_refusal_rendering",
+  "created": "2026-08-18",
+  "plan_created": "2026-08-18",
+  "plugin": null,
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.3816572499999995,
+   "phase": 35.5759435,
+   "consult": 2.97223,
+   "test": 3.0960122000000005,
+   "doc": 13.050992000000003,
+   "plan": 22.47081445
+  },
+  "total": 79.5476494,
+  "old_model_share": 0.9442197735135089,
+  "lines": [
+   0,
+   0,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 945,
+  "review_files": 47,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "213_fleet_admin_capability",
+  "created": "2026-09-06",
+  "plan_created": "2026-09-05",
+  "plugin": "0.9.29",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 22.699600249999996,
+   "phase": 43.31138549999999,
+   "consult": 2.21100925,
+   "test": 4.5483161,
+   "doc": 15.004577000000003,
+   "plan": 15.160594250000003
+  },
+  "total": 102.93548235,
+  "old_model_share": 0.8086190553514221,
+  "lines": [
+   1292,
+   5,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1270,
+  "review_files": 62,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "063_lifecycle_metadata_watch_hardening",
+  "created": "2026-08-02",
+  "plan_created": "2026-08-02",
+  "plugin": null,
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.4772827499999996,
+   "phase": 41.077891449999996,
+   "consult": 8.593998749999999,
+   "test": 3.610903500000001,
+   "doc": 10.019527150000002,
+   "plan": 13.247143500000002
+  },
+  "total": 79.0267471,
+  "old_model_share": 0.9250344684882013,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1076,
+  "review_files": 19,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "139_dev_image_toolchain_slimming",
+  "created": "2026-08-09",
+  "plan_created": "2026-08-09",
+  "plugin": null,
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.483315,
+   "phase": 16.015106,
+   "consult": 2.58516575,
+   "test": 2.3302168000000014,
+   "doc": 9.52881375,
+   "plan": 23.302463000000003
+  },
+  "total": 55.245080300000005,
+  "old_model_share": 0.9578203744596602,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 495,
+  "review_files": 17,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "186_typescript_contract_codegen",
+  "created": "2026-08-24",
+  "plan_created": "2026-08-24",
+  "plugin": "0.9.8",
+  "planned": 2,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.35423425,
+   "phase": 12.18404425,
+   "consult": 2.319897,
+   "test": 1.1911908,
+   "doc": 8.808582249999997,
+   "plan": 13.350228000000001
+  },
+  "total": 40.20817655,
+  "old_model_share": 0.9703744138081286,
+  "lines": [
+   0,
+   0,
+   2
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1054,
+  "review_files": 13,
+  "review_cov": [
+   2,
+   2
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "198_claude_shim",
+  "created": "2026-09-03",
+  "plan_created": "2026-09-02",
+  "plugin": "0.9.20",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.9966769999999996,
+   "phase": 55.40965025,
+   "consult": 8.551033750000002,
+   "test": 2.7106988999999997,
+   "doc": 17.82180049999999,
+   "plan": 17.576023749999997
+  },
+  "total": 106.06588414999999,
+  "old_model_share": 0.8687135263935855,
+  "lines": [
+   4899,
+   6,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 4677,
+  "review_files": 43,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "169_in_pod_surface",
+  "created": "2026-08-22",
+  "plan_created": "2026-08-22",
+  "plugin": null,
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.9660222499999993,
+   "phase": 40.52455150000001,
+   "consult": 2.5026094999999997,
+   "test": 6.755788799999998,
+   "doc": 20.82276675,
+   "plan": 36.91647614999999
+  },
+  "total": 109.48821494999999,
+  "old_model_share": 0.8823840519650378,
+  "lines": [
+   0,
+   0,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1646,
+  "review_files": 55,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "150_worker_tui_bubbletea_v2",
+  "created": "2026-08-10",
+  "plan_created": "2026-08-10",
+  "plugin": null,
+  "planned": 2,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.7903892499999998,
+   "phase": 17.753226750000003,
+   "consult": 2.0042392499999995,
+   "test": 3.9673070999999998,
+   "doc": 4.240198499999999,
+   "plan": 13.538048250000001
+  },
+  "total": 43.293409100000005,
+  "old_model_share": 0.9083623308380211,
+  "lines": [
+   0,
+   0,
+   2
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 445,
+  "review_files": 13,
+  "review_cov": [
+   2,
+   2
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "131_vscode_extension_tasks_and_robustness",
+  "created": "2026-08-07",
+  "plan_created": "2026-08-07",
+  "plugin": null,
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.19164925,
+   "phase": 44.298220500000006,
+   "consult": 5.04428875,
+   "test": 4.0978411,
+   "doc": 20.521518000000004,
+   "plan": 14.659588950000002
+  },
+  "total": 90.81310655000001,
+  "old_model_share": 0.9420063523859266,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 2954,
+  "review_files": 45,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "154_residual_sweep",
+  "created": "2026-08-16",
+  "plan_created": "",
+  "plugin": null,
+  "planned": 11,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.1043700000000003,
+   "phase": 53.222376,
+   "consult": 4.738381499999999,
+   "test": 2.527682199999999,
+   "doc": 14.400742999999999
+  },
+  "total": 77.9935527,
+  "old_model_share": 0.9675911391070664,
+  "lines": [
+   0,
+   0,
+   11
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 740,
+  "review_files": 24,
+  "review_cov": [
+   11,
+   11
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "173_surface_2_delivery_and_coverage",
+  "created": "2026-08-23",
+  "plan_created": "2026-08-23",
+  "plugin": "0.9.8",
+  "planned": 3,
+  "appended": 1,
+  "cost": {
+   "run-orch": 1.8662547500000004,
+   "phase": 24.224435250000003,
+   "consult": 5.5574312500000005,
+   "test": 6.854274,
+   "appended": 3.6914074999999995,
+   "doc": 12.265249249999998,
+   "plan": 20.692084300000005
+  },
+  "total": 75.1511363,
+  "old_model_share": 0.8690641315026928,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1297,
+  "review_files": 18,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "182_surface_2_inversion",
+  "created": "2026-08-25",
+  "plan_created": "2026-08-24",
+  "plugin": "0.9.8",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.3872217499999997,
+   "phase": 77.80174925000001,
+   "consult": 4.922566500000002,
+   "test": 4.294284000000001,
+   "doc": 40.32243525000001,
+   "plan": 25.45379625
+  },
+  "total": 156.18205300000002,
+  "old_model_share": 0.9725046257395525,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 7627,
+  "review_files": 93,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "156_cexec_behaviour_manual_page",
+  "created": "2026-08-17",
+  "plan_created": "2026-08-17",
+  "plugin": null,
+  "planned": 1,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.4879972500000003,
+   "phase": 17.43166985,
+   "consult": 1.6845714999999999,
+   "test": 1.3108007000000002,
+   "doc": 3.3171577500000002,
+   "plan": 9.38995205
+  },
+  "total": 34.6221491,
+  "old_model_share": 0.9423851955510179,
+  "lines": [
+   0,
+   0,
+   1
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 236,
+  "review_files": 3,
+  "review_cov": [
+   1,
+   1
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "104_minimal_tool_declaration",
+  "created": "2026-08-01",
+  "plan_created": "2026-08-01",
+  "plugin": null,
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.26607225,
+   "phase": 25.112259,
+   "consult": 3.3261077500000003,
+   "test": 1.8885304999999997,
+   "doc": 10.14949,
+   "plan": 12.07959525
+  },
+  "total": 53.82205475,
+  "old_model_share": 0.916863374674487,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 557,
+  "review_files": 24,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "218_kc_describe_and_catalog_output",
+  "created": "2026-09-08",
+  "plan_created": "2026-09-08",
+  "plugin": "0.9.32",
+  "planned": 9,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.0243692500000003,
+   "phase": 75.13954774999998,
+   "consult": 12.048406,
+   "test": 3.0209034,
+   "doc": 21.061428900000003,
+   "plan": 40.4473195
+  },
+  "total": 153.74197479999998,
+  "old_model_share": 0.9464934604833763,
+  "lines": [
+   3414,
+   9,
+   9
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 3273,
+  "review_files": 80,
+  "review_cov": [
+   9,
+   9
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "184_crash_loop_diagnosis_and_watch_guard",
+  "created": "2026-08-24",
+  "plan_created": "2026-08-24",
+  "plugin": "0.9.8",
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.4599405,
+   "phase": 45.01615025000001,
+   "consult": 3.8821504999999994,
+   "test": 3.8057762,
+   "doc": 9.959173499999999,
+   "plan": 15.09040765
+  },
+  "total": 79.21359860000001,
+  "old_model_share": 0.9443165355701942,
+  "lines": [
+   0,
+   0,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1658,
+  "review_files": 21,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "212_residual_sweep",
+  "created": "2026-09-04",
+  "plan_created": "",
+  "plugin": "0.9.20",
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.1649025000000002,
+   "phase": 27.741302750000003,
+   "consult": 2.5873222499999997,
+   "test": 2.2452989999999993,
+   "doc": 18.416246749999996
+  },
+  "total": 52.15507325,
+  "old_model_share": 0.9569495571554968,
+  "lines": [
+   1100,
+   7,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1047,
+  "review_files": 25,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "145_vscode_extension_attach_robustness",
+  "created": "2026-08-14",
+  "plan_created": "2026-08-14",
+  "plugin": null,
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.8180042500000002,
+   "phase": 16.783965750000004,
+   "consult": 2.35635175,
+   "test": 4.016597100000002,
+   "doc": 7.2816705000000015,
+   "plan": 14.755523999999996
+  },
+  "total": 47.01211335,
+  "old_model_share": 0.9145625071117973,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 531,
+  "review_files": 16,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "209_controller_config_validation",
+  "created": "2026-09-04",
+  "plan_created": "2026-09-04",
+  "plugin": "0.9.22",
+  "planned": 4,
+  "appended": 2,
+  "cost": {
+   "run-orch": 4.29698275,
+   "phase": 16.699106750000006,
+   "consult": 17.66598125,
+   "test": 3.7888688,
+   "doc": 24.754665,
+   "appended": 7.76189325,
+   "plan": 28.621996
+  },
+  "total": 103.5894938,
+  "old_model_share": 0.9441555138673726,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 685,
+  "review_files": 24,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "214_phase0_toolchains",
+  "created": "2026-09-06",
+  "plan_created": "2026-09-06",
+  "plugin": "0.9.29",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.7143542500000002,
+   "phase": 46.412193499999994,
+   "consult": 5.26778325,
+   "test": 3.6179908,
+   "doc": 7.3703217500000004,
+   "plan": 37.83170655
+  },
+  "total": 102.21435009999999,
+  "old_model_share": 0.9409257815160731,
+  "lines": [
+   583,
+   5,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 583,
+  "review_files": 9,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "091_kc_shell_completion",
+  "created": "2026-08-02",
+  "plan_created": "2026-08-02",
+  "plugin": null,
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.872536000000001,
+   "phase": 31.62853225,
+   "consult": 1.7549950000000003,
+   "test": 3.5135124999999983,
+   "doc": 6.892303500000001,
+   "plan": 15.017411749999997
+  },
+  "total": 62.679291,
+  "old_model_share": 0.9352364842480431,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1124,
+  "review_files": 21,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "151_recovery_mode_replaces_degrade_marker",
+  "created": "2026-08-10",
+  "plan_created": "2026-08-10",
+  "plugin": null,
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.6799807500000001,
+   "phase": 65.677238,
+   "consult": 2.73916675,
+   "test": 5.223691200000002,
+   "doc": 19.27792375,
+   "plan": 26.139411
+  },
+  "total": 120.73741145,
+  "old_model_share": 0.9438054773701214,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 2201,
+  "review_files": 40,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "117_api_contract_doc_slimming",
+  "created": "2026-08-01",
+  "plan_created": "2026-08-01",
+  "plugin": null,
+  "planned": 9,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.6344677499999998,
+   "phase": 80.55479635000002,
+   "consult": 8.0769515,
+   "test": 5.664035200000001,
+   "doc": 3.6996222,
+   "plan": 11.821321500000002
+  },
+  "total": 112.45119450000001,
+  "old_model_share": 0.8989670091943756,
+  "lines": [
+   0,
+   0,
+   9
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 3022,
+  "review_files": 40,
+  "review_cov": [
+   9,
+   9
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "199_north_surface_closeout_residuals",
+  "created": "2026-09-03",
+  "plan_created": "2026-09-03",
+  "plugin": "0.9.20",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.42468225,
+   "phase": 23.008675999999998,
+   "consult": 2.556818999999999,
+   "test": 3.3973366000000005,
+   "doc": 17.683487749999998,
+   "plan": 16.7607229
+  },
+  "total": 65.83172449999999,
+  "old_model_share": 0.8076823014107736,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 969,
+  "review_files": 24,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "180_vscode_extension_typescript",
+  "created": "2026-08-25",
+  "plan_created": "2026-08-24",
+  "plugin": "0.9.8",
+  "planned": 14,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.7743647500000006,
+   "phase": 96.55857825,
+   "consult": 3.3042355,
+   "test": 3.718598900000001,
+   "doc": 11.782591749999996,
+   "plan": 21.6445882
+  },
+  "total": 140.78295735,
+  "old_model_share": 0.9702539307397208,
+  "lines": [
+   0,
+   0,
+   14
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 4387,
+  "review_files": 44,
+  "review_cov": [
+   14,
+   14
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "142_environment_projection_accuracy",
+  "created": "2026-08-10",
+  "plan_created": "2026-08-10",
+  "plugin": null,
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.116779000000001,
+   "phase": 48.87506875000001,
+   "consult": 6.34390575,
+   "test": 4.0026326,
+   "doc": 10.271074250000002,
+   "plan": 15.892799099999998
+  },
+  "total": 88.50225945000001,
+  "old_model_share": 0.9347201954401629,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 814,
+  "review_files": 19,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "155_environment_state_visibility",
+  "created": "2026-08-17",
+  "plan_created": "2026-08-17",
+  "plugin": null,
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.145433,
+   "phase": 52.799144,
+   "consult": 4.343571000000001,
+   "test": 2.7198951,
+   "doc": 24.944206249999997,
+   "plan": 17.238632250000002
+  },
+  "total": 104.1908816,
+  "old_model_share": 0.9566011484828437,
+  "lines": [
+   0,
+   0,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 2904,
+  "review_files": 35,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "210_worker_preamble_and_leftovers",
+  "created": "2026-09-05",
+  "plan_created": "2026-09-05",
+  "plugin": "0.9.29",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.18416875,
+   "phase": 25.856525,
+   "consult": 3.706259749999999,
+   "test": 3.4486318000000002,
+   "doc": 11.6822,
+   "plan": 26.622056049999998
+  },
+  "total": 72.49984135,
+  "old_model_share": 0.9140046483701719,
+  "lines": [
+   647,
+   1,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1654,
+  "review_files": 35,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "159_compose_time_config_faults",
+  "created": "2026-08-18",
+  "plan_created": "2026-08-18",
+  "plugin": null,
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.8836924999999995,
+   "phase": 22.875723499999996,
+   "consult": 1.9005570000000003,
+   "test": 3.0145591000000005,
+   "doc": 7.90891575,
+   "plan": 28.153125049999993
+  },
+  "total": 65.73657289999998,
+  "old_model_share": 0.9298290099939179,
+  "lines": [
+   0,
+   0,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 450,
+  "review_files": 16,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "190_fleet_state_under_faults",
+  "created": "2026-09-01",
+  "plan_created": "2026-09-01",
+  "plugin": "0.9.12",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.6832064999999998,
+   "phase": 34.1767685,
+   "consult": 2.15992575,
+   "test": 3.534560400000001,
+   "doc": 11.037271499999996,
+   "plan": 17.449255449999995
+  },
+  "total": 70.04098809999999,
+  "old_model_share": 0.9320561541306983,
+  "lines": [
+   0,
+   0,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1031,
+  "review_files": 25,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "229_timer_and_adapter_residuals",
+  "created": "2026-09-19",
+  "plan_created": "2026-09-19",
+  "plugin": "0.9.40",
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.5727995000000001,
+   "phase": 22.241720249999993,
+   "consult": 1.4067462500000003,
+   "test": 4.8052042,
+   "doc": 8.436599650000003,
+   "plan": 14.67120955
+  },
+  "total": 53.1342794,
+  "old_model_share": 0.8140747929292517,
+  "lines": [
+   1328,
+   4,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1319,
+  "review_files": 17,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "125_cexec_exec_daemon",
+  "created": "2026-07-31",
+  "plan_created": "2026-07-31",
+  "plugin": null,
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 4.758069999999999,
+   "phase": 97.35287149999999,
+   "consult": 6.420883999999999,
+   "test": 6.681571600000002,
+   "doc": 22.9280605,
+   "plan": 21.225937300000005
+  },
+  "total": 159.3673949,
+  "old_model_share": 0.9445707642674153,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 5450,
+  "review_files": 64,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "092_worker_robustness_residuals",
+  "created": "2026-08-09",
+  "plan_created": "2026-08-09",
+  "plugin": null,
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.234251,
+   "phase": 12.956664750000002,
+   "consult": 2.2002345,
+   "test": 1.5512615,
+   "doc": 8.217255000000002,
+   "plan": 21.914841749999997
+  },
+  "total": 48.0745085,
+  "old_model_share": 0.9677321402048238,
+  "lines": [
+   0,
+   0,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 391,
+  "review_files": 14,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "174_vscode_extension_surface",
+  "created": "2026-08-23",
+  "plan_created": "2026-08-23",
+  "plugin": "0.9.8",
+  "planned": 2,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.50152025,
+   "phase": 10.79258525,
+   "consult": 2.5678927500000004,
+   "test": 3.1754149,
+   "doc": 9.3086145,
+   "plan": 10.95793925
+  },
+  "total": 38.3039669,
+  "old_model_share": 0.91709958114025,
+  "lines": [
+   0,
+   0,
+   2
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 607,
+  "review_files": 12,
+  "review_cov": [
+   2,
+   2
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "222_pod_start_walk_races_and_failed_step_naming",
+  "created": "2026-09-11",
+  "plan_created": "2026-09-11",
+  "plugin": "0.9.34",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.20040075,
+   "phase": 12.924036000000001,
+   "consult": 0.9461195,
+   "test": 0.8863099999999999,
+   "doc": 2.9005842499999996,
+   "plan": 11.0648763
+  },
+  "total": 31.9223268,
+  "old_model_share": 0.9201451834645087,
+  "lines": [
+   0,
+   0,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1251,
+  "review_files": 16,
+  "review_cov": [
+   4,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "149_contracts_package_and_drift_gate",
+  "created": "2026-08-10",
+  "plan_created": "2026-08-10",
+  "plugin": null,
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.3873722499999996,
+   "phase": 19.991162499999998,
+   "consult": 4.440657750000001,
+   "test": 2.0493634000000003,
+   "doc": 6.843184249999998,
+   "plan": 13.716238749999999
+  },
+  "total": 48.42797889999999,
+  "old_model_share": 0.9576822438898026,
+  "lines": [
+   0,
+   0,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 749,
+  "review_files": 20,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "221_manual_stage_origin_and_cluster_identities",
+  "created": "2026-09-10",
+  "plan_created": "2026-09-10",
+  "plugin": "0.9.33",
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.9828036000000004,
+   "phase": 22.8243545,
+   "consult": 2.6519080000000006,
+   "test": 2.0799651,
+   "doc": 12.38225725,
+   "plan": 20.896452
+  },
+  "total": 63.81774045,
+  "old_model_share": 0.935798370153671,
+  "lines": [
+   585,
+   4,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 555,
+  "review_files": 10,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "167_doc_scope_mechanism_only",
+  "created": "2026-08-21",
+  "plan_created": "2026-08-21",
+  "plugin": null,
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.8107242499999996,
+   "phase": 24.51040575,
+   "consult": 2.158253,
+   "test": 2.0627582,
+   "doc": 8.995016750000003,
+   "plan": 14.751703499999998
+  },
+  "total": 54.28886145,
+  "old_model_share": 0.9620040254132091,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 380,
+  "review_files": 21,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "219_kc_project_verbs_and_golden_scrub",
+  "created": "2026-09-10",
+  "plan_created": "2026-09-10",
+  "plugin": "0.9.33",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 5.27637955,
+   "phase": 39.438331000000005,
+   "consult": 8.0115895,
+   "test": 3.435091600000001,
+   "doc": 15.811763999999998,
+   "plan": 22.15532315
+  },
+  "total": 94.12847880000001,
+  "old_model_share": 0.9352193206802359,
+  "lines": [
+   32,
+   1,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1507,
+  "review_files": 39,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "168_env_issue_detail_budget",
+  "created": "2026-08-22",
+  "plan_created": "2026-08-22",
+  "plugin": null,
+  "planned": 2,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.88083225,
+   "phase": 26.435729500000004,
+   "consult": 2.2770029999999992,
+   "test": 3.3239859,
+   "doc": 11.227627,
+   "plan": 16.694262350000002
+  },
+  "total": 61.83944,
+  "old_model_share": 0.8725816242837904,
+  "lines": [
+   0,
+   0,
+   2
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 519,
+  "review_files": 9,
+  "review_cov": [
+   2,
+   2
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "157_kc_session_selector_ux",
+  "created": "2026-08-17",
+  "plan_created": "2026-08-17",
+  "plugin": null,
+  "planned": 2,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.8099777499999998,
+   "phase": 22.260555749999998,
+   "consult": 2.06851825,
+   "test": 4.191158699999999,
+   "doc": 6.675361500000001,
+   "plan": 10.439178349999999
+  },
+  "total": 47.444750299999995,
+  "old_model_share": 0.8992844462288169,
+  "lines": [
+   0,
+   0,
+   2
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1101,
+  "review_files": 6,
+  "review_cov": [
+   2,
+   2
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "143_user_facing_error_quality",
+  "created": "2026-08-13",
+  "plan_created": "2026-08-13",
+  "plugin": null,
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.1801922499999997,
+   "phase": 46.738488,
+   "consult": 2.5664437500000004,
+   "test": 2.8328146000000016,
+   "doc": 14.029803499999995,
+   "plan": 20.730590900000003
+  },
+  "total": 89.078333,
+  "old_model_share": 0.961093002268015,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1583,
+  "review_files": 47,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "200_worker_boot_restore_and_queued_nudge",
+  "created": "2026-09-03",
+  "plan_created": "2026-09-03",
+  "plugin": "0.9.20",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.98368,
+   "phase": 52.5586305,
+   "consult": 16.154884999999997,
+   "test": 7.014970999999999,
+   "doc": 28.999052500000005,
+   "plan": 27.853428100000002
+  },
+  "total": 136.5646471,
+  "old_model_share": 0.8496298545335603,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 2283,
+  "review_files": 95,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "225_headless_turns_that_never_end",
+  "created": "2026-09-11",
+  "plan_created": "2026-09-11",
+  "plugin": "0.9.36",
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.0333127500000001,
+   "phase": 16.364143000000002,
+   "consult": 0.8880067499999998,
+   "test": 3.3662648000000006,
+   "doc": 2.686129,
+   "plan": 17.6125824
+  },
+  "total": 41.95043870000001,
+  "old_model_share": 0.8633280276041547,
+  "lines": [
+   2517,
+   3,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 2517,
+  "review_files": 40,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "093_worker_test_realism",
+  "created": "2026-08-06",
+  "plan_created": "2026-08-03",
+  "plugin": null,
+  "planned": 10,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.2125997500000003,
+   "phase": 69.58785035000001,
+   "consult": 3.8308642500000003,
+   "test": 6.763476700000002,
+   "doc": 8.626964000000001,
+   "plan": 30.961732549999997
+  },
+  "total": 121.98348760000002,
+  "old_model_share": 0.9254443385827574,
+  "lines": [
+   0,
+   0,
+   10
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 2213,
+  "review_files": 24,
+  "review_cov": [
+   10,
+   10
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "223_mcp_adapter_reply_shapes",
+  "created": "2026-09-11",
+  "plan_created": "2026-09-11",
+  "plugin": "0.9.34",
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.8874882500000001,
+   "phase": 15.085558999999998,
+   "consult": 1.1048742500000002,
+   "test": 3.1274494000000006,
+   "doc": 2.7444572500000004,
+   "plan": 17.5098048
+  },
+  "total": 40.45963295,
+  "old_model_share": 0.8546908975356879,
+  "lines": [
+   31,
+   1,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1635,
+  "review_files": 31,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "124_ruff_format_decision",
+  "created": "2026-08-01",
+  "plan_created": "2026-08-01",
+  "plugin": null,
+  "planned": 1,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.3998935,
+   "phase": 2.22804575,
+   "consult": 1.61132025,
+   "test": 1.7704779,
+   "doc": 1.8927208499999997,
+   "plan": 7.41520825
+  },
+  "total": 16.3176665,
+  "old_model_share": 0.8709158567494927,
+  "lines": [
+   0,
+   0,
+   1
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 22,
+  "review_files": 5,
+  "review_cov": [
+   1,
+   1
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "172_ssh_transport_hardening",
+  "created": "2026-08-31",
+  "plan_created": "2026-08-23",
+  "plugin": "0.9.8",
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.4691562500000002,
+   "phase": 12.48461025,
+   "consult": 2.6758197499999996,
+   "test": 2.864441900000001,
+   "doc": 7.240907249999999,
+   "plan": 13.862767999999999
+  },
+  "total": 40.5977034,
+  "old_model_share": 0.929443252693944,
+  "lines": [
+   0,
+   0,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 720,
+  "review_files": 9,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "226_held_mcp_calls_never_go_silent",
+  "created": "2026-09-11",
+  "plan_created": "2026-09-11",
+  "plugin": "0.9.36",
+  "planned": 3,
+  "appended": 1,
+  "cost": {
+   "run-orch": 2.1883735,
+   "phase": 10.20232,
+   "consult": 2.043139,
+   "appended": 1.8902085,
+   "test": 9.460854099999999,
+   "doc": 2.787752,
+   "plan": 9.726779250000002
+  },
+  "total": 38.29942635,
+  "old_model_share": 0.6907093857817013,
+  "lines": [
+   11,
+   1,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 257,
+  "review_files": 10,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "107_kc_session_ui_polish",
+  "created": "2026-08-01",
+  "plan_created": "2026-08-01",
+  "plugin": null,
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.32111325,
+   "phase": 35.274170250000005,
+   "consult": 5.596536749999999,
+   "test": 4.0546641,
+   "doc": 14.305756299999997,
+   "plan": 10.68824215
+  },
+  "total": 71.2404828,
+  "old_model_share": 0.906339344741218,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1624,
+  "review_files": 32,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "175_worker_test_suite_reliability",
+  "created": "2026-08-23",
+  "plan_created": "2026-08-23",
+  "plugin": "0.9.8",
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.55598625,
+   "phase": 16.3448875,
+   "consult": 2.14767125,
+   "test": 2.243921,
+   "doc": 7.4210270000000005,
+   "plan": 13.38461625
+  },
+  "total": 43.09810925,
+  "old_model_share": 0.9479345836963834,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 811,
+  "review_files": 7,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "098_kc_cli_convention_hygiene",
+  "created": "2026-08-02",
+  "plan_created": "2026-08-02",
+  "plugin": null,
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.481815,
+   "phase": 20.4575455,
+   "consult": 3.931464,
+   "test": 1.4396738999999998,
+   "doc": 4.3816345000000005,
+   "plan": 7.90322925
+  },
+  "total": 39.59536215,
+  "old_model_share": 0.9636403401351391,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 704,
+  "review_files": 22,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "187_client_credential_lifecycle",
+  "created": "2026-08-28",
+  "plan_created": "2026-08-28",
+  "plugin": "0.9.8",
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.44647875,
+   "phase": 57.465648249999994,
+   "consult": 3.29330625,
+   "test": 3.6903983,
+   "doc": 22.918533999999998,
+   "plan": 20.614961000000005
+  },
+  "total": 110.42932655,
+  "old_model_share": 0.9665813564630491,
+  "lines": [
+   0,
+   0,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 3557,
+  "review_files": 54,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "128_config_fault_problem_detail",
+  "created": "2026-08-10",
+  "plan_created": "2026-08-09",
+  "plugin": null,
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.5750295000000003,
+   "phase": 22.639018249999996,
+   "consult": 6.5757315,
+   "test": 2.1851510000000007,
+   "doc": 14.85410825,
+   "plan": 14.612600450000002
+  },
+  "total": 62.44163895,
+  "old_model_share": 0.9328067573088581,
+  "lines": [
+   0,
+   0,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 789,
+  "review_files": 13,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "148_doc_accuracy_and_test_reliability",
+  "created": "2026-08-14",
+  "plan_created": "",
+  "plugin": null,
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.1292185,
+   "phase": 17.01148625,
+   "consult": 3.150421,
+   "test": 1.9125231999999999,
+   "doc": 5.6992277499999995
+  },
+  "total": 29.9028767,
+  "old_model_share": 0.9360421668059783,
+  "lines": [
+   0,
+   0,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 127,
+  "review_files": 14,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "181_desktop_vscode_extension",
+  "created": "2026-08-28",
+  "plan_created": "2026-08-28",
+  "plugin": "0.9.8",
+  "planned": 14,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.2624104999999997,
+   "phase": 214.53334974999999,
+   "consult": 7.4827745,
+   "test": 5.3009431,
+   "doc": 30.355825749999997,
+   "plan": 31.004892099999992
+  },
+  "total": 290.94019569999995,
+  "old_model_share": 0.9786952119658596,
+  "lines": [
+   0,
+   0,
+   14
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 21220,
+  "review_files": 162,
+  "review_cov": [
+   14,
+   14
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "191_pod_tmp_mode_and_client_token_name",
+  "created": "2026-09-01",
+  "plan_created": "2026-09-01",
+  "plugin": "0.9.12",
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.3319590000000001,
+   "phase": 13.339818750000001,
+   "consult": 3.226494,
+   "test": 1.5155950999999996,
+   "doc": 8.26200325,
+   "plan": 16.143568800000004
+  },
+  "total": 43.8194389,
+  "old_model_share": 0.9437964699725994,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 438,
+  "review_files": 17,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "201_homelab_literals_become_config",
+  "created": "2026-09-03",
+  "plan_created": "2026-09-03",
+  "plugin": "0.9.20",
+  "planned": 8,
+  "appended": 0,
+  "cost": {
+   "run-orch": 5.829030750000001,
+   "phase": 49.87589475,
+   "consult": 16.773419500000003,
+   "test": 4.2553392,
+   "doc": 31.32545350000001,
+   "plan": 24.850816550000005
+  },
+  "total": 132.90995425000003,
+  "old_model_share": 0.8549605248998868,
+  "lines": [
+   1376,
+   8,
+   8
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1376,
+  "review_files": 92,
+  "review_cov": [
+   8,
+   8
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "196_terminal_title_new_session_button",
+  "created": "2026-09-02",
+  "plan_created": "2026-09-02",
+  "plugin": "0.9.13",
+  "planned": 1,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.0291865,
+   "phase": 3.81239975,
+   "consult": 1.7206264999999998,
+   "test": 1.9540691,
+   "doc": 2.6511302499999996,
+   "plan": 8.729264650000001
+  },
+  "total": 19.89667675,
+  "old_model_share": 0.8919136583952394,
+  "lines": [
+   0,
+   0,
+   1
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 82,
+  "review_files": 4,
+  "review_cov": [
+   1,
+   1
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "188_desktop_environment_row",
+  "created": "2026-08-31",
+  "plan_created": "2026-08-31",
+  "plugin": "0.9.8",
+  "planned": 8,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.26177875,
+   "phase": 37.8326455,
+   "consult": 3.8492089999999988,
+   "test": 2.4190082999999993,
+   "doc": 8.561071500000002,
+   "plan": 17.342633750000005
+  },
+  "total": 71.26634680000001,
+  "old_model_share": 0.9660567938638884,
+  "lines": [
+   0,
+   0,
+   8
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1297,
+  "review_files": 48,
+  "review_cov": [
+   8,
+   8
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "162_residual_sweep",
+  "created": "2026-08-21",
+  "plan_created": "",
+  "plugin": null,
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.6650285,
+   "phase": 32.582467,
+   "consult": 3.8123620000000007,
+   "test": 6.088350500000001,
+   "doc": 5.567276499999999
+  },
+  "total": 49.7154845,
+  "old_model_share": 0.8775361326308707,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 897,
+  "review_files": 55,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "133_session_restore_nudge",
+  "created": "2026-08-07",
+  "plan_created": "2026-08-07",
+  "plugin": null,
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.96199025,
+   "phase": 14.92751925,
+   "consult": 1.9081812500000002,
+   "test": 3.1458697000000004,
+   "doc": 4.5802742499999995,
+   "plan": 13.7089441
+  },
+  "total": 40.2327788,
+  "old_model_share": 0.897429436318229,
+  "lines": [
+   0,
+   0,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 881,
+  "review_files": 21,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "185_residual_sweep",
+  "created": "2026-08-24",
+  "plan_created": "",
+  "plugin": "0.9.8",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.4794867499999997,
+   "phase": 16.5676105,
+   "consult": 3.44234625,
+   "test": 1.5468635,
+   "doc": 7.804492749999999
+  },
+  "total": 30.84079975,
+  "old_model_share": 0.9498435996297403,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 326,
+  "review_files": 13,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "161_cexec_diagnosability",
+  "created": "2026-08-19",
+  "plan_created": "2026-08-19",
+  "plugin": null,
+  "planned": 2,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.829867,
+   "phase": 8.00955325,
+   "consult": 1.9926220000000001,
+   "test": 5.107085199999998,
+   "doc": 6.844426,
+   "plan": 11.1076017
+  },
+  "total": 34.891155149999996,
+  "old_model_share": 0.8264706521188366,
+  "lines": [
+   0,
+   0,
+   2
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 306,
+  "review_files": 9,
+  "review_cov": [
+   2,
+   2
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "208_vscode_desktop_windows_share_probe",
+  "created": "2026-09-04",
+  "plan_created": "2026-09-04",
+  "plugin": "0.9.22",
+  "planned": 1,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.2129367500000001,
+   "phase": 5.7957719999999995,
+   "consult": 1.566844,
+   "test": 1.6390638,
+   "doc": 3.5851935999999998,
+   "plan": 13.19043175
+  },
+  "total": 26.9902419,
+  "old_model_share": 0.8664722916025439,
+  "lines": [
+   407,
+   1,
+   1
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 407,
+  "review_files": 7,
+  "review_cov": [
+   1,
+   1
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "217_departure_classification_and_session_linger_retirement",
+  "created": "2026-09-08",
+  "plan_created": "2026-09-08",
+  "plugin": "0.9.32",
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.81540635,
+   "phase": 62.609354499999995,
+   "consult": 4.781564649999999,
+   "test": 3.9872150999999993,
+   "doc": 15.282353250000005,
+   "plan": 28.503617450000007
+  },
+  "total": 118.97951130000001,
+  "old_model_share": 0.9256011291080164,
+  "lines": [
+   79,
+   1,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 3016,
+  "review_files": 57,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "144_controller_lifecycle_correctness",
+  "created": "2026-08-14",
+  "plan_created": "2026-08-14",
+  "plugin": null,
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.4120152500000003,
+   "phase": 26.84173625,
+   "consult": 2.1053344999999997,
+   "test": 3.2891047,
+   "doc": 8.789332250000001,
+   "plan": 11.934655999999999
+  },
+  "total": 54.37217895,
+  "old_model_share": 0.9395075797307181,
+  "lines": [
+   0,
+   0,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 543,
+  "review_files": 9,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "160_daemon_lifecycle_and_timing",
+  "created": "2026-08-19",
+  "plan_created": "2026-08-19",
+  "plugin": null,
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.749718249999999,
+   "phase": 25.30281875,
+   "consult": 1.7615195000000003,
+   "test": 2.1934039000000003,
+   "doc": 7.062267749999998,
+   "plan": 20.814248199999998
+  },
+  "total": 60.88397635,
+  "old_model_share": 0.9130073967318989,
+  "lines": [
+   0,
+   0,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 555,
+  "review_files": 27,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "195_mcp_adapter_oidc_north_auth",
+  "created": "2026-09-01",
+  "plan_created": "2026-09-01",
+  "plugin": "0.9.13",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.8989569999999998,
+   "phase": 31.60185575,
+   "consult": 3.1054625000000002,
+   "test": 2.4929261,
+   "doc": 7.54230375,
+   "plan": 18.98434625
+  },
+  "total": 65.62585135,
+  "old_model_share": 0.8447083368770651,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1424,
+  "review_files": 22,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "227_timers_controller",
+  "created": "2026-09-18",
+  "plan_created": "2026-09-18",
+  "plugin": "0.9.36",
+  "planned": 8,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.1322557500000001,
+   "phase": 87.97915524999998,
+   "consult": 3.053399250000001,
+   "test": 9.128782000000001,
+   "doc": 19.28142834999999,
+   "plan": 26.628420300000002
+  },
+  "total": 147.20344089999998,
+  "old_model_share": 0.8712844429168503,
+  "lines": [
+   6378,
+   8,
+   8
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 6025,
+  "review_files": 102,
+  "review_cov": [
+   8,
+   8
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "215_headless_turn_accounting_and_resume",
+  "created": "2026-09-06",
+  "plan_created": "2026-09-06",
+  "plugin": "0.9.29",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.9158460000000004,
+   "phase": 52.795682500000005,
+   "consult": 3.788176,
+   "test": 2.5640538999999998,
+   "doc": 12.055107749999998,
+   "plan": 26.91221355
+  },
+  "total": 100.0310797,
+  "old_model_share": 0.9485806764714947,
+  "lines": [
+   1924,
+   6,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1828,
+  "review_files": 46,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "228_timers_client_surfaces",
+  "created": "2026-09-18",
+  "plan_created": "2026-09-18",
+  "plugin": "0.9.38",
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.8933704999999998,
+   "phase": 57.42642374999999,
+   "consult": 1.65480875,
+   "test": 6.912209300000001,
+   "doc": 36.69174415000002,
+   "plan": 15.315226900000003
+  },
+  "total": 118.89378335,
+  "old_model_share": 0.906301363821475,
+  "lines": [
+   6518,
+   7,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 6486,
+  "review_files": 77,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "224_residual_sweep",
+  "created": "2026-09-11",
+  "plan_created": "",
+  "plugin": "0.9.34",
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.584203,
+   "phase": 7.79871725,
+   "consult": 0.8794915,
+   "test": 1.8313319999999997,
+   "doc": 2.18901225
+  },
+  "total": 14.282756000000001,
+  "old_model_share": 0.8717802082455236,
+  "lines": [
+   256,
+   5,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 256,
+  "review_files": 23,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "220_north_adapter_residuals",
+  "created": "2026-09-10",
+  "plan_created": "2026-09-10",
+  "plugin": "0.9.33",
+  "planned": 6,
+  "appended": 1,
+  "cost": {
+   "run-orch": 4.5280945,
+   "phase": 33.976813,
+   "consult": 8.175021749999999,
+   "appended": 7.947240749999999,
+   "test": 2.0678363,
+   "doc": 12.048229000000001,
+   "plan": 21.01166855
+  },
+  "total": 89.75490385,
+  "old_model_share": 0.9550739939876834,
+  "lines": [
+   0,
+   0,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1033,
+  "review_files": 21,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "094_controlplane_test_realism",
+  "created": "2026-08-09",
+  "plan_created": "2026-08-09",
+  "plugin": null,
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.52815725,
+   "phase": 14.094993,
+   "consult": 1.75955025,
+   "test": 2.5126681,
+   "doc": 4.98296075,
+   "plan": 18.39330405
+  },
+  "total": 43.2716334,
+  "old_model_share": 0.9232207305583247,
+  "lines": [
+   0,
+   0,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 353,
+  "review_files": 11,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "146_worker_daemon_env_setup_robustness",
+  "created": "2026-08-15",
+  "plan_created": "2026-08-15",
+  "plugin": null,
+  "planned": 3,
+  "appended": 1,
+  "cost": {
+   "run-orch": 1.92379675,
+   "phase": 12.871561999999999,
+   "consult": 4.46078225,
+   "appended": 2.2851507499999997,
+   "test": 2.7449910999999987,
+   "doc": 8.188575499999999,
+   "plan": 12.364943750000002
+  },
+  "total": 44.8398021,
+  "old_model_share": 0.9387822654997845,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 386,
+  "review_files": 7,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "179_headless_claude_flags",
+  "created": "2026-08-23",
+  "plan_created": "2026-08-23",
+  "plugin": "0.9.7",
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.9921130000000002,
+   "phase": 11.81956,
+   "consult": 2.3440222499999996,
+   "test": 2.8816962999999998,
+   "doc": 7.3619492499999994,
+   "plan": 13.44150625
+  },
+  "total": 39.84084705,
+  "old_model_share": 0.9276698033959097,
+  "lines": [
+   0,
+   0,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 459,
+  "review_files": 17,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "153_config_faults_refuse_uniformly",
+  "created": "2026-08-13",
+  "plan_created": "2026-08-11",
+  "plugin": null,
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.8462249999999993,
+   "phase": 26.50063025,
+   "consult": 8.272331249999999,
+   "test": 3.3047490000000006,
+   "doc": 14.336105250000001,
+   "plan": 25.88324305
+  },
+  "total": 80.1432838,
+  "old_model_share": 0.950159668900415,
+  "lines": [
+   0,
+   0,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1808,
+  "review_files": 13,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "202_kubeconfig_grants_and_clone_host_config",
+  "created": "2026-09-03",
+  "plan_created": "2026-09-03",
+  "plugin": "0.9.20",
+  "planned": 4,
+  "appended": 1,
+  "cost": {
+   "run-orch": 3.42061975,
+   "phase": 36.40442375000001,
+   "consult": 14.5150705,
+   "test": 3.4882134000000002,
+   "doc": 23.9449125,
+   "appended": 4.19152,
+   "plan": 20.905046700000003
+  },
+  "total": 106.8698066,
+  "old_model_share": 0.873552808974579,
+  "lines": [
+   40,
+   1,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1666,
+  "review_files": 45,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "108_kc_session_attach_robustness",
+  "created": "2026-08-09",
+  "plan_created": "2026-08-09",
+  "plugin": null,
+  "planned": 5,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.447467,
+   "phase": 38.927482,
+   "consult": 5.69414275,
+   "test": 4.1088839,
+   "doc": 12.47567125,
+   "plan": 26.245729750000002
+  },
+  "total": 88.89937665,
+  "old_model_share": 0.9537805094384764,
+  "lines": [
+   0,
+   0,
+   5
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 2190,
+  "review_files": 32,
+  "review_cov": [
+   5,
+   5
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "197_mcp_adapter_oauth_scope_and_manual",
+  "created": "2026-09-04",
+  "plan_created": "2026-09-04",
+  "plugin": "0.9.22",
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.33020075,
+   "phase": 19.262476999999997,
+   "consult": 2.9221014999999997,
+   "test": 2.0376638000000002,
+   "doc": 32.170179250000004,
+   "plan": 31.081790950000002
+  },
+  "total": 88.80441325,
+  "old_model_share": 0.9402882575771084,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 659,
+  "review_files": 20,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "171_tunnel_opt_in",
+  "created": "2026-08-22",
+  "plan_created": "2026-08-22",
+  "plugin": null,
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.805829,
+   "phase": 44.26896824999999,
+   "consult": 4.8121452499999995,
+   "test": 5.4960315999999985,
+   "doc": 16.534534249999997,
+   "plan": 24.455254150000002
+  },
+  "total": 98.3727625,
+  "old_model_share": 0.9367271453823411,
+  "lines": [
+   0,
+   0,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 879,
+  "review_files": 47,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "164_pushed_environment_state",
+  "created": "2026-08-21",
+  "plan_created": "2026-08-21",
+  "plugin": null,
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.5280430000000003,
+   "phase": 52.401741,
+   "consult": 3.05491125,
+   "test": 3.9141945999999996,
+   "doc": 23.754800750000005,
+   "plan": 27.965788
+  },
+  "total": 112.61947860000001,
+  "old_model_share": 0.965244071019878,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 4062,
+  "review_files": 55,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "193_ux_and_gate_residuals",
+  "created": "2026-09-01",
+  "plan_created": "2026-09-01",
+  "plugin": "0.9.13",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.7523247499999997,
+   "phase": 27.9634875,
+   "consult": 4.621098249999998,
+   "test": 6.4076099,
+   "doc": 13.271151499999998,
+   "plan": 18.500563349999993
+  },
+  "total": 74.51623525,
+  "old_model_share": 0.9050138473011493,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 585,
+  "review_files": 19,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "152_restart_replaces_sync",
+  "created": "2026-08-11",
+  "plan_created": "2026-08-11",
+  "plugin": null,
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 5.27944265,
+   "phase": 93.54119999999996,
+   "consult": 13.024712249999999,
+   "test": 7.4484780000000015,
+   "doc": 24.54928275,
+   "plan": 25.9631085
+  },
+  "total": 169.80622414999996,
+  "old_model_share": 0.9550718712568467,
+  "lines": [
+   0,
+   0,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 10302,
+  "review_files": 105,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "130_shared_repo_collision_and_gc",
+  "created": "2026-08-07",
+  "plan_created": "2026-08-06",
+  "plugin": null,
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.9690347500000005,
+   "phase": 14.848741250000002,
+   "consult": 1.4775027499999998,
+   "test": 4.114956299999999,
+   "doc": 9.339798749999998,
+   "plan": 12.473644550000001
+  },
+  "total": 44.22367835,
+  "old_model_share": 0.8486192951428247,
+  "lines": [
+   0,
+   0,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 574,
+  "review_files": 22,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "127_env_pod_composition_hygiene",
+  "created": "2026-08-06",
+  "plan_created": "2026-08-03",
+  "plugin": null,
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.5288212500000002,
+   "phase": 20.961535250000004,
+   "consult": 2.28018575,
+   "test": 7.195441599999999,
+   "doc": 14.619943750000001,
+   "plan": 20.56794875
+  },
+  "total": 67.15387635,
+  "old_model_share": 0.8928514332888542,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 514,
+  "review_files": 10,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "216_fleet_drive_waits_and_payloads",
+  "created": "2026-09-08",
+  "plan_created": "2026-09-08",
+  "plugin": "0.9.32",
+  "planned": 8,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.446254,
+   "phase": 72.80929474999999,
+   "consult": 3.2393944999999986,
+   "test": 5.534967499999999,
+   "doc": 16.068487999999995,
+   "plan": 28.914372850000003
+  },
+  "total": 128.01277159999998,
+  "old_model_share": 0.9340439239423518,
+  "lines": [
+   0,
+   0,
+   8
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 2319,
+  "review_files": 57,
+  "review_cov": [
+   8,
+   8
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "192_desktop_extension_host",
+  "created": "2026-09-01",
+  "plan_created": "2026-09-01",
+  "plugin": "0.9.12",
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.33490575,
+   "phase": 22.67119375,
+   "consult": 2.6463934999999994,
+   "test": 1.7058300999999998,
+   "doc": 7.435284750000001,
+   "plan": 13.109730799999998
+  },
+  "total": 49.903338649999995,
+  "old_model_share": 0.9511386018257919,
+  "lines": [
+   0,
+   0,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1373,
+  "review_files": 20,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "064_lifecycle_mechanical_semantic",
+  "created": "2026-08-02",
+  "plan_created": "2026-08-02",
+  "plugin": null,
+  "planned": 9,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.4678394999999997,
+   "phase": 73.437186,
+   "consult": 1.6773992499999997,
+   "test": 4.064285700000001,
+   "doc": 16.848642000000005,
+   "plan": 26.054916749999997
+  },
+  "total": 125.5502692,
+  "old_model_share": 0.9676282199480937,
+  "lines": [
+   0,
+   0,
+   9
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 2476,
+  "review_files": 57,
+  "review_cov": [
+   9,
+   9
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "163_planned_eviction_recovery",
+  "created": "2026-08-21",
+  "plan_created": "2026-08-21",
+  "plugin": null,
+  "planned": 1,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.569173,
+   "phase": 10.38892125,
+   "consult": 2.38208525,
+   "test": 3.2531526999999993,
+   "doc": 9.649469749999998,
+   "plan": 24.9496527
+  },
+  "total": 52.192454649999995,
+  "old_model_share": 0.9161226478164884,
+  "lines": [
+   0,
+   0,
+   1
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 398,
+  "review_files": 6,
+  "review_cov": [
+   1,
+   1
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "194_fleet_state_and_session_surface",
+  "created": "2026-09-01",
+  "plan_created": "2026-09-01",
+  "plugin": "0.9.13",
+  "planned": 9,
+  "appended": 0,
+  "cost": {
+   "run-orch": 7.1585354999999975,
+   "phase": 50.289043000000014,
+   "consult": 3.7137072500000015,
+   "test": 5.395183499999998,
+   "doc": 12.8494585,
+   "plan": 40.49898475000001
+  },
+  "total": 119.90491250000002,
+  "old_model_share": 0.9314300237698765,
+  "lines": [
+   0,
+   0,
+   9
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1995,
+  "review_files": 82,
+  "review_cov": [
+   9,
+   9
+  ]
+ },
+ {
+  "project": "KubeCoder",
+  "slice": "111_env_card_error_surfacing",
+  "created": "2026-08-09",
+  "plan_created": "2026-08-09",
+  "plugin": null,
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.55030175,
+   "phase": 51.36087950000001,
+   "consult": 3.12151025,
+   "test": 2.9096650999999993,
+   "doc": 11.6731075,
+   "plan": 16.585935
+  },
+  "total": 87.2013991,
+  "old_model_share": 0.966632816330581,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 838,
+  "review_files": 31,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "017_iac_pipeline_safety_rails_and_signalling",
+  "created": "2026-09-14",
+  "plan_created": "2026-09-14",
+  "plugin": "0.9.36",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.32059525,
+   "phase": 15.939483999999998,
+   "consult": 1.4689192500000001,
+   "test": 2.440441999999999,
+   "doc": 2.17239325,
+   "plan": 14.407441600000002
+  },
+  "total": 37.74927535,
+  "old_model_share": 0.8914964575604759,
+  "lines": [
+   543,
+   6,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 543,
+  "review_files": 16,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "020_ci_quality_gates",
+  "created": "2026-09-18",
+  "plan_created": "2026-09-15",
+  "plugin": "0.9.36",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.272801,
+   "phase": 25.94560975,
+   "consult": 1.52367075,
+   "test": 3.005579099999999,
+   "doc": 8.1418534,
+   "plan": 34.31954829999999
+  },
+  "total": 74.20906229999999,
+  "old_model_share": 0.7368739181602624,
+  "lines": [
+   917,
+   6,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 917,
+  "review_files": 17,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "007_argocd_tools_presync_hook",
+  "created": "2026-08-14",
+  "plan_created": "2026-08-14",
+  "plugin": null,
+  "planned": 11,
+  "appended": 0,
+  "cost": {
+   "run-orch": 5.1700475,
+   "phase": 70.02486175,
+   "consult": 5.584247249999999,
+   "test": 3.3018587999999998,
+   "doc": 9.21100775,
+   "plan": 25.7152305
+  },
+  "total": 119.00725355,
+  "old_model_share": 0.9722549785705896,
+  "lines": [
+   0,
+   0,
+   11
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 2402,
+  "review_files": 67,
+  "review_cov": [
+   11,
+   11
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "022_s3_bucket_mirror_backup",
+  "created": "2026-09-14",
+  "plan_created": "2026-09-14",
+  "plugin": "0.9.36",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 4.2277112500000005,
+   "phase": 26.153692000000003,
+   "consult": 1.60082725,
+   "test": 33.27060320000002,
+   "doc": 3.3672982499999997,
+   "plan": 17.251393200000003
+  },
+  "total": 85.87152515000002,
+  "old_model_share": 0.5781117711986973,
+  "lines": [
+   2385,
+   5,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 2665,
+  "review_files": 35,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "016_internal_tls_scheduled_renewal",
+  "created": "2026-08-30",
+  "plan_created": "2026-08-30",
+  "plugin": "0.9.8",
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 4.03608675,
+   "phase": 23.691661749999994,
+   "consult": 2.45680225,
+   "test": 2.3853693,
+   "doc": 8.11928125,
+   "plan": 13.385587999999998
+  },
+  "total": 54.07478929999999,
+  "old_model_share": 0.9558875895610747,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 448,
+  "review_files": 12,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "009_argocd_standup",
+  "created": "2026-08-17",
+  "plan_created": "2026-08-16",
+  "plugin": null,
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 9.808198750000004,
+   "phase": 77.14577935,
+   "consult": 3.9682382499999997,
+   "test": 3.5739388999999995,
+   "doc": 12.964528500000002,
+   "plan": 31.658903149999997
+  },
+  "total": 139.1195869,
+  "old_model_share": 0.9332103921737567,
+  "lines": [
+   0,
+   0,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 2265,
+  "review_files": 30,
+  "review_cov": [
+   6,
+   7
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "010_kubecoder_deploy_repo",
+  "created": "2026-09-13",
+  "plan_created": "2026-09-13",
+  "plugin": "0.9.36",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.92633375,
+   "phase": 25.06914675,
+   "consult": 1.6900954999999998,
+   "test": 2.1023506000000003,
+   "doc": 6.1207078,
+   "plan": 20.5893466
+  },
+  "total": 56.497981,
+  "old_model_share": 0.8679283778299972,
+  "lines": [
+   2843,
+   5,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 2967,
+  "review_files": 58,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "014_deploy_repo_architecture_producers",
+  "created": "2026-09-21",
+  "plan_created": "2026-09-21",
+  "plugin": "0.9.41",
+  "planned": 8,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.52807,
+   "phase": 25.87931,
+   "consult": 1.440426,
+   "test": 2.8495471000000006,
+   "doc": 4.453494500000001,
+   "plan": 25.463333149999997
+  },
+  "total": 61.614180749999996,
+  "old_model_share": 0.9220627793545726,
+  "lines": [
+   619,
+   8,
+   8
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 619,
+  "review_files": 24,
+  "review_cov": [
+   8,
+   8
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "011_kubecoder_ci_version_pins",
+  "created": "2026-09-20",
+  "plan_created": "2026-09-20",
+  "plugin": "0.9.41",
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.3862790000000003,
+   "phase": 23.668671500000002,
+   "consult": 2.9273182500000003,
+   "test": 3.545200699999999,
+   "doc": 7.269424249999998,
+   "plan": 18.699947400000003
+  },
+  "total": 57.496841100000005,
+  "old_model_share": 0.8919541059795717,
+  "lines": [
+   677,
+   3,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 646,
+  "review_files": 14,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "018_monitoring_alert_delivery_and_sso",
+  "created": "2026-09-18",
+  "plan_created": "2026-09-14",
+  "plugin": "0.9.36",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.2883637499999998,
+   "phase": 37.767602749999995,
+   "consult": 1.6650142500000003,
+   "test": 8.861629800000003,
+   "doc": 2.9315242500000007,
+   "plan": 36.82957495
+  },
+  "total": 89.34370975,
+  "old_model_share": 0.8585721531447825,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 914,
+  "review_files": 23,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "008_helmcharts_argo_coexistence",
+  "created": "2026-08-16",
+  "plan_created": "2026-08-15",
+  "plugin": null,
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.1554337499999994,
+   "phase": 15.62449075,
+   "consult": 1.23201275,
+   "test": 2.7720131,
+   "doc": 8.82806975,
+   "plan": 8.4485015
+  },
+  "total": 40.0605216,
+  "old_model_share": 0.9308043682586499,
+  "lines": [
+   0,
+   0,
+   3
+  ],
+  "missing": 1,
+  "has_wrap_up": false,
+  "review_lines": 771,
+  "review_files": 16,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "024_aac_tools_image",
+  "created": "2026-09-20",
+  "plan_created": "2026-09-20",
+  "plugin": "0.9.41",
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 6.59429825,
+   "phase": 49.468453999999994,
+   "consult": 4.02938675,
+   "test": 3.3952307,
+   "doc": 11.33660125,
+   "plan": 24.126130250000003
+  },
+  "total": 98.95010119999999,
+  "old_model_share": 0.9399837834627702,
+  "lines": [
+   3286,
+   7,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 3247,
+  "review_files": 57,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "013_iac_pipeline_restructure",
+  "created": "2026-08-13",
+  "plan_created": "2026-08-13",
+  "plugin": null,
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.8861365,
+   "phase": 16.760508250000004,
+   "consult": 2.0344012500000006,
+   "test": 3.4294833000000007,
+   "doc": 5.281811,
+   "plan": 13.12593275
+  },
+  "total": 44.518273050000005,
+  "old_model_share": 0.9229645926258588,
+  "lines": [
+   0,
+   0,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1347,
+  "review_files": 19,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "019_role_followups_kubelite_tls_openbao_backup",
+  "created": "2026-09-14",
+  "plan_created": "2026-09-14",
+  "plugin": "0.9.36",
+  "planned": 6,
+  "appended": 0,
+  "cost": {
+   "run-orch": 3.6742290000000004,
+   "phase": 25.05075799999999,
+   "consult": 1.36045625,
+   "test": 3.8630114999999994,
+   "doc": 3.7204587499999997,
+   "plan": 21.945260850000004
+  },
+  "total": 59.61417434999999,
+  "old_model_share": 0.8501616696466081,
+  "lines": [
+   0,
+   0,
+   6
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 626,
+  "review_files": 10,
+  "review_cov": [
+   6,
+   6
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "006_charts_repo_and_charts_home",
+  "created": "2026-08-13",
+  "plan_created": "2026-08-13",
+  "plugin": null,
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 2.737736,
+   "phase": 25.254128,
+   "consult": 7.8856139999999995,
+   "test": 4.543771699999999,
+   "doc": 5.020653499999998,
+   "plan": 19.5459936
+  },
+  "total": 64.9878968,
+  "old_model_share": 0.8988808359158964,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 964,
+  "review_files": 38,
+  "review_cov": [
+   4,
+   4
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "023_backup_freshness_alerting",
+  "created": "2026-09-18",
+  "plan_created": "2026-09-15",
+  "plugin": "0.9.38",
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.55914025,
+   "phase": 33.427868999999994,
+   "consult": 1.2427000000000001,
+   "test": 4.661997500000002,
+   "doc": 3.3671344999999993,
+   "plan": 16.7830727
+  },
+  "total": 61.041913949999994,
+  "old_model_share": 0.8750904754355266,
+  "lines": [
+   2524,
+   7,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 2395,
+  "review_files": 37,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "Ansible",
+  "slice": "015_webhook_relay",
+  "created": "2026-08-17",
+  "plan_created": "2026-08-17",
+  "plugin": null,
+  "planned": 1,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.8738622500000002,
+   "phase": 13.71710475,
+   "consult": 1.8956327499999999,
+   "test": 2.426519400000001,
+   "doc": 8.228048249999997,
+   "plan": 10.47863255
+  },
+  "total": 38.61979995,
+  "old_model_share": 0.9240368877156756,
+  "lines": [
+   0,
+   0,
+   1
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 1266,
+  "review_files": 12,
+  "review_cov": [
+   1,
+   1
+  ]
+ },
+ {
+  "project": "Architecture",
+  "slice": "003_retire_web_ui_and_mcp_capabilities",
+  "created": "2026-09-14",
+  "plan_created": "2026-09-14",
+  "plugin": "0.9.36",
+  "planned": 3,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.7440827500000001,
+   "phase": 5.02320275,
+   "consult": 0.8830422500000001,
+   "test": 1.8394250999999997,
+   "doc": 1.7703875,
+   "plan": 17.11429815
+  },
+  "total": 27.3744385,
+  "old_model_share": 0.7973551585359459,
+  "lines": [
+   175,
+   3,
+   3
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 175,
+  "review_files": 9,
+  "review_cov": [
+   3,
+   3
+  ]
+ },
+ {
+  "project": "Architecture",
+  "slice": "002_central_architecture_update",
+  "created": "2026-09-11",
+  "plan_created": "2026-09-11",
+  "plugin": "0.9.36",
+  "planned": 7,
+  "appended": 0,
+  "cost": {
+   "run-orch": 1.3071367499999997,
+   "phase": 49.23033874999999,
+   "consult": 2.974157,
+   "test": 5.401984799999998,
+   "doc": 7.64675325,
+   "plan": 11.6160766
+  },
+  "total": 78.17644714999999,
+  "old_model_share": 0.9103263143111512,
+  "lines": [
+   4506,
+   7,
+   7
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 4376,
+  "review_files": 43,
+  "review_cov": [
+   7,
+   7
+  ]
+ },
+ {
+  "project": "YouTrackMCPServer",
+  "slice": "001_follow_the_changed_board_model",
+  "created": "2026-09-18",
+  "plan_created": "2026-09-18",
+  "plugin": "0.9.36",
+  "planned": 4,
+  "appended": 0,
+  "cost": {
+   "run-orch": 0.910931,
+   "phase": 17.87694275,
+   "consult": 1.1476835,
+   "test": 2.672393899999999,
+   "doc": 1.9957852499999997,
+   "plan": 15.312603450000001
+  },
+  "total": 39.91633985,
+  "old_model_share": 0.8983284636003519,
+  "lines": [
+   0,
+   0,
+   4
+  ],
+  "missing": 0,
+  "has_wrap_up": false,
+  "review_lines": 4027,
+  "review_files": 31,
+  "review_cov": [
+   4,
+   4
+  ]
+ }
+]

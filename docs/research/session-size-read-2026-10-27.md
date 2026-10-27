@@ -144,7 +144,8 @@ the evidence.
 
 ## Method and caveats
 
-The scripts live in `/work/scratch/session-sizes/` and are not committed. `collect.py` gathers
+The scripts and the data they collected are in
+`docs/research/archive/scripts/session-size-2026-10-27/`. `collect.py` gathers
 the sessions through `slice_cost.collect`, `causes.py` attributes each turn's growth to the
 previous turn's output and tool results, and `size_vs_diff.py`, `touched.py`, `gates.py`,
 `econ.py` and `trend.py` produce the cuts above. Phase diffs exist only where the target repo is

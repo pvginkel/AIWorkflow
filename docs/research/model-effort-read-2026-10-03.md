@@ -38,11 +38,11 @@ Two lenses:
   017 vs 040, 240 vs 237, 229 vs 240. Plus my own read of 240 P3 (the heaviest `high` phase) and
   the four blocking reviews written at `high`.
 
-Tooling (research only, not plugin): `/work/scratch/model-read/render.py` renders a transcript
-readable (thinking is redacted in the jsonl; `[thinking]` renders empty), `render_slice.py`
-renders a slice's run-phase sessions and review files to a folder, `cohorts.py` tables the
-cohorts. 240's run record was not pushed when this was read; a Haiku headless session in the
-KubeCoder environment copied it into the shared home.
+Tooling (research only, not plugin), in `docs/research/archive/scripts/model-effort-2026-10-03/`:
+`render.py` renders a transcript readable (thinking is redacted in the jsonl; `[thinking]` renders
+empty), `render_slice.py` renders a slice's run-phase sessions and review files to a folder,
+`cohorts.py` tables the cohorts. 240's run record was not pushed when this was read; a Haiku
+headless session in the KubeCoder environment copied it into the shared home.
 
 ## 2. Opus 5.1 → 5.5, both at `xhigh`
 
