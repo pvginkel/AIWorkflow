@@ -439,22 +439,69 @@ the turn ends with one line.
 
 ### 5.4 Triage
 
-The triage skill becomes the stage's turns; the chat message, "Go", `agreed`, the handover dump's
-`## Rulings` and `/dev:slice-dag` go (points 11, 17):
+Rewritten 2026-10-30 from the read of the operator's answers since 0.9.60
+(`triage-answers-read-2026-10-30.md`, 41 runs), at their ask: "take the axe to it".
 
-- **The triage document.** Collect, itemize, the standing-decisions check and the research run as
-  today, by sub-agents; the scheme is written as entries — one `decision` per item, its options
-  the fates (`Slice A: <title> (~N phases)`, `Solution Known`, `Operator action`, `Close: duplicate
-  of X`, `Later`, `Decision`), the proposed fate recommended, the ask in the card's words as the
-  body; a standing-decision collision a `decision` (overrule / close on it); a question the
-  operator can answer from memory a `question`. The raw dump is attached as the archive.
-  `blocks.py` renders `asks/1-triage.md`; the turn ends.
-- **The continuation** reads the fates: the slice folders written (`slice.md` quoting the answers'
-  words as the operator's, its front matter carrying `issue:` and `needs:` — the slices it must
-  follow, structured, which is what survives of the DAG), the subsumed cards closed, `later` and
-  `close` actioned, the Solution Known lane to `sweep_slice.py` at its floor, the slice cards
-  filed and parented, the README's Pending lines, the commit. A `conditional:` answer re-enters
-  research and may register a second document.
+**What the read says.** The scheme is never the ask. In 63 turns the operator proposed a
+different bundling once, never named a slice by its letter, never commented on a phase estimate,
+never disputed a Close or a Later; the three times the message offered "say merge A+B" or
+"split", nobody said it. Their input is the numbered questions: 40 % of turns answer them, 33 %
+agree to everything, and 26 of 29 typed turns are "Qn: …" lists. Of 121 questions, the
+recommendation was taken 67 % of the time and overruled 21 % — the design content is where they
+disagree. The fixed answer forms ("split:", "superseded by", "conditional:") were never used;
+"Go" five times, always with no question open. What the message lacked they asked for after
+filing: the order between slices, in 5 of 8 multi-slice runs ("Can you build me a DAG for
+this?"), and once what a card was for (KC-165, disagreed with after filing because its one line
+had not said). Empty fates were printed anyway ("Close: — / Later: —"); the headings were made
+up per run. The median message was 392 words for 3 items and 3 questions; 22 of 41 runs restated
+what the conversation had just agreed, and all four zero-question messages got "Go".
+
+**The output, redesigned.** Whatever runs triage puts to the operator, under the writing skill:
+
+- *the questions first*, numbered, each a `decision` with its recommendation and, where it is a
+  collision, the standing decision quoted — the only part they answer;
+- *then the scheme as the consequence*, one line per slice: the title, its cards each with what
+  it is for in a few words (the KC-165 line), and its place among the others (`needs:`), which is
+  what survives of the DAG; the estimate goes;
+- *then the other fates only where an item has one*, a line each; nothing printed empty;
+- no "go", no fixed answer forms, no invented headings, no agreed scheme restated to be agreed
+  again: a run born of a conversation that already decided files, and says so in a line.
+
+A multi-round run is a design discussion on one question, never on the scheme: a continuation
+re-asks that question alone. The template in the skill and the handover dump's `## Rulings` go;
+the raw dump stays as the attached archive.
+
+**Where triage runs** — the operator's question of 2026-10-30 ("Triage I feel is mostly part of
+the project definition, right?"), with the design read of the same day. Pilot's design never
+places triage: a Pilot project is any body of work agreed in the definition chat, which produces
+`project.md`, and `/dev:triage` as a stage Pilot drives appears only in the v1.1 inbox proposal
+(`the-inbox-sitting-as-a-pilot-project.md`); `rules/stages.md` today says no stage is runnable
+from Pilot, and v1 has no stated path from the intake queue to a project. What triage does for
+one slice — read the cards, check them against the standing decisions, put the real questions
+with a recommendation — is the definition chat's work in the design's own words ("what the
+project is for, what result establishes it, its material constraints"). The one part the chat
+does not do is the bundling of a batch into several slices, which the read shows the operator
+never disputes and mostly does themselves by naming the cards (22 of 41 runs). *Recommended:*
+in Pilot, triage is the definition chat's, not a stage — the brain's definition skill carries
+the standing-decisions check and the questions-first shape, `slice.md` is written from
+`project.md` by the setup or read by the plan-preparer in its place; `/dev:triage` stays the
+operator's own chat skill (as `/dev:arch-design`, decision 6) for a batch sweep and for projects
+outside Pilot, with the output above and trimmed of the blanket accept. The alternative is the
+stage as this section first had it, each slice folder then becoming a project through
+`start_project`. *Open: the operator's ruling; it touches Pilot's design (the-brain §5, F2).*
+
+**Sweep slices**, the other question: PilotAppSpecs has never had a `sweep_slice.py` slice; the
+M1 "sweep slice" (plan row 030) is an ordinary triage over its named cards, "filed by a triage
+and run on today's workflow". The Solution Known lane was used in 3 of the 41 runs, and in one
+of those the operator moved the six marked cards to a manual sweep of their own. *Open:* whether
+the lane and `sweep_slice.py` stay at all once Pilot's pass and the card pass take the mechanical
+cards; nothing in this rework depends on it.
+
+**The continuation**, where triage is a stage or a chat skill alike: the slice folders written
+(`slice.md` quoting the answers' words as the operator's, its front matter carrying `issue:` and
+`needs:`), the subsumed cards closed, `later` and `close` actioned, the slice cards filed and
+parented, the README's Pending lines, the commit. A question the answer reopens re-enters
+research and may put a second document.
 
 ### 5.5 The halt file, in both loops
 
@@ -616,8 +663,11 @@ sessions in all.
   written, `grounding.md`, the continuation and the clarification turn by sub-agent;
   `refinement-writer.md` and `refinement.md` deleted; `plan-template.md` and `plan-loop.md`
   brought to it.
-- [ ] **B3. Triage** (§5.4): the skill rewritten; `slice-dag` deleted; `needs:` in `slice.md`'s front
-  matter read by preflight's "ready to plan"; `residual-sweep.md` brought to it.
+- [ ] **B3. Triage** (§5.4): the output rewritten from the read — the questions first, the scheme
+  as one line per slice with `needs:`, nothing empty, the template, "go" and the fixed answer
+  forms gone; `slice-dag` deleted; `needs:` in `slice.md`'s front matter read by preflight's
+  "ready to plan"; `residual-sweep.md` brought to it. Whether the skill is a stage or stays the
+  operator's chat skill waits on the ruling of §5.4; the output is the same either way.
 
 **Phase C — the sweep and the gutting**
 

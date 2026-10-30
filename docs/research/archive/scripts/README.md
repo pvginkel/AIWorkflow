@@ -13,3 +13,4 @@ transcripts under `~/.claude/projects/`.
 | `gate-timing-2026-10-24/` | Where PilotApp slice 008's time went: gate and test runs, gaps and phase sizes. `hits.py` asks whether the writer's own green run would have answered each phase gate, which is AIWF-93's reuse. |
 | `session-size-2026-10-27/` | `docs/research/session-size-read-2026-10-27.md` |
 | `phase-count-2026-10-27/` | `docs/research/phase-count-read-2026-10-27.md` |
+| `triage-answers-2026-10-30/` | `docs/research/triage-answers-read-2026-10-30.md`. `extract.py` pulls the `/dev:triage` runs since 0.9.60 from the transcripts into `runs.json` and per-run timelines (not kept: the operator's turns verbatim), `classify.py` holds the hand classification (`classification.json`), `stats.py` the message counts and latencies, `complaints.py` the fleet-wide scan for remarks about triage. |
