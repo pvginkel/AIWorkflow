@@ -56,12 +56,20 @@ log-file line plus one terse timestamped line per pass start and the final
 verdict, so a watching caller can follow progress cheaply; -v/--verbose
 echoes the full log there too.
 
+Pilot's halt file (run_loop.HALT_FILE) is looked for before every pass:
+present, the loop exits 7 with plan_state.json current, and the rerun once
+it is gone takes the next pass; present at the start, nothing runs. `stop`
+interrupts a running loop as Ctrl-C does.
+
 Usage:
     plan_loop.py run <slice-dir> [--fixes-applied] [--verbose]
+    plan_loop.py stop <slice-dir>
     plan_loop.py status <slice-dir>
 
 Exit codes: 0 plan complete · 4 operator input needed · 3 bailed
-(plan_bailout.json written) · 2 usage/precondition error · 1 unexpected error.
+(plan_bailout.json written) · 7 halted · 2 usage/precondition error ·
+130 interrupted · 1 unexpected error. Of stop: 0 stopped · 1 no loop
+running, or still running after the wait · 2 the loop is on another host.
 """
 
 import argparse
@@ -96,8 +104,10 @@ from close_out import (  # noqa: E402
 )
 from run_loop import (  # noqa: E402
     AGENTS_DIR,
+    EXIT_HALTED,
     PHILOSOPHY_LINE,
     SPAWN_ENV,
+    Halted,
     SliceLock,
     _git_toplevel,
     _now_hms,
@@ -119,6 +129,7 @@ from run_loop import (  # noqa: E402
     skill_line,
     skills_named,
     spawn_flags,
+    stop_driver,
 )
 
 TIMEOUTS = {"plan-writer": 7200, "plan-reviewer": 3600}
@@ -134,6 +145,13 @@ MODELS: dict[str, tuple[str, str | None]] = {
 VERDICTS = {
     "plan-writer": {"done", "questions", "blocked"},
     "plan-reviewer": {"go", "issues", "questions"},
+}
+
+# The passes Pilot's halt stops the loop before, by the state's `phase`.
+HALT_PASSES = {
+    "writing": "plan-writer pass",
+    "fixing": "plan-writer fix pass",
+    "reviewing": "plan-reviewer pass",
 }
 
 # Files the loop itself writes into the slice folder. They are working state,
@@ -1031,6 +1049,13 @@ class PlanLoop:
             self._plan_lock.release()
 
     def _run(self) -> None:
+        # Before anything is read or written: a halt at the start runs
+        # nothing, and the start after it is the same command again.
+        if run_loop.halt_requested():
+            print(f"Halted: {run_loop.HALT_FILE} is present — Pilot's halt "
+                  "holds, and the plan loop does not start. Rerun once the "
+                  "file is gone.", file=sys.stderr)
+            sys.exit(EXIT_HALTED)
         self._assert_agents()
         dirty = self._slice_dirty_paths()
         if dirty:
@@ -1084,6 +1109,11 @@ class PlanLoop:
                 self._ensure_report()
                 while True:
                     phase = self.state["phase"]
+                    # Pilot's halt, between passes — the safe point: the
+                    # pass in flight finishes, and the rerun takes the next
+                    # one from `phase`, its round not yet drawn.
+                    if phase in HALT_PASSES and run_loop.halt_requested():
+                        raise Halted(f"before the {HALT_PASSES[phase]}")
                     if phase == "writing":
                         self._writer_pass(initial=True)
                     elif phase == "fixing":
@@ -1106,6 +1136,13 @@ class PlanLoop:
                          "continue")
                 print("Interrupted — rerun to continue.", file=sys.stderr)
                 sys.exit(130)
+            except Halted as halt:
+                self.log(f"HALTED {halt.where}: {run_loop.HALT_FILE} is "
+                         "present — plan_state.json is current; rerun once "
+                         "it is gone")
+                print(f"Halted {halt.where}: {run_loop.HALT_FILE} is present "
+                      "— rerun once it is gone.", file=sys.stderr)
+                sys.exit(EXIT_HALTED)
         finally:
             self._render_report()
 
@@ -1129,6 +1166,13 @@ def cmd_run(args) -> None:
                     fixes_applied=args.fixes_applied)
     print(f"plan loop log: {loop.log_path}", flush=True)
     loop.run()
+
+
+def cmd_stop(args) -> None:
+    """SIGINT the slice's plan loop — its KeyboardInterrupt path: the
+    report rendered, plan_state.json current, exit 130; the rerun takes the
+    interrupted pass again — and wait for it to let plan.lock go."""
+    sys.exit(stop_driver(Path(args.slice_dir) / "plan.lock", None))
 
 
 def cmd_status(args) -> None:
@@ -1164,6 +1208,11 @@ def main() -> None:
     run_p.add_argument("-v", "--verbose", action="store_true",
                        help="echo the log to stdout as well as plan_log.txt")
     run_p.set_defaults(func=cmd_run)
+
+    stop_p = sub.add_parser("stop", help="interrupt the slice's plan loop "
+                                         "(SIGINT, as Ctrl-C) and wait for it")
+    stop_p.add_argument("slice_dir")
+    stop_p.set_defaults(func=cmd_stop)
 
     status_p = sub.add_parser("status", help="print a slice's plan-loop state")
     status_p.add_argument("slice_dir")

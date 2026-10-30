@@ -646,7 +646,7 @@ sessions in all.
   and `wrap-up.md`; the suite reworked (the render and read-back half of `test_close_out.py`).
   *Done when:* a store of the old fixtures renders as a document that `register_document` would
   take, and an answered copy absorbs into rulings. The largest item.
-- [ ] **A3. The halt file** (§5.5) in both loops, `plan_loop.py stop`, the exit `halted`, tests.
+- [x] **A3. The halt file** (§5.5) in both loops, `plan_loop.py stop`, the exit `halted`, tests.
 - [ ] **A4. The run loop's asks** (§5.2): every exit-4 rendered as a document before the exit, `--step`,
   the question verdict's optional `options`/`recommend` in `code-writer.md` and `doc-writer.md`,
   the pre-run actions and the environment facts as `action` documents, AIWF-88's checks

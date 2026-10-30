@@ -4,6 +4,33 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-30 — Both loops stop at Pilot's halt file and exit 7; the plan loop gets `stop` (v0.10.3)
+
+Pilot writes `/work/.quota-limit-halt-requested` while a usage halt or the project's pause holds.
+Until now a loop ran on through it, and the session limit it hit was waited out in one sleep of
+up to twelve hours. Now both loops look for the file at their safe points, where nothing is in
+flight, and exit 7, `halted`, with their state current. The nudge after the halt lifts resumes
+them.
+
+- **The run loop** looks at each iteration of the phase loop, at every dispatch, at every consult
+  and before every push. It also looks at every poll of the devlock wait, and every minute of the
+  session-limit sleep, which ends early. A dispatch looks once the round's number is drawn and
+  its in-flight record written. The resume then dispatches that round fresh under the same
+  number, as after an interrupt at that point. A consult looks before its number is drawn.
+- **On a halt** the run releases the devlock, records the stop in `state.json`'s new `halts` and
+  exits 7, leaving `run_phase` where `--resume` re-enters. It writes no `bailout.json` and nothing
+  for the close-out report. `wait` reports where the run stopped.
+- **The halt passes the wrap-up's leave-out**, as an interrupt does. A resume into that stage
+  starts it over.
+- **The plan loop** looks before each pass, before the round is drawn, so the rerun takes the
+  next pass under the round it would have had. It gets `plan_loop.py stop`, the run loop's
+  SIGINT-and-wait, now shared as `stop_driver`.
+- **At the start**, either loop refuses with exit 7 and records nothing, so the start after it is
+  the same command.
+
+The P-111 plan's §5.5, item A3. The contract is `run-loop.md` § Protocol invariants, with
+`runner-state.md` and `plan-loop.md` for the codes.
+
 ## 2026-10-30 — The close-out report is rendered once, as the document Pilot reads, and its answers read back (v0.10.2)
 
 `close_out.py` now sits on `asks.py`, as the P-111 plan's §5.1 sets out (item A2). At the run's

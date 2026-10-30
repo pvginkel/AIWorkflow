@@ -36,8 +36,13 @@ is a warning in the log), both checked at GO as
 the run loop checks them at start ([run-loop.md](run-loop.md) § Protocol invariants),
 `plugin_version` — the installed plugin is not the loop's own version, checked with
 `verification.json`'s keys at startup, before every dispatch and, for the keys, before exit 0;
-[run-loop.md](run-loop.md) § Protocol invariants) · **2** refused before it reads or writes
-anything: another plan loop holds the slice's `plan.lock`, or its run loop holds `run.lock`.
+[run-loop.md](run-loop.md) § Protocol invariants) · **7** halted: Pilot's halt file was there
+before a pass — the pass in flight finished, `plan_state.json` is current, and the rerun once the
+file is gone takes the next pass under the round it would have had; there at the start, nothing
+ran ([run-loop.md](run-loop.md) § Protocol invariants) · **2** refused before it reads or writes
+anything: another plan loop holds the slice's `plan.lock`, or its run loop holds `run.lock` ·
+**130** interrupted: `plan_loop.py stop <slice-dir>` sends the loop SIGINT, as Ctrl-C, and waits
+for `plan.lock` to go free, as the run loop's `stop` does ([runner-state.md](runner-state.md)).
 
 **One plan loop per slice.** The loop holds a `flock` on `<slice>/plan.lock` for the whole run —
 the run loop's lock, its note and heartbeat ([runner-state.md](runner-state.md) § Resume and crash

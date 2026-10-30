@@ -626,9 +626,25 @@ under the role's own timeout, not the nudge's, and is the same round — its num
 duration added to the row — at most twice per round (the doc-writer yields twice); past that
 the verdict nudge falls back to the same-prompt retry. A session killed by the account's
 session-limit window is not an agent outcome: the driver waits out the stated reset and
-redispatches the same round — nothing counted. The driver asserts its agent definitions resolve
-before dispatching anything (`kc session create-headless --agent` does
-not validate names).
+redispatches the same round — nothing counted; Pilot's halt ends that wait early (below). The
+driver asserts its agent definitions resolve before dispatching anything (`kc session
+create-headless --agent` does not validate names).
+
+**The loop stops at Pilot's halt.** Pilot writes `/work/.quota-limit-halt-requested` while a usage
+halt or the project's pause holds ([pilot.md](pilot.md) § The nudge and the halt). The run loop
+looks for it at its safe points, where nothing is in flight: each iteration of the phase loop;
+every dispatch, once the round's number is drawn and its in-flight record written, so the resume
+dispatches it fresh under that number, as after an interrupt there; every consult, before its
+number is drawn, since a consult never reattaches; every push; every poll of the devlock wait;
+and every minute of the session-limit sleep, which then ends early and leaves the redispatch's
+check to stop the run. A running role's turn, a running gate and a push in flight finish first.
+Found, the run releases the devlock, records the stop in `state.json`'s `halts` and exits **7**
+with `run_phase` where `--resume` re-enters — the interrupt's path, branches left as they stand —
+and nothing else: no bail, no `bailout.json`, nothing for the close-out report, since the run is
+not over. The stop passes the wrap-up's leave-out as an interrupt does, and a resume into that
+stage starts it over. Present at the start, the file refuses the start with exit 7 and nothing
+recorded, so the start after it is the same command. The plan loop looks for it before each pass
+([plan-loop.md](plan-loop.md)).
 
 **The loop runs only under the plugin version its agents load.** A loop keeps the version it was
 launched from, while every session it spawns loads the installed plugin

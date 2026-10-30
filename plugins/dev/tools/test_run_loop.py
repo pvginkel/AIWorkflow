@@ -93,6 +93,11 @@ run_loop._user_home = lambda: NO_HOME
 # the tests that exercise it write their own (`installed`).
 run_loop.INSTALLED_PLUGINS = NO_HOME / "installed_plugins.json"
 
+# Pilot's halt file is the host's (`/work/...`): a pod running the suite while
+# a halt holds would halt every run in it. Pointed at a file that does not
+# exist; the tests of the halt make one of their own (`halt_file`).
+run_loop.HALT_FILE = NO_HOME / "quota-limit-halt-requested"
+
 
 class FakeGit:
     """Answers the git queries the driver makes; records mutations. The
@@ -11242,7 +11247,10 @@ def test_session_limit_waits_then_redispatches_the_same_round():
         with patched(run_loop, run_kc_session=r.run_kc_session):
             assert run_to_exit(r) == 0
         assert not r.script
-        assert len(r.sleeps) == 1 and 0 < r.sleeps[0] <= 12 * 3600
+        # one sleep to the stated reset, looking for Pilot's halt file
+        # every HALT_POLL seconds on the way
+        assert 0 < sum(r.sleeps) <= 12 * 3600
+        assert max(r.sleeps) <= run_loop.HALT_POLL
         state = load_state(slice_dir)
         assert state["phases"]["1"]["executor_rounds"] == 1, (
             "a session-limit kill spends no round")
@@ -15414,6 +15422,270 @@ def test_a_detached_run_refuses_and_runs_through_the_real_handshake():
         pid, code, text = run_loop.detach(body2, again.log_path)
         assert (pid, code) == (None, 2) and "Pass --resume" in text
         assert exit_record(slice_dir)["code"] == 0
+
+
+# -- Pilot's halt: the halt file, the safe points, exit 7 --------------------
+#
+# Pilot writes its halt file while a usage halt or the project's pause holds
+# (docs/pilot.md § The nudge and the halt). The run stops at its next safe
+# point — nothing in flight — with state.json current, exits 7, and the
+# resume carries on from where it stood once the file is gone.
+
+@contextlib.contextmanager
+def halt_file(tmp):
+    """The halt file's path for this test, pointed at by the module — absent
+    until the test (or a script step's effect) touches it."""
+    path = Path(tmp) / "quota-limit-halt-requested"
+    with patched(run_loop, HALT_FILE=path):
+        yield path
+
+
+def raises_the_halt(path):
+    """A script step's effect: Pilot's halt begins while the session works."""
+    def effect(loop):
+        path.touch()
+    return effect
+
+
+def test_a_halt_at_the_start_runs_nothing_and_records_nothing():
+    with tempfile.TemporaryDirectory() as tmp, halt_file(tmp) as halt:
+        slice_dir, repo = make_slice(tmp)
+        halt.touch()
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            assert run_to_exit(r) == 7
+        assert not r.spawned
+        assert not (slice_dir / "state.json").exists(), (
+            "a refused start leaves no record: the next start is not a "
+            "--resume")
+        assert f"Halted: {halt} is present" in err.getvalue()
+
+        # A resume refused the same way leaves the record as it stood.
+        state = {"slice": "074_test_slice", "exit": {"code": 7, "ts": "t"},
+                 "halts": [{"at": "before P2", "run_phase": "phases",
+                            "ts": "t"}]}
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        r = ScriptedLoop(slice_dir, [], resume=True, repo_root=repo)
+        with contextlib.redirect_stderr(io.StringIO()):
+            assert run_to_exit(r) == 7
+        assert load_state(slice_dir) == state
+
+
+def test_a_halt_between_phases_stops_before_the_next_and_the_resume_goes_on():
+    with tempfile.TemporaryDirectory() as tmp, halt_file(tmp) as halt:
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First"),
+                                                  ("2", "Second")])
+        script = [V["exec_done"], (*V["review_signoff"],
+                                   raises_the_halt(halt))]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        with contextlib.redirect_stderr(io.StringIO()):
+            assert run_to_exit(r) == 7
+        assert [(role, pid) for role, pid, *_ in r.spawned] == [
+            ("code-writer", "1"), ("code-reviewer", "1")]
+        state = load_state(slice_dir)
+        assert state["exit"]["code"] == 7
+        assert state["run_phase"] == "phases"
+        [stop] = state["halts"]
+        assert (stop["at"], stop["run_phase"]) == ("before P2", "phases")
+        assert state["phases"]["1"]["status"] == "merged"
+        assert "2" not in state["phases"]
+        assert not state.get("bailouts")
+        assert not (slice_dir / "bailout.json").exists()
+        assert f"HALTED before P2: {halt} is present" in \
+            (slice_dir / "log.txt").read_text()
+
+        halt.unlink()
+        r2 = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                      *TAIL], resume=True, repo_root=repo)
+        assert run_to_exit(r2) == 0
+        assert r2.spawned[0][:3] == ("code-writer", "2", 1)
+        assert load_state(slice_dir)["halts"] == [stop]
+
+
+def test_a_halt_before_the_consult_draws_no_consult_number():
+    """A consult never reattaches, so the halt comes before its number: a
+    number drawn and never answered would be a consult_<n>.json nothing
+    wrote."""
+    with tempfile.TemporaryDirectory() as tmp, halt_file(tmp) as halt:
+        slice_dir, repo = make_slice(tmp)
+        script = [V["exec_done"], (*V["review_signoff"],
+                                   raises_the_halt(halt))]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        with contextlib.redirect_stderr(io.StringIO()):
+            assert run_to_exit(r) == 7
+        state = load_state(slice_dir)
+        assert state["halts"][-1]["at"].startswith("before the consult (")
+        assert state.get("consult_seq", 0) == 0
+
+        halt.unlink()
+        r2 = ScriptedLoop(slice_dir, list(TAIL), resume=True, repo_root=repo)
+        assert run_to_exit(r2) == 0
+        assert load_state(slice_dir)["consult_seq"] == 1
+
+
+def test_a_halt_before_a_session_banks_its_round_for_the_resume():
+    """The round's number is drawn and the in-flight record written before
+    the halt point, as before an interrupt at the same place: the resume
+    dispatches it fresh, under the same number, with nothing counted twice."""
+    with tempfile.TemporaryDirectory() as tmp, halt_file(tmp) as halt:
+        slice_dir, repo = make_slice(tmp)
+        script = [("code-writer", {"outcome": "done", "summary": "built"},
+                   raises_the_halt(halt))]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session), \
+                contextlib.redirect_stderr(io.StringIO()):
+            assert run_to_exit(r) == 7
+        state = load_state(slice_dir)
+        flight = state["in_flight"]
+        assert (flight["role"], flight["phase"], flight["round"],
+                flight["session"]) == ("code-reviewer", "1", 1, None)
+        assert state["halts"][-1]["at"] == \
+            "before the [P1] [code-reviewer] session"
+        assert "code-reviewer" not in [h["role"] for h in state["history"]]
+        assert "[P1] [code-reviewer] session starting" not in \
+            (slice_dir / "log.txt").read_text()
+
+        halt.unlink()
+        script = [("code-reviewer", {"outcome": "signoff", "summary": "ok"}),
+                  ("consult", {"outcome": "complete", "summary": "done"}),
+                  ("test-agent", {"outcome": "clean", "summary": "ok"}),
+                  ("doc-writer", {"outcome": "done", "summary": "ok"})]
+        r2 = SpawningLoop(slice_dir, script, resume=True, repo_root=repo)
+        # the repo as the halted run left it: the writer's commit on P1
+        r2.fake_git = r2.git = r.fake_git
+        r2.git_ok, r2.git_raw = r.fake_git.ok, r.fake_git.raw
+        with patched(run_loop, run_kc_session=r2.run_kc_session):
+            assert run_to_exit(r2) == 0
+        assert r2.session_resumes[0][:2] == ("code-reviewer", None), (
+            "dispatched fresh: there was no session to reattach")
+        state = load_state(slice_dir)
+        assert state["phases"]["1"]["review_rounds"] == 1
+        assert state["phases"]["1"]["executor_rounds"] == 1
+
+
+def test_a_halt_ends_the_session_limit_sleep_and_stops_before_the_redispatch():
+    with tempfile.TemporaryDirectory() as tmp, halt_file(tmp) as halt:
+        slice_dir, repo = make_slice(tmp)
+        r = SpawningLoop(slice_dir, [("code-writer", SESSION_LIMIT_TEXT)],
+                         repo_root=repo)
+
+        def sleep(seconds):
+            r.sleeps.append(seconds)
+            halt.touch()   # Pilot's halt begins during the wait
+
+        r._sleep = sleep
+        with patched(run_loop, run_kc_session=r.run_kc_session), \
+                contextlib.redirect_stderr(io.StringIO()):
+            assert run_to_exit(r) == 7
+        assert r.sleeps == [run_loop.HALT_POLL], (
+            "the file is looked for before every step of the sleep")
+        state = load_state(slice_dir)
+        assert state["in_flight"]["round"] == 1
+        assert state["phases"]["1"]["executor_rounds"] == 1
+        assert state["halts"][-1]["at"] == \
+            "before the [P1] [code-writer] session"
+        log = (slice_dir / "log.txt").read_text()
+        assert "halt requested — the session-limit sleep ends early" in log
+
+
+def test_a_halt_in_the_devlock_wait_lets_go_with_nothing_held():
+    with tempfile.TemporaryDirectory() as tmp:
+        lease = Path(tmp) / "devlock.lease"
+        holder = Path(tmp) / "dev-holder"
+        holder.write_text("session: someone else\n")
+        fd = os.open(lease, os.O_RDWR | os.O_CREAT, 0o644)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            lock = run_loop.DevLock(lease)
+            polls = []
+
+            def halt():
+                polls.append(1)
+                return len(polls) >= 2
+
+            try:
+                lock.acquire("test phase", lambda m: None,
+                             lambda s: None, halt=halt)
+            except run_loop.Halted as e:
+                assert e.where == "waiting for the devlock (test phase)"
+            else:
+                raise AssertionError("the wait did not end in Halted")
+            assert len(polls) == 2
+            assert not lock.held
+            assert holder.read_text() == "session: someone else\n", (
+                "the other holder's note is not this lock's to remove")
+        finally:
+            os.close(fd)
+
+
+def test_a_halt_before_a_push_leaves_it_for_the_resume():
+    with tempfile.TemporaryDirectory() as tmp, halt_file(tmp) as halt:
+        slice_dir, repo = make_slice(tmp, config=rc(test=False))
+        script = [V["exec_done"], V["review_signoff"],
+                  (*V["consult_complete"], raises_the_halt(halt))]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        with contextlib.redirect_stderr(io.StringIO()):
+            assert run_to_exit(r) == 7
+        assert pushes(r) == []
+        assert load_state(slice_dir)["halts"][-1]["at"] == \
+            f"before pushing main in {repo}"
+
+        halt.unlink()
+        r2 = ScriptedLoop(slice_dir, [V["doc_done"]], resume=True,
+                          repo_root=repo)
+        assert run_to_exit(r2) == 0
+        assert (str(repo), "main") in pushes(r2)
+
+
+def test_a_halt_passes_the_wrap_ups_leave_out_and_the_resume_starts_it_over():
+    """Halted is a BaseException, as an interrupt is: the wrap-up's
+    leave-out, which catches every Exception, does not swallow it."""
+    with tempfile.TemporaryDirectory() as tmp, halt_file(tmp) as halt:
+        slice_dir, repo, sib = sibling_phase_slice(tmp)
+        plant_waiting(slice_dir)
+        script = wrap_script(repo, sib)
+        role, verdict, model = script[-1]
+
+        def hands_back(loop):
+            model(loop)
+            halt.touch()
+
+        script[-1] = (role, verdict, hands_back)
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        with contextlib.redirect_stderr(io.StringIO()):
+            assert run_to_exit(r) == 7
+        assert not r.wrap_up_sessions
+        state = load_state(slice_dir)
+        assert state["doc_phase"]["stage"] == "wrap-up"
+        assert state["wrap_up"]["outcome"] is None, "not left out"
+        assert state["halts"][-1]["at"] == "before the [wrap-up] session"
+
+        halt.unlink()
+        r2 = ScriptedLoop(slice_dir, [], resume=True, repo_root=repo,
+                          wrap_ups=[(WRAP_DONE, wrap_up_fixes(repo, sib))])
+        for name in ("refs", "parents", "branch_at", "dirty_roots",
+                     "spec_head", "specs_committed", "spec_snapshots"):
+            setattr(r2.fake_git, name, getattr(r.fake_git, name))
+        assert run_to_exit(r2) == 0
+        assert len(r2.wrap_up_sessions) == 1
+        assert load_state(slice_dir)["wrap_up"]["outcome"] == "landed"
+
+
+def test_wait_answers_0_with_the_halt_and_where_it_stopped():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(
+            tmp, state={"run_phase": "phases", "exit": {"code": 7, "ts": "t"},
+                        "halts": [{"at": "before P1", "run_phase": "phases",
+                                   "ts": "t"},
+                                  {"at": "before P3", "run_phase": "phases",
+                                   "ts": "t"}]})
+        code, out, _ = wait(slice_dir)
+        assert code == 0
+        assert out.splitlines() == [
+            "ended: exit 7",
+            f"halted before P3: {run_loop.HALT_FILE} was present — once it "
+            "is gone, resume with --resume --detach"]
 
 
 if __name__ == "__main__":

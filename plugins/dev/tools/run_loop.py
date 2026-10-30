@@ -113,7 +113,10 @@ run (an unreadable spec, a tree git cannot hash).
 
 Exit codes of run: 0 slice complete · 3 bailed on an error (bailout.json
 written) · 4 bailed with an operator question (bailout.json written) ·
-2 usage/precondition error · 130 interrupted · 1 unexpected error.
+7 halted: Pilot's halt file (HALT_FILE) was present at a safe point
+(state.json current, the stop in `halts`; --resume carries on once it is
+gone) or at the start (nothing ran) · 2 usage/precondition error ·
+130 interrupted · 1 unexpected error.
 `run --detach` exits 0 once the driver started, else with its refusal's code.
 
 Exit codes of wait, its own and not the run's: 0 the run ended (its code is
@@ -496,6 +499,15 @@ SESSION_LIMIT_GRACE = 300         # the stated reset is approximate: wait past i
 SESSION_LIMIT_FALLBACK = 1800     # no parseable reset: retry in half an hour
 SESSION_LIMIT_MAX_SLEEP = 12 * 3600   # no single wait may exceed this
 
+# Pilot's halt (docs/pilot.md § The nudge and the halt): Pilot writes this file
+# into the environment while a usage halt or the project's pause holds, and
+# deletes it when neither does. Present, the loop stops at its next safe
+# point and exits EXIT_HALTED; present at the start, it does not start. A
+# module constant so the suites point it away from the host's own.
+HALT_FILE = Path("/work/.quota-limit-halt-requested")
+HALT_POLL = 60        # seconds between looks at it during a long sleep
+EXIT_HALTED = 7       # the run's, and the plan loop's; never `wait`'s 5 or 6
+
 VERDICTS = {
     "code-writer": {"done", "question", "blocked"},
     "code-reviewer": {"signoff", "issues", "critical"},
@@ -523,6 +535,24 @@ class Bailout(Exception):
         self.details = details
         self.consult = consult
         self.question = question
+
+
+class Halted(BaseException):
+    """Pilot's halt file, seen at a safe point (`halt_requested`). A
+    BaseException, as KeyboardInterrupt is: it passes every `except
+    Exception` on its way out — the wrap-up's leave-out among them — along
+    the path an interrupt takes, and the loop's top level turns it into
+    EXIT_HALTED with its state current. `where` says where the loop stood."""
+
+    def __init__(self, where: str):
+        super().__init__(where)
+        self.where = where
+
+
+def halt_requested() -> bool:
+    """Whether Pilot's halt file is present now. Read at every safe point,
+    never cached: Pilot deletes it when the halt lifts."""
+    return HALT_FILE.exists()
 
 
 class WrapUpLeftOut(Exception):
@@ -2114,7 +2144,10 @@ class DevLock:
         except (OSError, AttributeError):
             return "(no holder note)"
 
-    def acquire(self, purpose: str, log, sleep) -> None:
+    def acquire(self, purpose: str, log, sleep, halt=None) -> None:
+        """Take the lease, polling while another holder has it. `halt`, a
+        callable, is asked at every poll: true, the wait ends in `Halted`
+        with nothing held."""
         if not self.configured or self._fd is not None:
             return
         self._fd = os.open(self.lock_path, os.O_WRONLY | os.O_CREAT, 0o644)
@@ -2129,6 +2162,11 @@ class DevLock:
                     log("devlock held — waiting; holder:\n"
                         + self.holder_note())
                     logged = True
+                if halt is not None and halt():
+                    os.close(self._fd)
+                    self._fd = None
+                    raise Halted(
+                        f"waiting for the devlock ({purpose})") from None
                 if time.monotonic() >= deadline:
                     os.close(self._fd)
                     self._fd = None
@@ -5349,19 +5387,23 @@ class RunLoop:
         recoveries = 0
         carried_s = 0        # the round's seconds before a recovery resume
         while True:
-            self.log(f"{label} session starting"
-                     + (" (resume)" if resume_session else ""))
-            self.announce((f"P{phase_id} " if phase_id else "") + shown
-                          + (f" r{round_}" if round_ else "")
-                          + (" (resume)" if resume_session else ""))
             verdict_path.unlink(missing_ok=True)
-
             self.state["in_flight"] = {
                 "phase": phase_id, "role": role, "round": round_,
                 "verdict_path": str(verdict_path), "session": resume_session,
                 "started_at": _now_iso(),
             }
             self._save_state()
+            # Pilot's halt stops the round before its session, with the
+            # in-flight record already on disk: the resume dispatches the
+            # round under the number it banked, as after an interrupt here.
+            self._halt_point(f"before the {label} session")
+
+            self.log(f"{label} session starting"
+                     + (" (resume)" if resume_session else ""))
+            self.announce((f"P{phase_id} " if phase_id else "") + shown
+                          + (f" r{round_}" if round_ else "")
+                          + (" (resume)" if resume_session else ""))
 
             t0 = time.monotonic()
             try:
@@ -5582,17 +5624,40 @@ class RunLoop:
         self.log(f"{label} account session limit — {when}; sleeping "
                  f"{int(seconds)}s, then redispatching the same round "
                  "(no round spent, no nudge, no consult)")
-        self._sleep(seconds)
+        # The fallback for a wall Pilot's halt did not prevent, and halt-aware
+        # itself: the file is looked for every HALT_POLL seconds, and once it
+        # is there the sleep ends and the redispatch's halt point stops the run.
+        remaining = seconds
+        while remaining > 0:
+            if halt_requested():
+                self.log(f"{label} halt requested — the session-limit sleep "
+                         "ends early")
+                return
+            step = min(float(HALT_POLL), remaining)
+            self._sleep(step)
+            remaining -= step
 
     def _sleep(self, seconds: float) -> None:
         """The driver's only wall-clock wait, isolated so tests can take it
         out."""
         time.sleep(seconds)
 
+    def _halt_point(self, where: str) -> None:
+        """A safe point: nothing is in flight here, so Pilot's halt file,
+        if present, stops the run (`Halted`, caught in `_run`). Every
+        dispatch, every consult, every iteration of the phase loop and every
+        push passes one; the devlock wait and the session-limit sleep look
+        for the file as they poll."""
+        if halt_requested():
+            raise Halted(where)
+
     def _consult(self, site: str, situation: str, actions: dict[str, str],
                  material: list[Path], phase_id: str | None) -> dict:
         """Spawn a fresh bare consult session; return its verdict
         (validated). `site` names the decision point in log lines."""
+        # Before its number is drawn: a consult never reattaches, so a halt
+        # any later would leave a number nothing answered.
+        self._halt_point(f"before the consult ({site})")
         n = self.state["consult_seq"] = self.state.get("consult_seq", 0) + 1
         self._save_state()
         base = (self.slice_dir / "phases" / f"P{phase_id}"
@@ -6572,6 +6637,7 @@ class RunLoop:
             # `complete` judged.
             if self.state.pop("consult_complete", None) is not None:
                 self._save_state()
+            self._halt_point(f"before P{pending.id}")
             self._run_phase(pending)
 
     def _executor_where(self, target: ResolvedTarget) -> str:
@@ -9040,6 +9106,7 @@ class RunLoop:
                               root=root)
             if behind not in ("", "0"):
                 self._rebase_doc_sibling(root, base, ahead, behind)
+            self._halt_point(f"before pushing {base} in {root}")
             self.git("push", "origin", base, root=root)
             self.log(f"[doc-phase] pushed {base} in {root} ({ahead} "
                      "commit(s) the doc phase left there)")
@@ -9532,6 +9599,7 @@ class RunLoop:
                 self.log(f"[doc-phase] merged into {base}; the project does "
                          "not push — nothing sent to origin")
             return
+        self._halt_point(f"before pushing {base} in {root}")
         self.git("push", "origin", base, root=root)
         self.log(f"[doc-phase] merged into {base} and pushed — the dev roll "
                  "is not tracked")
@@ -9922,6 +9990,9 @@ class RunLoop:
             self._save_state()
 
         while True:
+            # The wrap-up never reattaches: a halt here leaves the stage for
+            # the resume to start over from a clean slate, as an interrupt.
+            self._halt_point("before the [wrap-up] session")
             self.log(f"{label} session starting")
             self.announce("wrap-up")
             verdict_path.unlink(missing_ok=True)
@@ -10320,6 +10391,14 @@ class RunLoop:
             self._slice_lock.release()
 
     def _run(self) -> None:
+        # Before anything is read or written: a halt at the start is not a
+        # run, so nothing records it, and the start after it is the same
+        # command again.
+        if halt_requested():
+            print(f"Halted: {HALT_FILE} is present — Pilot's halt holds, and "
+                  "the run does not start. Run the same command again once "
+                  "the file is gone.", file=sys.stderr)
+            sys.exit(EXIT_HALTED)
         if self.state_path.exists():
             if not self.resume:
                 print(f"Error: {self.state_path} exists. Pass --resume to "
@@ -10453,6 +10532,11 @@ class RunLoop:
             print("Interrupted — resume with --resume (the in-flight session "
                   "will be reattached).", file=sys.stderr)
             sys.exit(130)
+        except Halted as halt:
+            # The interrupt's path at a point where nothing is in flight: no
+            # branch restored, `run_phase` left where the resume re-enters.
+            self.devlock.release(self.log)
+            self._halt(halt)
 
         self.state["run_phase"] = "done"
         self._save_state()
@@ -10581,7 +10665,7 @@ class RunLoop:
             return
         self.announce(f"acquiring devlock ({purpose})")
         self.devlock.acquire(f"slice {self.slice_num} {purpose}",
-                             self.log, self._sleep)
+                             self.log, self._sleep, halt=halt_requested)
 
     def _settle_push(self) -> None:
         """The driver's push, for a project that runs no test phase.
@@ -10607,6 +10691,7 @@ class RunLoop:
             if why is not None:
                 self._report_hold(root, why)
                 continue
+            self._halt_point(f"before pushing {base} in {root}")
             self.git("push", "origin", base, root=root)
             self.log(f"pushed {base} in {root}")
 
@@ -10651,6 +10736,22 @@ class RunLoop:
         print(f"{kind} ({bail.reason}) — see "
               f"{self.slice_dir / 'bailout.json'}", file=sys.stderr)
         sys.exit(4 if bail.question else 3)
+
+    def _halt(self, halt: Halted) -> None:
+        """Pilot's halt, met at a safe point: the stop on record in `halts`
+        — where, the stage, when — and exit EXIT_HALTED. Not a bail: no
+        bailout.json, no close-out render, nothing for the report; the run
+        is not over, and `--resume` carries on from the stage it stopped in
+        once the file is gone."""
+        self.state.setdefault("halts", []).append(
+            {"at": halt.where, "run_phase": self.state.get("run_phase"),
+             "ts": _now_iso()})
+        self._save_state()
+        self.log(f"HALTED {halt.where}: {HALT_FILE} is present — state.json "
+                 "is current; resume with --resume once it is gone")
+        print(f"Halted {halt.where}: {HALT_FILE} is present — resume with "
+              "--resume once it is gone.", file=sys.stderr)
+        sys.exit(EXIT_HALTED)
 
     def _summary(self) -> None:
         phases = self.state["phases"]
@@ -10931,6 +11032,13 @@ def _running_line(state: dict, log_path: Path) -> str:
 
 def _ended_lines(code: int, slice_dir: Path) -> list[str]:
     lines = [f"ended: exit {code}"]
+    if code == EXIT_HALTED:
+        halts = (_read_json(slice_dir / "state.json") or {}).get("halts") or []
+        where = halts[-1].get("at") if halts else None
+        lines.append("halted" + (f" {where}" if where else "")
+                     + f": {HALT_FILE} was present — once it is gone, "
+                       "resume with --resume --detach")
+        return lines
     if code not in (3, 4):
         return lines
     bail = _read_json(slice_dir / "bailout.json") or {}
@@ -11004,10 +11112,21 @@ def cmd_stop(args) -> None:
     reattach, exit 130 — and wait for it to let the lock go. Only the
     driver's own pid: the session it runs is the resume's to pick up."""
     slice_dir = Path(args.slice_dir)
-    lock_path = slice_dir / "run.lock"
+    sys.exit(stop_driver(slice_dir / "run.lock", slice_dir / "state.json"))
+
+
+def stop_driver(lock_path: Path, state_path: Path | None) -> int:
+    """SIGINT the driver holding `lock_path` — the pid its note names, on
+    this host only — wait up to STOP_WAIT for it to let the lock go, and
+    answer `stop`'s exit code: 0 stopped · 1 no driver running, or still
+    running after the wait · 2 the driver is on another host, or the note
+    names no pid. With `state_path`, the exit the driver recorded there is
+    printed; the plan loop, which records none, passes None. Shared by both
+    loops' `stop`."""
     if not lock_held(lock_path):
-        print(f"no driver is running {slice_dir}: {lock_path.name} is free")
-        sys.exit(1)
+        print(f"no driver is running {lock_path.parent}: {lock_path.name} "
+              "is free")
+        return 1
     fields = note_fields(holder_note(lock_path))
     here = socket.gethostname()
     if fields.get("host") != here:
@@ -11016,18 +11135,18 @@ def cmd_stop(args) -> None:
         print(f"Error: the driver holding {lock_path} runs on host "
               f"{fields.get('host') or '(unknown)'}{where}, not on {here} — "
               "its pid means nothing here.", file=sys.stderr)
-        sys.exit(2)
+        return 2
     try:
         pid = int(fields.get("pid", ""))
     except ValueError:
         print(f"Error: {lock_path} names no driver pid.", file=sys.stderr)
-        sys.exit(2)
+        return 2
     try:
         os.kill(pid, signal.SIGINT)
     except ProcessLookupError:
         print(f"Error: pid {pid} from {lock_path} is not running, yet the "
               "lock is held.", file=sys.stderr)
-        sys.exit(1)
+        return 1
     print(f"sent SIGINT to the driver (pid {pid}); waiting up to "
           f"{STOP_WAIT}s for it to stop", flush=True)
     deadline = time.monotonic() + STOP_WAIT
@@ -11035,14 +11154,17 @@ def cmd_stop(args) -> None:
         if time.monotonic() >= deadline:
             print(f"the driver (pid {pid}) still holds {lock_path.name} "
                   f"after {STOP_WAIT}s")
-            sys.exit(1)
+            return 1
         time.sleep(STOP_POLL)
-    record = (_read_json(slice_dir / "state.json") or {}).get("exit")
+    if state_path is None:
+        print("stopped")
+        return 0
+    record = (_read_json(state_path) or {}).get("exit")
     if record is None:
         print("stopped, but it left no exit record")
     else:
         print(f"stopped: exit {record.get('code')}")
-    sys.exit(0)
+    return 0
 
 
 def code_repos_for(spec_root: Path) -> list[Path]:

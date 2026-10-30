@@ -52,7 +52,9 @@ has none was killed from outside), `bailouts` (every stop this run made — `rea
 `question`, `ts`, the `run_phase` it stopped in and its `details` clipped to 600 characters —
 kept here because `bailout.json` is unlinked on resume; the resume that follows a stop writes it
 into the close-out report as an event and marks the row `reported`, so each stop is entered
-once however often the run resumes), `appended_phases`
+once however often the run resumes), `halts` (every stop at Pilot's halt file — `at`, where the
+run stood, the `run_phase` it stopped in and `ts`; a halt is not a bail, and nothing reports it;
+[run-loop.md](run-loop.md) § Protocol invariants), `appended_phases`
 (the ids the plan gained after the run started — a consult's, the test phase's, or the
 operator's, as opposed to the phases it began with), `holds_reported` (the repos held by the
 plan's `## Push holds` section that the driver has already entered in the close-out report — one
@@ -188,10 +190,13 @@ error the orchestrator diagnoses).
 | `protocol_failure` | – | a git command failed, an agent left uncommitted changes, a consult chose an unoffered action, the worktree was dirty at merge, a shared target's merge failed five times over, the primary repo is shared or `kc env describe` does not answer, a `CLAUDE.md` procedure-doc pointer is missing, `.aiworkflowrc` no longer loads where the driver re-reads `push.enabled`, or a `verification.json` item carries a key outside the schema |
 | `lost_work` | – | a commit the driver recorded on a phase branch is not on it any more (and the driver did not ask for the rebase that rewrote it), or a `pending` phase's branch carries commits the run has no record of |
 
-Exit codes: **0** slice complete · **3** error bail · **4** operator question · **2** usage or
-precondition — a `state.json` that exists without `--resume`, a slice another driver is already
-running (`run.lock` held), a missing/unparseable `plan.md` or missing `verification.json`, a dirty
-tree at preflight, or a missing agent definition · **130** interrupted · **1** unexpected error.
+Exit codes: **0** slice complete · **3** error bail · **4** operator question · **7** halted:
+Pilot's halt file, met at a safe point with `state.json` current and the stop in `halts`, or at
+the start with nothing run or recorded ([run-loop.md](run-loop.md) § Protocol invariants) ·
+**2** usage or precondition — a `state.json` that exists without `--resume`, a slice another
+driver is already running (`run.lock` held), a missing/unparseable `plan.md` or missing
+`verification.json`, a dirty tree at preflight, or a missing agent definition · **130**
+interrupted · **1** unexpected error.
 
 **Detached.** `run … --detach`, what `/dev:run-slice` launches, puts the driver in a session of
 its own, off any terminal, so no caller's cap on one command can kill it — the harness's
@@ -199,7 +204,7 @@ background cap is 2 h, and on 2026-09-30 it killed three runs mid-flight. It ret
 driver holds `run.lock`, or with the driver's own refusal and exit 2; the run is unchanged, its
 exit code on disk as `exit`. `run_loop.py wait <slice-dir> [--for S] [--from OFFSET]` waits on
 it, 3 300 s by default, and answers **0** the run ended (its code, and for a bail the reason,
-question and details), **5** still running (the stage, the session in flight against its role's
+question and details, for a halt where it stopped), **5** still running (the stage, the session in flight against its role's
 cap, the age of the last log line) or **6** gone with no `exit` recorded — each time with the
 driver's own `log.txt` lines since `--from`, the in-flight session's latest narration, and the
 command to run next. Liveness is the `flock`, never the pid. `run_loop.py stop <slice-dir>`

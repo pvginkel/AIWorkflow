@@ -14,6 +14,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -41,6 +42,12 @@ run_loop._user_home = lambda: Path(tempfile.gettempdir()) / "planloop-no-home"
 # the tests that exercise it write their own (`installed`).
 run_loop.INSTALLED_PLUGINS = (Path(tempfile.gettempdir()) / "planloop-no-home"
                               / "installed_plugins.json")
+
+# Pilot's halt file is the host's (`/work/...`): a pod running the suite while
+# a halt holds would halt every loop in it. Pointed at a file that does not
+# exist; the tests of the halt make one of their own (`halt_file`).
+run_loop.HALT_FILE = (Path(tempfile.gettempdir()) / "planloop-no-home"
+                      / "quota-limit-halt-requested")
 
 # The GO check's tool scan reads the pod's tool containers from `kc env
 # describe`; stubbed as running `python` alone. Its service scan reads the
@@ -1685,6 +1692,120 @@ def test_no_other_slice_holding_a_push_leaves_the_review_as_it_was():
             review_path=loop.slice_dir / "plan_review_r1.md",
             verdict_path=loop.slice_dir / "plan_review_result_r1.json")
         assert "push holds —" not in (slice_dir / "plan_log.txt").read_text()
+
+
+# -- Pilot's halt and `stop` -------------------------------------------------
+
+@contextlib.contextmanager
+def halt_file(tmp):
+    """The halt file's path for this test, pointed at by the run loop's
+    module, whose `halt_requested` the plan loop asks — absent until touched."""
+    path = Path(tmp) / "quota-limit-halt-requested"
+    saved = run_loop.HALT_FILE
+    run_loop.HALT_FILE = path
+    try:
+        yield path
+    finally:
+        run_loop.HALT_FILE = saved
+
+
+def test_a_halt_at_the_start_runs_nothing():
+    with tempfile.TemporaryDirectory() as tmp, halt_file(tmp) as halt:
+        slice_dir = make_slice(tmp)
+        halt.touch()
+        loop = ScriptedLoop(slice_dir, [])
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            assert run_to_exit(loop) == 7
+        assert not loop.spawned
+        assert not (slice_dir / "plan_state.json").exists()
+        assert f"Halted: {halt} is present" in err.getvalue()
+        assert not run_loop.lock_held(slice_dir / "plan.lock")
+
+
+def test_a_halt_stops_the_loop_between_passes_and_the_rerun_takes_the_next():
+    """The pass in flight finishes; the halt is met before the next one draws
+    its round, so the rerun dispatches it under the number it would have had."""
+    def writes_then_halts(loop):
+        write_phases(loop)
+        halt.touch()
+
+    with tempfile.TemporaryDirectory() as tmp, halt_file(tmp) as halt:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [(*W_DONE[:2], writes_then_halts)])
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            assert run_to_exit(loop) == 7
+        state = load_state(slice_dir)
+        assert state["phase"] == "reviewing"
+        assert state["review_rounds"] == 0
+        assert "Halted before the plan-reviewer pass" in err.getvalue()
+        assert "HALTED before the plan-reviewer pass" in \
+            (slice_dir / "plan_log.txt").read_text()
+        assert (slice_dir / "close-out.json").exists(), (
+            "the report is rendered at this exit as at every other")
+        assert not run_loop.lock_held(slice_dir / "plan.lock")
+
+        halt.unlink()
+        loop = ScriptedLoop(slice_dir, [R_GO])
+        assert run_to_exit(loop) == 0
+        assert loop.spawned == [("plan-reviewer", 1, "go")]
+
+
+# A plan loop in miniature: holds plan.lock with the real note's shape, and
+# on SIGINT lets it go and exits 130, as PlanLoop.run does.
+PLAN_DRIVER_CHILD = """\
+import fcntl, os, signal, socket, sys, time
+signal.signal(signal.SIGINT, signal.default_int_handler)
+fd = os.open(os.path.join(sys.argv[1], "plan.lock"), os.O_RDWR | os.O_CREAT)
+fcntl.flock(fd, fcntl.LOCK_EX)
+os.write(fd, f"host: {socket.gethostname()}\\npid: {os.getpid()}\\n".encode())
+print("ready", flush=True)
+try:
+    while True:
+        time.sleep(0.02)
+except KeyboardInterrupt:
+    os.ftruncate(fd, 0)
+    sys.exit(130)
+"""
+
+
+def stop(slice_dir):
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            plan_loop.cmd_stop(type("Args", (), {"slice_dir": str(slice_dir)})())
+        except SystemExit as e:
+            return e.code, out.getvalue(), err.getvalue()
+    raise AssertionError("cmd_stop did not exit")
+
+
+def test_stop_interrupts_the_plan_loop_and_waits_for_its_lock():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        code, out, _ = stop(slice_dir)
+        assert code == 1 and "no driver is running" in out
+        assert "plan.lock is free" in out
+
+        child = subprocess.Popen(
+            [sys.executable, "-c", PLAN_DRIVER_CHILD, str(slice_dir)],
+            stdout=subprocess.PIPE, text=True)
+        try:
+            assert child.stdout.readline() == "ready\n"
+            saved = run_loop.STOP_POLL
+            run_loop.STOP_POLL = 0.02
+            try:
+                code, out, _ = stop(slice_dir)
+            finally:
+                run_loop.STOP_POLL = saved
+            assert child.wait(timeout=10) == 130
+        finally:
+            child.kill()
+            child.wait()
+        assert code == 0, out
+        assert f"sent SIGINT to the driver (pid {child.pid})" in out
+        assert out.splitlines()[-1] == "stopped"
+        assert not run_loop.lock_held(slice_dir / "plan.lock")
 
 
 if __name__ == "__main__":

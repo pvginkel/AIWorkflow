@@ -126,8 +126,9 @@ read back as the continuation reads it.
 
 Pilot writes `/work/.quota-limit-halt-requested` into the environment while a usage halt or the
 project's pause holds, and deletes it when neither does. Present, it means stop at the next safe
-point: the loops check it at theirs and exit `halted`, and the skill ends its turn saying where
-the stage stopped. Present at a stage's start, the stage does not start, and the turn says so.
+point: the loops check it at theirs and exit `halted`, code 7 ([run-loop.md](run-loop.md)
+§ Protocol invariants has the safe points), and the skill ends its turn saying where the stage
+stopped. Present at a stage's start, the stage does not start, and the turn says so.
 The nudge after the halt lifts carries on.
 
 ## Cards
