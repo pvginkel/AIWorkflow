@@ -14,6 +14,14 @@ places); PilotApp `docs/round-trip.md`, `docs/mcp.md`, `docs/work.md`; PilotProj
 `rules/stages.md`, `rules/work-items.md`; this plugin at 0.9.147, surveyed subsystem by subsystem;
 and the 91 changes from 0.9.57 to 0.9.147, read as a whole (§2).
 
+**Working the plan.** A session starts in `/work/PilotApp` (the project whose memory points here),
+checks out `pilot-redesign` in `/work/AIWorkflow`, reads §1 and §9, and takes the first unticked
+item of §8; a decision an item needs that §9 does not rule is built as recommended. Every commit
+bumps the plugin's version and adds a changelog entry, as this repo's `CLAUDE.md` says, and the
+item's box is ticked in the same commit; a ruling the operator gives is written into §9, dated,
+naming its decision. The branch is pushed only on the operator's word. The surveys this plan was
+written from are not kept: an item's session reads the code it changes.
+
 ## 0. In short
 
 A stage of the workflow — triage, planning, a run with its close-out — becomes **a Pilot work
@@ -58,7 +66,10 @@ record, as rows in PilotAppSpecs `decisions.md` at the cutover.
    program reads the answer. The alternative — every stage's agent writes its document under the
    format skill and a parser reads the answers — keeps the prose in the agent's hands at the cost
    of a Markdown parser in every loop and a mapping from blocks to cards, rulings and entries that
-   is guessed rather than known.
+   is guessed rather than known. This reads the operator's "rework the run system (so the
+   requirements, or an evolution of this) to something close to the close-out system"
+   (2026-10-30) as the planning stage's requirements document and the loops' questions; if
+   another part was meant, this decision is where it changes.
 2. **The close-out as the run's continuation** (§0 point 2; §5.3). *Recommend:* yes. The
    alternative is a close-out stage of its own that Pilot starts after the run, which costs a
    second work item and environment for what the run's session already holds.
@@ -379,78 +390,78 @@ sessions in all.
 
 **Phase A — the contract and the foundation**
 
-- **A0. The contract page.** `plugins/dev/docs/pilot.md` as §3 states it, and `docs/AUTHORING.md`'s
+- [ ] **A0. The contract page.** `plugins/dev/docs/pilot.md` as §3 states it, and `docs/AUTHORING.md`'s
   rules for a stage skill (headless, ends its turn, the brief, the documents, the continuation,
   the clarification turn, the fallback). *Done when:* the page reads as the one home and the
   operator has read it — this is P-111's "Designed" box, with this plan.
-- **A1. `blocks.py`** (§4) with its suite, pinned against the format skill's example and the
+- [ ] **A1. `blocks.py`** (§4) with its suite, pinned against the format skill's example and the
   quoting rules. *Done when:* a rendered document of every kind round-trips through the read-back
   with Pilot's answer lines added.
-- **A2. `close_out.py`** (§5.1): the fields, the write model, `render` as the document plus the
+- [ ] **A2. `close_out.py`** (§5.1): the fields, the write model, `render` as the document plus the
   record, `absorb`, the verbs removed, the dispatch line, `close-out.md` and
   `close-out-template.md` rewritten; the suite reworked (the render and read-back half of
   `test_close_out.py`). *Done when:* a store of the old fixtures renders as a document that
   `register_document` would take, and an answered copy absorbs into rulings. The largest item.
-- **A3. The halt file** (§5.5) in both loops, `plan_loop.py stop`, the exit `halted`, tests.
-- **A4. The run loop's asks** (§5.2): every exit-4 rendered as a document before the exit, `--step`,
+- [ ] **A3. The halt file** (§5.5) in both loops, `plan_loop.py stop`, the exit `halted`, tests.
+- [ ] **A4. The run loop's asks** (§5.2): every exit-4 rendered as a document before the exit, `--step`,
   the question verdict's optional `options`/`recommend` in `code-writer.md` and `doc-writer.md`,
   the pre-run actions and the environment facts as `action` documents, AIWF-88's checks
   evaluated, `report_edited` removed, `wait` as a machine signal; tests.
-- **A5. The plan loop's asks** (§5.3): `plan_questions_rN.json`, `plan_review_rN.json`, the
+- [ ] **A5. The plan loop's asks** (§5.3): `plan_questions_rN.json`, `plan_review_rN.json`, the
   documents rendered at exit 4, the plan-writer's and plan-reviewer's hand-back sections, the fix
   pass by default; tests (the exit-4 tests of `test_plan_loop.py`).
-- **A6. Preflight** (§5.6): structured failures, the stale-plugin check gone, the version guard
+- [ ] **A6. Preflight** (§5.6): structured failures, the stale-plugin check gone, the version guard
   relaxed for `--plugin-dir`; tests.
 
 **Phase B — the stages**
 
-- **B1. Run-slice** (§5.2): the skill rewritten as the stage's turns with the close-out
+- [ ] **B1. Run-slice** (§5.2): the skill rewritten as the stage's turns with the close-out
   continuation; `/dev:close-out` deleted; the close-out card gone; the wrap-up's asks as
   proposals; `run-loop.md`, `runner-state.md`, `agent-dispatch.md` brought to it.
-- **B2. Plan-slice** (§5.3): the skill rewritten; `refinement-writer.md` and `refinement.md`
+- [ ] **B2. Plan-slice** (§5.3): the skill rewritten; `refinement-writer.md` and `refinement.md`
   deleted; `plan-template.md` and `plan-loop.md` brought to it.
-- **B3. Triage** (§5.4): the skill rewritten; `slice-dag` deleted; `needs:` in `slice.md`'s front
+- [ ] **B3. Triage** (§5.4): the skill rewritten; `slice-dag` deleted; `needs:` in `slice.md`'s front
   matter read by preflight's "ready to plan"; `residual-sweep.md` brought to it.
 
 **Phase C — the sweep and the gutting**
 
-- **C1. AIWF-36**, the risk table and the reviewer's dispatch line.
-- **C2. AIWF-82's rule** (after decision 8): the prompts, the format skill, the checks.
-- **C3. The blanket-accept scan** and the trims of `inbox`, `onboard`, `arch-design` (§6).
-- **C4. Dead code and the research tools** that read gone artifacts: `close_out_readout.py`'s
+- [ ] **C1. AIWF-36**, the risk table and the reviewer's dispatch line.
+- [ ] **C2. AIWF-82's rule** (after decision 8): the prompts, the format skill, the checks.
+- [ ] **C3. The blanket-accept scan** and the trims of `inbox`, `onboard`, `arch-design` (§6).
+- [ ] **C4. Dead code and the research tools** that read gone artifacts: `close_out_readout.py`'s
   snapshot import left as research, noted in its header; nothing else.
-- **C5. The AIWF cards** commented with their fate (§7); closed at the cutover.
-- **C6. Optional, if it falls out of A4:** the review set computed from HEAD before and after in
+- [ ] **C5. The AIWF cards** commented with their fate (§7); closed at the cutover.
+- [ ] **C6. Optional, if it falls out of A4:** the review set computed from HEAD before and after in
   every repo a session committed to, in place of the `Review:` ledger (§2).
 
 **Phase D — the docs**
 
-- **D1.** `README.md`, this repo's `CLAUDE.md`, `docs/ADOPTING.md`, `project-contract.md`,
+- [ ] **D1.** `README.md`, this repo's `CLAUDE.md`, `docs/ADOPTING.md`, `project-contract.md`,
   `preflight.md`; `docs/rationale/`: `plan-refinement.md` and `reporting.md` rewritten or moved
   to `history.md`, `principles.md` § Git and gates corrected, `overview.md` the new flow; the
   0.10.0 changelog entry that tells the story once.
 
 **Phase E — the rehearsal** (decision 10)
 
-- **E1.** The four stages end to end in ad hoc sessions with `--plugin-dir` on a throwaway slice
+- [ ] **E1.** The four stages end to end in ad hoc sessions with `--plugin-dir` on a throwaway slice
   of a test spec repo, the fallback path showing each document, the answer lines edited by hand.
-- **E2.** One rehearsal through pilot-dev: a test project, a free-form work item whose brief points
+- [ ] **E2.** One rehearsal through pilot-dev: a test project, a free-form work item whose brief points
   at the branch's skill by path with `CLAUDE_PLUGIN_ROOT` named; the round trip watched —
   register, the pass, the operator's answer from the phone, the write-back, the continuation, a
   clarification turn.
 
 **Phase F — the cutover** (with implementation-plan step 17)
 
-- **F1.** Merge to `main`, publish 0.10.0, the marketplace updated in every environment.
-- **F2.** PilotProjects: `rules/stages.md` rewritten — the three commands, the brief's arguments,
+- [ ] **F1.** Merge to `main`, publish 0.10.0, the marketplace updated in every environment.
+- [ ] **F2.** PilotProjects: `rules/stages.md` rewritten — the three commands, the brief's arguments,
   what each stage registers, the ticket in the brief; `rules/work-items.md`'s brief for a stage.
-- **F3.** PilotAppSpecs: `feed-model.md` §7 brought to what was built; `aiworkflow-redesign.md`
+- [ ] **F3.** PilotAppSpecs: `feed-model.md` §7 brought to what was built; `aiworkflow-redesign.md`
   reworked into the record of the points and their fates, or retired; `aiworkflow-structured-data.md`
   marked as the 0.9.93 survey it is; the ledger's F92 row ticked; the rulings of §1 as rows in
   `decisions.md` where they bind the record. PilotApp: `CLAUDE.md`'s dev-pipeline paragraph,
   `.aiworkflowrc` checked (unchanged unless `[risk]` is added).
-- **F4.** The AIWF cards closed; a KC card for the environment-readiness declaration (§2).
-- **F5.** The first slice through Pilot, the phone's layout (031), on 0.10.0.
+- [ ] **F4.** The AIWF cards closed; a KC card for the environment-readiness declaration (§2).
+- [ ] **F5.** The first slice through Pilot, the phone's layout (031), on 0.10.0.
 
 ## 9. Rulings
 
