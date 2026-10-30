@@ -9,6 +9,7 @@ Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_plan_loop.py` or via pytest.
 """
 
 import contextlib
+import fcntl
 import importlib.util
 import io
 import json
@@ -89,12 +90,16 @@ class ScriptedLoop(PlanLoop):
     like a real session would — the GO gate re-reads it from disk.
     """
 
-    def __init__(self, slice_dir, script, fixes_applied=False,
-                 spec_top="/specs"):
-        super().__init__(Path(slice_dir), fixes_applied=fixes_applied)
+    def __init__(self, slice_dir, script, step=None, spec_top="/specs",
+                 nudge_effect=None):
+        super().__init__(Path(slice_dir), step=step)
         self.script = list(script)
         self.spawned = []   # (role, round, outcome)
         self.prompts = []   # (role, prompt)
+        self.nudges = []    # (role, prompt), each a resume of the session
+        # What a nudged session does, given the loop: a hand-back fixed, or
+        # nothing.
+        self.nudge_effect = nudge_effect
         self.git_calls = []  # every git invocation, as its argv tuple
         self.branch = "main"  # what the spec repo is checked out on
         # What `rev-parse --show-toplevel` answers.
@@ -131,11 +136,18 @@ class ScriptedLoop(PlanLoop):
         Path(verdict_path).write_text(json.dumps(verdict))
         self.prompts.append((role, prompt))
         self.spawned.append((role, round_, verdict["outcome"]))
+        self._session = "sess-test"
         self._record(role, round_, verdict["outcome"],
                      verdict.get("summary", ""), "sess-test", 1)
         if len(step) > 2:
             step[2](self)
         return verdict
+
+    def _nudge(self, prompt, session_id, label, role):
+        assert session_id == "sess-test"
+        self.nudges.append((role, prompt))
+        if self.nudge_effect is not None:
+            self.nudge_effect(self)
 
 
 def make_slice(tmp, phases=False):
@@ -166,14 +178,58 @@ def load_state(slice_dir):
     return json.loads((slice_dir / "plan_state.json").read_text())
 
 
+def asks_questions(*questions):
+    """What a writer's `questions` pass leaves: its hand-back, for the round
+    the loop drew."""
+    def effect(loop):
+        w = loop.state["writer_rounds"]
+        (loop.slice_dir / f"plan_questions_r{w}.json").write_text(
+            json.dumps({"questions": list(questions)}))
+    return effect
+
+
+def finds(*findings):
+    """What a review that does not `go` leaves beside its prose: the
+    findings that need a ruling, for the round the loop drew."""
+    def effect(loop):
+        r = loop.state["review_rounds"]
+        (loop.slice_dir / f"plan_review_r{r}.json").write_text(
+            json.dumps({"findings": list(findings)}))
+    return effect
+
+
+QUESTION = {
+    "headline": "Keep the sessions in Postgres or in Redis",
+    "body": "The plan stores a session per sign-in. Postgres is already a "
+            "service here; Redis is not.",
+    "options": [{"label": "Postgres", "line": "one store, no new service"},
+                {"label": "Redis", "line": "faster expiry, a new service"}],
+    "recommend": "Postgres",
+}
+BLOCKING = {
+    "class": "blocking",
+    "headline": "Requirement 1 has no criterion",
+    "body": "slice.md's requirement 1 is in no item of verification.json.",
+    "proposal": "verification.json carries requirement 1 as a criterion, in "
+                "the operator's words.",
+}
+OPERATOR = {
+    "class": "operator",
+    "headline": "Slice 031 and this plan build the login page differently",
+    "body": "Both plans carry the login page; each specifies it otherwise.",
+    "options": [{"label": "As 031 says", "line": "a form with a magic link"},
+                {"label": "As this plan says", "line": "a password form"}],
+}
+
 W_DONE = ("plan-writer", {"outcome": "done", "summary": "written"},
           write_phases)
-W_Q = ("plan-writer", {"outcome": "questions", "summary": "need a ruling"})
+W_Q = ("plan-writer", {"outcome": "questions", "summary": "need a ruling"},
+       asks_questions(QUESTION))
 R_GO = ("plan-reviewer", {"outcome": "go", "summary": "clean"})
 R_ISSUES = ("plan-reviewer", {"outcome": "issues",
-                              "summary": "two blocking"})
+                              "summary": "two blocking"}, finds(BLOCKING))
 R_Q = ("plan-reviewer", {"outcome": "questions",
-                         "summary": "undecided semantics"})
+                         "summary": "undecided semantics"}, finds(OPERATOR))
 
 
 def test_fresh_slice_happy_path():
@@ -245,6 +301,7 @@ def test_the_loop_renders_the_report_at_every_exit_and_commits_none_of_it():
     def appends(what):
         def effect(loop):
             write_phases(loop)
+            asks_questions(QUESTION)(loop)
             close_out.append_entry(loop.slice_dir, "event", what, "b",
                                    consequence="none")
         return effect
@@ -330,7 +387,7 @@ def test_review_issues_exit_for_adjudication_then_one_fix_pass():
         state = load_state(slice_dir)
         assert state["phase"] == "adjudicating"
         assert state["pending_review"] == 1
-        # Rerun without --fixes-applied: exactly one writer fix pass, no
+        # The rerun once the findings are ruled: exactly one writer fix pass, no
         # confirming review.
         loop2 = ScriptedLoop(slice_dir, [W_DONE])
         assert run_to_exit(loop2) == 0
@@ -340,40 +397,6 @@ def test_review_issues_exit_for_adjudication_then_one_fix_pass():
         fix_prompt = loop2.prompts[0][1]
         assert "plan_review_r1.md" in fix_prompt
         assert "rulings recorded in plan.md supersede" in fix_prompt
-
-
-def test_fixes_applied_flag_skips_the_fix_pass():
-    """--fixes-applied is the session's declaration that it applied the
-    accepted fixes itself. It is the ONLY thing that suppresses the pass."""
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir = make_slice(tmp)
-        loop = ScriptedLoop(slice_dir, [W_DONE, R_ISSUES])
-        assert run_to_exit(loop) == 4
-        # The interactive session adjudicates, records the ruling AND applies
-        # the fix itself, then says so on the rerun.
-        plan = slice_dir / "plan.md"
-        plan.write_text(
-            plan.read_text()
-            .replace("1. The operator's first requirement, verbatim.",
-                     "1. The operator's first requirement, verbatim.\n"
-                     "- Ruling (2026-07-31): split P1.")
-            .replace("Outcome: the thing works.",
-                     "Outcome: the thing works, in two steps."))
-        loop2 = ScriptedLoop(slice_dir, [], fixes_applied=True)
-        assert run_to_exit(loop2) == 0
-        assert not loop2.spawned, "no session may be spawned"
-        assert load_state(slice_dir)["phase"] == "done"
-
-
-def test_fixes_applied_outside_adjudication_is_a_usage_error():
-    """The flag answers a pending adjudication. Passed with none pending, the
-    session is confused about the loop's state — say so rather than accept a
-    declaration about nothing."""
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir = make_slice(tmp)
-        loop = ScriptedLoop(slice_dir, [], fixes_applied=True)
-        assert run_to_exit(loop) == 2
-        assert not loop.spawned
 
 
 def test_plan_edits_during_adjudication_still_dispatch_the_fix_pass():
@@ -427,11 +450,11 @@ def test_writer_questions_pause_and_resume():
         loop = ScriptedLoop(slice_dir, [W_Q])
         assert run_to_exit(loop) == 4
         state = load_state(slice_dir)
-        assert state["pending_questions"].endswith("plan_questions_r1.md")
+        assert state["pending_questions"].endswith("plan_questions_r1.json")
         loop2 = ScriptedLoop(slice_dir, [W_DONE, R_GO])
         assert run_to_exit(loop2) == 0
         resumed_prompt = loop2.prompts[0][1]
-        assert "plan_questions_r1.md" in resumed_prompt
+        assert "plan_questions_r1.json" in resumed_prompt
         assert "rulings section now holds the answers" in resumed_prompt
         assert load_state(slice_dir)["pending_questions"] is None
 
@@ -448,6 +471,176 @@ def test_reviewer_questions_route_to_adjudication_like_issues():
         assert run_to_exit(loop2) == 0
         assert [s[0] for s in loop2.spawned] == ["plan-writer"]
         assert "plan_review_r1.md" in loop2.prompts[0][1]
+
+
+# -- exit 4: the hand-backs as a document Pilot reads -------------------------
+
+asks = plan_loop.asks
+
+
+def quiet(loop):
+    """The loop run to its exit with stdout and stderr captured: (code,
+    stdout, stderr)."""
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = run_to_exit(loop)
+    return code, out.getvalue(), err.getvalue()
+
+
+def test_writer_questions_exit_with_a_document_for_the_session_to_register():
+    """A `questions` pass puts its hand-back to the operator as a document
+    in asks/, rendered through asks.py — a decision where the writer gave
+    options, its recommendation kept — names it on stdout and in the exit
+    record, carries the plan task as `step`, and commits nothing of it: the
+    session commits what it registers."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [W_Q], step="t7")
+        code, out, err = quiet(loop)
+        assert code == 4
+        document = slice_dir / "asks" / "1-plan-questions.md"
+        assert f"document: {document}" in out.splitlines()
+        assert "QUESTIONS PENDING (plan-writer r1)" in err
+        record = load_state(slice_dir)["exit"]
+        assert record["code"] == 4
+        assert record["reason"] == "questions"
+        assert record["document"] == str(document)
+        store = asks.load(document)
+        assert store["title"] == "Slice 099: the plan-writer's questions"
+        assert store["step"] == "t7"
+        assert "pass r1 on slice 099's plan" in store["context"][0]
+        assert [(e["id"], e["kind"], e["headline"], e.get("recommend"))
+                for e in store["entries"]] == [
+            ("D1", "decision", QUESTION["headline"], "Postgres")]
+        assert {bid: (b["kind"], b["lines"]) for bid, b in
+                asks.read_back(document.read_text()).items()} == {
+            "D1": ("decision", {})}
+        assert commits(loop) == [("commit", "-m", "slice 099: close-out report")]
+
+
+def test_review_findings_put_one_ask_each_and_leave_the_advisory_in_the_review():
+    """A blocking finding goes as a decision on the reviewer's disposition,
+    an operator-decidable one as a decision on its options with no winner
+    named, or as a question where it gives none; an advisory note stays in
+    the prose review."""
+    advisory = {"class": "advisory", "headline": "P1 runs long",
+                "body": "It could split."}
+    open_fact = {"class": "operator", "headline": "Which tenant owns the data",
+                 "body": "Neither slice.md nor the code says."}
+    review = ("plan-reviewer", {"outcome": "issues", "summary": "x"},
+              finds(OPERATOR, BLOCKING, advisory, open_fact))
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        code, out, _ = quiet(ScriptedLoop(slice_dir, [W_DONE, review]))
+        assert code == 4
+        document = slice_dir / "asks" / "1-plan-review.md"
+        assert f"document: {document}" in out.splitlines()
+        store = asks.load(document)
+        assert store["title"] == "Slice 099: the plan review's findings"
+        assert store["summary"] == ("Slice 099's plan waits on 3 rulings "
+                                    "before the plan loop can go on")
+        assert "plan_review_r1.md" in store["context"][0]
+        assert "step" not in store
+        entries = [{k: e.get(k) for k in ("id", "kind", "headline",
+                                         "proposal", "recommend")}
+                   for e in store["entries"]]
+        assert entries == [
+            {"id": "D1", "kind": "decision", "headline": OPERATOR["headline"],
+             "proposal": None, "recommend": None},
+            {"id": "D2", "kind": "decision", "headline": BLOCKING["headline"],
+             "proposal": BLOCKING["proposal"], "recommend": None},
+            {"id": "Q1", "kind": "question", "headline": open_fact["headline"],
+             "proposal": None, "recommend": None}]
+        assert load_state(slice_dir)["exit"]["reason"] == "review"
+
+
+def test_the_plan_task_is_kept_for_the_reruns_that_do_not_give_it():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        assert quiet(ScriptedLoop(slice_dir, [W_Q], step="t3"))[0] == 4
+        code, _, _ = quiet(ScriptedLoop(slice_dir, [W_DONE, R_ISSUES]))
+        assert code == 4
+        assert asks.load(slice_dir / "asks" / "2-plan-review.md")["step"] == "t3"
+        assert load_state(slice_dir)["step"] == "t3"
+
+
+def test_a_faulty_hand_back_is_nudged_once_then_put():
+    """A hand-back the operator cannot be shown goes back to the session
+    that wrote it, once, with its faults; fixed, the exit goes on."""
+    missing = ("plan-writer", {"outcome": "questions", "summary": "q"})
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [missing],
+                            nudge_effect=asks_questions(QUESTION))
+        assert quiet(loop)[0] == 4
+        assert [role for role, _ in loop.nudges] == ["plan-writer"]
+        nudge = loop.nudges[0][1]
+        assert "plan_questions_r1.json cannot go to the operator" in nudge
+        assert "- plan_questions_r1.json is not there" in nudge
+        assert (slice_dir / "asks" / "1-plan-questions.md").exists()
+
+
+def test_a_hand_back_still_faulty_after_its_nudge_bails():
+    headed = dict(QUESTION, body="Context.\n\n## A heading\n\nMore.")
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [
+            ("plan-writer", {"outcome": "questions", "summary": "q"},
+             asks_questions(headed))])
+        assert quiet(loop)[0] == 3
+        assert len(loop.nudges) == 1
+        bail = json.loads((slice_dir / "plan_bailout.json").read_text())
+        assert bail["reason"] == "protocol_failure"
+        assert bail["details"].startswith(
+            "plan-writer's hand-back plan_questions_r1.json cannot go to the "
+            "operator after a nudge:\n- questions 1: ")
+        assert "heading" in bail["details"]
+        assert not (slice_dir / "asks").exists()
+        assert load_state(slice_dir)["exit"] == {
+            "code": 3, "ts": load_state(slice_dir)["exit"]["ts"],
+            "reason": "protocol_failure"}
+
+
+def test_read_handback_names_every_fault():
+    def faults(role, data):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "handback.json"
+            path.write_text(data if isinstance(data, str) else json.dumps(data))
+            return plan_loop.read_handback(role, path)
+
+    assert faults("plan-writer", "{not json")[1][0].startswith(
+        "handback.json is no JSON")
+    assert faults("plan-writer", {"questions": "one"})[1] == [
+        'handback.json is no {"questions": [...]}']
+    assert faults("plan-writer", {"questions": []})[1] == [
+        "handback.json holds no question that needs a ruling"]
+    _, found = faults("plan-writer", {"questions": [
+        dict(QUESTION, recommend="MySQL"),
+        {"headline": "x", "body": "y", "why": "z"},
+        {"headline": "", "body": "y"}]})
+    assert len(found) == 3
+    assert "recommend: MySQL" in found[0] and found[0].startswith("questions 1:")
+    assert found[1] == "questions 2: no field why"
+    assert found[2].startswith("questions 3:")
+    entries, found = faults("plan-reviewer", {"findings": [
+        {"class": "blocking", "headline": "h", "body": "b"},
+        {"class": "nit", "headline": "h", "body": "b"},
+        {"class": "advisory", "headline": "h", "body": "b"}]})
+    assert entries == []
+    assert found == [
+        "findings 1: a blocking finding says its disposition, as a "
+        "`proposal` or `options`",
+        "findings 2: `class` is blocking, operator or advisory, not 'nit'"]
+    entries, found = faults("plan-reviewer", {"findings": [
+        {"class": "advisory", "headline": "h", "body": "b"}]})
+    assert (entries, found) == (
+        [], ["handback.json holds no finding that needs a ruling"])
+    entries, found = faults("plan-writer", {"questions": [
+        {"headline": "Name the queue", "body": "b",
+         "options": ["jobs", "work"]}]})
+    assert found == []
+    assert entries == [{"kind": "decision", "headline": "Name the queue",
+                        "body": "b", "options": ["jobs", "work"]}]
 
 
 def test_existing_phased_plan_enters_at_review():
@@ -711,13 +904,11 @@ def test_the_plan_loop_records_its_driver_and_lets_the_lock_go_at_every_exit():
         raise KeyboardInterrupt
 
     blocked = ("plan-writer", {"outcome": "blocked", "summary": "no"})
-    for script, fixes_applied, code in [([W_Q], False, 4),
-                                        ([blocked], False, 3),
-                                        ([(*W_DONE[:2], interrupt)], False, 130),
-                                        ([], True, 2)]:
+    for script, code in [([W_Q], 4), ([blocked], 3),
+                         ([(*W_DONE[:2], interrupt)], 130)]:
         with tempfile.TemporaryDirectory() as tmp:
             slice_dir = make_slice(tmp)
-            loop = ScriptedLoop(slice_dir, script, fixes_applied=fixes_applied)
+            loop = ScriptedLoop(slice_dir, script)
             with contextlib.redirect_stderr(io.StringIO()), \
                     environment_id(None):
                 assert run_to_exit(loop) == code
@@ -1690,6 +1881,7 @@ def test_no_other_slice_holding_a_push_leaves_the_review_as_it_was():
             close_out_line=plan_loop.dispatch_line(loop.report_path),
             other_holds_line="",
             review_path=loop.slice_dir / "plan_review_r1.md",
+            findings_path=loop.slice_dir / "plan_review_r1.json",
             verdict_path=loop.slice_dir / "plan_review_result_r1.json")
         assert "push holds —" not in (slice_dir / "plan_log.txt").read_text()
 
@@ -1742,6 +1934,9 @@ def test_a_halt_stops_the_loop_between_passes_and_the_rerun_takes_the_next():
         assert "Halted before the plan-reviewer pass" in err.getvalue()
         assert "HALTED before the plan-reviewer pass" in \
             (slice_dir / "plan_log.txt").read_text()
+        record = load_state(slice_dir)["exit"]
+        assert (record["code"], record["halted"]) == (
+            7, "before the plan-reviewer pass")
         assert (slice_dir / "close-out.json").exists(), (
             "the report is rendered at this exit as at every other")
         assert not run_loop.lock_held(slice_dir / "plan.lock")
@@ -1806,6 +2001,135 @@ def test_stop_interrupts_the_plan_loop_and_waits_for_its_lock():
         assert f"sent SIGINT to the driver (pid {child.pid})" in out
         assert out.splitlines()[-1] == "stopped"
         assert not run_loop.lock_held(slice_dir / "plan.lock")
+
+
+# -- `run --detach` and `wait` ------------------------------------------------
+
+def call(cmd, **args):
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            cmd(type("Args", (), args)())
+        except SystemExit as e:
+            return e.code, out.getvalue(), err.getvalue()
+    raise AssertionError(f"{cmd.__name__} did not exit")
+
+
+def wait(slice_dir, for_seconds=0):
+    return call(plan_loop.cmd_wait, slice_dir=str(slice_dir),
+                for_seconds=for_seconds)
+
+
+@contextlib.contextmanager
+def patched(module, **attrs):
+    saved = {name: getattr(module, name) for name in attrs}
+    for name, value in attrs.items():
+        setattr(module, name, value)
+    try:
+        yield
+    finally:
+        for name, value in saved.items():
+            setattr(module, name, value)
+
+
+def plan_record(tmp, exit_=None):
+    slice_dir = Path(tmp) / "099_test_slice"
+    slice_dir.mkdir()
+    state = {"slice": slice_dir.name, "phase": "adjudicating"}
+    if exit_ is not None:
+        state["exit"] = exit_
+    (slice_dir / "plan_state.json").write_text(json.dumps(state))
+    return slice_dir
+
+
+def test_wait_answers_with_the_exit_and_what_it_leaves():
+    """The plan loop's `wait` is the run loop's signal on plan.lock and
+    plan_state.json: the exit and, by it, the document to register, the bail
+    record, or where a halt stopped — nothing a session reads to decide."""
+    with tempfile.TemporaryDirectory() as tmp:
+        code, _, err = wait(Path(tmp) / "nope")
+        assert code == 2 and "not found" in err
+        (Path(tmp) / "099_x").mkdir()
+        code, _, err = wait(Path(tmp) / "099_x")
+        assert code == 2 and "never started" in err
+    cases = [
+        ({"code": 4, "ts": "t", "reason": "review",
+          "document": "/specs/slices/backlog/099_x/asks/2-plan-review.md"},
+         ["ended: exit 4", "reason: review",
+          "document: /specs/slices/backlog/099_x/asks/2-plan-review.md"]),
+        ({"code": 7, "ts": "t", "halted": "before the plan-writer fix pass"},
+         ["ended: exit 7", "halted: before the plan-writer fix pass"]),
+        ({"code": 0, "ts": "t"}, ["ended: exit 0"]),
+    ]
+    for record, lines in cases:
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out, _ = wait(plan_record(tmp, record))
+            assert (code, out.splitlines()) == (0, lines), record
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = plan_record(tmp, {"code": 3, "ts": "t", "reason": "blocked"})
+        code, out, _ = wait(slice_dir)
+        assert out.splitlines() == [
+            "ended: exit 3", "reason: blocked",
+            f"bailout: {os.path.abspath(slice_dir / 'plan_bailout.json')}"]
+
+
+def test_wait_re_arms_while_the_loop_runs_and_relaunches_one_gone():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = plan_record(tmp)
+        where = os.path.abspath(slice_dir)
+        fd = os.open(slice_dir / "plan.lock", os.O_RDWR | os.O_CREAT, 0o644)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            code, out, _ = wait(slice_dir)
+        finally:
+            os.close(fd)
+        assert code == run_loop.WAIT_RUNNING
+        assert out.splitlines() == [
+            "running", f"next: python3 {plan_loop.SCRIPT} wait {where}"]
+        code, out, _ = wait(slice_dir)
+        assert code == run_loop.WAIT_KILLED
+        assert out.splitlines() == [
+            "gone: the driver left no exit record",
+            f"next: python3 {plan_loop.SCRIPT} run {where} --detach"]
+
+
+def test_run_detach_names_the_plan_loops_own_stop_and_wait():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        with patched(run_loop, detach=lambda body, log: (4242, 0, "")):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                plan_loop.cmd_run(type("Args", (), {
+                    "slice_dir": str(slice_dir), "verbose": False,
+                    "step": None, "detach": True})())
+        lines = out.getvalue().splitlines()
+        assert lines[1] == ("driver detached: pid 4242 — it outlives this "
+                            "shell; `plan_loop.py stop` interrupts it")
+        assert lines[2] == (f"next: python3 {plan_loop.SCRIPT} wait "
+                            f"{os.path.abspath(slice_dir)}")
+
+
+def test_a_detached_plan_loop_runs_through_the_real_handshake():
+    """Detached, the loop's refusal comes back as the caller's exit, and a
+    loop that starts is waited on to its exit record."""
+    def detached(loop):
+        def body(started):
+            loop.on_start = started
+            loop.run()
+        return run_loop.detach(body, loop.log_path)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        pid, code, text = detached(ScriptedLoop(slice_dir, [W_DONE, R_GO]))
+        assert code == 0 and pid, text
+        with patched(run_loop, WAIT_POLL=0.02):
+            code, out, _ = wait(slice_dir, for_seconds=30)
+        assert (code, out.splitlines()) == (0, ["ended: exit 0"])
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        (slice_dir / "plan.md").unlink()
+        pid, code, text = detached(ScriptedLoop(slice_dir, []))
+        assert (pid, code) == (None, 2) and "does not exist" in text
 
 
 if __name__ == "__main__":

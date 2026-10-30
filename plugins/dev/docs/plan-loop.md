@@ -1,7 +1,7 @@
 # The plan loop — one structural write→review round
 
-`${CLAUDE_PLUGIN_ROOT}/tools/plan_loop.py` is `/dev:plan-slice`'s mechanical half. The interactive
-session pins requirements with the operator and seeds `plan.md`'s header; the loop then runs a
+`${CLAUDE_PLUGIN_ROOT}/tools/plan_loop.py` is `/dev:plan-slice`'s mechanical half. The plan-slice
+session settles the slice's requirements and seeds `plan.md`'s header; the loop then runs a
 fresh **plan-writer** pass to complete the plan and **one** fresh **plan-reviewer** pass to
 judge it. The review is structural, not optional: **exit 0 is refused without a reviewer
 verdict on file**, and it is the only place anything checks the plan against `slice.md` —
@@ -10,25 +10,35 @@ nobody downstream reads slice.md again. Session mechanics and models are
 [run-loop.md](run-loop.md).
 
 **There is no review loop.** A `go` verdict completes the plan. Anything else — blocking
-findings or questions — pauses with the review on file: the interactive session adjudicates
-the findings with the operator — in the agree-or-comment form of [refinement.md](refinement.md)
-— and records the rulings in plan.md's rulings section, **edited in place** (a ruling that
-corrects an earlier one replaces it; the round history lives in `plan_review_r*.md`, the
-interview's in `refinement.md`). The rerun then dispatches one writer fix pass that reads the review plus
-the rulings — **unless the session applied the accepted fixes itself and says so with
-`--fixes-applied`**. That declaration is the only thing that suppresses the pass: the loop
-reads nothing off the plan to guess it. It cannot — recording the rulings is required either
-way, and a reversed ruling routinely falsifies an ordering or not-in-scope bullet, so plan
-maintenance and applied fixes look identical in the file. The default is therefore the pass:
-a forgotten flag costs a no-op writer round, never a plan that ships unfixed. Nobody
-re-reviews the result — the operator's read is the second look, and it is the cheapest review
-pass there is. Post-GO corrections are the same move without the loop: edit the plan in place,
+findings or questions only the operator can rule — pauses with the findings put to the operator as
+a document (below). Their answers go into plan.md's rulings section, **edited in place** (a ruling
+that corrects an earlier one replaces it; the round history lives in `plan_review_r*.md`), and the
+rerun **always** dispatches one writer fix pass that reads the review plus the rulings and
+resolves every blocking finding the rulings do not overrule. Nothing suppresses the pass, and the
+loop reads nothing off the plan to guess whether the fixes are in: recording the rulings is
+required either way, and a reversed ruling routinely falsifies an ordering or not-in-scope
+bullet, so plan maintenance and applied fixes look identical in the file. Nobody re-reviews the
+result. Post-GO corrections are the same move without the loop: edit the plan in place,
 sanity-check with `run_loop.py run <slice-dir> --dry-run`.
 
+**Every ask is a document before the exit.** A writer's `questions` verdict hands back
+`plan_questions_rN.json`, and a review that does not `go` hands back `plan_review_rN.json` beside
+its prose review, each shaped as the role's contract says. The loop checks the hand-back as
+`asks.py` will render it: one with faults goes back once to the session that wrote it, with the
+faults, and then the loop bails `protocol_failure`. It renders the asks into the slice's
+`asks/<n>-plan-questions.md` or `asks/<n>-plan-review.md` through `asks.py` and exits 4, the path on
+stdout and in `plan_state.json`'s `exit`, for the stage to register with Pilot
+([pilot.md](pilot.md) § The documents). A question with options is a decision with its
+recommendation, one without them a question. A blocking finding is a decision on the reviewer's
+disposition, an operator-decidable one a decision on its options or a question, and an advisory
+note stays in the review. The document carries `run --step`'s plan task as its `step`, kept in
+`plan_state.json` for the reruns that do not give it. The loop commits none of it: the session
+commits what it registers, as it commits the rulings before the rerun. A document that cannot be
+written is logged, and the exit stands without it.
+
 Exits: **0** plan complete (a reviewer verdict is on file and the plan parses as a phase
-queue) · **4** operator input needed (writer questions, a review pending adjudication, or a
-`close-out.md` edited by hand that refused the exit-0 seed below; handle it, rerun — the loop
-resumes where it paused) · **3** bailed (`plan_bailout.json`:
+queue) · **4** operator input needed (the writer's questions or the review's findings, as the
+document above; answer it, rerun — the loop resumes where it paused) · **3** bailed (`plan_bailout.json`:
 `blocked`, `timeout`, `protocol_failure`, `missing_tools` — a plan Target's manifest calls a
 `cexec` tool this environment does not run, `missing_services` — the host's own
 `.kubecoder/config.yaml` declares a service this environment does not run (another Target repo's
@@ -43,6 +53,16 @@ ran ([run-loop.md](run-loop.md) § Protocol invariants) · **2** refused before 
 anything: another plan loop holds the slice's `plan.lock`, or its run loop holds `run.lock` ·
 **130** interrupted: `plan_loop.py stop <slice-dir>` sends the loop SIGINT, as Ctrl-C, and waits
 for `plan.lock` to go free, as the run loop's `stop` does ([runner-state.md](runner-state.md)).
+Every exit past the refusals is on disk as `plan_state.json`'s `exit`: its code, and for an exit
+4 its `reason` and `document`, for a bail its `reason`, for a halt where it stopped.
+
+**Detached.** `run … --detach` puts the loop in a session of its own, as the run loop's does, and
+returns once the loop is past its refusals, or with its refusal's code. `plan_loop.py wait
+<slice-dir> [--for S]` is what the stage's session waits on inside its turn, the run loop's `wait`
+on `plan.lock` and `plan_state.json` ([runner-state.md](runner-state.md) § bailout.json and exit
+codes): **0** `ended: exit <n>`, then for an exit 4 its `reason:` and the `document:` to register,
+for a bail its `reason:` and the `bailout:` file, for a halt where it stopped; **5** `running`,
+with the `next:` wait to re-arm; **6** `gone`, with the `next:` relaunch, `run … --detach`.
 
 **One plan loop per slice.** The loop holds a `flock` on `<slice>/plan.lock` for the whole run —
 the run loop's lock, its note and heartbeat ([runner-state.md](runner-state.md) § Resume and crash
@@ -71,10 +91,8 @@ it; what the planning agents write there is [close-out.md](close-out.md)'s. At e
 seeds the report's actions from the plan: one entry per push-hold repo, listing the criteria
 owed after that push, and one per criterion owed after anything else. It commits them under the
 same branch check, and a headline an action already carries, live or struck, is not
-entered again, however often the loop reruns. A seed that `close_out.py` refuses because the
-operator edited the report where the write would drop it ([close-out.md](close-out.md)) stops
-the loop with exit 4 and the lines on stderr; the rerun seeds what is left. The loop renders the report when it stops,
-whatever its exit. Every dispatch also names the project's
+entered again, however often the loop reruns. A seed that `close_out.py` refuses is logged and
+left out, never a failed plan. The loop renders the report when it stops, whatever its exit. Every dispatch also names the project's
 **change-discipline doc** (`.aiworkflowrc`'s `design_philosophy`) — the same pointer the run
 loop's dispatches carry, so the rules a plan's phases will be held to are in view while the plan
 is written and reviewed, not discovered at execution.
@@ -82,11 +100,11 @@ is written and reviewed, not discovered at execution.
 ## The plan doc
 
 `plan.md` is **the one plan** — read by every executor, and by the operator (legibility is a
-design goal; the operator's read is the cheapest review pass there is). The concrete skeleton —
+design goal). The concrete skeleton —
 heading levels, the `Target:` line, done-record shape, the `verification.json` schema — is
 [plan-template.md](plan-template.md); its shape:
 
-- **Header** (seeded by the interactive session): the one-liner; **requirements/rulings** — every
+- **Header** (seeded by the plan-slice session): the one-liner; **requirements/rulings** — every
   requirement and operator ruling, in the operator's words; this section is authoritative on
   intent, is preserved verbatim by the writer, and is where `/dev:run-slice` records mid-run
   operator answers.

@@ -981,21 +981,15 @@ def _append_ask(store: dict, ask: dict) -> None:
     asks.append(store, "question", ask["headline"], body)
 
 
-def render_question_document(slice_dir: Path, bail: Bailout,
-                             step: str | None) -> Path:
-    """The document an operator question puts (`question_asks`), rendered
-    into the slice's `asks/` through asks.py before the run exits 4, for the
-    run-slice session to register: its path. AskError or OSError when it
-    cannot be written; a store left without its document is removed."""
-    slug, what, after = QUESTION_DOCS.get(bail.reason, _QUESTION_DEFAULT)
-    num = Path(slice_dir).name.split("_")[0]
-    where = (f" in P{bail.phase}" if bail.phase else "")
-    entries = question_asks(bail)
-    why = _REASON_WORDS.get(bail.reason, f"`{bail.reason}`")
-    context = [f"The run of slice {num} stopped{where} on {why}. {after}"]
-    path = asks.create(slice_dir, slug, f"Slice {num}: {what}", step=step,
-                       summary=f"Slice {num}'s run waits on {len(entries)} asks "
-                               "before it can go on",
+def render_asks_document(slice_dir: Path, slug: str, title: str,
+                         step: str | None, summary: str,
+                         context: list[str], entries: list[dict]) -> Path:
+    """A loop's asks — `{kind, headline, body, options?, recommend?,
+    proposal?, check?}` each — as a new document in the slice's `asks/`,
+    rendered through asks.py for the stage's session to register: its path.
+    AskError or OSError when it cannot be written; a store left without its
+    document is removed. Both loops' exit-4 documents come through here."""
+    path = asks.create(slice_dir, slug, title, step=step, summary=summary,
                        context=context)
     try:
         with asks.editing(path) as store:
@@ -1006,6 +1000,22 @@ def render_question_document(slice_dir: Path, bail: Bailout,
         with contextlib.suppress(OSError):
             path.unlink()
         raise
+
+
+def render_question_document(slice_dir: Path, bail: Bailout,
+                             step: str | None) -> Path:
+    """The document an operator question puts (`question_asks`), rendered
+    into the slice's `asks/` before the run exits 4, for the run-slice
+    session to register: its path."""
+    slug, what, after = QUESTION_DOCS.get(bail.reason, _QUESTION_DEFAULT)
+    num = Path(slice_dir).name.split("_")[0]
+    where = (f" in P{bail.phase}" if bail.phase else "")
+    entries = question_asks(bail)
+    why = _REASON_WORDS.get(bail.reason, f"`{bail.reason}`")
+    return render_asks_document(
+        slice_dir, slug, f"Slice {num}: {what}", step,
+        f"Slice {num}'s run waits on {len(entries)} asks before it can go on",
+        [f"The run of slice {num} stopped{where} on {why}. {after}"], entries)
 
 
 _REASON_WORDS = {
@@ -11207,9 +11217,11 @@ def cmd_run(args) -> None:
     loop.run()
 
 
-def run_detached(loop: RunLoop, slice_arg: Path) -> None:
-    """`run --detach`: the driver goes on in its own session, and this
-    process says how to wait on it."""
+def run_detached(loop, slice_arg: Path, script: Path = SCRIPT) -> None:
+    """`run --detach`, either loop's: the driver goes on in its own session,
+    and this process says how to wait on it. `loop` has `log_path`, an
+    `on_start` it calls past its refusals, and `run()`; `script` is the
+    loop's own file, whose `stop` and `wait` the lines name."""
 
     def body(started) -> None:
         loop.on_start = started
@@ -11222,8 +11234,8 @@ def run_detached(loop: RunLoop, slice_arg: Path) -> None:
     if pid is None:
         sys.exit(code)
     print(f"driver detached: pid {pid} — it outlives this shell; "
-          f"`{SCRIPT.name} stop` interrupts it", flush=True)
-    print(f"next: python3 {SCRIPT} wait {os.path.abspath(slice_arg)}",
+          f"`{script.name} stop` interrupts it", flush=True)
+    print(f"next: python3 {script} wait {os.path.abspath(slice_arg)}",
           flush=True)
 
 
@@ -11264,18 +11276,31 @@ def cmd_wait(args) -> None:
     """Block until the run ends or `--for` seconds pass, then say which, and
     nothing a session must read: `running` with the wait to re-arm, `ended:
     exit <n>` with what the exit leaves, or `gone` with the relaunch."""
-    slice_dir = Path(args.slice_dir)
-    state_path = slice_dir / "state.json"
+    wait_on_driver(Path(args.slice_dir), "state.json", "run.lock",
+                   args.for_seconds, SCRIPT, "--resume --detach",
+                   lambda record, slice_dir: _ended_lines(record.get("code"),
+                                                          slice_dir))
+
+
+def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
+                   for_seconds: float, script: Path, relaunch: str,
+                   ended) -> None:
+    """Either loop's `wait`: block while the driver holds `lock_name` or
+    until `for_seconds` pass, then print the signal and exit with its code —
+    `running` and the wait to re-arm (5), `ended(record, slice_dir)`'s lines
+    for the exit recorded in `state_name` (0), or `gone` and the relaunch
+    with `relaunch`'s flags (6). Liveness is the flock, never the pid."""
+    state_path = slice_dir / state_name
     if not slice_dir.is_dir():
         print(f"Error: slice directory not found: {slice_dir}",
               file=sys.stderr)
         sys.exit(2)
     if not state_path.exists():
-        print(f"Error: {state_path} does not exist — the run never started",
-              file=sys.stderr)
+        print(f"Error: {state_path} does not exist — the driver never "
+              "started", file=sys.stderr)
         sys.exit(2)
-    lock_path = slice_dir / "run.lock"
-    deadline = time.monotonic() + args.for_seconds
+    lock_path = slice_dir / lock_name
+    deadline = time.monotonic() + for_seconds
     while lock_held(lock_path):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -11286,13 +11311,13 @@ def cmd_wait(args) -> None:
     record = (_read_json(state_path) or {}).get("exit")
     if lock_held(lock_path):
         code, lines = WAIT_RUNNING, [
-            "running", f"next: python3 {SCRIPT} wait {where}"]
+            "running", f"next: python3 {script} wait {where}"]
     elif record is not None:
-        code, lines = 0, _ended_lines(record.get("code"), slice_dir)
+        code, lines = 0, ended(record, slice_dir)
     else:
         code, lines = WAIT_KILLED, [
             "gone: the driver left no exit record",
-            f"next: python3 {SCRIPT} run {where} --resume --detach"]
+            f"next: python3 {script} run {where} {relaunch}"]
     print("\n".join(lines), flush=True)
     sys.exit(code)
 

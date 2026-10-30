@@ -4,6 +4,43 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-30 — The plan loop puts its questions and findings as documents, runs detached, and always runs the fix pass (v0.10.5)
+
+The plan loop's side of a stage that waits inside its turn, P-111's A5.
+
+**The planners hand back JSON.** A plan-writer with `questions` writes `plan_questions_rN.json`,
+and a review that does not `go` writes `plan_review_rN.json` beside its prose review, each shaped
+by the agent's hand-back section. The loop checks a hand-back as `asks.py` will render it. One
+with faults goes back once to the session that wrote it, with the faults, and then the loop
+bails `protocol_failure`.
+
+**Every exit 4 leaves a document.** The loop renders the hand-back into the slice's
+`asks/<n>-plan-questions.md` or `asks/<n>-plan-review.md` through `asks.py` and exits 4. The path
+is printed on stdout and kept in `plan_state.json`'s `exit`, for the stage to register:
+- A question with options becomes a decision with its recommendation, and one without them a
+  question.
+- A blocking finding becomes a decision on the reviewer's disposition, its `proposal`.
+- An operator-decidable finding becomes a decision on its options, with no winner unless the
+  reviewer has grounds, or a question.
+- An advisory note stays in the prose review.
+
+The loop commits none of it: the session commits what it registers. `run --step <id>` gives the
+plan task from Pilot's brief, which `plan_state.json` keeps and every document carries.
+
+**The fix pass always runs.** `--fixes-applied` is gone. After a ruled review the rerun
+dispatches the one writer fix pass, and nobody reads the plan after the loop to catch a skipped
+fix.
+
+**`run --detach` and `wait`, as the run loop has them.** The plan loop now records every exit in
+`plan_state.json`'s `exit`, with an exit 4's `reason` and `document`, a bail's `reason` and a
+halt's stop. `plan_loop.py wait` waits on it in the foreground and answers the run loop's
+signal. Both loops share `wait_on_driver`, `run_detached` and `render_asks_document`, which
+`run_loop.py` now exposes. `plan-loop.md` no longer says a refused exit-0 seed exits 4: it is
+logged and left out, as the code does.
+
+The plan-slice skill still runs the loop backgrounded and reads the old exits until its rewrite
+(B2).
+
 ## 2026-10-30 — The run loop puts every operator question as a document, checks what it needs before it starts, and waits in the foreground (v0.10.4)
 
 A stage now waits on its run inside its turn, because Pilot ends a work item at a turn's end.

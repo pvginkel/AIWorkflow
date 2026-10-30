@@ -651,7 +651,7 @@ sessions in all.
   the question verdict's optional `options`/`recommend` in `code-writer.md` and `doc-writer.md`,
   the pre-run actions and the environment facts as `action` documents, AIWF-88's checks
   evaluated, `report_edited` removed, `wait` as a machine signal; tests.
-- [ ] **A5. The plan loop's asks** (§5.3): `plan_questions_rN.json`, `plan_review_rN.json`, the
+- [x] **A5. The plan loop's asks** (§5.3): `plan_questions_rN.json`, `plan_review_rN.json`, the
   documents rendered at exit 4, the plan-writer's and plan-reviewer's hand-back sections, the fix
   pass by default; tests (the exit-4 tests of `test_plan_loop.py`).
 - [ ] **A6. Preflight** (§5.6): structured failures, the stale-plugin check gone, the version guard

@@ -8,10 +8,9 @@ unattended. You are the **only** check of the plan against `slice.md`: nobody do
 slice.md again, so a request dropped, softened, or silently substituted here is wrong in every
 downstream session. You review the plan, not the code that will be written.
 
-**You get one round.** There is no fix-verify loop behind you: your findings go to the
-interactive session, which adjudicates them with the operator; at most one writer fix pass
-applies the rulings, and nobody re-reviews it — the operator's read does. Rank accordingly, and
-report only what is worth the operator's time.
+**You get one round.** There is no fix-verify loop behind you: the findings that need a ruling go
+to the operator, one writer fix pass applies the rulings, and nobody re-reviews it. Rank
+accordingly, and report only what is worth the operator's time.
 
 Inputs: the slice's `slice.md`, `plan.md` (its requirements/rulings section is the operator's
 settled input), `verification.json`, `attachments/`, the project documentation, and the code the
@@ -94,16 +93,33 @@ yours.
 ## Output
 
 Write the review file named in your dispatch — findings ranked (operator-decidable first, then
-blocking, then advisory), each with problem, evidence, impact. Then write the verdict file named
-in your dispatch:
+blocking, then advisory), each with problem, evidence, impact. Unless your verdict is `go`, write
+the findings that need a ruling, in the review's order, to the findings file named in your
+dispatch:
+
+```json
+{"findings": [{"class": "operator | blocking", "headline": "…", "body": "…",
+               "proposal": "…", "options": [{"label": "…", "line": "…"}], "recommend": "<a label>"}]}
+```
+
+Each entry is one ask of the document the loop puts to the operator in Pilot. The `headline` is
+the problem, in a line. The `body` is the problem, its evidence and its impact, in Markdown
+paragraphs or a list, with no heading and no fenced block. A `blocking` finding says its
+disposition as its `proposal`: what the plan holds once the finding is resolved, the outcome and
+never the edit. An `operator` finding gives the courses as `options`, each a label and at most
+one line, with `recommend` only where you have grounds — a step two slices specify differently
+names no winner — or no options where it is an open question. Advisory notes stay in the review
+file. The loop checks the file and sends it back to you once with its faults.
+
+Then write the verdict file named in your dispatch:
 
 ```json
 {"outcome": "go | issues | questions", "summary": "one sentence"}
 ```
 
 - `questions` — one or more findings only the operator can resolve.
-- `issues` — blocking findings; the session adjudicates them with the operator.
+- `issues` — blocking findings; the operator rules on them.
 - `go` — the plan is executable as it stands (advisory notes may ride in the review file).
 
-Commit the review and verdict to the spec repo (stage by name,
+Commit the review, the findings file and the verdict to the spec repo (stage by name,
 `${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`).

@@ -1,40 +1,38 @@
 #!/usr/bin/env python3
 """Plan loop — the single structural write→review round behind /dev:plan-slice.
 
-The interactive /dev:plan-slice session settles requirements and rulings with the
-operator and seeds plan.md's header sections; this script owns the mechanical
-half: a fresh plan-writer pass completes the plan (phases with `Target:`
-lines, attachments only where the executor genuinely cannot derive the
-design, verification.json's outcome-level acceptance criteria), then a fresh
-plan-reviewer pass judges it — structurally, in ONE round. The review is not
-optional: exit 0 is refused without a reviewer verdict on file, and it is
-the only place anything checks the plan against slice.md; nobody downstream
-reads slice.md again.
+The plan-slice session settles the slice's requirements and seeds plan.md's
+header sections; this script owns the mechanical half: a fresh plan-writer
+pass completes the plan (phases with `Target:` lines, attachments only where
+the executor genuinely cannot derive the design, verification.json's
+outcome-level acceptance criteria), then a fresh plan-reviewer pass judges
+it — structurally, in ONE round. The review is not optional: exit 0 is
+refused without a reviewer verdict on file, and it is the only place
+anything checks the plan against slice.md; nobody downstream reads slice.md
+again.
 
 There is no review loop. A `go` verdict completes the plan. Anything else —
-blocking findings or operator questions — exits 4 with the review on file:
-the interactive session adjudicates the findings with the operator, records
-the rulings in plan.md's rulings section (edited in place, never
-correction-chained), and either leaves the accepted fixes to the rerun,
-which dispatches ONE writer fix pass, or applies them itself and declares
-that by rerunning with --fixes-applied. The loop never infers which
-happened — the fix pass is the default, so a forgotten flag costs one no-op
-writer pass instead of shipping the plan unfixed. No confirming review
-follows — the operator's read is the second look.
+blocking findings or questions only the operator can rule — exits 4 with a
+document: the role's hand-back (plan_questions_rN.json, plan_review_rN.json)
+rendered through asks.py into the slice's asks/, one ask per question or
+finding, for the session to register with Pilot (docs/pilot.md). The
+answers go into plan.md's rulings section; the rerun resumes the paused
+pass, and after a review it always dispatches ONE writer fix pass, which
+resolves every finding the rulings do not overrule. No review follows it.
 
   exit 0 — plan complete: a reviewer verdict is on file and the plan parses
            as run_loop.py's phase queue.
-  exit 4 — operator input needed: writer questions, or a review pending
-           adjudication. Handle it, rerun — the loop continues where it
-           paused.
+  exit 4 — operator input needed: the writer's questions, or the review's
+           findings, as the document named on stdout and in plan_state.json's
+           `exit`. Answer it, rerun — the loop continues where it paused.
   exit 3 — bailed (plan_bailout.json): an agent reported blocked, or a
            protocol failure.
 
-The loop never resumes an agent session: every pass is a fresh context
-reading its inputs from the slice folder (slice.md, plan.md, the review).
-Rulings reach agents through plan.md only — dispatch prompts carry pointers,
-not relayed content. State persists in <slice>/plan_state.json across
-invocations.
+The loop never resumes an agent session but to nudge it: every pass is a
+fresh context reading its inputs from the slice folder (slice.md, plan.md,
+the review). Rulings reach agents through plan.md only — dispatch prompts
+carry pointers, not relayed content. State persists in
+<slice>/plan_state.json across invocations, the last exit as its `exit`.
 
 One loop plans a slice at a time: it holds <slice>/plan.lock for the run,
 the lock's note naming its KubeCoder environment, host and pid with a
@@ -53,8 +51,12 @@ every exit.
 
 All loop and session output goes to <slice>/plan_log.txt; stdout carries the
 log-file line plus one terse timestamped line per pass start and the final
-verdict, so a watching caller can follow progress cheaply; -v/--verbose
-echoes the full log there too.
+verdict; -v/--verbose echoes the full log there too.
+
+`run --detach` takes the loop out of the launching shell, as the run loop's
+does, and `wait` is what the stage's session waits on inside its turn: a
+foreground call under the Bash tool's ten minutes that answers with a
+signal, never a report (docs/pilot.md § A turn's end is the run's end).
 
 Pilot's halt file (run_loop.HALT_FILE) is looked for before every pass:
 present, the loop exits 7 with plan_state.json current, and the rerun once
@@ -62,14 +64,18 @@ it is gone takes the next pass; present at the start, nothing runs. `stop`
 interrupts a running loop as Ctrl-C does.
 
 Usage:
-    plan_loop.py run <slice-dir> [--fixes-applied] [--verbose]
+    plan_loop.py run <slice-dir> [--step ID] [--detach] [--verbose]
+    plan_loop.py wait <slice-dir> [--for SECONDS]
     plan_loop.py stop <slice-dir>
     plan_loop.py status <slice-dir>
 
 Exit codes: 0 plan complete · 4 operator input needed · 3 bailed
 (plan_bailout.json written) · 7 halted · 2 usage/precondition error ·
-130 interrupted · 1 unexpected error. Of stop: 0 stopped · 1 no loop
-running, or still running after the wait · 2 the loop is on another host.
+130 interrupted · 1 unexpected error. `run --detach` exits 0 once the loop
+started, else with its refusal's code. Of wait: 0 the loop ended (its code
+in the output) · 5 still running at --for · 6 gone, no exit record · 2
+nothing to wait on. Of stop: 0 stopped · 1 no loop running, or still
+running after the wait · 2 the loop is on another host.
 """
 
 import argparse
@@ -89,6 +95,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # plan-shape authority, and the target repo's root comes from `git rev-parse
 # --show-toplevel` in the process cwd — not from `__file__`, which locates the
 # plugin these tools ship in, never the repo being planned.
+import asks  # noqa: E402
 import github_target  # noqa: E402
 import project_config  # noqa: E402
 import run_loop  # noqa: E402
@@ -107,8 +114,10 @@ from run_loop import (  # noqa: E402
     EXIT_HALTED,
     PHILOSOPHY_LINE,
     SPAWN_ENV,
+    WAIT_DEFAULT,
     Halted,
     SliceLock,
+    _exit_status,
     _git_toplevel,
     _now_hms,
     _now_iso,
@@ -124,13 +133,17 @@ from run_loop import (  # noqa: E402
     parse_plan,
     parse_push_holds,
     plugin_version,
+    render_asks_document,
     resolve_skills,
     run_kc_session,
     skill_line,
     skills_named,
     spawn_flags,
     stop_driver,
+    wait_on_driver,
 )
+
+SCRIPT = Path(__file__).resolve()
 
 TIMEOUTS = {"plan-writer": 7200, "plan-reviewer": 3600}
 NUDGE_TIMEOUT = 900
@@ -180,6 +193,11 @@ SEED_CRITERION_WIDTH = 100
 # A slice folder's name — its number, then its slug (`NNN_slug`).
 SLICE_FOLDER_RE = re.compile(r"^\d{3,}_")
 
+# The findings of a review that come to the operator, by the class the
+# reviewer gives each in plan_review_rN.json; an advisory note stays in the
+# prose review.
+FINDING_CLASSES = ("blocking", "operator")
+
 
 def _target_key(target: str) -> str:
     """A hold target or an `owed_after` as the seed compares them — the
@@ -192,6 +210,80 @@ class Bailout(Exception):
         super().__init__(reason)
         self.reason = reason
         self.details = details
+
+
+# ---------------------------------------------------------------------------
+# The hand-backs. A `questions` verdict's plan_questions_rN.json and an
+# `issues` or `questions` review's plan_review_rN.json are what the loop puts
+# to the operator: each entry one ask of the exit's document.
+# ---------------------------------------------------------------------------
+
+_HANDBACK = {
+    "plan-writer": ("questions", {"headline", "body", "options", "recommend",
+                                  "proposal"}),
+    "plan-reviewer": ("findings", {"class", "headline", "body", "options",
+                                   "recommend", "proposal"}),
+}
+
+
+def read_handback(role: str, path: Path) -> tuple[list[dict], list[str]]:
+    """(asks, faults) of a role's hand-back file. An entry is one ask: a
+    decision where it gives `options` (with an optional `recommend`) or a
+    `proposal`, a question otherwise. Of a review, a `blocking` finding must
+    say its disposition, as a proposal or options, an `operator` one may
+    leave the choice open, and an `advisory` one is left in the prose
+    review. Every ask is checked as asks.py will render it, so a hand-back
+    without faults is a document that renders."""
+    key, fields = _HANDBACK[role]
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return [], [f"{path.name} is not there"]
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+        return [], [f"{path.name} is no JSON: {e}"]
+    items = data.get(key) if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return [], [f'{path.name} is no {{"{key}": [...]}}']
+    found: list[str] = []
+    out: list[dict] = []
+    scratch = asks.new_store("a hand-back")
+    for n, item in enumerate(items, 1):
+        who = f"{key} {n}"
+        if not isinstance(item, dict):
+            found.append(f"{who} is no object")
+            continue
+        unknown = sorted(set(item) - fields)
+        if unknown:
+            found.append(f"{who}: no field {', '.join(unknown)}")
+            continue
+        if role == "plan-reviewer":
+            cls = item.get("class")
+            if cls == "advisory":
+                continue
+            if cls not in FINDING_CLASSES:
+                found.append(f"{who}: `class` is blocking, operator or "
+                             f"advisory, not {cls!r}")
+                continue
+            if cls == "blocking" and not (item.get("proposal")
+                                          or item.get("options")):
+                found.append(f"{who}: a blocking finding says its "
+                             "disposition, as a `proposal` or `options`")
+                continue
+        block = {k: item[k] for k in ("options", "recommend", "proposal")
+                 if item.get(k) not in (None, "", [])}
+        kind = "decision" if ("options" in block or "proposal" in block) \
+            else "question"
+        try:
+            asks.append(scratch, kind, item.get("headline"), item.get("body"),
+                        **block)
+        except (asks.AskError, AttributeError, TypeError) as e:
+            found.append(f"{who}: {e}")
+            continue
+        out.append({"kind": kind, "headline": item["headline"],
+                    "body": item["body"], **block})
+    if not out and not found:
+        found.append(f"{path.name} holds no {key[:-1]} that needs a ruling")
+    return out, found
 
 
 # ---------------------------------------------------------------------------
@@ -212,23 +304,24 @@ not-in-scope, attachments/ only where an executor genuinely cannot derive
 the design, and verification.json's outcome-level acceptance criteria.
 {philosophy_line}{skill_line}{close_out_line}
 Commit to the spec repo (stage by name), then write your verdict
-to {verdict_path}. Blocking questions go to {questions_path} with verdict
+to {verdict_path}. Questions only the operator can rule go to
+{questions_path}, shaped as your hand-back section says, with verdict
 `questions`.
 """
 
 WRITER_FIX_PROMPT = """\
-The plan-reviewer's findings on slice {slice_name}'s plan have been
-adjudicated with the operator. Slice folder: {slice_dir}
+The operator has ruled on the plan-reviewer's findings on slice
+{slice_name}'s plan. Slice folder: {slice_dir}
 
 Read {review_path} and plan.md — the rulings recorded in plan.md supersede
 the review where they speak. Apply every ruling the plan does not yet
 reflect and resolve every blocking finding the rulings do not overrule —
 the reviewer and the operator state problems; the fix design is yours. This
-is the only fix pass: no review follows it, the operator's read does.
+is the only fix pass: no review follows it.
 {philosophy_line}{skill_line}{close_out_line}
 Commit (stage by name), then write your verdict to {verdict_path}. A
-finding the rulings leave genuinely unresolved goes to {questions_path}
-with verdict `questions`.
+finding the rulings leave genuinely unresolved goes to {questions_path},
+shaped as your hand-back section says, with verdict `questions`.
 """
 
 WRITER_RESUME_NOTE = """\
@@ -242,7 +335,9 @@ only round: no fix-verify loop follows; your findings go to the operator.
 Slice folder: {slice_dir}
 {philosophy_line}{skill_line}{close_out_line}{other_holds_line}
 
-Write your review to {review_path} and your verdict to {verdict_path}.
+Write your review to {review_path}, the findings that need a ruling to
+{findings_path}, shaped as your output section says, and your verdict to
+{verdict_path}.
 """
 
 # The reviewer's alone: the push holds the other slices in flight declare
@@ -259,6 +354,15 @@ now to {verdict_path} as JSON ({{"outcome": "...", "summary": "..."}}; outcome
 must be one of {outcomes}).
 """
 
+# A `questions` or `issues` hand-back that cannot go to the operator as it
+# stands: its faults, for the one nudge before the bail.
+HANDBACK_NUDGE_PROMPT = """\
+Your hand-back {path} cannot go to the operator as it stands:
+{faults}
+Do not start new work: rewrite that file as your contract's hand-back
+section shapes it, commit it (stage by name), and end.
+"""
+
 COMMIT_NUDGE_PROMPT = """\
 Your session ended leaving uncommitted changes in the slice folder. Commit
 them now (stage by name — the spec repo is a shared working tree). Do not
@@ -272,7 +376,7 @@ start new work.
 
 class PlanLoop:
     def __init__(self, slice_dir: Path, verbose: bool = False,
-                 fixes_applied: bool = False):
+                 step: str | None = None):
         self.slice_dir = slice_dir.resolve()
         self.slice_name = self.slice_dir.name
         self.slice_num = self.slice_name.split("_")[0]
@@ -282,10 +386,21 @@ class PlanLoop:
         self.state_path = self.slice_dir / "plan_state.json"
         self.log_path = self.slice_dir / "plan_log.txt"
         self.verbose = verbose
-        # The interactive session's declaration that it applied the
-        # adjudicated fixes itself — the only thing that suppresses the fix
-        # pass. Nothing is inferred from the plan's content.
-        self.fixes_applied = fixes_applied
+        # The plan task the planning serves, from the brief (`--step`):
+        # every document the loop renders carries it; kept in
+        # plan_state.json for the reruns that do not give it.
+        self.step = (step or "").strip() or None
+        # `run --detach`'s handshake: called once the loop is past its
+        # refusals, so a refusal reaches the caller as an attached run's does.
+        self.on_start = None
+        # Whether this run read or wrote plan_state.json — what makes its
+        # exit worth recording there (`_record_exit`).
+        self._owns_state = False
+        # What the exit record says beyond the code: the document an exit 4
+        # rendered, a bail's reason, where a halt stopped.
+        self._exit_facts: dict = {}
+        # The last dispatched session, for a hand-back's nudge.
+        self._session: str | None = None
         self.state: dict = {}
         self._log_file = None
         # Sessions spawn in the target repo, not the spec repo: the loop is
@@ -304,6 +419,21 @@ class PlanLoop:
             json.dump(self.state, f, indent=2)
             f.write("\n")
         os.replace(tmp, self.state_path)
+
+    def _record_exit(self, code: int) -> None:
+        """The loop's exit, on disk as plan_state.json's `exit` — written
+        last, whatever the exit: a detached loop's code reaches nobody else,
+        and `wait` reads it. Nothing for a run refused before it owned the
+        state, and nothing here may mask the exit."""
+        if not self._owns_state:
+            return
+        self.state["exit"] = {"code": code, "ts": _now_iso(),
+                              **self._exit_facts}
+        try:
+            self._save_state()
+        except OSError as e:
+            print(f"warning: the exit record was not written: {e}",
+                  file=sys.stderr)
 
     def _record(self, role: str, round_: int, outcome: str, summary: str,
                 session: str | None, duration_s: int) -> None:
@@ -551,6 +681,7 @@ class PlanLoop:
                           details=f"{role} exceeded {TIMEOUTS[role]}s") from None
         duration_s = int(time.monotonic() - t0)
         session_id = result.session_id
+        self._session = session_id
 
         def _valid(v: dict | None) -> bool:
             return v is not None and v.get("outcome") in VERDICTS[role]
@@ -600,7 +731,7 @@ class PlanLoop:
         w = self.state["writer_rounds"]
         self._save_state()
         return (w, self.slice_dir / f"plan_writer_result_r{w}.json",
-                self.slice_dir / f"plan_questions_r{w}.md")
+                self.slice_dir / f"plan_questions_r{w}.json")
 
     def _writer_pass(self, initial: bool) -> None:
         w, verdict_path, questions_path = self._writer_paths()
@@ -629,10 +760,11 @@ class PlanLoop:
                       + ("" if initial else " (fix pass)"))
         verdict = self._spawn("plan-writer", prompt, verdict_path, w)
         if verdict["outcome"] == "questions":
+            entries = self._handback("plan-writer", questions_path, w)
             self.state.update(pending_questions=str(questions_path),
                               phase="questions")
             self._save_state()
-            self._exit_questions(questions_path)
+            self._exit_questions(entries, w, initial)
         if verdict["outcome"] == "blocked":
             raise Bailout("blocked", details=verdict.get("summary", ""))
         # The initial pass goes to its one review; the fix pass completes
@@ -646,6 +778,7 @@ class PlanLoop:
         r = self.state["review_rounds"]
         self._save_state()
         review_path = self.slice_dir / f"plan_review_r{r}.md"
+        findings_path = self.slice_dir / f"plan_review_r{r}.json"
         verdict_path = self.slice_dir / f"plan_review_result_r{r}.json"
         prompt = REVIEWER_PROMPT.format(
             slice_name=self.slice_name, slice_dir=self.slice_dir,
@@ -653,7 +786,8 @@ class PlanLoop:
             skill_line=self._skill_line(f"[plan-reviewer r{r}]"),
             close_out_line=dispatch_line(self.report_path),
             other_holds_line=self._other_holds_line(f"[plan-reviewer r{r}]"),
-            review_path=review_path, verdict_path=verdict_path)
+            review_path=review_path, findings_path=findings_path,
+            verdict_path=verdict_path)
 
         self.announce(f"plan-reviewer r{r}")
         verdict = self._spawn("plan-reviewer", prompt, verdict_path, r)
@@ -661,11 +795,43 @@ class PlanLoop:
             self.state.update(pending_review=r, phase="done")
             self._save_state()
             return
-        # issues / questions: both are the operator's — the interactive
-        # session adjudicates the review; there is no fix-verify loop.
+        # issues / questions: both are the operator's, as one document of
+        # the findings that need a ruling; there is no fix-verify loop.
+        entries = self._handback("plan-reviewer", findings_path, r)
         self.state.update(pending_review=r, phase="adjudicating")
         self._save_state()
-        self._exit_adjudication(review_path)
+        self._exit_adjudication(entries, r)
+
+    # -- the hand-backs: what goes to the operator ---------------------------
+
+    def _handback(self, role: str, path: Path, round_: int) -> list[dict]:
+        """The asks a `questions` or `issues` verdict's hand-back file puts,
+        each checked as asks.py will render it. A file with faults gets one
+        nudge to the session that wrote it, then a bail: an ask the operator
+        cannot be shown is a stop nobody can answer."""
+        label = f"[{role} r{round_}]"
+        entries, faults = read_handback(role, path)
+        nudged = False
+        if faults and self._session:
+            self.log(f"{label} hand-back {path.name}: {len(faults)} fault(s)")
+            self._nudge(HANDBACK_NUDGE_PROMPT.format(
+                path=path, faults="\n".join(f"- {f}" for f in faults)),
+                self._session, label, role)
+            nudged = True
+            dirty = self._slice_dirty_paths()
+            if dirty:
+                raise Bailout(
+                    "protocol_failure",
+                    details=f"{role} left the slice folder uncommitted after "
+                            "its hand-back nudge: " + ", ".join(dirty))
+            entries, faults = read_handback(role, path)
+        if faults:
+            raise Bailout(
+                "protocol_failure",
+                details=f"{role}'s hand-back {path.name} cannot go to the "
+                        "operator" + (" after a nudge" if nudged else "")
+                        + ":\n" + "\n".join(f"- {f}" for f in faults))
+        return entries
 
     # -- the exit-0 gate -----------------------------------------------------
 
@@ -751,27 +917,56 @@ class PlanLoop:
 
     # -- terminal exits ------------------------------------------------------
 
-    def _exit_questions(self, questions_file: Path) -> None:
-        self.log(f"QUESTIONS PENDING — {questions_file}")
-        print(f"QUESTIONS PENDING — ask the operator from {questions_file}, "
-              "record the ruling in plan.md's rulings section, then rerun.",
-              file=sys.stderr)
-        sys.exit(4)
+    def _exit_questions(self, entries: list[dict], round_: int,
+                        initial: bool) -> None:
+        pass_ = "pass" if initial else "fix pass"
+        self._exit_with_document(
+            "plan-questions", "the plan-writer's questions", entries,
+            [f"The plan-writer's {pass_} r{round_} on slice "
+             f"{self.slice_num}'s plan stopped on what only you can rule. "
+             "Your answers go into plan.md's rulings section in your words, "
+             "and the plan loop resumes the pass with them."],
+            "questions", f"QUESTIONS PENDING (plan-writer r{round_})")
 
-    def _exit_adjudication(self, review_path: Path) -> None:
-        self.log(f"REVIEW PENDING ADJUDICATION — {review_path}")
-        print(f"REVIEW PENDING ADJUDICATION — read {review_path}, "
-              "adjudicate the findings with the operator, and record the "
-              "rulings in plan.md's rulings section (edit superseded "
-              "rulings in place — no correction-chains). Commit, then rerun: "
-              "the rerun dispatches one writer fix pass, which applies the "
-              "accepted fixes to the phases and verification.json. Only if "
-              "you applied those fixes yourself, rerun with --fixes-applied "
-              "to skip that pass.",
-              file=sys.stderr)
+    def _exit_adjudication(self, entries: list[dict], round_: int) -> None:
+        self._exit_with_document(
+            "plan-review", "the plan review's findings", entries,
+            [f"The plan-reviewer read slice {self.slice_num}'s plan once and "
+             "found what the plan cannot go on without your ruling. Your "
+             "answers go into plan.md's rulings section in your words. Then "
+             "one writer fix pass resolves every finding you did not "
+             "overrule, and no review follows it. The full review, with its "
+             f"evidence and any advisory notes, is plan_review_r{round_}.md."],
+            "review", f"REVIEW PENDING RULINGS (plan-reviewer r{round_})")
+
+    def _exit_with_document(self, slug: str, what: str, entries: list[dict],
+                            context: list[str], reason: str,
+                            headline: str) -> None:
+        """Exit 4 with the asks as a document in the slice's asks/, for the
+        session to register with Pilot (docs/pilot.md § The documents): its
+        path on stdout and in the exit record. Nothing is committed — the
+        session commits what it registers. A document that cannot be written
+        is logged, and the exit stands without it."""
+        document = None
+        try:
+            document = str(render_asks_document(
+                self.slice_dir, slug, f"Slice {self.slice_num}: {what}",
+                self.state.get("step"),
+                f"Slice {self.slice_num}'s plan waits on {len(entries)} "
+                "rulings before the plan loop can go on",
+                context, entries))
+        except (asks.AskError, OSError) as e:
+            self.log(f"{headline}: the document was not written: {e}")
+        self._exit_facts = {"reason": reason, "document": document}
+        self.log(f"{headline} — {document or 'no document'}")
+        if document:
+            print(f"document: {document}", flush=True)
+        print(f"{headline} — register the document; its answers go into "
+              "plan.md's rulings section, then rerun.", file=sys.stderr)
         sys.exit(4)
 
     def _bail(self, bail: Bailout) -> None:
+        self._exit_facts = {"reason": bail.reason}
         payload = {"reason": bail.reason, "details": bail.details,
                    "ts": _now_iso()}
         with open(self.slice_dir / "plan_bailout.json", "w") as f:
@@ -821,8 +1016,14 @@ class PlanLoop:
                 "pending_questions": None,
                 "history": [],
             }
-        # This run's driver, over whichever run recorded itself last.
+        # This run's driver, over whichever run recorded itself last; the
+        # last run's exit cleared, so a `wait` under this run never reads it
+        # as this one's end; the plan task kept for the reruns without one.
         self.state["driver"] = dict(self._plan_lock.driver)
+        self.state.pop("exit", None)
+        if self.step:
+            self.state["step"] = self.step
+        self._owns_state = True
         self._save_state()
 
     def _ensure_report(self) -> None:
@@ -1042,9 +1243,14 @@ class PlanLoop:
                   "runs.", file=sys.stderr)
             sys.exit(2)
         self._take_plan_lock()
-        # Let go at every exit — sys.exit's included, which passes through.
+        # Let go at every exit — sys.exit's included, which passes through —
+        # and the exit recorded before the lock goes, so a `wait` that sees
+        # the lock free finds it.
         try:
             self._run()
+        except BaseException as e:
+            self._record_exit(_exit_status(e))
+            raise
         finally:
             self._plan_lock.release()
 
@@ -1067,38 +1273,25 @@ class PlanLoop:
             sys.exit(2)
         self._init_state()
         (self.slice_dir / "plan_bailout.json").unlink(missing_ok=True)
-
-        if self.fixes_applied and self.state["phase"] != "adjudicating":
-            print("Error: --fixes-applied declares that the adjudicated "
-                  f"fixes are in the plan, but phase is "
-                  f"{self.state['phase']!r}, not 'adjudicating' — no review "
-                  "is pending adjudication. Rerun without it.",
-                  file=sys.stderr)
-            sys.exit(2)
+        # The start point: every refusal is behind it, and plan_state.json
+        # is on disk for the `wait` that follows a detached start at once.
+        if self.on_start is not None:
+            self.on_start()
 
         # A questions exit resumes into the pass that raised (or must absorb)
-        # the questions, now answered in plan.md's rulings section. An
-        # adjudication exit resumes into the fix pass unless the session
-        # declares it applied the fixes itself. That declaration is the only
-        # thing that suppresses the pass: which edits the session made during
-        # adjudication cannot be read off the plan — recording the rulings is
-        # required either way, and ordering/not-in-scope maintenance follows
-        # from a reversed ruling — so inferring it silently shipped unfixed
-        # plans. Defaulting to the pass makes a forgotten flag a wasted
-        # writer round rather than a hole.
+        # the questions, now answered in plan.md's rulings section. A review
+        # exit resumes into the one fix pass, always: nothing of the plan
+        # says whether the rulings' fixes are in it — recording the rulings
+        # is required either way, and ordering/not-in-scope maintenance
+        # follows from a reversed ruling — so inferring it silently shipped
+        # unfixed plans, and nobody reads the plan after the loop to catch it.
         if self.state["phase"] == "questions":
             self.state["phase"] = ("fixing" if self.state["pending_review"]
                                    else "writing")
             self._save_state()
         elif self.state["phase"] == "adjudicating":
-            if self.fixes_applied:
-                self.log("--fixes-applied: the session applied the "
-                         "adjudicated fixes itself — no fix pass")
-                self.state["phase"] = "done"
-            else:
-                self.log("dispatching the writer fix pass for the "
-                         "adjudicated review")
-                self.state["phase"] = "fixing"
+            self.log("dispatching the writer fix pass for the ruled review")
+            self.state["phase"] = "fixing"
             self._save_state()
 
         # Every exit from here on — 0, the questions and adjudication exits,
@@ -1137,6 +1330,7 @@ class PlanLoop:
                 print("Interrupted — rerun to continue.", file=sys.stderr)
                 sys.exit(130)
             except Halted as halt:
+                self._exit_facts = {"halted": halt.where}
                 self.log(f"HALTED {halt.where}: {run_loop.HALT_FILE} is "
                          "present — plan_state.json is current; rerun once "
                          "it is gone")
@@ -1163,9 +1357,40 @@ def cmd_run(args) -> None:
         print(f"Error: slice directory not found: {slice_dir}", file=sys.stderr)
         sys.exit(2)
     loop = PlanLoop(slice_dir, verbose=args.verbose,
-                    fixes_applied=args.fixes_applied)
+                    step=getattr(args, "step", None))
     print(f"plan loop log: {loop.log_path}", flush=True)
+    if getattr(args, "detach", False):
+        run_loop.run_detached(loop, slice_dir, script=SCRIPT)
+        return
     loop.run()
+
+
+def _ended_lines(record: dict, slice_dir: Path) -> list[str]:
+    """What an ended loop leaves for the session: the exit, and by it where
+    a halt stopped, the document an exit 4 put, or a bail's reason and
+    record."""
+    code = record.get("code")
+    lines = [f"ended: exit {code}"]
+    if code == EXIT_HALTED:
+        lines.append(f"halted: {record.get('halted') or 'at a safe point'}")
+    elif code == 4:
+        lines.append(f"reason: {record.get('reason')}")
+        if record.get("document"):
+            lines.append(f"document: {record['document']}")
+    elif code == 3:
+        lines.append(f"reason: {record.get('reason')}")
+        lines.append("bailout: "
+                     f"{os.path.abspath(slice_dir / 'plan_bailout.json')}")
+    return lines
+
+
+def cmd_wait(args) -> None:
+    """Block until the loop ends or `--for` seconds pass, then say which:
+    `running` with the wait to re-arm, `ended: exit <n>` with what the exit
+    leaves, or `gone` with the relaunch — run_loop's `wait`, on plan.lock
+    and plan_state.json."""
+    wait_on_driver(Path(args.slice_dir), "plan_state.json", "plan.lock",
+                   args.for_seconds, SCRIPT, "--detach", _ended_lines)
 
 
 def cmd_stop(args) -> None:
@@ -1190,6 +1415,9 @@ def cmd_status(args) -> None:
     elif state.get("pending_review") and state["phase"] != "done":
         print(f"  review round {state['pending_review']} on file "
               f"({state['phase']})")
+    exit_ = state.get("exit") or {}
+    if exit_.get("document"):
+        print(f"  document: {exit_['document']}")
     for h in state["history"][-8:]:
         print(f"  {h['ts']}  {h['role']} r{h['round']} → {h['outcome']}")
 
@@ -1200,14 +1428,30 @@ def main() -> None:
 
     run_p = sub.add_parser("run", help="run (or continue) the plan loop")
     run_p.add_argument("slice_dir", help="path to slices/backlog/NNN_slug/")
-    run_p.add_argument("--fixes-applied", action="store_true",
-                       help="on a rerun after an adjudication exit: the "
-                            "accepted fixes are already in the plan's phases "
-                            "and verification.json — skip the writer fix "
-                            "pass. Without it the fix pass runs.")
+    run_p.add_argument("--step", metavar="ID",
+                       help="the plan task the planning serves, from Pilot's "
+                            "brief: every document the loop renders carries "
+                            "it as `step`; kept for the reruns that do not "
+                            "give it")
+    run_p.add_argument("--detach", action="store_true",
+                       help="run the loop in its own session, outliving this "
+                            "shell; exits once it started and prints the "
+                            "`wait` command to follow it with")
     run_p.add_argument("-v", "--verbose", action="store_true",
                        help="echo the log to stdout as well as plan_log.txt")
     run_p.set_defaults(func=cmd_run)
+
+    wait_p = sub.add_parser(
+        "wait", help="wait on a slice's plan loop, in the foreground; exit 0 "
+                     "when it ended, 5 still running at --for, 6 gone (no "
+                     "exit record)")
+    wait_p.add_argument("slice_dir")
+    wait_p.add_argument("--for", dest="for_seconds", type=float,
+                        default=WAIT_DEFAULT, metavar="SECONDS",
+                        help=f"give up waiting after this long (default "
+                             f"{WAIT_DEFAULT}, inside the Bash tool's ten "
+                             "minutes)")
+    wait_p.set_defaults(func=cmd_wait)
 
     stop_p = sub.add_parser("stop", help="interrupt the slice's plan loop "
                                          "(SIGINT, as Ctrl-C) and wait for it")
