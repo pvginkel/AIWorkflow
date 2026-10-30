@@ -2,117 +2,90 @@
 """The close-out report's mechanics — the store, its verbs, the routing table, the render.
 
 `<slice>/close-out.json` is the record every plan and run agent writes its
-out-of-scope observations to, and `<slice>/close-out.md` is rendered from it
-(${CLAUDE_PLUGIN_ROOT}/docs/close-out.md is the contract — the labels, the
-routes, who writes what; docs/close-out-template.md the shapes of both files).
-Every writer goes through this tool — the shape is mechanical, the content
-is judgment — and nobody edits either file by hand; importable by both loops
-(the way plan_loop imports run_loop) and a CLI for the agents and the skills:
+out-of-scope observations to (${CLAUDE_PLUGIN_ROOT}/docs/close-out.md is the
+contract — the labels, the routes, who writes what; docs/close-out-template.md
+the shapes). At the run's end it is rendered, once, into two files:
+`close-out.md`, the document Pilot reads — one ask per entry that comes to
+the operator, rendered by `asks.py` in the format of `/dev:document-format` —
+and `close-out-record.md`, the record attached to it. Pilot writes the
+answers back into close-out.md; `absorb` reads them into the store, where
+the run's continuation finds each ruling, carries it out and records what it
+did. Every writer goes through this tool — the shape is mechanical, the
+content is judgment — and nobody edits any of the three files by hand;
+importable by both loops (the way plan_loop imports run_loop) and a CLI for
+the agents and the skills:
 
-  init         create the store (no entries) and render it; an existing
-               store is never touched.
+  init         create the store (no entries); an existing store is never
+               touched.
   labels       print the contract's `## The labels` section.
-  append       add one entry with the labels its kind carries — refused,
-               naming the flag, when one is missing, belongs to the other
-               family, or contradicts the Consequence line. Prints the id:
-               the kind's letter and the next number under it. `--by`
-               records the appender `amend` asks for.
+  append       add one entry with the labels its kind carries, and what its
+               kind owes: an action and an improvement a proposal, a
+               decision its options and the one it recommends — refused,
+               naming the flag, when one is missing, belongs to another
+               kind, or contradicts the Consequence line. `--check` and
+               `--due` are an action's check and what an entry must land
+               before. Prints the id: the kind's letter and the next number
+               under it.
   list         the view an agent takes before it appends: per kind, ids,
                headlines and Consequence lines, struck entries marked.
-  note         add a dated paragraph `<who>, <date> — <text>` to one entry.
+  note         add a dated paragraph `<who>, <date> — <text>` to one entry;
+               `--left` is the wrap-up's mark that it looked and changed
+               nothing.
   strike       strike one entry, with the reason and the commit.
-  unnote       withdraw the latest note an author wrote with `note` or
-               `relabel` — a relabel's kind and labels put back — while it
-               is not committed, and only on its own --by.
-  unstrike     withdraw an author's own strike while it is not committed.
-  amend        correct an entry its appender wrote with `append --by`, while
-               it is not committed: each field given replaces the entry's,
-               the labels and the proposal checked as `append` checks them,
-               no note left. The id and the kind never change.
+  amend        correct a live entry: each field given replaces the entry's,
+               checked as `append` checks it, no note left. The id and the
+               kind never change.
   relabel      give an entry its labels or correct them, with a note of what
                changed and why. The id never changes, not even with the kind.
                `--dry-run` prints the note and the route it would give the
                entry, and writes nothing.
-  propose      give an entry its proposal — what the author would do about
-               it — or replace it, the old one kept as a note.
-  unpropose    withdraw a proposal `propose` set, while it is not committed
-               and only on its own --by: the one it replaced comes back.
-  request-card the wrap-up asks for a card on an entry; its words become the
-               entry's proposal.
-  request-word the wrap-up hands the operator an entry whose edit a rule
-               reserves for their word; its words — the edit and the rule —
-               become the entry's proposal, and the entry comes to them.
-  leave        the wrap-up looked at an entry and changed nothing.
-  unmark       withdraw the wrap-up's mark on an entry, while it is not
-               committed and only on its own --by: the mark before it and
-               the proposal it replaced come back.
+  propose      give an entry its proposal, or replace it, the old one kept as
+               a note; `--card` and `--word` make it the wrap-up's request
+               for a card, or for the operator's word on an edit.
   fold         append an entry verbatim — its `show`, quoted, under a line
                naming the slice, the entry and the report — to the slice.md
                of the slice still unplanned it is `for` (or `--into`), and
                stage that file; prints the strike that follows its commit.
                Writes neither the store nor the report.
-  held         the live entries of every report in the spec repo held for a
-               slice triage has not created — or, with `--for`, those for
-               one slice: what /dev:triage carries into the slice.md it
-               creates. Read-only.
   worklist     what waits for the wrap-up, with what is asked of each.
-  show         one or more entries in full — the view a reader of the
-               evidence takes, now that the report carries the ask alone.
-  rule         the operator's words on an entry, and what was done on them;
-               words the entry already holds are never replaced unasked —
-               `--append` adds to them, `--replace` puts the new ones in
-               their place (the old kept in a note); without an id, the
-               `Disposition:` lines of close-out.md read back into the store.
-  unrule       withdraw the words and what was done on them, as `rule` wrote
-               them, while they are not committed: a `--did` takes its strike
-               with it, words a `--replace` put in place give back the ones
-               its note kept and the note goes, other words give back HEAD's
-               or none. No note is left.
+  show         one or more entries in full — what the document and the
+               record cut short.
+  render       write close-out-record.md, and close-out.md through asks.py
+               — unless Pilot wrote that one back, its answers in it;
+               `--step`, `--summary` and `--context` set the document's own
+               fields.
+  stamp        render, printing the run header.
+  absorb       read close-out.md, as Pilot wrote it back, into the store:
+               each block's answer lines into its entry's ruling; a
+               `deferred` closes the entry as Pilot's, an action's `done`
+               is what was done on it.
+  rule         record what the continuation did on an entry's ruling, which
+               strikes it.
   settle       settle a criterion owed after an operator's action, once it
                has happened: its verdict, rationale and evidence written
                into verification.json in the file's own escaping, and the
                action that waited on it struck — a push hold's action that
                lists more criteria takes a note until the last is settled.
-  close        close the report on the operator's word.
-  render       read the `Disposition:` lines back, then write close-out.md:
-               sections by route, each entry in its form — the ask (headline,
-               Proposal, Consequence) where something is asked, the route
-               where it is closed, the heading alone in the record — the run
-               header from state.json.
-  stamp        render, printing the run header.
-  counts       live entries per section of the report and per id letter.
-  import       read a close-out.md of the old, parsed shape into a store.
+  close        close the report once its answers are carried out: every
+               live entry struck, but one whose ruling nobody carried out.
+  counts       live entries per place of the report and per id letter.
+
+The store is open to every author — the appender, the reviewers, the
+consults, the wrap-up — until the report is rendered at the run's end; after
+it, only the continuation writes, through `absorb`, `rule`, `fold`, `settle`
+and `close`. Nothing renders on a write.
 
 The route is computed at every render, never stored: `route()` reads an
 entry's kind and labels, the repositories the slice touched, and the stage
 of the slice a `for` names (still unplanned, planned or running, or not
-created yet — held until triage creates it) against
-the two tables of the contract (§ The routes) — the policy is the operator's
-and lives here only. So do the run loop's triggers for what is owed before the
-push (`owed_before_push()`) and what a test phase would fail as worded
-(`owed_before_test()`): the live entries it hands the completion consult.
-
-A report written before the store existed is imported by the first call that
-finds a `close-out.md` and no store beside it. The old parser stays as the
-reader behind that import: sections, `###` blocks read outside fenced code and
-outside HTML comments (an entry that quotes `## Bugs` or `### B3` inside a
-fence moves no boundary), struck headings, folds, the three bold label lines.
+created yet) against the two tables of the contract (§ The routes) — the
+policy is the operator's and lives here only. So do the run loop's triggers
+for what is owed before the push (`owed_before_push()`) and before the test
+phase (`owed_before_test()`), which read the `due` an author set: the live
+entries it hands the completion consult.
 
 Every read-modify-write of the store holds an exclusive flock on the slice
-directory itself (no lock file lands in the spec repo's tree): the close-out
-session rules while the wrap-up it dispatched strikes and relabels, and a
-write lost to an overlap can be the operator's ruling. Under the same lock,
-every write reads the `Disposition:` lines back first and, when the store
-changed, writes close-out.md from it after it saves, so the report never
-lags its store; `render` writes it whether or not anything changed. The
-store keeps the sha256 of the close-out.md it last wrote (`rendered`): a
-report that no longer matches it was edited, and a write whose render would
-drop a line of it — a line neither the store before the write nor after it
-renders — writes nothing and raises `ReportEdited`, naming the lines, until
-it carries the permission to overwrite (`--overwrite`, `overwriting()`).
-An edit the read-back takes, and the run header, which follows state.json
-under a running loop, never stop a write. `edited_report()` makes the same
-test without writing — the run loop's, before every dispatch. A filesystem
+directory itself (no lock file lands in the spec repo's tree). A filesystem
 that refuses the flock gets the write without it.
 
 `<slice>` is the slice directory or its close-out.md — the dispatch names the
@@ -126,7 +99,6 @@ import argparse
 import contextlib
 import difflib
 import fcntl
-import hashlib
 import json
 import os
 import re
@@ -140,9 +112,14 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import asks  # noqa: E402
+
 REPORT_NAME = "close-out.md"
+RECORD_NAME = "close-out-record.md"
 STORE_NAME = "close-out.json"
-STORE_VERSION = 1
+STORE_VERSION = 2
 
 # This file, resolved — the driver runs from the installed plugin clone, so
 # a dispatch that names it names the copy that will run.
@@ -160,18 +137,17 @@ LABELS_HEADING = "## The labels"
 # is sure to read.
 DISPATCH_LINE = """\
 The slice's close-out report is {report}, rendered from its store,
-{store}. Write to it only through `python3 {tool} <verb> {report} …` —
-`append`, `note`, `strike`; while it is not committed, `amend <id> --by
-<who>` corrects an entry you appended with that --by (any of `append`'s
-flags but --kind, each replacing its field), and `unnote` or `unstrike`
-takes back your own note or strike;{relabel_line} `list` shows what is there
-(ids, headlines, Consequence lines) — never edit either file by hand, and
-commit the store with your own commit, staged by name. An entry carries
-labels that say what it is, and the tool routes it from them: you state
-what you know and, where `append` asks for a proposal, what you would do
-— never where the entry goes. `python3 {tool} labels` prints what each
-label means — read it before your first append. The labels each kind
-carries, every one of them, `unknown` where you cannot tell:
+{store}, once, at the run's end. Write to it only through `python3 {tool}
+<verb> {report} …` — `append`, `note`, `strike`, and `amend <id>`, which
+corrects an entry (any of `append`'s flags but --kind, each replacing its
+field);{relabel_line} `list` shows what is there (ids, headlines,
+Consequence lines) — never edit either file by hand, and commit the store
+with your own commit, staged by name. An entry carries labels that say what
+it is, and the tool routes it from them: you state what you know and what
+you would do (`--proposal`; a decision's `--option` lines and the one it
+`--recommend`s) — never where the entry goes. `python3 {tool} labels` prints
+what each label means — read it before your first append. The labels each
+kind carries, every one of them, `unknown` where you cannot tell:
 {kind_labels}
 {label_pairing}
 The verbs take:
@@ -325,57 +301,45 @@ TRIAGE_ORDER = ("trigger", "impact", "signal", "fix", "benefit", "felt",
 # taken as unfelt.
 UNFELT = ("after-change", "after-incident", "not-observable")
 
-# -- the report (docs/close-out-template.md § The report) ---------------------
+# -- the report (docs/close-out-template.md) -----------------------------------
 
-REPORT_SECTIONS = ("Comes to you", "Card requests", "For the wrap-up",
-                   "Unlabelled", "Closed", "Held for a later slice", "Record")
-# The counts line's word for each section, in the same order.
-COUNT_NAMES = ("to you", "card requests", "wrap-up", "unlabelled", "closed",
-               "held", "record")
+# Where a route puts an entry: the document's three places, then the record's
+# two. The asks of the document are what comes to the operator, the card
+# requests, and what waits for a wrap-up that did not reach it (or an entry
+# without labels, which nobody routed); the record holds the rest.
+PLACES = ("Comes to you", "Card requests", "For the wrap-up", "Unlabelled", "Closed",
+          "Record")
+ASKED = ("Comes to you", "Card requests", "For the wrap-up", "Unlabelled")
+# The sections of close-out-record.md, in order: what was ruled, what is asked
+# and open, what the table closed, and the record.
+RECORD_SECTIONS = ("Ruled", "Asked", "Closed", "Record")
+# The counts line's word for each place, in the same order.
+COUNT_NAMES = ("to you", "card requests", "wrap-up", "unlabelled", "closed", "record")
 # The smoke counts that trail the counts line when there are any.
 NO_CONSEQUENCE = "no_consequence"
 NO_PROVENANCE = "no_provenance"
 NO_PROPOSAL = "no_proposal"
 
-HEAD_COMMENT = """\
-<!-- Generated by `close_out.py render` from close-out.json, the record. The `Disposition:`
-     lines are yours to write and are read back; an edit anywhere else stops the next write
-     until a session has taken it into the record or you have let it go.
-     `close_out.py show <id>` prints an entry in full. -->"""
 UNSTAMPED = "Run: <not yet stamped>"
 
-# A report rendered before 0.9.70 folded bodies in `<details>`; the read-back
-# still ends an entry's Disposition at a fold's close, and import takes the
-# oldest fold off.
-FOLD_CLOSE = "</details>"
-OLD_FOLD_OPEN = "<details><summary>struck — body kept for the record</summary>"
-
-# The kinds whose author owes a proposal: what comes to the operator by kind.
-PROPOSAL_KINDS = ("action", "decision", "improvement")
+# The kinds whose author owes a proposal: an action and an improvement; a
+# decision owes its options and the one recommended in its place.
+PROPOSAL_KINDS = ("action", "improvement")
 PROPOSAL_HELP = "what you would do about it and why, in a sentence or two"
+
+# What must land before a step of the run (`--due`): the store keeps it for
+# the driver, and the document never shows it.
+DUES = asks.DUES
 
 HEADER_WIDTH = 96
 
+# Who strikes an entry the continuation executed (`rule --did`), and one
+# Pilot's answer closed (`deferred`).
 RULED_BY = "the operator's ruling"
-# What the history note a ruling's replaced words are kept in opens with.
-RULED_EARLIER = "ruled earlier: "
+PILOT = "Pilot"
+PILOT_RULED_BY = "Pilot's ruling"
 
-_SECTION_RE = re.compile(r"^## (?P<name>.+?)\s*$")
-_ENTRY_RE = re.compile(r"^### (~~)?(?P<letter>[A-Z])(?P<num>\d+)\b")
-_ANY_HEADING_RE = re.compile(r"^### ")
 _ID_RE = re.compile(r"([A-Z])(\d+)")
-# The three label lines of an old-shape entry; bold in the shape, bare too.
-_LABEL_LINE_RES: dict[str, re.Pattern] = {
-    "Consequence": re.compile(r"^\*{0,2}Consequence:\*{0,2}\s*"),
-    "Provenance": re.compile(r"^\*{0,2}Provenance:\*{0,2}\s*"),
-    "Disposition": re.compile(r"^\*{0,2}Disposition:\*{0,2}\s*"),
-}
-_ANY_LABEL_LINE_RE = re.compile(
-    r"^\*{0,2}(Consequence|Provenance|Disposition|Triage|Route):")
-_FENCE_RE = re.compile(r"^\s*(```|~~~)")
-# An HTML comment counts only when it opens a line (the template's comments
-# all do); `<!--` mentioned mid-line in prose opens nothing.
-_COMMENT_OPEN_RE = re.compile(r"^\s*<!--")
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 _MARKUP = string.punctuation + "—–…“”‘’"
 
@@ -383,42 +347,6 @@ _MARKUP = string.punctuation + "—–…“”‘’"
 class ReportError(Exception):
     """A precondition the caller must fix — no store, no such entry, a label
     the entry's kind does not take."""
-
-
-EDITED_HEAD = ("close-out.md was edited since close_out.py last wrote it, and this write "
-               "would drop what was edited — nothing was written.")
-EDITED_TAIL = ("Ask the operator about every line here that is not yours to take into "
-               "the store. Then take what is (`note`, `propose`, `rule <id> --words`), "
-               "the first of those writes carrying --overwrite, or repeat this write "
-               "with --overwrite: either re-renders the report, so work from this list. "
-               "A role the run loop dispatched never passes --overwrite: say in your "
-               "verdict's summary what you meant to write, and carry on.")
-# The verbs that write close-out.md, each taking `--overwrite`.
-WRITING_VERBS = ("append", "note", "strike", "unnote", "unstrike", "amend", "relabel",
-                 "propose", "unpropose", "request-card", "request-word", "leave",
-                 "unmark", "rule", "unrule", "settle", "close", "render", "stamp")
-OVERWRITE_HELP = ("write close-out.md although it was edited since its last render "
-                  "(after the refusal's list is dealt with)")
-
-
-class ReportEdited(ReportError):
-    """A write refused because close-out.md was edited since close_out.py
-    last wrote it and the write's render would drop lines of it: nothing
-    was written. `taken` is what the read-back took — (id, words) — and
-    `dropped` the lines the render loses, in file order."""
-
-    def __init__(self, taken: list[tuple[str, str]], dropped: list[str]):
-        self.taken = list(taken)
-        self.dropped = list(dropped)
-        lines = [EDITED_HEAD]
-        if self.taken:
-            lines.append("The Disposition lines it takes into the store:")
-            lines += [f"  {eid}: {_collapse(words)}" for eid, words in self.taken]
-        lines.append("The lines a re-render drops — an edit, or a line an older plugin "
-                     "rendered otherwise:")
-        lines += [f"  > {line}" for line in self.dropped]
-        lines.append(EDITED_TAIL)
-        super().__init__("\n".join(lines))
 
 
 def report_path(slice_dir: Path | str) -> Path:
@@ -441,13 +369,12 @@ def slice_dir_of(arg: Path | str) -> Path:
 def dispatch_line(report: Path | str, *, relabel: bool = False) -> str:
     """The report pointer a dispatch prompt carries — the path, the store,
     the tool, the labels each kind carries and how they pair, as
-    `check_labels` holds them, and the arguments of five of the verbs it
+    `check_labels` holds them, and the arguments of three of the verbs it
     names, rendered from the parser; `amend`, whose flags are `append`'s,
     is named without them. With `relabel`, it offers `relabel` too, for
     an entry whose labels the role can show wrong, and gives its
     arguments."""
-    verbs = ("append", "note", "strike", "unnote", "unstrike") + (
-        ("relabel",) if relabel else ())
+    verbs = ("append", "note", "strike") + (("relabel",) if relabel else ())
     return DISPATCH_LINE.format(report=report, store=STORE_NAME, tool=TOOL_PATH,
                                 relabel_line=DISPATCH_RELABEL if relabel else "",
                                 kind_labels=kind_labels_text(),
@@ -601,16 +528,11 @@ def _new_store(slice_dir: Path | str) -> dict:
 
 
 def _load(slice_dir: Path | str) -> dict:
-    """The store — imported first from a close-out.md of the old shape when
-    that is all the slice holds. Called under the lock."""
+    """The store. Called under the lock."""
     path = store_path(slice_dir)
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
-        if report_path(slice_dir).exists():
-            store = _import(slice_dir)
-            _save(slice_dir, store)
-            return store
         raise ReportError(f"{path} does not exist — run `close_out.py init` "
                           "(both loops do at start)") from None
     except OSError as e:
@@ -629,163 +551,18 @@ def _read_store(slice_dir: Path | str) -> dict:
         return _load(slice_dir)
 
 
-# How long reading HEAD's store may take before a withdrawal is refused.
-GIT_SHOW_TIMEOUT = 30
-
-
-def _committed_entry(slice_dir: Path | str, eid: str) -> dict | None:
-    """The entry as HEAD's store holds it — `git show HEAD:./close-out.json`
-    from the slice directory — the line `unnote`, `unstrike` and `amend` do
-    not cross: what a commit holds stays. None when nothing is committed: no
-    git, no repository, no commit yet, no store or no such entry in it. A
-    git that does not answer, or a committed store that is not JSON, is a
-    ReportError — a withdrawal is never let through on a store that could
-    not be read. Called under the lock."""
-    try:
-        result = subprocess.run(
-            ["git", "show", f"HEAD:./{STORE_NAME}"], cwd=slice_dir,
-            capture_output=True, text=True, timeout=GIT_SHOW_TIMEOUT,
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
-    except subprocess.TimeoutExpired:
-        raise ReportError(f"`git show HEAD:./{STORE_NAME}` in {slice_dir} did not answer "
-                          f"within {GIT_SHOW_TIMEOUT}s, so what is committed is unknown "
-                          "— nothing was withdrawn; try again") from None
-    except OSError:
-        return None
-    if result.returncode != 0:
-        return None
-    try:
-        committed = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        committed = None
-    if not isinstance(committed, dict) or not isinstance(committed.get("entries"), list):
-        raise ReportError(f"HEAD's {STORE_NAME} in {slice_dir} is not a close-out store, "
-                          "so what is committed is unknown — nothing was withdrawn")
-    return next((e for e in committed["entries"]
-                 if isinstance(e, dict) and e.get("id") == eid), None)
-
-
-_OVERWRITE = threading.local()
-
-
 @contextlib.contextmanager
-def overwriting():
-    """Writes inside go through although close-out.md was edited since its
-    last render — the permission `--overwrite` gives, for a caller that has
-    dealt with the refusal's list (`ReportEdited`). Per thread, re-entrant."""
-    depth = getattr(_OVERWRITE, "depth", 0)
-    _OVERWRITE.depth = depth + 1
-    try:
-        yield
-    finally:
-        _OVERWRITE.depth = depth
-
-
-def _sha(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def _report_text(slice_dir: Path | str) -> str | None:
-    """close-out.md as it is now; None when there is none."""
-    try:
-        return report_path(slice_dir).read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return None
-    except OSError as e:
-        raise ReportError(f"{report_path(slice_dir)} is unreadable: {e}") from None
-
-
-def _edited(store: dict, current: str | None) -> bool:
-    """Whether close-out.md is other than what close_out.py last wrote. A
-    store without the hash (written before it existed) has nothing to
-    compare with: clean, once — its next render records one."""
-    rendered = store.get("rendered")
-    return bool(rendered) and current is not None and _sha(current) != rendered
-
-
-def _header_lines(lines: list[str]) -> set[int]:
-    """The run header's lines: the first `Run: ` line above the first `## `,
-    and the lines it wraps onto, up to the next blank line."""
-    for i, line in enumerate(lines):
-        if line.startswith("## "):
-            break
-        if line.startswith("Run: "):
-            end = i
-            while end < len(lines) and lines[end].strip():
-                end += 1
-            return set(range(i, end))
-    return set()
-
-
-def _dropped(current: str, *renders: str) -> list[str]:
-    """The non-blank lines of `current` that none of `renders` holds (each
-    line whitespace-collapsed), in file order — what a write of the last of
-    them loses. The run header is left out: it follows state.json, which a
-    running loop moves on between renders, and is never the operator's."""
-    kept = {_collapse(line) for text in renders for line in text.split("\n")}
-    lines = current.split("\n")
-    header = _header_lines(lines)
-    return [line.rstrip() for i, line in enumerate(lines)
-            if line.strip() and i not in header and _collapse(line) not in kept]
-
-
-@contextlib.contextmanager
-def _writing(slice_dir: Path | str, receipt: dict | None = None):
-    """The one path every change takes: lock, load, read the `Disposition:`
-    lines of close-out.md back, change, save and render close-out.md (only
-    when something changed), release. The read-back comes first, so a write
-    never overwrites words the operator wrote on the report and the store
-    has not taken yet. With `receipt`, close-out.md is rendered whether or
-    not anything changed, and the receipt gets the (id, words) taken
-    (`taken`) and the entries per section written (`tally`). An exception
-    inside writes nothing.
-
-    A write that renders first checks close-out.md against the hash of what
-    it last wrote (`rendered`). Edited, the lines that neither the store as
-    the read-back left it nor the store as this write leaves it renders are
-    the edit's — the read-back's own are in both — and while there are any
-    the write raises `ReportEdited` and writes nothing, unless it runs
-    under `overwriting()`. The hash follows every render, saved with the
-    store."""
+def _writing(slice_dir: Path | str):
+    """The one path every change of the store takes: lock, load, change,
+    save when something changed, release. Nothing is rendered: the report is
+    rendered once, at the run's end (`render_report`). An exception inside
+    writes nothing."""
     with _locked(slice_dir):
         store = _load(slice_dir)
         before = _dump(store)
-        current = _report_text(slice_dir)
-        taken = _read_back(store, current)
-        edited = _edited(store, current)
-        prior = json.loads(_dump(store)) if edited else None
         yield store
-        if _dump(store) == before and receipt is None:
-            return
-        text, tally = _render(store, slice_dir)
-        if edited and not getattr(_OVERWRITE, "depth", 0):
-            dropped = _dropped(current, _render(prior, slice_dir)[0], text)
-            if dropped:
-                raise ReportEdited(taken, dropped)
-        store["rendered"] = _sha(text)
         if _dump(store) != before:
             _save(slice_dir, store)
-        _write_report(slice_dir, text)
-        if receipt is not None:
-            receipt.update(taken=taken, tally=tally)
-
-
-def edited_report(slice_dir: Path | str) -> ReportEdited | None:
-    """The test a `render` makes before it writes — close-out.md edited
-    since close_out.py last wrote it, and a render that drops lines of it —
-    made without writing anything: the refusal that write would raise, or
-    None. A slice without a store has nothing to compare with. The run
-    loop's check before every dispatch."""
-    with _locked(slice_dir):
-        if not store_path(slice_dir).exists():
-            return None
-        store = _load(slice_dir)
-        current = _report_text(slice_dir)
-        if not _edited(store, current):
-            return None
-        taken = _read_back(store, current)
-        dropped = _dropped(current, _render(store, slice_dir)[0])
-        return ReportEdited(taken, dropped) if dropped else None
 
 
 def _find(store: dict, eid: str) -> dict:
@@ -840,20 +617,67 @@ def _entry(eid: str, kind: str | None, headline: str, body: list[str],
     }
 
 
+# The fields an entry carries for the block it renders to, and for the
+# driver (`due`): each only where given. Which kind takes which is
+# `_ask_problems`'.
+ASK_FIELDS = ("options", "recommend", "check", "due")
+_ASK_TAKES = {"options": ("decision", "action"), "recommend": ("decision",),
+              "check": ("action",)}
+
+
+def _ask_problems(entry: dict) -> list[str]:
+    """What keeps an entry's options, recommendation, check or due from the
+    block it renders to: a field its kind does not take, an option list
+    `asks.py` would refuse, a recommendation naming no option, a due that is
+    no step of the run."""
+    kind = entry.get("kind")
+    found: list[str] = []
+    for key, kinds in _ASK_TAKES.items():
+        if entry.get(key) is not None and kind not in kinds:
+            takers = " or ".join(f"a{'n' if k[0] in 'aeiou' else ''} {k}" for k in kinds)
+            found.append(f"--{'option' if key == 'options' else key} is {takers}'s, "
+                         f"not a{'n' if (kind or ' ')[0] in 'aeiou' else ''} {kind}'s")
+    options = entry.get("options")
+    if options is not None:
+        found += [f.removeprefix("the ask: ") for f in
+                  asks._options_problems(options, "the ask")]
+        if kind == "decision" and len(options) < 2:
+            found.append("a decision puts two options or more (--option, repeated)")
+    recommend = entry.get("recommend")
+    if recommend is not None and recommend not in [o.get("label") for o in options or ()
+                                                   if isinstance(o, dict)]:
+        found.append(f"--recommend {recommend!r} names no --option")
+    if entry.get("check") is not None and not _collapse(entry["check"]):
+        found.append("--check is empty")
+    if entry.get("due") is not None and entry["due"] not in DUES:
+        found.append(f"--due is one of {', '.join(DUES)}, not {entry['due']!r}")
+    return found
+
+
+def _set_ask_fields(entry: dict, options=None, recommend: str | None = None,
+                    check: str | None = None, due: str | None = None) -> None:
+    """Each field given in place of the entry's; an empty one removes it."""
+    given = {"options": options, "recommend": recommend, "check": check, "due": due}
+    for key, value in given.items():
+        if value is None:
+            continue
+        if value in ("", []):
+            entry.pop(key, None)
+        elif key == "options":
+            entry[key] = asks._options(value)
+        else:
+            entry[key] = _collapse(value)
+
+
 # -- the API both loops import -----------------------------------------------
 
 def init_report(slice_dir: Path | str) -> bool:
-    """Create the store, without entries, and render it. True when created;
-    False when a store — or a close-out.md to import — was already there
-    (the second is imported, nothing else)."""
+    """Create the store, without entries. True when created; False when a
+    store was already there, which is left as it is."""
     with _locked(slice_dir):
         if store_path(slice_dir).exists():
             return False
-        if report_path(slice_dir).exists():
-            _load(slice_dir)
-            return False
         _save(slice_dir, _new_store(slice_dir))
-        render_report(slice_dir)
         return True
 
 
@@ -863,14 +687,18 @@ def append_entry(slice_dir: Path | str, section: str, headline: str,
                  severity: str | None = None,
                  labels: dict | None = None,
                  proposal: str | None = None,
-                 by: str | None = None) -> str:
+                 by: str | None = None, *, options=None,
+                 recommend: str | None = None, check: str | None = None,
+                 due: str | None = None) -> str:
     """Append one entry; returns its id. `section` is a kind or one of the
     old section names. The loops' path, and it refuses nothing about labels
     or the proposal: without labels, an action, an event or a decision gets
     the tool's own (`tool_labels`) and any other kind is stored unlabelled.
     The CLI checks an author's labels and proposal before it gets here.
-    `by` is the appender, the one `amend_entry` lets correct the entry
-    while it is not committed; None — the loops' — leaves it unamendable."""
+    `options` (labels, or (label, line) pairs), `recommend`, `check` and
+    `due` are the block's and the driver's, refused where the kind does not
+    take them (`_ask_problems`). `by` is the appender, kept as the record of
+    who wrote it."""
     kind = _kind_of(section)
     if severity is not None and severity not in SEVERITIES:
         raise ReportError(f"unknown severity {severity!r}; one of "
@@ -879,9 +707,13 @@ def append_entry(slice_dir: Path | str, section: str, headline: str,
         labels = tool_labels(kind, consequence)
     with _writing(slice_dir) as store:
         eid = _next_id(store, KINDS[kind])
-        store["entries"].append(_entry(eid, kind, headline, _lines(body),
-                                       consequence, provenance, severity,
-                                       labels, proposal, by))
+        entry = _entry(eid, kind, headline, _lines(body), consequence, provenance,
+                       severity, labels, proposal, by)
+        _set_ask_fields(entry, options, recommend, check, due)
+        errors = _ask_problems(entry)
+        if errors:
+            raise ReportError("\n".join(errors))
+        store["entries"].append(entry)
     return eid
 
 
@@ -953,27 +785,11 @@ def _struck_heading(entry: dict) -> str:
             + _strike_tail(entry["strike"]))
 
 
-def _no_striker(strike: dict) -> str | None:
-    """Why nobody withdraws a strike, or None when its author may: one made
-    without --by (a `close`, a strike that named nobody) has no author to
-    take it back, and the operator's ruling owns its own."""
-    if not strike.get("by"):
-        return "a strike made without --by has no author to take it back"
-    if strike["by"] == RULED_BY:
-        return "the operator's ruling (`rule --did`) struck it, and the ruling owns it"
-    return None
-
-
 def _strike(entry: dict, reason: str, by: str | None, commit: str | None,
             date: str) -> None:
-    strike = entry.get("strike")
-    if strike:
-        why = _no_striker(strike)
-        back = (f"{why[0].upper()}{why[1:]}; a note adds to it." if why else
-                f"Its striker withdraws it while it is not committed — `unstrike "
-                f"{entry['id']} --by {strike['by']}` — and strikes again.")
+    if entry.get("strike"):
         raise ReportError(f"{entry['id']} is already struck: "
-                          + _struck_heading(entry)[4:] + ". " + back)
+                          + _struck_heading(entry)[4:] + ". A note adds to it.")
     reason = _collapse(reason)
     if not reason:
         raise ReportError("a strike needs a --reason")
@@ -991,35 +807,6 @@ def strike_entry(slice_dir: Path | str, eid: str, reason: str,
         entry = _find(store, eid)
         _strike(entry, reason, by, commit, day)
         return _struck_heading(entry)
-
-
-def unstrike_entry(slice_dir: Path | str, eid: str, by: str) -> str:
-    """Withdraw a strike, the entry live again: only on the strike's own
-    --by, and only while it is not committed — a strike HEAD's store holds
-    stays, and a note adds to it. A strike made without --by, and the
-    operator's ruling's, have nobody to withdraw them. Amending a strike is
-    withdrawing it and striking again. Returns the entry's heading."""
-    who = _collapse(by)
-    if not who:
-        raise ReportError("unstrike needs --by: who struck the entry")
-    with _writing(slice_dir) as store:
-        entry = _find(store, eid)
-        eid = entry["id"]
-        strike = entry.get("strike")
-        if not strike:
-            raise ReportError(f"{eid} is not struck")
-        why = _no_striker(strike)
-        if why:
-            raise ReportError(f"{eid} stays struck: {why}; a note adds to it")
-        if strike["by"] != who:
-            raise ReportError(f"{eid} was struck by {strike['by']}, not {who}: only its "
-                              "striker withdraws a strike")
-        committed = _committed_entry(slice_dir, eid)
-        if committed is not None and committed.get("strike") == strike:
-            raise ReportError(f"{eid}'s strike is committed, and a committed strike "
-                              "stays; a note adds to it")
-        entry["strike"] = None
-        return _heading(entry)
 
 
 UNLABELLED_MARK = "—"
@@ -1110,84 +897,19 @@ def relabel_entry(slice_dir: Path | str, eid: str, by: str, note: str,
                                    slice_dir))
 
 
-def _undo_relabel(entry: dict, i: int) -> None:
-    """Put back what the relabel recorded on note `i` changed: the kind,
-    and each label as it was (None: not there) — an entry left with no
-    labels has none again, as before its first relabel. Refused when a
-    later relabel changed one of the same keys, or either changed the kind
-    (the labels a kind carries move with it), and when the entry no longer
-    carries what the relabel left."""
-    eid, note = entry["id"], entry["notes"][i]
-    record = note["relabel"]
-    for later in entry["notes"][i + 1:]:
-        again = later.get("relabel") or {}
-        shared = [k for k in record if k in again]
-        if again and (shared or "kind" in record or "kind" in again):
-            said = (f"changed {_join(shared)} again" if shared
-                    else "relabelled it across a change of its kind")
-            raise ReportError(f"{eid}: {note['by']}'s relabel is not withdrawn — a later "
-                              f"relabel, {later['by']}'s of {later['date']}, {said}; "
-                              "that one is withdrawn first")
-    labels = dict(entry.get("labels") or {})
-    for key, (_, new) in record.items():
-        now = entry.get("kind") if key == "kind" else labels.get(key)
-        if now != new:
-            raise ReportError(f"{eid}: {note['by']}'s relabel is not withdrawn — it left "
-                              f"{key} {new or UNLABELLED_MARK}, and the entry carries "
-                              f"{now or UNLABELLED_MARK} now")
-    for key, (old, _) in record.items():
-        if key == "kind":
-            entry["kind"] = old
-        elif old is None:
-            labels.pop(key, None)
-        else:
-            labels[key] = old
-    entry["labels"] = _ordered_labels(labels) or None
-
-
-def unnote_entry(slice_dir: Path | str, eid: str, by: str) -> str:
-    """Withdraw the latest note `by` wrote on an entry with `note` or
-    `relabel` — never one the tool wrote to keep history (`history`),
-    whoever signs it — while it is not committed: a note HEAD's store holds
-    stays, and a new note adds to it. A relabel's note takes its change
-    back with it (`_undo_relabel`). Amending a note is withdrawing it and
-    writing it again. Returns the withdrawn paragraph."""
-    who = _collapse(by)
-    if not who:
-        raise ReportError("unnote needs --by: who wrote the note")
-    with _writing(slice_dir) as store:
-        entry = _find(store, eid)
-        eid, notes = entry["id"], entry["notes"]
-        i = next((i for i in reversed(range(len(notes)))
-                  if notes[i].get("by") == who and not notes[i].get("history")), None)
-        if i is None:
-            raise ReportError(f"{eid} holds no note {who} wrote with `note` or `relabel`")
-        note = notes[i]
-        # The note is the n-th of its exact copies on the entry; HEAD holding
-        # n of them commits it — an agent's retried note stays withdrawable.
-        committed = (_committed_entry(slice_dir, eid) or {}).get("notes") or []
-        if committed.count(note) >= notes[:i + 1].count(note):
-            raise ReportError(f"{who}'s latest note on {eid} is committed, and a "
-                              f"committed note stays; a new note adds to it — "
-                              f"{_note_text(note)}")
-        if note.get("relabel"):
-            _undo_relabel(entry, i)
-        del notes[i]
-        return _note_text(note)
-
-
 def _amended(entry: dict, slice_dir: Path | str, headline: str | None,
              body: str | None, consequence: str | None, proposal: str | None,
              provenance: str | None, severity: str | None,
-             labels: dict | None) -> dict:
+             labels: dict | None, asked: dict | None = None) -> dict:
     """A copy of `entry` with each field given in place of its own, and the
     checks `append` makes run on the result: the labels as they would be
     stored (the given merged over the entry's, `for` given as `none`
-    removed), against the Consequence line as it would read, and the
-    proposal an action, a decision and an improvement owe. Refused — every
-    refusal in one error — when it would not pass them."""
+    removed), against the Consequence line as it would read, what an
+    author owes by kind (`author_problems`), and the block's fields
+    (`asked`: options, recommend, check, due). Refused — every refusal in
+    one error — when it would not pass them."""
     kind = entry["kind"]
-    new = dict(entry)
+    new = json.loads(json.dumps(entry))
     errors: list[str] = []
     if headline is not None:
         new["headline"] = _collapse(headline)
@@ -1210,6 +932,7 @@ def _amended(entry: dict, slice_dir: Path | str, headline: str | None,
         if severity not in SEVERITIES:
             errors.append(f"unknown severity {severity!r}; one of " + ", ".join(SEVERITIES))
         new["grade"] = severity
+    _set_ask_fields(new, **(asked or {}))
     given = {k: v for k, v in (labels or {}).items() if v is not None}
     merged = dict(entry.get("labels") or {})
     if given:
@@ -1221,31 +944,29 @@ def _amended(entry: dict, slice_dir: Path | str, headline: str | None,
         merged.update(given)
         new["labels"] = merged = _ordered_labels(merged)
     errors += check_labels(kind, merged, new["consequence"], slice_dir, given=given)
-    if kind in PROPOSAL_KINDS and not new["proposal"]:
-        errors.append(f"a{'n' if kind[0] in 'aeiou' else ''} {kind} needs "
-                      f"--proposal: {PROPOSAL_HELP}")
+    errors += author_problems(new)
     if errors:
         raise ReportError("\n".join(errors))
     return new
 
 
-def amend_entry(slice_dir: Path | str, eid: str, by: str, *,
+def amend_entry(slice_dir: Path | str, eid: str, *, by: str | None = None,
                 headline: str | None = None, body: str | None = None,
                 consequence: str | None = None, proposal: str | None = None,
                 provenance: str | None = None, severity: str | None = None,
-                labels: dict | None = None) -> str:
-    """Correct an entry its appender wrote: each field given replaces the
-    entry's, the labels merged over its own (`for` given as `none`, the
-    FOR_CLEAR, removes the label), and the result checked as `append`
-    checks an author's entry (`_amended`). Only on the `by` the entry was
-    appended with — an entry appended without one has no appender, and a
-    note corrects it — and only while HEAD's store does not hold the entry
-    at all: what a commit holds stays. No note is left; the id and the kind
-    never change. Returns the entry's heading."""
-    who = _collapse(by)
-    if not who:
-        raise ReportError("amend needs --by: who appended the entry")
-    fields = (headline, body, consequence, proposal, provenance, severity)
+                labels: dict | None = None, options=None,
+                recommend: str | None = None, check: str | None = None,
+                due: str | None = None) -> str:
+    """Correct a live entry: each field given replaces the entry's, the
+    labels merged over its own (`for` given as `none`, the FOR_CLEAR,
+    removes the label), and the result checked as `append` checks an
+    author's entry (`_amended`); `by` replaces who wrote it. Anyone with the
+    pen amends, until the
+    report is rendered at the run's end. No note is left; the id and the
+    kind never change. Returns the entry's heading."""
+    asked = {"options": options, "recommend": recommend, "check": check, "due": due}
+    fields = (by, headline, body, consequence, proposal, provenance, severity,
+              *asked.values())
     if all(f is None for f in fields) and not any(
             v is not None for v in (labels or {}).values()):
         raise ReportError("amend needs a field to replace: any of `append`'s flags "
@@ -1253,35 +974,28 @@ def amend_entry(slice_dir: Path | str, eid: str, by: str, *,
     with _writing(slice_dir) as store:
         entry = _find(store, eid)
         eid = entry["id"]
-        appender = entry.get("by")
-        if not appender:
-            raise ReportError(f"{eid} has no recorded appender (it was appended without "
-                              "--by), so nobody amends it; a note adds to it")
-        if appender != who:
-            raise ReportError(f"{eid} was appended by {appender}, not {who}: only its "
-                              "appender amends an entry")
-        if _committed_entry(slice_dir, eid) is not None:
-            raise ReportError(f"{eid} is committed, and a committed entry stays; a note "
+        if entry.get("strike"):
+            raise ReportError(f"{eid} is struck — a struck entry is settled; a note "
                               "adds to it")
         new = _amended(entry, slice_dir, headline, body, consequence, proposal,
-                       provenance, severity, labels)
+                       provenance, severity, labels, asked)
+        if _collapse(by):
+            new["by"] = _collapse(by)
         if new == entry:
             raise ReportError(f"amend changes nothing on {eid}: it already holds that")
-        if new["proposal"] != entry.get("proposal"):
-            # the proposal is the appender's again: no `propose` set it
-            new.pop("proposed", None)
-            entry.pop("proposed", None)
+        entry.clear()
         entry.update(new)
         return _heading(entry)
 
 
-# The wrap-up's marks: outcome → (the verb that makes it, what its note says
-# the wrap-up did, what a `proposed` record it wrote is called in a refusal —
-# None for a mark that sets no proposal).
+# The wrap-up's marks: outcome → (the flag that makes it, what its note says
+# the wrap-up did). A card request and a request for the operator's word are
+# proposals (`propose --card`, `propose --word`); a look that changed nothing
+# is a note (`note --left`).
 MARKS = {
-    "left": ("leave", "looked and left it", None),
-    "card": ("request-card", "asks for a card", "card request"),
-    "word": ("request-word", "asks for the operator's word", "request for your word"),
+    "left": ("note --left", "looked and left it"),
+    "card": ("propose --card", "asks for a card"),
+    "word": ("propose --word", "asks for the operator's word"),
 }
 
 
@@ -1290,55 +1004,36 @@ def _proposal_note(who: str, day: str, old: str) -> dict:
             "history": "proposal"}
 
 
-def _set_proposal(entry: dict, who: str, day: str, text: str, via: str) -> None:
+def _set_proposal(entry: dict, who: str, day: str, text: str) -> None:
     """Give the entry `text` as its proposal; one it already had, and that
-    says something else, stays as a note signed by whoever replaced it —
-    a history note, which `unnote` never takes. `proposed` records who set
-    it, when, through which verb (`via`), the proposal it replaced (None:
-    none) and the record before it (`prior`) — what `unpropose` and
-    `unmark` restore from."""
+    says something else, stays as a history note signed by whoever replaced
+    it."""
     old = entry.get("proposal")
     if old and old != text:
         entry["notes"].append(_proposal_note(who, day, old))
-    entry["proposed"] = {"by": who, "date": day, "via": via, "replaced": old,
-                         "prior": entry.get("proposed")}
+    entry.pop("proposed", None)
     entry["proposal"] = text
 
 
-def _drop_note(entry: dict, note: dict) -> None:
-    """Remove the latest note equal to `note` — the history note a write
-    that is taken back added. Nothing when there is none."""
-    notes = entry["notes"]
-    for i in reversed(range(len(notes))):
-        if notes[i] == note:
-            del notes[i]
-            return
-
-
-def _unset_proposal(entry: dict, record: dict) -> None:
-    """Take back the proposal `record` set — the entry's current `proposed`:
-    the proposal it replaced comes back (or none), with the record before
-    it, and the history note it added goes."""
-    old = record.get("replaced")
-    if old and old != entry.get("proposal"):
-        _drop_note(entry, _proposal_note(record["by"], record["date"], old))
-    entry["proposal"] = old
-    if record.get("prior") is None:
-        entry.pop("proposed", None)
-    else:
-        entry["proposed"] = record["prior"]
-
-
-def _proposal_back(entry: dict) -> str:
-    return (f"back: **Proposal:** {entry['proposal']}" if entry.get("proposal")
-            else "back: no proposal")
+def _mark(entry: dict, outcome: str, who: str, day: str, lines: list[str]) -> None:
+    """The wrap-up's mark on the entry; a mark it had already stays, as a
+    history note."""
+    prior = entry.get("wrap_up") or None
+    if prior:
+        entry["notes"].append(_mark_note(prior))
+    entry["wrap_up"] = {"outcome": outcome, "by": who, "date": day, "text": lines}
 
 
 def propose_entry(slice_dir: Path | str, eid: str, by: str, text: str,
-                  date: str | None = None) -> str:
+                  date: str | None = None, mark: str | None = None) -> str:
     """Give a live entry its proposal — what its author would do about it
-    and why — or replace the one it has, the old one kept as a note.
-    Returns the Proposal line."""
+    and why — or replace the one it has, the old one kept as a note. With
+    `mark`, the proposal is the wrap-up's mark too: `card` asks for a card,
+    and makes the entry a card request; `word` asks for the operator's word
+    on an edit a rule of the project reserves for them, and brings the entry
+    to them, whatever the table's route. Returns the Proposal line."""
+    if mark is not None and mark not in ("card", "word"):
+        raise ReportError(f"unknown mark {mark!r}; card or word")
     proposal = _collapse(text)
     if not proposal:
         raise ReportError("a proposal needs --text")
@@ -1350,71 +1045,10 @@ def propose_entry(slice_dir: Path | str, eid: str, by: str, text: str,
         entry = _find(store, eid)
         if entry.get("strike"):
             raise ReportError(f"{eid} is struck — a struck entry is settled")
-        _set_proposal(entry, who, day, proposal, "propose")
+        _set_proposal(entry, who, day, proposal)
+        if mark is not None:
+            _mark(entry, mark, who, day, _lines(text.strip()))
     return f"**Proposal:** {proposal}"
-
-
-def unpropose_entry(slice_dir: Path | str, eid: str, by: str) -> str:
-    """Withdraw a proposal `propose` set: only on its own --by, and only
-    while HEAD's store does not hold its record. The proposal it replaced
-    comes back — or none — and the note that kept it goes. The appender's
-    own proposal has no record, and `amend` corrects it; a card request's
-    goes with its mark (`unmark`). Returns what was withdrawn and what is
-    back."""
-    who = _collapse(by)
-    if not who:
-        raise ReportError("unpropose needs --by: who proposed")
-    with _writing(slice_dir) as store:
-        entry = _find(store, eid)
-        eid = entry["id"]
-        record = entry.get("proposed")
-        if not record:
-            if not entry.get("proposal"):
-                raise ReportError(f"{eid} has no proposal")
-            raise ReportError(f"{eid}'s proposal was not set by `propose` — it is its "
-                              "appender's, which `amend` corrects, or older than the "
-                              "tool's record of who proposed; `propose` replaces it")
-        if record["via"] != "propose":
-            what = next((m[2] for m in MARKS.values() if m[0] == record["via"]),
-                        f"`{record['via']}`")
-            raise ReportError(f"{eid}'s proposal is {record['by']}'s {what} of "
-                              f"{record['date']}, and it goes with that mark: `unmark "
-                              f"{eid} --by {record['by']}`")
-        if record["by"] != who:
-            raise ReportError(f"{eid}'s proposal was set by {record['by']}, not {who}: "
-                              "only its proposer withdraws a proposal")
-        committed = _committed_entry(slice_dir, eid)
-        if committed is not None and committed.get("proposed") == record:
-            raise ReportError(f"{eid}'s proposal is committed, and a committed proposal "
-                              "stays; `propose` replaces it")
-        withdrawn = entry["proposal"]
-        _unset_proposal(entry, record)
-        return f"withdrawn: {withdrawn}\n{_proposal_back(entry)}"
-
-
-def _mark_wrap_up(slice_dir: Path | str, eid: str, outcome: str, by: str,
-                  text: str, date: str | None, propose: bool = False) -> str:
-    lines = _lines(text.strip())
-    if not lines:
-        raise ReportError("the wrap-up's mark needs --text")
-    who = _collapse(by)
-    if not who:
-        raise ReportError("the wrap-up's mark needs --by")
-    day = _date(date)
-    with _writing(slice_dir) as store:
-        entry = _find(store, eid)
-        if entry.get("strike"):
-            raise ReportError(f"{eid} is struck — a struck entry is settled")
-        prior = entry.get("wrap_up") or None
-        if prior:
-            # A second mark replaces the first; the first stays, as a history note.
-            entry["notes"].append(_mark_note(prior))
-        # `prior` and `set_proposal` are what `unmark` restores from.
-        entry["wrap_up"] = {"outcome": outcome, "by": who, "date": day,
-                            "text": lines, "prior": prior, "set_proposal": propose}
-        if propose:
-            _set_proposal(entry, who, day, _collapse(text), MARKS[outcome][0])
-        return _mark_text(entry["wrap_up"])
 
 
 def _mark_note(mark: dict) -> dict:
@@ -1430,271 +1064,170 @@ def _mark_text(mark: dict) -> str:
 
 def request_card(slice_dir: Path | str, eid: str, by: str, text: str,
                  date: str | None = None) -> str:
-    """The wrap-up asks for a card on an entry: its route becomes a card
-    request, and what it asks — how the problem is reached and what the
-    fix takes — becomes the entry's proposal, as `propose` would set it."""
-    return _mark_wrap_up(slice_dir, eid, "card", by, text, date, propose=True)
-
-
-def leave_entry(slice_dir: Path | str, eid: str, by: str, text: str,
-                date: str | None = None) -> str:
-    """The wrap-up looked at an entry and changed nothing: what waited for
-    it is closed; every other route stands."""
-    return _mark_wrap_up(slice_dir, eid, "left", by, text, date)
+    """The wrap-up asks for a card on an entry (`propose --card`)."""
+    return propose_entry(slice_dir, eid, by, text, date, mark="card")
 
 
 def request_word(slice_dir: Path | str, eid: str, by: str, text: str,
                  date: str | None = None) -> str:
-    """The wrap-up hands the operator an entry whose edit a rule reserves
-    for their word: its route becomes `to you`, whatever the table's, and
-    what it asks — the exact edit it would make, and the rule — becomes
-    the entry's proposal, so their assent executes it."""
-    return _mark_wrap_up(slice_dir, eid, "word", by, text, date, propose=True)
+    """The wrap-up asks for the operator's word on an edit (`propose --word`)."""
+    return propose_entry(slice_dir, eid, by, text, date, mark="word")
 
 
-def _unrecorded(entry: dict, mark: dict) -> list[str]:
-    """What a mark of a store written before marks recorded what they
-    replace leaves as it is, in the words `unmark` returns: the proposal,
-    where the mark's words are it (a card request set it), and an earlier
-    mark the notes hold."""
+def leave_entry(slice_dir: Path | str, eid: str, by: str, text: str,
+                date: str | None = None) -> str:
+    """The wrap-up looked at an entry and changed nothing (`note --left`):
+    what waited for it is closed; every other route stands. Returns the
+    mark as the record shows it."""
+    lines = _lines(text.strip())
+    if not lines:
+        raise ReportError("the wrap-up's mark needs --text")
+    who = _collapse(by)
+    if not who:
+        raise ReportError("the wrap-up's mark needs --by")
+    day = _date(date)
+    with _writing(slice_dir) as store:
+        entry = _find(store, eid)
+        if entry.get("strike"):
+            raise ReportError(f"{eid} is struck — a struck entry is settled")
+        _mark(entry, "left", who, day, lines)
+        return _mark_text(entry["wrap_up"])
+
+
+# -- the continuation: the answers read back, executed, the report closed ------
+
+def _ruled(entry: dict) -> bool:
+    """Whether the entry holds a ruling: the answer lines read back from the
+    document, or the words a report before 0.10 recorded."""
+    ruling = entry.get("ruling") or {}
+    return bool(ruling.get("answer_lines") or ruling.get("words"))
+
+
+def _pending(entry: dict) -> bool:
+    """A ruling nobody has carried out yet: the entry is live and holds one."""
+    return not entry.get("strike") and _ruled(entry) and not entry["ruling"].get("did")
+
+
+def _answered_by(lines: dict) -> str:
+    """Who the answer lines say answered: a handle, or Pilot, whose `by` is
+    `agent` or absent."""
+    by = lines.get("by", asks.AGENT)
+    return PILOT if by == asks.AGENT else by
+
+
+def _striker(entry: dict) -> str:
+    """Who a strike on a ruling is signed by: the operator's ruling, or
+    Pilot's where Pilot chose the answer."""
+    lines = (entry.get("ruling") or {}).get("answer_lines") or {}
+    return PILOT_RULED_BY if lines and _answered_by(lines) == PILOT else RULED_BY
+
+
+def _absorb(store: dict, blocks: dict[str, dict], day: str) -> list[str]:
+    """The answer lines of each block into the entry of its id: the ruling's
+    `answer_lines`. `deferred` closes the entry as Pilot's (struck, its `to`
+    named); an action's `done` is what was done on it, which strikes it.
+    A block with no answer lines — never answered, or Undone — drops a
+    ruling nobody carried out. Returns a line per block."""
+    by_id = {e["id"]: e for e in store["entries"]}
+    unknown = [bid for bid in blocks if bid not in by_id]
+    if unknown:
+        raise ReportError(f"close-out.md holds block{'s' if len(unknown) > 1 else ''} "
+                          f"{', '.join(unknown)}, which no entry of the store is: it is "
+                          "not this store's document")
     out = []
-    if entry.get("proposal") and entry["proposal"] == _collapse(" ".join(mark["text"])):
-        out.append("not restored: the proposal the mark replaced — the store does not "
-                   "record it, so the mark's words stay the proposal; `propose` "
-                   "replaces them")
-    # a mark that replaced another always left it as a history note
-    earlier = [n for n in entry["notes"] if n.get("history") == "wrap-up"]
-    if earlier:
-        out.append(f"not restored: the earlier mark ({earlier[-1]['by']}, "
-                   f"{earlier[-1]['date']}) — the store does not record which mark this "
-                   "one replaced; it stays a note, and the entry carries no mark")
-    else:
-        out.append("back: no mark")
+    for bid, block in blocks.items():
+        entry, lines = by_id[bid], block["lines"]
+        ruling = entry.get("ruling") or {}
+        if not lines:
+            if _pending(entry):
+                entry["ruling"] = None
+            out.append(f"{bid}  open")
+            continue
+        if ruling.get("answer_lines") != lines:
+            entry["ruling"] = ruling = {"answer_lines": lines, "did": ruling.get("did"),
+                                        "date": day}
+        who = _answered_by(lines)
+        if not entry.get("strike"):
+            if lines.get("answer") == asks.DEFERRED:
+                _strike(entry, f"deferred to {lines.get('to')} by {who}", PILOT, None, day)
+            elif "done" in lines:
+                ruling["did"] = _collapse(lines.get("note")) or f"done {lines['done']}"
+                _strike(entry, f"done by {who}: {ruling['did']}", _striker(entry), None, day)
+        out.append(f"{bid}  {asks.state({'answer_lines': lines})}")
     return out
 
 
-def unmark_entry(slice_dir: Path | str, eid: str, by: str) -> str:
-    """Withdraw the wrap-up's mark on an entry — whichever verb made it —
-    only on its own --by, and only while HEAD's store does not hold it:
-    a committed mark stays, and a new mark replaces it. What the mark
-    replaced comes back: the mark before it (`prior`, its history note
-    gone), and — where the mark set the proposal (`set_proposal`) — the
-    proposal before it, from the `proposed` record the mark wrote, which a
-    later `propose` must be withdrawn from first. A mark of a store written
-    before marks recorded that is dropped, and what could not be restored
-    is said. Returns the withdrawn mark's text, then what is back."""
-    who = _collapse(by)
-    if not who:
-        raise ReportError("unmark needs --by: who marked the entry")
+def absorb_report(slice_dir: Path | str, date: str | None = None) -> list[str]:
+    """Read close-out.md, as Pilot wrote it back, into the store: every
+    block's answer lines into its entry's ruling (`_absorb`). Refused,
+    nothing written, on a document Pilot's reader would refuse or one whose
+    blocks are no entries of the store. Returns a line per block, its id and
+    state."""
+    day = _date(date)
+    path = report_path(slice_dir)
+    with _writing(slice_dir) as store:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as e:
+            raise ReportError(f"{path} cannot be read: {e}") from None
+        try:
+            blocks = asks.read_back(text)
+        except asks.AskError as e:
+            raise ReportError(f"{path} cannot be read back: {e}") from None
+        if not blocks:
+            raise ReportError(f"{path} holds no block: there is nothing to read back")
+        return _absorb(store, blocks, day)
+
+
+def rule_entry(slice_dir: Path | str, eid: str, did: str,
+               commit: str | None = None, date: str | None = None) -> str:
+    """Record what the continuation did on an entry's ruling — "carded as
+    P-12", "folded into slice 031", "closed" — which strikes the entry. The
+    ruling is the answer lines `absorb` read back; an entry without one has
+    nothing to act on. Returns the ruling as the record shows it."""
+    did = _collapse(did)
+    if not did:
+        raise ReportError("--did is empty")
+    day = _date(date)
     with _writing(slice_dir) as store:
         entry = _find(store, eid)
-        eid = entry["id"]
-        mark = entry.get("wrap_up")
-        if not mark:
-            raise ReportError(f"{eid} carries no wrap-up mark")
-        if mark["by"] != who:
-            raise ReportError(f"{eid} was marked by {mark['by']}, not {who}: only its "
-                              "marker withdraws a mark")
-        committed = _committed_entry(slice_dir, eid)
-        if committed is not None and committed.get("wrap_up") == mark:
-            raise ReportError(f"{eid}'s mark is committed, and a committed mark stays; "
-                              "a new mark replaces it")
-        said = [_mark_text(mark)]
-        if "prior" not in mark:
-            entry["wrap_up"] = None
-            return "\n".join(said + _unrecorded(entry, mark))
-        if mark.get("set_proposal"):
-            record = entry.get("proposed") or {}
-            if (record.get("via"), record.get("by"), record.get("date")) != \
-                    (MARKS.get(mark["outcome"], (None,))[0], mark["by"], mark["date"]):
-                if record.get("via") == "propose":
-                    raise ReportError(
-                        f"{eid}'s mark set its proposal, and {record['by']}'s `propose` "
-                        f"of {record['date']} replaced it since; that is withdrawn first "
-                        f"(`unpropose {eid} --by {record['by']}`)")
-                raise ReportError(f"{eid}'s mark set its proposal, and the proposal was "
-                                  "changed since, so the mark stays; a new mark replaces it")
-            _unset_proposal(entry, record)
-            said.append(_proposal_back(entry))
-        prior = mark["prior"]
-        if prior:
-            _drop_note(entry, _mark_note(prior))
-            said.append(f"back: the mark before it — {_mark_text(prior)}")
-        else:
-            said.append("back: no mark")
-        entry["wrap_up"] = prior
-        return "\n".join(said)
-
-
-RULE_MODES = ("append", "replace")
-
-
-def _rule(entry: dict, words: str | None, did: str | None,
-          commit: str | None, day: str, mode: str | None = None) -> None:
-    """The ruling's words and what was done on them. Words the entry holds
-    already, and that say something else, are refused unless `mode` says
-    what to do with them: `append` adds the new ones after them, `replace`
-    puts the new ones in their place and keeps the old in a history note.
-    The same words again change nothing."""
-    ruling = entry.get("ruling")
-    if words is not None:
-        words = words.strip()
-        if not words:
-            raise ReportError("--words is empty")
-        old = (ruling or {}).get("words")
-        if old and _collapse(old) != _collapse(words):
-            if mode is None:
-                raise ReportError(
-                    f"{entry['id']} already holds the operator's words: "
-                    f"\"{_collapse(old)}\". --append adds these after them — what the "
-                    "operator said in the session about an entry they had ruled on "
-                    "already; --replace puts these in their place, the old words kept "
-                    "in a note — only when the operator says so. Words recorded wrong "
-                    f"and not committed yet, `unrule {entry['id']}` takes back.")
-            if mode == "append":
-                words = f"{old}; {words}"
-            else:
-                entry["notes"].append({"by": "the operator", "date": day,
-                                       "text": _lines(RULED_EARLIER + old),
-                                       "history": "ruling"})
-            ruling = entry["ruling"] = {"words": words, "did": ruling.get("did"),
-                                        "date": day}
-        elif not old:
-            ruling = entry["ruling"] = {"words": words,
-                                        "did": (ruling or {}).get("did"),
-                                        "date": day}
-    if did is not None:
-        if not ruling or not ruling.get("words"):
-            raise ReportError(f"{entry['id']} has no ruling to act on — give "
-                              "the operator's --words with --did")
-        did = _collapse(did)
-        if not did:
-            raise ReportError("--did is empty")
-        ruling["did"] = did
+        if not _ruled(entry):
+            raise ReportError(f"{entry['id']} holds no ruling to act on: `absorb` reads "
+                              "the answers of close-out.md back first")
+        if entry["ruling"].get("did"):
+            raise ReportError(f"{entry['id']} is done already: {entry['ruling']['did']}")
+        entry["ruling"]["did"] = did
         if not entry.get("strike"):
-            _strike(entry, did, RULED_BY, commit, day)
+            _strike(entry, did, _striker(entry), commit, day)
+        elif commit and not entry["strike"].get("commit"):
+            entry["strike"]["commit"] = _collapse(commit)
+        return f"{entry['id']}: {_ruling_text(entry)}"
 
 
-def rule_entry(slice_dir: Path | str, eid: str, words: str | None = None,
-               did: str | None = None, commit: str | None = None,
-               date: str | None = None, mode: str | None = None) -> str:
-    """Record the operator's words on an entry, verbatim, and what the
-    session did on them, which strikes the entry. Words the entry already
-    holds are refused unless `mode` is `append` (the new ones joined after
-    them) or `replace` (the new ones in their place, the old kept in a
-    note); on an entry without words either is plain words. Returns the
-    Disposition line as the report shows it."""
-    if mode is not None and mode not in RULE_MODES:
-        raise ReportError(f"unknown rule mode {mode!r}; one of " + ", ".join(RULE_MODES))
-    if mode is not None and words is None:
-        raise ReportError(f"--{mode} needs --words: the words it adds or puts in place")
-    if words is None and did is None:
-        raise ReportError("rule <id> needs --words, --did, or both")
+def close_report(slice_dir: Path | str, by: str | None = None,
+                 date: str | None = None) -> tuple[int, list[str]]:
+    """Close the report once the continuation has carried out its answers:
+    every entry still live is struck as closed with the report, but one that
+    holds a ruling nobody carried out, which stays, and a report that keeps
+    one is not closed. Returns how many entries were closed, and the ids
+    that stay."""
     day = _date(date)
-    with _writing(slice_dir) as store:
-        entry = _find(store, eid)
-        _rule(entry, words, did, commit, day, mode)
-        return f"{entry['id']}: {_disposition(entry)}"
-
-
-def unrule_entry(slice_dir: Path | str, eid: str) -> str:
-    """Withdraw the operator's words on an entry and what was done on them,
-    as `rule` wrote them, while HEAD's store does not hold them — `rule`
-    records no --by, so there is nobody to check. A did HEAD does not hold
-    goes back to HEAD's, or none, and the strike it made goes with it;
-    words HEAD does not hold give back those the latest `--replace` kept in
-    its note, the note gone, and without such a note HEAD's words, or none.
-    What a commit holds stays, and so do the words the report's `close`
-    gave. A `Disposition:` line this write's read-back took is the
-    operator's, on the report: refused, nothing written. The render that
-    follows carries the withdrawal, so no read-back brings the words back.
-    No note is left. Returns what was withdrawn and what is back."""
-    with _writing(slice_dir) as store:
-        entry = _find(store, eid)
-        eid = entry["id"]
-        ruling = entry.get("ruling") or {}
-        # the read-back ran first; the store as saved is what it found
-        if (_find(_load(slice_dir), eid).get("ruling") or {}) != ruling:
-            raise ReportError(f"close-out.md's Disposition line on {eid} carries words the "
-                              "store had not taken — the operator's, on the report, which "
-                              "unrule never withdraws; nothing was written. `rule` without "
-                              "an id takes them into the store")
-        if not ruling.get("words"):
-            raise ReportError(f"{eid} carries no ruling")
-        strike = entry.get("strike") or {}
-        if not ruling.get("did") and not strike.get("by") and \
-                strike.get("reason") == f"closed with the report, {ruling.get('date')}":
-            raise ReportError(f"{eid}'s words are the report's close of {ruling['date']}, "
-                              "and the close owns them")
-        committed = _committed_entry(slice_dir, eid)
-        head = (committed or {}).get("ruling") or {}
-        words, did = ruling["words"], ruling.get("did")
-        if committed is not None and (words, did) == (head.get("words"), head.get("did")):
-            raise ReportError(f"{eid}'s ruling is committed, and a committed ruling stays; "
-                              "`rule --replace` puts the operator's other words in its place")
-        said = [f"withdrawn: {_disposition(entry)}"]
-        unstruck = False
-        if did != head.get("did"):
-            did = head.get("did")
-            if strike.get("by") == RULED_BY and (committed or {}).get("strike") != strike:
-                entry["strike"], unstruck = None, True
-        if words != head.get("words"):
-            notes = entry["notes"]
-            i = next((i for i in reversed(range(len(notes)))
-                      if notes[i].get("history") == "ruling"), None)
-            kept = (committed or {}).get("notes") or []
-            if i is not None and kept.count(notes[i]) < notes[:i + 1].count(notes[i]):
-                words = "\n".join(notes[i]["text"]).removeprefix(RULED_EARLIER)
-                del notes[i]
-            else:
-                words = head.get("words")
-        if (words, did) == (head.get("words"), head.get("did")):
-            entry["ruling"] = (committed or {}).get("ruling")
-        else:
-            entry["ruling"] = {"words": words, "did": did, "date": ruling["date"]}
-        said.append(f"back: **Disposition:** {_disposition(entry)}" if _ruled(entry)
-                    else "back: no ruling")
-        if unstruck:
-            said.append("back: not struck — the strike the did made went with it")
-        return "\n".join(said)
-
-
-def close_report(slice_dir: Path | str, words: str,
-                 date: str | None = None) -> tuple[int, list[str], list[str]]:
-    """Close the report on the operator's word: every live entry without a
-    ruling takes the words as its ruling and is struck. An entry that
-    carries a ruling nobody executed — a `defer`, words read back and not
-    acted on yet — stays live, and a report that keeps a live entry is not
-    closed. An entry held for a slice not created yet stays live too, and
-    the report closes over it: /dev:triage carries it into that slice, and
-    folds and strikes it in the closed report. Returns how many entries
-    were closed, the ids that stay, and the ids held."""
-    words = (words or "").strip()
-    if not words:
-        raise ReportError("close needs the operator's --words")
-    day = _date(date)
+    who = _collapse(by) or None
     with _writing(slice_dir) as store:
         if store.get("closed"):
-            raise ReportError(f"the report was closed on "
-                              f"{store['closed']['date']} — "
-                              f"{store['closed']['words']}")
-        touched, stages = touched_repos(slice_dir), slice_stages(slice_dir)
-        n, stay, held = 0, [], []
+            raise ReportError(f"the report was closed on {store['closed']['date']}")
+        n, stay = 0, []
         for entry in store["entries"]:
             if entry.get("strike"):
                 continue
-            if route(entry, touched, stages)[0].startswith("held:"):
-                held.append(entry["id"])
-                continue
-            if _ruled(entry):
+            if _pending(entry):
                 stay.append(entry["id"])
                 continue
-            entry["ruling"] = {"words": words, "did": None, "date": day}
-            _strike(entry, f"closed with the report, {day}", None, None, day)
+            _strike(entry, f"closed with the report, {day}", who, None, day)
             n += 1
         if not stay:
-            store["closed"] = {"date": day, "words": words}
-        return n, stay, held
+            store["closed"] = {"date": day, "by": who}
+        return n, stay
 
 
 VERIFICATION_NAME = "verification.json"
@@ -1816,9 +1349,10 @@ def settle_criterion(slice_dir: Path | str, vid: str, verdict: str,
     struck or noted (`_settle_entries`). Refused, nothing written, on a
     criterion without `owed_after` or with a verdict other than `owed` or
     none. verification.json is written after the store, so a store write
-    refused (`ReportEdited`) leaves both as they were; a slice without a
-    store has nothing to strike and gets verification.json alone. Returns
-    one line per thing done."""
+    refused leaves both as they were; a slice without a store has nothing
+    to strike and gets verification.json alone. An action the read-back
+    struck as done already stays as it is. Returns one line per thing
+    done."""
     vid = vid.strip()
     if verdict not in SETTLE_VERDICTS:
         raise ReportError(f"unknown verdict {verdict!r}; one of " + ", ".join(SETTLE_VERDICTS))
@@ -1856,7 +1390,7 @@ def settle_criterion(slice_dir: Path | str, vid: str, verdict: str,
         verdicts = {i.get("id"): i.get("verdict") for i in data["items"]
                     if isinstance(i, dict)}
         done = [f"{vid} settled {verdict} in {VERIFICATION_NAME}"]
-        if store_path(slice_dir).exists() or report_path(slice_dir).exists():
+        if store_path(slice_dir).exists():
             with _writing(slice_dir) as store:
                 done += _settle_entries(store, vid, verdicts, by, day)
         _write_atomic(path, text)
@@ -2199,17 +1733,13 @@ def _fold(lab: dict) -> tuple[str, str]:
     return "wrap-up:fold", f"the wrap-up — fold into slice {lab['for']}"
 
 
-def _held(lab: dict) -> tuple[str, str]:
-    return ("held:later", f"held for slice {lab['for']}, which triage has not created "
-            "yet — /dev:triage carries it into that slice's slice.md")
-
-
 def _for_route(lab: dict, stages: dict | None) -> tuple[str, str] | None:
     """Where the entry's `for` sends it, at the row the fold sits at, by the
     stage `slice_stages` gives the slice it names: a fold into a slice
     still unplanned; to the operator for one planned or running, whose run
-    never reads slice.md again; held for one no folder holds, not created
-    yet; None — the table's next rows, as if the label were not there —
+    never reads slice.md again; to the operator for one no folder holds,
+    not created yet, to hold for it — Pilot defers it to that slice's task;
+    None — the table's next rows, as if the label were not there —
     for a slice no longer to run, the slice itself, or a value that names
     no slice. Without `stages` (no `slices` ancestor, no context given), a
     fold."""
@@ -2223,7 +1753,9 @@ def _for_route(lab: dict, stages: dict | None) -> tuple[str, str] | None:
         return None
     slot = stages.get(number)
     if slot is None:
-        return _held(lab)
+        return ("operator:held",
+                f"to you — for slice {target}, which no folder holds yet: hold it for "
+                "that slice")
     if slot[1] == "planned":
         return ("operator:action",
                 f"to you — an action: slice {target} is planned or running and its run "
@@ -2351,28 +1883,31 @@ def route(entry: dict, touched: set[str] | None = None,
 
 
 def report_section(key: str) -> str:
-    """The section of the report a route key lands in."""
+    """The place a route key puts an entry: one of PLACES."""
     head = key.split(":", 1)[0]
     return {"operator": "Comes to you", "card": "Card requests",
             "wrap-up": "For the wrap-up", "unlabelled": "Unlabelled",
-            "closed": "Closed", "held": "Held for a later slice",
-            "record": "Record"}[head]
+            "closed": "Closed", "record": "Record"}[head]
 
 
-# What the slice's push must not carry. The report is worked after the doc
-# phase, the push follows the completion consult, and nothing reads the
-# report between them — so the run loop hands that consult these entries
-# (DHCPApp slice 001's B3: production addresses in a public repo's tests).
-BEFORE_PUSH_RE = re.compile(r"\bbefore (?:the|this|any) push", re.IGNORECASE)
+# What the slice's push must not carry, and what its test phase would fail
+# as worded. The report is worked after the doc phase, the push follows the
+# completion consult, the test phase checks every criterion as worded, and
+# nothing reads the report between them — so the run loop hands that consult
+# the entries whose author said they are due before the push or the test
+# phase (`--due`), and those whose labels say a push would expose them
+# (DHCPApp slice 001's B3: production addresses in a public repo's tests;
+# AnsibleSpecs slice 058's P3: V15 worded against ruling D2).
+_CRITERION_RE = re.compile(r"\bV(\d+)\b")
 
 
 def owed_before_push(slice_dir: Path | str) -> list[tuple[dict, list[str]]]:
     """(entry, the reasons) for every live entry that may describe what the
-    slice's push must not carry, in id order: one whose impact is `severe` —
-    what a push exposes is, by the labels — unless it is an improvement or
-    its fix lives in a repository the slice did not touch; and one whose
-    proposal asks for its fix before the push, whatever its kind. Reads the
-    store, never writes it."""
+    slice's push must not carry, in id order: one due before the push,
+    whatever its kind, and one whose impact is `severe` — what a push
+    exposes is, by the labels — unless it is an improvement or its fix lives
+    in a repository the slice did not touch. Reads the store, never writes
+    it."""
     store = _read_store(slice_dir)
     touched = touched_repos(slice_dir)
     out = []
@@ -2384,63 +1919,38 @@ def owed_before_push(slice_dir: Path | str) -> list[tuple[dict, list[str]]]:
         if (entry.get("kind") != "improvement" and lab.get("impact") == "severe"
                 and _elsewhere(lab, touched) in (None, "unknown")):
             reasons.append("impact severe")
-        proposal = _collapse(entry.get("proposal"))
-        if BEFORE_PUSH_RE.search(proposal):
-            reasons.append("proposal: "
-                           + textwrap.shorten(proposal, 160, placeholder=" …"))
+        if entry.get("due") == "push":
+            reasons.append("due before the push")
         if reasons:
             out.append((entry, reasons))
     return sorted(out, key=lambda item: _id_key(item[0]))
 
 
-# What the slice's test phase would fail as worded. It checks every criterion
-# of the slice's verification.json as it stands, and the report is worked
-# after it — so the run loop hands the completion consult the entries that
-# say one of them is worded wrong (AnsibleSpecs slice 058's P3: V15 worded
-# against ruling D2, reworded before the test phase only because the consult
-# happened to read the entry). A criterion is named `V<n>`; another slice by
-# `slice <n>`, or by its number or folder just before `verification.json`.
-TEST_OWED_KINDS = ("prose", "defect", "test-gap")
-_CRITERION_RE = re.compile(r"\bV(\d+)\b")
-_SLICE_NAMED_RE = re.compile(r"\bslices?\s+(\d+)", re.IGNORECASE)
-_SLICE_FOLDER_RE = re.compile(r"(?<![^\s/])(\d+)(?:_[\w-]+)?[\s/]+verification\.json")
-
-
 def owed_before_test(slice_dir: Path | str) -> list[tuple[dict, list[str]]]:
-    """(entry, the criteria it names) for every live prose, defect or
-    test-gap entry whose headline or proposal names verification.json and a
-    criterion the slice's own holds, and no other slice, in id order — the
-    criteria as verification.json spells them, in number order (`V1` names
-    V01). Reads the store, never writes it."""
+    """(entry, what it names) for every live entry due before the test
+    phase, in id order: the criteria of the slice's verification.json its
+    headline, body or proposal names, as verification.json spells them, in
+    number order (`V1` names V01) — or, naming none, that it is due. Reads
+    the store, never writes it."""
     store = _read_store(slice_dir)
     criteria: dict[int, str] = {}
     for vid in _verification(slice_dir):
         m = re.fullmatch(r"V(\d+)", str(vid))
         if m:
             criteria.setdefault(int(m.group(1)), str(vid))
-    own = _slice_number(Path(slice_dir).resolve().name)
     out = []
     for entry in store["entries"]:
-        if entry.get("strike") or entry.get("kind") not in TEST_OWED_KINDS:
+        if entry.get("strike") or entry.get("due") != "test":
             continue
-        texts = [_collapse(entry.get("headline")), _collapse(entry.get("proposal"))]
-        if not any("verification.json" in text for text in texts):
-            continue
-        slices = {int(n) for text in texts
-                  for n in _SLICE_NAMED_RE.findall(text) + _SLICE_FOLDER_RE.findall(text)}
-        if slices - {own}:
-            continue
+        texts = [_collapse(entry.get("headline")), _collapse(entry.get("proposal")),
+                 *(entry.get("body") or [])]
         named = {int(n) for text in texts for n in _CRITERION_RE.findall(text)}
-        if held := sorted(named & criteria.keys()):
-            out.append((entry, [criteria[n] for n in held]))
+        held = sorted(named & criteria.keys())
+        out.append((entry, [criteria[n] for n in held] or ["due before the test phase"]))
     return sorted(out, key=lambda item: _id_key(item[0]))
 
 
 # -- worklist ----------------------------------------------------------------
-
-def _ruled(entry: dict) -> bool:
-    return bool((entry.get("ruling") or {}).get("words"))
-
 
 # The --by the wrap-up signs with: its dispatch names none, and it writes
 # `wrap-up`, at times with the slice after it (`wrap-up, slice 022`).
@@ -2468,7 +1978,9 @@ def _asked(entry: dict, touched: set[str] | None,
     nothing. An entry the operator has ruled on is theirs, whatever its
     route: it does not wait. One the table closed is asked a `check` where
     it breaks a flow, else a `recheck` where it was noted since its labels
-    last changed (`_noted_since`)."""
+    last changed (`_noted_since`). One that comes to the operator is asked a
+    `note` where it is a risk, else a `vet`: the checks the operator would
+    otherwise have to make before ruling."""
     if entry.get("strike") or entry.get("wrap_up") or _ruled(entry):
         return None
     key, _ = table_route(entry, touched, stages)
@@ -2493,6 +2005,9 @@ def _asked(entry: dict, touched: set[str] | None,
                 "against the note")
     if key == "operator:risk":
         return "note — note what the code says under it; the entry stays the operator's"
+    if key.startswith(("operator:", "card:")):
+        return ("vet — before the operator reads it: what a command settles, a proposal "
+                "where none, its vehicle")
     return None
 
 
@@ -2531,16 +2046,16 @@ def worklist_view(slice_dir: Path | str) -> str:
 # -- counts ------------------------------------------------------------------
 
 def entry_counts(slice_dir: Path | str) -> dict[str, int]:
-    """Live entries per section of the report — the events in the record
+    """Live entries per place of the report — the events in the record
     counted, the struck ones not — then live entries per id letter (the
     old letters only where the store holds such entries), then the smoke
     counts: live entries without a Consequence or a Provenance line, and
     those that come to the operator (to you, card requests) without a
-    proposal."""
+    proposal, or a decision without its options."""
     store = _read_store(slice_dir)
     touched, stages = touched_repos(slice_dir), slice_stages(slice_dir)
     counts = dict.fromkeys(COUNT_NAMES, 0)
-    by_name = dict(zip(REPORT_SECTIONS, COUNT_NAMES, strict=True))
+    by_name = dict(zip(PLACES, COUNT_NAMES, strict=True))
     letters = dict.fromkeys(KINDS.values(), 0)
     for entry in store["entries"]:
         m = _ID_RE.fullmatch(entry["id"])
@@ -2557,7 +2072,7 @@ def entry_counts(slice_dir: Path | str) -> dict[str, int]:
         no_consequence += not entry.get("consequence")
         no_provenance += not (entry.get("evidence") or entry.get("author"))
         no_proposal += (key.startswith(("operator:", "card:"))
-                        and not entry.get("proposal"))
+                        and not (entry.get("proposal") or entry.get("options")))
     counts.update(letters)
     counts[NO_CONSEQUENCE] = no_consequence
     counts[NO_PROVENANCE] = no_provenance
@@ -2620,8 +2135,8 @@ def list_view(slice_dir: Path | str) -> str:
 def _wrap(line: str) -> list[str]:
     """A line wrapped at the report's width; a ` · ` separator stays with
     the word before it, so no line opens with one."""
-    glued = line.replace(" · ", "\u00a0· ")
-    return [part.replace("\u00a0", " ")
+    glued = line.replace(" · ", " · ")
+    return [part.replace(" ", " ")
             for part in textwrap.wrap(glued, width=HEADER_WIDTH,
                                       break_long_words=False,
                                       break_on_hyphens=False)] or [line]
@@ -2665,14 +2180,31 @@ def _notes(entry: dict) -> list[str]:
     return paras
 
 
-def _disposition(entry: dict) -> str:
-    """What the Disposition line carries: the operator's words, then ` — `
-    and what was done on them; empty until they rule."""
+def _ruling_text(entry: dict) -> str:
+    """The ruling as the record and `show` give it: the answer lines as
+    Pilot wrote them — the answer, where it was deferred to, when it was
+    done, the note — and who answered, an answer Pilot chose said as Pilot's
+    and not the operator's; then ` — ` and what the continuation did on it.
+    A report before 0.10 recorded the operator's words instead. Empty
+    without a ruling."""
     ruling = entry.get("ruling") or {}
-    words = ruling.get("words") or ""
-    if words and ruling.get("did"):
-        return f"{words} — {ruling['did']}"
-    return words
+    lines = ruling.get("answer_lines")
+    if lines:
+        bits = [f"{key}: {lines[key]}" for key in ("answer", "to", "done", "note")
+                if key in lines]
+        if _answered_by(lines) == PILOT:
+            bits.append("chosen by Pilot; the operator did not decide this")
+        else:
+            bits.append(f"by {lines['by']}" + (f" via {lines['via']}"
+                                               if lines.get("via") else ""))
+        if lines.get("at"):
+            bits.append(f"at {lines['at']}")
+        said = " · ".join(bits)
+    else:
+        said = ruling.get("words") or ""
+    if said and ruling.get("did"):
+        return f"{said} — {ruling['did']}"
+    return said
 
 
 def _provenance(entry: dict) -> str | None:
@@ -2701,39 +2233,45 @@ def _proposal_lines(entry: dict) -> list[str]:
     return [*_wrap(f"**Proposal:** {entry['proposal']}"), ""]
 
 
-def _disposition_line(entry: dict) -> str:
-    disposition = _disposition(entry)
-    return f"**Disposition:** {disposition}" if disposition else "**Disposition:**"
+def _ask_field_lines(entry: dict) -> list[str]:
+    """An entry's options, the recommended one marked, its check and what it
+    is due before, as `show` and the record give them."""
+    out: list[str] = []
+    for opt in entry.get("options") or []:
+        mark = " (recommended)" if opt.get("label") == entry.get("recommend") else ""
+        line = f": {opt['line']}" if opt.get("line") else ""
+        out.append(f"- **{opt.get('label')}**{mark}{line}")
+    if out:
+        out = ["**Options:**", "", *out, ""]
+    if entry.get("check"):
+        out += [f"**Check:** {entry['check']}", ""]
+    if entry.get("due"):
+        out += [f"**Due:** before the {entry['due']}", ""]
+    return out
 
 
 def _tail(entry: dict, route_words: str | None) -> list[str]:
     """The lines under the body in the full view: Consequence, then the
-    block the entry is triaged on — Triage, Provenance, Route,
-    Disposition."""
+    lines the entry is triaged on — Triage, Provenance, Route — and the
+    ruling where it has one."""
     out: list[str] = []
     if entry.get("consequence"):
         out += [f"**Consequence:** {entry['consequence']}", ""]
-    triage = _triage_words(entry)
-    if triage:
-        out += _wrap(f"**Triage:** {triage}")
-    provenance = _provenance(entry)
-    if provenance:
-        out.append(f"**Provenance:** {provenance}")
+    out += _triage_lines(entry)
     if route_words:
         out.append(f"**Route:** {route_words}")
-    out.append(_disposition_line(entry))
+    if _ruled(entry):
+        # the answer lines verbatim, never wrapped
+        out.append(f"**Ruling:** {_ruling_text(entry)}")
     return out
 
 
 # What plan_loop.py writes into every owed-after action: true of each one,
-# so the report leaves it out (`show` keeps it).
+# so the document leaves it out (`show` keeps it).
 _OWED_HEADLINE_RE = re.compile(r"^Settle (?P<vid>V\d+) after\b")
 _OWED_CONSEQUENCE_RE = re.compile(r"^V\d+ stays unproven until then; the test phase "
                                   r"does not settle it\.?$")
 _OWED_PROPOSAL_RE = re.compile(r"^When that has happened, say so: the session settles V\d+")
-# A Route that only says the kind, which the Triage line names already; a
-# risk's says why it came, and stays.
-_KIND_ONLY_ROUTES = ("to you — an action", "to you — a decision", "to you — an improvement")
 
 
 def _verification(slice_dir: Path | str) -> dict[str, dict]:
@@ -2746,34 +2284,8 @@ def _verification(slice_dir: Path | str) -> dict[str, dict]:
     return {i["id"]: i for i in items or [] if isinstance(i, dict) and i.get("id")}
 
 
-def _ask_heading(entry: dict, vmap: dict[str, dict]) -> str:
-    """The heading, with an owed-after action's criterion named by its area
-    and its owed-after in full, where plan_loop.py shortened them."""
-    m = _OWED_HEADLINE_RE.match(entry.get("headline") or "")
-    item = vmap.get(m.group("vid")) if m else None
-    if entry.get("strike") or not item or not item.get("owed_after"):
-        return _heading(entry)
-    area = f" ({item['area']})" if item.get("area") else ""
-    return f"### {entry['id']} — Settle {m.group('vid')}{area} after {item['owed_after']}"
-
-
-def _latest(entry: dict) -> list[str]:
-    """The newest note (a wrap-up mark counts as one) in full, and how many
-    there are; nothing without one."""
-    notes = list(entry.get("notes") or [])
-    if entry.get("wrap_up"):
-        mark = entry["wrap_up"]
-        notes.append({"by": mark["by"], "date": mark["date"], "text": _wrap_up_lines(mark)})
-    if not notes:
-        return []
-    last = notes[-1]
-    count = f" · {len(notes)} notes" if len(notes) > 1 else ""
-    text = "\n".join(last.get("text") or [])
-    return [f"**Latest** ({last['by']}, {last['date']}{count}): {text}", ""]
-
-
 def _short_strike_tail(strike: dict) -> str:
-    """The struck heading's tail as the report gives it: the reason up to its
+    """The struck heading's tail as the record gives it: the reason up to its
     first `; `, at most a couple of lines, then the striker. `show` keeps the
     whole reason."""
     reason = strike["reason"].split("; ", 1)[0].strip()
@@ -2798,49 +2310,34 @@ def _triage_lines(entry: dict) -> list[str]:
     return out
 
 
-def _render_entry(entry: dict, form: str, route_words: str | None,
-                  vmap: dict[str, dict] | None = None) -> str:
-    """One entry in one of its forms. The report's three: `ask` (the
-    headline, the body, the Proposal and the Consequence where they say
-    more than every entry of their kind, the newest note, then Triage,
-    Provenance, Route unless it only names the kind, and Disposition),
-    `closed` (the heading, the Consequence unless it says none, Triage,
-    Provenance, Route and Disposition) and `record` (the heading alone, a
-    struck one's reason cut short). And `show`'s: `full`, the body, every
-    note, the proposal and every label line."""
+def _render_entry(entry: dict, form: str, route_words: str | None) -> str:
+    """One entry as the record or `show` gives it: `full` (the body, every
+    note, the proposal, the options, check and due, then every line the
+    entry is triaged on and its ruling — `show`'s), `closed` (the heading,
+    the Consequence unless it says none, Triage, Provenance and Route — what
+    the table closed), `ruled` (the heading and the ruling) and `record` (the
+    heading alone, a struck one's reason cut short)."""
     if form == "record":
         if entry.get("strike"):
             return (f"### ~~{entry['id']} — {_headline_with_grade(entry)}~~ — "
                     + _short_strike_tail(entry["strike"]))
         return _heading(entry)
+    if form == "ruled":
+        return "\n".join([_heading(entry), "", f"**Ruling:** {_ruling_text(entry)}"])
     if form == "full":
         lines = [_heading(entry), ""]
         body = _body_and_notes(entry)
         if body:
             lines += [body, ""]
         lines += _proposal_lines(entry)
+        lines += _ask_field_lines(entry)
         struck = bool(entry.get("strike"))
-        return "\n".join(lines + _tail(entry, None if struck else route_words))
+        return "\n".join(lines + _tail(entry, None if struck else route_words)).rstrip("\n")
+    lines = [_heading(entry), ""]
     consequence = entry.get("consequence")
-    if form == "closed":
-        lines = [_heading(entry), ""]
-        if consequence and not opens_with_none(consequence):
-            lines += [f"**Consequence:** {consequence}", ""]
-        return "\n".join([*lines, *_triage_lines(entry), f"**Route:** {route_words}",
-                          _disposition_line(entry)])
-    lines = [_ask_heading(entry, vmap or {}), ""]
-    body = "\n".join(entry.get("body") or []).strip()
-    if body:
-        lines += [body, ""]
-    if entry.get("proposal") and not _OWED_PROPOSAL_RE.match(entry["proposal"]):
-        lines += _proposal_lines(entry)
-    if consequence and not _OWED_CONSEQUENCE_RE.match(consequence):
+    if consequence and not opens_with_none(consequence):
         lines += [f"**Consequence:** {consequence}", ""]
-    lines += _latest(entry)
-    lines += _triage_lines(entry)
-    if route_words and route_words not in _KIND_ONLY_ROUTES:
-        lines.append(f"**Route:** {route_words}")
-    return "\n".join([*lines, _disposition_line(entry)])
+    return "\n".join([*lines, *_triage_lines(entry), f"**Route:** {route_words}"])
 
 
 def _sort_key(entry: dict) -> tuple:
@@ -2857,71 +2354,302 @@ def _id_key(entry: dict) -> tuple:
     return m.group(1), int(m.group(2))
 
 
-def _title(store: dict) -> str:
+def _slice_name(store: dict) -> tuple[str, str]:
+    """(the slice's number, its name in words), from the folder name the
+    store records: `029_notifications` is ("029", "notifications")."""
     num, _, slug = str(store.get("slice") or "").partition("_")
-    return f"# Close-out — slice {num} {slug}".rstrip()
+    return num, re.sub(r"[_-]+", " ", slug).strip()
 
 
-def _header(slice_dir: Path | str) -> str:
+def _state(slice_dir: Path | str) -> dict | None:
     try:
         state = json.loads((Path(slice_dir) / "state.json").read_text())
     except (OSError, json.JSONDecodeError):
-        return UNSTAMPED
-    return run_header(state, slice_dir) if isinstance(state, dict) else UNSTAMPED
+        return None
+    return state if isinstance(state, dict) else None
 
 
-def _placed(store: dict, slice_dir: Path | str,
-            live_only: bool = False) -> list[tuple[str, list[tuple[dict, str]]]]:
-    """(section, [(entry, its Route words)]) in the report's order: the
-    sections as REPORT_SECTIONS, a section's entries as the render sorts
-    them — the record's events first, then what was struck. With
-    `live_only`, struck entries are left out."""
+def _header(slice_dir: Path | str) -> str:
+    state = _state(slice_dir)
+    return UNSTAMPED if state is None else run_header(state, slice_dir)
+
+
+def _placed(store: dict, slice_dir: Path | str, live_only: bool = False
+            ) -> list[tuple[str, list[tuple[dict, str, str]]]]:
+    """(place, [(entry, its route key, its Route words)]) in PLACES' order,
+    a place's entries as the render sorts them — the record's events first,
+    then what was struck. With `live_only`, struck entries are left out."""
     touched, stages = touched_repos(slice_dir), slice_stages(slice_dir)
-    placed: dict[str, list[tuple[dict, str]]] = {s: [] for s in REPORT_SECTIONS}
+    placed: dict[str, list[tuple[dict, str, str]]] = {p: [] for p in PLACES}
     for entry in store["entries"]:
         if live_only and entry.get("strike"):
             continue
         key, words = route(entry, touched, stages)
-        placed[report_section(key)].append((entry, words))
+        placed[report_section(key)].append((entry, key, words))
     out = []
-    for section in REPORT_SECTIONS:
-        items = placed[section]
-        if section == "Record":
-            items = sorted(items, key=lambda x: (bool(x[0].get("strike")),
-                                                 _id_key(x[0])))
+    for place in PLACES:
+        items = placed[place]
+        if place == "Record":
+            items = sorted(items, key=lambda x: (bool(x[0].get("strike")), _id_key(x[0])))
         else:
             items = sorted(items, key=lambda x: _sort_key(x[0]))
-        out.append((section, items))
+        out.append((place, items))
     return out
 
 
-def _render(store: dict, slice_dir: Path | str) -> tuple[str, dict[str, int]]:
-    """The report's text and the number of entries in each section it
-    wrote."""
-    out = [_title(store), "", HEAD_COMMENT, "", *_wrap(_header(slice_dir))]
-    if store.get("closed"):
-        closed = store["closed"]
-        out += ["", *_wrap(f"Closed: {closed['date']} — {_collapse(closed['words'])}")]
-    tally: dict[str, int] = {}
-    vmap = _verification(slice_dir)
-    for section, items in _placed(store, slice_dir):
-        if not items:
+# -- the document: what Pilot reads (asks.py renders it) --------------------------
+
+_FENCE_LINE_RE = re.compile(r" {0,3}(`{3,}|~{3,})")
+_HEADING_LINE_RE = re.compile(r" {0,3}#{1,6}(?:[ \t]|$)")
+
+
+def _prose(lines: list[str]) -> str:
+    """An author's text as the document carries it: a line Markdown reads as
+    a heading, outside a fence, has its first `#` escaped, so that it stays
+    the author's text and does not end the ask's section."""
+    out: list[str] = []
+    fence: str | None = None
+    for line in lines:
+        if fence is None:
+            m = _FENCE_LINE_RE.match(line)
+            if m:
+                fence = m.group(1)
+            elif _HEADING_LINE_RE.match(line) and line.strip("# \t"):
+                line = line.replace("#", "\\#", 1)
+        elif re.fullmatch(rf" {{0,3}}{re.escape(fence[0])}{{{len(fence)},}}[ \t]*", line):
+            fence = None
+        out.append(line)
+    return "\n".join(out).strip("\n")
+
+
+def _ask_headline(entry: dict, vmap: dict[str, dict]) -> str:
+    """The ask's heading: the entry's headline, its grade left off; an
+    owed-after action's criterion named by its area and its owed-after in
+    full, where plan_loop.py shortened them."""
+    m = _OWED_HEADLINE_RE.match(entry.get("headline") or "")
+    item = vmap.get(m.group("vid")) if m else None
+    if item and item.get("owed_after"):
+        area = f" ({item['area']})" if item.get("area") else ""
+        return _collapse(f"Settle {m.group('vid')}{area} after {item['owed_after']}")
+    return entry["headline"]
+
+
+def _for_planned(entry: dict, key: str) -> bool:
+    """Whether the entry comes to the operator because the slice its `for`
+    names is planned or running (`_for_route`), not for its kind."""
+    return key == "operator:action" and entry.get("kind") != "action"
+
+
+def _ask_lead(entry: dict, place: str, key: str, words: str) -> str | None:
+    """What an entry that comes to the operator for a reason of its own is
+    said as, before its body: one the wrap-up did not reach, one nobody
+    routed, one for a later slice."""
+    target = (effective_labels(entry) or {}).get("for")
+    if place == "For the wrap-up":
+        asked = words.removeprefix("the wrap-up — ")
+        return (f"**Not reached.** The table gave this entry to the wrap-up ({asked}), "
+                "and no wrap-up reached it: nobody has looked at it since its author.")
+    if place == "Unlabelled":
+        return "**Unlabelled.** The entry carries no labels, so nothing routed it."
+    if key == "operator:held":
+        return f"**For slice {target}**, which no folder holds yet."
+    if _for_planned(entry, key):
+        return (f"**For slice {target}**, which is planned or running: its run never "
+                "reads slice.md again.")
+    return None
+
+
+def _ask_proposal(entry: dict, key: str) -> str | None:
+    """The proposal a block other than an action's or a decision's with its
+    options carries: the entry's own, or — where the table brought the entry
+    for a reason its author did not state — the one that reason makes; an
+    entry for a slice not created yet is proposed to be held for it, and
+    Pilot defers it to that slice's task."""
+    lab = effective_labels(entry) or {}
+    own = entry.get("proposal")
+    if key == "operator:held":
+        hold = f"Hold it for slice {lab.get('for')}, which is not created yet."
+        return f"{hold} The author proposes: {own}" if own else hold
+    if own:
+        return own
+    if key == "card:table":
+        return (f"Card it for {lab.get('repo')}: the fix lives there, and this slice "
+                "did not touch it.")
+    if _for_planned(entry, key):
+        return f"Add a phase to slice {lab.get('for')}'s plan, or rule on its run."
+    return None
+
+
+def _ask(entry: dict, place: str, key: str, words: str,
+         vmap: dict[str, dict]) -> dict:
+    """The entry as an ask of the document, in asks.py's shape: the block
+    by kind — an action's with its options and check, a decision's with
+    its options and the one recommended, any other a decision on its
+    proposal, or a question where nobody proposed anything — and above it
+    the body, an action's proposal, the consequence and the provenance; the
+    notes under the body, those the tool keeps as history left to the
+    record. The id is the entry's, so the answers come back to it."""
+    kind = entry.get("kind")
+    paras = [p for p in (_ask_lead(entry, place, key, words),
+                         _prose(entry.get("body") or [])) if p and p.strip()]
+    proposal = entry.get("proposal")
+    if kind == "action" and proposal and not _OWED_PROPOSAL_RE.match(proposal):
+        paras.append(f"**Proposal:** {proposal}")
+    consequence = entry.get("consequence")
+    if consequence and not _OWED_CONSEQUENCE_RE.match(consequence):
+        paras.append(f"**Consequence:** {consequence}")
+    provenance = _provenance(entry)
+    if provenance:
+        paras.append(f"**Provenance:** {provenance}")
+    ask: dict = {"id": entry["id"], "headline": _ask_headline(entry, vmap),
+                 "body": "\n\n".join(paras) or "The entry has no body."}
+    if kind == "action":
+        ask["kind"] = "action"
+        for field in ("options", "check", "due"):
+            if entry.get(field):
+                ask[field] = entry[field]
+    elif kind == "decision" and entry.get("options"):
+        ask.update(kind="decision", options=entry["options"])
+        if entry.get("recommend"):
+            ask["recommend"] = entry["recommend"]
+    elif (said := _ask_proposal(entry, key)) is not None:
+        ask.update(kind="decision", proposal=said)
+    else:
+        ask["kind"] = "question"
+    notes = [n for n in entry.get("notes") or [] if not n.get("history")]
+    mark = entry.get("wrap_up")
+    if mark and mark.get("outcome") == "left":
+        notes.append({"by": mark["by"], "date": mark["date"], "text": _wrap_up_lines(mark)})
+    if notes:
+        ask["notes"] = [{"by": n["by"], "date": n["date"], "text": _prose(n["text"])}
+                        for n in notes]
+    return ask
+
+
+# What a document's summary says it holds, by the place its asks come from.
+SUMMARY_WORDS = {"Comes to you": "what is yours to rule or to do",
+                 "Card requests": "the cards asked for",
+                 "For the wrap-up": "what no wrap-up reached",
+                 "Unlabelled": "what nobody routed"}
+
+
+def _shipped(slice_dir: Path | str) -> list[str]:
+    """The phases plan.md stamps done, `P3 <title>` each, in plan order."""
+    try:
+        text = (Path(slice_dir) / "plan.md").read_text(encoding="utf-8")
+    except OSError:
+        return []
+    out = []
+    for line in text.split("\n"):
+        m = PHASE_RE.match(line)
+        if m and re.search(r"✅\s*DONE\b", m.group(2)):
+            title = re.sub(r"\s*✅\s*DONE\b.*$", "", m.group(2)).strip()
+            out.append(f"P{m.group(1)} {title}")
+    return out
+
+
+def _wrap_up_said(store: dict) -> str | None:
+    """What the wrap-up settled, in a line: the entries it fixed, a commit
+    each, and those it folded into later slices."""
+    fixed, folded = [], []
+    for entry in store["entries"]:
+        strike = entry.get("strike") or {}
+        if not _WRAP_UP_BY_RE.match(_collapse(strike.get("by"))):
             continue
-        form = {"Record": "record", "Closed": "closed",
-                "Held for a later slice": "closed"}.get(section, "ask")
-        out += ["", f"## {section}"]
-        for entry, words in items:
-            out += ["", _render_entry(entry, form, words, vmap)]
-        tally[section] = len(items)
-    return "\n".join(out) + "\n", tally
+        if strike.get("reason", "").startswith("folded into"):
+            folded.append(entry["id"])
+        elif strike.get("commit"):
+            fixed.append(entry["id"])
+    said = []
+    if fixed:
+        said.append(f"fixed {_join(fixed)}, a commit each")
+    if folded:
+        said.append(f"folded {_join(folded)} into later slices")
+    return f"**The wrap-up** {' and '.join(said)}." if said else None
+
+
+def _context(store: dict, slice_dir: Path | str) -> list[str]:
+    """The paragraphs the asks share: those the session gave (`render
+    --context`), then the run in a line, what shipped, what the wrap-up
+    settled, and where the record is."""
+    paras = list(store.get("context") or [])
+    state = _state(slice_dir)
+    if state is not None:
+        paras.append(f"**The run.** {run_header(state, slice_dir).removeprefix('Run: ')}.")
+    shipped = _shipped(slice_dir)
+    if shipped:
+        paras.append("**What shipped.** " + "; ".join(shipped) + ".")
+    wrap_up = _wrap_up_said(store)
+    if wrap_up:
+        paras.append(wrap_up)
+    paras.append(f"**The record**, `{RECORD_NAME}`, attached, holds the rest: what the "
+                 "table closed, the run's events, and every entry struck.")
+    return [_prose(p.split("\n")) for p in paras]
+
+
+def _document(store: dict, slice_dir: Path | str) -> dict | None:
+    """The close-out as an asks.py store, rendered to close-out.md: one ask
+    per entry that comes to the operator, is a card request, or waits for a
+    wrap-up that did not reach it or for labels nobody gave — None when
+    there is none."""
+    vmap = _verification(slice_dir)
+    entries, present = [], []
+    for place, items in _placed(store, slice_dir, live_only=True):
+        if place not in ASKED or not items:
+            continue
+        present.append(place)
+        entries += [_ask(entry, place, key, words, vmap) for entry, key, words in items]
+    if not entries:
+        return None
+    num, name = _slice_name(store)
+    doc: dict = {"title": f"Close-out of slice {num} — {name}" if name
+                 else f"Close-out of slice {num}"}
+    if len(entries) > 1:
+        doc["summary"] = store.get("summary") or (
+            f"Slice {num}'s close-out: " + _join([SUMMARY_WORDS[p] for p in present]))
+    if store.get("step"):
+        doc["step"] = store["step"]
+    doc["context"] = _context(store, slice_dir)
+    doc["entries"] = entries
+    return doc
+
+
+def _record(store: dict, slice_dir: Path | str) -> str:
+    """close-out-record.md, the record attached to the document: the run
+    header; what the operator ruled and what was done on it; what is asked
+    and open; what the table closed, with its ground; and the record — the
+    run's events, then every entry struck."""
+    num, name = _slice_name(store)
+    out = [f"# Close-out record — slice {num} {name}".rstrip(), "",
+           *_wrap(_header(slice_dir))]
+    closed = store.get("closed")
+    if closed:
+        said = closed.get("words") or (f"by {closed['by']}" if closed.get("by") else "")
+        out += ["", *_wrap(f"Closed: {closed['date']}" + (f" — {_collapse(said)}"
+                                                         if said else ""))]
+    placed = dict(_placed(store, slice_dir))
+    ruled = sorted((e for e in store["entries"] if _ruled(e)), key=_id_key)
+    asked = [(e, w) for place in ASKED for e, _, w in placed[place] if not _ruled(e)]
+    sections = dict(zip(RECORD_SECTIONS, (
+        [_render_entry(e, "ruled", None) for e in ruled],
+        [_render_entry(e, "record", None) for e, _ in asked],
+        [_render_entry(e, "closed", w) for e, _, w in placed["Closed"]],
+        [_render_entry(e, "record", None) for e, _, _ in placed["Record"] if not _ruled(e)],
+    ), strict=True))
+    for title, blocks in sections.items():
+        if blocks:
+            out += ["", f"## {title}"]
+            for block in blocks:
+                out += ["", block]
+    return "\n".join(out) + "\n"
 
 
 def show_view(slice_dir: Path | str, ids: list[str] | None = None) -> str:
-    """Entries in full — body, every note, Proposal, Consequence, Triage,
-    Provenance, Route, Disposition: what the report cuts short, for the
-    wrap-up, the close-out session and a card filing to read. The
-    named ids in the order given, struck ones too; without ids every live
-    entry, under its section's `## ` line, in the report's order."""
+    """Entries in full — body, every note, Proposal, the options, check and
+    due, Consequence, Triage, Provenance, Route, the ruling: what the
+    document and the record cut short, for the wrap-up, the continuation
+    and a card filing to read. The named ids in the order given, struck ones
+    too; without ids every live entry, under its place's `## ` line."""
     store = _read_store(slice_dir)
     if ids:
         touched, stages = touched_repos(slice_dir), slice_stages(slice_dir)
@@ -2929,11 +2657,11 @@ def show_view(slice_dir: Path | str, ids: list[str] | None = None) -> str:
         return "\n\n".join(_render_entry(e, "full", route(e, touched, stages)[1])
                             for e in entries)
     out: list[str] = []
-    for section, items in _placed(store, slice_dir, live_only=True):
+    for place, items in _placed(store, slice_dir, live_only=True):
         if not items:
             continue
-        out.append(f"## {section}")
-        out += [_render_entry(entry, "full", words) for entry, words in items]
+        out.append(f"## {place}")
+        out += [_render_entry(entry, "full", words) for entry, _, words in items]
     return "\n\n".join(out) or "no live entries"
 
 
@@ -3011,8 +2739,8 @@ def fold_entry(slice_dir: Path | str, eid: str, into: str | None = None,
         stages = slice_stages(here) or {}
         if folder is None and number not in stages:
             raise ReportError(f"{named}: slice {str(number).zfill(_for_width(stages))} is "
-                              "not created yet — the entry is held for it, and "
-                              "/dev:triage folds it when it creates that slice")
+                              "not created yet — the entry comes to the operator, "
+                              "to hold for that slice")
         if folder is None:
             raise ReportError(f"{named}: no other slice still to run has that number "
                               "(a <number>_* folder in slices/ or slices/backlog/)")
@@ -3064,142 +2792,10 @@ def fold_entry(slice_dir: Path | str, eid: str, into: str | None = None,
     return f"folded {eid} into {rel} (staged) — commit it, then: {strike}"
 
 
-# -- held: what waits for a slice triage has not created --------------------------
 
-def _slices_root_of(path: Path | str) -> Path | None:
-    """The `slices` directory a `held` path names: the spec repo, its
-    `slices/`, or a folder or file anywhere inside it."""
-    here = Path(path).resolve()
-    if here.suffix in (".md", ".json") or here.is_file():
-        here = here.parent
-    if here.name == "slices":
-        return here
-    if (here / "slices").is_dir():
-        return here / "slices"
-    return _slices_root(here)
-
-
-def held_entries(path: Path | str, for_: str | None = None) -> list[str]:
-    """One line per live entry of every store under the `slices` root
-    `path` names, at any depth, whose `for` names slice `for_` — created or
-    not; or, without `for_`, a slice no folder holds: held for a slice
-    triage has not created. `<report> <id> for <slice> — <headline>`, the
-    report's path relative to the spec repo, the reports in path order and
-    each one's entries in order of arrival; a store that cannot be read is
-    a line that says so. Read-only."""
-    root = _slices_root_of(path)
-    if root is None:
-        raise ReportError(f"{path} is in no spec repo: no `slices` directory at it or "
-                          "above it")
-    number = None
-    if for_ is not None:
-        number = _slice_number(_collapse(for_))
-        if number is None:
-            raise ReportError(f"--for {for_} names no slice — a slice is named by its "
-                              "number: 12, 012 or 012_slug")
-    folders = {int(_FOLDER_RE.match(f.name).group(1)) for f in _slice_folders(root)}
-    spec = root.parent
-    out: list[str] = []
-    for found in sorted(root.rglob(STORE_NAME)):
-        if any(part.startswith(".") for part in found.relative_to(root).parts):
-            continue
-        report = (found.parent / REPORT_NAME).relative_to(spec)
-        try:
-            store = json.loads(found.read_text(encoding="utf-8"))
-            entries = store["entries"]
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError):
-            out.append(f"{found.relative_to(spec)}: not a close-out store — skipped")
-            continue
-        for entry in entries:
-            if not isinstance(entry, dict) or entry.get("strike"):
-                continue
-            target = (entry.get("labels") or {}).get("for")
-            n = _slice_number(target) if target else None
-            if n is None or (n != number if number is not None else n in folders):
-                continue
-            out.append(f"{report} {entry['id']} for {target} — "
-                       f"{_collapse(entry.get('headline'))}")
-    return out
-
-
-def held_view(path: Path | str, for_: str | None = None) -> str:
-    lines = held_entries(path, for_)
-    if lines:
-        return "\n".join(lines)
-    return "nothing is held" + (f" for slice {_collapse(for_)}" if for_ else "")
-
-
-def _read_back(store: dict, text: str | None) -> list[tuple[str, str]]:
-    """Take into the store every `Disposition:` line of close-out.md (`text`,
-    None when there is none) that differs from what the store would render
-    there: the text is the operator's (`ruling.words`) — where it ends in
-    ` — <did>` as the store has it, the words are what stands before that.
-    The operator's own line replaces the words it held, the old kept in a
-    note. Returns (id, words) per entry taken; changes `store` in place."""
-    if text is None:
-        return []
-    found = _dispositions(text)
-    by_id = {e["id"]: e for e in store["entries"]}
-    taken: list[tuple[str, str]] = []
-    day = _today()
-    for eid, written in found.items():
-        entry = by_id.get(eid)
-        said = _collapse(written)
-        if entry is None or not said or said == _collapse(_disposition(entry)):
-            continue
-        ruling = entry.get("ruling") or {}
-        did = ruling.get("did")
-        words = written.strip()
-        if did and said.endswith(" — " + _collapse(did)):
-            words = said[:-len(" — " + _collapse(did))].strip()
-        if _collapse(words) == _collapse(ruling.get("words")):
-            continue
-        _rule(entry, words, None, None, day, mode="replace")
-        taken.append((eid, words))
-    return taken
-
-
-def _dispositions(text: str) -> dict[str, str]:
-    """Id → the text after an entry's last `Disposition:` label, up to the
-    end of the entry (the next heading, or — in a report rendered before
-    0.9.70, read back before its first re-render — the `</details>` of a
-    fold), read off headings outside fences and comments."""
-    out: dict[str, str] = {}
-    current: str | None = None
-    collected: list[str] | None = None
-
-    def close() -> None:
-        if current and collected is not None:
-            out[current] = "\n".join(collected).strip()
-
-    for line, what in _scan(text, kinds=True):
-        hidden = what is not None
-        if not hidden and (line.startswith("## ") or _ANY_HEADING_RE.match(line)):
-            close()
-            m = _ENTRY_RE.match(line)
-            current = f"{m.group('letter')}{m.group('num')}" if m else None
-            collected = None
-            continue
-        if current is None:
-            continue
-        if not hidden and _LABEL_LINE_RES["Disposition"].match(line):
-            collected = [_LABEL_LINE_RES["Disposition"].sub("", line, count=1)]
-            continue
-        if collected is not None:
-            if not hidden and line.strip() == FOLD_CLOSE:
-                close()
-                collected = None
-                continue
-            if what != "comment":   # a report's charter comment is nobody's words
-                collected.append(line)
-    close()
-    return out
-
-
-def _write_report(slice_dir: Path | str, text: str) -> None:
-    """Write close-out.md as `text`, left alone when it already holds those
-    bytes. Called under the lock."""
-    path = report_path(slice_dir)
+def _write_if_changed(path: Path, text: str) -> None:
+    """Write `text`, left alone when the file already holds those bytes.
+    Called under the lock."""
     try:
         old = path.read_text(encoding="utf-8")
     except OSError:
@@ -3208,30 +2804,70 @@ def _write_report(slice_dir: Path | str, text: str) -> None:
         _write_atomic(path, text)
 
 
-def _rendered(slice_dir: Path | str) -> dict:
-    """A write with no change of its own: the read-back, and close-out.md
-    rendered even when the store stays as it was. Returns the receipt."""
-    receipt: dict = {}
-    with _writing(slice_dir, receipt):
-        pass
-    return receipt
+def record_path(slice_dir: Path | str) -> Path:
+    return Path(slice_dir) / RECORD_NAME
 
 
-def read_back(slice_dir: Path | str) -> list[tuple[str, str]]:
-    """`rule` without an id: the `Disposition:` lines of close-out.md into
-    the store, and close-out.md rendered from it. (id, words) per entry
-    taken."""
-    return _rendered(slice_dir)["taken"]
+def _answered(path: Path) -> list[str]:
+    """The ids of the blocks of a close-out.md that carry answer lines: one
+    Pilot wrote back, which is never rendered over. None of them in a file
+    that is missing or is no document Pilot reads."""
+    try:
+        blocks = asks.read_back(path.read_text(encoding="utf-8"))
+    except (OSError, asks.AskError):
+        return []
+    return [bid for bid, block in blocks.items() if block["lines"]]
 
 
-def render_report(slice_dir: Path | str) -> str:
-    """Read the `Disposition:` lines back, then write close-out.md from the
-    store, under the store's lock — whether or not the store changed, so a
-    report that is missing or lags the run header is written; the same bytes
-    when nothing changed. Returns a one-line tally of the sections
+def render_report(slice_dir: Path | str, *, step: str | None = None,
+                  summary: str | None = None,
+                  context: list[str] | None = None) -> str:
+    """Write the record, close-out-record.md, and the document,
+    close-out.md, through asks.py (`_document`): the asks, or — with none —
+    no document, an unanswered one left from an earlier render removed. A
+    document Pilot wrote back, its answers in it, is never rendered over:
+    the record alone is written. `step`, `summary` and `context` set the
+    document's own fields in the store, for this render and every later
+    one; an empty one removes it. A ReportError names the entries Pilot
+    would refuse, the record written. Returns a line saying what was
     written."""
-    tally = _rendered(slice_dir)["tally"]
-    return " · ".join(f"{name} {n}" for name, n in tally.items()) or "no entries"
+    with _locked(slice_dir):
+        store = _load(slice_dir)
+        before = _dump(store)
+        for key, value in (("step", step), ("summary", summary)):
+            if value is not None:
+                if _collapse(value):
+                    store[key] = _collapse(value)
+                else:
+                    store.pop(key, None)
+        if context is not None:
+            paragraphs = [c.strip() for c in context if c.strip()]
+            if paragraphs:
+                store["context"] = paragraphs
+            else:
+                store.pop("context", None)
+        store.pop("rendered", None)
+        if _dump(store) != before:
+            _save(slice_dir, store)
+        _write_if_changed(record_path(slice_dir), _record(store, slice_dir))
+        report = report_path(slice_dir)
+        answered = _answered(report)
+        if answered:
+            return (f"{RECORD_NAME} written; {REPORT_NAME} left as Pilot wrote it back "
+                    f"(answers on {', '.join(answered)}): `absorb` reads it")
+        doc = _document(store, slice_dir)
+        if doc is None:
+            if report.exists():
+                report.unlink()
+            return f"{RECORD_NAME} written; nothing to ask, so no {REPORT_NAME}"
+        try:
+            text = asks.render(doc)
+        except asks.AskError as e:
+            raise ReportError(f"{REPORT_NAME} cannot be rendered: {e}\nCorrect each entry "
+                              "it names (`amend`), then render again.") from None
+        _write_if_changed(report, text)
+        return (f"{RECORD_NAME} and {REPORT_NAME} written: "
+                f"{_plural(len(doc['entries']), 'ask')}")
 
 
 # -- the run header ------------------------------------------------------------
@@ -3324,235 +2960,34 @@ def stamp_header(slice_dir: Path | str) -> str:
     return run_header(state, slice_dir)
 
 
-# -- import: the old Markdown report -------------------------------------------
 
-def _scan(text: str, kinds: bool = False):
-    """(line, hidden) for every line: hidden inside a fenced code block or
-    an HTML comment — with `kinds`, what hides it (`fence`, `comment`, or
-    None). A comment runs from a line it opens to the line holding its
-    `-->`; a fence opened inside a comment, or a comment inside a fence, is
-    text."""
-    fenced = commented = False
-    for line in text.split("\n"):
-        hidden = "fence"
-        if commented:
-            commented = "-->" not in line
-            hidden = "comment"
-        elif _FENCE_RE.match(line):
-            fenced = not fenced
-        elif fenced:
-            pass
-        elif _COMMENT_OPEN_RE.match(line):
-            commented = "-->" not in line
-            hidden = "comment"
-        else:
-            hidden = None
-        yield line, (hidden if kinds else hidden is not None)
-
-
-def _unfenced_lines(text: str):
-    """(offset, line) for every line outside a fenced code block and outside
-    an HTML comment — the only lines a heading can stand on."""
-    offset = 0
-    for line, hidden in _scan(text):
-        if not hidden:
-            yield offset, line
-        offset += len(line) + 1
-
-
-def _sections(text: str) -> list[tuple[str, int, int, int]]:
-    """(name, heading_start, body_start, body_end) per `## ` heading; the
-    body runs to the next `## ` heading or the end of the file."""
-    heads = []
-    for offset, line in _unfenced_lines(text):
-        m = _SECTION_RE.match(line)
-        if m:
-            heads.append((m.group("name"), offset, offset + len(line)))
-    out = []
-    for i, (name, head, body_start) in enumerate(heads):
-        end = heads[i + 1][1] if i + 1 < len(heads) else len(text)
-        out.append((name, head, body_start, end))
-    return out
-
-
-def _blocks(body: str) -> list[tuple[str, str]]:
-    """(heading, the text under it) per unfenced `###` heading of one
-    section body, in file order."""
-    heads = [(off, line) for off, line in _unfenced_lines(body)
-             if _ANY_HEADING_RE.match(line)]
-    out = []
-    for i, (off, line) in enumerate(heads):
-        nxt = heads[i + 1][0] if i + 1 < len(heads) else len(body)
-        out.append((line, body[off + len(line):nxt]))
-    return out
-
-
-def _split_grade(text: str) -> tuple[str, str | None]:
-    stem, sep, grade = text.rpartition(" · ")
-    if sep and grade.strip().lower() in SEVERITIES:
-        return stem.strip(), grade.strip().lower()
-    return text.strip(), None
-
-
-def _parse_heading(heading: str, letter: str) -> dict:
-    """An old heading as (id, headline, grade, strike): `### B3 — <headline>
-    · <grade>`, or the struck `### ~~B3 — <headline>~~ — <reason>; struck by
-    <who>`. A heading not in that shape, or under another section's letter,
-    has no id."""
-    m = _ENTRY_RE.match(heading)
-    if m is None or m.group("letter") != letter:
-        return {"id": None, "headline": _collapse(heading[4:]), "grade": None,
-                "strike": None}
-    rest = heading[m.end():]
-    strike = None
-    if m.group(1):
-        inside, _, tail = rest.partition("~~")
-        rest = inside
-        reason = re.sub(r"^\s*—\s*", "", tail).strip()
-        by = None
-        stem, sep, who = reason.rpartition("; struck by ")
-        if sep:
-            reason, by = stem.strip(), _collapse(who)
-        strike = {"reason": _collapse(reason) or "struck", "by": by or None,
-                  "date": None, "commit": None}
-    headline, grade = _split_grade(_collapse(re.sub(r"^\s*—", "", rest)))
-    return {"id": f"{letter}{m.group('num')}", "headline": headline,
-            "grade": grade, "strike": strike}
-
-
-def _take_label(lines: list[str], hidden: list[bool], label: str
-                ) -> tuple[str | None, list[int]]:
-    """The first unfenced paragraph opening with `label:` — its text,
-    collapsed, and the line numbers it spans."""
-    pattern = _LABEL_LINE_RES[label]
-    for i, line in enumerate(lines):
-        if hidden[i] or not pattern.match(line):
-            continue
-        span = [i]
-        para = [pattern.sub("", line, count=1)]
-        j = i + 1
-        while (j < len(lines) and lines[j].strip() and not hidden[j]
-               and not _ANY_LABEL_LINE_RE.match(lines[j])
-               and not _ANY_HEADING_RE.match(lines[j])
-               and lines[j].strip() != FOLD_CLOSE):
-            para.append(lines[j])
-            span.append(j)
-            j += 1
-        return "\n".join(para).strip(), span
-    return None, []
-
-
-def _parse_block(text: str) -> dict:
-    """The body of one old block — its label lines and the fold taken off,
-    nothing else lost — and the three labels."""
-    lines = text.strip("\n").split("\n") if text.strip() else []
-    hidden = [h for _, h in _scan("\n".join(lines))]
-    drop: set[int] = set()
-    # The old render's fold: its opening line, and the last `</details>`.
-    opens = [i for i, line in enumerate(lines)
-             if not hidden[i] and line.strip() == OLD_FOLD_OPEN]
-    if opens:
-        drop.add(opens[0])
-        closes = [i for i, line in enumerate(lines)
-                  if not hidden[i] and line.strip() == FOLD_CLOSE and i > opens[0]]
-        if closes:
-            drop.add(closes[-1])
-    found: dict[str, str | None] = {}
-    for label in ("Consequence", "Provenance", "Disposition"):
-        value, span = _take_label(lines, hidden, label)
-        found[label] = value
-        drop.update(span)
-    body: list[str] = []
-    for i, line in enumerate(lines):
-        if i in drop:
-            continue
-        # Squeeze the blank lines a removed line leaves behind.
-        if not line.strip() and (not body or not body[-1].strip()):
-            continue
-        body.append(line.rstrip())
-    while body and not body[-1].strip():
-        body.pop()
-    return {"body": body, "consequence": found["Consequence"],
-            "provenance": found["Provenance"], "disposition": found["Disposition"]}
-
-
-def _import(slice_dir: Path | str) -> dict:
-    """A store from a close-out.md of the old shape. Every entry keeps its
-    id and carries the section it stood under; the kind is the section's —
-    with the tool's labels for an action, an event or a decision, none for
-    a Bugs or Suggestions entry, which stays unlabelled until the wrap-up
-    labels it. A `###` heading not in the entry shape becomes an entry with
-    the next id under its section's letter. The head, the Summary, the
-    sections' `Focus:` lines and charters are kept under `imported`, not
-    rendered."""
-    text = report_path(slice_dir).read_text(encoding="utf-8")
-    store = _new_store(slice_dir)
-    sections = _sections(text)
-    imported: dict[str, list[str]] = {}
-    head = _lines(text[:sections[0][1]] if sections else text)
-    if head:
-        imported["head"] = head
-    pending: list[tuple[str, str, dict, dict]] = []
-    taken: dict[str, set[int]] = {}
-    for name, _, start, end in sections:
-        body = text[start:end]
-        if name not in SECTIONS:
-            kept = _lines(body)
-            if kept:
-                imported[name] = kept
-            continue
-        letter = SECTION_LETTERS[name]
-        blocks = _blocks(body)
-        first = next((off for off, line in _unfenced_lines(body)
-                      if _ANY_HEADING_RE.match(line)), len(body))
-        preamble = _lines(body[:first])
-        if preamble:
-            imported[name] = preamble
-        for heading, rest in blocks:
-            parsed = _parse_heading(heading, letter)
-            if parsed["id"]:
-                num = int(parsed["id"][1:])
-                if num in taken.setdefault(letter, set()):
-                    parsed["id"] = None     # a duplicate id: a fresh one below
-                    parsed["headline"] = _collapse(heading[4:])
-                    parsed["strike"] = None
-                    parsed["grade"] = None
-                else:
-                    taken[letter].add(num)
-            pending.append((name, letter, parsed, _parse_block(rest)))
-    for name, letter, parsed, block in pending:
-        eid = parsed["id"]
-        if eid is None:
-            num = max(taken.get(letter) or {0}) + 1
-            taken.setdefault(letter, set()).add(num)
-            eid = f"{letter}{num}"
-        kind = SECTIONS[name]
-        entry = _entry(eid, kind, parsed["headline"], block["body"],
-                       block["consequence"], block["provenance"], parsed["grade"],
-                       tool_labels(kind, block["consequence"]))
-        entry = {"id": entry.pop("id"), "kind": entry.pop("kind"), "section": name,
-                 **entry}
-        entry["strike"] = parsed["strike"]
-        if block["disposition"]:
-            entry["ruling"] = {"words": block["disposition"], "did": None,
-                               "date": None}
-        store["entries"].append(entry)
-    if imported:
-        store["imported"] = imported
-    return store
-
-
-def import_report(slice_dir: Path | str) -> int:
-    """`import`: read close-out.md into a new store; refused when a store
-    exists. Returns the number of entries."""
-    with _locked(slice_dir):
-        if store_path(slice_dir).exists():
-            raise ReportError(f"{store_path(slice_dir)} exists — import reads a "
-                              "report into a new store only")
-        if not report_path(slice_dir).exists():
-            raise ReportError(f"{report_path(slice_dir)} does not exist — "
-                              "nothing to import")
-        return len(_load(slice_dir)["entries"])
+def author_problems(entry: dict) -> list[str]:
+    """What an author owes by the entry's kind, beyond its labels: an action
+    and an improvement their proposal; a decision its options, two or more,
+    and the one it would recommend, in place of a proposal; an improvement
+    whose headline is a question is a decision; and the block's fields as
+    their kinds take them (`_ask_problems`)."""
+    kind = entry.get("kind") or ""
+    article = f"a{'n' if kind[:1] in 'aeiou' else ''}"
+    found: list[str] = []
+    if kind in PROPOSAL_KINDS and not _collapse(entry.get("proposal")):
+        found.append(f"{article} {kind} needs --proposal: {PROPOSAL_HELP}")
+    if kind == "decision":
+        if not entry.get("options"):
+            found.append("a decision needs its --option lines, two or more — the label, "
+                         "then a line saying what it costs — and the one it would "
+                         "--recommend")
+        elif not entry.get("recommend"):
+            found.append("a decision needs --recommend: the label of the option you "
+                         "would pick")
+        if _collapse(entry.get("proposal")):
+            found.append("a decision takes no --proposal: what you would pick is its "
+                         "--recommend, and why goes in that option's line or the body")
+    if kind == "improvement" and _collapse(entry.get("headline")).endswith("?"):
+        found.append("a question in an improvement's headline makes it a decision: "
+                     "append it as --kind decision, with its --option lines and the one "
+                     "it would --recommend")
+    return found + _ask_problems(entry)
 
 
 # -- CLI --------------------------------------------------------------------
@@ -3563,9 +2998,8 @@ def _label_value(value: str) -> str:
     return re.sub(r"[\s_]+", "-", value.strip().lower())
 
 
-# The help strings are prompt text: `verb_usage("append", "note",
-# "strike", "unnote", "unstrike")` is rendered into every dispatch, and
-# `relabel`'s into those that offer it.
+# The help strings are prompt text: `verb_usage("append", "note", "strike")`
+# is rendered into every dispatch, and `relabel`'s into those that offer it.
 LABEL_HELP = {
     "trigger": "what has to happen for the problem to show",
     "impact": "what is then experienced",
@@ -3575,10 +3009,11 @@ LABEL_HELP = {
             "authentication or secrets",
     "repo": "the repository the fix lives in, by its directory name",
     "for": "the number of another slice that should take the entry — one still "
-           "to run, or one the plan names that triage has not created yet, which "
-           "holds the entry until it does — never the slice being run; leave it "
-           "out for an entry about this one. One already planned or running "
-           "brings the entry to the operator, since that run never reads slice.md",
+           "to run, or one the plan names that triage has not created yet, for "
+           "which the operator is asked to hold it — never the slice being run; "
+           "leave it out for an entry about this one. One already planned or "
+           "running brings the entry to the operator, since that run never reads "
+           "slice.md",
     "benefit": "improvement: who is better off",
     "felt": "improvement: when that is felt",
     "change": "improvement: whether it removes, adjusts or adds",
@@ -3611,6 +3046,33 @@ def _labels_from(args) -> dict:
             if getattr(args, f"label_{label.replace('-', '_')}", None) is not None}
 
 
+def _add_ask_args(p: argparse.ArgumentParser) -> None:
+    """The block's flags, `append`'s and `amend`'s: one definition each."""
+    p.add_argument("--option", action="append", nargs="+", metavar=("LABEL", "LINE"),
+                   help="a decision's option, or an answer an action asks for: the "
+                        "label, then one line saying what it is or costs; repeat it "
+                        "for each — a decision puts two or more")
+    p.add_argument("--recommend", metavar="LABEL",
+                   help="a decision: the label of the option you would pick — required "
+                        "for a decision, in place of --proposal")
+    p.add_argument("--check", help="an action: what shows that it was done, where a "
+                                   "command or a file can")
+    p.add_argument("--due", choices=DUES, type=_label_value,
+                   help="what must not happen before the entry is dealt with: the "
+                        "phase's merge, the test phase, the push, or the report's "
+                        "close")
+
+
+def _options_from(args) -> list | None:
+    if args.option is None:
+        return None
+    for tokens in args.option:
+        if len(tokens) > 2:
+            raise ReportError(f"--option takes a label and one line, not {len(tokens)} "
+                              f"words: quote each — {tokens!r}")
+    return [tuple(tokens) for tokens in args.option]
+
+
 def build_parser() -> tuple[argparse.ArgumentParser,
                             dict[str, argparse.ArgumentParser]]:
     """The CLI, plus its verbs by name — the second is what `verb_usage`
@@ -3634,7 +3096,7 @@ def build_parser() -> tuple[argparse.ArgumentParser,
             p.add_argument("id", metavar="<id>", help=id_help)
         return p
 
-    verb("init", "create the store and render it, if absent")
+    verb("init", "create the store, if absent")
 
     sub.add_parser("labels", help="print what each label means")
 
@@ -3648,8 +3110,8 @@ def build_parser() -> tuple[argparse.ArgumentParser,
                         "or none — the line the operator triages on")
     proposal_help = (f"{PROPOSAL_HELP}, in a ruling's words (card · fix now · "
                      "fold into <slice> · close · do it) — the operator reads it "
-                     "with the headline and the Consequence and nothing else; "
-                     "required for an action, a decision and an improvement")
+                     "with the headline and the Consequence; required for an "
+                     "action and an improvement, refused on a decision")
     provenance_help = ("witnessed | read, then role, phase, round, and the artifact "
                        "with the full record")
     severity_help = "the grade, where the entry has one"
@@ -3663,11 +3125,9 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p.add_argument("--body", required=True, help=body_help)
     p.add_argument("--consequence", required=True, help=consequence_help)
     p.add_argument("--proposal", help=proposal_help)
+    _add_ask_args(p)
     p.add_argument("--provenance", help=provenance_help)
-    p.add_argument("--by",
-                   help="who appends — role, phase and round; an entry appended with "
-                        "--by can be corrected with amend until it is committed, one "
-                        "without it cannot")
+    p.add_argument("--by", help="who appends — role, phase and round")
     p.add_argument("--severity", choices=SEVERITIES, type=_label_value, help=severity_help)
     _add_label_args(p)
     # `--kind` is required unless the suppressed `--section` stands in for
@@ -3681,6 +3141,9 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p = verb("note", "add a dated paragraph to one entry", entry=True)
     p.add_argument("--by", required=True, help="who notes — role and round")
     p.add_argument("--text", required=True, help="the note, or - for stdin")
+    p.add_argument("--left", action="store_true",
+                   help="the wrap-up: you looked at the entry and changed nothing — "
+                        "the note says why, and is the entry's mark")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
     p = verb("strike", "strike one live entry; prints its heading", entry=True)
@@ -3690,23 +3153,14 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p.add_argument("--commit", help="the commit that resolved the entry")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
-    p = verb("unnote", "withdraw the latest note you wrote with note or relabel, "
-                       "not yet committed", entry=True)
-    p.add_argument("--by", required=True,
-                   help="the --by the note was written with — a relabel's labels "
-                        "go back with it")
-
-    p = verb("unstrike", "withdraw a strike you made, not yet committed; prints "
-                         "the entry's heading", entry=True)
-    p.add_argument("--by", required=True, help="the --by the strike was made with")
-
-    p = verb("amend", "correct an entry you appended with --by, not yet committed: each "
-                      "field given replaces the entry's; prints its heading", entry=True)
-    p.add_argument("--by", required=True, help="the --by the entry was appended with")
+    p = verb("amend", "correct a live entry: each field given replaces the entry's; "
+                      "prints its heading", entry=True)
+    p.add_argument("--by", help="who wrote the entry, in place of who appended it")
     p.add_argument("--headline", help=headline_help)
     p.add_argument("--body", help=body_help)
     p.add_argument("--consequence", help=consequence_help)
     p.add_argument("--proposal", help=proposal_help)
+    _add_ask_args(p)
     p.add_argument("--provenance", help=provenance_help)
     p.add_argument("--severity", choices=SEVERITIES, type=_label_value, help=severity_help)
     _add_label_args(p, relabel=True)
@@ -3727,37 +3181,15 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p.add_argument("--by", required=True, help="who proposes")
     p.add_argument("--text", required=True,
                    help="what you would do about it and why, or - for stdin")
+    mark = p.add_mutually_exclusive_group()
+    mark.add_argument("--card", dest="mark", action="store_const", const="card",
+                      help="the wrap-up asks for a card: how the problem is reached and "
+                           "what the fix takes; the entry becomes a card request")
+    mark.add_argument("--word", dest="mark", action="store_const", const="word",
+                      help="the wrap-up asks for the operator's word on an edit a rule of "
+                           "the project reserves for them: the exact edit and the rule; "
+                           "the entry comes to them")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
-
-    p = verb("unpropose", "withdraw a proposal you set with propose, not yet committed; "
-                          "the one it replaced comes back", entry=True)
-    p.add_argument("--by", required=True, help="the --by the proposal was set with")
-
-    p = verb("request-card", "the wrap-up asks for a card on an entry", entry=True)
-    p.add_argument("--by", required=True, help="who asks")
-    p.add_argument("--text", required=True,
-                   help="how it is reached and what the fix takes — it becomes the "
-                        "entry's proposal; or - for stdin")
-    p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
-
-    p = verb("request-word", "the wrap-up hands the operator an entry whose edit a rule "
-                             "reserves for their word", entry=True)
-    p.add_argument("--by", required=True, help="who asks")
-    p.add_argument("--text", required=True,
-                   help="the exact edit you would make, and the rule that reserves it for "
-                        "the operator's word — it becomes the entry's proposal; or - for "
-                        "stdin")
-    p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
-
-    p = verb("leave", "the wrap-up looked at an entry and changed nothing", entry=True)
-    p.add_argument("--by", required=True, help="who looked")
-    p.add_argument("--text", required=True, help="why it stays, or - for stdin")
-    p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
-
-    p = verb("unmark", "withdraw the wrap-up mark you made on an entry, not yet "
-                       "committed; the mark and the proposal it replaced come back",
-             entry=True)
-    p.add_argument("--by", required=True, help="the --by the mark was made with")
 
     p = verb("fold", "append an entry verbatim to the slice.md of the slice still "
                      "unplanned it is for, and stage it; prints the strike that follows "
@@ -3768,44 +3200,33 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p.add_argument("--date", help="YYYY-MM-DD, the date the fold's first line "
                                   "carries; today when omitted")
 
-    p = sub.add_parser("held", help="the live entries of every report in the spec repo "
-                                    "held for a slice triage has not created; with "
-                                    "--for, those for one slice, created or not")
-    p.add_argument("path", metavar="<path>",
-                   help="the spec repo, its slices/ directory, or a slice directory or "
-                        "report in it")
-    p.add_argument("--for", dest="for_", metavar="SLICE",
-                   help="the slice, by its number (12, 012 or 012_slug): list the live "
-                        "entries whose for names it")
-
     verb("worklist", "what waits for the wrap-up, with what is asked of each")
 
-    p = verb("show", "one or more entries in full — body, notes, labels, marks; "
-                     "without an id, every live entry")
+    p = verb("show", "one or more entries in full — body, notes, labels, marks, the "
+                     "ruling; without an id, every live entry")
     p.add_argument("ids", nargs="*", metavar="<id>", help=id_help)
 
-    p = verb("rule", "the operator's words on an entry; without an id, read the "
-                     "Disposition lines back")
-    p.add_argument("id", nargs="?", metavar="<id>", help=id_help)
-    p.add_argument("--words",
-                   help="the operator's words, verbatim — refused on an entry that "
-                        "holds other words, unless --append or --replace says what "
-                        "becomes of them")
-    mode = p.add_mutually_exclusive_group()
-    mode.add_argument("--append", dest="mode", action="store_const", const="append",
-                      help="add --words after the words the entry holds, joined with "
-                           "`; ` — what the operator said in the session about an "
-                           "entry they had ruled on already")
-    mode.add_argument("--replace", dest="mode", action="store_const", const="replace",
-                      help="put --words in place of the words the entry holds, the "
-                           "old ones kept in a note — only when the operator says so")
-    p.add_argument("--did", help="what was done on them — strikes the entry")
-    p.add_argument("--commit", help="the commit of what was done")
+    p = verb("render", "write close-out-record.md, and close-out.md — the document "
+                       "Pilot reads — unless Pilot wrote it back")
+    p.add_argument("--step", help="the plan task the brief names, as the document's "
+                                  "`step`; kept for every later render")
+    p.add_argument("--summary", help="what the document is about, in one line; kept")
+    p.add_argument("--context", action="append", metavar="PARAGRAPH",
+                   help="a paragraph the asks share, before the run's own — the slice "
+                        "in two lines; repeat it for each; kept")
+    verb("stamp", "render, printing the run header from state.json")
+
+    p = verb("absorb", "read close-out.md, as Pilot wrote it back, into the store: each "
+                       "block's answer lines into its entry's ruling")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
-    verb("unrule", "withdraw the operator's words and the did that rule recorded on an "
-                   "entry, not yet committed; the words a --replace kept in its note come "
-                   "back, or else the committed ones, or none; leaves no note", entry=True)
+    p = verb("rule", "record what was done on an entry's ruling — strikes the entry",
+             entry=True)
+    p.add_argument("--did", required=True,
+                   help="what was done: carded as <card>, fixed in <commit>, folded "
+                        "into <slice>, closed")
+    p.add_argument("--commit", help="the commit of what was done")
+    p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
     p = verb("settle", "settle a criterion owed after an operator's action — writes its "
                        "verdict into verification.json and strikes the action that waited "
@@ -3824,20 +3245,13 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p.add_argument("--by", help="who settles — signs the strike, and the note on a push "
                                 "hold's action that still waits on another criterion")
 
-    p = verb("close", "close the report on the operator's word")
-    p.add_argument("--words", required=True, help="the operator's words, verbatim")
+    p = verb("close", "close the report once its answers are carried out: every live "
+                      "entry struck, but one whose ruling nobody carried out")
+    p.add_argument("--by", help="who closes")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
-    verb("render", "read close-out.md's Disposition lines back into the store — a hand edit "
-                   "of close-out.json they contradict is undone — then write close-out.md")
-    verb("stamp", "render, printing the run header from state.json")
-    verb("counts", "live entries per section and per id letter, one line")
-    verb("import", "read a close-out.md of the old shape into a new store")
-    for name, p in sub.choices.items():
-        if name in WRITING_VERBS:
-            # Never in a dispatch's verb block (`verb_usage`): a role the
-            # run loop dispatched does not overwrite an edit.
-            p.add_argument("--overwrite", action="store_true", help=OVERWRITE_HELP)
+    verb("counts", "live entries per place and per id letter, one line")
+    for p in sub.choices.values():
         _positionals_first(p)
     return parser, sub.choices
 
@@ -3873,14 +3287,15 @@ def verb_usage(*verbs: str) -> str:
     for verb in verbs:
         sub = subs[verb]
         usage = " ".join(sub.format_usage().removeprefix("usage:").split())
-        out.append(usage.replace(" [-h]", "").replace(" [--overwrite]", ""))
+        out.append(usage.replace(" [-h]", ""))
         for action in sub._actions:
-            # `slice` is the report path the dispatch line already names;
-            # `--overwrite` is never a dispatched role's to pass
-            if action.dest in ("help", "slice", "overwrite") or not action.help \
+            # `slice` is the report path the dispatch line already names
+            if action.dest in ("help", "slice") or not action.help \
                     or action.help == argparse.SUPPRESS:
                 continue
             name = ", ".join(action.option_strings) or action.metavar or action.dest
+            if isinstance(name, tuple):
+                name = " ".join(name)
             out.append(f"    {name}: {action.help}")
     return "\n".join(out)
 
@@ -3915,55 +3330,36 @@ def _append_cli(slice_dir: Path, args) -> str:
     else:
         raise ReportError("append needs --kind")
     labels = _labels_from(args)
+    options = _options_from(args)
+    candidate = {"kind": kind, "headline": args.headline, "proposal": args.proposal}
+    _set_ask_fields(candidate, options, args.recommend, args.check, args.due)
     errors = check_labels(kind, labels, args.consequence, slice_dir)
-    if kind in PROPOSAL_KINDS and not _collapse(args.proposal):
-        errors.append(f"a{'n' if kind[0] in 'aeiou' else ''} {kind} needs "
-                      f"--proposal: {PROPOSAL_HELP}")
+    errors += author_problems(candidate)
     if errors:
         raise ReportError("\n".join(errors))
     labels = normalise_for(labels, slice_dir)
     return append_entry(slice_dir, kind, args.headline, _stdin_or(args.body),
                         consequence=args.consequence, provenance=args.provenance,
                         severity=args.severity, labels=labels,
-                        proposal=args.proposal, by=args.by)
+                        proposal=args.proposal, by=args.by, options=options,
+                        recommend=args.recommend, check=args.check, due=args.due)
 
 
 def _amend_cli(slice_dir: Path, args) -> str:
-    return amend_entry(slice_dir, args.id, args.by, headline=args.headline,
+    return amend_entry(slice_dir, args.id, by=args.by, headline=args.headline,
                        body=None if args.body is None else _stdin_or(args.body),
                        consequence=args.consequence, proposal=args.proposal,
                        provenance=args.provenance, severity=args.severity,
-                       labels=_labels_from(args))
-
-
-def _rule_cli(slice_dir: Path, args) -> str:
-    if args.id is None:
-        if args.words or args.did or args.commit or args.mode:
-            raise ReportError("--words, --did, --commit, --append and --replace need "
-                              "an entry id")
-        taken = read_back(slice_dir)
-        if not taken:
-            return "nothing to take from the Disposition lines"
-        return "\n".join(f"{eid}: {_collapse(words)}" for eid, words in taken)
-    return rule_entry(slice_dir, args.id, words=args.words, did=args.did,
-                      commit=args.commit, date=args.date, mode=args.mode)
+                       labels=_labels_from(args), options=_options_from(args),
+                       recommend=args.recommend, check=args.check, due=args.due)
 
 
 def main(argv=None) -> int:
     parser, _ = build_parser()
     args = parser.parse_args(argv)
-    with overwriting() if getattr(args, "overwrite", False) \
-            else contextlib.nullcontext():
-        return _main(args)
-
-
-def _main(args) -> int:
     try:
         if args.command == "labels":
             print(labels_text())
-            return 0
-        if args.command == "held":
-            print(held_view(args.path, args.for_))
             return 0
         slice_dir = slice_dir_of(args.slice)
         if not slice_dir.is_dir():
@@ -3978,16 +3374,16 @@ def _main(args) -> int:
         elif command == "list":
             print(list_view(slice_dir))
         elif command == "note":
-            add_note(slice_dir, args.id, args.by, _stdin_or(args.text), date=args.date)
-            print(f"{args.id} noted")
+            if args.left:
+                print(leave_entry(slice_dir, args.id, args.by, _stdin_or(args.text),
+                                  date=args.date))
+            else:
+                add_note(slice_dir, args.id, args.by, _stdin_or(args.text),
+                         date=args.date)
+                print(f"{args.id} noted")
         elif command == "strike":
             print(strike_entry(slice_dir, args.id, args.reason, by=args.by,
                                commit=args.commit, date=args.date))
-        elif command == "unnote":
-            para = unnote_entry(slice_dir, args.id, args.by)
-            print(f"{args.id} unnoted: {para}")
-        elif command == "unstrike":
-            print(unstrike_entry(slice_dir, args.id, args.by))
         elif command == "amend":
             print(_amend_cli(slice_dir, args))
         elif command == "relabel":
@@ -3997,54 +3393,36 @@ def _main(args) -> int:
                                 date=args.date, dry_run=args.dry_run))
         elif command == "propose":
             print(propose_entry(slice_dir, args.id, args.by, _stdin_or(args.text),
-                                date=args.date))
-        elif command == "unpropose":
-            print(f"{args.id} unproposed: {unpropose_entry(slice_dir, args.id, args.by)}")
-        elif command == "unmark":
-            print(f"{args.id} unmarked: {unmark_entry(slice_dir, args.id, args.by)}")
-        elif command == "request-card":
-            print(request_card(slice_dir, args.id, args.by, _stdin_or(args.text),
-                               date=args.date))
-        elif command == "request-word":
-            print(request_word(slice_dir, args.id, args.by, _stdin_or(args.text),
-                               date=args.date))
-        elif command == "leave":
-            print(leave_entry(slice_dir, args.id, args.by, _stdin_or(args.text),
-                              date=args.date))
+                                date=args.date, mark=args.mark))
         elif command == "fold":
             print(fold_entry(slice_dir, args.id, into=args.into, date=args.date))
         elif command == "worklist":
             print(worklist_view(slice_dir))
         elif command == "show":
             print(show_view(slice_dir, args.ids))
+        elif command == "render":
+            print(render_report(slice_dir, step=args.step, summary=args.summary,
+                                context=args.context))
+        elif command == "stamp":
+            print(stamp_header(slice_dir))
+        elif command == "absorb":
+            print("\n".join(absorb_report(slice_dir, date=args.date)))
         elif command == "rule":
-            print(_rule_cli(slice_dir, args))
-        elif command == "unrule":
-            print(f"{args.id} unruled: {unrule_entry(slice_dir, args.id)}")
+            print(rule_entry(slice_dir, args.id, args.did, commit=args.commit,
+                             date=args.date))
         elif command == "settle":
             print("\n".join(settle_criterion(slice_dir, args.vid, args.verdict,
                                              [_stdin_or(e) for e in args.evidence],
                                              rationale=args.rationale, by=args.by)))
         elif command == "close":
-            n, stay, held = close_report(slice_dir, args.words, date=args.date)
+            n, stay = close_report(slice_dir, by=args.by, date=args.date)
             if stay:
                 print(f"{_plural(n, 'entry', 'entries')} closed; the report stays "
-                      f"open over {', '.join(stay)}, ruled and not executed")
+                      f"open over {', '.join(stay)}, ruled and not carried out")
             else:
                 print(f"closed, {_plural(n, 'entry', 'entries')} with it")
-            if held:
-                print(f"held for a later slice, live: {', '.join(held)} — /dev:triage "
-                      "carries each into its slice")
-        elif command == "render":
-            print(render_report(slice_dir))
-        elif command == "stamp":
-            print(stamp_header(slice_dir))
         elif command == "counts":
             print(counts_line(entry_counts(slice_dir)))
-        elif command == "import":
-            n = import_report(slice_dir)
-            print(f"imported {_plural(n, 'entry', 'entries')} into "
-                  f"{store_path(slice_dir)}")
     except ReportError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 2

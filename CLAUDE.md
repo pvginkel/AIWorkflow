@@ -71,7 +71,8 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   (`slices/completed/NNN_slug/`): `log.txt` is the driver's narration, `state.json` is per
   `runner-state.md`, `phases/P*/` holds each round's review and result files, beside `plan.md`,
   `slice.md`, `verification.json` and the close-out report — `close-out.json`, the record, and
-  the `close-out.md` rendered from it (Markdown only before 0.9.57).
+  the `close-out.md` rendered from it (Markdown only before 0.9.57; the document Pilot reads,
+  with `close-out-record.md` beside it, from 0.10.2).
   `plugins/dev/tools/slice_cost.py <slice_dir>` prices it per role/phase/session; `close_out.py
   counts|list|worklist <slice_dir|close-out.md>` reads the report; `state.json`'s
   `plugin_version` says which plugin ran it. A round whose session died

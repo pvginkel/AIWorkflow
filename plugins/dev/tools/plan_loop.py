@@ -24,9 +24,8 @@ follows — the operator's read is the second look.
 
   exit 0 — plan complete: a reviewer verdict is on file and the plan parses
            as run_loop.py's phase queue.
-  exit 4 — operator input needed: writer questions, a review pending
-           adjudication, or a close-out.md edited by hand that refused the
-           exit-0 seed. Handle it, rerun — the loop continues where it
+  exit 4 — operator input needed: writer questions, or a review pending
+           adjudication. Handle it, rerun — the loop continues where it
            paused.
   exit 3 — bailed (plan_bailout.json): an agent reported blocked, or a
            protocol failure.
@@ -44,9 +43,9 @@ the same for `status`. A second plan loop — or one started while the
 slice's run loop holds run.lock — is refused with exit 2, naming the holder.
 
 The loop is the first to run on a slice, so it creates and commits the
-slice's close-out report (<slice>/close-out.json, the store, and the
-close-out.md rendered from it — docs/close-out.md) before its first
-dispatch. At exit 0 it seeds that report's actions from the plan: one entry
+slice's close-out report (<slice>/close-out.json, the store — the
+close-out.md and close-out-record.md rendered from it are docs/close-out.md's)
+before its first dispatch. At exit 0 it seeds that report's actions from the plan: one entry
 per `## Push holds` repo, listing the criteria verification.json marks
 `owed_after` that push, and one per criterion owed after anything else —
 each entered once, however often the loop reruns. It renders the report at
@@ -86,7 +85,6 @@ import github_target  # noqa: E402
 import project_config  # noqa: E402
 import run_loop  # noqa: E402
 from close_out import (  # noqa: E402
-    ReportEdited,
     ReportError,
     append_entry,
     dispatch_line,
@@ -152,7 +150,7 @@ LOOP_OWNED_FILES = frozenset({
 # it is the loop's own output, not an agent's work left uncommitted, so the
 # cleanliness checks pass it by as they pass the files above. The store
 # itself is an agent's commit and stays checked.
-RENDERED_FILES = frozenset({"close-out.md"})
+RENDERED_FILES = frozenset({"close-out.md", "close-out-record.md"})
 
 # The kind the exit-0 seed enters, by its old section name, and the widths it
 # shortens to: a headline (a free-text `owed_after` can run long) and a
@@ -742,13 +740,6 @@ class PlanLoop:
               file=sys.stderr)
         sys.exit(4)
 
-    def _exit_report_edited(self, refused: ReportEdited) -> None:
-        self.log(f"REPORT EDITED — {refused}")
-        print(f"REPORT EDITED — the plan is complete, but its close-out actions "
-              f"were not seeded:\n{refused}\nCommit the slice folder (stage by "
-              "name), then rerun: the rerun seeds them.", file=sys.stderr)
-        sys.exit(4)
-
     def _exit_adjudication(self, review_path: Path) -> None:
         self.log(f"REVIEW PENDING ADJUDICATION — {review_path}")
         print(f"REVIEW PENDING ADJUDICATION — read {review_path}, "
@@ -818,10 +809,8 @@ class PlanLoop:
 
     def _ensure_report(self) -> None:
         """The slice's close-out report exists before the first dispatch —
-        its store created, the report rendered from it, and both committed
-        by the loop (by name; the spec repo is a shared tree); a close-out.md
-        written before the store existed is imported, and the store
-        committed beside it. A rerun finds the store and leaves it be. Runs
+        its store created and committed by the loop (by name; the spec repo
+        is a shared tree). A rerun finds the store and leaves it be. Runs
         under the bail handler: a git or store failure is a bail
         (plan_bailout.json), never a traceback. This is where the loop
         records its base branch — before the store is written, so a report
@@ -829,21 +818,19 @@ class PlanLoop:
         skipped) by the rerun."""
         self._assert_on_base()
         store = store_path(self.slice_dir)
-        had_store = store.exists()
         try:
             created = init_report(self.slice_dir)
         except ReportError as e:
             raise Bailout("protocol_failure", details=str(e)) from None
-        if created or (not had_store and store.exists()):
-            self.git("add", str(store), str(self.report_path))
+        if created:
+            self.git("add", str(store))
             self.git("commit", "-m",
                      f"slice {self.slice_num}: close-out report")
-            self.log(f"{'created' if created else 'imported'} "
-                     f"{store.name} beside {self.report_path.name}")
+            self.log(f"created {store.name}")
         self._report_ready = True
 
     def _render_report(self) -> None:
-        """close-out.md rendered from the store, at the loop's exit — any
+        """The report rendered from the store, at the loop's exit — any
         exit. Never a failure and never a change to the exit: a report that
         does not render is logged. Only on the loop's base branch: the tree
         is shared, and a render onto another session's branch would leave
@@ -969,14 +956,10 @@ class PlanLoop:
         live or struck, is left be: the loop reruns after questions and
         adjudication, and a slice may be replanned. Appended entries are
         committed under the same branch check as `_ensure_report`;
-        a report that refuses an entry is logged, never a failed plan — save
-        a close-out.md the operator edited where the write would drop the
-        edit: the loop stops there with the operator-input exit
-        (`_exit_report_edited`), and the rerun seeds what is left."""
+        a report that refuses an entry is logged, never a failed plan."""
         entries = self._owed_entries()
         if not entries:
             return
-        refused = None
         self._assert_on_base()
         seeded = 0
         for headline, body, consequence, provenance, proposal in entries:
@@ -990,22 +973,16 @@ class PlanLoop:
                                    body, consequence=consequence,
                                    provenance=provenance,
                                    proposal=proposal)
-            except ReportEdited as e:
-                refused = e
-                break
             except ReportError as e:
                 self.log(f"close-out entry not written ({e}): {headline}")
                 continue
             seeded += 1
             self.log(f"close-out {eid}: {headline}")
         if seeded:
-            self.git("add", str(store_path(self.slice_dir)),
-                     str(self.report_path))
+            self.git("add", str(store_path(self.slice_dir)))
             self.git("commit", "-m",
                      f"slice {self.slice_num}: seed close-out "
                      "outstanding actions")
-        if refused is not None:
-            self._exit_report_edited(refused)
 
     def _take_plan_lock(self) -> None:
         """One plan loop on a slice, and none beside a live run of it —

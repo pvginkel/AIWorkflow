@@ -102,16 +102,7 @@ relaunch with `--resume`.
 A `prerun_action` bail is the close-out's `Before /dev:run-slice` entry still live: the run
 needs an action only the operator can take. Put it to them; once it is done — by them, or by you
 on their word — strike it (`close_out.py strike <slice_dir> <id> --reason "<what was done>" --by
-"run-slice session"`), render (`close_out.py render <slice_dir>`), commit `close-out.json` and
-`close-out.md`, and relaunch with `--resume`.
-
-A `report_edited` bail is the operator's edit of `close-out.md`, outside its `Disposition:`
-lines, that the next write would drop; `bailout.json` lists the lines. Put them to the operator.
-What they want kept goes into the store (`close_out.py note`, `propose`, `rule <slice_dir> <id>
---words`), the first of those writes carrying `--overwrite`; when nothing is to be kept,
-`close_out.py render <slice_dir> --overwrite` on their word. Commit `close-out.json` and
-`close-out.md`, and relaunch with `--resume`. The same refusal from your own `stamp` is handled
-the same way.
+"run-slice session"`), commit `close-out.json`, and relaunch with `--resume`.
 
 A `missing_tools` bail is the environment's: a Target repo's manifest calls a `cexec <tool>` this
 environment does not run. `bailout.json` names each tool, the repo whose manifest calls it, and

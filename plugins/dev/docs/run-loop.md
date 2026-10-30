@@ -383,15 +383,16 @@ whole plan is a feature of the review, not a cost. Then:
   judged against both the plan and the repo. It appends phases (or answers `complete`) through
   the generation bar below. It is also handed, as owed, every live close-out entry that may
   describe what the push after it must not carry — an impact of `severe` in a repo the slice
-  touched or that names none, or a proposal that lands its fix "before the push" — because
+  touched or that names none, or an entry its author marked due before the push (`--due
+  push`) — because
   nothing reads the report before that push. Where the push would carry what the entry
   describes, the consult appends a phase that removes it or bails, as for a red sweep row; where
   it would not, it says why in a note on the entry. The code-writer fixes such a thing in its
   own phase ([its definition](../agents/code-writer.md)); this is the backstop for one entered
   anyway. Where the project runs a test phase, the consult is handed as well, to fix before it,
-  every live prose, defect or test-gap entry whose headline or proposal names `verification.json`
-  and one of this slice's criterion ids, and no other slice's number — because the test phase
-  checks each criterion as worded and the report is worked after it. Where the plan and its
+  every live entry its author marked due before the test phase (`--due test`), with the criteria
+  of this slice it names — because the test phase checks each criterion as worded and the
+  report is worked after it. Where the plan and its
   rulings show the wording wrong, the consult rewords the criterion to what they require, no
   further, commits and strikes the entry; where the wording is right and the slice falls short,
   that is outstanding work; otherwise it notes why. Without a test phase the entry stays with
@@ -539,8 +540,8 @@ whole plan is a feature of the review, not a cost. Then:
   check exists to catch) and the landing stops at the merge.
 - **Wrap-up** — after the doc-writer's session and before the gate sweep, so that one landing
   carries both. One `dev:wrap-up` session works on what the close-out report's table gave the
-  wrap-up ([close-out.md](close-out.md#the-wrap-up)): `close_out.py worklist` names it, and
-  when it names nothing the stage is skipped. It has no switch, and a project that runs no doc
+  wrap-up ([close-out.md](close-out.md#the-wrap-up)) and vets what comes to the operator:
+  `close_out.py worklist` names it, and when it names nothing the stage is skipped. It has no switch, and a project that runs no doc
   phase still runs it: the ladder then starts here, after the test phase, and the gate and the
   landing below are the wrap-up's alone. **Its commits sit on a branch of their own**,
   `phase/<NNN>-wrap-up`, in every code repo the slice touched and the plan does not hold — in
@@ -650,22 +651,13 @@ while its A1 — push two toolchain commits, restart the pod — was still open,
 criterion owed after it) do not stop a run; they are what the run leaves behind. `--dry-run` lists
 the open entries without failing.
 
-**The loop does not write over an edited report.** Before every dispatch, and at each of its own
-writes to the close-out report, the run loop asks `close_out.py` whether `close-out.md` was
-edited since the tool last wrote it in a way the next write would drop ([close-out.md](close-out.md));
-it then bails `report_edited` (exit 4), the details holding the lines that would go. A role
-whose own write meets the refusal says what it meant to write in its verdict and carries on;
-the check before the next dispatch stops the run. The render at a bail and the stamp at
-completion only log the refusal: `/dev:run-slice` meets it there with the operator.
-
 **The loop commits its own entries before a role writes.** The driver's close-out entries — a
 refuted finding, a held push, a resumed stop — are written between sessions. Before every
-dispatch and every nudge, once the report passed the edit check, the run loop commits the store
-when `close-out.json` shows a change, `close-out.md` with it, staged by name. Left in the store,
-they would ride the next role's commit, since a JSON file cannot be staged in part: PilotApp's
-slice 002 P9 reviewer committed its own T6 together with the loop's E1 and a header bump. A
-`close-out.md` changed alone makes no commit; it rides the next one. A commit that fails is logged
-and the dispatch goes ahead.
+dispatch and every nudge, the run loop commits the store when `close-out.json` shows a change,
+the files a render left beside it with it, staged by name. Left in the store, they would ride
+the next role's commit, since a JSON file cannot be staged in part: PilotApp's slice 002 P9
+reviewer committed its own T6 together with the loop's E1 and a header bump. A commit that
+fails is logged and the dispatch goes ahead.
 
 **The loop does not start without the tool containers its Targets' manifests call.** At
 startup, fresh or `--resume`, once the plan's Targets resolve and before any dispatch, the run

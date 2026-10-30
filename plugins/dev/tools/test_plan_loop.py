@@ -185,11 +185,19 @@ def test_fresh_slice_happy_path():
         assert "Target:" in writer_prompt
 
 
+def rendered(slice_dir):
+    """What the loop's render wrote: the document Pilot reads, where there is an
+    ask, then the record."""
+    return "".join((slice_dir / name).read_text()
+                   for name in ("close-out.md", "close-out-record.md")
+                   if (slice_dir / name).exists())
+
+
 def test_the_loop_creates_and_commits_the_close_out_report_first():
     """The plan loop is the first to run on a slice, so it is the one that
-    creates the report — its store and close-out.md, before the first
-    dispatch, committed together by name — and every dispatch names it. A
-    rerun leaves the existing store alone."""
+    creates the report — its store, before the first dispatch, committed by
+    name — and every dispatch names it. A rerun leaves the existing store
+    alone."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         report = slice_dir / "close-out.md"
@@ -197,15 +205,17 @@ def test_the_loop_creates_and_commits_the_close_out_report_first():
         seen_at_spawn = []
 
         def writer_effect(loop):
-            seen_at_spawn.append(report.exists())
+            seen_at_spawn.append(store.exists())
             write_phases(loop)
 
         loop = ScriptedLoop(slice_dir, [(*W_DONE[:2], writer_effect), R_ISSUES])
         assert run_to_exit(loop) == 4
         assert seen_at_spawn == [True], "the report predates the first dispatch"
-        assert report.read_text().startswith("# Close-out — slice 099 test_slice\n")
+        assert (slice_dir / "close-out-record.md").read_text().startswith(
+            "# Close-out record — slice 099 test slice\n")
+        assert not report.exists(), "nothing to ask"
         assert json.loads(store.read_text())["entries"] == []
-        assert ("add", str(store), str(report)) in loop.git_calls
+        assert ("add", str(store)) in loop.git_calls
         commits = [c for c in loop.git_calls if c[:1] == ("commit",)]
         assert commits == [("commit", "-m", "slice 099: close-out report")]
         for role, prompt in loop.prompts:
@@ -216,7 +226,7 @@ def test_the_loop_creates_and_commits_the_close_out_report_first():
                                consequence="the rollout waits on it")
         rerun = ScriptedLoop(slice_dir, [W_DONE])
         assert run_to_exit(rerun) == 0
-        assert "### D1 — planning asked" in report.read_text()
+        assert "### D1 — planning asked" in rendered(slice_dir)
         assert not [c for c in rerun.git_calls if c[:1] == ("commit",)]
         assert f"close-out report is {report}" in rerun.prompts[0][1]
 
@@ -234,22 +244,20 @@ def test_the_loop_renders_the_report_at_every_exit_and_commits_none_of_it():
 
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
-        report = slice_dir / "close-out.md"
+        report = slice_dir / "close-out-record.md"
         loop = ScriptedLoop(slice_dir, [("plan-writer", {"outcome": "questions",
                                                          "summary": "q"},
                                          appends("asked the operator"))])
         assert run_to_exit(loop) == 4
         assert "### E1 — asked the operator" in report.read_text()
         assert commits(loop) == [("commit", "-m", "slice 099: close-out report")]
-        assert "close-out rendered: Record 1" in (slice_dir / "plan_log.txt").read_text()
+        assert ("close-out rendered: close-out-record.md written; nothing to ask, so "
+                "no close-out.md") in (slice_dir / "plan_log.txt").read_text()
 
         before = report.read_text()
 
         def bails(loop):
             appends("the tree moved")(loop)
-            # The append renders E2 into the page; put the page back, so it
-            # lags the store by what only the exit's render would write.
-            report.write_text(before)
             loop.branch = "phase/191-P3"
 
         # A bail with the tree off its base leaves the report as it was: the
@@ -924,7 +932,7 @@ def test_a_push_hold_is_seeded_once_naming_the_criteria_owed_after_it():
         report = slice_dir / "close-out.md"
         loop = ScriptedLoop(slice_dir, [writer, R_ISSUES])
         assert run_to_exit(loop) == 4
-        assert "### A1" not in report.read_text(), "exit 0 only"
+        assert "### A1" not in rendered(slice_dir), "exit 0 only"
         assert commits(loop) == [("commit", "-m", "slice 099: close-out report")]
 
         fix = ScriptedLoop(slice_dir, [writer])
@@ -948,8 +956,7 @@ def test_a_push_hold_is_seeded_once_naming_the_criteria_owed_after_it():
         assert ("**Provenance:** read — `plan.md`'s `## Push holds` and "
                 "`verification.json`'s `owed_after`, seeded by the plan "
                 "loop") in full
-        assert ("add", str(slice_dir / "close-out.json"), str(report)) \
-            in fix.git_calls
+        assert ("add", str(slice_dir / "close-out.json")) in fix.git_calls
         assert commits(fix) == [SEED_COMMIT]
         log = (slice_dir / "plan_log.txt").read_text()
         assert "close-out A1: Push HelmCharts by hand when its hold lifts" in log
@@ -1018,8 +1025,8 @@ def test_an_owed_criterion_no_hold_covers_gets_its_own_settle_entry():
                         f"settles {vid} in verification.json.")
             assert proposal in full and proposal not in text
         # the page names the criterion by its area, with what it waits on in full
-        assert "### A2 — Settle V05 (deploy) after the operator's DNS cutover\n" in text
-        assert f"### A3 — Settle V07 (deploy) after {long_wait}\n" in text
+        assert "## Settle V05 (deploy) after the operator's DNS cutover\n" in text
+        assert f"## Settle V07 (deploy) after {long_wait}\n" in text
         assert "V05 — Pods resolve the new internal zone." in full
         assert "marks V05 owed after: the operator's DNS cutover." in full
         assert f"marks V07 owed after: {long_wait}." in full
@@ -1039,13 +1046,14 @@ def test_no_hold_and_nothing_owed_leaves_the_report_alone():
         seen = []
 
         def writer_effect(loop):
-            seen.append((slice_dir / "close-out.md").read_text())
+            seen.append((slice_dir / "close-out.json").read_text())
             plans("", [criterion("V01", "The app serves the new route.")])(loop)
 
         loop = ScriptedLoop(slice_dir, [("plan-writer", {"outcome": "done"},
                                          writer_effect), R_GO])
         assert run_to_exit(loop) == 0
-        assert (slice_dir / "close-out.md").read_text() == seen[0]
+        assert (slice_dir / "close-out.json").read_text() == seen[0]
+        assert not (slice_dir / "close-out.md").exists()
         assert commits(loop) == [("commit", "-m", "slice 099: close-out report")]
 
 
@@ -1062,14 +1070,14 @@ def test_a_struck_entry_with_the_seeded_headline_is_not_entered_again():
         close_out.strike_entry(slice_dir, "A1", "pushed 2026-09-20",
                                by="operator")
         close_out.render_report(slice_dir)
-        before = (slice_dir / "close-out.md").read_text()
+        before = rendered(slice_dir)
         loop = ScriptedLoop(slice_dir, [
             ("plan-writer", {"outcome": "done"},
              plans(HOLD_SECTION, [criterion("V02", "Runs the new chart.",
                                             owed_after="../HelmCharts")])),
             R_GO])
         assert run_to_exit(loop) == 0
-        assert (slice_dir / "close-out.md").read_text() == before
+        assert rendered(slice_dir) == before
         assert not commits(loop)
         log = (slice_dir / "plan_log.txt").read_text()
         assert "close-out A1 already holds: Push HelmCharts" in log
@@ -1091,45 +1099,6 @@ def test_a_report_that_refuses_the_seed_is_logged_not_a_failed_plan():
         assert "close-out not rendered: " in log
 
 
-def test_an_edited_report_that_refuses_the_seed_is_the_operator_input_exit():
-    """AIWF-54: the operator edited close-out.md while the loop ran, and the
-    seed's write would drop the edit — the loop stops with exit 4, the
-    refusal on stderr, and the rerun seeds once it is dealt with."""
-    def operator_edits(loop):
-        with open(loop.report_path, "a") as f:
-            f.write("\nthe operator's aside\n")
-
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir = make_slice(tmp)
-        loop = ScriptedLoop(slice_dir, [
-            ("plan-writer", {"outcome": "done"}, plans(HOLD_SECTION, [])),
-            R_GO + (operator_edits,)])
-        err = io.StringIO()
-        with contextlib.redirect_stderr(err):
-            assert run_to_exit(loop) == 4
-        assert err.getvalue().startswith(
-            "REPORT EDITED — the plan is complete, but its close-out actions were "
-            "not seeded:\nclose-out.md was edited since")
-        assert "  > the operator's aside\n" in err.getvalue()
-        assert commits(loop) == [("commit", "-m", "slice 099: close-out report")]
-        assert not (slice_dir / "plan_bailout.json").exists()
-        text = (slice_dir / "close-out.md").read_text()
-        assert "### A1" not in text and "the operator's aside" in text
-        log = (slice_dir / "plan_log.txt").read_text()
-        assert "REPORT EDITED — close-out.md was edited" in log
-        # the exit's render meets the same refusal, and logs it
-        assert "close-out not rendered: close-out.md was edited" in log
-
-        # the operator lets it go; the rerun (phase done) seeds it
-        with close_out.overwriting():
-            close_out.render_report(slice_dir)
-        rerun = ScriptedLoop(slice_dir, [])
-        assert run_to_exit(rerun) == 0
-        assert "### A1 — Push HelmCharts by hand" in \
-            (slice_dir / "close-out.md").read_text()
-        assert commits(rerun) == [SEED_COMMIT]
-
-
 def test_the_seed_commits_on_the_base_branch_only():
     """The seed writes into the shared tree like every other commit of the
     loop's: a tree moved off the base bails before anything is appended."""
@@ -1145,12 +1114,11 @@ def test_the_seed_commits_on_the_base_branch_only():
         bail = json.loads((slice_dir / "plan_bailout.json").read_text())
         assert bail["reason"] == "blocked"
         assert "is on phase/191-P3, not main" in bail["details"]
-        assert "### A1" not in (slice_dir / "close-out.md").read_text()
+        assert "### A1" not in rendered(slice_dir)
         # Back on base, the rerun (phase done) seeds it.
         rerun = ScriptedLoop(slice_dir, [])
         assert run_to_exit(rerun) == 0
-        assert "### A1 — Push HelmCharts by hand" in \
-            (slice_dir / "close-out.md").read_text()
+        assert "### A1 — Push HelmCharts by hand" in rendered(slice_dir)
         assert commits(rerun) == [SEED_COMMIT]
 
 

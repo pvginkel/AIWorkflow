@@ -40,20 +40,17 @@ only work the plan owes and no phase delivered, the second blocking work
 only, a third pending generation bails to the operator.
 
 The driver's part in the slice's close-out report (<slice>/close-out.json,
-the store, and the close-out.md rendered from it —
+the store, and the close-out.md and close-out-record.md rendered from it —
 ${CLAUDE_PLUGIN_ROOT}/docs/close-out.md): create it if the plan loop did
 not, name it and close_out.py (the only way to write to it) in every
 dispatch, enter refuted findings and funding-consult merges through that
 tool, hand the completion consult the live entries owed before the push
-(close_out.owed_before_push) and, where a test phase runs, those to fix
-before it (close_out.owed_before_test), dispatch the wrap-up, render it
-before the doc phase, after the wrap-up, at every bail and at completion,
-stamp the run header at completion, and commit the store before every
-dispatch that finds it changed, so a role's commit of it holds only its own
-entries. A close-out.md edited by hand where a render would drop the edit
-stops the run with an operator question (`report_edited`) — checked before
-every dispatch, and met by any driver write mid-run; at a bail, in the
-wrap-up and at completion a refused write is logged.
+(close_out.owed_before_push) and, where a test phase runs, those due before
+it (close_out.owed_before_test), dispatch the wrap-up, render it before the
+doc phase, after the wrap-up, at every bail and at completion, stamp the run
+header at completion, and commit the store before every dispatch that finds
+it changed, so a role's commit of it holds only its own entries. A render
+or a write the tool refuses is logged, never a stop.
 
 The plan doc is writable by every agent in the loop — deliberately. The
 driver's job is keeping the shared doc parseable: a parse error, a vanished
@@ -155,19 +152,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import github_target  # noqa: E402
 import project_config  # noqa: E402
 from close_out import (  # noqa: E402
-    ReportEdited,
     ReportError,
     add_note,
     append_entry,
     counts_line,
     dispatch_line,
-    edited_report,
     entry_counts,
     find_by_headline,
     init_report,
     live_entries,
     owed_before_push,
     owed_before_test,
+    record_path,
     render_report,
     report_path,
     stamp_header,
@@ -3973,10 +3969,6 @@ def services_check(roots: Sequence[Path],
 # ---------------------------------------------------------------------------
 
 class RunLoop:
-    # True where a driver write close-out.md refuses for an edit is logged
-    # rather than a stop (`_report_logged`).
-    _report_quiet = False
-
     def __init__(self, slice_dir: Path, resume: bool, verbose: bool = False):
         self.slice_dir = slice_dir.resolve()
         self.slice_name = self.slice_dir.name
@@ -5154,50 +5146,13 @@ class RunLoop:
 
     def _assert_current(self) -> None:
         """Before the run and before every dispatch: the installed plugin —
-        the one the agent about to run loads — is this loop's,
-        verification.json holds no key this loop would ignore, and
-        close-out.md holds no edit a write would drop. Each can change under
-        a running loop (a marketplace update, a newer agent, the operator)."""
+        the one the agent about to run loads — is this loop's, and
+        verification.json holds no key this loop would ignore. Each can change
+        under a running loop (a marketplace update, a newer agent)."""
         assert_plugin_current(Path(__file__).name,
                               " plus --resume (a run loop resumes from "
                               "state.json)")
         assert_verification_keys(self.slice_dir)
-        self._assert_report_unedited()
-
-    def _assert_report_unedited(self) -> None:
-        """Bail (`report_edited`, an operator question) while close-out.md
-        carries an edit the next write to it would drop: the agent about to
-        run writes to the report, and its write would be refused. A report
-        that cannot be read is logged — its writers meet that themselves."""
-        try:
-            edited = edited_report(self.slice_dir)
-        except ReportError as e:
-            self.log(f"close-out not checked for an edit ({e})")
-            return
-        if edited is not None:
-            raise Bailout("report_edited", question=True, details=str(edited))
-
-    def _report_refused(self, e: ReportError) -> None:
-        """A driver write close_out.py refused: mid-run, an edit the write
-        would drop is an operator question (`report_edited`) — the run stops
-        rather than write past it. Every other refusal, and this one where
-        the run is stopping or done (`_report_logged`), is the caller's to
-        log."""
-        if isinstance(e, ReportEdited) and not self._report_quiet:
-            raise Bailout("report_edited", question=True, details=str(e)) from None
-
-    @contextlib.contextmanager
-    def _report_logged(self):
-        """Driver writes to the report inside log a refusal for an edit,
-        never stop on it: at a bail (no second bail), in the wrap-up (never
-        a stop) and at completion (the run's work is done; /dev:run-slice
-        re-stamps and meets the refusal itself)."""
-        prior = self._report_quiet
-        self._report_quiet = True
-        try:
-            yield
-        finally:
-            self._report_quiet = prior
 
     def _commit_own_entries(self, before: str) -> None:
         """Before a dispatch, commit the store when it changed. The driver's
@@ -7913,15 +7868,12 @@ class RunLoop:
         operator should see without reading the log, each with the stock
         consequence line its event carries. A report an agent removed is
         logged, never a bail: the run's outcome does not hang on its
-        narrative — an operator's edit the write would drop is the one stop
-        (`_report_refused`). Returns the entry's id, None when it was not
-        written."""
+        narrative. Returns the entry's id, None when it was not written."""
         try:
             eid = append_entry(self.slice_dir, section, headline, body,
                                consequence=consequence, provenance=provenance,
                                proposal=proposal)
         except ReportError as e:
-            self._report_refused(e)
             self.log(f"close-out entry not written ({e}): {headline}")
             return None
         self.log(f"close-out {eid}: {headline}")
@@ -8753,7 +8705,6 @@ class RunLoop:
                 self._save_state()
                 return
         except ReportError as e:
-            self._report_refused(e)
             self.log(f"close-out not searched for the seeded hold ({e})")
         self._report(
             "Outstanding actions", headline,
@@ -9013,14 +8964,9 @@ class RunLoop:
             self._save_state()
 
         if ds["stage"] == "wrap-up":
-            # Asked before the stage, which turns any stop into a leave-out:
-            # an operator's edit of the report is theirs to settle, and the
-            # resume re-enters the stage with the wrap-up still to run.
-            self._assert_report_unedited()
             # Never raises a Bailout: whatever goes wrong in it is left out
             # of the landing, and the stage moves on.
-            with self._report_logged():
-                self._wrap_up(ds, branch)
+            self._wrap_up(ds, branch)
 
         if ds["stage"] == "gate":
             self._doc_gate_until_green(ds, branch)
@@ -9938,9 +9884,8 @@ class RunLoop:
             slice_name=self.slice_name,
             close_out_line=dispatch_line(self.report_path),
             close_out_verbs=textwrap.indent(
-                verb_usage("worklist", "show", "list", "relabel", "propose",
-                           "request-card", "request-word", "leave", "fold", "unmark",
-                           "unpropose"),
+                verb_usage("worklist", "show", "list", "relabel", "propose", "fold",
+                           "amend"),
                 "  "),
             worklist=textwrap.indent(worklist_view(self.slice_dir), "  "),
             repo_rows="\n".join(rows) or "  (none — the plan holds every code "
@@ -10171,12 +10116,14 @@ class RunLoop:
         return self._gate_exec(argv, cwd, log_file)
 
     def _commit_report(self, message: str, label: str = "[wrap-up]") -> str:
-        """Commit the report — the store and the close-out.md rendered from
-        it — where either changed, staged and committed by name on the spec
-        tree's base, as the driver's own report commit is; return the spec
-        repo's commit it now stands at. `label` heads the log line."""
-        paths = [str(p) for p in (store_path(self.slice_dir), self.report_path)
-                 if p.exists()]
+        """Commit the report — the store and the files rendered from it —
+        where any changed, staged and committed by name on the spec tree's
+        base, as the driver's own report commit is; return the spec repo's
+        commit it now stands at. `label` heads the log line."""
+        paths = [str(p) for p in (store_path(self.slice_dir), self.report_path,
+                                  record_path(self.slice_dir))
+                 # one a render removed is committed as removed
+                 if p.exists() or self.specs_git("ls-files", "--", str(p)).strip()]
         self._assert_spec_on_base()
         if paths and self.specs_git("status", "--porcelain", "--", *paths):
             self.specs_git("add", "--", *paths)
@@ -10192,20 +10139,10 @@ class RunLoop:
         is not."""
         store = store_path(self.slice_dir)
         text = self.specs_git("show", f"{sha}:./{store.name}")
-        # The hash of the close-out.md last written stays the current
-        # store's: the report on disk is that one, not the commit's, and an
-        # edit made to it since is still one.
-        try:
-            data = json.loads(text)
-            data["rendered"] = json.loads(store.read_text()).get("rendered")
-            text = json.dumps(data, indent=2, ensure_ascii=False)
-        except (OSError, ValueError, AttributeError, TypeError):
-            pass
         tmp = store.with_name(store.name + ".tmp")
         tmp.write_text(text if text.endswith("\n") else text + "\n")
         os.replace(tmp, store)
-        with self._report_logged():
-            self._render_report()
+        self._render_report()
         self._commit_report(f"slice {self.slice_num}: close-out report back to "
                             f"where it stood before the wrap-up ({sha[:12]})")
         self.log(f"[wrap-up] the store is back to {sha[:12]}")
@@ -10521,35 +10458,30 @@ class RunLoop:
         self._save_state()
         # A resume that completed without dispatching anything enters its
         # stops here, with the tree on its base and the run over.
-        with self._report_logged():
-            self._report_bailouts()
-            self._stamp_report()
+        self._report_bailouts()
+        self._stamp_report()
         self._summary()
         sys.exit(0)
 
     def _ensure_report(self) -> None:
-        """The report exists from here on — its store and the close-out.md
-        rendered from it, created and committed by the driver when the plan
-        loop left none (a slice planned before the report existed), or the
-        store imported from a close-out.md written before the store existed
-        and committed beside it. Idempotent, so a resume picks one up
-        mid-run rather than running without."""
+        """The report exists from here on — its store, created and committed
+        by the driver when the plan loop left none (a slice planned before
+        the report existed). Idempotent, so a resume picks one up mid-run
+        rather than running without."""
         # Asserted before the store is written, not before the commit: a
         # report created onto the wrong branch and bailed on would be found
         # by the resume and never committed at all.
         self._assert_spec_on_base()
         store = store_path(self.slice_dir)
-        had_store = store.exists()
         try:
             created = init_report(self.slice_dir)
         except ReportError as e:
             raise Bailout("protocol_failure", details=str(e)) from None
-        if created or (not had_store and store.exists()):
-            self.specs_git("add", str(store), str(self.report_path))
+        if created:
+            self.specs_git("add", str(store))
             self.specs_git("commit", "-m",
                            f"slice {self.slice_num}: close-out report")
-            self.log(f"{'created' if created else 'imported'} "
-                     f"{store.name} beside {self.report_path.name}")
+            self.log(f"created {store.name}")
 
     def _report_bailouts(self) -> None:
         """Every stop of this run becomes an event entry, written by the
@@ -10606,14 +10538,12 @@ class RunLoop:
                 self._save_state()
 
     def _render_report(self) -> None:
-        """close-out.md rendered from the store — before the doc phase, at
-        every bail and at completion. Idempotent, and never a failure: a
-        report an agent broke is logged, the run goes on — save, mid-run,
-        an operator's edit the render would drop (`_report_refused`)."""
+        """close-out.md and close-out-record.md rendered from the store —
+        before the doc phase, at every bail and at completion. Idempotent, and
+        never a failure: a report an agent broke is logged, the run goes on."""
         try:
             self.log("close-out rendered: " + render_report(self.slice_dir))
         except ReportError as e:
-            self._report_refused(e)
             self.log(f"close-out not rendered: {e}")
 
     def _stamp_report(self) -> None:
@@ -10710,8 +10640,7 @@ class RunLoop:
         # in. The rendered files are left as they are — a bail commits
         # nothing — and nothing here may mask the bail or change its code.
         try:
-            with self._report_logged():
-                self._render_report()
+            self._render_report()
         except Exception as e:
             why = e.details if isinstance(e, Bailout) else str(e)
             self.log(f"close-out not rendered: {why}")

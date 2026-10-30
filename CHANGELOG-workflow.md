@@ -4,6 +4,40 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-30 — The close-out report is rendered once, as the document Pilot reads, and its answers read back (v0.10.2)
+
+`close_out.py` now sits on `asks.py`, as the P-111 plan's §5.1 sets out (item A2). At the run's
+end the store renders into two files. `close-out.md` is the document Pilot reads: one ask per
+entry that comes to the operator, is a card request, or waits for a wrap-up that never reached
+it. `close-out-record.md` is the record attached to it: the rulings, what the table closed, the
+run's events and every strike. `absorb` reads Pilot's answers back into the store, where the
+run's continuation carries them out.
+
+- **The fields.** A decision carries its options and the one it recommends, in place of a
+  proposal. An action may carry a check and options, the answers it asks for. Any entry may
+  carry `due`, what it must land before: the phase's merge, the test phase, the push or the
+  report's close. The run loop's hand-offs to the completion consult read `due` now, where they
+  matched prose such as "before the push". The tool refuses an improvement whose headline is a
+  question: that is a decision, with options.
+- **The write model.** The store is open to every author until the render, and nothing renders
+  on a write. `amend` corrects any live entry. Removed: the take-backs (`unnote`, `unstrike`,
+  `unpropose`, `unmark`, `unrule`), `held`, `import` and the old Markdown parser, the
+  `Disposition:` read-back, `rule --words`, `close --words`, the report's hash, `--overwrite`
+  and the run loop's `report_edited` stop. The wrap-up's marks are `propose --card`,
+  `propose --word` and `note --left`.
+- **The routes.** An entry for a slice not created yet comes to the operator, proposed to be
+  held for that slice, for Pilot to defer. The wrap-up's work list now names every entry that
+  comes to the operator, as `vet`. The wrap-up checks the claim still holds, gives a proposal
+  where there is none, and makes sure the proposal has a vehicle after the run.
+- **The rules of the close-out skill** move to their homes. The continuation's rules go to
+  `docs/close-out.md` § The continuation, the vetting to `agents/wrap-up.md`, and the driver's
+  two to § Lifecycle. The skill itself goes with run-slice's rewrite.
+
+Every one of the 68 close-out stores in six spec repos renders as a document that PilotApp's
+own `pilot_dsl` parses and validates without a fault: 1,044 blocks, with the strikes and rulings
+cleared so that every entry is asked. Each answered copy, written with `pilot_dsl`'s writer,
+absorbs back into rulings.
+
 ## 2026-10-30 — One store for every ask, rendered as the document Pilot reads and read back from its answers (v0.10.1)
 
 `plugins/dev/tools/asks.py` is the module the P-111 plan's §4 names. A stage's asks are entries in

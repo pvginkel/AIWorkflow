@@ -640,7 +640,7 @@ sessions in all.
   pinned against the format skill's example and the quoting rules. *Done when:* a store of every
   kind renders to a document that round-trips through the read-back with Pilot's answer lines
   added.
-- [ ] **A2. `close_out.py`** (§5.1) on `asks.py`: the fields, the write model, `render` as the
+- [x] **A2. `close_out.py`** (§5.1) on `asks.py`: the fields, the write model, `render` as the
   document plus the record, `absorb`, the verbs removed, the dispatch line, the vehicle rule, the
   rules of the close-out skill moved to their homes in `close-out.md`, `close-out-template.md`
   and `wrap-up.md`; the suite reworked (the render and read-back half of `test_close_out.py`).

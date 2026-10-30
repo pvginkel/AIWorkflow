@@ -54,11 +54,10 @@ and the close-out says so. Other projects' cards stay: a card filed under anothe
 substance is this project's is flagged by id — mine, misfiled? — never adopted; moving it is the
 operator's. A `[NNN] close-out: …` card is not an ask but the marker that a slice's close-out
 report is waiting (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`): render the report it names
-(`python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py render <slice_dir>`) and take as items what
-the report brings the operator — the entries under **Comes to you** and **Card requests** whose
-`Disposition:` line is blank, and every entry whose line says `defer` — one per entry, the entry
-verbatim as the source. What the report closed, what waits for the wrap-up and the record are
-not items, and the card itself is never itemized.
+(`python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py render <slice_dir>`) and take as items the
+asks of its `close-out.md` that carry no answer — one per ask, the entry verbatim as the source
+(`close_out.py show <slice_dir> <id>`). What the report closed and the record are not items, and
+the card itself is never itemized.
 
 A card that an open dump under `handovers/` holds ruled — a sitting that stopped before filing
 wrote its rulings there (step 6) — brings its ruling along: it is read from the dump, not asked
@@ -297,18 +296,6 @@ Requirements, not solutions: no fixes, no task shapes, no acceptance criteria, n
 verdicts. **Attachments** that arrive with the work (a debugging write-up, a prior design or
 proposal — including anything already in `handovers/`) move into the slice folder as input,
 unvalidated; you author none of your own.
-
-**Carry what other reports hold for the slice.** A close-out entry may be `for` a slice that
-no folder held yet — a planner's ruling, or a reviewer's finding, for a slice the project's plan
-names — and it waited in its report, held, for this moment. Once the folder and its `slice.md`
-exist, `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py held <spec-repo> --for <N>` lists what
-is held for it, and `close_out.py fold <its report> <id>` appends each entry verbatim to the new
-`slice.md` and stages it. Give each a line on the numbered requirements — `Slice <M>'s
-close-out, entry <id>`, its ask in the entry's own words, quoted whole below — since the planner
-seeds its criteria from that list alone. The folds ride the slice folder's commit; then strike
-each entry in its own report with the command `fold` printed, its reason naming the slice and
-that commit, and commit those stores (`close-out.json` and `close-out.md`, staged by name). Do
-it before the slice is planned: a planned slice's run never reads `slice.md`.
 
 Add each slice to the **Pending** section of `<spec-repo>/README.md` — one line matching the
 existing entries, `- **NNN** — <short title>: <one-clause summary>`, placed inside that section,
