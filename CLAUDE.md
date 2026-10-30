@@ -87,7 +87,8 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   `asks.py` (the store of a stage's asks, rendered as the document Pilot reads, and the
   read-back of the answers Pilot writes into it), `close_out.py` (the close-out report: its
   store, the policy tables that route an entry from its labels, the rendering; imported by both
-  loops), `github_target.py`
+  loops), `checks.py` (an action's checks: the vocabulary the store holds a check to, and its
+  evaluation, which the run loop runs on the actions owed before a run), `github_target.py`
   (the `github:` Target's scratch clone), `preflight.py`,
   `sweep_slice.py`, `close_slice.py`, `redact_secrets.py` (the `kind: Secret` stubbing of
   every diff the driver hands an agent), `spec_check.py` (the spec repo's phase gate),

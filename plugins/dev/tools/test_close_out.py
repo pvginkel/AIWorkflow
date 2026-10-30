@@ -773,15 +773,61 @@ def test_append_stores_the_entry_in_the_store_shape():
         code, out, _ = run_cli("append", slice_dir, *DEFECT)
         assert entry_of(slice_dir, out.strip())["proposal"] is None
         # the block's fields only where given, after the rest
-        code, out, err = run_cli("append", slice_dir, *ACTION, "--check", "the job runs",
-                                 "--due", "Push", "--option", "Done", "--option",
-                                 "Not possible", "say why")
+        code, out, err = run_cli("append", slice_dir, *ACTION, "--check", "env JOB_TOKEN",
+                                 "--check", "slice 12 completed", "--due", "Push",
+                                 "--option", "Done", "--option", "Not possible", "say why")
         assert code == 0, err
         a1 = entry_of(slice_dir, out.strip())
         assert list(a1)[-4:] == ["ruling", "options", "check", "due"]
         assert a1["options"] == [{"label": "Done"},
                                  {"label": "Not possible", "line": "say why"}]
-        assert (a1["check"], a1["due"]) == ("the job runs", "push")
+        assert (a1["check"], a1["due"]) == ("env JOB_TOKEN; slice 12 completed", "push")
+
+
+def test_an_actions_check_is_the_vocabularys_and_one_before_the_run_needs_one():
+    """AIWF-88: an action's check is a fact the tree or the pod shows — never
+    a commit, which a push rebases, nor an environment, which may not be the
+    one that runs the slice — and an action owed before the run states one,
+    or says `manual`."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        _refused(slice_dir, [*ACTION, "--check", "the job runs"],
+                 "--check: `the job runs` is no check", "`slice <NNN> completed`")
+        _refused(slice_dir, [*ACTION, "--check", "origin . main:x contains 45a9ab3"],
+                 "45a9ab3, a commit")
+        _refused(slice_dir, [*ACTION, "--check", "manual", "--check", "env A"],
+                 "`manual` stands alone")
+        prerun = with_flags(ACTION, headline="Before /dev:run-slice: restart the pod")
+        _refused(slice_dir, prerun, "an action owed before the run needs --check")
+        _refused(slice_dir, [*prerun, "--check", "restart pvginkel-pilotapp-addac6"],
+                 "an environment")
+        code, out, err = run_cli("append", slice_dir, *prerun,
+                                 "--check", "env PILOT_TOKEN", "--check",
+                                 "origin ../PilotApp main:.kubecoder/config.yaml "
+                                 "contains PILOT_TOKEN")
+        assert code == 0, err
+        assert entry_of(slice_dir, "A1")["check"] == (
+            "env PILOT_TOKEN; origin ../PilotApp main:.kubecoder/config.yaml "
+            "contains PILOT_TOKEN")
+        code, out, err = run_cli("append", slice_dir, *with_flags(
+            prerun, headline="Before `/dev:run-slice`: approve the spend"),
+            "--check", "manual")
+        assert code == 0, err
+        # an action after the run may go without one
+        assert run_cli("append", slice_dir, *ACTION)[0] == 0
+        # the loops' own path takes a pre-run action without one: the run
+        # loop reads it as one a person strikes
+        close_out.append_entry(slice_dir, "action", "Before /dev:run-slice: x", "b",
+                               consequence="c")
+        assert [(a["id"], a["check"], a["struck"])
+                for a in close_out.prerun_actions(slice_dir)] == [
+            ("A1", entry_of(slice_dir, "A1")["check"], False),
+            ("A2", "manual", False), ("A4", None, False)]
+        close_out.strike_entry(slice_dir, "A2", "approved", by="op")
+        assert [a["struck"] for a in close_out.prerun_actions(slice_dir)] == \
+            [False, True, False]
+    assert close_out.prerun_actions(Path("/nonexistent")) == []
 
 
 def test_append_asks_a_proposal_of_an_action_a_decision_and_an_improvement():
@@ -1310,9 +1356,9 @@ def test_amend_runs_appends_checks_on_the_entry_as_it_would_be():
                       "B")[0] == 0
         assert entry_of(slice_dir, "D1")["options"] == [{"label": "A"}, {"label": "B"}]
         _amend_refused(slice_dir, "A1", ["--due", "never"], "invalid choice")
-        assert _amend(slice_dir, "A1", "--due", "test", "--check", "it runs")[0] == 0
+        assert _amend(slice_dir, "A1", "--due", "test", "--check", "manual")[0] == 0
         assert (entry_of(slice_dir, "A1")["due"], entry_of(slice_dir, "A1")["check"]) == \
-            ("test", "it runs")
+            ("test", "manual")
         assert _amend(slice_dir, "A1", "--check", "")[0] == 0
         assert "check" not in entry_of(slice_dir, "A1")
         # every refusal in one error
@@ -2618,8 +2664,11 @@ def test_verb_usage_renders_append_compactly_with_its_help_strings():
                                     "more"),
             ("--recommend", "a decision: the label of the option you would pick — "
                             "required for a decision, in place of --proposal"),
-            ("--check", "an action: what shows that it was done, where a command or a "
-                        "file can"),
+            ("--check", "an action: the fact that shows it done — `env <NAME>`, `file "
+                        "<repo>:<path>`, `origin <repo> <branch>:<path> contains <text>`, "
+                        "`slice <NNN> completed`, or `manual` where none captures it; "
+                        "repeat it for each fact. Never a commit or an environment. An "
+                        "action owed before the run needs one"),
             ("--due", "what must not happen before the entry is dealt with: the phase's "
                       "merge, the test phase, the push, or the report's close"),
             ("--by", "who appends — role, phase and round"),
@@ -2812,8 +2861,9 @@ def _every_place(tmp):
         "# Plan\n\n### P1 — the hook ✅ DONE 2026-08-14\n\nTarget: app\n\n"
         "### P2 — the docs\n\nTarget: app\n")
     close_out.init_report(slice_dir)
-    run_cli("append", slice_dir, *ACTION, "--check", "the job exists", "--due", "push",
-            "--option", "Done", "--option", "Not possible", "say why")          # A1
+    run_cli("append", slice_dir, *ACTION, "--check", "file deploy:jobs/nightly.yaml",
+            "--due", "push", "--option", "Done", "--option", "Not possible",
+            "say why")                                                          # A1
     run_cli("append", slice_dir, *DECISION)                                     # D1
     run_cli("append", slice_dir, *with_flags(DEFECT, trigger="fault", impact="severe",
                                              proposal="Card it: it needs a design."))  # B1
@@ -2860,7 +2910,7 @@ def test_render_writes_the_asks_as_the_document_pilot_reads():
         assert "**The wrap-up** fixed B9, a commit each." in doc
         # the blocks, each as its kind takes it
         assert ("```action id=A1\noptions:\n  - Done\n  - Not possible: say why\n"
-                "check: the job exists\n```") in doc
+                "check: file deploy:jobs/nightly.yaml\n```") in doc
         assert ("```decision id=D1\noptions:\n  - Keep it: nothing changes\n"
                 "  - Change it: costs a release\nrecommend: Keep it\n```") in doc
         assert "```decision id=B1\nproposal: \"Card it: it needs a design.\"\n```" in doc

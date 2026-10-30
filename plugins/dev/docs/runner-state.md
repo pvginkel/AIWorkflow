@@ -49,12 +49,18 @@ re-sweep after the consult's commit is red; absent on a run older than 0.9.143, 
 the consult as before), `in_flight`, `exit` (how the run ended — its exit `code` and `ts`, the driver's last
 write, after `bailout.json`; cleared when a `--resume` starts, so a run that is not running and
 has none was killed from outside), `bailouts` (every stop this run made — `reason`, `phase`,
-`question`, `ts`, the `run_phase` it stopped in and its `details` clipped to 600 characters —
-kept here because `bailout.json` is unlinked on resume; the resume that follows a stop writes it
+`question`, `ts`, the `run_phase` it stopped in, its `details` clipped to 600 characters and
+the `document` an operator question rendered, or `null` — kept here because `bailout.json` is
+unlinked on resume; the resume that follows a stop writes it
 into the close-out report as an event and marks the row `reported`, so each stop is entered
 once however often the run resumes), `halts` (every stop at Pilot's halt file — `at`, where the
 run stood, the `run_phase` it stopped in and `ts`; a halt is not a bail, and nothing reports it;
-[run-loop.md](run-loop.md) § Protocol invariants), `appended_phases`
+[run-loop.md](run-loop.md) § Protocol invariants), `step` (the plan task the run serves, as
+`run --step` gave it from Pilot's brief; every document the run renders carries it, and a resume
+that gives none keeps it), `prerun_held` (the ids of the actions owed before the run whose
+checks held, or that a person struck, once all of them were met: never evaluated again, so the
+checks gate the start and nothing after it; [run-loop.md](run-loop.md) § Protocol invariants),
+`appended_phases`
 (the ids the plan gained after the run started — a consult's, the test phase's, or the
 operator's, as opposed to the phases it began with), `holds_reported` (the repos held by the
 plan's `## Push holds` section that the driver has already entered in the close-out report — one
@@ -163,19 +169,22 @@ itself the same way; [run-loop.md](run-loop.md) § The per-phase round). Executo
 ## bailout.json and exit codes
 
 ```json
-{"reason": "<enum>", "phase": "<id|null>", "details": "…", "consult": "<path|null>", "question": false, "ts": "…"}
+{"reason": "<enum>", "phase": "<id|null>", "details": "…", "consult": "<path|null>", "question": false, "document": "<path|null>", "ts": "…"}
 ```
 
 Deleted at the start of every run, so its presence always means *this* run bailed. `question`
 splits the two bail classes: `true` exits 4 (only the operator can move it), `false` exits 3 (an
-error the orchestrator diagnoses).
+error the orchestrator diagnoses). A question's `document` is the one the driver rendered before
+it exited, `asks/<n>-<slug>.md` in the slice folder, for the stage to register
+([run-loop.md](run-loop.md) § Protocol invariants); `null` for an error, or where the document
+could not be written, which the log says.
 
 | Reason | Question? | Raised when |
 |---|:-:|---|
 | `operator_question` | ✓ | an executor or the doc-writer returned `question` |
 | `plan_doc` | ✓ | the plan doc is broken and no session could fix it on a nudge |
 | `generation_exhausted` | ✓ | a third follow-up generation of appended work is pending |
-| `prerun_action` | ✓ | at startup, fresh or `--resume`, the slice's close-out report holds a live `Before /dev:run-slice` action ([run-loop.md](run-loop.md) § Protocol invariants) |
+| `prerun_action` | ✓ | at startup, fresh or `--resume`, before the run's actions owed before it were all met: one whose check fails, struck or not, or one without a check the driver can run that nobody struck ([run-loop.md](run-loop.md) § Protocol invariants) |
 | `missing_tools` | ✓ | a Target repo's manifest calls a `cexec <tool>` this environment does not run — at startup, fresh or `--resume`, or at a phase gate that meets it mid-run; the details name the tools and the `- use:` lines ([run-loop.md](run-loop.md) § Protocol invariants) |
 | `missing_services` | ✓ | the host's own `.kubecoder/config.yaml` declares a service this environment does not run, at startup, fresh or `--resume` (another Target repo's is a `warning:` line in `log.txt`); or a phase gate goes red mid-run in any Target repo whose config declares one; the details name the services and the `services:` lines ([run-loop.md](run-loop.md) § Protocol invariants) |
 | `target_not_cloned` | – | a pending phase's `Target:` is a repo path the environment's `.kubecoder/config.yaml` declares and the pod has not cloned — the plan is fine, so no session is nudged; the details name each such phase and the fix: `kc env restart`, or a clone plus `kc project setup` ([run-loop.md](run-loop.md) § The plan is the queue) |
@@ -202,12 +211,14 @@ interrupted · **1** unexpected error.
 its own, off any terminal, so no caller's cap on one command can kill it — the harness's
 background cap is 2 h, and on 2026-09-30 it killed three runs mid-flight. It returns once the
 driver holds `run.lock`, or with the driver's own refusal and exit 2; the run is unchanged, its
-exit code on disk as `exit`. `run_loop.py wait <slice-dir> [--for S] [--from OFFSET]` waits on
-it, 3 300 s by default, and answers **0** the run ended (its code, and for a bail the reason,
-question and details, for a halt where it stopped), **5** still running (the stage, the session in flight against its role's
-cap, the age of the last log line) or **6** gone with no `exit` recorded — each time with the
-driver's own `log.txt` lines since `--from`, the in-flight session's latest narration, and the
-command to run next. Liveness is the `flock`, never the pid. `run_loop.py stop <slice-dir>`
+exit code on disk as `exit`. `run_loop.py wait <slice-dir> [--for S]` waits on it in the
+foreground, 540 s by default, inside the Bash tool's ten minutes: the stage's session waits
+inside its turn, since a turn's end is the work item's ([pilot.md](pilot.md) § A turn's end is
+the run's end). It is a signal, not a report, and answers **0** the run ended (`ended: exit
+<n>`, then for a halt where it stopped, for a bail its `reason:`, the `document:` to register
+where there is one, and the `bailout:` file), **5** still running (`running`, and the `next:`
+wait to re-arm with nothing read) or **6** `gone`, with no `exit` recorded (and the `next:`
+relaunch). Liveness is the `flock`, never the pid. `run_loop.py stop <slice-dir>`
 sends the driver SIGINT: the 130 path, as Ctrl-C.
 
 ## Resume and crash recovery

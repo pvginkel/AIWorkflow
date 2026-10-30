@@ -82,9 +82,10 @@ instead. A `github:` repo without a manifest has no gate, and its phase needs a 
 `## Driver rulings` ([plan-template.md](plan-template.md)): without one the dry run lists a plan
 problem and the run refuses the phase. A phase that declares that it adds the manifest
 (`Creates:`) needs no ruling. The check moves to its gate, where a clone that still has no
-manifest is the same plan problem. The first phase a run resolves on a clone leaves an
-action in the close-out report suggesting the operator delete it once the slice's commits are
-on origin.
+manifest is the same plan problem. The first phase a run resolves on a clone enters it in the
+close-out report as an event; at the run's end the driver removes the clone when its tree is
+clean, it holds no stash and every commit on its branches is on a remote, and says so under the
+event — otherwise it says what it found there and leaves it.
 
 **A shared repo is never branched in place.** A repo kc marks `shared` (`kc env describe
 --output=json`, `repos[].shared` — one clone mounted into every environment of the project; the
@@ -564,8 +565,8 @@ whole plan is a feature of the review, not a cost. Then:
   failure is entered in the report as an event that names the branches, and the run goes on
   with the doc phase's own gate and landing. What it committed in the spec repo beside the
   store — a fold, prose — stays where it is: that tree has no branch of the wrap-up's to leave
-  behind. What the table gave the wrap-up then still waits, and the close-out session
-  dispatches it. A repo it would branch that holds uncommitted work is a soft failure before
+  behind. What the table gave the wrap-up then comes to the operator said as what it is, an
+  entry no wrap-up reached ([close-out.md](close-out.md) § Lifecycle). A repo it would branch that holds uncommitted work is a soft failure before
   anything is dispatched. A gate in the primary repo that is red with its commits is run once
   more without them: red there too, it is the doc phase's red and goes to the doc-writer as
   before — and in a project that runs no doc phase, which would have completed over that red
@@ -659,13 +660,31 @@ points reject a `verification.json` item key outside [plan-template.md](plan-tem
 `protocol_failure` — the second guard, for a newer agent's field the driver would otherwise drop.
 
 **The loop does not start over an open pre-run action.** At startup, fresh or `--resume`, before
-any dispatch, the run loop reads the slice's own close-out report and bails `prerun_action`
-(exit 4) on any live action whose headline begins `Before /dev:run-slice`
-([close-out.md](close-out.md) § Who writes what, when). Slice 027's first executor was dispatched
-while its A1 — push two toolchain commits, restart the pod — was still open, failed its first
-`cexec` and handed back `blocked`. The after-run actions the plan loop seeds (a held push, a
-criterion owed after it) do not stop a run; they are what the run leaves behind. `--dry-run` lists
-the open entries without failing.
+any dispatch, the run loop reads the slice's close-out store for the actions whose headline
+begins `Before /dev:run-slice` ([close-out.md](close-out.md) § Who writes what, when) and
+evaluates each one's check (AIWF-88; the vocabulary is `tools/checks.py`'s, which the store
+holds every action's check to). One whose checks all hold is met: a live one the driver strikes,
+"its checks hold: …", by the run loop, so that nobody comes back to strike what the pod already
+shows. One whose check fails is open, struck or not — a strike does not make the fact true:
+slice 007's restart was struck while the commit it waited on was unpushed, and preflight passed.
+One whose check is `manual`, or that has none the driver can read, is met once a person struck
+it. Any open one bails `prerun_action` (exit 4), its document an `action` per open one with what
+failed. Once all are met their ids go into `state.json`'s `prerun_held`, and they are never
+evaluated again: the checks gate the start. Slice 027's first executor was dispatched while its
+A1 — push two toolchain commits, restart the pod — was still open, failed its first `cexec` and
+handed back `blocked`. The after-run actions the plan loop seeds (a held push, a criterion owed
+after it) do not stop a run; they are what the run leaves behind. `--dry-run` lists the open
+entries with their checks without evaluating or failing.
+
+**Every operator question is a document before the exit.** A bail that exits 4 renders its asks
+into the slice's `asks/<n>-<slug>.md` through `asks.py` before it exits, and names the file in
+`bailout.json`'s `document` and the `bailouts` row, for the stage to register with Pilot
+([pilot.md](pilot.md) § The documents): a writer's question as a decision where its verdict gives
+`options` (and the `recommend`), a question otherwise, its options said in the body where
+`asks.py` refuses them; a plan problem and an exhausted generation as a decision with the
+driver's proposal; a missing tool container or service as an `action` with the details' fix; the
+pre-run actions as above. The document carries `run --step`'s plan task as its `step`. One that
+cannot be written is logged, and the bail stands without it.
 
 **The loop commits its own entries before a role writes.** The driver's close-out entries — a
 refuted finding, a held push, a resumed stop — are written between sessions. Before every

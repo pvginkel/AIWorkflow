@@ -71,9 +71,12 @@ branch, never a second landing (specs-repo files, if any, staged **by name**,
 `${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`) — then write the verdict file named in your dispatch:
 
 ```json
-{"outcome": "done | question | blocked", "summary": "1-3 sentences: surfaces updated, gates run, claims left unverified (each named, or none)"}
+{"outcome": "done | question | blocked", "summary": "1-3 sentences: surfaces updated, gates run, claims left unverified (each named, or none)", "options": [{"label": "question only, optional", "line": "what it means or costs"}], "recommend": "the label you would pick"}
 ```
 
 - `done` — every affected surface updated, gates green, committed.
-- `question` — a doc decision only the operator can make; state it precisely.
+- `question` — a doc decision only the operator can make; state it precisely in `summary`, the
+  ask the operator reads. Where the answer is a pick between alternatives, give them as
+  `options`, two or more, and the one you would pick as `recommend`; leave both out for an open
+  question.
 - `blocked` — an environmental problem you must not work around.

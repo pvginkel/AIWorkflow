@@ -4,6 +4,47 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-30 — The run loop puts every operator question as a document, checks what it needs before it starts, and waits in the foreground (v0.10.4)
+
+A stage now waits on its run inside its turn, because Pilot ends a work item at a turn's end.
+The run loop's side of that is P-111's A4.
+
+**Every exit 4 leaves a document.** Before it exits, the driver renders the question into the
+slice's `asks/<n>-<slug>.md` through `asks.py`, and `bailout.json` names it as `document` for the
+stage to register. A writer's question becomes a decision when its verdict gives `options`, with
+the `recommend` it gives; `code-writer` and `doc-writer` now say when to give them. Otherwise it
+is a question. Options that `asks.py` refuses are said in the body, never dropped. A plan
+problem and an exhausted follow-up generation become decisions with the driver's proposal. A
+missing tool container or service becomes an `action`. A document that cannot be written is
+logged, and the stop stands. `run --step <id>` gives the plan task from Pilot's brief, which
+`state.json` keeps and every document carries, the close-out included.
+
+**The actions owed before a run carry checks (AIWF-88).** An action's `--check` is now a fact in
+a fixed vocabulary, in the new `checks.py`: `env <NAME>`, `file <repo>:<path>`, `origin <repo>
+<branch>:<path> contains <text>`, `slice <NNN> completed`, or `manual`. `--check` may be
+repeated, and the checks are kept joined by `; `. A commit or an environment id is refused,
+because slice 018's commit was rebased on push, and slice 007 named the wrong pod. An action
+headed `Before /dev:run-slice:` must carry a check. At startup the run loop evaluates the checks:
+- If they hold, the driver strikes the action.
+- If one fails, the action stays open even when struck, which is slice 007's case.
+- An action with `manual` or no check counts as done once a person strikes it.
+
+Any open action stops the run with an `action` document. Once every action is met, the ids go
+into `prerun_held` and are never evaluated again. The design's D1 to D5 are built as recommended.
+
+**`wait` is a signal.** It waits in the foreground, 540 s by default, within the Bash tool's ten
+minutes, and prints only what the session acts on:
+- `running` and the wait to re-arm
+- `ended: exit <n>` with the reason, the `document:` and the `bailout:` file
+- `gone` and the relaunch
+
+The log digest, the narration and `--from` are gone.
+
+**The driver removes its scratch clones.** At the run's end, the driver removes a `github:`
+Target's clone when its tree is clean, it holds no stash and every commit on its branches is on
+a remote. It notes this under the clone's event, or notes what it found and leaves the clone.
+The close-out session did this before.
+
 ## 2026-10-30 — Both loops stop at Pilot's halt file and exit 7; the plan loop gets `stop` (v0.10.3)
 
 Pilot writes `/work/.quota-limit-halt-requested` while a usage halt or the project's pause holds.

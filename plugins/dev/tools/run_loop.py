@@ -152,10 +152,13 @@ from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import asks  # noqa: E402
+import checks  # noqa: E402
 import github_target  # noqa: E402
 import project_config  # noqa: E402
 from close_out import (  # noqa: E402
     ReportError,
+    _prose,
     add_note,
     append_entry,
     counts_line,
@@ -166,11 +169,13 @@ from close_out import (  # noqa: E402
     live_entries,
     owed_before_push,
     owed_before_test,
+    prerun_actions,
     record_path,
     render_report,
     report_path,
     stamp_header,
     store_path,
+    strike_entry,
     verb_usage,
     worklist,
     worklist_view,
@@ -336,11 +341,6 @@ BAIL_DETAILS_CAP = 600
 # entry's headline. `phases` with no phase is between them, or before any.
 BAIL_STAGES = {"consult": "at the completion consult",
                "test": "in the test phase", "docs": "in the doc phase"}
-# An action entry the operator must settle before a run can
-# work — the plan-writer heads it `Before /dev:run-slice: …`. After-run ones
-# (the plan loop's push-hold and settle-V entries) never match.
-PRERUN_HEADLINE_RE = re.compile(r"^before\s+`?/dev:run-slice\b`?", re.IGNORECASE)
-
 # The spawn environment of every dispatched session (plan_loop imports it).
 # Ephemeral sessions must not pay the 1-hour cache-write premium; and the
 # prefix they carry on every turn is trimmed of what no headless role uses —
@@ -524,17 +524,20 @@ WRAP_UP_LISTS = ("fixed", "folded", "cards", "words", "left", "relabelled")
 
 class Bailout(Exception):
     """A terminal stop. `question=True` marks an operator question (exit 4);
-    everything else is an error (exit 3)."""
+    everything else is an error (exit 3). A question's `asks` are the asks
+    its document puts (`question_asks`), each `{kind, headline, body}` with
+    the block's fields; without them the reason's own are put."""
 
     def __init__(self, reason: str, phase: str | None = None,
                  details: str = "", consult: str | None = None,
-                 question: bool = False):
+                 question: bool = False, asks: list[dict] | None = None):
         super().__init__(reason)
         self.reason = reason
         self.phase = phase
         self.details = details
         self.consult = consult
         self.question = question
+        self.asks = asks
 
 
 class Halted(BaseException):
@@ -777,36 +780,242 @@ VERIFICATION_ITEM_KEYS = frozenset({
     "evidence"})
 
 
-def open_prerun_actions(slice_dir: Path) -> list[tuple[str, str]]:
-    """(id, headline) of every live action entry in the slice's
-    close-out report whose headline opens `Before /dev:run-slice` (the
-    command in backticks or not, any case). A missing report, or one without
-    the section, has none."""
+def scratch_clone_findings(clone: Path) -> list[str]:
+    """What keeps a scratch clone from being removed: changes in its tree, a
+    stash, a commit on a branch that no remote has, a linked worktree, or a
+    git that cannot tell. None, and it holds nothing of its own."""
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", str(clone), *args], capture_output=True,
+                              text=True, timeout=60, check=False)
+
+    found = []
     try:
-        entries = live_entries(slice_dir, "Outstanding actions")
-    except ReportError:
-        return []
-    return [(eid, headline) for eid, headline in entries
-            if PRERUN_HEADLINE_RE.match(headline)]
+        status = git("status", "--porcelain")
+        if status.returncode != 0:
+            return [f"`git status` failed ({status.stderr.strip() or status.returncode})"]
+        if status.stdout.strip():
+            found.append("its tree has changes")
+        if git("stash", "list").stdout.strip():
+            found.append("it holds a stash")
+        ahead = git("log", "--branches", "--not", "--remotes", "--oneline")
+        if ahead.returncode != 0:
+            found.append("git could not tell its branches from its remotes")
+        elif ahead.stdout.strip():
+            n = len(ahead.stdout.strip().splitlines())
+            found.append(f"{n} commit(s) on its branches are on no remote")
+        trees = git("worktree", "list", "--porcelain").stdout
+        if trees.count("worktree ") > 1:
+            found.append("it has linked worktrees")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        found.append(f"git could not read it ({e})")
+    return found
 
 
-def assert_no_prerun_actions(slice_dir: Path) -> None:
-    """Bail (`prerun_action`, an operator question) while the report holds an
-    open pre-run action: a phase dispatched before it is taken fails on what
-    it was meant to provide, and only the operator can take it."""
-    open_ = open_prerun_actions(slice_dir)
-    if not open_:
+def open_prerun_actions(slice_dir: Path) -> list[tuple[str, str]]:
+    """(id, headline) of every live action the run needs before it starts
+    (`close_out.prerun_actions`). A missing report has none."""
+    return [(a["id"], a["headline"]) for a in prerun_actions(slice_dir)
+            if not a["struck"]]
+
+
+def prerun_status(slice_dir: Path, repo_root: Path, spec_root: Path,
+                  skip: Sequence[str] = ()) -> list[dict]:
+    """Each action the run needs before it starts, but those in `skip`, with
+    what its checks say now (AIWF-88): the action's fields, `results` — one
+    `(check, holds, why)` per check the driver can evaluate — and `met`.
+    Every check holding meets it, struck or not; one failing leaves it open,
+    a strike notwithstanding (a strike does not make the fact true: slice
+    007). An action whose check is `manual`, absent or not the vocabulary's
+    has nothing to evaluate and is met once a person struck it."""
+    out = []
+    for action in prerun_actions(slice_dir):
+        if action["id"] in skip:
+            continue
+        try:
+            parsed = checks.parse(action["check"]) if action["check"] else []
+        except checks.CheckError:
+            parsed = []
+        if not parsed or checks.is_manual(parsed):
+            results, met = [], action["struck"]
+        else:
+            results = [(c.text, *checks.evaluate(c, repo_root=repo_root,
+                                                 spec_root=spec_root))
+                       for c in parsed]
+            met = all(holds for _, holds, _ in results)
+        out.append({**action, "results": results, "met": met})
+    return out
+
+
+def _prerun_ask(action: dict) -> dict:
+    """The `action` ask of a pre-run action still open: its body, then what
+    stands between it and the run."""
+    if action["results"]:
+        said = "\n".join(f"- `{check}`: {why}" for check, holds, why
+                          in action["results"] if not holds)
+        tail = ("**Not met yet.** The run starts once every check holds; it "
+                "evaluates them again when it resumes:\n\n" + said)
+    else:
+        tail = ("**Open.** No check shows this done: once you report it done, "
+                "the action is struck and the run starts.")
+    body = "\n\n".join(part for part in (_prose(action["body"].splitlines()), tail)
+                        if part.strip())
+    ask = {"kind": "action", "id": action["id"], "headline": action["headline"],
+           "body": body}
+    if action.get("check"):
+        ask["check"] = action["check"]
+    return ask
+
+
+# What each operator question's document says about itself: its file's
+# slug, the title's tail, what happens once it is answered, and — for a
+# reason whose raise site gives no asks — the one ask it puts.
+QUESTION_DOCS = {
+    "operator_question": (
+        "run-question", "a question from the run",
+        "Your answer goes into plan.md's rulings in your words, and the run "
+        "resumes where it stopped: the next writer reads the ruling there."),
+    "prerun_action": (
+        "before-the-run", "owed before its run",
+        "The run starts once every action here is done: it evaluates the "
+        "checks it can run, and an action without one is struck once you "
+        "report it done."),
+    "generation_exhausted": (
+        "follow-up-cap", "follow-up work past its cap",
+        "Your answer goes into plan.md's rulings in your words; the run-slice "
+        "session edits the plan to it and resumes the run."),
+    "plan_doc": (
+        "plan-fix", "a fix to its plan",
+        "Your answer goes into plan.md's rulings in your words; the run-slice "
+        "session corrects the plan to it and resumes the run."),
+    "missing_tools": (
+        "missing-tools", "tool containers its repos call",
+        "The run resumes in the environment once it runs them; it checks "
+        "again before it dispatches anything."),
+    "missing_services": (
+        "missing-services", "services its environment declares",
+        "The run resumes in the environment once it runs them; it checks "
+        "again before it dispatches anything."),
+}
+_QUESTION_DEFAULT = (
+    "run-question", "a question from the run",
+    "Your answer goes into plan.md's rulings in your words, and the run "
+    "resumes where it stopped.")
+
+
+def question_asks(bail: Bailout) -> list[dict]:
+    """The asks of an operator question's document: the raise site's own, or
+    the one its reason puts — a decision with the driver's proposal for a
+    plan problem or an exhausted generation, an `action` for an
+    environment fact, a question otherwise."""
+    if bail.asks:
+        return bail.asks
+    body = _prose((bail.details or "").splitlines()) or "(no details)"
+    where = f" in P{bail.phase}" if bail.phase else ""
+    if bail.reason == "generation_exhausted":
+        return [{"kind": "decision", "headline": "Stop the follow-up work here",
+                 "body": body,
+                 "proposal": "Stop here: the work appended last goes to the "
+                             "close-out for a later slice, its phases taken "
+                             "out of plan.md, and the run resumes to its test "
+                             "and doc phases."}]
+    if bail.reason == "plan_doc":
+        return [{"kind": "decision", "headline": f"Correct plan.md{where}",
+                 "body": body,
+                 "proposal": "The run-slice session corrects plan.md as each "
+                             "problem says, commits it and resumes the run."}]
+    if bail.reason == "missing_tools":
+        return [{"kind": "action",
+                 "headline": "Give this environment the tool containers",
+                 "body": body,
+                 "check": "the pod runs every tool container the run's repos "
+                          "call (`kc env describe`)"}]
+    if bail.reason == "missing_services":
+        return [{"kind": "action",
+                 "headline": "Give this environment the services",
+                 "body": body,
+                 "check": "the pod runs every service the host's environment "
+                          "config declares (`kc env describe`)"}]
+    return [{"kind": "question", "headline": f"The run's question{where}",
+             "body": body}]
+
+
+def writer_question_ask(verdict: dict, phase_id: str | None) -> dict:
+    """A writer's `question` verdict as its document's ask: a decision where
+    it gives `options` (labels, or `{label, line}`) — with its `recommend`
+    where it gives one — a question otherwise. The doc phase's writer has no
+    phase."""
+    role, where = (("code-writer", f" in P{phase_id}") if phase_id
+                   else ("doc-writer", " in the doc phase"))
+    body = _prose(str(verdict.get("summary") or "").splitlines()) \
+        or "(the writer gave no text)"
+    ask = {"kind": "question", "headline": f"The {role}'s question{where}",
+           "body": body}
+    options = verdict.get("options")
+    if isinstance(options, list) and options:
+        ask.update(kind="decision", options=options)
+        if isinstance(verdict.get("recommend"), str) and verdict["recommend"].strip():
+            ask["recommend"] = verdict["recommend"].strip()
+    return ask
+
+
+def _append_ask(store: dict, ask: dict) -> None:
+    """One ask into the store; where its block's fields are refused — a
+    writer's options asks.py will not take — the ask goes as a plain
+    question with the options said in its body, never dropped."""
+    fields = {k: ask[k] for k in asks.BLOCK_KEYS if ask.get(k) not in (None, "", [])}
+    try:
+        asks.append(store, ask["kind"], ask["headline"], ask["body"],
+                    id=ask.get("id"), **fields)
         return
-    tool = TOOLS_DIR / "close_out.py"
-    raise Bailout(
-        "prerun_action", question=True,
-        details=f"{report_path(slice_dir)} holds {len(open_)} open pre-run "
-                "action(s), to be taken before this run can work:\n"
-                + "\n".join(f"- {eid} — {headline}" for eid, headline in open_)
-                + "\nTake each action (or have it taken on your word), strike "
-                f"its entry with `python3 {tool} strike {slice_dir} <id> "
-                "--reason \"<what was done>\" --by <who>`, commit the report, "
-                "then relaunch with --resume.")
+    except asks.AskError:
+        if not fields:
+            raise
+    said = [f"- {o.get('label') if isinstance(o, dict) else o}"
+            + (f": {o['line']}" if isinstance(o, dict) and o.get("line") else "")
+            for o in fields.get("options") or ()]
+    body = ask["body"]
+    if said:
+        body += "\n\nThe options it gave:\n\n" + "\n".join(said)
+        if fields.get("recommend"):
+            body += f"\n\nIt recommends {fields['recommend']}."
+    asks.append(store, "question", ask["headline"], body)
+
+
+def render_question_document(slice_dir: Path, bail: Bailout,
+                             step: str | None) -> Path:
+    """The document an operator question puts (`question_asks`), rendered
+    into the slice's `asks/` through asks.py before the run exits 4, for the
+    run-slice session to register: its path. AskError or OSError when it
+    cannot be written; a store left without its document is removed."""
+    slug, what, after = QUESTION_DOCS.get(bail.reason, _QUESTION_DEFAULT)
+    num = Path(slice_dir).name.split("_")[0]
+    where = (f" in P{bail.phase}" if bail.phase else "")
+    entries = question_asks(bail)
+    why = _REASON_WORDS.get(bail.reason, f"`{bail.reason}`")
+    context = [f"The run of slice {num} stopped{where} on {why}. {after}"]
+    path = asks.create(slice_dir, slug, f"Slice {num}: {what}", step=step,
+                       summary=f"Slice {num}'s run waits on {len(entries)} asks "
+                               "before it can go on",
+                       context=context)
+    try:
+        with asks.editing(path) as store:
+            for ask in entries:
+                _append_ask(store, ask)
+        return asks.render_file(path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            path.unlink()
+        raise
+
+
+_REASON_WORDS = {
+    "operator_question": "a writer's question only you can answer",
+    "prerun_action": "actions owed before it starts",
+    "generation_exhausted": "follow-up work appended past its cap",
+    "plan_doc": "a plan problem only you can fix",
+    "missing_tools": "tool containers this environment does not run",
+    "missing_services": "services this environment does not run",
+}
 
 
 def assert_verification_keys(slice_dir: Path) -> None:
@@ -4007,7 +4216,8 @@ def services_check(roots: Sequence[Path],
 # ---------------------------------------------------------------------------
 
 class RunLoop:
-    def __init__(self, slice_dir: Path, resume: bool, verbose: bool = False):
+    def __init__(self, slice_dir: Path, resume: bool, verbose: bool = False,
+                 step: str | None = None):
         self.slice_dir = slice_dir.resolve()
         self.slice_name = self.slice_dir.name
         self.slice_num = self.slice_name.split("_")[0]
@@ -4018,6 +4228,9 @@ class RunLoop:
         self.log_path = self.slice_dir / "log.txt"
         self.resume = resume
         self.verbose = verbose
+        # The plan task the run serves, from the brief (`--step`): every
+        # document the run renders carries it, the close-out among them.
+        self.step = (step or "").strip() or None
         self.state: dict = {}
         self._log_file = None
         self._reattach: dict | None = None
@@ -4893,6 +5106,43 @@ class RunLoop:
         roots.extend(Path(key) for key in sorted(bases or {})
                      if not self._is_spec_root(Path(key)))
         return roots
+
+    def _assert_prerun(self) -> None:
+        """The actions the run needs before it starts (AIWF-88,
+        `prerun_status`), before any dispatch, fresh and resumed alike: one
+        whose checks all hold is struck by the driver, which says so; any
+        still open bails `prerun_action`, an operator question whose
+        document is an `action` per open one. Once every one is met, their
+        ids are kept in `prerun_held` and never evaluated again — the checks
+        gate the start, and the run that started owns what it found."""
+        held = self.state.setdefault("prerun_held", [])
+        status = prerun_status(self.slice_dir, self.repo_root, self.spec_root,
+                               skip=held)
+        for action in status:
+            if not (action["met"] and action["results"] and not action["struck"]):
+                continue
+            checked = "; ".join(check for check, _, _ in action["results"])
+            try:
+                strike_entry(self.slice_dir, action["id"],
+                             f"its checks hold: {checked}", by="the run loop")
+                self.log(f"pre-run {action['id']} struck: its checks hold "
+                         f"({checked})")
+            except ReportError as e:
+                self.log(f"pre-run {action['id']} met but not struck ({e})")
+        open_ = [a for a in status if not a["met"]]
+        if open_:
+            lines = []
+            for a in open_:
+                why = "; ".join(f"`{c}` — {w}" for c, ok, w in a["results"] if not ok) \
+                    or "no check shows it done, and nobody struck it"
+                lines.append(f"- {a['id']} — {a['headline']}: {why}")
+            raise Bailout(
+                "prerun_action", question=True,
+                details=f"{len(open_)} action(s) owed before this run are not "
+                        "done:\n" + "\n".join(lines),
+                asks=[_prerun_ask(a) for a in open_])
+        held.extend(a["id"] for a in status)
+        self._save_state()
 
     def _missing_tools(self) -> str | None:
         """The missing-tools message for this run's repos (`tools_check`),
@@ -7691,7 +7941,8 @@ class RunLoop:
                 ps["operator_question"] = verdict.get("summary", "")
                 self._save_state()
             raise Bailout("operator_question", phase=phase_id, question=True,
-                          details=verdict.get("summary", ""))
+                          details=verdict.get("summary", ""),
+                          asks=[writer_question_ask(verdict, phase_id)])
         if verdict["outcome"] == "blocked":
             raise Bailout("blocked", phase=phase_id,
                           details=verdict.get("summary", ""))
@@ -8824,9 +9075,9 @@ class RunLoop:
     def _report_scratch_clone(self, target: ResolvedTarget) -> None:
         """A GitHub target's clone, entered in the close-out report once per
         clone per run, as an event that describes no problem — the record:
-        the driver made (or adopted) it, and the close-out session removes it
-        once the slice's commits are on origin. Nothing is asked of the
-        operator. Marked in state.json once the write is over, so a write an
+        the driver made (or adopted) it, and removes it at the run's end
+        when nothing in it is the run's alone (`_remove_scratch_clones`).
+        Nothing is asked of the operator. Marked in state.json once the write is over, so a write an
         operator's edit stopped is the resume's to make."""
         if not github_target.is_github(target.name):
             return
@@ -8851,19 +9102,59 @@ class RunLoop:
             f"The driver cloned (or adopted) `{clone}` for `Target: "
             f"{target.name}`; the slice's phases for that repo are branched, "
             "merged and pushed there.\n\n"
-            "Deleting it is safe once the slice's commits are on origin — "
-            "the push check before the doc phase confirms that. The close-out "
-            "session removes it then and says so under this entry; nothing is "
-            "asked of the operator. A clone left in place is synced by every "
-            "later preflight in this environment and adopted by the next "
-            "`github:` target naming that repo.",
+            "The run loop removes it at the run's end when its tree is clean "
+            "and every commit on its branches is on origin, and says so under "
+            "this entry; otherwise it says what it found and leaves it. "
+            "Nothing is asked of the operator. A clone left in place is "
+            "synced by every later preflight in this environment and adopted "
+            "by the next `github:` target naming that repo.",
             consequence="none — the clone is where the run works; left "
                         "behind, it takes disk space and a sync in every "
-                        "later preflight, until the close-out session "
-                        "removes it.",
+                        "later preflight.",
             provenance="witnessed — the driver's target resolution")
         reported.append(key)
         self._save_state()
+
+    def _remove_scratch_clones(self) -> None:
+        """At the run's end: each scratch clone the run reported
+        (`_report_scratch_clone`) is removed when its tree is clean and every
+        commit on its branches is on a remote — nothing in it is the run's
+        alone — and the clone's event says so; one that is not stays, and the
+        event says what was found. Never a failure: the run is done."""
+        for key in self.state.get("scratch_clones_reported") or []:
+            clone = Path(key)
+            if not clone.is_dir():
+                continue
+            found = scratch_clone_findings(clone)
+            if not found:
+                try:
+                    shutil.rmtree(clone)
+                    said = ("Removed by the run loop at the run's end: its tree "
+                            "was clean and every commit on its branches was on "
+                            "its origin.")
+                except OSError as e:
+                    said = f"Left in place at the run's end: removing it failed ({e})."
+            else:
+                said = ("Left in place at the run's end: "
+                        + "; ".join(found) + ".")
+            self.log(f"scratch clone {clone}: {said}")
+            eid = self._scratch_clone_entry(clone)
+            if eid is None:
+                continue
+            try:
+                add_note(self.slice_dir, eid, "the run loop", said)
+            except ReportError as e:
+                self.log(f"close-out note on {eid} not written ({e})")
+
+    def _scratch_clone_entry(self, clone: Path) -> str | None:
+        prefix = f"The driver left a scratch clone at {clone} "
+        try:
+            for eid, headline in live_entries(self.slice_dir, "Notable events"):
+                if headline.startswith(prefix):
+                    return eid
+        except ReportError as e:
+            self.log(f"close-out not searched for the scratch clone ({e})")
+        return None
 
     def _assert_pushed(self, session: str | None) -> None:
         """Before the doc phase: every repo the slice touched is on its
@@ -10447,6 +10738,8 @@ class RunLoop:
                 "appended_phases": [],
                 "history": [],
             }
+        if self.step:
+            self.state["step"] = self.step
         (self.slice_dir / "bailout.json").unlink(missing_ok=True)
 
         # A resume re-enters the stage the bail left off in rather than
@@ -10492,7 +10785,7 @@ class RunLoop:
             # on a fresh run and on every resume alike. A resume enters the
             # earlier stops at its first dispatch, not here, while the spec
             # tree still stands on its base (`_report_bailouts`).
-            assert_no_prerun_actions(self.slice_dir)
+            self._assert_prerun()
             # Before the first dispatch, fresh and resumed alike: a repo
             # whose manifest calls a tool container this pod lacks, or a host
             # whose environment config declares a service it does not run, is
@@ -10543,6 +10836,7 @@ class RunLoop:
         # A resume that completed without dispatching anything enters its
         # stops here, with the tree on its base and the run over.
         self._report_bailouts()
+        self._remove_scratch_clones()
         self._stamp_report()
         self._summary()
         sys.exit(0)
@@ -10626,7 +10920,8 @@ class RunLoop:
         before the doc phase, at every bail and at completion. Idempotent, and
         never a failure: a report an agent broke is logged, the run goes on."""
         try:
-            self.log("close-out rendered: " + render_report(self.slice_dir))
+            self.log("close-out rendered: " + render_report(
+                self.slice_dir, step=self.state.get("step")))
         except ReportError as e:
             self.log(f"close-out not rendered: {e}")
 
@@ -10704,11 +10999,24 @@ class RunLoop:
         # close-out header can say how often the run stopped, and the details
         # with the stage so the resume can write the stop into the report
         # (`_report_bailouts`).
+        # An operator question's document first, so that the records below
+        # name it: rendered into the slice's asks/ for the run-slice session
+        # to register. One that cannot be written is logged, and the stop
+        # stands without it — nothing here may mask the bail.
+        document = None
+        if bail.question:
+            try:
+                document = str(render_question_document(
+                    self.slice_dir, bail, self.state.get("step")))
+                self.log(f"the question's document: {document}")
+            except Exception as e:
+                self.log(f"the question's document was not written: {e}")
         self.state.setdefault("bailouts", []).append(
             {"reason": bail.reason, "phase": bail.phase,
              "question": bail.question, "ts": _now_iso(),
              "run_phase": self.state.get("run_phase"),
-             "details": _clip(bail.details, BAIL_DETAILS_CAP)})
+             "details": _clip(bail.details, BAIL_DETAILS_CAP),
+             "document": document})
         self._save_state()
         payload = {
             "reason": bail.reason,
@@ -10716,6 +11024,7 @@ class RunLoop:
             "details": bail.details,
             "consult": bail.consult,
             "question": bail.question,
+            "document": document,
             "ts": _now_iso(),
         }
         with open(self.slice_dir / "bailout.json", "w") as f:
@@ -10886,7 +11195,8 @@ def cmd_run(args) -> None:
         print("Error: --detach and --dry-run do not combine — a dry run "
               "dispatches nothing and is over in seconds.", file=sys.stderr)
         sys.exit(2)
-    loop = RunLoop(slice_dir, resume=args.resume, verbose=args.verbose)
+    loop = RunLoop(slice_dir, resume=args.resume, verbose=args.verbose,
+                   step=getattr(args, "step", None))
     if args.dry_run:
         cmd_dry_run(loop)
         return
@@ -10899,10 +11209,7 @@ def cmd_run(args) -> None:
 
 def run_detached(loop: RunLoop, slice_arg: Path) -> None:
     """`run --detach`: the driver goes on in its own session, and this
-    process says how to wait on it. `--from` is log.txt's end before the
-    driver wrote to it, so the first `wait` reports the run from its first
-    line."""
-    offset = _file_size(loop.log_path)
+    process says how to wait on it."""
 
     def body(started) -> None:
         loop.on_start = started
@@ -10916,146 +11223,47 @@ def run_detached(loop: RunLoop, slice_arg: Path) -> None:
         sys.exit(code)
     print(f"driver detached: pid {pid} — it outlives this shell; "
           f"`{SCRIPT.name} stop` interrupts it", flush=True)
-    print(f"next: python3 {SCRIPT} wait {os.path.abspath(slice_arg)} "
-          f"--from {offset}", flush=True)
+    print(f"next: python3 {SCRIPT} wait {os.path.abspath(slice_arg)}",
+          flush=True)
 
 
-# `wait` — what the launching session re-arms on. Its cadence sits under the
-# harness's 3 600 000 ms timeout on the call, so it always exits by itself.
-WAIT_DEFAULT = 3300
+# `wait` — what the stage's session waits on inside its turn (pilot.md § A
+# turn's end is the run's end): a foreground call under the Bash tool's ten
+# minutes, re-armed with nothing read in between. Its output is a signal for
+# that session, never a report: one state line, then what it needs to act.
+WAIT_DEFAULT = 540
 WAIT_POLL = 10              # seconds between lock probes
 WAIT_RUNNING = 5            # wait's own exit codes, not the run's
 WAIT_KILLED = 6
-WAIT_LOG_LINES = 40         # the driver lines a check shows at most
-WAIT_LINE_CHARS = 200
-NARRATION_TAIL = 256 * 1024     # how far back to look for the agent's words
-TRANSCRIPT_LINE_RE = re.compile(r"\] session \S+ — transcript ")
-SESSION_START_RE = re.compile(r"\] session starting(?: \(resume\))?$")
-NARRATION_MARK = "] [text] "
 STOP_WAIT = 120
 STOP_POLL = 1
 
 
-def _span(seconds: float) -> str:
-    s = int(max(seconds, 0))
-    if s < 60:
-        return f"{s}s"
-    if s < 3600:
-        return f"{s // 60}m"
-    return f"{s // 3600}h{s % 3600 // 60:02d}m"
-
-
-def _age(iso: str | None) -> float | None:
-    try:
-        then = datetime.fromisoformat(iso)
-    except (TypeError, ValueError):
-        return None
-    if then.tzinfo is None:
-        then = then.astimezone()
-    return (datetime.now().astimezone() - then).total_seconds()
-
-
-def log_digest(log_path: Path, offset: int) -> tuple[list[str], int]:
-    """The driver's own lines in log.txt from byte `offset`, and the offset
-    read up to. Agent activity (indented) and the transcript locators are
-    left out, each line is clipped, and only the last WAIT_LOG_LINES are
-    kept. Complete lines only: a line still being written is the next
-    check's. An offset past the end means the log was rewritten under it,
-    and reading starts over."""
-    try:
-        with open(log_path, "rb") as f:
-            size = os.fstat(f.fileno()).st_size
-            if offset > size:
-                offset = 0
-            f.seek(offset)
-            data = f.read(size - offset)
-    except OSError:
-        return [], 0
-    end = data.rfind(b"\n") + 1
-    lines = [_clip(line, WAIT_LINE_CHARS)
-             for line in data[:end].decode(errors="replace").splitlines()
-             if line.strip() and not line[0].isspace()
-             and not TRANSCRIPT_LINE_RE.search(line)]
-    if len(lines) > WAIT_LOG_LINES:
-        omitted = len(lines) - WAIT_LOG_LINES
-        lines = [f"({omitted} earlier lines omitted)"] + lines[-WAIT_LOG_LINES:]
-    return lines, offset + end
-
-
-def latest_narration(log_path: Path, upto: int) -> str | None:
-    """The in-flight session's latest words — its last `[text]` activity
-    line before `upto`, looking no further back than the session's start."""
-    try:
-        with open(log_path, "rb") as f:
-            start = max(upto - NARRATION_TAIL, 0)
-            f.seek(start)
-            data = f.read(upto - start)
-    except OSError:
-        return None
-    for line in reversed(data.decode(errors="replace").splitlines()):
-        if line[:1].isspace():
-            if NARRATION_MARK in line:
-                return line.split(NARRATION_MARK, 1)[1]
-        elif SESSION_START_RE.search(line):
-            break
-    return None
-
-
-def _running_line(state: dict, log_path: Path) -> str:
-    parts = [state.get("run_phase") or "?"]
-    flight = state.get("in_flight") or {}
-    where = []
-    pid = flight.get("phase")
-    if pid:
-        where.append(f"P{pid}")
-        stage = (state.get("phases", {}).get(pid) or {}).get("stage")
-        if stage:
-            where.append(stage)
-    if flight.get("round"):
-        where.append(f"r{flight['round']}")
-    if where:
-        parts.append(" ".join(where))
-    role = flight.get("role")
-    if role:
-        seg = f"{role} in flight"
-        age = _age(flight.get("started_at"))
-        if age is not None:
-            seg += f" {_span(age)}"
-        if role in TIMEOUTS:
-            seg += f" (cap {_span(TIMEOUTS[role])})"
-        parts.append(seg)
-    with contextlib.suppress(OSError):
-        parts.append("last log line "
-                     f"{_span(time.time() - log_path.stat().st_mtime)} ago")
-    return "running: " + " · ".join(parts)
-
-
 def _ended_lines(code: int, slice_dir: Path) -> list[str]:
+    """What an ended run leaves for the session: the exit, and by it where a
+    halt stopped, or a stop's reason with the document to register — or,
+    for an error, the record to diagnose from."""
     lines = [f"ended: exit {code}"]
     if code == EXIT_HALTED:
         halts = (_read_json(slice_dir / "state.json") or {}).get("halts") or []
         where = halts[-1].get("at") if halts else None
-        lines.append("halted" + (f" {where}" if where else "")
-                     + f": {HALT_FILE} was present — once it is gone, "
-                       "resume with --resume --detach")
+        lines.append(f"halted: {where or 'at a safe point'}")
         return lines
     if code not in (3, 4):
         return lines
     bail = _read_json(slice_dir / "bailout.json") or {}
     lines.append(f"reason: {bail.get('reason')}"
                  + (f" (P{bail['phase']})" if bail.get("phase") else ""))
-    if bail.get("question"):
-        lines.append(f"question: {bail['question']}")
-    if bail.get("details"):
-        lines.append("details: " + "\n  ".join(
-            str(bail["details"]).splitlines()))
+    if bail.get("document"):
+        lines.append(f"document: {bail['document']}")
+    lines.append(f"bailout: {os.path.abspath(slice_dir / 'bailout.json')}")
     return lines
 
 
 def cmd_wait(args) -> None:
-    """Block until the run ends or `--for` seconds pass, then report it:
-    a status line, the driver's log lines since `--from`, the in-flight
-    session's latest words, and the next command."""
+    """Block until the run ends or `--for` seconds pass, then say which, and
+    nothing a session must read: `running` with the wait to re-arm, `ended:
+    exit <n>` with what the exit leaves, or `gone` with the relaunch."""
     slice_dir = Path(args.slice_dir)
     state_path = slice_dir / "state.json"
     if not slice_dir.is_dir():
@@ -11067,9 +11275,6 @@ def cmd_wait(args) -> None:
               file=sys.stderr)
         sys.exit(2)
     lock_path = slice_dir / "run.lock"
-    log_path = slice_dir / "log.txt"
-    offset = (args.from_offset if args.from_offset is not None
-              else _file_size(log_path))
     deadline = time.monotonic() + args.for_seconds
     while lock_held(lock_path):
         remaining = deadline - time.monotonic()
@@ -11077,31 +11282,17 @@ def cmd_wait(args) -> None:
             break
         time.sleep(min(WAIT_POLL, remaining))
 
-    alive = lock_held(lock_path)
-    state = _read_json(state_path) or {}
-    record = state.get("exit")
-    if alive:
-        code, lines = WAIT_RUNNING, [_running_line(state, log_path)]
+    where = os.path.abspath(slice_dir)
+    record = (_read_json(state_path) or {}).get("exit")
+    if lock_held(lock_path):
+        code, lines = WAIT_RUNNING, [
+            "running", f"next: python3 {SCRIPT} wait {where}"]
     elif record is not None:
         code, lines = 0, _ended_lines(record.get("code"), slice_dir)
     else:
-        code = WAIT_KILLED
-        lines = ["killed: the driver is gone and left no exit record"]
-        note = holder_note(lock_path) or "(no holder note)"
-        lines += [f"  {line}" for line in note.splitlines()]
-    digest, read_to = log_digest(log_path, offset)
-    lines += digest
-    flight = state.get("in_flight") or {}
-    if alive and flight.get("role"):
-        words = latest_narration(log_path, read_to)
-        if words:
-            lines.append(_clip(f"latest from {flight['role']}: {words}",
-                               WAIT_LINE_CHARS))
-    where = os.path.abspath(slice_dir)
-    if code == WAIT_RUNNING:
-        lines.append(f"next: python3 {SCRIPT} wait {where} --from {read_to}")
-    elif code == WAIT_KILLED:
-        lines.append(f"next: python3 {SCRIPT} run {where} --resume --detach")
+        code, lines = WAIT_KILLED, [
+            "gone: the driver left no exit record",
+            f"next: python3 {SCRIPT} run {where} --resume --detach"]
     print("\n".join(lines), flush=True)
     sys.exit(code)
 
@@ -11304,9 +11495,12 @@ def cmd_dry_run(loop: RunLoop) -> None:
             print(f"  hold  {target}  INVALID")
     # Reported, not a plan problem: a born-planned slice has no report, and
     # the dry run's verdict is on the plan alone.
-    for eid, headline in open_prerun_actions(loop.slice_dir):
-        print(f"  pre-run  {eid}  open — a real run stops on it until struck: "
-              f"{headline}")
+    for action in prerun_actions(loop.slice_dir):
+        if action["struck"]:
+            continue
+        check = f" (check: {action['check']})" if action["check"] else ""
+        print(f"  pre-run  {action['id']}  open — a real run evaluates it "
+              f"before it starts{check}: {action['headline']}")
     rulings, ruling_errors = parse_rulings(loop.plan_path.read_text())
     errors.extend(ruling_errors)
     for ruling in rulings:
@@ -11554,20 +11748,22 @@ def main() -> None:
                        help="run the driver in its own session, outliving "
                             "this shell; exits once it started and prints "
                             "the `wait` command to follow it with")
+    run_p.add_argument("--step", metavar="ID",
+                       help="the plan task the run serves, from Pilot's brief: "
+                            "every document the run renders carries it as "
+                            "`step`; kept for the resumes that do not give it")
     run_p.set_defaults(func=cmd_run)
 
     wait_p = sub.add_parser(
-        "wait", help="wait on a slice's driver; exit 0 when the run ended, "
-                     "5 still running at --for, 6 killed (no exit record)")
+        "wait", help="wait on a slice's driver, in the foreground; exit 0 "
+                     "when the run ended, 5 still running at --for, 6 gone "
+                     "(no exit record)")
     wait_p.add_argument("slice_dir")
     wait_p.add_argument("--for", dest="for_seconds", type=float,
                         default=WAIT_DEFAULT, metavar="SECONDS",
-                        help=f"give up waiting after this long "
-                             f"(default {WAIT_DEFAULT})")
-    wait_p.add_argument("--from", dest="from_offset", type=int,
-                        metavar="OFFSET",
-                        help="report log.txt from this byte (default: its "
-                             "end when the wait starts)")
+                        help=f"give up waiting after this long (default "
+                             f"{WAIT_DEFAULT}, inside the Bash tool's ten "
+                             "minutes)")
     wait_p.set_defaults(func=cmd_wait)
 
     stop_p = sub.add_parser(

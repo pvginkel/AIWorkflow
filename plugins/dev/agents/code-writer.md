@@ -75,10 +75,13 @@ author prose docs.
 Write the verdict file named in your dispatch:
 
 ```json
-{"outcome": "done | question | blocked", "summary": "1-3 sentences", "refuted": [{"id": "F2", "evidence": "review-fix rounds only: a blocking finding you witnessed as unable to fail — one line, what you ran or wrote"}]}
+{"outcome": "done | question | blocked", "summary": "1-3 sentences", "refuted": [{"id": "F2", "evidence": "review-fix rounds only: a blocking finding you witnessed as unable to fail — one line, what you ran or wrote"}], "options": [{"label": "question only, optional", "line": "what it means or costs"}], "recommend": "the label you would pick"}
 ```
 
 - `done` — implemented, gated, committed, done-record appended.
 - `question` — a decision only the operator can make; state it precisely in `summary` (the loop
-  pauses on it).
+  pauses on it, and the summary is the ask the operator reads). Where the answer is a pick
+  between alternatives, give them as `options` — two or more, each a short label and a line —
+  and the one you would pick as `recommend`; the question then reaches the operator as a
+  decision. Leave both out for an open question.
 - `blocked` — an environmental or premise problem you must not work around.

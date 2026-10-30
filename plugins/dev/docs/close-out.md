@@ -208,9 +208,14 @@ the entry, the operator what happens to it.
 **What must land first.** An entry whose fix must not wait for the run's end says what it must
 land before (`--due`): the phase's merge, the test phase, the push, or the report's close. The
 run loop hands the completion consult every live entry due before the push or the test phase
-([run-loop.md](run-loop.md) § After the last phase). An action whose being done shows in a
-command or a file says how (`--check`), and one that asks for an answer back names the answers
-(`--option`).
+([run-loop.md](run-loop.md) § After the last phase). An action whose being done shows in the
+tree or the pod says so as a fact (`--check`, repeated for each): `env <NAME>` set in the pod
+that runs the slice, `file <repo>:<path>` present, `origin <repo> <branch>:<path> contains
+<text>` after a fetch, `slice <NNN> completed` — never a commit, which a push can rebase, nor an
+environment, which may not be the one that runs the slice; `manual` where no check captures it.
+An action owed before the run carries one, which the run loop evaluates before it starts
+([run-loop.md](run-loop.md) § Protocol invariants). One that asks for an answer back names the
+answers (`--option`).
 
 **The tool refuses**, naming the flag, so that the author corrects in one turn:
 
@@ -218,6 +223,8 @@ command or a file says how (`--check`), and one that asks for an answer back nam
   the one it recommends, or with a proposal; an improvement whose headline is a question;
 - an option, a recommendation or a check on a kind that does not take it, a recommendation
   naming no option, a due that is no step of the run;
+- a check outside the vocabulary, one naming a commit or an environment, `manual` beside another
+  check; an action owed before the run without one;
 - an entry without the labels its kind carries;
 - an impact other than `none` over a `Consequence:` that opens with "none", and the reverse;
 - a `for` that names the slice being run, or one whose folder has left `slices/` and
@@ -337,8 +344,9 @@ invariants).
   events during planning. Their in-scope findings and questions keep their existing routes (the
   review file, the `questions` verdict, the interactive session). An action only the operator can
   take that the run needs *before* it starts — a push the plan's tools wait on, a pod restart —
-  is an action whose headline begins `Before /dev:run-slice:`; the run loop refuses to start or
-  resume while one is live ([run-loop.md](run-loop.md) § Protocol invariants).
+  is an action whose headline begins `Before /dev:run-slice:`, with the check that shows it
+  done; the run loop strikes it when its checks hold and does not start while one is open
+  ([run-loop.md](run-loop.md) § Protocol invariants).
 - **the plan loop** — at its exit 0, one action per repo the plan's `## Push holds` holds,
   listing the criteria `verification.json` marks `owed_after` that push, and one per criterion
   owed after anything else ([plan-template.md](plan-template.md)). Each is entered once: the
@@ -523,11 +531,14 @@ agreeing is not an answer.
    seeds the actions the plan already owes at its exit 0, and renders.
 2. The run loop creates it if planning did not, appends throughout; the completion consult
    reconciles; the wrap-up works on what the table gave it, after the doc-writer and before the
-   run's last render, whatever the run's exit; the driver renders before the doc phase, after
-   the wrap-up, at every stop and when the run completes, and `/dev:run-slice` once more after
-   the cost block lands. The driver removes a scratch clone it left for a `github:` Target when
-   its tree is clean and level with its origin, and says so in the record; otherwise it says
-   what it found and leaves it.
+   render the run completes with — in a project with no doc phase the ladder starts at it — so
+   the close-out a run registers always comes after it, and an entry it did not reach, its
+   session left out, renders as that. The driver renders before the doc phase, after the
+   wrap-up, at every stop — the record of a run not over, which nobody registers — and when the
+   run completes, and `/dev:run-slice` once more after the cost block lands. At the run's end
+   the driver removes a scratch clone it left for a `github:` Target when its tree is clean,
+   it holds no stash and every commit on its branches is on a remote, and says so under the
+   clone's event; otherwise it says what it found and leaves it.
 3. `/dev:run-slice` registers `close-out.md` with Pilot, attaches the record and the rest of
    the slice's evidence, and ends its turn. With no ask, there is nothing to register.
 4. Pilot's pass pre-rules what it can, the operator answers the rest, Pilot writes the answers

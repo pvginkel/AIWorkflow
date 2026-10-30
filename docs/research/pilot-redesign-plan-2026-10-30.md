@@ -647,7 +647,7 @@ sessions in all.
   *Done when:* a store of the old fixtures renders as a document that `register_document` would
   take, and an answered copy absorbs into rulings. The largest item.
 - [x] **A3. The halt file** (§5.5) in both loops, `plan_loop.py stop`, the exit `halted`, tests.
-- [ ] **A4. The run loop's asks** (§5.2): every exit-4 rendered as a document before the exit, `--step`,
+- [x] **A4. The run loop's asks** (§5.2): every exit-4 rendered as a document before the exit, `--step`,
   the question verdict's optional `options`/`recommend` in `code-writer.md` and `doc-writer.md`,
   the pre-run actions and the environment facts as `action` documents, AIWF-88's checks
   evaluated, `report_edited` removed, `wait` as a machine signal; tests.

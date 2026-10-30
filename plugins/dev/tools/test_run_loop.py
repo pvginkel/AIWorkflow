@@ -12590,12 +12590,14 @@ def test_an_open_pre_run_action_refuses_the_run_until_struck():
         assert not r.spawned
         bail = json.loads((slice_dir / "bailout.json").read_text())
         assert bail["reason"] == "prerun_action" and bail["question"] is True
-        assert f"- A2 — {PRERUN}" in bail["details"]
+        assert f"- A2 — {PRERUN}: no check shows it done" in bail["details"]
         assert "A1" not in bail["details"], "an after-run action never refuses"
-        tool = Path(run_loop.__file__).resolve().parent / "close_out.py"
-        assert (f"`python3 {tool} strike {slice_dir} <id> --reason "
-                '"<what was done>" --by <who>`') in bail["details"]
-        assert "relaunch with --resume" in bail["details"]
+        # the document the session registers: an action per open one
+        doc = Path(bail["document"]).read_text()
+        assert Path(bail["document"]).parent == slice_dir / "asks"
+        assert f"## {PRERUN}\n" in doc and "```action id=A2\n" in doc
+        assert "**Open.** No check shows this done" in doc
+        assert "A1" not in doc
         state = load_state(slice_dir)
         assert state["run_phase"] == "phases"
         assert state["bailouts"][-1]["reason"] == "prerun_action"
@@ -12612,6 +12614,7 @@ def test_an_open_pre_run_action_refuses_the_run_until_struck():
                                      *TAIL], resume=True, repo_root=repo)
         assert run_to_exit(r) == 0
         assert r.spawned
+        assert load_state(slice_dir)["prerun_held"] == ["A2"]
 
 
 def test_an_after_run_action_alone_never_refuses_the_run():
@@ -12656,9 +12659,188 @@ def test_a_dry_run_lists_open_pre_run_actions_without_failing():
                 raise AssertionError(
                     f"dry run must pass, exited {e.code}") from None
         text = out.getvalue()
-        assert ("  pre-run  A2  open — a real run stops on it until struck: "
-                + PRERUN) in text
+        assert ("  pre-run  A2  open — a real run evaluates it before it "
+                "starts: " + PRERUN) in text
         assert "A1" not in text
+
+
+def _prerun_with_check(slice_dir, check, headline=PRERUN):
+    close_out.init_report(slice_dir)
+    return close_out.append_entry(slice_dir, "action", headline, "body",
+                                  consequence="x", check=check)
+
+
+def test_a_pre_run_action_whose_checks_hold_is_struck_by_the_driver():
+    """AIWF-88 D3: nobody comes back to strike what the pod already shows;
+    the run starts, and the held actions are never evaluated again."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        _prerun_with_check(slice_dir, "env PILOT_TEST_TOKEN; slice 73 completed")
+        (slice_dir.parent / "completed" / "073_done").mkdir(parents=True)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        r.step = "T4"
+        with patched(os, environ={**os.environ, "PILOT_TEST_TOKEN": "t"}):
+            assert run_to_exit(r) == 0
+        # the step the brief gave is the close-out's too
+        assert json.loads((slice_dir / "close-out.json").read_text())["step"] == "T4"
+        entry = json.loads((slice_dir / "close-out.json").read_text())["entries"][0]
+        assert entry["strike"]["by"] == "the run loop"
+        assert entry["strike"]["reason"] == (
+            "its checks hold: env PILOT_TEST_TOKEN; slice 73 completed")
+        assert load_state(slice_dir)["prerun_held"] == ["A1"]
+
+
+def test_a_pre_run_check_that_fails_stops_the_run_struck_or_not():
+    """D4: a check that fails is an open action, a strike notwithstanding —
+    slice 007's was struck while the commit it waited on was unpushed. The
+    document says which check and why."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        _prerun_with_check(slice_dir, "env PILOT_ABSENT_TOKEN")
+        close_out.strike_entry(slice_dir, "A1", "restarted", by="operator")
+        env = {k: v for k, v in os.environ.items() if k != "PILOT_ABSENT_TOKEN"}
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r.step = "T7"
+        with patched(os, environ=env):
+            assert run_to_exit(r) == 4
+        assert not r.spawned
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "prerun_action"
+        assert ("- A1 — " + PRERUN + ": `env PILOT_ABSENT_TOKEN` — "
+                "PILOT_ABSENT_TOKEN is not set in this pod") in bail["details"]
+        doc = Path(bail["document"]).read_text()
+        assert doc.startswith("---\ntitle: \"Slice 074: owed before its run\"\n"
+                              "step: T7\n---\n") or "step: T7" in doc.split("---")[1]
+        assert "**Not met yet.**" in doc
+        assert "- `env PILOT_ABSENT_TOKEN`: PILOT_ABSENT_TOKEN is not set in this pod" in doc
+        assert "```action id=A1\ncheck: env PILOT_ABSENT_TOKEN\n```" in doc
+        assert load_state(slice_dir)["step"] == "T7"
+        assert load_state(slice_dir)["prerun_held"] == []
+
+
+def test_a_writers_question_is_rendered_as_the_document_to_register():
+    """Decision 4: a question verdict's options and recommendation make a
+    decision; without them it is a question; options asks.py refuses are
+    said in the body, never dropped."""
+    for verdict, block in (
+            ({"outcome": "question", "summary": "Which auth scheme?",
+              "options": ["OIDC", {"label": "Basic", "line": "one header"}],
+              "recommend": "OIDC"},
+             "```decision id=D1\noptions:\n  - OIDC\n  - Basic: one header\n"
+             "recommend: OIDC\n```"),
+            ({"outcome": "question", "summary": "Which auth scheme?"},
+             "```question id=Q1\n```"),
+            ({"outcome": "question", "summary": "Which auth scheme?",
+              "options": ["OIDC", "OIDC"]},
+             "```question id=Q1\n```")):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp)
+            r = ScriptedLoop(slice_dir, [("code-writer", verdict)], repo_root=repo)
+            assert run_to_exit(r) == 4
+            bail = json.loads((slice_dir / "bailout.json").read_text())
+            document = Path(bail["document"])
+            assert document == slice_dir / "asks" / "1-run-question.md"
+            assert load_state(slice_dir)["bailouts"][-1]["document"] == str(document)
+            doc = document.read_text()
+            assert "## The code-writer's question in P1\n\nWhich auth scheme?" in doc
+            assert block in doc, doc
+            assert ("The run of slice 074 stopped in P1 on a writer's question "
+                    "only you can answer.") in doc
+            if verdict.get("options") == ["OIDC", "OIDC"]:
+                assert "The options it gave:\n\n- OIDC\n- OIDC" in doc
+
+
+def test_each_question_reason_puts_its_own_ask():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = Path(tmp) / "slices" / "074_x"
+        slice_dir.mkdir(parents=True)
+        cases = (
+            (run_loop.Bailout("missing_tools", question=True,
+                              details="- use: go\n# not a heading"),
+             "## Give this environment the tool containers\n",
+             "```action id=A1\ncheck: the pod runs every tool container"),
+            (run_loop.Bailout("generation_exhausted", question=True, details="x"),
+             "## Stop the follow-up work here\n",
+             "```decision id=D1\nproposal: \"Stop here: the work appended last"),
+            (run_loop.Bailout("plan_doc", phase="3", question=True, details="x"),
+             "## Correct plan.md in P3\n", "```decision id=D1\nproposal:"),
+            (run_loop.Bailout("something_new", question=True, details="why?"),
+             "## The run's question\n", "```question id=Q1\n```"))
+        for n, (bail, heading, block) in enumerate(cases, 1):
+            path = run_loop.render_question_document(slice_dir, bail, None)
+            assert path.name.startswith(f"{n}-"), path
+            doc = path.read_text()
+            assert heading in doc and block in doc, doc
+            assert "step:" not in doc
+        # a heading in the details stays the driver's text
+        assert "\\# not a heading" in (slice_dir / "asks" / "1-missing-tools.md").read_text()
+
+
+def test_a_question_whose_document_cannot_be_written_still_stops():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [("code-writer", {"outcome": "question",
+                                                      "summary": "which?"})],
+                         repo_root=repo)
+
+        def refuse(*a, **kw):
+            raise run_loop.asks.AskError("no")
+        with patched(run_loop, render_question_document=refuse):
+            assert run_to_exit(r) == 4
+        assert json.loads((slice_dir / "bailout.json").read_text())["document"] is None
+        assert "the question's document was not written: no" in \
+            (slice_dir / "log.txt").read_text()
+
+
+def _git_in(cwd, *args):
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+
+def test_the_run_removes_a_scratch_clone_with_nothing_of_its_own():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        bare = root / "remote.git"
+        _git_in(root, "init", "--bare", "-b", "main", str(bare))
+        clones = {}
+        for name in ("Clean", "Ahead", "Dirty"):
+            clone = root / "scratch" / name
+            _git_in(root, "clone", str(bare), str(clone))
+            _git_in(clone, "config", "user.email", "t@t")
+            _git_in(clone, "config", "user.name", "t")
+            (clone / "f").write_text(name)
+            _git_in(clone, "add", "f")
+            _git_in(clone, "commit", "-m", name)
+            clones[name] = clone
+        _git_in(clones["Clean"], "push", "origin", "HEAD:refs/heads/clean")
+        _git_in(clones["Clean"], "fetch", "origin")
+        (clones["Dirty"] / "f").write_text("changed")
+        _git_in(clones["Dirty"], "push", "origin", "HEAD:refs/heads/dirty")
+        _git_in(clones["Dirty"], "fetch", "origin")
+        assert run_loop.scratch_clone_findings(clones["Clean"]) == []
+        assert run_loop.scratch_clone_findings(clones["Ahead"]) == [
+            "1 commit(s) on its branches are on no remote"]
+        assert run_loop.scratch_clone_findings(clones["Dirty"]) == [
+            "its tree has changes"]
+
+        slice_dir, repo = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        loop = ScriptedLoop(slice_dir, [], repo_root=repo)
+        loop.state = {"scratch_clones_reported": [str(c) for c in clones.values()]}
+        for clone in clones.values():
+            close_out.append_entry(
+                slice_dir, "event", f"The driver left a scratch clone at {clone} "
+                f"(`Target: github:acme/{clone.name}`)", "b", consequence="none")
+        loop._remove_scratch_clones()
+        assert not clones["Clean"].exists()
+        assert clones["Ahead"].is_dir() and clones["Dirty"].is_dir()
+        notes = {e["headline"].split("scratch/")[1].split(" ")[0]:
+                 " ".join(e["notes"][-1]["text"])
+                 for e in json.loads((slice_dir / "close-out.json").read_text())["entries"]}
+        assert notes["Clean"].startswith("Removed by the run loop at the run's end")
+        assert notes["Ahead"] == ("Left in place at the run's end: 1 commit(s) on its "
+                                  "branches are on no remote.")
+        assert notes["Dirty"] == "Left in place at the run's end: its tree has changes."
 
 
 # -- the installed-plugin and verification-key guards -----------------------
@@ -13677,8 +13859,14 @@ def test_a_github_phase_runs_in_its_clone_and_reports_it_once():
                 "witnessed", "the driver's target resolution")
             body = " ".join(entry["body"])
             assert f"`Target: {GITHUB}`" in body
-            assert ("The close-out session removes it then and says so under "
-                    "this entry; nothing is asked of the operator.") in body
+            assert ("The run loop removes it at the run's end when its tree is "
+                    "clean and every commit on its branches is on origin, and "
+                    "says so under this entry") in body
+            # the run's end looked at it: a clone git cannot read stays
+            assert clone.is_dir()
+            assert entry["notes"][-1]["by"] == "the run loop"
+            assert " ".join(entry["notes"][-1]["text"]).startswith(
+                "Left in place at the run's end: `git status` failed")
             assert load_state(slice_dir)["scratch_clones_reported"] == [
                 str(clone.resolve())]
             assert run_loop.live_entries(slice_dir, "Outstanding actions") == []
@@ -15024,9 +15212,9 @@ def call(cmd, **args):
     raise AssertionError(f"{cmd.__name__} did not exit")
 
 
-def wait(slice_dir, for_seconds=0, from_offset=None):
+def wait(slice_dir, for_seconds=0):
     return call(run_loop.cmd_wait, slice_dir=str(slice_dir),
-                for_seconds=for_seconds, from_offset=from_offset)
+                for_seconds=for_seconds)
 
 
 RUNNING_STATE = {
@@ -15046,22 +15234,32 @@ def test_wait_answers_2_when_there_is_no_run_to_wait_on():
         assert code == 2 and "never started" in err
 
 
-def test_wait_answers_0_with_the_exit_and_the_bail():
+def test_wait_answers_0_with_the_exit_and_the_document():
+    """A signal, not a report: the exit, the reason and the document to
+    register — no log line, no details, nothing a session reads to decide
+    whether to wait again."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = run_record(
             tmp, state={"run_phase": "test", "exit": {"code": 4, "ts": "t"}},
             bail={"reason": "operator_question", "phase": "3",
-                  "question": True, "details": "which auth?\nline two"},
+                  "question": True, "details": "which auth?\nline two",
+                  "document": "/specs/slices/075_waited/asks/1-run-question.md"},
             log="[10:00:00] [P3] [code-writer] → question: which auth?\n")
-        code, out, _ = wait(slice_dir, from_offset=0)
+        code, out, _ = wait(slice_dir)
         assert code == 0
-        lines = out.splitlines()
-        assert lines[0] == "ended: exit 4"
-        assert "reason: operator_question (P3)" in lines
-        assert "question: True" in lines
-        assert "details: which auth?" in lines and "  line two" in lines
-        assert "[10:00:00] [P3] [code-writer] → question: which auth?" in lines
-        assert not any(line.startswith("next:") for line in lines)
+        assert out.splitlines() == [
+            "ended: exit 4", "reason: operator_question (P3)",
+            "document: /specs/slices/075_waited/asks/1-run-question.md",
+            f"bailout: {os.path.abspath(slice_dir / 'bailout.json')}"]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(
+            tmp, state={"exit": {"code": 3, "ts": "t"}},
+            bail={"reason": "blocked", "phase": None, "question": False,
+                  "details": "x", "document": None})
+        code, out, _ = wait(slice_dir)
+        assert out.splitlines() == [
+            "ended: exit 3", "reason: blocked",
+            f"bailout: {os.path.abspath(slice_dir / 'bailout.json')}"]
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = run_record(
             tmp, state={"run_phase": "done", "exit": {"code": 0, "ts": "t"}})
@@ -15069,26 +15267,17 @@ def test_wait_answers_0_with_the_exit_and_the_bail():
         assert (code, out) == (0, "ended: exit 0\n")
 
 
-def test_wait_answers_5_with_the_status_and_the_next_wait():
+def test_wait_answers_5_with_the_wait_to_re_arm_and_nothing_else():
     log = ("[03:00:00] [P2] [code-reviewer] session starting\n"
-           "    [P2] [code-reviewer] [1s] [text] Reading the diff.\n"
-           "    [P2] [code-reviewer] [9s] [tool] Bash git diff\n"
-           "    [P2] [code-reviewer] [20s] [text] Now the tests.\n"
-           "    [P2] [code-reviewer] [30s] [tool] Read x.py\n")
+           "    [P2] [code-reviewer] [1s] [text] Reading the diff.\n")
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = run_record(tmp, state=RUNNING_STATE, log=log)
-        size = (slice_dir / "log.txt").stat().st_size
         with holding(slice_dir):
             code, out, _ = wait(slice_dir)
         assert code == run_loop.WAIT_RUNNING == 5
-        lines = out.splitlines()
-        assert re.fullmatch(
-            r"running: phases · P2 review r2 · code-reviewer in flight "
-            r"\S+ \(cap 1h00m\) · last log line \d+s ago", lines[0]), lines[0]
-        assert lines[1] == "latest from code-reviewer: Now the tests."
-        assert lines[-1] == (f"next: python3 {run_loop.SCRIPT} wait "
-                             f"{os.path.abspath(slice_dir)} --from {size}")
-        assert len(lines) == 3
+        assert out.splitlines() == [
+            "running", f"next: python3 {run_loop.SCRIPT} wait "
+                       f"{os.path.abspath(slice_dir)}"]
 
 
 def test_wait_answers_6_for_a_driver_gone_without_an_exit_record():
@@ -15096,17 +15285,12 @@ def test_wait_answers_6_for_a_driver_gone_without_an_exit_record():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = run_record(tmp, state=RUNNING_STATE, note=note,
                                log="[03:00:00] [P2] start\n")
-        code, out, _ = wait(slice_dir, from_offset=0)
+        code, out, _ = wait(slice_dir)
         assert code == run_loop.WAIT_KILLED == 6
-        lines = out.splitlines()
-        assert lines[0] == "killed: the driver is gone and left no exit record"
-        assert lines[1:4] == ["  host: pod", "  pid: 4242",
-                              "  started: 2026-10-01T03:00:00+00:00"]
-        assert "[03:00:00] [P2] start" in lines
-        # nothing in flight is narrated for a dead driver
-        assert not any(line.startswith("latest from") for line in lines)
-        assert lines[-1] == (f"next: python3 {run_loop.SCRIPT} run "
-                             f"{os.path.abspath(slice_dir)} --resume --detach")
+        assert out.splitlines() == [
+            "gone: the driver left no exit record",
+            f"next: python3 {run_loop.SCRIPT} run "
+            f"{os.path.abspath(slice_dir)} --resume --detach"]
 
 
 def test_wait_returns_when_the_driver_lets_the_lock_go():
@@ -15130,68 +15314,8 @@ def test_wait_returns_when_the_driver_lets_the_lock_go():
         assert code == 0 and out.startswith("ended: exit 0")
 
 
-def test_wait_shows_the_drivers_own_lines_since_the_offset():
-    driver = [f"[10:00:{i:02d}] [P1] line {i}" for i in range(45)]
-    lines = []
-    for i, line in enumerate(driver):
-        lines.append(line)
-        lines.append(f"    [P1] [code-writer] [{i}s] [tool] Bash ls")
-    lines.insert(3, "[10:00:01] [P1] [code-writer] session "
-                    "0f0e-11 — transcript /home/x/.claude/0f0e-11.jsonl")
-    lines.insert(5, "")
-    lines.append("[10:01:00] " + "y" * 300)
-    text = "\n".join(lines) + "\n" + "[10:02:00] half a li"
-    with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "log.txt"
-        data = text.encode()     # offsets are bytes, and "—" is three
-        path.write_bytes(data)
-        out, read_to = run_loop.log_digest(path, 0)
-        # complete lines only: the offset stops at the last newline
-        assert read_to == data.rindex(b"\n") + 1
-        assert out[0] == "(6 earlier lines omitted)"
-        assert len(out) == 41
-        assert out[1:-1] == driver[6:]
-        assert len(out[-1]) == 200 and out[-1].endswith("…")
-        assert not any("transcript" in line or line.startswith(" ")
-                       for line in out)
-        # from an offset: only what came after it
-        offset = data.index(driver[44].encode())
-        assert run_loop.log_digest(path, offset)[0] == \
-            [driver[44], out[-1]]
-        # an offset past the end is a rewritten log: start over
-        assert run_loop.log_digest(path, len(data) + 100)[1] == read_to
-        # the partial line is the next check's, once it is whole
-        with open(path, "ab") as f:
-            f.write(b"ne\n")
-        assert run_loop.log_digest(path, read_to)[0] == \
-            ["[10:02:00] half a line"]
-        assert run_loop.log_digest(Path(tmp) / "absent.txt", 7) == ([], 0)
-        # bytes that are not UTF-8 are read, not fatal
-        path.write_bytes(b"[10:00:00] caf\xe9\n")
-        assert run_loop.log_digest(path, 0)[0] == ["[10:00:00] caf�"]
-
-
-def test_wait_reads_from_its_own_start_by_default():
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir = run_record(tmp, state={"exit": {"code": 0, "ts": "t"}},
-                               log="[10:00:00] old line\n")
-        code, out, _ = wait(slice_dir)
-        assert out == "ended: exit 0\n"
-        code, out, _ = wait(slice_dir, from_offset=0)
-        assert "[10:00:00] old line" in out.splitlines()
-
-
-def test_the_narration_is_the_in_flight_sessions_own():
-    log = ("[03:00:00] [P1] [code-writer] session starting\n"
-           "    [P1] [code-writer] [1s] [text] The writer's words.\n"
-           "[03:10:00] [P1] [code-reviewer] session starting\n"
-           "    [P1] [code-reviewer] [1s] [tool] Bash git diff\n")
-    with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "log.txt"
-        path.write_text(log)
-        assert run_loop.latest_narration(path, len(log)) is None
-        path.write_text(log + "    [P1] [code-reviewer] [5s] [text] Mine.\n")
-        assert run_loop.latest_narration(path, path.stat().st_size) == "Mine."
+def test_wait_stays_inside_the_bash_tools_ten_minutes():
+    assert run_loop.WAIT_DEFAULT < 600
 
 
 def stop(slice_dir):
@@ -15372,7 +15496,7 @@ def test_run_detach_prints_the_pid_and_the_wait_to_follow():
         lines = out.getvalue().splitlines()
         assert "pid 4242" in lines[0]
         assert lines[-1] == (f"next: python3 {run_loop.SCRIPT} wait "
-                             f"{os.path.abspath(slice_dir)} --from 6")
+                             f"{os.path.abspath(slice_dir)}")
         err = io.StringIO()
         with patched(run_loop, detach=lambda body, log: (None, 2, "Error: x\n")), \
                 contextlib.redirect_stderr(err):
@@ -15408,10 +15532,9 @@ def test_a_detached_run_refuses_and_runs_through_the_real_handshake():
         pid, code, text = run_loop.detach(body, r.log_path)
         assert code == 0 and pid, text
         with patched(run_loop, WAIT_POLL=0.02):
-            code, out, _ = wait(slice_dir, for_seconds=30, from_offset=0)
+            code, out, _ = wait(slice_dir, for_seconds=30)
         assert code == 0, out
-        assert out.splitlines()[0] == "ended: exit 0"
-        assert any("merged" in line for line in out.splitlines())
+        assert out.splitlines() == ["ended: exit 0"]
 
         again = ScriptedLoop(slice_dir, [], repo_root=repo)
 
@@ -15682,10 +15805,7 @@ def test_wait_answers_0_with_the_halt_and_where_it_stopped():
                                    "ts": "t"}]})
         code, out, _ = wait(slice_dir)
         assert code == 0
-        assert out.splitlines() == [
-            "ended: exit 7",
-            f"halted before P3: {run_loop.HALT_FILE} was present — once it "
-            "is gone, resume with --resume --detach"]
+        assert out.splitlines() == ["ended: exit 7", "halted: before P3"]
 
 
 if __name__ == "__main__":

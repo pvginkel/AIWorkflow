@@ -103,7 +103,9 @@ facts `${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels asks for (`close_o
 prints them), `unknown` where you cannot tell; where an entry goes is the tool's to decide, never
 yours. In-scope questions keep their route: the `questions` verdict, never a report entry. An
 action only the operator can take that the run needs before it starts is an entry of the kind
-`action` headed `Before /dev:run-slice: …` — the run loop will not start while it is live.
+`action` headed `Before /dev:run-slice: …`, with the fact that shows it done as `--check` — never
+a commit or an environment (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels, *What must
+land first*, has the vocabulary); the run loop does not start until its checks hold.
 
 ## Hand-back
 

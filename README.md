@@ -40,8 +40,8 @@ it, the operator answers what comes to them in Pilot and the run's continuation 
 answers out.
 
 - **`plugins/dev/`** — the plugin: 9 skills, 11 agents, the tools (`run_loop.py`,
-  `plan_loop.py`, `asks.py`, `close_out.py`, `sweep_slice.py`, `close_slice.py`, `slice_cost.py`,
-  `turn_profile.py`, `preflight.py`, `project_config.py`, `redact_secrets.py`,
+  `plan_loop.py`, `asks.py`, `close_out.py`, `checks.py`, `sweep_slice.py`, `close_slice.py`,
+  `slice_cost.py`, `turn_profile.py`, `preflight.py`, `project_config.py`, `redact_secrets.py`,
   `spec_check.py`, `allocate-next-slice.sh`, with their suites), and the
   contract docs
   (`run-loop.md` / `runner-state.md` / `plan-loop.md` / `plan-template.md` / `refinement.md` /

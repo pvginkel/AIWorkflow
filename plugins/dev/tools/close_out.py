@@ -115,6 +115,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import asks  # noqa: E402
+import checks  # noqa: E402
 
 REPORT_NAME = "close-out.md"
 RECORD_NAME = "close-out-record.md"
@@ -647,7 +648,9 @@ def _ask_problems(entry: dict) -> list[str]:
     if recommend is not None and recommend not in [o.get("label") for o in options or ()
                                                    if isinstance(o, dict)]:
         found.append(f"--recommend {recommend!r} names no --option")
-    if entry.get("check") is not None and not _collapse(entry["check"]):
+    if entry.get("check") is not None and kind == "action":
+        found += [f"--check: {fault}" for fault in checks.problems(entry["check"])]
+    elif entry.get("check") is not None and not _collapse(entry["check"]):
         found.append("--check is empty")
     if entry.get("due") is not None and entry["due"] not in DUES:
         found.append(f"--due is one of {', '.join(DUES)}, not {entry['due']!r}")
@@ -737,6 +740,31 @@ def find_by_headline(slice_dir: Path | str, section: str,
         if want in (entry["headline"], _headline_with_grade(entry)):
             return entry["id"]
     return None
+
+
+# An action the run needs before it starts — the plan-writer heads it
+# `Before /dev:run-slice: …`. After-run ones (the plan loop's push-hold and
+# settle-V entries) never match.
+PRERUN_HEADLINE_RE = re.compile(r"^before\s+`?/dev:run-slice\b`?", re.IGNORECASE)
+
+
+def is_prerun(entry: dict) -> bool:
+    return (entry.get("kind") == "action"
+            and bool(PRERUN_HEADLINE_RE.match(entry.get("headline") or "")))
+
+
+def prerun_actions(slice_dir: Path | str) -> list[dict]:
+    """Every action the run needs before it starts, struck or live, in order
+    of arrival: `{id, headline, body, check, struck}`, the body as one text.
+    A missing or unreadable store has none."""
+    try:
+        store = _read_store(slice_dir)
+    except ReportError:
+        return []
+    return [{"id": e["id"], "headline": _headline_with_grade(e),
+             "body": "\n".join(e.get("body") or []), "check": e.get("check"),
+             "struck": bool(e.get("strike"))}
+            for e in store["entries"] if is_prerun(e)]
 
 
 def live_entries(slice_dir: Path | str, section: str) -> list[tuple[str, str]]:
@@ -2987,6 +3015,10 @@ def author_problems(entry: dict) -> list[str]:
         found.append("a question in an improvement's headline makes it a decision: "
                      "append it as --kind decision, with its --option lines and the one "
                      "it would --recommend")
+    if is_prerun(entry) and entry.get("check") is None:
+        found.append("an action owed before the run needs --check: the fact that shows "
+                     "it done, one of " + ", ".join(f"`{v}`" for v in checks.VOCABULARY)
+                     + f" — `{checks.MANUAL}` where no check captures it")
     return found + _ask_problems(entry)
 
 
@@ -3055,8 +3087,12 @@ def _add_ask_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--recommend", metavar="LABEL",
                    help="a decision: the label of the option you would pick — required "
                         "for a decision, in place of --proposal")
-    p.add_argument("--check", help="an action: what shows that it was done, where a "
-                                   "command or a file can")
+    p.add_argument("--check", action="append",
+                   help="an action: the fact that shows it done — `env <NAME>`, `file "
+                        "<repo>:<path>`, `origin <repo> <branch>:<path> contains <text>`, "
+                        "`slice <NNN> completed`, or `manual` where none captures it; "
+                        "repeat it for each fact. Never a commit or an environment. An "
+                        "action owed before the run needs one")
     p.add_argument("--due", choices=DUES, type=_label_value,
                    help="what must not happen before the entry is dealt with: the "
                         "phase's merge, the test phase, the push, or the report's "
@@ -3318,6 +3354,13 @@ def labels_text() -> str:
     return "\n".join(lines[start:end]).rstrip("\n")
 
 
+def _check_of(args) -> str | None:
+    """`--check`, repeated, as the one value the entry keeps: the checks
+    joined by `; `; None when not given, and empty to remove it."""
+    given = getattr(args, "check", None)
+    return None if given is None else checks.join(given)
+
+
 def _stdin_or(value: str) -> str:
     return sys.stdin.read() if value == "-" else value
 
@@ -3332,7 +3375,7 @@ def _append_cli(slice_dir: Path, args) -> str:
     labels = _labels_from(args)
     options = _options_from(args)
     candidate = {"kind": kind, "headline": args.headline, "proposal": args.proposal}
-    _set_ask_fields(candidate, options, args.recommend, args.check, args.due)
+    _set_ask_fields(candidate, options, args.recommend, _check_of(args), args.due)
     errors = check_labels(kind, labels, args.consequence, slice_dir)
     errors += author_problems(candidate)
     if errors:
@@ -3342,7 +3385,7 @@ def _append_cli(slice_dir: Path, args) -> str:
                         consequence=args.consequence, provenance=args.provenance,
                         severity=args.severity, labels=labels,
                         proposal=args.proposal, by=args.by, options=options,
-                        recommend=args.recommend, check=args.check, due=args.due)
+                        recommend=args.recommend, check=_check_of(args), due=args.due)
 
 
 def _amend_cli(slice_dir: Path, args) -> str:
@@ -3351,7 +3394,7 @@ def _amend_cli(slice_dir: Path, args) -> str:
                        consequence=args.consequence, proposal=args.proposal,
                        provenance=args.provenance, severity=args.severity,
                        labels=_labels_from(args), options=_options_from(args),
-                       recommend=args.recommend, check=args.check, due=args.due)
+                       recommend=args.recommend, check=_check_of(args), due=args.due)
 
 
 def main(argv=None) -> int:
