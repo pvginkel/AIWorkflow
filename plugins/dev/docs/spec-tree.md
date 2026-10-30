@@ -19,7 +19,7 @@ running slice's `plan.md` edits ride the driver's next stamp by design.
 ## Another writer's edit in the same file
 
 Staging by name keeps other files out of a commit, not another writer's uncommitted hunk in a
-file you also commit — the operator's lane ticks in `slices/DAG.md`, a page someone is still
-editing. That hunk rides your commit, and that is accepted: the shared tree's commits are not
+file you also commit — the README's Pending list as another session files a slice, a page
+someone is still editing. That hunk rides your commit, and that is accepted: the shared tree's commits are not
 pristine, and an edit committed by someone else is not lost. Commit your change; do not defer it
 for that, and do not take the other edit back out.

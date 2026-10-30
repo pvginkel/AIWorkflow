@@ -12,7 +12,9 @@ on it. Under plan, only the target, the spec repo and what the `--slice` plan
 targets block; any other repo's refusal is a warning line, and a vanished repo
 or a gone GitHub origin is skipped. Given `--slice`, plan and run fail on a
 pending phase's Target that config.yaml declares and the pod has not cloned,
-and on nothing kc cannot place. The phase pointers and the devlock
+and on nothing kc cannot place. Plan, after the sync, refuses a slice whose
+`slice.md` front matter `needs:` a slice that has not completed. The phase
+pointers and the devlock
 follow, and the retired spec-tree guard: its removal from the spec repo's git
 dir, over real git. The run baseline runs `kc project setup` before its build,
 from the repo root under the run loop's setup timeout; setup never decides: a
@@ -1157,6 +1159,107 @@ def test_the_clone_check_runs_before_the_tree_and_sync_checks():
     assert run.index("targets_cloned") == run.index("clean_tree") - 1
     assert plan.index("targets_cloned") == plan.index("synced") - 1
     assert "targets_cloned" not in preflight.PROFILES["triage"]
+
+
+# -- check_ready_to_plan -----------------------------------------------------
+
+def a_needing_layout(tmp, front, *others):
+    """A spec repo holding slice 031 in the backlog, whose slice.md front
+    matter carries the line `front`, beside the slice folders `others`
+    (paths under `slices/`). Returns the config."""
+    spec = a_spec_repo(tmp, "backlog/031_widget", *others)
+    (spec / "slices" / "backlog" / "031_widget" / "slice.md").write_text(
+        f"---\nissue: KC-31\n{front}\n---\n\n# Widget\n\nThe widget.\n")
+    return a_config(spec_repo=spec)
+
+
+def failure_of(fn, *args):
+    """Run a check expected to fail; return its Failure."""
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            fn(*args)
+    except preflight.Failure as failure:
+        return failure
+    raise AssertionError(f"{fn.__name__} passed where it should have failed")
+
+
+def test_a_slice_that_needs_an_unfinished_slice_is_not_ready_to_plan():
+    """Exit 1: each slice `needs:` names that is not under completed/ is
+    named with where it is — running, in the backlog, or nowhere — the
+    completed one is not, and the fix gives both ways out."""
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = a_needing_layout(tmp, "needs: [028, 29, 030, 041]",
+                               "028_running", "backlog/029_queued",
+                               "completed/030_done")
+        failure = failure_of(preflight.check_ready_to_plan, cfg, "31")
+    assert failure.code == 1 and failure.check == "ready_to_plan"
+    assert failure.fact.startswith("Slice 031_widget must follow")
+    lines = failure.fact.splitlines()[1:]
+    assert lines == [
+        "- 028, at slices/028_running, not completed",
+        "- 029, at slices/backlog/029_queued, not completed",
+        "- 041, under none of slices/, slices/backlog/ or slices/completed/"]
+    assert "once each of them has completed" in failure.fix
+    assert "take that slice off the `needs:` line" in failure.fix
+
+
+def test_a_slice_whose_needs_have_all_completed_is_ready_to_plan():
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = a_needing_layout(tmp, "needs: 030", "completed/030_done")
+        preflight.check_ready_to_plan(cfg, "031")
+
+
+def test_a_slice_that_needs_nothing_is_ready_to_plan():
+    """No `needs:` line, an empty one, one outside the front matter, no
+    front matter, no slice.md, no `--slice`: nothing to wait for, though
+    028 is pending throughout."""
+    with tempfile.TemporaryDirectory() as tmp:
+        for front in ("owner: someone", "needs:", "needs: []"):
+            cfg = a_needing_layout(Path(tmp) / front.replace(":", ""), front,
+                                   "028_running")
+            preflight.check_ready_to_plan(cfg, "31")
+        slice_md = cfg.spec_repo / "slices" / "backlog" / "031_widget" / "slice.md"
+        slice_md.write_text("---\nissue: KC-31\n---\n\nneeds: 028\n")
+        preflight.check_ready_to_plan(cfg, "31")
+        slice_md.write_text("# Widget\n\nneeds: 028\n")
+        preflight.check_ready_to_plan(cfg, "31")
+        slice_md.unlink()
+        preflight.check_ready_to_plan(cfg, "31")
+        preflight.check_ready_to_plan(cfg, None)
+
+
+def test_a_needs_line_that_names_no_slice_number_fails():
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = a_needing_layout(tmp, "needs: 028, auth", "completed/028_done")
+        failure = failure_of(preflight.check_ready_to_plan, cfg, "31")
+    assert failure.code == 1 and failure.check == "ready_to_plan"
+    assert "`auth`, which is not a slice number" in failure.fact
+    assert "`needs: 028, 031`" in failure.fix
+
+
+def test_the_ready_check_runs_under_plan_alone_after_the_sync():
+    """After the sync, so a slice completed in another environment reads as
+    completed; run and triage never ask it."""
+    plan = preflight.PROFILES["plan"]
+    assert plan.index("ready_to_plan") > plan.index("synced")
+    assert "ready_to_plan" not in preflight.PROFILES["run"]
+    assert "ready_to_plan" not in preflight.PROFILES["triage"]
+
+
+def test_under_json_a_slice_not_ready_to_plan_is_one_failure_object():
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = a_needing_layout(tmp, "needs: 028", "028_running")
+        quiet = {name: (lambda *a, **k: None) for name in (
+            "check_kc", "check_kc_status", "check_manifest", "check_pointer",
+            "remove_spec_tree_guard", "check_targets_cloned", "check_synced")}
+        with patched(preflight, repo_root=lambda: Path(tmp),
+                     load_config=lambda root: cfg, **quiet):
+            code, stdout, stderr = _main("plan", fake_subprocess(), "31",
+                                         as_json=True)
+    report = json.loads(stdout)
+    assert code == 1 and stderr == ""
+    assert report["result"] == "fail" and report["check"] == "ready_to_plan"
+    assert "- 028, at slices/028_running, not completed" in report["fact"]
 
 
 FETCH_HEAD_GONE = (128, "", "error: cannot open '.git/FETCH_HEAD': No such "

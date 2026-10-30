@@ -398,7 +398,7 @@ work.
 ## The wrap-up
 
 What the table gives the wrap-up is worked on by one agent, `dev:wrap-up` — called the wrap-up,
-never a sweep: the run loop has its gate sweep and the plugin the residual sweep. It does what
+never a sweep: the run loop has its gate sweep. It does what
 the operator used to ask for by hand, "fix inline please": it fixes what is decided and safe,
 asks for a card where a likely problem is more than it can fix responsibly, and the rest stays
 closed. [Its definition](../agents/wrap-up.md) holds its bar and what it does entry by entry.

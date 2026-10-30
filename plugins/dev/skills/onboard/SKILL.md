@@ -114,8 +114,8 @@ workflow, and those copies shadow just as effectively as current ones.
 
 Delete (the plugin provides each):
 
-- the pipeline skills/commands — `triage`, `plan-slice`, `run-slice`, `slice-dag`, `arch-design`,
-  and a retired `write-task` / `major-change` / `minor-change` / `write-slice` — under
+- the pipeline skills/commands — `triage`, `plan-slice`, `run-slice`, `arch-design`, and a
+  retired `slice-dag` / `write-task` / `major-change` / `minor-change` / `write-slice` — under
   `.claude/commands/` or `.claude/skills/`, at **every** `.claude` found in step 1, not just the
   root;
 - the nine dev agents — `code-writer`, `code-reviewer`, `doc-writer`, `plan-writer`,
@@ -123,13 +123,13 @@ Delete (the plugin provides each):
   `plan-briefer`, `plan-scribe`, `slice-grounder`, `slice-verifier` and an older `code-tester`,
   likewise at every `.claude`;
 - the pipeline scripts and their session machinery — `run_loop.py`, `plan_loop.py`,
-  `sweep_slice.py`, `close_slice.py`, `slice_cost.py`, `preflight.py`, `allocate-next-slice.sh`
-  and their tests (commonly under `tools/ai_workflow/`), plus the retired `task_runner.py`,
+  `close_slice.py`, `slice_cost.py`, `preflight.py`, `allocate-next-slice.sh` and their tests
+  (commonly under `tools/ai_workflow/`), plus the retired `sweep_slice.py`, `task_runner.py`,
   `grounding_check.py`, `grounding_dispatch.py`, `claude_session.py`, `codex_exec.py`, and any
   `scripts/preflight.py` the plugin's preflight replaces;
 - **the in-repo contract docs** — `run-loop.md`, `runner-state.md`, `plan-loop.md`,
-  `plan-template.md`, `agent-dispatch.md`, `project-contract.md`, `preflight.md`,
-  `residual-sweep.md`, and the retired `task-workflow.md`, `task-runner.md`,
+  `plan-template.md`, `agent-dispatch.md`, `project-contract.md`, `preflight.md`, and the
+  retired `residual-sweep.md`, `task-workflow.md`, `task-runner.md`,
   `grounding-ledger.md` (commonly under `docs/conventions/`). The plugin owns those contracts now
   (`${CLAUDE_PLUGIN_ROOT}/docs/`); a project copy is a second source of truth that will drift and
   be believed.
@@ -148,7 +148,7 @@ folder (a build tracker, a codegen script).
 Rewrite those references to their `/dev:` names, and report what you rewrote:
 
 ```bash
-grep -rn '/triage\|/plan-slice\|/run-slice\|/slice-dag\|/arch-design' \
+grep -rn '/triage\|/plan-slice\|/run-slice\|/arch-design' \
   <each .claude found in step 1>
 grep -rn 'ai_workflow\|docs/commands/\|scripts/preflight' --exclude-dir=.git .
 ```
@@ -300,7 +300,7 @@ Preflight only checks the path is a directory, but the pipeline needs a shape:
 ```
 <spec-repo>/
   README.md                 # `## Pending` + `## Completed` lists — triage appends to the first,
-                            #   close_slice.py moves the entry across; slice-dag reads it
+                            #   close_slice.py moves the entry across
   .gitignore                # slices/.next-slice, slices/.slice-alloc.lock (host-local, self-seeding)
   slices/
     backlog/                # triage writes NNN_slug/slice.md here; plan-slice promotes out of it
@@ -333,7 +333,7 @@ pipeline can navigate, nothing more.
 
 **Do not rewrite slice bodies.** An old-format slice is not a defect to fix here: `/dev:plan-slice`
 reads one and deals with it, with some effort, at the point it plans it (the loop's preflight
-accepts `overview.md` beside `slice.md`, and `/dev:slice-dag` expects to meet both). Reworking a
+accepts `overview.md` beside `slice.md`). Reworking a
 slice you are not planning is speculative effort on something that may never be planned, spent
 without the context the planner will have. Leave them.
 
@@ -341,7 +341,7 @@ In scope:
 
 - **The tree.** `slices/` and its lifecycle folders exist, and each slice sits in the one that
   reflects its state — finished under `completed/`, abandoned under `cancelled/`. That is what makes
-  the pending set legible to `/dev:slice-dag` and `/dev:plan-slice`; slice bodies are not.
+  the pending set legible to `/dev:triage` and `/dev:plan-slice`; slice bodies are not.
 - **Whole eras → `archive/`.** A layout the current pipeline will never read again — a bundle tree,
   a `major-change`/`minor-change`-era folder — moves wholesale. Archive it; do not modernize what is
   done.

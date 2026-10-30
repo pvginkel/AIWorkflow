@@ -4,6 +4,44 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-30 — Triage puts the questions first and the slices as their consequence; the Solution Known lane, the sweep and `/dev:slice-dag` go, and `needs:` orders the slices (v0.10.10)
+
+`/dev:triage` stays the operator's own chat skill: in Pilot, triage is the definition chat's. Its
+message is redesigned from the read of the operator's answers since 0.9.60
+(`docs/research/triage-answers-read-2026-10-30.md`, 41 runs). The questions were what they
+answered, 40 % of their turns and nearly every typed one, while the scheme drew one regrouping in
+63 turns and no letter, estimate, Close or Later was ever disputed.
+
+- **The message** opens with the numbered questions, each a decision with its recommendation and
+  the standing decision quoted where it collides. Then comes one line per slice, with each card
+  and what it is for in a few words and the slices it must follow. Every other fate follows only
+  where an item has one, and nothing is printed empty.
+- **What goes from the message:** the template, the phase estimate, "go", the fixed answer forms,
+  the offered regroupings and the made-up headings. A run born of a conversation that already
+  decided files and says so in a line, without putting the scheme to be agreed again.
+- **Reading the reply.** An answer rules its question, a word on an item moves that item, and
+  the rest stands as shown. A question back is answered in prose before anything is asked again,
+  and a continuation is about that one question. The kinds of ruling the answer forms named —
+  close, later, a literal-edit ceiling, a split, superseded, a ruling that waits on a fact — are
+  read from the operator's own words.
+- **The handover dump's `## Rulings`** goes. A run that stops before filing files nothing, and
+  the next run reads every card afresh.
+- **`needs:`.** Triage now orders the slices: `slice.md`'s front matter carries `needs:` with the
+  numbers of the slices that must be done before it is planned. Preflight's plan profile has a
+  new check, `ready_to_plan`. It runs after the sync and refuses a slice until each slice it
+  needs is under `slices/completed/`, naming where each one is. This is what survives of the DAG
+  the operator asked for after filing in five of eight multi-slice runs.
+- **What is deleted.** The Solution Known lane was used in 3 of 41 runs. It goes with
+  `sweep_slice.py` and its tests, `docs/residual-sweep.md`, and the `/dev:slice-dag` skill.
+- **The litmus moves.** The wrap-up's bar was the residual sweep's litmus, and it now lives in
+  the wrap-up's own definition.
+- **Smaller fixes.** The triage skill no longer takes close-out marker cards as items and no
+  longer calls planning "the refinement session". What the run writes for the operator, the
+  sub-agents' cards and comments included, is written under `/dev:writing`.
+- **References brought along:** `close-out.md`, `project-contract.md`, the DAG sentence in
+  `spec-tree.md`, the inbox skill's line on the lane, and the onboard skill, where `slice-dag`,
+  `sweep_slice.py` and `residual-sweep.md` are now retired names.
+
 ## 2026-10-30 — Plan-slice is planning's stage in Pilot, a small coordinator; the plan-preparer grounds the slice and the refinement page goes (v0.10.9)
 
 `/dev:plan-slice` is rewritten as the turns Pilot sends a stage (`docs/pilot.md`), in the shape

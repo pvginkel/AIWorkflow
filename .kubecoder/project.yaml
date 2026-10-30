@@ -12,7 +12,7 @@ projects:
   dev-plugin:
     description: >-
       The `dev` plugin — the kc-native slice pipeline (run_loop, plan_loop,
-      sweep_slice, close_slice, slice_cost, preflight) and its suites, plus the
+      close_slice, slice_cost, preflight) and its suites, plus the
       skills, agents and contract docs they are written against.
     cwd: .
     test: cexec python uv run --with pytest pytest

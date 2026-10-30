@@ -30,9 +30,8 @@ nothing in the pipeline loads it for you.
 author wrote it and recommend; the operator decides — no card is closed, deferred or moved on
 your judgment alone; a card's diagnosis is a claim; a fate that turns on a fact only a repository
 can show is fetched by a read-only sub-agent asked that one question, with *cannot determine* an
-allowed answer. Two things triage does and this sitting does not: the standing-decisions check,
-which is a project's and waits for its triage, and the Solution Known litmus — the mark and the
-sweep are triage's (its step 8), and the inbox leaves them alone.
+allowed answer. One thing triage does and this sitting does not: the standing-decisions check,
+which is a project's and waits for its triage.
 
 ## Where a card goes
 

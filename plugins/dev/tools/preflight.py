@@ -24,6 +24,7 @@ schema):
 | Declared Target repos cloned (`--slice` only)        |        |  x   |  x  |
 | Clean working tree                                   |        |      |  x  |
 | Synced with origin (ff / rebase; refuse dirty)       |        |  x*  |  x  |
+| Every `needs:` slice completed (`--slice` only)      |        |  x   |     |
 | Baseline `kc project setup`, then `kc project build` |        |      |  x  |
 
 A phase the project switched off is not checked: its pointer is absent by
@@ -38,6 +39,11 @@ A pending phase of the `--slice` plan whose repo-path Target
 `.kubecoder/config.yaml` declares and the pod has not cloned yet is an
 environment fault (exit 2), named as such (`check_targets_cloned`); without
 `--slice` there is no plan to read, and the check passes.
+
+A slice `slice.md` says must follow others — its front matter's `needs:` line,
+which triage writes — is not ready to plan until each of them has completed
+(`check_ready_to_plan`, exit 1). It runs after the sync, so a slice that
+completed elsewhere reads as completed here.
 
 Three steps *act* rather than check. The sync pulls a clean base onto its own
 origin, which destroys nothing, while a repo with uncommitted work is refused,
@@ -637,6 +643,70 @@ def check_targets_cloned(root: Path, cfg: project_config.ProjectConfig | None,
              "where its line says and run `kc project setup` in it.")
 
 
+def slice_needs(slice_md: Path) -> list[str]:
+    """The slices `slice.md` must follow: its front matter's `needs:` line,
+    the numbers as written (`needs: 028, 031`; brackets allowed). No front
+    matter, no `needs:` line or an empty one is none. A front matter is the
+    block between a first line `---` and the next; a `needs:` line anywhere
+    else is the slice's prose, not its order."""
+    lines = slice_md.read_text().splitlines()
+    if not lines or lines[0].strip() != "---":
+        return []
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        key, sep, value = line.partition(":")
+        if sep and key.strip() == "needs":
+            value = value.strip().strip("[]")
+            return [token for token in re.split(r"[\s,]+", value) if token]
+    return []
+
+
+def check_ready_to_plan(cfg: project_config.ProjectConfig | None,
+                        slice_arg: str | None) -> None:
+    """Fail (exit 1) when the `--slice` slice must follow a slice that has
+    not completed: each number its `slice.md` names under `needs:` must be
+    a folder under `slices/completed/`. A slice planned before the one it
+    builds on is planned against code that slice is about to change. The
+    order is the project's — triage writes it, and the operator moves it —
+    so the fix names both ways: plan once the slice has completed, or take
+    it off the line. No `--slice`, or no `slice.md`, is nothing to check."""
+    if slice_arg is None:
+        return
+    folder = find_slice(cfg, slice_arg)
+    slice_md = folder / "slice.md"
+    if not slice_md.is_file():
+        return
+    needs = slice_needs(slice_md)
+    bad = [token for token in needs if not token.isdigit()]
+    if bad:
+        fail(1, "ready_to_plan",
+             f"The `needs:` line in {slice_md} names "
+             f"{', '.join(f'`{token}`' for token in bad)}, which is not a "
+             f"slice number.",
+             "Write the slices it must follow by number, `needs: 028, 031`, "
+             "or remove the line if it must follow none.")
+    waiting = []
+    for token in needs:
+        num = token.zfill(3)
+        found = find_slice_dir(cfg.spec_repo, num)
+        if found is not None and found.parent.name == "completed":
+            continue
+        where = (f"at {found.relative_to(cfg.spec_repo)}, not completed"
+                 if found is not None else
+                 "under none of slices/, slices/backlog/ or "
+                 "slices/completed/")
+        waiting.append(f"- {num}, {where}")
+    if waiting:
+        fail(1, "ready_to_plan",
+             f"Slice {folder.name} must follow slices that have not "
+             f"completed (the `needs:` line in its slice.md):\n"
+             + "\n".join(waiting),
+             "Plan it once each of them has completed. If the order no "
+             "longer holds, take that slice off the `needs:` line in "
+             f"{slice_md}.")
+
+
 # A dirty tree may be another process's pull caught mid-checkout — a sibling
 # is half-applied for a moment, and "commit or stash" would capture that. So a
 # repo found behind and dirty is looked at once more after this wait (seconds).
@@ -944,7 +1014,7 @@ def check_baseline_build(root: Path) -> None:
 PROFILES = {
     "triage": ["kc", "config", "spec_repo", "spec_tree_guard"],
     "plan": ["kc", "kc_status", "manifest", "config", "spec_repo",
-             "spec_tree_guard", "targets_cloned", "synced"],
+             "spec_tree_guard", "targets_cloned", "synced", "ready_to_plan"],
     "run": ["kc", "kc_status", "manifest", "config", "spec_repo",
             "spec_tree_guard", "design_philosophy", "phase_pointers",
             "devlock", "targets_cloned", "clean_tree", "synced",
@@ -1019,6 +1089,8 @@ def run_profile(args) -> None:
         strict = (strict_repos(root, cfg, args.slice)
                   if args.profile == "plan" else None)
         check_synced(root, cfg, strict)
+    if "ready_to_plan" in checks:
+        check_ready_to_plan(cfg, args.slice)
     if "baseline_build" in checks:
         check_baseline_build(root)
     # Silent on success, but for the notes.

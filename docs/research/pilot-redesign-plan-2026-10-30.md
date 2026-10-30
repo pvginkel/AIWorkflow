@@ -670,7 +670,7 @@ sessions in all.
   written, `grounding.md`, the continuation and the clarification turn by sub-agent;
   `refinement-writer.md` and `refinement.md` deleted; `plan-template.md` and `plan-loop.md`
   brought to it.
-- [ ] **B3. Triage** (§5.4): the chat skill's output rewritten from the read — the questions
+- [x] **B3. Triage** (§5.4): the chat skill's output rewritten from the read — the questions
   first, the scheme as one line per slice with `needs:`, nothing empty; the template, "go", the
   fixed answer forms and the Solution Known lane gone; `sweep_slice.py` with its tests,
   `residual-sweep.md` and `slice-dag` deleted; `needs:` in `slice.md`'s front matter read by

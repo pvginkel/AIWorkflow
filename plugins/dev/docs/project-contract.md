@@ -103,8 +103,7 @@ A card is **closed** with one of three dispositions — **resolved** (the work h
 invalid, a duplicate) — or **deferred**, which parks it open. One **slice card** per slice advances
 **triaged → planned → in progress → delivered → done**: a run ends at *delivered*, merged, and
 its continuation moves it to *done* once it has carried out the close-out's answers, the
-operator's review of the slice ([pilot.md](pilot.md) § Cards). The **Solution Known** mark is a
-flag beside all that ([residual-sweep.md](residual-sweep.md)).
+operator's review of the slice ([pilot.md](pilot.md) § Cards).
 The tracker holds no triage verdict. A host may also run an **unattended pass** over the intake
 queues — a resolver that takes what is in its lane and leaves a **hand-back mark** on what is
 not, meaning *waits for the operator*; the convention names the marks, says where the pass's

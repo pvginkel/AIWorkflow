@@ -66,6 +66,7 @@ documents). The exit code is the same either way.
 | Declared Target repos cloned: no pending phase of the `--slice` plan targets a repo path `.kubecoder/config.yaml` declares and the pod has not cloned — only with `--slice` | `targets_cloned` | – | ✓ | ✓ |
 | Clean working tree | `clean_tree` | – | – | ✓ |
 | Synced with origin: fetch, then fast-forward or rebase the checked-out branch — the target repo, every checkout beside it, the spec repo; under `plan` only the target repo, the spec repo and the `--slice` plan's Target repos block | `synced` | – | ✓ | ✓ |
+| Ready to plan: every slice the `--slice` slice's `slice.md` names under `needs:` has completed — only with `--slice` | `ready_to_plan` | – | ✓ | – |
 | Baseline: `kc project setup`, then `kc project build` (all components) | `baseline_build` | – | – | ✓ |
 
 Checks run in that order (cheapest first, the baseline build last). `kc` is checked before anything
@@ -122,6 +123,24 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   that does not resolve, as before. A `github:` Target's scratch clone is the run loop's to make,
   and a component name is not looked up. A run that meets the same Target stops with
   `target_not_cloned` ([run-loop.md](run-loop.md) § The plan is the queue).
+
+## Notes on ready to plan
+
+- **Why it exists.** A slice that builds on another, or changes what another is about to change,
+  is planned against the code that slice leaves behind. Planned earlier, its plan grounds on code
+  that is about to move. The order is triage's call, and the operator's to change
+  ([`/dev:triage`](../skills/triage/SKILL.md) step 7).
+- **What it reads.** The `needs:` line of `slice.md`'s front matter, the block between a first
+  line `---` and the next: slice numbers, comma- or space-separated, brackets allowed
+  (`needs: 028, 031`). No front matter, no line, or an empty one is nothing to wait for, and a
+  `needs:` in the body is prose. A value that is not a number fails, naming it.
+- **What it checks.** Each slice named is a folder under `slices/completed/`. One that is still
+  running, waits in the backlog, or is nowhere the check looks — deferred, cancelled, never filed
+  — is a line of the failure, with where it is. Exit 1, and the fix names both ways out: plan
+  once each has completed, or take it off the line where the order no longer holds.
+- **When it runs.** Under `plan` alone, after the sync, so a slice completed in another
+  environment reads as completed. A planned slice keeps its order to the run: nothing re-checks
+  it there.
 
 ## Notes on the sync
 

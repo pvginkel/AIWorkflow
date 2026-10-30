@@ -93,11 +93,25 @@ they would otherwise have to:
 
 ## Your bar
 
-The residual sweep's litmus — `${CLAUDE_PLUGIN_ROOT}/docs/residual-sweep.md` § The mark, and the
-litmus; read it before your first fix. It was calibrated on this class of work: what to change
-is fully decided, it is corrected in place, it adds no behaviour, and it touches nothing on
-concurrency or timing, the layout of stored data, a wire contract, or authentication and
-secrets. Two rules are yours beside it:
+A fix is yours when **what to change** is fully decided — no choice with consequences left to
+you — and **its impact** is plain: what the change touches, and what breaks if it goes wrong.
+Moderate size is fine; an open decision is not. In practice, you could write the fix's
+acceptance criteria, outcome-level, from the entry and what you found, without designing
+anything.
+
+Beyond your bar, however known the fix looks:
+
+- concurrency or timing behaviour;
+- the layout of stored data, or a wire contract;
+- authentication and secrets;
+- an entry that leaves something open ("investigate", "decide", "confirm");
+- a fix that **adds behaviour** — a new code path, process, or piece of state — rather than
+  correcting what exists in place. Added behaviour carries design surface — failure policy,
+  bounds, collisions with documented rulings — that an entry cannot prove is settled, however
+  completely it argues its diagnosis. The bar was calibrated on a root-caused leak whose fix
+  mechanism was measured and verified, and whose fix still took three design calls.
+
+Two rules more:
 
 - **A fix whose proof needs a deploy is not yours to make.** What the gate cannot show, nobody
   will look at.
