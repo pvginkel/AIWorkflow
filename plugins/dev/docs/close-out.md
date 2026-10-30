@@ -450,7 +450,8 @@ An entry's words are written under `/dev:writing`
 its `Consequence:` are the lines the operator rules from, and the body is what a question about
 the entry, the wrap-up and the card an entry may become work from. Those have only the store, so
 the body quotes what they will need: the sentence that is wrong, the command and its output, the
-file and the quoted line. Three rules are the store's own:
+file and the quoted line, never its number ([spec-tree.md](spec-tree.md) § Citing a line, which
+the CLI enforces). Three rules are the store's own:
 
 - **`Provenance:` opens with the claim's class** — `witnessed`, the author ran, measured,
   reproduced or mutated it and the command, the output or the probe is in the body, or `read`,

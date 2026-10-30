@@ -578,6 +578,43 @@ def test_append_refuses_a_missing_label_naming_every_flag_and_the_kind():
         assert code == 0 and out.strip() == "E1"
 
 
+def test_the_cli_refuses_an_authors_line_number_and_the_loops_api_does_not():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        _refused(slice_dir, with_flags(DEFECT, body="it breaks at controller.py:88"),
+                 "--body cites a line by its number (`controller.py:88`)",
+                 "spec-tree.md § Citing a line")
+        _refused(slice_dir, with_flags(DEFECT, consequence="status.go:12 shows it wrong"),
+                 "--consequence cites")
+        _refused(slice_dir, with_flags(IMPROVEMENT, proposal="Drop helpers.py:3-9 now."),
+                 "--proposal cites")
+        # a command's output in a fenced block is evidence, not a citation
+        code, out, err = run_cli("append", slice_dir, *with_flags(
+            DEFECT, body="the gate:\n\n```\ntests/t.py:4: AssertionError\n```"))
+        assert code == 0, err
+        eid = out.strip()
+        # an amend is checked on what it changes
+        code, _, err = run_cli("amend", slice_dir, eid, "--body", "now in x.py:3")
+        assert code == 2 and "--body cites" in err, err
+        code, _, err = run_cli("amend", slice_dir, eid, "--headline", "controller: wrong")
+        assert code == 0, err
+        for argv, says in [
+            (("note", slice_dir, eid, "--by", "me", "--text", "see w.py:1"), "the note cites"),
+            (("note", slice_dir, eid, "--by", "me", "--left", "--text", "w.py:1"),
+             "the note cites"),
+            (("propose", slice_dir, eid, "--by", "me", "--text", "fix v.py:2"),
+             "the proposal cites"),
+        ]:
+            code, _, err = run_cli(*argv)
+            assert code == 2 and says in err, (argv, err)
+        assert entry_of(slice_dir, eid)["notes"] == []
+        # the loops' API quotes tool output and is not checked
+        close_out.add_note(slice_dir, eid, "the run loop", "the gate said x.py:3")
+        close_out.append_entry(slice_dir, "event", "the gate failed", "at y.py:9",
+                               consequence="none")
+
+
 def test_append_refuses_a_label_of_the_other_family():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
@@ -1501,8 +1538,9 @@ def test_a_store_written_before_the_proposal_reads_as_without_one():
 
 WU = "wrap-up"
 EASY = with_flags(DEFECT, fix="one-edit", area="plain")     # the wrap-up's, to fix
-WORD = ("design/engine-and-sync.md:706 — say the engine syncs on start; a design record "
-        "is corrected on the operator's word (CLAUDE.md § Design records)")
+WORD = ("design/engine-and-sync.md, the line \"The engine syncs on demand.\" — say it syncs "
+        "on start; a design record is corrected on the operator's word (CLAUDE.md § Design "
+        "records)")
 WORD_ROUTE = ("operator:word", "to you — the wrap-up asks for your word on its edit")
 
 

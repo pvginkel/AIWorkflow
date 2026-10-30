@@ -61,6 +61,12 @@ them, so an Undo reads back as an open ask. A document whose blocks are not
 the store's asks, by id and kind, is refused. The grammar whole is PilotApp's
 `docs/block-dsl.md`.
 
+**An author's text.** `init`, `append`, `amend` and `note` also refuse a
+line cited by its number outside a fenced block, `path:12` or `path:12-30`
+(`citation_problems`; the rule is `docs/spec-tree.md` § Citing a line). The
+functions the loops import do not check it: a driver's text quotes tool
+output.
+
 `<store>` is the store's path or its document's: a `.md` argument resolves
 to the `.json` beside it. Every read-modify-write holds an exclusive flock on
 the store's folder; a filesystem that refuses it gets the write without it.
@@ -127,6 +133,21 @@ _UNSTORABLE = re.compile(r"[\x00\ud800-\udfff]")
 _NON_PRINTABLE = re.compile(
     "[^\x09\x0a\x0d\x20-\x7e\x85\xa0-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]"
 )
+
+# A line cited by its number (`citation_problems`): a path-like token, then
+# `:<digits>` and an optional range, not inside a URL and not followed by a
+# path. `_cites_a_file` decides whether the token is a file.
+_LINE_CITATION = re.compile(
+    r"(?<![\w/.:~-])(?P<path>(?:[\w.~-]+/)*[\w.-]*[\w-]):\d+(?:[-\u2013]\d+)?(?![\w/])"
+)
+_EXTENSION = re.compile(r"\.([A-Za-z][A-Za-z0-9]{0,5})$")
+_EXTENSIONLESS = frozenset((
+    "Makefile", "Dockerfile", "Containerfile", "Jenkinsfile", "Procfile", "Justfile",
+    "Vagrantfile", "Gemfile", "Rakefile", "Caddyfile", "Tiltfile",
+))
+_HOST_SUFFIXES = frozenset((
+    "com", "org", "net", "nl", "io", "home", "local", "lan", "internal", "svc", "cluster",
+))
 
 
 class AskError(Exception):
@@ -288,6 +309,55 @@ def _markdown_problems(text: str, what: str) -> list[str]:
             found.append(f"{what} holds a heading (`{lines[i].strip()}`): an ask's "
                          "sub-structure is run-in heads (`**Cost.** …`) and lists")
         i += 1
+    return found
+
+
+def _outside_fences(text: str) -> Iterator[str]:
+    """The lines of `text` outside its fenced blocks; an unclosed fence
+    holds the rest."""
+    lines = [line.removesuffix("\r") for line in text.split("\n")]
+    i = 0
+    while i < len(lines):
+        m = _opening(lines[i])
+        if m is not None:
+            close = _closing(lines, i, m["marker"])
+            if close is None:
+                return
+            i = close + 1
+            continue
+        yield lines[i]
+        i += 1
+
+
+def _cites_a_file(path: str) -> bool:
+    """Whether what stands before `:<digits>` is a file: a path with a `/`,
+    a name with an extension, or a build file with none — never a host and
+    its port, a clock time or a ratio."""
+    name = path.rsplit("/", 1)[-1]
+    if "/" in path or name.split(".", 1)[0] in _EXTENSIONLESS:
+        return True
+    m = _EXTENSION.search(name)
+    return m is not None and m[1].lower() not in _HOST_SUFFIXES
+
+
+def citation_problems(text, what: str) -> list[str]:
+    """A line cited by its number in an author's text, outside a fenced
+    block: `path:12`, `path:12-30`. The number has moved by the time another
+    session reads the text; the rule is the plugin's `docs/spec-tree.md`
+    § Citing a line. The CLIs that take an author's text refuse one —
+    this tool's and `close_out.py`'s — and a driver's own text, which
+    quotes tool output, is never checked."""
+    if not isinstance(text, str):
+        return []
+    found: list[str] = []
+    for line in _outside_fences(text):
+        for m in _LINE_CITATION.finditer(line):
+            if _cites_a_file(m["path"]):
+                found.append(
+                    f"{what} cites a line by its number (`{m[0]}`), which will have moved "
+                    f"when the next session reads it: cite `{m['path']}` and quote the line "
+                    "itself (docs/spec-tree.md § Citing a line); a command's output goes in "
+                    "a fenced block, which this check passes")
     return found
 
 
@@ -1156,11 +1226,40 @@ def _frame_fields(args: argparse.Namespace) -> dict:
             "for_": args.for_, "context": args.context}
 
 
+def _cli_citations(fields: dict) -> list[str]:
+    """`citation_problems` over an author's text as the CLI takes it: a
+    value, a list of them (`--context`), or a list of lists (`--option`'s
+    label and line). A field not given is not checked, so an amend is
+    checked on what it changes."""
+    found: list[str] = []
+    for what, value in fields.items():
+        items = value if isinstance(value, list) else [value]
+        for item in items:
+            for text in item if isinstance(item, list) else [item]:
+                found += citation_problems(text, what)
+    return found
+
+
+def _ask_texts(args: argparse.Namespace) -> dict:
+    return {"the headline": args.headline, "the body": args.body,
+            "`--proposal`": args.proposal, "`--default`": args.default,
+            "an `--option`": args.option}
+
+
+def _frame_texts(args: argparse.Namespace) -> dict:
+    return {"the title": args.title, "the summary": args.summary,
+            "the context": args.context}
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         _stdin(args, "body", "proposal", "text", "context")
         command = args.command
+        texts = {"init": _frame_texts, "append": _ask_texts, "note": lambda a: {
+            "the note": a.text}, "amend": lambda a: {**_ask_texts(a), **_frame_texts(a)}}
+        if command in texts:
+            _refuse(f"{command} is refused", _cli_citations(texts[command](args)))
         if command == "init":
             frame = _frame_fields(args)
             title = frame.pop("title")

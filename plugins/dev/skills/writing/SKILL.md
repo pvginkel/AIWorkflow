@@ -69,7 +69,8 @@ background for this also". Nothing assumes the slice is fresh in the reader's mi
 - no bare id — a decision, a requirement, a card, a finding is named with what it says;
 - an id of the run (`P3 r1 F3`, `V10`) is provenance, on its own line, never a reference the
   reader has to follow;
-- a citation is a path and a quoted line, never a line number, which moves;
+- a citation is a path and a quoted line, never a line number, which moves
+  (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md` § Citing a line);
 - the fact the choice turns on is in the ask, in a line, not behind it: the questions that
   carried their own numbers were answered in a minute (1.11, 2.3, 4.7, 4.8, 5.4).
 

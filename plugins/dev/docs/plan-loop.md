@@ -133,8 +133,8 @@ altitude a smart dev would want handed to them: a functional description of succ
 names, pseudo-code, or a specced implementation. Read on demand, never inlined.
 
 **`verification.json`** — outcome-level acceptance criteria, complete against slice.md's numbered
-requirements 1:1 in the operator's wording, with `file:line` evidence citations where a criterion
-rests on a code fact. Coverage-preservation criteria allowed; doc-truth universals banned.
+requirements 1:1 in the operator's wording, with evidence citations where a criterion rests on a
+code fact. Coverage-preservation criteria allowed; doc-truth universals banned.
 Checked off in the run loop's test phase, except a criterion marked `owed_after` an action the
 run cannot take, a held push above all ([plan-template.md](plan-template.md)).
 

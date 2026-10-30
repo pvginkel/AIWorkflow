@@ -69,18 +69,21 @@ rendering, registering, the operator's answers, the plan loop — is the stage's
 4. **Write `grounding.md`** in the folder, for any later agent pointed at it: a sub-agent
    answering Pilot's question about the slice, the one carrying the answers into the plan. What
    you read, what you checked and what you found, each claim with its evidence or marked
-   unverified; the cards routed to the slice, by id and ask; the settled items, a sentence each;
-   the approach in short; the size, the phases it comes to and the repos it touches. The evidence
-   lives here and nowhere else in what the operator reads.
+   unverified, every citation a path and a quoted line
+   (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md` § Citing a line); the cards routed to the slice,
+   by id and ask; the settled items, a sentence each; the approach in short; the size, the
+   phases it comes to and the repos it touches. The evidence lives here and nowhere else in what
+   the operator reads.
 5. **Seed `plan.md`'s header** in the shape of `${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md`: the
    one-liner; `## Requirements / rulings` with every requirement of `slice.md` and of the cards
    absorbed, in the operator's words — no silent substitution — and, as your own facts with their
-   evidence, the grounding that binds the plan: a premise correction with what it changes, a
-   verified fact a requirement rests on. This section is the only place the plan-writer reads it.
-   A skill in your listing whose description says the slice's work follows it is named there as
-   `` `<plugin>:<skill>` ``: the roles see no listing, and get the file only for a name the plan
-   carries. Then any ordering constraints already known, and `## Not in scope`. No phases: every
-   `###` is the plan-writer's, and sub-structure inside your sections is `####`.
+   evidence, cited by path and quoted line as in `grounding.md`, the grounding that binds the
+   plan: a premise correction with what it changes, a verified fact a requirement rests on.
+   This section is the only place the plan-writer reads it. A skill in your listing whose
+   description says the slice's work follows it is named there as `` `<plugin>:<skill>` ``: the
+   roles see no listing, and get the file only for a name the plan carries. Then any ordering
+   constraints already known, and `## Not in scope`. No phases: every `###` is the
+   plan-writer's, and sub-structure inside your sections is `####`.
 6. **Put the asks.** With nothing to ask, write no store. Otherwise:
    `python3 ${CLAUDE_PLUGIN_ROOT}/tools/asks.py init <slice> requirements --title "<the slice in a line>: requirements" --step <task>`,
    with `--summary` where there is more than one ask, and the shared context as `--context`

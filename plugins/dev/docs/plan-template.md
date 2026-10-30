@@ -227,9 +227,10 @@ The mechanical rules the parser holds every author to:
 - **Outcome-level, complete against slice.md's numbered requirements 1:1**, in the operator's
   wording. Add criteria freely; never drop or re-word a requirement without a ruling recorded
   in plan.md's rulings section.
-- **`file:line` evidence citations** where a criterion rests on a code fact the author verified
-  this pass — the surviving anti-hallucination discipline. A planning-time citation goes in the
-  criterion's `description`; `evidence` is the test phase's.
+- **Evidence citations**, a path and the line quoted, never its number
+  ([spec-tree.md](spec-tree.md) § Citing a line), where a criterion rests on a code fact the
+  author verified this pass — the surviving anti-hallucination discipline. A planning-time
+  citation goes in the criterion's `description`; `evidence` is the test phase's.
 - **Coverage-preservation criteria are allowed** ("no coverage is lost; every deleted test has
   a named successor" — phrased as an outcome, never an inventory of paths). **Doc-truth
   universals are banned** (a criterion asserting prose claims hold everywhere).

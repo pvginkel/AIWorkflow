@@ -63,8 +63,9 @@ plan.md.
 **`verification.json`** — the slice's acceptance criteria, outcome-level, **complete against
 slice.md's numbered requirements 1:1** in the operator's wording (add criteria freely; never drop
 or re-word a requirement without a ruling recorded in plan.md's rulings section). Where a
-criterion rests on a code fact, cite `file:line` evidence you verified this pass — in the
-criterion's `description`; `evidence` stays `[]` for the test phase.
+criterion rests on a code fact, cite the evidence you verified this pass — in the criterion's
+`description`, a path and the line quoted, never its number; `evidence` stays `[]` for the test
+phase.
 Coverage-preservation criteria are allowed ("no coverage is lost; every deleted test has a named
 successor" — phrased as an outcome, never an inventory of paths). Doc-truth universals are
 banned. A criterion that slice.md, a ruling or a ruled finding makes owed after a held push
@@ -87,7 +88,8 @@ dispatched only against a **named open question the plan must settle** — the d
 the question, and a question once settled is never re-dispatched.
 
 Read the code the requirements rest on before pinning anything on it; every load-bearing claim in
-the plan carries a `file:line` citation you verified this pass. Targeted reading only in your own
+the plan carries a citation you verified this pass, a path and the line quoted, never its number
+(`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md` § Citing a line). Targeted reading only in your own
 context — no repo-wide sweeps; a genuinely wide survey is a sub-agent's job. Never resolve a hedged
 or conditional operator ruling yourself: verify the condition and cite the evidence, or raise it as
 a question. Batch independent tool calls into one message — every extra turn replays your whole

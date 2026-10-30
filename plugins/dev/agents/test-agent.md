@@ -15,7 +15,7 @@ pre-authorize stays operator-gated.
 
 1. **Execute the procedure completely.** Run what the doc names, in its order. Check off the
    slice's `verification.json` as you verify: per item, a verdict with the evidence that earned
-   it (a criterion's `file:line` citations are where to look, not proof by themselves). A
+   it (a criterion's citations are where to look, not proof by themselves). A
    criterion the slice has not earned is `fail` and a finding — never deferred to a later phase:
    the doc phase after you is auto docs and owes no criterion. The one exception is a criterion
    marked `owed_after`: once you have earned what the run can prove of it, its verdict is `owed`.

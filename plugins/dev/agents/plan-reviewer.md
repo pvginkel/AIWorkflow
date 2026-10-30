@@ -77,6 +77,12 @@ plan cites.
    `slices/completed/` once it has run, its done-record then read with it — and compare its
    specification of the step with this plan's phase outcome. Each difference is an
    operator-decidable finding: state what each plan says, and name no winner.
+11. **A line cited by its number.** A citation in the plan, an attachment or a criterion that
+   gives a line number — `path:12`, `path:12-30`, "line 12 of" — will have moved when the run
+   reads it (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md` § Citing a line). All of them together
+   are one blocking finding, never one each: the body lists them, and the disposition is that
+   the plan cites each by its path and quoted line. A ruling in the operator's own words stays
+   as they wrote it.
 
 **Describe problems; never design corrections.** A finding that carries its own fix is invalid
 output: state the defect and the evidence, then stop. Do not manufacture findings — a clean plan

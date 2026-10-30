@@ -573,6 +573,75 @@ def test_the_cli_amends_clears_and_refuses_with_exit_2():
             assert code == 2 and err.startswith("Error: ") and says in err, (argv, err)
 
 
+CITED = [
+    "see telegram.py:257-279 for it",
+    "`run_loop.py:2256`",
+    "in plugins/dev/tools/asks.py:12.",
+    "scripts/deploy:40",
+    "Makefile:12",
+    "Jenkinsfile.architecture:3",
+    "foo.py:12:5, the column",
+]
+NOT_CITED = [
+    "at 10:30 today",
+    "2026-10-30T09:18Z",
+    "https://pilot-dev.home:8080/x",
+    "http://host.example.com:443",
+    "pilot-dev.home:8080 refuses",
+    "10.0.0.1:5432",
+    "a ratio of 3:1",
+    "`file:line` citations",
+    "file repo:plugins/x.py",
+    "D1:2",
+    "the gate failed:\n\n```\ntests/test_x.py:45: AssertionError\n```",
+    "the line `def run_kc_session(` in plugins/dev/tools/run_loop.py",
+]
+
+
+def test_a_line_cited_by_its_number_is_a_fault_and_what_is_not_one_passes():
+    for text in CITED:
+        found = asks.citation_problems(text, "the body")
+        assert len(found) == 1 and "cites a line by its number" in found[0], (text, found)
+        assert "spec-tree.md § Citing a line" in found[0]
+    for text in NOT_CITED:
+        assert asks.citation_problems(text, "the body") == [], text
+    assert asks.citation_problems(None, "x") == []
+
+
+def test_the_cli_refuses_an_authors_line_number_and_the_loops_api_does_not():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = scratch_slice(tmp)
+        code, _, err = run_cli("init", slice_dir, "q", "--title", "T", "--context",
+                               "As run_loop.py:40 shows.")
+        assert code == 2 and "the context cites a line by its number" in err, err
+        store = asks.create(slice_dir, "requirements", "Requirements")
+        for argv, says in [
+            (("--body", "B, see x.py:3."), "the body cites"),
+            (("--body", "B.", "--proposal", "change y.py:3-9"), "`--proposal` cites"),
+            (("--body", "B.", "--headline", "H at z.md:4"), "the headline cites"),
+        ]:
+            args = ["append", store, "--kind", "action", "--headline", "H", *argv]
+            if "--proposal" not in argv:
+                args += ["--proposal", "do it"]
+            code, _, err = run_cli(*args)
+            assert code == 2 and says in err, (argv, err)
+        assert asks.load(store)["entries"] == []
+        # a command's output in a fenced block is evidence, not a citation
+        assert run_cli("append", store, "--kind", "question", "--headline", "H", "--body",
+                       "It failed:\n\n```\ntests/test_x.py:45: AssertionError\n```\n")[0] == 0
+        # the loops' API quotes tool output and is not checked
+        with asks.editing(store) as data:
+            eid = asks.append(data, "question", "H2", "The gate said x.py:3.")
+        # an amend is checked on what it changes, never on what it leaves
+        code, _, err = run_cli("amend", store, eid, "--headline", "Another")
+        assert code == 0, err
+        code, _, err = run_cli("amend", store, eid, "--body", "Now y.py:3.")
+        assert code == 2 and "the body cites" in err, err
+        code, _, err = run_cli("note", store, eid, "--by", "me", "--text", "and w.py:1")
+        assert code == 2 and "the note cites" in err, err
+        assert run_cli("note", store, eid, "--by", "me", "--text", "and `def w(`")[0] == 0
+
+
 def test_the_docstring_lists_every_verb():
     listed = re.findall(r"^  ([a-z]+) {2,}", asks.__doc__, re.M)
     parser = asks.build_parser()

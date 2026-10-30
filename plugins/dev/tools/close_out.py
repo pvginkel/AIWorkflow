@@ -73,7 +73,11 @@ the agents and the skills:
 The store is open to every author — the appender, the reviewers, the
 consults, the wrap-up — until the report is rendered at the run's end; after
 it, only the continuation writes, through `absorb`, `rule`, `fold`, `settle`
-and `close`. Nothing renders on a write.
+and `close`. Nothing renders on a write. `append`, `amend`, `note` and
+`propose` refuse an author's text that cites a line by its number outside a
+fenced block (`asks.citation_problems`; the rule is `docs/spec-tree.md`
+§ Citing a line); the functions the loops call do not, since a driver's
+text quotes tool output.
 
 The route is computed at every render, never stored: `route()` reads an
 entry's kind and labels, the repositories the slice touched, and the stage
@@ -3374,23 +3378,47 @@ def _append_cli(slice_dir: Path, args) -> str:
         raise ReportError("append needs --kind")
     labels = _labels_from(args)
     options = _options_from(args)
+    body = _stdin_or(args.body)
     candidate = {"kind": kind, "headline": args.headline, "proposal": args.proposal}
     _set_ask_fields(candidate, options, args.recommend, _check_of(args), args.due)
     errors = check_labels(kind, labels, args.consequence, slice_dir)
     errors += author_problems(candidate)
+    errors += _citations(args, body)
     if errors:
         raise ReportError("\n".join(errors))
     labels = normalise_for(labels, slice_dir)
-    return append_entry(slice_dir, kind, args.headline, _stdin_or(args.body),
+    return append_entry(slice_dir, kind, args.headline, body,
                         consequence=args.consequence, provenance=args.provenance,
                         severity=args.severity, labels=labels,
                         proposal=args.proposal, by=args.by, options=options,
                         recommend=args.recommend, check=_check_of(args), due=args.due)
 
 
+def _citations(args, body: str | None) -> list[str]:
+    """An author's text, as `append` and `amend` take it, where it cites a
+    line by its number (`asks.citation_problems`, the rule
+    `docs/spec-tree.md` § Citing a line); a field not given is not checked.
+    The loops' path is not checked: a driver's text quotes tool output."""
+    return asks._cli_citations({
+        "--headline": args.headline, "--body": body, "--consequence": args.consequence,
+        "--proposal": args.proposal, "an --option": args.option})
+
+
+def _refuse_citations(what: str, text: str) -> str:
+    """`text` as given, refused where it cites a line by its number."""
+    found = asks.citation_problems(text, what)
+    if found:
+        raise ReportError("\n".join(found))
+    return text
+
+
 def _amend_cli(slice_dir: Path, args) -> str:
+    body = None if args.body is None else _stdin_or(args.body)
+    errors = _citations(args, body)
+    if errors:
+        raise ReportError("\n".join(errors))
     return amend_entry(slice_dir, args.id, by=args.by, headline=args.headline,
-                       body=None if args.body is None else _stdin_or(args.body),
+                       body=body,
                        consequence=args.consequence, proposal=args.proposal,
                        provenance=args.provenance, severity=args.severity,
                        labels=_labels_from(args), options=_options_from(args),
@@ -3417,12 +3445,11 @@ def main(argv=None) -> int:
         elif command == "list":
             print(list_view(slice_dir))
         elif command == "note":
+            text = _refuse_citations("the note", _stdin_or(args.text))
             if args.left:
-                print(leave_entry(slice_dir, args.id, args.by, _stdin_or(args.text),
-                                  date=args.date))
+                print(leave_entry(slice_dir, args.id, args.by, text, date=args.date))
             else:
-                add_note(slice_dir, args.id, args.by, _stdin_or(args.text),
-                         date=args.date)
+                add_note(slice_dir, args.id, args.by, text, date=args.date)
                 print(f"{args.id} noted")
         elif command == "strike":
             print(strike_entry(slice_dir, args.id, args.reason, by=args.by,
@@ -3435,7 +3462,8 @@ def main(argv=None) -> int:
                                 labels=normalise_for(_labels_from(args), slice_dir),
                                 date=args.date, dry_run=args.dry_run))
         elif command == "propose":
-            print(propose_entry(slice_dir, args.id, args.by, _stdin_or(args.text),
+            print(propose_entry(slice_dir, args.id, args.by,
+                                _refuse_citations("the proposal", _stdin_or(args.text)),
                                 date=args.date, mark=args.mark))
         elif command == "fold":
             print(fold_entry(slice_dir, args.id, into=args.into, date=args.date))

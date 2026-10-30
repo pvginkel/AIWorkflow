@@ -680,7 +680,7 @@ sessions in all.
 
 - ~~**C1. AIWF-36**, the risk table and the reviewer's dispatch line.~~ Closed by the operator,
   2026-10-30; nothing to build.
-- [ ] **C2. AIWF-82's rule** (after decision 8): the prompts, the format skill, the checks.
+- [x] **C2. AIWF-82's rule** (after decision 8): the prompts, the format skill, the checks.
 - [ ] **C3. The blanket-accept scan** and the trims of `inbox`, `onboard`, `arch-design` (§6).
 - [ ] **C4. Dead code and the research tools** that read gone artifacts: `close_out_readout.py`'s
   snapshot import left as research, noted in its header; nothing else.

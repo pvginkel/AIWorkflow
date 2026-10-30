@@ -4,6 +4,32 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-30 — A citation another session reads is a path and a quoted line, never a line number; the stores refuse one (v0.10.11)
+
+AIWF-82, as decision 8 of the P-111 plan has it. A line number in what one session hands
+another has moved by the time it is read: a design doc had drifted 170 lines under a criterion,
+the doc phase had shifted the close-out entries before the wrap-up read them, and a ruling cited
+lines 257–279 of a 200-line file. A quoted line is easier to resolve, to detect and to read.
+
+- **The rule** is `docs/spec-tree.md` § Citing a line, a page every writer already loads, since
+  the cause is that tree: every artifact in it is read later, after other sessions moved the
+  lines. A citation is the path and the line quoted, enough of it to be unique. A command's
+  output keeps its numbers inside a fenced block. The page is retitled for it.
+- **The prompts point at it.** The plan-writer, the code-reviewer, the code-writer's
+  done-record, the plan-preparer's grounding and seeded header, the arch-design surveys, the
+  test-agent, the plan template, the plan loop's contract and `close-out.md` § Writing an entry
+  no longer ask for `file:line`. The writing skill's citation line points at the page, and the
+  format skill reaches it through the writing skill.
+- **The stores refuse one.** `asks.citation_problems` finds a line cited by its number
+  (`path:12`, `path:12-30`) outside a fenced block. A host and its port, a clock time and a
+  ratio pass. The CLIs refuse it in an author's text: `asks.py` `init`, `append`, `amend` and
+  `note`, and `close_out.py` `append`, `amend`, `note` and `propose`. An amend is checked on
+  the fields it changes. The functions the loops call are not checked, since a driver's text
+  quotes tool output.
+- **The plan-reviewer flags one.** Every line-number citation in a plan, an attachment or a
+  criterion is one blocking finding together, whose disposition is the quoted form. A ruling in
+  the operator's own words stays as written.
+
 ## 2026-10-30 — Triage puts the questions first and the slices as their consequence; the Solution Known lane, the sweep and `/dev:slice-dag` go, and `needs:` orders the slices (v0.10.10)
 
 `/dev:triage` stays the operator's own chat skill: in Pilot, triage is the definition chat's. Its

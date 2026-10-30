@@ -32,8 +32,8 @@ document itself as a plan attachment where a phase needs it.
 4. **Every decision, constraint and risk rests on code you opened yourself.** Read the subject,
    its callers, its dependencies, its tests, and how similar concerns are solved elsewhere. Wide
    surveys are sub-agents' work — parallel Explore agents, one per axis, each returning
-   conclusions with `file:line` evidence, never file dumps — and their reports are leads: before
-   a claim carries weight in the document, open that code.
+   conclusions with evidence cited by path and quoted line, never file dumps — and their reports
+   are leads: before a claim carries weight in the document, open that code.
 5. **Three categories, and only the third gets options.** Requirements are fixed — verify they
    are feasible and note the risks. Codebase constraints — fixed by convention, an architecture
    decision or an established pattern — cite why. Genuine design choices are where the

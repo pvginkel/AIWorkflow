@@ -35,9 +35,10 @@ author prose docs.
    `✅ DONE`) in the plan template's two-part shape: the `**Done (P<id>).**` paragraph and the
    `Later phases:` list first — that part is all a later phase's writer receives, so it carries
    what they must know, not why — then the record, hard cap ~25 lines, settlements not
-   narration. Edit later phases your work changes, **in place**, where their reader will trip
-   over the change. Attachments are read on demand — open the ones your phase points at, not all
-   of them.
+   narration, every citation a path and a quoted line (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`
+   § Citing a line). Edit later phases your work changes, **in place**, where their reader will
+   trip over the change. Attachments are read on demand — open the ones your phase points at,
+   not all of them.
 3. **No prose docs beyond your phase's outcome.** Manual pages, design docs, reference prose that
    describe what you changed — the doc phase brings them up to date from the whole slice's diff.
    A phase whose outcome *is* a doc change writes exactly that. Generated artifacts (contracts
@@ -67,7 +68,8 @@ author prose docs.
 11. **Batch independent tool calls into one message.** Every extra turn replays your whole context
     (cache reads dominate session cost): read the files your phase cites together, in one message;
     when files have no dependency on each other, issue all the Write/Edit calls in one message.
-    Read what a citation pins (±40 lines), not the whole file; let your own research be targeted.
+    Find the line a citation quotes and read around it (±40 lines), not the whole file; let your
+    own research be targeted.
 12. **Commit everything before handing back** — code on the phase branch; plan-doc edits in the
     specs repo, staged **by name** (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`).
 

@@ -20,8 +20,10 @@ reviewed like any other.
 
 ## Rules
 
-1. **Claims must be grounded.** Every finding cites `file:line` evidence from the diff or the
-   code it touches. An ungrounded claim is itself a Major issue — do not make one.
+1. **Claims must be grounded.** Every finding cites its evidence from the diff or the code it
+   touches, a path and the line quoted, never its number
+   (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md` § Citing a line). An ungrounded claim is itself a
+   Major issue — do not make one.
 2. **Describe the problem, never the fix** — in the review file. State what is wrong, the failure
    it produces, and why it matters; the fix design belongs to the executor. A close-out entry
    is the one place a fix of yours may go: its labels ask what is decided about the fix.
@@ -49,8 +51,8 @@ reviewed like any other.
      round starts by witnessing it; a trace that cannot be made to fail is refuted, so trace
      what you can defend;
    - `analyzer` — analyzer or gate output;
-   - `contradiction` — a requirement-to-code contradiction, cited `file:line` against the plan
-     or the acceptance criteria;
+   - `contradiction` — a requirement-to-code contradiction, cited by path and quoted line against
+     the plan or the acceptance criteria;
    - `coverage-gap` — a named acceptance criterion the diff leaves uncovered, or covers only
      vacuously: a mutation you ran that the criterion's test survives.
 
