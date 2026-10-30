@@ -112,13 +112,14 @@ more than a fix — and the body is the card's text, written for the card and fo
 cannot ask back, since nobody has measured whether a card can be ruled from its text alone (1.3,
 4.15).
 
-**A batch is one line per item.** The chat message of one line per item, under its fate, with the
-questions numbered and each carrying its recommendation, is the triage format that worked: an
-eighteen-item run was ruled by numbered reply, and a short list named at a session's close was
-ruled at once. The line is the id and the ask in its author's words, shortened to a line — no card
-text, which was 56 % of the words of a document hardly read; no label, which predicted nothing;
-no note, which drew 3 reactions on 105 items. In a document, the heading is that line (1.8, 4.6,
-5.7, 5.8, 6.4).
+**A batch puts each item once, as its id and its ask.** A chat message with every item on a line
+and the questions numbered, each carrying its recommendation, is the triage format that worked:
+an eighteen-item run was ruled by numbered reply, and a short list named at a session's close was
+ruled at once. The item is its id and the ask in its author's words, shortened to a line or less
+— no card text, which was 56 % of the words of a document hardly read; no label, which predicted
+nothing; no note, which drew 3 reactions on 105 items. Where the items sit — each on a line under
+its fate, or on the line of the slice it is filed into — is the layout of the skill that puts the
+batch, not this skill's. In a document, the heading is that line (1.8, 4.6, 5.7, 5.8, 6.4).
 
 ## What an ask rests on
 

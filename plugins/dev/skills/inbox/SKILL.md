@@ -64,10 +64,8 @@ under the night-shift mark**: those were ruled at an earlier sitting and wait fo
 hand-back mark on one still brings it back, and so does the operator naming it; the rest you
 only count per project for the message, with the date of the oldest ruling among them (the
 ruling comment on the one left untouched longest). Read what you pull in full, project by
-project, in the batches the tracker tool allows. Two kinds of card are not items: the slice
-cards, and the close-out marker cards (`[NNN] close-out: …`), which say a report is waiting —
-count them per project for the message and leave them to `/dev:close-out`. Nothing is dumped to
-disk: the tracker is the record, a sitting that stops leaves what it did not reach as it was,
+project, in the batches the tracker tool allows. The slice cards are not items. Nothing is
+dumped to disk: the tracker is the record, a sitting that stops leaves what it did not reach as it was,
 and the next one reads it.
 
 Before judging, **read the pass's lane** from where the convention says it is written — what it
@@ -129,8 +127,7 @@ outlives the sitting.
 One chat message, however long the inbox — never a dialog, never a document — by project:
 
 ```
-<project> (N new, M held back, A of your actions; S on the night shift since <date>;
-           K close-out reports wait — /dev:close-out there)
+<project> (N new, M held back, A of your actions; S on the night shift since <date>)
   Night shift:  <id>  <the ask, on one line>
                 <id>  <the ask> — held back <date>, waited on <card>, closed since: mark off
   Slice:        <id>  <the ask>                                                  (Q1)
@@ -147,12 +144,15 @@ Q1 (<id>). <What the card asks.> <The question?> I'd <recommendation>.
 
 Every card exactly once, on its line, written as `/dev:writing` has a batch's line (the title is
 part of the ask, and the operator opens a card when they want it), and for a held-back card what
-it waits on. The questions numbered. The operator answers in chat, in their own words: **go** approves
-the scheme as it stands; **night shift**, **slice**, **close**, **later** and **yours** on a card
-move it; **done: <what they did>** on a *yours* card is the act performed, and the card takes the
-fate that follows — for an action of theirs, that is closed resolved; an answer to a question is the
-ruling as given, never your proposal. **close** and **later** are binding, as at triage. One pass
-per operator message; re-present only what moved.
+it waits on. The questions numbered. The message offers no word that approves the lot.
+
+The operator answers in chat, in their own words. **night shift**, **slice**, **close**, **later**
+or **yours** on a card moves it, and a card they leave untouched stands as its line showed it.
+**done: <what they did>** on a *yours* card is the act performed, and the card takes the fate that
+follows — for an action of theirs, that is closed resolved. An answer to a question is the ruling
+as given, never your proposal, and a question left unanswered leaves its card as it was, for the
+next sitting. **close** and **later** are binding, as at triage. One pass per operator message;
+re-present only what moved.
 
 ### 5. Record
 
@@ -183,7 +183,6 @@ disjoint card sets and are verified on the tracker by spot check, never from the
 ### 6. Close the sitting
 
 Notify per the host convention — `Inbox <date>: N cards — K for the night shift, M pre-filtered
-for slices (<projects>), J closed, L deferred, P wait on you (<ids>), A actions kept.` — name
-each project whose pre-filtered batch grew ("run /dev:triage in <project> when ready"), and
+for slices (<projects>), J closed, L deferred, P wait on you (<ids>), A actions kept.` — and
 stop. The pass's next run, a project's triage and the operator's own acts are their moves, in
 their own time.

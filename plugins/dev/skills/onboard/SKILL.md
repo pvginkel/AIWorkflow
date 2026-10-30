@@ -392,4 +392,4 @@ A green run profile means the contract holds, the tree is clean, and the baselin
 the operator: what was deleted, what was left behind and why, which references you rewrote, what was
 archived out to `archive/quality/`, the automation each component now declares (naming any that
 declare no tests, as a decision they made), what the spec-repo reshaping moved, and anything still
-open. Then hand off to `/dev:triage`.
+open.

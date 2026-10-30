@@ -320,8 +320,7 @@ README to the specs repo, staging files by name (`${CLAUDE_PLUGIN_ROOT}/docs/spe
   parked. A partial disposition (a selection of the cards, a run that stopped) leaves it in
   place, committed. If deleting it would lose a fact, it isn't absorbed yet.
 - **Notify the operator** per the host convention — "N items triaged: K closed at the filter,
-  M slices under `<spec-repo>/slices/backlog/`. Run /dev:plan-slice on a slice when ready." —
-  and stop.
+  M slices under `<spec-repo>/slices/backlog/`." — and stop.
 
 Stop means stop: planning is the operator's next move, in their own time. The one exception — the
 operator explicitly asks to carry straight on into `/dev:plan-slice` *and* you agree the change is

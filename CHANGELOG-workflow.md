@@ -4,6 +4,29 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-30 — No word approves the lot in the inbox, and the chat skills stop pointing at the next command (v0.10.12)
+
+Item C3 of the P-111 plan: the blanket-accept scan and the trims of `inbox`, `onboard` and
+`arch-design`, as the plan's decisions 6 and 7 and the operator's point 11 have them: "I don't
+want to make it 'easy' … to accept the default. It has to look."
+
+- **The scan** read every skill, agent, contract doc and string a tool prints for wording that
+  offers or invites a one-word accept-all. One was left, the inbox's "**go** approves the scheme
+  as it stands", which goes. Triage lost its "go" in 0.10.10, and `pilot.md` already forbids the
+  word to a stage. A one-word answer to one entry, such as `Agree` to a proposal, is not one.
+- **The inbox** reads its reply as triage does: a word on a card moves it, a card left untouched
+  stands as its line showed it, and a question left unanswered leaves its card as it was for the
+  next sitting. The message offers no word that approves the lot. The close-out marker cards and
+  the `/dev:close-out` pointer go, since 0.10.8 removed both.
+- **The by-hand hints go.** The inbox's "run /dev:triage in <project> when ready", triage's "Run
+  /dev:plan-slice on a slice when ready" and onboard's closing "hand off to /dev:triage" are
+  dropped; each notification keeps its facts. Onboard's quality-archive step stays: it preserves
+  the drifted copies, not the workflow.
+- **`arch-design`** had nothing to trim.
+- **The writing skill's batch rule** states what an item is on its line, its id and its ask, and
+  leaves where the lines sit to the skill that puts the batch. "Under its fate" was the inbox's
+  layout, and triage now puts its cards on the line of the slice they are filed into.
+
 ## 2026-10-30 — A citation another session reads is a path and a quoted line, never a line number; the stores refuse one (v0.10.11)
 
 AIWF-82, as decision 8 of the P-111 plan has it. A line number in what one session hands
