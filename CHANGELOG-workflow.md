@@ -4,6 +4,41 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-30 — Plan-slice is planning's stage in Pilot, a small coordinator; the plan-preparer grounds the slice and the refinement page goes (v0.10.9)
+
+`/dev:plan-slice` is rewritten as the turns Pilot sends a stage (`docs/pilot.md`), in the shape
+run-slice took in 0.10.8. The session never reads the slice. It launches, waits, registers,
+carries out and commits, and every read goes to a sub-agent in the foreground, so its context
+stays small over a planning that may run for days.
+
+- **The start** reads the brief and runs preflight with `--json`; a failure is an `action`
+  document. Then the new **`plan-preparer`** agent, Opus at xhigh in the refinement-writer's
+  place, absorbs `slice.md` and the cards routed to the slice, grounds what each requirement
+  rests on, writes `grounding.md`, seeds `plan.md`'s header and appends the requirements asks to
+  `asks/1-requirements.json`. The session renders the document, registers it with
+  `grounding.md` and `slice.md` attached, commits, and ends the turn. A slice with nothing to ask
+  goes straight to the loop.
+- **The loop** is launched with `run --detach --step` and waited on in the foreground, as the
+  run's is. Exit 4 registers the document the loop rendered, with the plan and the review's
+  prose attached. Exit 3 goes to a diagnosis sub-agent, and exits 7 and 130 end the turn for the
+  nudge to rerun.
+- **The continuation** has a sub-agent write each ruling into `plan.md`'s requirements and
+  rulings in the operator's words, with its `## Push holds` or `## Driver rulings` bullet. A
+  hedged answer is not a ruling until its condition is checked, and a note that asks back is
+  answered in a new document. A deferred answer goes under not-in-scope. A repository the
+  slice creates is created here, once ruled; an arch design first, or a cancelled slice, stops
+  planning.
+- **At exit 0** the dry run, the promotion out of `slices/backlog/` and the commit stay as they
+  were. A sub-agent moves the card to planned and closes the absorbed cards the plan carries.
+
+What the interactive session did in chat goes: the walkthrough, agree-or-comment, the blanket
+"agree", the sanity-read after the loop and `--fixes-applied`, which 0.10.5 had
+already dropped from the loop. `docs/refinement.md` and `agents/refinement-writer.md` are deleted. Their rules have a
+home in the writing skill, the plan-preparer or pilot.md, or were superseded by the documents;
+the record of how the refinement page came to be stays in `docs/rationale/plan-refinement.md`.
+`plan-loop.md`, `plan-template.md`, `agent-dispatch.md`, the plan-writer and `plan_loop.py`'s
+messages speak of the stage and its preparer, not an interactive session.
+
 ## 2026-10-30 — Run-slice is the run's stage in Pilot, and the close-out is its continuation; `/dev:close-out` goes (v0.10.8)
 
 `/dev:run-slice` is rewritten as the turns Pilot sends a stage (`docs/pilot.md`): the start, the

@@ -6,7 +6,7 @@ description: Completes a slice's plan.md — the phase queue with Target: lines,
 You are the planning architect for **one slice**, spawned by the plan loop for one fresh-context
 pass — the initial completion of the plan, or a fix pass after a review; your dispatch names which
 and the files it rests on. Inputs: the slice folder's `slice.md` (the recorded change request,
-authoritative on intent) and `plan.md` (the plan-slice session seeded its header — the one-liner
+authoritative on intent) and `plan.md` (the plan-slice stage seeded its header — the one-liner
 and the requirements/rulings section, in the operator's words; **preserve that section verbatim**),
 the project documentation, and the code (read it — never plan from assumption).
 

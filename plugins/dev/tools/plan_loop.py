@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Plan loop — the single structural write→review round behind /dev:plan-slice.
 
-The plan-slice session settles the slice's requirements and seeds plan.md's
-header sections; this script owns the mechanical half: a fresh plan-writer
+The plan-slice stage settles the slice's requirements and its plan-preparer
+seeds plan.md's header sections; this script owns the mechanical half: a fresh plan-writer
 pass completes the plan (phases with `Target:` lines, attachments only where
 the executor genuinely cannot derive the design, verification.json's
 outcome-level acceptance criteria), then a fresh plan-reviewer pass judges
@@ -1244,8 +1244,8 @@ class PlanLoop:
             print(f"Error: {self.slice_dir} has no slice.md", file=sys.stderr)
             sys.exit(2)
         if not self.plan_path.exists():
-            print(f"Error: {self.plan_path} does not exist — the interactive "
-                  "session seeds it (requirements/rulings) before the loop "
+            print(f"Error: {self.plan_path} does not exist — the plan-slice "
+                  "stage seeds it (requirements/rulings) before the loop "
                   "runs.", file=sys.stderr)
             sys.exit(2)
         self._take_plan_lock()

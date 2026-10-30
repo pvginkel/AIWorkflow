@@ -1,7 +1,7 @@
 # The plan template — plan.md and verification.json, mechanically
 
 The concrete shape of a slice's `plan.md` and `verification.json`, settled so every author —
-the interactive `/dev:plan-slice` session seeding the header, the plan-writer completing it, agents
+the `/dev:plan-slice` stage seeding the header, the plan-writer completing it, agents
 appending phases mid-run, the operator editing at will — produces a doc `run_loop.py`'s parser
 drives without nudges. Semantics (who writes which section, review charter, loop mechanics) are
 [plan-loop.md](plan-loop.md) and [run-loop.md](run-loop.md); this doc is the shape. Sanity-check
@@ -17,7 +17,8 @@ repo" when none or several do.
 
 ## Requirements / rulings
 
-<!-- Seeded by /dev:plan-slice, in the operator's words; authoritative on intent.
+<!-- Seeded by /dev:plan-slice's plan-preparer, the operator's rulings added as they
+     come, in the operator's words; authoritative on intent.
      /dev:run-slice appends mid-run operator answers here. A ruling that corrects
      an earlier one REPLACES it in place — no correction-chains; the round
      history lives in plan_review_r*.md. -->

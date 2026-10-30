@@ -344,7 +344,7 @@ invariants).
 
 - **plan-writer / plan-reviewer** — out-of-scope observations about the spec or the estate;
   events during planning. Their in-scope findings and questions keep their existing routes (the
-  review file, the `questions` verdict, the interactive session). An action only the operator can
+  review's and the questions' hand-backs, which the loop renders as documents). An action only the operator can
   take that the run needs *before* it starts — a push the plan's tools wait on, a pod restart —
   is an action whose headline begins `Before /dev:run-slice:`, with the check that shows it
   done; the run loop strikes it when its checks hold and does not start while one is open

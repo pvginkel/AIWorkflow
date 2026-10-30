@@ -1,7 +1,7 @@
 # The plan loop — one structural write→review round
 
 `${CLAUDE_PLUGIN_ROOT}/tools/plan_loop.py` is `/dev:plan-slice`'s mechanical half. The plan-slice
-session settles the slice's requirements and seeds `plan.md`'s header; the loop then runs a
+stage settles the slice's requirements and its plan-preparer seeds `plan.md`'s header; the loop then runs a
 fresh **plan-writer** pass to complete the plan and **one** fresh **plan-reviewer** pass to
 judge it. The review is structural, not optional: **exit 0 is refused without a reviewer
 verdict on file**, and it is the only place anything checks the plan against `slice.md` —
@@ -104,7 +104,7 @@ design goal). The concrete skeleton —
 heading levels, the `Target:` line, done-record shape, the `verification.json` schema — is
 [plan-template.md](plan-template.md); its shape:
 
-- **Header** (seeded by the plan-slice session): the one-liner; **requirements/rulings** — every
+- **Header** (seeded by the plan-slice stage's plan-preparer): the one-liner; **requirements/rulings** — every
   requirement and operator ruling, in the operator's words; this section is authoritative on
   intent, is preserved verbatim by the writer, and is where `/dev:run-slice` records mid-run
   operator answers.

@@ -85,10 +85,9 @@ The only exceptions are the **always-Sonnet agents**, which additionally pin `mo
 their own definitions so they stay Sonnet even as sub-agents: **test-agent** (the test phase),
 **test-fixer** (mechanical suite repair), and the **rebase-agent**. Two Opus agents pin their
 model too. The
-**refinement-writer** pins `model: opus` and `effort: xhigh`: it writes the operator's decision
-document from the plan-slice session's material and nothing else
-([refinement.md](refinement.md)), and the page does not inherit the operator's choice of model
-for the session. The **wrap-up** pins `model: opus` too, though the driver is its one caller now
+**plan-preparer** pins `model: opus` and `effort: xhigh`: it grounds the slice and writes the
+requirements asks the operator rules on, and that work does not inherit the model of the stage's
+session ([plan-slice](../skills/plan-slice/SKILL.md)). The **wrap-up** pins `model: opus` too, though the driver is its one caller now
 and passes the same flags: what fixes code unreviewed runs on Opus whoever dispatches it
 ([close-out.md](close-out.md#the-wrap-up)).
 
@@ -121,10 +120,11 @@ Every agent — including one a script spawned — can dispatch sub-agents of it
 rule: **delegate the reading, keep the judgment.** Mechanical, independent, per-item work —
 hunting the evidence for one verification item, surveying one axis of a subsystem, a rebase, a
 red-suite repair — goes to a sub-agent that returns conclusions. Every verdict, severity call,
-and write-back stays with the dispatching agent. The one delegated *write* is the interview's:
-the plan-slice session hands its grounded material to the `dev:refinement-writer`, which writes
-`refinement.md` for the operator and returns a receipt; the grounding, the rulings and the plan
-stay with the session ([refinement.md](refinement.md)). The doc phase's pages are not delegated:
+and write-back stays with the dispatching agent. A stage's session is the exception: it judges
+nothing it would have to read for, so its reading and the writing that rests on it go to
+sub-agents pointed at the slice folder — the `dev:plan-preparer` grounds a slice and writes its
+requirements asks, and a sub-agent carries each answered document into the plan
+([pilot.md](pilot.md)). The doc phase's pages are not delegated:
 a per-scope authoring sub-agent was built (0.9.14) and read on nine slices — about twice the cost
 per phase of shipped work, a fresh session re-orienting on every hand-over brief — and reverted
 (`docs/research/doc-phase-read-2026-09-04.md` § 5–6); the doc-writer surveys through sub-agents

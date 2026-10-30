@@ -100,7 +100,7 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   roles, the operator-triggered workflows and `document-format`, which a session loads to write a
   document Pilot reads.
 - **`plugins/dev/docs/`** — the **canonical contract** for all of the above: `run-loop.md`,
-  `plan-loop.md`, `runner-state.md`, `plan-template.md`, `refinement.md`, `agent-dispatch.md`, `close-out.md`,
+  `plan-loop.md`, `runner-state.md`, `plan-template.md`, `agent-dispatch.md`, `close-out.md`,
   `close-out-template.md`, `project-contract.md`, `preflight.md`, `residual-sweep.md`,
   `spec-tree.md`, and `pilot.md`, a stage as a Pilot work item. Behaviour
   changes here and in the code together; a doc that describes a loop the code no longer runs is a

@@ -666,7 +666,7 @@ sessions in all.
 - [x] **B1. Run-slice** (§5.2): the skill rewritten as the stage's turns with the close-out
   continuation; `/dev:close-out` deleted; the close-out card gone; the wrap-up's asks as
   proposals; `run-loop.md`, `runner-state.md`, `agent-dispatch.md` brought to it.
-- [ ] **B2. Plan-slice** (§5.3): the skill rewritten as the small coordinator; `plan-preparer.md`
+- [x] **B2. Plan-slice** (§5.3): the skill rewritten as the small coordinator; `plan-preparer.md`
   written, `grounding.md`, the continuation and the clarification turn by sub-agent;
   `refinement-writer.md` and `refinement.md` deleted; `plan-template.md` and `plan-loop.md`
   brought to it.

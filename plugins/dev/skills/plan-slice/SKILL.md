@@ -1,229 +1,199 @@
 ---
 name: plan-slice
-description: The refinement session — pin a triaged slice's requirements with the operator, seed plan.md, then launch ${CLAUDE_PLUGIN_ROOT}/tools/plan_loop.py for the structural write→review round. The run loop executes the result.
-argument-hint: <slice-number-or-path>
+description: The planning of a triaged slice, as a stage Pilot runs — a headless session that has the plan-preparer ground the slice and put its requirements asks, registers them, carries the answers into plan.md, launches ${CLAUDE_PLUGIN_ROOT}/tools/plan_loop.py detached and waits on it inside its turn, registers what the loop asks, and at its end promotes the plan. Started by a work item whose brief opens `/dev:plan-slice <slice>`; without Pilot, the operator starts it the same way and writes the answers into the documents.
+argument-hint: <slice-number-or-path>, then the brief
 ---
 
 # Plan Slice
 
-Turn a triaged slice into its executable phased plan. **Required input: a slice folder** produced
-by `/dev:triage` (`<spec-repo>/slices/backlog/NNN_slug/` with a `slice.md`). Argument: the slice
-number or path. This is the interactive planning session — the operator is present; everything
-downstream runs unattended, and **nobody downstream reads slice.md or this chat**: what reaches
-the executors is `plan.md`, nothing else.
+The planning of one triaged slice, as a stage of Pilot. The contract every stage keeps — the
+brief, the four ways a turn opens, the documents, the continuation, the clarification, the nudge
+and the halt, the cards, the fallback without Pilot — is `${CLAUDE_PLUGIN_ROOT}/docs/pilot.md`.
+This skill restates none of it: it says what planning does in each turn, and where the turn ends.
 
-`<spec-repo>` is the path in your `.aiworkflowrc`'s `spec_repo`. The plan-doc format and loop
-mechanics are `${CLAUDE_PLUGIN_ROOT}/docs/plan-loop.md`; the concrete plan.md/verification.json template
-is `${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md`; the run loop that executes the result is
-`${CLAUDE_PLUGIN_ROOT}/docs/run-loop.md`; the project contract is
-`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md`. Its section 3 is where the tracker comes from —
-what realises the slice card and its states is your host convention. **Load that convention
-before the first tracker call** — where the host ships it as a skill, invoke the skill: nothing
-in the pipeline loads it for you, and a convention that is not in context gets guessed at.
+**The session coordinates; it never reads the slice.** The `dev:plan-preparer` grounds the slice
+and writes its requirements asks. `plan_loop.py` drives the plan-writer and the plan-reviewer
+(`${CLAUDE_PLUGIN_ROOT}/docs/plan-loop.md`), and the plan's shape is
+`${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md`. This session launches, waits, registers, carries
+out and commits. What has to be read — the slice, an answer to carry into the plan, a bail to
+diagnose, a question about the slice — goes to a sub-agent pointed at the slice folder. Nobody
+downstream reads `slice.md` or a document: what reaches the executors is `plan.md`.
 
-**Preflight (step 0).** Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for plan --slice
-<the slice number or path>` and relay its message verbatim if it exits non-zero. A silent exit 0
-means every gate passed. A `warning:` line on exit 0 names a repo preflight left unsynced, one this
-slice's planning does not need: relay it to the operator and carry on.
+Below, `<spec-repo>` is your `.aiworkflowrc`'s `spec_repo`, `<slice>` the slice folder under
+`<spec-repo>/slices/backlog/` that the brief's first line names, `<task>` the brief's plan task,
+and a tool is `python3 ${CLAUDE_PLUGIN_ROOT}/tools/<tool>`. Run from the target code repo.
 
-## Your role
+- **A sub-agent runs in the foreground** (pilot.md § A turn's end is the run's end). Brief it with
+  the slice folder, the paths it works on and the section of this skill it follows. It loads
+  `/dev:writing` before it writes an ask, and hands back a receipt: what it did, with the commits,
+  and the path of any store of asks it wrote.
+- **The tracker** — the slice card, the cards routed to the slice, the cards a ruling asks for —
+  speaks your host convention (`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md` §3). Load it
+  before the first tracker call, yours or a sub-agent's. The slice card's id is `slice.md`'s
+  `issue:`.
+- **An ask is a document**: a store under `<slice>/asks/` through `asks.py`, `--step <task>`,
+  rendered, registered and backed as pilot.md § The documents says. Commit every store, document
+  and file of the folder you changed by name before the turn ends
+  (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`).
 
-You are a **coordinator and the PO's advocate**, not the technical architect. This is the
-**refinement session** — the dev team going through the idea with the PO. Triage recorded the ask
-in the operator's words and read no code; pinning requirements and working interactively toward
-the better solution happens **here**. The plan loop (`${CLAUDE_PLUGIN_ROOT}/tools/plan_loop.py`)
-drives the plan-writer and plan-reviewer; you own what is genuinely interactive: the design
-conversation and the operator's rulings. Your value:
+## The start
 
-1. **Faithful capture** — every explicit request in `slice.md` lands in the plan's
-   requirements/rulings section in the operator's words. No silent substitution, ever;
-   infeasibility is discussed, not designed around.
-2. **Completeness** — every scope boundary the slice touches is ruled in or out on the record
-   before the loop launches.
-3. **Push-back** — feasibility concerns and pattern conflicts surface now, to the operator.
+1. **Read the brief** (pilot.md § The brief): the slice from the first line, the ticket from its
+   `Ticket:` line, `<task>` from "This work item serves plan task `<id>`". While
+   `/work/.quota-limit-halt-requested` exists, do not start: end the turn saying so.
+2. **Preflight**: `preflight.py --for plan --slice <slice> --json`. A failure is an `action`
+   document: its heading the fix in a line, its body the `fact`, the `fix` and the `output`,
+   `--check "preflight --for plan passes its <check> check"`. Register it and end the turn; its
+   continuation starts again at this step. Fix nothing in the environment yourself. A failure
+   with no slice folder to hold a document — no slice of that name, or no spec repo — ends the
+   turn with its last line saying what failed and what fixes it. A pass's notes go into the
+   turn's last line.
+3. **Prepare**: dispatch `dev:plan-preparer` with `<slice>`, `<task>` and the ticket. It leaves
+   `grounding.md` and `plan.md`'s seeded header in the folder and hands back the path of
+   `asks/1-requirements.json`, or `nothing to ask`.
+4. **Put the requirements**: `asks.py render <store>`, register `asks/1-requirements.md`, attach
+   `grounding.md` and `slice.md` to it, commit `plan.md`, `grounding.md` and `asks/` by name, and
+   end the turn. With nothing to ask, commit `plan.md` and `grounding.md` and go to
+   [the loop](#the-loop).
 
-## Procedure
+## The loop
 
-### 1. Absorb the slice
+**Launch, detached**: `plan_loop.py run <slice> --detach --step <task>`. It returns once the loop
+holds the slice, its last line the `next:` wait. A rerun is the same command; the loop takes it
+up where it paused and always dispatches the writer's fix pass after a review. Refused (exit 2)
+because another plan loop holds `plan.lock`, the loop is live: wait on it,
+`plan_loop.py wait <slice>`. Refused because the slice's run loop holds `run.lock`, re-planning
+would rewrite the queue it executes: that is an `action` document as in the start's step 2.
 
-Read `slice.md` and every attachment in the slice folder. Its numbered requirements list is the
-authoritative statement of intent — and deliberately thin. **Then read the tracker for what was
-routed to the slice after triage**: the open cards that link to the slice's card (`issue:` in
-`slice.md`'s frontmatter) or mention it, by its id or by the slice's number, as your host convention
-queries them — a card the inbox left to be decided with this slice is one. Each is input as
-`slice.md` is: its ask comes into the refinement in its card's words, with the card it came from.
-One the plan carries is the slice's, closed as the convention closes an absorbed task; one the
-operator rules out of this slice stays open, with a comment that says so. Treat every claim or
-citation the slice and those cards carry as **unverified input** — a pinned requirement included.
-Triage read no code, and what a card cites rots between filing and planning: the sentence a
-requirement exists to fix was removed by an earlier slice, the file it names as a home never
-existed, the spawn path its steer targets never carries the variable. So before anything is absorbed
-as spec, one read-only sub-agent over the whole slice checks what each requirement rests on — does
-the thing it cites still exist, and say what the slice says it says — and reports per requirement. A
-premise that no longer holds is a finding the refinement doc carries as settled — one sentence, with
-what changes, inside the decision it produces or in the settled list; its evidence goes to `plan.md`
-in §3 — not a phase; about a fifth of a backlog slice goes that way.
+**Wait**: run the `next:` line's `wait` in the foreground, a plain Bash call; it returns within
+nine minutes. Its exit code is a signal, and the lines it prints are all there is to read:
 
-### 2. Pin the requirements with the operator
+- **5, running** — run the new `next:` line again at once. Read nothing in between.
+- **6, gone** — the loop died with no exit recorded: run the `next:` relaunch, then wait again.
+- **0, ended** — act on `ended: exit <n>`:
 
-Bottom the ask out with the operator — through a document and a conversation, never a dialog:
-you MUST NOT use the AskUserQuestion tool, here or anywhere in this skill. The two forms, the
-material, and the doc's shape are `${CLAUDE_PLUGIN_ROOT}/docs/refinement.md`. Walk the
-requirements that leave the *how* open; bring open choices, contradictions, and anything that
-changes the shape. Don't relitigate settled input — a requirement that arrives pinned is
-absorbed as spec, not reopened.
+| The loop's exit | The turn |
+|---|---|
+| **0**, plan complete | [the promotion](#the-promotion) |
+| **4**, the writer's questions or the review's findings | register the `document:` line's file; attach `plan.md`, and for a review its prose, `plan_review_rN.md`; commit `asks/`; end the turn. With no `document:` line, a sub-agent puts the hand-back file the exit names as a `question` document first. |
+| **3**, a bail, or **1** | [the diagnosis](#an-error) |
+| **7**, halted | end the turn, its last line the `halted:` line |
+| **130**, interrupted | someone stopped the loop: end the turn saying where; a nudge resumes it |
 
-1. **Ground, decide what is a decision, then collect.** For each open item: the premises it
-   rests on, verified — **targeted exploration only, for load-bearing uncertainty** (e.g. "who
-   reads the session title"), one focused sub-agent per question, never a fan-out, and never
-   pre-read code ranges yourself that the planner will read again: what you read rides your
-   context for the rest of the slice — then your recommendation and its trade-off, the one
-   alternative the operator could plausibly pick, and the impact if you are wrong. Only an item
-   the operator could rule the other way is a decision (`/dev:writing`'s bar); the rest you
-   settle yourself and list one line each, marked routine or not. The evidence stays in the
-   material and, where it binds the plan, goes to `plan.md` in §3 — the doc carries none of it.
-   What only the operator knows is an open fact. The size in phases goes in the material too.
-   Two premises are grounded like any other, because they are the ones a slice is most often
-   built on without evidence. A slice justified by a policy or a principle ("our testing doc
-   says…") rests on the premise that the thing has caused harm: one sub-agent over git history,
-   completed slices' reviews and the relevant docs, asking only whether it has caused a
-   concrete, dated defect — a null result is a finding, and closing the measured gap goes into
-   the doc as a live alternative beside the slice as filed. A real but rare bug rests on
-   exposure: how often it can fire and how long the damage survives (nothing automated reaches
-   the path; the row repairs itself at the next compaction), measured before the fix is sized —
-   one grep and one file read have turned a wire-change phase into a won't-fix. When the felt
-   complaint and the measured one differ, say so plainly; it is what closes the slice.
-2. **Dispatch `dev:refinement-writer`** with the material and end the turn — its receipt is the
-   walkthrough; post it as it came back. The doc is `refinement.md` in the slice folder.
-3. **Take the rulings.** The operator comments in the file or in chat. Every ruling lands in
-   two places: `plan.md`'s rulings section (§3), and — when it came in chat — under its
-   *Operator* line in `refinement.md`, in the operator's words; a ruling that moves later
-   replaces the line (the contract's walkthrough section). The doc is the page the operator
-   returns to. A single decent choice with impact is put to
-   them in chat as agree-or-comment; a reframe or "walk me through this" is answered as
-   `/dev:writing` has a question back answered.
-   **A hedged answer is not a ruling**: an answer that rules conditionally ("if X, then fine")
-   stays open — verify the condition and re-surface it with the evidence.
-4. A slice whose shape is wrong is re-shaped here with the operator: split it, kick an item back
-   to the backlog, or pull in an obviously-adjacent backlog slice (follow-up folders come from the
-   allocator, `/dev:triage`'s conventions). A slice that arrives for a finding against the
-   workflow itself is cancelled, not planned — `/dev:triage`'s routing owns that class. A design
-   reframe worth a design document gets `/dev:arch-design` before planning.
+A `plugin_version` bail is rerun from the installed `tools/` path `plan_bailout.json` names, not
+from `${CLAUDE_PLUGIN_ROOT}`: this session's copy is the stale one.
 
-### 3. Seed plan.md and run the loop
+## An error
 
-**A repo the slice creates is created here, before the loop runs**, with a manifest in it: the
-plan loop's dry run clones every `github:` target, and one without a `.kubecoder/project.yaml`
-has no gate — a plan problem, or a `gate` ruling that drops the repo's tests from the run's
-sweep. Creating it is a push: put it to the operator and create it only on their go. Build its
-first commit locally in `/work/scratch/<Repo>` (`git init -b main`): the README and a seed
-`.kubecoder/project.yaml` whose `test` needs no file in the repo — for a deploy repo, a `helm
-template` of the pinned upstream chart. Prove the seed with `kc project test` from that
-directory, commit, and push with `gh repo create <owner>/<repo> --private --source . --push`,
-not `--add-readme`, which writes a README-only first commit on GitHub. Leave the clone clean:
-the driver adopts it. Record the seed and its commit in the requirements/rulings section — the
-phase that builds the repo replaces it with the real manifest.
+A sub-agent diagnoses the bail by this section. It reads `plan_bailout.json` and the files it
+names before deciding anything, `plan.md`'s requirements and rulings among them; the loop's
+message is a diagnosis from a process that cannot see the plan, not an instruction. Then the root
+cause:
 
-Write the plan's header yourself — this is the one artifact you author: the one-liner; a
-**requirements/rulings** section carrying every requirement and every ruling from §2 **in the
-operator's words**, and — as your own facts, with their evidence — the grounding that binds the
-plan: a premise correction with what it changes, a verified fact a ruling rests on. This section
-is the only place the plan-writer reads it; `refinement.md` carries none of it. A skill in your
-listing whose description says the slice's work follows it is named there as
-`` `<plugin>:<skill>` `` (`${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md`): the roles see no
-listing, and get the file only for a name the plan carries. Then any
-ordering constraints already known; not-in-scope. A constraint where a later phase consumes what
-an earlier one publishes — a chart release, an image build number, an artifact deployed and
-verified live — needs a push no phase makes: phases merge locally and only the test phase pushes
-(`${CLAUDE_PLUGIN_ROOT}/docs/run-loop.md`, the push check). Put the in-phase push to the operator
-now, as agree-or-comment — which phase's executor pushes which repo, and after what — and record
-their ruling in the requirements/rulings section in their words; the constraint written down
-without it stops the plan loop on a questions round. A ruling that forbids
-pushing a repo also gets its machine-readable half — a `## Push holds` bullet, shaped as the
-plan template above says; prose alone is invisible to the driver, which then nudges the test
-agent for that push and bails. Likewise, a ruling that replaces a target's test gate
-("the Jenkins build is the gate"), accepts a red lint, build or test, or authorizes a promotion
-gets a `## Driver rulings` bullet (`gate` / `accept` / `prd`). Without one, the driver runs the
-gate the ruling waived and spends its fix rounds on a red it cannot fix. No phases — the
-plan-writer designs those, and **`###` is theirs
-alone**: sub-structure inside your sections is `####`, because every `###` the parser sees is a
-phase heading and a stray one is a structure error. Commit it with `refinement.md` (stage by
-name, `${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`), then:
+- **Mechanical or environmental, and the workflow's** — a stale checkout, a wrong path, the spec
+  repo checked out off its base: the sub-agent fixes it and says so, and the session reruns the
+  loop and waits.
+- **An environment fact only the operator can change** — a tool or a service this environment
+  does not run: an `action` document, its check the fact.
+- **Anything else** — the sub-agent writes a `decision` store: the diagnosis, and of retry,
+  change the plan and stop here the options that are live, with its recommendation. The session
+  renders and registers it, attaches `plan_bailout.json` and the files it names, commits and
+  ends the turn.
 
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/tools/plan_loop.py run <spec-repo>/slices/backlog/<SLICE_DIR>
-```
+## The continuation
 
-Run it from the **target code repo**, in the background (`run_in_background: true`). Do **not**
-read or tail `plan_log.txt` — the loop's stdout carries one terse timestamped line per pass start,
-all the mid-run visibility you need. A loop is dead only when its log has gone quiet —
-`plan_log.txt` untouched for several minutes — never on `ps`, which sees only this pod while
-another environment of the project may run the loop; `plan_loop.py run` refuses (exit 2) while
-`plan.lock` or `run.lock` is held, naming the holder's environment. The writer completes the plan (the task-shape declaration,
-phases with `Target:` lines, attachments only where genuinely underivable,
-`verification.json`'s acceptance criteria); the reviewer is the **one** structural check against
-slice.md — there is no fix-verify loop behind it. Handle the exit:
+A sub-agent reads back the documents Pilot's message names and carries them out by this section
+and pilot.md § The continuation, each with `asks.py absorb <document>`. Every ruling lands in
+`plan.md`'s `## Requirements / rulings` in the operator's words, a ruling that corrects an earlier
+one replacing it in place, and is committed by name before anything is launched: the next writer
+reads the plan, not the document. Two readings beside pilot.md's:
 
-- **Exit 0 — plan complete.** A reviewer verdict is on file and the plan parses as a phase
-  queue. Continue below.
-- **Exit 4 — writer questions.** The named questions file is second-round material: re-ground
-  it (where the plan now stands, what the writer settled, what each question decides), dispatch
-  `dev:refinement-writer` to append the decisions to `refinement.md`, post its receipt, take
-  the rulings, and write each **into plan.md's requirements/rulings section** (operator's
-  words), commit, rerun. Never answer a pending question from your own judgment.
-- **Exit 4 — review pending adjudication.** Read the review and bring every blocking finding
-  to the operator in one agree-or-comment message — each with its default disposition and what
-  it changes in the plan; a premise the review overturned is stated first — and record the
-  rulings in plan.md's rulings section — **editing a superseded ruling in place, never
-  appending a correction-chain** (the round history lives in `plan_review_r*.md`) — and, for a
-  finding that reverses a refinement decision, under that decision's *Operator* line (§2.3).
-  Commit,
-  rerun: the rerun dispatches one writer fix pass, which applies
-  the accepted fixes to the plan's phases and `verification.json`. Only if you applied those
-  fixes yourself, rerun with `--fixes-applied` to skip that pass — **the flag is the loop's
-  only signal**, so leaving it off when you did apply them costs a redundant pass, while
-  passing it when you did not ships the plan unfixed. Recording the rulings, or squaring
-  ordering/not-in-scope with a reversed ruling, is not applying the fixes. No review follows
-  the fixes — your sanity-read in §4 is the second look.
-- **Exit 3 — bailed** (`blocked` / `timeout` / `protocol_failure` / `plugin_version`): diagnose;
-  fix only what is genuinely environmental, otherwise defer to the operator. `plugin_version`
-  means this session's `${CLAUDE_PLUGIN_ROOT}` is stale: rerun from the installed path
-  `plan_bailout.json` names, as it stands — the rerun clears the bail record itself.
+- **A hedged answer is not a ruling.** One that rules conditionally ("if X, then fine") has its
+  condition checked; where it holds, the ruling stands as given, and where it does not, the ask
+  goes again in a new document with what was found.
+- **A note that asks back is answered**, under `/dev:writing` § A question back, in a new
+  document that puts the ask again.
 
-### 4. Promote and present
+By what the document asked:
 
-- Sanity-read the final plan yourself — it is written to be read; a requirement missing from
-  `verification.json` or a ruling not reflected is a correction: record the ruling (in place)
-  and apply it directly, sanity-check with `run_loop.py run <slice-dir> --dry-run`, commit.
-- `git mv <spec-repo>/slices/backlog/NNN_slug <spec-repo>/slices/NNN_slug`; commit the move
-  together with the loop-owned `plan_state.json` and `plan_log.txt` (they are the planning run's
-  who-did-what record), staging by name; drop a stale `plan_bailout.json` and the emptied
-`plan.lock`. The slice folder MUST
-  be clean after.
-- Advance the slice's tracker card — the id in `slice.md`'s `issue:` frontmatter — from
-  **triaged** to **planned**. Where planning moved the slice's scope — a requirement dropped,
-  ruled out or split off — bring the card's highlights in line in the same move: the card is
-  what the operator sees of the slice. A card the slice absorbed whose requirement planning
-  ruled out is no longer absorbed: re-close it as **rejected**, still under the slice's card,
-  with a comment carrying the ruling.
-- Report what is now ready: the phases (id, target, title, one line each), the acceptance
-  criteria, and any A/B decisions made with their grounds. A correction on top of this summary
-  is a ruling — record it in plan.md (in place) and apply it, per §4's first bullet. Do **not**
-  start `/dev:run-slice` — running is a separate operator instruction.
+- **The requirements.** Besides the rulings:
+  - a ruling that forbids pushing a repo needs its `- <repo> — <why>` bullet under
+    `## Push holds`, and one that waives a target's gate, accepts a red lint, build or test, or
+    authorizes a promotion its `## Driver rulings` bullet (`gate`, `accept`, `prd`;
+    plan-template.md). Without it the driver runs the rule the ruling bent. An in-phase push
+    ruled lands as its ordering constraint too;
+  - a repository to create, ruled so, is created now, as
+    [below](#a-repository-the-slice-creates);
+  - a slice split, or an item kicked back, gets its folders from the allocator under
+    `/dev:triage`'s conventions, and an adjacent slice pulled in is absorbed as the preparer
+    absorbs a card;
+  - an arch design first, or the slice cancelled: planning stops here, nothing is launched, and
+    the turn ends saying so.
+- **The loop's questions or review.** The rulings alone; the rerun's fix pass applies them to
+  the phases and `verification.json` (plan-loop.md).
+- **An action, done.** Nothing to write: the step that raised it runs again.
+- **The error's decision.** Retry reruns; change the plan lands as a ruling does. Stop here lands
+  as a ruling too, and planning stays stopped where it stood, resumable by a later
+  `/dev:plan-slice` of the slice; the turn ends.
+- **An answer deferred** takes its subject out of the slice: a line under `## Not in scope`
+  quoting its `to`. Where the plan cannot go on without it, planning stops as stop here leaves
+  it.
 
-## Quality checklist
+Then the session launches the loop, or reruns it, and waits. What the sub-agent could not carry
+out as ruled comes back as a store of asks, which the session renders, registers and ends the
+turn on instead.
 
-- [ ] Every numbered requirement in `slice.md` → the plan's requirements/rulings section
-      (operator's wording) and an outcome-level criterion in `verification.json`.
-- [ ] `refinement.md` written by the refinement-writer, no dialog posed; every ruling it drew
-      is in plan.md, in the operator's words, and under its *Operator* line in the doc — no
-      placeholder left on a ruled decision or an answered fact, no recommendation standing
-      unmarked against a ruling that reversed it; the doc carries no code, no `file:line`, and
-      no decision you could have settled yourself.
-- [ ] Every phase opens with a real `Target:`; phases are PR-sized, producers first.
-- [ ] Attachments only where genuinely underivable, at the smart-dev altitude; no auto-doc
-      content anywhere in the plan (a doc task is a phase); rulings edited in place, no
-      correction-chains.
-- [ ] The plan loop exited 0 (reviewer verdict on file; findings adjudicated).
-- [ ] Slice folder committed clean; card advanced to planned, its highlights matching the plan's
-      scope.
+### A repository the slice creates
+
+Created before the loop runs, with a manifest in it: the plan loop's dry run clones every
+`github:` target, and one without a `.kubecoder/project.yaml` has no gate. Build its first commit
+locally in `/work/scratch/<Repo>` (`git init -b main`): the README and a seed
+`.kubecoder/project.yaml` whose `test` needs no file in the repo — for a deploy repo, a
+`helm template` of the pinned upstream chart. Prove the seed with `kc project test` from that
+directory, commit, and push with `gh repo create <owner>/<repo> --private --source . --push`, not
+`--add-readme`, which writes a README-only first commit on GitHub. Leave the clone clean, for the
+driver adopts it, and record the seed and its commit in `## Requirements / rulings`: the phase
+that builds the repo replaces it with the real manifest.
+
+## The promotion
+
+At exit 0, in this order:
+
+1. `run_loop.py run <slice> --dry-run` — the plan parses, every `Target:` resolves, the gates
+   print. A failure is [diagnosed](#an-error) as a bail is.
+2. `git mv <spec-repo>/slices/backlog/<NNN_slug> <spec-repo>/slices/<NNN_slug>`, and commit the
+   move with the loop's `plan_state.json` and `plan_log.txt`, staged by name; drop a stale
+   `plan_bailout.json` and the emptied `plan.lock`. The folder is clean after. No document of the
+   slice is open at exit 0, so the move is safe (pilot.md § The documents).
+3. A sub-agent brings the tracker in line with the plan. The slice card goes from triaged to
+   planned, its highlights matching the plan's scope where planning moved it. Each card
+   `grounding.md` names as routed to the slice is closed as the convention closes an absorbed
+   task where the plan carries its ask, and is left open with a comment quoting the ruling where
+   it does not.
+4. End the turn, its last line the plan's path and its phases, counted.
+
+## The clarification
+
+A fresh sub-agent pointed at the slice folder — `grounding.md`, the asks, `slice.md`, `plan.md` —
+answers each question (pilot.md § The clarification). The turn's last message is its answers, as
+the sub-agent gave them.
+
+## The nudge
+
+Carry on from where the session stood (pilot.md § The nudge and the halt): a loop still live is
+waited on (`plan_loop.py wait <slice>`); one that exited 7 or 130 is rerun and waited on; a
+document still unanswered is left as it is, and the turn ends; one answered in place is read back
+as the continuation reads it. A start that ended before its document was registered takes the
+step it stood at again.
+
+## Bounds
+
+- **Nothing else is yours**: no reading of the slice or the code, no grounding, no plan text but
+  what a sub-agent writes by this skill, no phases. Never answer a pending question from your own
+  judgment.
+- **Notify nobody, and tell nothing outside a document.** Pilot puts what the operator needs in
+  front of them.
+- **The loop outlives this session.** A later session meets the `plan.lock` refusal while the
+  loop lives, and waits on it. `plan_loop.py stop <slice>` interrupts it as Ctrl-C would. A loop
+  is dead only when `plan_log.txt` has gone quiet, never on `ps`, which sees only this pod.
+- **Running is a separate work item.** Do not start `/dev:run-slice`.
