@@ -30,13 +30,15 @@ written from are not kept: an item's session reads the code it changes.
 
 ## 0. In short
 
-A stage of the workflow — triage, planning, a run with its close-out — becomes **a Pilot work
-item**: Pilot starts a headless session with a brief whose first line is the stage's command, the
-skill does its work, writes its asks as **a block document**, registers it with Pilot, attaches
-what backs it, and ends its turn; Pilot's pass pre-rules, the operator answers in the app, the
-answers come back in the file, and the session is resumed with a message naming the file. Nothing
-is put to a person in chat, nothing is edited by hand in a rendered file, no card is a pointer a
-person follows, nobody checks on a loop every 55 minutes.
+A stage of the workflow — planning, a run with its close-out — becomes **a Pilot work item**:
+Pilot starts a headless session with a brief whose first line is the stage's command, the skill
+does its work, writes its asks as **a block document**, registers it with Pilot, attaches what
+backs it, and ends its turn; Pilot's pass pre-rules, the operator answers in the app, the answers
+come back in the file, and the session is resumed with a message naming the file. Triage is not
+a stage: in Pilot it is the definition chat's work, and `/dev:triage` stays the operator's own
+chat skill (§5.4, ruled 2026-10-30). Nothing is put to a person in chat, nothing is edited by
+hand in a rendered file, no card is a pointer a person follows, nobody checks on a loop every 55
+minutes.
 
 Three things make it one design rather than four reworks:
 
@@ -177,7 +179,7 @@ This is what `plugins/dev/docs/pilot.md` states once written (§8 A0), the one h
 every stage skill follows; `docs/AUTHORING.md` points at it.
 
 **The brief.** Pilot's `add_item` for a stage carries a `brief` whose first line is the stage's
-command — `/dev:triage P-106 P-107`, `/dev:plan-slice 031`, `/dev:run-slice 031` — so the skill
+command — `/dev:plan-slice 031`, `/dev:run-slice 031` — so the skill
 loads with what follows as its arguments (the-brain §5.4); then the brain's own text: the task in
 a line, the project's ticket (`P-5`), and the grants text the switch selects; then the server's
 `From Pilot:` lines — the plan task to write as `step`, the switch, the handbook verbatim
@@ -221,7 +223,9 @@ after a halt or a pause (F135.3, F141.3) — resumes what the session was doing:
 **Cards.** Every card a stage files — a slice card, a card a close-out ruling asks for — is
 parented to the project's ticket from the brief (F57.1), through the host convention
 (`kubecoder:youtrack-usage`); the slice card's moves (triaged → planned → in progress → resolved)
-stay the skills', Done the operator's.
+stay the skills', Done the operator's. Resolved is new to the skills: today the operator moves
+the card there after a review of their own; in Pilot the close-out's answers are that review, and
+the run's continuation makes the move (ruled 2026-10-30).
 
 **The fallback** (decision 11): no `mcp__pilot__register_document` among the tools → print the
 path, end the turn; the continuation is the operator's "continue".
@@ -430,9 +434,10 @@ The folder carries enough for this; that is what `grounding.md` is for. The oper
 practice, a new session pointed at the folder with the question, is the same move by hand and
 stays theirs. An answer in the operator's chat whose referent is not in it ("yes, that's what I
 want") is Pilot's to write into the document with its context, since it writes the answer line.
-*Open (asked 2026-10-30):* whether Pilot's clarification turn to the writer's session (D059) stays
-the mechanism, with the sub-agent inside it and no change to Pilot, or Pilot starts a dedicated
-session per question, a PilotApp change; the plan assumes the former.
+*Ruled 2026-10-30:* the simple option — Pilot's clarification turn to the writer's session
+(D059) stays the mechanism, the sub-agent inside it, no change to Pilot. Every resume lands on a
+session over an hour old, its cache cold; whether that costs real budget is reviewed once a few
+slices have run through Pilot (P-128), the dedicated session per question the alternative then.
 
 **Exit 0.** The dry run, the promotion to `slices/`, the commit, the card to planned, as today;
 the turn ends with one line.
@@ -481,21 +486,21 @@ one slice — read the cards, check them against the standing decisions, put the
 with a recommendation — is the definition chat's work in the design's own words ("what the
 project is for, what result establishes it, its material constraints"). The one part the chat
 does not do is the bundling of a batch into several slices, which the read shows the operator
-never disputes and mostly does themselves by naming the cards (22 of 41 runs). *Recommended:*
+never disputes and mostly does themselves by naming the cards (22 of 41 runs). *Ruled 2026-10-30:*
 in Pilot, triage is the definition chat's, not a stage — the brain's definition skill carries
-the standing-decisions check and the questions-first shape, `slice.md` is written from
-`project.md` by the setup or read by the plan-preparer in its place; `/dev:triage` stays the
-operator's own chat skill (as `/dev:arch-design`, decision 6) for a batch sweep and for projects
-outside Pilot, with the output above and trimmed of the blanket accept. The alternative is the
-stage as this section first had it, each slice folder then becoming a project through
-`start_project`. *Open: the operator's ruling; it touches Pilot's design (the-brain §5, F2).*
+the standing-decisions check and the questions-first shape, and `slice.md` is written from
+`project.md` by the setup or read by the plan-preparer in its place (F2, F3); `/dev:triage`
+stays the operator's own chat skill (as `/dev:arch-design`, decision 6) for a batch sweep and
+for projects outside Pilot, with the output above and trimmed of the blanket accept. The
+alternative — the stage as this section first had it, each slice folder becoming a project
+through `start_project` — was not taken.
 
 **Sweep slices**, the other question: PilotAppSpecs has never had a `sweep_slice.py` slice; the
 M1 "sweep slice" (plan row 030) is an ordinary triage over its named cards, "filed by a triage
 and run on today's workflow". The Solution Known lane was used in 3 of the 41 runs, and in one
-of those the operator moved the six marked cards to a manual sweep of their own. *Open:* whether
-the lane and `sweep_slice.py` stay at all once Pilot's pass and the card pass take the mechanical
-cards; nothing in this rework depends on it.
+of those the operator moved the six marked cards to a manual sweep of their own. *Ruled
+2026-10-30:* dropped, as unused — the lane, `sweep_slice.py` and `residual-sweep.md` go (§6, B3);
+a mechanical card is the card pass's, or an ordinary slice's.
 
 **The continuation**, where triage is a stage or a chat skill alike: the slice folders written
 (`slice.md` quoting the answers' words as the operator's, its front matter carrying `issue:` and
@@ -590,11 +595,13 @@ reads' method, `triage-read-2026-09-29.md` § Corpus and method).
 
 ## 6. What goes
 
-- **Skills:** `close-out` (folded into run-slice), `slice-dag`.
-- **Agents:** `refinement-writer`.
-- **Docs:** `plugins/dev/docs/refinement.md`; `close-out.md` and `close-out-template.md`
-  rewritten; the DAG sentence in `spec-tree.md`; `docs/rationale/plan-refinement.md` and
-  `reporting.md` rewritten or moved to `history.md`.
+- **Skills:** `close-out` (folded into run-slice), `slice-dag`; in `triage`, the Solution Known
+  lane, the template, the fixed answer forms and "go".
+- **Agents:** `refinement-writer` (the `plan-preparer` in its place).
+- **Tools:** `sweep_slice.py` and its tests.
+- **Docs:** `plugins/dev/docs/refinement.md`, `residual-sweep.md`; `close-out.md` and
+  `close-out-template.md` rewritten; the DAG sentence in `spec-tree.md`;
+  `docs/rationale/plan-refinement.md` and `reporting.md` rewritten or moved to `history.md`.
 - **In `close_out.py`:** the verbs of §5.1; the rendering of the old page; `held`.
 - **In `run_loop.py`:** the `report_edited` bail; `wait`'s prose for a person; the stale-plugin
   relaunch; the close-out card, the chat summary and the 55-minute status update in the skill.
@@ -663,11 +670,11 @@ sessions in all.
   written, `grounding.md`, the continuation and the clarification turn by sub-agent;
   `refinement-writer.md` and `refinement.md` deleted; `plan-template.md` and `plan-loop.md`
   brought to it.
-- [ ] **B3. Triage** (§5.4): the output rewritten from the read — the questions first, the scheme
-  as one line per slice with `needs:`, nothing empty, the template, "go" and the fixed answer
-  forms gone; `slice-dag` deleted; `needs:` in `slice.md`'s front matter read by preflight's
-  "ready to plan"; `residual-sweep.md` brought to it. Whether the skill is a stage or stays the
-  operator's chat skill waits on the ruling of §5.4; the output is the same either way.
+- [ ] **B3. Triage** (§5.4): the chat skill's output rewritten from the read — the questions
+  first, the scheme as one line per slice with `needs:`, nothing empty; the template, "go", the
+  fixed answer forms and the Solution Known lane gone; `sweep_slice.py` with its tests,
+  `residual-sweep.md` and `slice-dag` deleted; `needs:` in `slice.md`'s front matter read by
+  preflight's "ready to plan". Not a stage: no document, no brief (ruled 2026-10-30).
 
 **Phase C — the sweep and the gutting**
 
@@ -690,8 +697,10 @@ sessions in all.
 
 **Phase E — the rehearsal** (decision 10)
 
-- [ ] **E1.** The four stages end to end in ad hoc sessions with `--plugin-dir` on a throwaway slice
-  of a test spec repo, the fallback path showing each document, the answer lines edited by hand.
+- [ ] **E1.** Plan-slice and run-slice end to end in ad hoc sessions with `--plugin-dir` on a
+  throwaway slice of a test spec repo, the fallback path showing each document, the answer lines
+  edited by hand; `/dev:triage` once in chat with its new output; the documents read against the
+  synthesis (§5.7).
 - [ ] **E2.** One rehearsal through pilot-dev: a test project, a free-form work item whose brief points
   at the branch's skill by path with `CLAUDE_PLUGIN_ROOT` named; the round trip watched —
   register, the pass, the operator's answer from the phone, the write-back, the continuation, a
@@ -700,13 +709,16 @@ sessions in all.
 **Phase F — the cutover** (with implementation-plan step 17)
 
 - [ ] **F1.** Merge to `main`, publish 0.10.0, the marketplace updated in every environment.
-- [ ] **F2.** PilotProjects: `rules/stages.md` rewritten — the three commands, the brief's arguments,
-  what each stage registers, the ticket in the brief; `rules/work-items.md`'s brief for a stage.
+- [ ] **F2.** PilotProjects: `rules/stages.md` rewritten — the two commands, the brief's arguments,
+  what each stage registers, the ticket in the brief, what each fate means for the pass (§5.1);
+  `rules/work-items.md`'s brief for a stage; the definition chat's skill given triage's substance
+  — the standing-decisions check, the questions first with a recommendation, `slice.md` from
+  `project.md` (§5.4).
 - [ ] **F3.** PilotAppSpecs: `feed-model.md` §7 brought to what was built; `aiworkflow-redesign.md`
   reworked into the record of the points and their fates, or retired; `aiworkflow-structured-data.md`
-  marked as the 0.9.93 survey it is; the ledger's F92 row ticked; the rulings of §1 as rows in
-  `decisions.md` where they bind the record. PilotApp: `CLAUDE.md`'s dev-pipeline paragraph,
-  `.aiworkflowrc` checked (unchanged unless `[risk]` is added).
+  marked as the 0.9.93 survey it is; the ledger's F92 row ticked; the rulings of §1 and §9 as rows
+  in `decisions.md` where they bind the record — triage as the definition chat's among them.
+  PilotApp: `CLAUDE.md`'s dev-pipeline paragraph, `.aiworkflowrc` checked (unchanged).
 - [ ] **F4.** The AIWF cards closed (AIWF-36 already is).
 - [ ] **F5.** The first slice through Pilot, the phone's layout (031), on 0.10.0.
 
@@ -739,4 +751,16 @@ Recorded here as the operator gives them, dated, each naming the decision of §1
 - Rich prose — paragraphs, lists, formatting, no 200-word paragraph — is a must of the writing
   skill (§5.7).
 - Parked for later: PilotApp managing the loop's process (§0).
-- §8 not yet reviewed by the operator.
+
+**2026-10-30, second round** (on the six questions the first round left):
+
+- Questions about a slice: the simple option — Pilot's clarification turn with the sub-agent
+  inside it, the continuation on the aged session; whether the cache misses cost real budget is
+  reviewed after some slices through Pilot, P-128 (§5.3).
+- Triage is the definition chat's in Pilot, `/dev:triage` the operator's chat skill (§5.4, F2,
+  F3).
+- The run's continuation moves the slice card to Resolved (§3).
+- The writing skill is its own, `dev:writing` (§5.7).
+- The later-phase proposal bug is fixed on the branch only, no patch on `main`.
+- The Solution Known lane and `sweep_slice.py` are dropped as unused (§5.4, §6, B3).
+- The branch may be pushed (pushed 2026-10-30). §8 stands as written, the build may start.
