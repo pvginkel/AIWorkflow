@@ -657,6 +657,11 @@ def plugin_version() -> str | None:
 # constant so the suites point it away from the operator's own file.
 INSTALLED_PLUGINS = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
 TOOLS_DIR = Path(__file__).resolve().parent
+# Where Claude Code keeps what it installs: the marketplace clones and the
+# per-version cache. A loop that runs from anywhere else runs from a checkout
+# a session was given with `--plugin-dir` (runs_from_checkout). Its own
+# constant, so the suites can stand their checkout in for an install.
+PLUGINS_HOME = Path.home() / ".claude" / "plugins"
 
 
 def installed_plugin(tools_dir: Path | None = None) -> tuple[str, str] | None:
@@ -754,15 +759,39 @@ def stale_plugin(script: str) -> tuple[str, str, str] | None:
     return ours, version, loop
 
 
-def assert_plugin_current(script: str, rerun: str) -> None:
+def runs_from_checkout(tools_dir: Path | None = None) -> bool:
+    """Whether this loop runs from outside Claude Code's plugin home: a
+    checkout, such as a branch a session was given with `--plugin-dir`, and
+    no installed copy."""
+    tools = (tools_dir or TOOLS_DIR).resolve()
+    try:
+        tools.relative_to(PLUGINS_HOME.resolve())
+    except ValueError:
+        return True
+    return False
+
+
+def assert_plugin_current(script: str, rerun: str) -> str | None:
     """Bail (`plugin_version`, an error) when this loop runs another plugin
     version than the one its agents load: a newer agent writes what this
     driver ignores, an older one misses what it expects. `script` is the
-    launching loop's filename, `rerun` how a relaunch picks the run up."""
+    launching loop's filename, `rerun` how a relaunch picks the run up.
+
+    Relaxed for a loop run from a checkout (runs_from_checkout): a session
+    given a branch with `--plugin-dir` launches the branch's loop, while
+    every agent it dispatches loads the installed plugin, since a
+    `kc session` takes no plugin directory. That difference is the run's
+    premise, not a stale copy, so it does not bail: the line saying so is
+    returned for the log. None otherwise."""
     stale = stale_plugin(script)
     if stale is None:
-        return
+        return None
     ours, version, relaunch = stale
+    if runs_from_checkout():
+        return (f"this loop runs plugin {ours} from a checkout "
+                f"({TOOLS_DIR.parent}), a --plugin-dir run; the agents it "
+                f"dispatches load the installed {version}, and the version "
+                "guard lets that pass")
     raise Bailout(
         "plugin_version",
         details=f"this loop runs plugin {ours} from {TOOLS_DIR}; the "
@@ -4229,6 +4258,9 @@ class RunLoop:
     def __init__(self, slice_dir: Path, resume: bool, verbose: bool = False,
                  step: str | None = None):
         self.slice_dir = slice_dir.resolve()
+        # Whether the log has said once that the version guard let a
+        # --plugin-dir run's checkout pass (assert_plugin_current).
+        self._checkout_logged = False
         self.slice_name = self.slice_dir.name
         self.slice_num = self.slice_name.split("_")[0]
         self.plan_path = self.slice_dir / "plan.md"
@@ -5447,9 +5479,12 @@ class RunLoop:
         the one the agent about to run loads — is this loop's, and
         verification.json holds no key this loop would ignore. Each can change
         under a running loop (a marketplace update, a newer agent)."""
-        assert_plugin_current(Path(__file__).name,
-                              " plus --resume (a run loop resumes from "
-                              "state.json)")
+        said = assert_plugin_current(Path(__file__).name,
+                                     " plus --resume (a run loop resumes "
+                                     "from state.json)")
+        if said and not self._checkout_logged:
+            self._checkout_logged = True
+            self.log(f"[plugin] {said}")
         assert_verification_keys(self.slice_dir)
 
     def _commit_own_entries(self, before: str) -> None:

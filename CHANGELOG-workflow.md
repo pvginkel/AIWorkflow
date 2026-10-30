@@ -4,6 +4,30 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-30 — Preflight's failure is data, its stale-plugin line is gone, and a `--plugin-dir` run passes the version guard (v0.10.6)
+
+Preflight's side of a stage that renders every ask as a document, P-111's A6.
+
+**A failure is data.** Every check now stops with four parts: the `check`, by its name in
+`preflight.md`'s Profiles table; the `fact` it found; the `fix` that makes it pass; and the
+`output` a command it ran gave. Without a flag, they read as one message on stderr, the fact
+first, so a new repo still self-onboards from it. With `--json`, stdout carries one object and
+stderr nothing, pass or fail, with the notes a pass makes (the guard's removal, a repo planning
+passed over, a red setup under a green build) as entries of `notes`. A stage renders a failure
+into an `action` document. The checks themselves and the exit codes are unchanged.
+
+**The stale-plugin line is gone.** Preflight no longer compares the session's plugin copy with the
+installed one or names the installed loop to launch: a session Pilot starts loads the plugin as
+installed. `/dev:plan-slice` and `/dev:run-slice` no longer read that line.
+
+**A `--plugin-dir` run passes the version guard.** A loop that runs from outside
+`~/.claude/plugins/` runs from a checkout, such as a branch a session was given with
+`--plugin-dir`. A `kc session` takes no plugin directory, so its agents load the installed plugin
+whatever the loop runs. For such a loop the version difference is the run's premise, not a stale
+copy: neither loop bails `plugin_version` for it, and the log says so once, naming both versions.
+A loop run from an installed copy still bails as before. That is how the rehearsal (decision 10)
+runs the branch.
+
 ## 2026-10-30 — The plan loop puts its questions and findings as documents, runs detached, and always runs the fix pass (v0.10.5)
 
 The plan loop's side of a stage that waits inside its turn, P-111's A5.

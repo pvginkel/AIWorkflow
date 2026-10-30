@@ -654,7 +654,7 @@ sessions in all.
 - [x] **A5. The plan loop's asks** (§5.3): `plan_questions_rN.json`, `plan_review_rN.json`, the
   documents rendered at exit 4, the plan-writer's and plan-reviewer's hand-back sections, the fix
   pass by default; tests (the exit-4 tests of `test_plan_loop.py`).
-- [ ] **A6. Preflight** (§5.6): structured failures, the stale-plugin check gone, the version guard
+- [x] **A6. Preflight** (§5.6): structured failures, the stale-plugin check gone, the version guard
   relaxed for `--plugin-dir`; tests.
 - [ ] **A7. The writing skill** (§5.7): `skills/writing/SKILL.md` from the synthesis, every rule
   with its finding; the role prompts and `document-format` pointed at it, their own prose rules

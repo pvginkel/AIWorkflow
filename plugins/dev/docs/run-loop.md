@@ -653,9 +653,12 @@ launched from, while every session it spawns loads the installed plugin
 whose `owed_after` it ignored without a word (AIWF-16). So both loops compare their own
 manifest's version with the installed one at startup and before every dispatch, and bail
 `plugin_version` (exit 3) on a difference, naming the installed copy's `tools/` path to relaunch
-from — the run loop with `--resume`, the plan loop by a plain rerun. Preflight names the same
-path before the first launch ([preflight.md](preflight.md) § Notes on the plugin check). A
-missing file or entry passes: the check never holds a loop up on its own bookkeeping. The same
+from — the run loop with `--resume`, the plan loop by a plain rerun. A missing file or entry
+passes: the check never holds a loop up on its own bookkeeping. So does a loop that runs from
+outside `~/.claude/plugins/`, a checkout such as a branch a session was given with
+`--plugin-dir`: a `kc session` takes no plugin directory, so its agents load the installed plugin
+whatever the loop runs, and the difference is that run's premise. The log says so once, naming
+both versions. The same
 points reject a `verification.json` item key outside [plan-template.md](plan-template.md)'s schema as
 `protocol_failure` — the second guard, for a newer agent's field the driver would otherwise drop.
 

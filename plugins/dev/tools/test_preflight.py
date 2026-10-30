@@ -17,8 +17,11 @@ follow, and the retired spec-tree guard: its removal from the spec repo's git
 dir, over real git. The run baseline runs `kc project setup` before its build,
 from the repo root under the run loop's setup timeout; setup never decides: a
 red or timed-out one is a warning line under a green build and part of a red
-build's message. The kc/manifest checks and the rest of clean-tree are not
-covered here.
+build's message. A failure is data — its check, its fact, its fix and the
+output it captured — read on stderr as one message, or with `--json` as one
+object on stdout, pass or fail, with the notes a pass carries; no profile
+checks the session's plugin copy any more. The kc/manifest checks and the rest
+of clean-tree are not covered here.
 
 Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_preflight.py` or via pytest.
 """
@@ -46,11 +49,6 @@ _spec.loader.exec_module(preflight)
 # the pod's own clones; the tests about them patch in a root of their own.
 preflight.github_target.SCRATCH_ROOT = (Path(tempfile.gettempdir())
                                         / "preflight-suite-no-scratch")
-# The plugin check reads Claude Code's installed_plugins.json, which on the
-# operator's machine names a real install; no test but its own may see it.
-preflight.run_loop.INSTALLED_PLUGINS = (Path(tempfile.gettempdir())
-                                        / "preflight-suite-no-home"
-                                        / "installed_plugins.json")
 
 
 class patched:
@@ -122,24 +120,31 @@ class scripted_subprocess:
         return any(argv_has(tokens, argv) for argv in self.calls)
 
 
-def run_main(profile, subproc, slice_=None):
-    """main() for one profile (and `--slice`) with `kc` on PATH and a stubbed
-    subprocess. Returns (exit_code, stderr) — exit_code None when it passed
-    silently."""
-    stderr = io.StringIO()
+def _main(profile, subproc, slice_=None, as_json=False):
+    """main() for one profile (and `--slice`, `--json`) with `kc` on PATH and
+    a stubbed subprocess: (exit_code, stdout, stderr), exit_code None when it
+    passed."""
+    stdout, stderr = io.StringIO(), io.StringIO()
     kc_on_path = types.SimpleNamespace(which=lambda name: "/usr/local/bin/kc")
-    argv = types.SimpleNamespace(profile=profile, slice=slice_)
+    argv = types.SimpleNamespace(profile=profile, slice=slice_, json=as_json)
     parser = types.SimpleNamespace(
         add_argument=lambda *a, **k: None, parse_args=lambda: argv)
     fake_argparse = types.SimpleNamespace(ArgumentParser=lambda **k: parser)
     with patched(preflight, subprocess=subproc, shutil=kc_on_path,
                  argparse=fake_argparse):
-        with contextlib.redirect_stderr(stderr):
+        with contextlib.redirect_stdout(stdout), \
+                contextlib.redirect_stderr(stderr):
             try:
                 preflight.main()
             except SystemExit as exit_:
-                return exit_.code, stderr.getvalue()
-    return None, stderr.getvalue()
+                return exit_.code, stdout.getvalue(), stderr.getvalue()
+    return None, stdout.getvalue(), stderr.getvalue()
+
+
+def run_main(profile, subproc, slice_=None):
+    """main() as `_main` gives it, as (exit_code, stderr)."""
+    code, _, stderr = _main(profile, subproc, slice_)
+    return code, stderr
 
 
 HEALTHY = ("worker daemon:  ok (reachable)\n"
@@ -383,9 +388,9 @@ def test_beside_a_run_lock_any_other_change_is_still_refused():
     tracked run.lock modified, is uncommitted work as before."""
     for dirty, listed in (
             ("?? slices/completed/057_x/run.lock\n?? notes.md\n",
-             "retry.\n?? notes.md\n"),
+             "by hand.\n?? notes.md\n"),
             (" M slices/057_x/run.lock\n",
-             "retry.\n M slices/057_x/run.lock\n")):
+             "by hand.\n M slices/057_x/run.lock\n")):
         subproc = scripted_subprocess(repo_rules("0\t3", dirty=dirty))
         with synced(subproc):
             code, message = refused(preflight.check_synced, APP, None)
@@ -684,7 +689,7 @@ def test_a_tree_still_dirty_with_no_index_lock_gets_the_established_refusal():
     assert code == 1
     assert message == ("`App` (/work/App) is 3 behind origin/main and has "
                        "uncommitted changes — preflight will not pull over "
-                       "them. Commit or stash, or pull by hand, then retry.\n"
+                       "them.\nCommit or stash them, or pull by hand.\n"
                        " M app.py\n")
     assert slept == [preflight.DIRTY_RECHECK_WAIT]
     assert sum(argv_has(("rev-list",), argv) for argv in subproc.calls) == 2
@@ -1021,8 +1026,7 @@ def test_plan_hands_the_sync_its_strict_repos_and_run_hands_it_none():
         quiet = {name: (lambda *a, **k: None) for name in (
             "check_kc", "check_kc_status", "check_manifest", "check_pointer",
             "remove_spec_tree_guard", "check_phase_pointers",
-            "check_devlock", "check_clean_tree", "check_baseline_build",
-            "check_plugin_current")}
+            "check_devlock", "check_clean_tree", "check_baseline_build")}
         for profile, slice_ in (("plan", "7"), ("plan", None), ("run", None),
                                 ("run", "7")):
             with patched(preflight, repo_root=lambda: app,
@@ -1090,8 +1094,7 @@ def cloning_main(profile, app, cfg, slice_, declares):
     quiet = {name: (lambda *a, **k: None) for name in (
         "check_kc", "check_kc_status", "check_manifest", "check_pointer",
         "remove_spec_tree_guard", "check_phase_pointers", "check_devlock",
-        "check_clean_tree", "check_synced", "check_baseline_build",
-        "check_plugin_current")}
+        "check_clean_tree", "check_synced", "check_baseline_build")}
     with patched(preflight, repo_root=lambda: app,
                  load_config=lambda root: cfg, **quiet), \
             patched(preflight.run_loop, declared_repo_dirs=declares):
@@ -1364,10 +1367,11 @@ def test_a_red_setup_under_a_red_build_names_setup_as_the_first_fix():
                        build=(1, "TS2307: Cannot find module 'pg'\n", ""))
     code, stdout, message = baseline(subproc)
     assert code == 1 and stdout == ""
-    prose = message.splitlines()[0]
-    assert prose.startswith("Baseline `kc project build` failed")
-    assert ("`kc project setup`, run before it, failed (exit 1): fix setup's "
-            "own failure first") in prose
+    fact, fix = message.splitlines()[:2]
+    assert fact.startswith("Baseline `kc project build` failed")
+    assert fact.endswith("`kc project setup`, run before it, failed (exit 1).")
+    assert fix.startswith("Fix setup's own failure first")
+    assert fix.endswith("Then fix the baseline, or narrow the manifest's build list.")
     assert "`kc project setup` → RED (exit 1):" in message
     assert "npm ERR! 404 pg" in message and "setup line 12" in message
     assert "setup line 11\n" not in message
@@ -1383,8 +1387,10 @@ def test_a_timed_out_setup_under_a_red_build_says_so():
                        build=(1, "TS2307: Cannot find module 'pg'\n", ""))
     code, _, message = baseline(subproc)
     assert code == 1
-    assert (f"`kc project setup`, run before it, timed out after {timeout}s: "
-            "fix setup's own failure first") in message.splitlines()[0]
+    fact, fix = message.splitlines()[:2]
+    assert fact.endswith(
+        f"`kc project setup`, run before it, timed out after {timeout}s.")
+    assert fix.startswith("Fix setup's own failure first")
     assert f"`kc project setup` → timed out after {timeout}s:" in message
     assert "fetching pg" in message and "TS2307" in message
 
@@ -1400,77 +1406,99 @@ def test_against_the_real_kc_status():
     preflight.check_kc_status()
 
 
-# -- check_plugin_current ----------------------------------------------------
+# -- the output: a failure as data, --json ------------------------------------
 
-OURS = preflight.run_loop.plugin_version()
-
-
-def installed_plugins(tmp, version):
-    """installed_plugins.json in `tmp` naming `version` for this plugin (None:
-    no entry for it), and the install root its paths sit under."""
-    path = Path(tmp) / "installed_plugins.json"
-    root = Path(tmp) / "cache" / "aiworkflow" / "dev"
-    plugins = {"kubecoder@kubecoder-config": [
-        {"scope": "user", "installPath": "/elsewhere", "version": "0.8"}]}
-    if version is not None:
-        plugins["dev@aiworkflow"] = [{
-            "scope": "user", "version": version,
-            "installPath": str(root / version)}]
-    path.write_text(json.dumps({"version": 2, "plugins": plugins}))
-    return path, root
+def run_json(profile, subproc, slice_=None):
+    """main() under --json: (exit_code, the object on stdout, stderr)."""
+    code, stdout, stderr = _main(profile, subproc, slice_, as_json=True)
+    return code, json.loads(stdout), stderr
 
 
-def plugin_line(profile):
-    stdout = io.StringIO()
-    with contextlib.redirect_stdout(stdout):
-        preflight.check_plugin_current(profile)
-    return stdout.getvalue()
+def test_a_failure_under_json_is_one_object_on_stdout_and_nothing_on_stderr():
+    """The check that failed, the fact it found, the fix and the output it
+    captured, each a field a stage renders into an `action` document; the
+    exit code is the failure's, as without --json."""
+    code, report, stderr = run_json("run", fake_subprocess(1, DAEMON_DOWN))
+    assert code == 2 and stderr == "", stderr
+    assert report["result"] == "fail" and report["profile"] == "run"
+    assert report["code"] == 2 and report["check"] == "kc_status"
+    assert "broken control plane" in report["fact"]
+    assert report["fix"].startswith("Mend the half")
+    assert "connection refused" in report["output"]
+    assert report["notes"] == []
+    assert preflight.NOTES is None, "a --json run leaves printing as it was"
 
 
-def test_a_stale_session_plugin_names_the_installed_loop():
-    """The session runs another version than the installed one: the line
-    names the installed copy of the loop the profile's command launches."""
-    for profile, script in (("plan", "plan_loop.py"), ("run", "run_loop.py")):
-        with tempfile.TemporaryDirectory() as tmp:
-            path, root = installed_plugins(tmp, "0.0.1")
-            with patched(preflight.run_loop, INSTALLED_PLUGINS=path):
-                line = plugin_line(profile)
-        assert str(root / "0.0.1" / "tools" / script) in line, line
-        assert f"this session's plugin is {OURS}" in line
-        assert "the installed one is 0.0.1" in line
-        assert "every launch and relaunch" in line
-        assert line.count("\n") == 1, "one line"
+def test_without_json_the_message_is_the_fact_then_the_fix_then_the_output():
+    code, stdout, stderr = _main("run", fake_subprocess(1, DAEMON_DOWN))
+    assert code == 2 and stdout == ""
+    lines = stderr.splitlines()
+    assert "broken control plane" in lines[0]
+    assert lines[1].startswith("Mend the half")
+    assert "connection refused" in stderr.split(lines[1], 1)[1]
 
 
-def test_a_matching_or_unknown_installed_plugin_prints_nothing():
-    for version in (OURS, None, "absent"):
-        with tempfile.TemporaryDirectory() as tmp:
-            path, _ = installed_plugins(tmp, version)
-            if version == "absent":
-                path.unlink()
-            with patched(preflight.run_loop, INSTALLED_PLUGINS=path):
-                assert plugin_line("run") == "", version
+def test_a_dirty_tree_fails_as_clean_tree_with_its_status_as_the_output():
+    subproc = fake_subprocess(0, " M app.py\n")
+    with patched(preflight, subprocess=subproc), \
+            contextlib.redirect_stderr(io.StringIO()):
+        try:
+            preflight.check_clean_tree(Path("/work/App"))
+            raise AssertionError("expected a Failure")
+        except preflight.Failure as failure:
+            assert failure.code == 1 and failure.check == "clean_tree"
+            assert "/work/App has uncommitted changes" in failure.fact
+            assert failure.fix.startswith("Commit or stash them")
+            assert failure.output == " M app.py"
 
 
-def test_the_plugin_line_comes_last_and_only_for_plan_and_run():
-    """Printed after every other check, so a failing check's message is
-    never joined by it; triage launches no loop and never checks."""
-    stubs = ["check_kc", "check_kc_status", "repo_root", "check_manifest",
-             "load_config", "check_pointer", "remove_spec_tree_guard",
-             "check_phase_pointers", "check_devlock", "check_clean_tree",
-             "strict_repos", "check_synced", "check_baseline_build",
-             "check_plugin_current"]
-    for profile in ("triage", "plan", "run"):
-        calls = []
-        recorders = {name: (lambda *a, _n=name, _c=calls, **k: _c.append(_n))
-                     for name in stubs}
-        with patched(preflight, **recorders):
-            code, _ = run_main(profile, fake_subprocess())
-        assert code is None, profile
-        if profile == "triage":
-            assert "check_plugin_current" not in calls
-        else:
-            assert calls[-1] == "check_plugin_current", (profile, calls)
+def triage_stubs(calls, notes=()):
+    """The triage profile's checks stubbed: each records its name, and the
+    guard's removal makes the notes in `notes` as the real one does."""
+    def guard(cfg):
+        calls.append("remove_spec_tree_guard")
+        for text in notes:
+            preflight.note("spec_tree_guard", text, warning=False)
+    return {"check_kc": lambda: calls.append("check_kc"),
+            "repo_root": lambda: Path("/work/App"),
+            "load_config": lambda root: None,
+            "check_pointer": lambda cfg, key: calls.append(key),
+            "remove_spec_tree_guard": guard}
+
+
+def test_a_pass_under_json_is_one_object_with_its_notes():
+    """A note is printed as its line without --json, and is an entry of the
+    object's `notes` with it — never both."""
+    removed = "removed the retired spec-tree guard /work/Specs/.git/hooks/pre-commit"
+    calls = []
+    with patched(preflight, **triage_stubs(calls, [removed])):
+        code, report, stderr = run_json("triage", fake_subprocess())
+    assert code is None and stderr == ""
+    assert report == {"result": "pass", "profile": "triage", "notes": [
+        {"check": "spec_tree_guard", "note": removed}]}
+    with patched(preflight, **triage_stubs([], [removed])):
+        code, stdout, _ = _main("triage", fake_subprocess())
+    assert code is None and stdout == removed + "\n"
+
+
+def test_a_repo_planning_passes_over_is_a_note_of_the_sync_under_json():
+    subproc = scripted_subprocess(repo_rules("2\t3", first=[
+        (("/work/Sib", "rebase", "@{u}"), CONFLICT)]))
+    with patched(preflight, NOTES=[]):
+        said = planned(subproc, (APP, SIB, OTHER), strict=(APP,))
+        notes = preflight.NOTES
+    assert said == "", "under --json nothing is printed as it is made"
+    assert [n["check"] for n in notes] == ["synced"], notes
+    assert notes[0]["note"].startswith("`Sib` "), notes
+    assert "planning goes on" in notes[0]["note"]
+
+
+def test_no_profile_checks_the_sessions_plugin_copy():
+    """The stale-plugin line went with Pilot launching the plugin: no
+    profile names a plugin check, and preflight has none to run."""
+    for profile, checks in preflight.PROFILES.items():
+        assert not any("plugin" in c for c in checks), profile
+    assert not hasattr(preflight, "check_plugin_current")
 
 
 # -- the retired spec-tree guard ---------------------------------------------

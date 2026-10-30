@@ -8,13 +8,36 @@ the spec repo (§ Notes on the spec-tree guard), the sync that brings the enviro
 to their origins (§ Notes on the sync), and the `kc project setup` the run baseline runs before
 its build (§ Notes on the run baseline).
 
-**Silent on success** — but for one line, on a pass, when the session's plugin copy is stale
-(§ Notes on the plugin check), under `plan` a `warning:` line for each repo the sync passed
-over (§ Notes on the sync), and under `run` a `warning:` line when the baseline's setup went red
-or timed out and its build was green (§ Notes on the run baseline). On failure it prints **one** actionable message — what is missing,
-the exact line/fix, and a pointer to `project-contract.md` — so a new repo self-onboards from the
-error text. Each skill relays that message verbatim on a non-zero exit and stops; the run loop
-does **not** re-run preflight, so `/dev:run-slice` is the gate.
+**Silent on success** — but for its notes: the line saying it removed the spec-tree guard, under
+`plan` a `warning:` line for each repo the sync passed over (§ Notes on the sync), and under
+`run` a `warning:` line when the baseline's setup went red or timed out and its build was green
+(§ Notes on the run baseline). It stops at the first check that fails, and the failure is data:
+the check, the fact it found and the fix that makes it pass (§ Output). The run loop does **not**
+re-run preflight, so `/dev:run-slice` is the gate.
+
+## Output
+
+A failure has four parts:
+
+- **`check`** — the check that failed, by its name in the table below.
+- **`fact`** — what the check found, naming the repo, the path or the line.
+- **`fix`** — what makes the check pass, with the exact line or command where there is one, and
+  the pointer to [`project-contract.md`](project-contract.md) where the contract is the fix.
+- **`output`** — what a command the check ran said, verbatim: `git status`, a fetch's error, the
+  setup's and the build's last lines. Often empty.
+
+Without `--json`, the failure is one message on stderr, the fact, then the fix, then the output,
+so a new repo self-onboards from it, and each note is its line on stdout. With `--json`, stdout
+carries one object and stderr nothing, pass or fail:
+
+```json
+{"result": "fail", "profile": "run", "code": 1, "check": "clean_tree",
+ "fact": "…", "fix": "…", "output": "…", "notes": []}
+```
+
+A pass is `{"result": "pass", "profile": …, "notes": [{"check": …, "note": …}]}`. A stage runs
+`--json` and renders a failure into an `action` document ([pilot.md](pilot.md) § The
+documents). The exit code is the same either way.
 
 ## Exit codes
 
@@ -26,23 +49,24 @@ does **not** re-run preflight, so `/dev:run-slice` is the gate.
 
 ## Profiles
 
-| Check | triage | plan | run |
-|---|:-:|:-:|:-:|
-| `kc` on PATH | ✓ | ✓ | ✓ |
-| Control plane healthy: `kc status` (worker daemon + controller) | – | ✓ | ✓ |
-| Manifest valid: `kc project list --output=json` returns ≥1 component | – | ✓ | ✓ |
-| `.aiworkflowrc` present, parses, names no unknown key | ✓ | ✓ | ✓ |
-| `spec_repo` set, path exists (directory) | ✓ | ✓ | ✓ |
-| The spec-tree guard removed: a pre-commit hook an older plugin installed in the spec repo | ✓ | ✓ | ✓ |
-| `design_philosophy` set, target doc exists | – | – | ✓ |
-| `test_phase.strategy` set + exists — only when the phase runs | – | – | ✓ |
-| `doc_phase.plan` set + exists — only when the phase runs | – | – | ✓ |
-| `devlock.lease` resolvable — only when one is named | – | – | ✓ |
-| Declared Target repos cloned: no pending phase of the `--slice` plan targets a repo path `.kubecoder/config.yaml` declares and the pod has not cloned — only with `--slice` | – | ✓ | ✓ |
-| Clean working tree | – | – | ✓ |
-| Synced with origin: fetch, then fast-forward or rebase the checked-out branch — the target repo, every checkout beside it, the spec repo; under `plan` only the target repo, the spec repo and the `--slice` plan's Target repos block | – | ✓ | ✓ |
-| Baseline: `kc project setup`, then `kc project build` (all components) | – | – | ✓ |
-| The session's plugin is the installed one — else a line naming the installed loop, still a pass | – | ✓ | ✓ |
+| Check | Name | triage | plan | run |
+|---|---|:-:|:-:|:-:|
+| `kc` on PATH | `kc` | ✓ | ✓ | ✓ |
+| Control plane healthy: `kc status` (worker daemon + controller) | `kc_status` | – | ✓ | ✓ |
+| In a git repository: the target repo resolves | `git_repo` | ✓ | ✓ | ✓ |
+| Manifest valid: `kc project list --output=json` returns ≥1 component | `manifest` | – | ✓ | ✓ |
+| `.aiworkflowrc` present, parses, names no unknown key | `config` | ✓ | ✓ | ✓ |
+| `spec_repo` set, path exists (directory) | `spec_repo` | ✓ | ✓ | ✓ |
+| The spec-tree guard removed: a pre-commit hook an older plugin installed in the spec repo | `spec_tree_guard` | ✓ | ✓ | ✓ |
+| `design_philosophy` set, target doc exists | `design_philosophy` | – | – | ✓ |
+| `test_phase.strategy` set + exists — only when the phase runs | `test_phase.strategy` | – | – | ✓ |
+| `doc_phase.plan` set + exists — only when the phase runs | `doc_phase.plan` | – | – | ✓ |
+| `devlock.lease` resolvable — only when one is named | `devlock` | – | – | ✓ |
+| `--slice` names a slice folder — only with `--slice` | `slice` | – | ✓ | ✓ |
+| Declared Target repos cloned: no pending phase of the `--slice` plan targets a repo path `.kubecoder/config.yaml` declares and the pod has not cloned — only with `--slice` | `targets_cloned` | – | ✓ | ✓ |
+| Clean working tree | `clean_tree` | – | – | ✓ |
+| Synced with origin: fetch, then fast-forward or rebase the checked-out branch — the target repo, every checkout beside it, the spec repo; under `plan` only the target repo, the spec repo and the `--slice` plan's Target repos block | `synced` | – | ✓ | ✓ |
+| Baseline: `kc project setup`, then `kc project build` (all components) | `baseline_build` | – | – | ✓ |
 
 Checks run in that order (cheapest first, the baseline build last). `kc` is checked before anything
 that shells out to it, and the two environment checks run before the repo is resolved — neither
@@ -154,7 +178,7 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   other untracked file, a tracked `run.lock` modified, or `plan.lock` still counts (AIWF-76).
 - **Exit codes.** A fetch that fails is environment (exit 2). A refused dirty tree, a branch with no
   upstream or a rebase that does not apply is the operator's to resolve by hand (exit 1) — the
-  relaying session does not resolve it either. A repo on a phase branch is exit 1 too, but a
+  session that ran preflight does not resolve it either. A repo on a phase branch is exit 1 too, but a
   live run's branch is waited out, not resolved.
 - **Mid-run, the loop only fast-forwards.** Its own fetches are refs-only, save that a fresh
   phase's base with no commits of its own is fast-forwarded to its origin before the branch is
@@ -178,20 +202,3 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   Target repos*). A repo that defines no setup (exit 3) passes. A red or timed-out setup with a
   green build passes, with a `warning:` line. A red build's failure message carries setup's
   outcome and its last lines, so it shows whether install state is the cause.
-
-## Notes on the plugin check
-
-- **Why it exists.** A session keeps the plugin copy it started with, while the loop it launches
-  bails `plugin_version` at once unless it runs the installed version
-  ([run-loop.md](run-loop.md) § Protocol invariants). So a marketplace update after the session
-  started made the first launch from `${CLAUDE_PLUGIN_ROOT}` a wasted one, and preflight, run
-  from the same stale copy, had passed green (AIWF-33).
-- **What it prints.** When the two versions differ, preflight exits 0 and prints, after every
-  other check has passed, one line naming the installed copy of the profile's loop —
-  `plan_loop.py` for `--for plan`, `run_loop.py` for `--for run`. The session launches that path
-  instead of `${CLAUDE_PLUGIN_ROOT}`'s, for every launch and relaunch it makes. A pass, not a
-  failure: a non-zero exit stops the skill and costs the round-trip the line saves.
-- **Fail open, like the loop.** An unreadable manifest, or no entry in
-  `~/.claude/plugins/installed_plugins.json`, is no evidence of a mismatch: nothing is printed.
-- **It helps from the copy that carries it.** A session whose own copy predates the check gets
-  no line, and the loop's bail names the path as before.

@@ -25,7 +25,6 @@ schema):
 | Clean working tree                                   |        |      |  x  |
 | Synced with origin (ff / rebase; refuse dirty)       |        |  x*  |  x  |
 | Baseline `kc project setup`, then `kc project build` |        |      |  x  |
-| Session plugin = installed (else print loop)         |        |  x   |  x  |
 
 A phase the project switched off is not checked: its pointer is absent by
 contract, and checking it would make an optional phase mandatory again.
@@ -50,20 +49,19 @@ ask for before the build, so an install behind its lockfile does not read as a
 red baseline; a red or timed-out setup is a `warning:` line when the build is
 green (docs/preflight.md, "Notes on the run baseline").
 
-**Silent on success** (exit 0) — but for a line when it removed that hook, a
-`warning:` line under plan for each repo the sync passed over (*, above), one
-under run when the baseline's setup was red or timed out and its build green,
-and one, printed last, when the plugin this session runs from is not the
-installed one: the installed copy of the loop the command launches, which the
-session launches instead. On failure, prints ONE
-actionable message — what is missing, the exact line/fix, and a pointer to the
-project contract — so a new repo self-onboards from the error text. Exit codes:
+**Silent on success** (exit 0) — but for the notes: a line when it removed that
+hook, a `warning:` line under plan for each repo the sync passed over (*,
+above), and one under run when the baseline's setup was red or timed out and
+its build green. A failure stops at the first check that fails and is data
+(Failure): the check, the fact it found, the fix that makes it pass, and what a
+command it ran said. On stderr they read as one message, the fact before the
+fix, from which a new repo self-onboards; with `--json`, stdout carries one
+object instead, pass or fail, for a stage to render into an `action` document
+(docs/preflight.md, "Output"). Exit codes:
 
     0  pass
     1  contract violation (the project must fix something)
     2  environment broken (kc missing / control plane down / not in a git repo)
-
-The command runs the profile and relays this message verbatim on non-zero.
 """
 
 from __future__ import annotations
@@ -105,23 +103,70 @@ POINTERS = {
 }
 
 
-def fail(code: int, message: str):
-    """Print one actionable message and exit with the contract/env code."""
-    sys.stderr.write(message.rstrip("\n") + "\n")
-    raise SystemExit(code)
+class Failure(SystemExit):
+    """A check that did not pass, as data. `check` names it as the profiles
+    do (`PROFILES`; a pointer by its key, `git_repo` and `slice` for the repo
+    and `--slice` themselves); `fact` is what it found; `fix` what makes it
+    pass, with the exact line or command where there is one; `output` what a
+    command it ran said, verbatim. Exits with `code`: 1 the project's to fix,
+    2 the environment's."""
+
+    def __init__(self, code: int, check: str, fact: str, fix: str,
+                 output: str = ""):
+        super().__init__(code)
+        self.check = check
+        self.fact = fact.strip()
+        self.fix = fix.strip()
+        self.output = output.rstrip("\n")
+
+    def text(self) -> str:
+        """The failure as one message: the fact, the fix, the output."""
+        return "\n".join(part for part in (self.fact, self.fix, self.output)
+                         if part)
+
+    def data(self) -> dict:
+        return {"code": self.code, "check": self.check, "fact": self.fact,
+                "fix": self.fix, "output": self.output}
+
+
+# Under --json, main collects the notes here and prints them in its one
+# object; None prints each note as its line when it is made, and a failure's
+# message on stderr when it is raised.
+NOTES: list[dict] | None = None
+
+
+def fail(code: int, check: str, fact: str, fix: str, output: str = ""):
+    """Stop at a check that failed (Failure): its message on stderr at once,
+    or, under --json, the object main prints."""
+    failure = Failure(code, check, fact, fix, output)
+    if NOTES is None:
+        sys.stderr.write(failure.text() + "\n")
+    raise failure
+
+
+def note(check: str, text: str, warning: bool = True) -> None:
+    """A note on a pass: its line on stdout, `warning:` first where it is
+    one, or, under --json, an entry of the object's `notes`."""
+    if NOTES is None:
+        print(f"warning: {text}" if warning else text)
+    else:
+        NOTES.append({"check": check, "note": text})
 
 
 class Refusal(Exception):
-    """A repo the sync will not sync: the exit code and message to `fail`
-    with — or, in a repo planning does not block on, `summary`, the refusal
-    on one line (the message's first unless the refusal gives its own), for
-    the warning printed instead."""
+    """A repo the sync will not sync: the exit code, fact, fix and output to
+    `fail` with — or, in a repo planning does not block on, `summary`, the
+    refusal on one line (the fact's first unless the refusal gives its own),
+    for the note made instead."""
 
-    def __init__(self, code: int, message: str, summary: str | None = None):
-        super().__init__(message)
+    def __init__(self, code: int, fact: str, fix: str, output: str = "",
+                 summary: str | None = None):
+        super().__init__(fact)
         self.code = code
-        self.message = message
-        self.summary = summary or message.splitlines()[0]
+        self.fact = fact
+        self.fix = fix
+        self.output = output
+        self.summary = summary or fact.splitlines()[0]
 
 
 def _git(args: list[str]) -> subprocess.CompletedProcess:
@@ -161,16 +206,16 @@ def _fetch(path: str, remote: str) -> tuple[subprocess.CompletedProcess, int]:
 def repo_root() -> Path:
     result = _git(["rev-parse", "--show-toplevel"])
     if result.returncode != 0:
-        fail(2, "Not inside a git repository — run the pipeline command from the "
-                "target code repo.")
+        fail(2, "git_repo", "Not inside a git repository.",
+             "Run the pipeline command from the target code repo.")
     return Path(result.stdout.strip())
 
 
 def check_kc() -> None:
     if shutil.which("kc") is None:
-        fail(2, "`kc` is not on PATH. This pipeline is kc-native and requires the "
-                "KubeCoder CLI — run inside a KubeCoder pod, where `kc` is always "
-                "available.")
+        fail(2, "kc", "`kc` is not on PATH, and this pipeline is kc-native: it "
+                      "requires the KubeCoder CLI.",
+             "Run inside a KubeCoder pod, where `kc` is always available.")
 
 
 def check_kc_status() -> None:
@@ -185,11 +230,12 @@ def check_kc_status() -> None:
     result = subprocess.run(["kc", "status"], capture_output=True, text=True)
     if result.returncode != 0:
         report = (result.stdout + result.stderr).strip()
-        fail(2,
+        fail(2, "kc_status",
              "`kc status` reports a broken control plane. Every agent this "
              "pipeline dispatches runs through `kc session`, so the first "
-             "dispatch would fail — fix the environment before retrying (the "
-             "report says which half is down).\n" + report)
+             "dispatch would fail.",
+             "Mend the half of the control plane the report names as down.",
+             report)
 
 
 def load_config(root: Path) -> project_config.ProjectConfig:
@@ -198,7 +244,9 @@ def load_config(root: Path) -> project_config.ProjectConfig:
     try:
         return project_config.load(root)
     except project_config.ConfigError as e:
-        fail(1, f"{e}\n\nSee {CONTRACT_DOC} for the full project contract.")
+        fail(1, "config", str(e),
+             f"Write `.aiworkflowrc` at the repo root as said, or correct it; "
+             f"the full project contract is {CONTRACT_DOC}.")
 
 
 def check_pointer(cfg: project_config.ProjectConfig, key: str) -> None:
@@ -211,17 +259,17 @@ def check_pointer(cfg: project_config.ProjectConfig, key: str) -> None:
         "doc_phase.plan": cfg.doc_plan,
     }[key]
     if target is None:
-        fail(1,
-             f"Missing required `{key}` in {cfg.path}.\n"
+        fail(1, key, f"Missing required `{key}` in {cfg.path}.",
              f"Add it, pointing at {what}:\n\n"
              f"    {snippet}\n\n"
-             f"See {CONTRACT_DOC} for the full project contract.")
+             f"The full project contract is {CONTRACT_DOC}.")
     ok = target.is_dir() if expect_dir else target.is_file()
     if not ok:
         kind = "directory" if expect_dir else "file"
-        fail(1,
+        fail(1, key,
              f"`{key}` in {cfg.path} points to {target}, which is not an "
-             f"existing {kind}.\nFix the path (see {CONTRACT_DOC}).")
+             f"existing {kind}.",
+             f"Correct the path (the project contract: {CONTRACT_DOC}).")
 
 
 def check_phase_pointers(cfg: project_config.ProjectConfig) -> None:
@@ -241,11 +289,12 @@ def check_devlock(cfg: project_config.ProjectConfig) -> None:
     if cfg.devlock_lease is None:
         return
     if not cfg.devlock_lease.parent.is_dir():
-        fail(1,
+        fail(1, "devlock",
              f"`devlock.lease` in {cfg.path} resolves to "
-             f"{cfg.devlock_lease}, whose directory does not exist. The lease "
-             f"is relative to the spec repo and must sit where every "
-             f"contending repo can see it (see {CONTRACT_DOC}).")
+             f"{cfg.devlock_lease}, whose directory does not exist.",
+             f"Point it at a directory that exists: the lease is relative to "
+             f"the spec repo and must sit where every contending repo can see "
+             f"it (the project contract: {CONTRACT_DOC}).")
 
 
 # ---------------------------------------------------------------------------
@@ -289,14 +338,15 @@ def remove_spec_tree_guard(cfg: project_config.ProjectConfig | None) -> None:
     try:
         target.unlink()
     except OSError as e:
-        fail(2,
+        fail(2, "spec_tree_guard",
              f"Could not remove the retired spec-tree guard {target} ({e}): "
              f"a phase on the spec repo works in a worktree of its own, and "
-             f"the guard refuses its commits there. Delete {target} by hand, "
-             f"then retry.")
-    print(f"removed the retired spec-tree guard {target} — a phase on the "
-          f"spec repo works in a worktree of its own, and the guard would "
-          f"refuse its commits there")
+             f"the guard refuses its commits there.",
+             f"Delete {target}.")
+    note("spec_tree_guard",
+         f"removed the retired spec-tree guard {target} — a phase on the "
+         f"spec repo works in a worktree of its own, and the guard would "
+         f"refuse its commits there", warning=False)
 
 
 def check_manifest(root: Path) -> None:
@@ -304,20 +354,22 @@ def check_manifest(root: Path) -> None:
         ["kc", "project", "list", "--output=json"],
         cwd=str(root), capture_output=True, text=True)
     if result.returncode != 0:
-        fail(1,
+        fail(1, "manifest",
              "No valid `.kubecoder/project.yaml` manifest: `kc project list "
-             f"--output=json` failed (rc={result.returncode}).\n"
-             f"{(result.stderr or result.stdout).strip()}\n\n"
+             f"--output=json` failed (rc={result.returncode}).",
              f"Author a manifest so `kc project list` returns the components "
-             f"(see {CONTRACT_DOC}).")
+             f"(the project contract: {CONTRACT_DOC}).",
+             (result.stderr or result.stdout).strip())
     try:
         components = json.loads(result.stdout)
     except (json.JSONDecodeError, ValueError):
-        fail(1, "`kc project list --output=json` did not emit valid JSON — "
-                f"check the manifest (see {CONTRACT_DOC}).")
+        fail(1, "manifest",
+             "`kc project list --output=json` did not emit valid JSON.",
+             f"Correct the manifest, `.kubecoder/project.yaml` (the project "
+             f"contract: {CONTRACT_DOC}).")
     if not components:
-        fail(1, "`.kubecoder/project.yaml` declares no components. Add at least "
-                f"one (see {CONTRACT_DOC}).")
+        fail(1, "manifest", "`.kubecoder/project.yaml` declares no components.",
+             f"Add at least one (the project contract: {CONTRACT_DOC}).")
 
 
 def current_branch(repo: Path) -> str | None:
@@ -400,10 +452,10 @@ def refuse_phase_branch(repo: Path, branch: str | None,
             1,
             f"{head}, a run loop's phase branch{whose} — not a branch to "
             f"push or track. Preflight found no slice folder{where} to tell "
-            f"whether that run is live. If it is, wait for its phase to "
-            f"merge (the run checks the base branch back out itself); if it "
-            f"is not, once any work on the branch is committed, check "
-            f"`{name}`'s base branch back out, then retry.")
+            f"whether that run is live.",
+            f"If it is, wait for its phase to merge (the run checks the base "
+            f"branch back out itself); if it is not, once any work on the "
+            f"branch is committed, check `{name}`'s base branch back out.")
 
     lock = slice_dir / "run.lock"
     holder = run_lock_holder(lock)
@@ -413,9 +465,10 @@ def refuse_phase_branch(repo: Path, branch: str | None,
             f"{head}, a phase branch left by slice {num}'s run "
             f"({slice_dir}), which is not running — nothing holds its "
             f"run.lock. A bail leaves the branch checked out; the slice's "
-            f"log.txt says why. Once any work on the branch is committed, "
-            f"check `{name}`'s base branch back out, then retry. Never push "
-            f"a phase branch or give it an upstream: it is the run's own.")
+            f"log.txt says why.",
+            f"Once any work on the branch is committed, check `{name}`'s base "
+            f"branch back out. Never push a phase branch or give it an "
+            f"upstream: it is the run's own.")
 
     live = (f"{head}, the phase branch of slice {num}'s run ({slice_dir}), "
             f"and that run is live")
@@ -423,9 +476,10 @@ def refuse_phase_branch(repo: Path, branch: str | None,
         1,
         f"{live} — {lock} is held by:\n{_indented(holder)}\n"
         f"The run checked this branch out for its phase and checks the base "
-        f"branch back out itself once the phase merges. Wait for that, then "
-        f"retry. Do not set an upstream, push, or check anything out in "
-        f"`{name}` meanwhile — each would change a live run's branch under it.",
+        f"branch back out itself once the phase merges.",
+        f"Wait for that. Do not set an upstream, push, or check anything out "
+        f"in `{name}` meanwhile — each would change a live run's branch "
+        f"under it.",
         summary=f"{live} ({lock} is held).")
 
 
@@ -436,13 +490,15 @@ def check_clean_tree(root: Path,
     try:
         refuse_phase_branch(root, current_branch(root), cfg)
     except Refusal as refusal:
-        fail(refusal.code, refusal.message)
+        fail(refusal.code, "clean_tree", refusal.fact, refusal.fix,
+             refusal.output)
     result = _git(["-C", str(root), "status", "--porcelain"])
     if result.stdout.strip():
-        fail(1,
-             "The working tree has uncommitted changes; commit or stash before "
-             "running a slice (a dirty tree is never the runner's to clean up).\n"
-             + result.stdout.rstrip("\n"))
+        fail(1, "clean_tree",
+             f"The working tree of {root} has uncommitted changes, and a "
+             f"dirty tree is never the run's to clean up.",
+             "Commit or stash them before the slice runs.",
+             result.stdout.rstrip("\n"))
 
 
 def sync_roots(root: Path,
@@ -492,12 +548,12 @@ def find_slice(cfg: project_config.ProjectConfig, given: str) -> Path:
         found = find_slice_dir(cfg.spec_repo, num)
         if found is not None:
             return found
-    fail(1,
+    fail(1, "slice",
          f"`--slice {given}` names no slice folder: `{given}` is not a "
          f"directory, and the spec repo {cfg.spec_repo} has no slice "
          f"{' or '.join(nums)} under slices/, slices/backlog/ or "
-         f"slices/completed/. Give the slice's number or its folder's path, "
-         f"then retry.")
+         f"slices/completed/.",
+         "Give the slice's number or its folder's path.")
 
 
 def plan_targets(root: Path, slice_dir: Path) -> set[Path]:
@@ -573,10 +629,12 @@ def check_targets_cloned(root: Path, cfg: project_config.ProjectConfig | None,
         if message:
             problems.append(f"- phase P{phase.id}: {message}")
     if problems:
-        fail(2,
+        fail(2, "targets_cloned",
              f"The slice's plan ({plan}) targets a repo this environment "
              f"declares but has not cloned — the plan is fine, and the "
-             f"environment is a checkout short:\n" + "\n".join(problems))
+             f"environment is a checkout short:\n" + "\n".join(problems),
+             "Restart the environment (`kc env restart`), or clone each repo "
+             "where its line says and run `kc project setup` in it.")
 
 
 # A dirty tree may be another process's pull caught mid-checkout — a sibling
@@ -628,9 +686,9 @@ def _index_lock(repo: Path) -> Path | None:
 
 
 def _origin_gone(repo: Path) -> str:
-    """The warning for a repo whose GitHub origin no longer exists."""
+    """The note for a repo whose GitHub origin no longer exists."""
     name, path = repo.name, str(repo)
-    line = (f"warning: `{name}` ({path}) was not synced — its origin reports "
+    line = (f"`{name}` ({path}) was not synced — its origin reports "
             f"\"Repository not found\", so the repo was deleted or moved on "
             f"GitHub; planning goes on without it.")
     if _git(["-C", path, "config", "--get",
@@ -641,8 +699,8 @@ def _origin_gone(repo: Path) -> str:
 
 
 def _passed_over(repo: Path, refusal: Refusal) -> str:
-    """The warning for a refusal in a repo planning does not block on."""
-    return (f"warning: {refusal.summary} Not synced, as the slice's plan "
+    """The note for a refusal in a repo planning does not block on."""
+    return (f"{refusal.summary} Not synced, as the slice's plan "
             f"targets no part of `{repo.name}`: planning goes on, and "
             f"`/dev:run-slice`'s preflight refuses it until it is resolved.")
 
@@ -650,7 +708,7 @@ def _passed_over(repo: Path, refusal: Refusal) -> str:
 def _sync_repo(repo: Path, cfg: project_config.ProjectConfig | None,
                planning: bool) -> str | None:
     """One repo's sync (check_synced). Raises a Refusal where the repo is not
-    synced; returns the warning line a repo skipped under plan gets, if any."""
+    synced; returns the note a repo skipped under plan gets, if any."""
     name, path = repo.name, str(repo)
     branch_name = current_branch(repo)
     if branch_name is None:
@@ -664,9 +722,10 @@ def _sync_repo(repo: Path, cfg: project_config.ProjectConfig | None,
             f"`{name}` ({path}) is on `{branch_name}`, a branch with no "
             f"upstream — preflight syncs every repo of the environment "
             f"with its origin before a slice starts, and a repo it skipped "
-            f"would report green having synced nothing. Set the tracking "
-            f"ref (`git -C {path} branch --set-upstream-to=origin/"
-            f"{branch_name}`) or push the branch with `-u`, then retry.")
+            f"would report green having synced nothing.",
+            f"Set the tracking ref (`git -C {path} branch "
+            f"--set-upstream-to=origin/{branch_name}`) or push the branch "
+            f"with `-u`.")
     upstream = tracking.stdout.strip()
     remote = upstream.split("/", 1)[0]
 
@@ -678,20 +737,22 @@ def _sync_repo(repo: Path, cfg: project_config.ProjectConfig | None,
                 (fetched.stderr or "") + (fetched.stdout or "")).lower():
             return _origin_gone(repo)
         if _lost_race(fetched):
-            why = (f"Another session in this pod was updating the same "
+            why = (f" Another session in this pod was updating the same "
                    f"clone's refs at the same moment — git's ref-update "
-                   f"race, not a network or credentials problem. Preflight "
-                   f"tried {attempts} times; a rerun normally clears it.")
+                   f"race, not a network or credentials problem; preflight "
+                   f"tried {attempts} times.")
+            fix = "Run preflight again: a rerun normally clears the race."
         else:
-            why = ("Check that the remote is reachable from this pod "
-                   "(network, credentials), then retry.")
+            why = ""
+            fix = ("Make the remote reachable from this pod (network, "
+                   "credentials).")
         output = fetched.stderr or fetched.stdout
         raise Refusal(
             2,
             f"`git fetch {remote}` failed in `{name}` ({path}) "
             f"(rc={fetched.returncode}). Preflight syncs every repo of the "
-            f"environment with its origin before a slice starts. {why}\n"
-            + output.rstrip("\n"))
+            f"environment with its origin before a slice starts.{why}",
+            fix, output.rstrip("\n"))
 
     counts = _ahead_behind(path)
     if counts is None or counts[1] == 0:
@@ -716,17 +777,17 @@ def _sync_repo(repo: Path, cfg: project_config.ProjectConfig | None,
                 1,
                 f"`{name}` ({path}) is {behind} behind {upstream} and has "
                 f"uncommitted changes while another git process works in it "
-                f"— its index lock {lock} was held as preflight looked. "
-                f"Committing or stashing now would capture that process's "
-                f"half-applied work, so don't: wait for it to finish, then "
-                f"retry.\n" + status.rstrip("\n"))
+                f"— its index lock {lock} was held as preflight looked.",
+                "Committing or stashing now would capture that process's "
+                "half-applied work, so don't: wait for it to finish.",
+                status.rstrip("\n"))
         if status.strip():
             raise Refusal(
                 1,
                 f"`{name}` ({path}) is {behind} behind {upstream} and has "
-                f"uncommitted changes — preflight will not pull over them. "
-                f"Commit or stash, or pull by hand, then retry.\n"
-                + status.rstrip("\n"))
+                f"uncommitted changes — preflight will not pull over them.",
+                "Commit or stash them, or pull by hand.",
+                status.rstrip("\n"))
 
     if ahead == 0:
         merged = _git(["-C", path, "merge", "--ff-only", "--quiet", "@{u}"])
@@ -734,10 +795,9 @@ def _sync_repo(repo: Path, cfg: project_config.ProjectConfig | None,
             raise Refusal(
                 1,
                 f"`{name}` ({path}) is {behind} behind {upstream} but "
-                f"`git merge --ff-only` refused it "
-                f"(rc={merged.returncode}) — bring it up to date by hand, "
-                f"then retry.\n"
-                + (merged.stderr or merged.stdout).rstrip("\n"))
+                f"`git merge --ff-only` refused it (rc={merged.returncode}).",
+                "Bring it up to date by hand.",
+                (merged.stderr or merged.stdout).rstrip("\n"))
         return None
 
     rebased = _git(["-C", path, "rebase", "--quiet", "@{u}"])
@@ -747,9 +807,10 @@ def _sync_repo(repo: Path, cfg: project_config.ProjectConfig | None,
         raise Refusal(
             1,
             f"`{name}` ({path}) has {ahead} local commits that do not "
-            f"rebase onto {upstream} ({behind} behind) — resolve by hand "
-            f"(rebase or merge), then retry. The rebase was aborted, so "
-            f"the repo stands where it did.\n" + "\n".join(tail))
+            f"rebase onto {upstream} ({behind} behind). The rebase was "
+            f"aborted, so the repo stands where it did.",
+            "Resolve it by hand, by a rebase or a merge.",
+            "\n".join(tail))
     return None
 
 
@@ -777,19 +838,20 @@ def check_synced(root: Path, cfg: project_config.ProjectConfig | None,
 
     `strict` is the plan profile's set of repos that may block (strict_repos,
     resolved paths); None, the run profile, makes every repo strict. Under
-    plan any other repo's refusal is printed as one `warning:` line and the
-    sync goes on, and every repo, strict or not, is skipped when it vanished
-    mid-sync (silently) or its GitHub origin is gone (with a warning line).
+    plan any other repo's refusal is one note and the sync goes on, and
+    every repo, strict or not, is skipped when it vanished mid-sync
+    (silently) or its GitHub origin is gone (with a note).
     """
     for repo in sync_roots(root, cfg):
         try:
             warning = _sync_repo(repo, cfg, planning=strict is not None)
         except Refusal as refusal:
             if strict is None or repo.resolve() in strict:
-                fail(refusal.code, refusal.message)
+                fail(refusal.code, "synced", refusal.fact, refusal.fix,
+                     refusal.output)
             warning = _passed_over(repo, refusal)
         if warning:
-            print(warning)
+            note("synced", warning)
 
 
 # kc's exit code for "nothing ran" (KC-81; run_loop.KC_NOTHING_RAN): a project
@@ -844,73 +906,54 @@ def check_baseline_build(root: Path) -> None:
                      else f"had nothing to build (exit {KC_NOTHING_RAN})")
             last = next((line.strip() for line in reversed(setup_lines)
                          if line.strip()), "")
-            print(f"warning: `kc project setup` {setup_failed}, but the "
-                  f"baseline `kc project build` {built}, so the run goes on — "
-                  f"the phase gates meet what setup could not install"
-                  + (f" (setup's last line: {last})" if last else ""))
+            note("baseline_build",
+                 f"`kc project setup` {setup_failed}, but the baseline "
+                 f"`kc project build` {built}, so the run goes on — the phase "
+                 f"gates meet what setup could not install"
+                 + (f" (setup's last line: {last})" if last else ""))
         return
 
+    fix = "Fix the baseline, or narrow the manifest's build list."
     if setup_failed:
-        about_setup = (f"`kc project setup`, run before it, {setup_failed}: "
-                       f"fix setup's own failure first — the build may be red "
-                       f"only for what setup could not install. ")
+        about_setup = f"`kc project setup`, run before it, {setup_failed}."
+        fix = ("Fix setup's own failure first — the build may be red only "
+               "for what setup could not install. Then " + fix[0].lower()
+               + fix[1:])
     elif outcome == "green":
         about_setup = ("`kc project setup` ran green before it, so the red is "
-                       "not install state. ")
+                       "not install state.")
     else:
         about_setup = ("The repo defines no `kc project setup`, so none ran "
-                       "before it. ")
+                       "before it.")
     tail = (result.stdout + result.stderr).strip().splitlines()[-BUILD_TAIL:]
-    fail(1, "\n\n".join([
-        "Baseline `kc project build` failed — the suite must be green before a "
-        "slice runs (a baseline-broken build screams on task 1 otherwise). "
-        + about_setup + "Fix the baseline, or narrow the manifest's build "
-        "list, then retry.",
-        "\n".join([f"`kc project setup` → {setup_said}:",
-                   *setup_lines[-SETUP_TAIL:]]),
-        "\n".join([f"`kc project build` → RED (exit {result.returncode}):",
-                   *tail])]))
+    fail(1, "baseline_build",
+         "Baseline `kc project build` failed — the suite must be green before "
+         "a slice runs (a baseline-broken build screams on task 1 otherwise). "
+         + about_setup,
+         fix,
+         "\n\n".join([
+             "\n".join([f"`kc project setup` → {setup_said}:",
+                        *setup_lines[-SETUP_TAIL:]]),
+             "\n".join([f"`kc project build` → RED (exit {result.returncode}):",
+                        *tail])]))
 
 
 # Triage deliberately has no `kc_status`: it dispatches nothing and touches no
 # kc surface — it is intake, doable without the repo. Gating it on live
 # controller reachability would fail work that needs none of it.
-# The loop each launching profile's command starts, for check_plugin_current.
-LOOPS = {"plan": "plan_loop.py", "run": "run_loop.py"}
-
-
-def check_plugin_current(profile: str) -> None:
-    """Print the installed copy of the profile's loop when this session's
-    plugin is another version. Launched from the session's
-    ${CLAUDE_PLUGIN_ROOT}, that loop would bail at once with `plugin_version`
-    (run_loop.assert_plugin_current); named here, the first launch is the
-    right one. A pass, not a failure — a non-zero exit stops the skill and
-    costs the operator the round-trip this line saves. Silent when the
-    versions match or either is unknown, as the loop's own guard is."""
-    script = LOOPS[profile]
-    stale = run_loop.stale_plugin(script)
-    if stale is None:
-        return
-    ours, version, loop = stale
-    print(f"Launch the loop from {loop} — for every launch and relaunch this "
-          f"session, not from ${{CLAUDE_PLUGIN_ROOT}}: this session's plugin "
-          f"is {ours} ({run_loop.TOOLS_DIR.parent}), the installed one is "
-          f"{version}, and a loop run from the session's copy bails at once "
-          "with plugin_version.")
-
-
 PROFILES = {
     "triage": ["kc", "config", "spec_repo", "spec_tree_guard"],
     "plan": ["kc", "kc_status", "manifest", "config", "spec_repo",
-             "spec_tree_guard", "targets_cloned", "synced", "plugin_current"],
+             "spec_tree_guard", "targets_cloned", "synced"],
     "run": ["kc", "kc_status", "manifest", "config", "spec_repo",
             "spec_tree_guard", "design_philosophy", "phase_pointers",
             "devlock", "targets_cloned", "clean_tree", "synced",
-            "baseline_build", "plugin_current"],
+            "baseline_build"],
 }
 
 
 def main() -> None:
+    global NOTES
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--for", dest="profile", required=True,
                         choices=sorted(PROFILES), help="which command's profile to run")
@@ -919,9 +962,33 @@ def main() -> None:
                              "whose plan's Targets must not name a repo the "
                              "environment declares and has not cloned; under "
                              "plan, its Targets may also block the sync")
+    parser.add_argument("--json", action="store_true",
+                        help="print one JSON object on stdout, pass or fail: "
+                             "the notes, and a failure's check, fact, fix "
+                             "and output")
     args = parser.parse_args()
     if args.slice is not None and args.profile not in ("plan", "run"):
         parser.error("--slice applies to --for plan and --for run only")
+    if not args.json:
+        run_profile(args)
+        return
+    NOTES = []
+    try:
+        try:
+            run_profile(args)
+        except Failure as failure:
+            report = {"result": "fail", "profile": args.profile,
+                      **failure.data(), "notes": NOTES}
+            print(json.dumps(report, indent=2))
+            raise
+        print(json.dumps({"result": "pass", "profile": args.profile,
+                          "notes": NOTES}, indent=2))
+    finally:
+        NOTES = None
+
+
+def run_profile(args) -> None:
+    """The profile's checks in order; a Failure at the first that fails."""
     checks = PROFILES[args.profile]
 
     # kc first (env gate), before anything that shells out to it; the control
@@ -954,10 +1021,7 @@ def main() -> None:
         check_synced(root, cfg, strict)
     if "baseline_build" in checks:
         check_baseline_build(root)
-    # Last, so it is printed only on a pass, never beside a failure's message.
-    if "plugin_current" in checks:
-        check_plugin_current(args.profile)
-    # Silent on success, but for that line and the sync's and baseline's warnings.
+    # Silent on success, but for the notes.
 
 
 if __name__ == "__main__":

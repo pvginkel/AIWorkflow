@@ -43,6 +43,10 @@ run_loop._user_home = lambda: Path(tempfile.gettempdir()) / "planloop-no-home"
 # the tests that exercise it write their own (`installed`).
 run_loop.INSTALLED_PLUGINS = (Path(tempfile.gettempdir()) / "planloop-no-home"
                               / "installed_plugins.json")
+# The suite's loops run from this checkout, which the guard lets pass as a
+# --plugin-dir run's (run_loop.runs_from_checkout). Stood in for an install
+# here, so the guard's tests see it bail; the test of a checkout moves it.
+run_loop.PLUGINS_HOME = run_loop.TOOLS_DIR.parent.parent
 
 # Pilot's halt file is the host's (`/work/...`): a pod running the suite while
 # a halt holds would halt every loop in it. Pointed at a file that does not
@@ -1427,6 +1431,27 @@ def test_a_plugin_version_mismatch_bails_before_the_first_dispatch():
             inst.set(OURS)
             loop = ScriptedLoop(slice_dir, [W_DONE, R_GO])
             assert run_to_exit(loop) == 0, "the relaunch picks the run up"
+
+
+def test_a_plugin_dir_run_passes_the_version_guard_and_says_so_once():
+    """From a checkout (`--plugin-dir`), agents of the installed version are
+    the run's premise: the plan loop goes on, with one line in its log."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        saved = run_loop.PLUGINS_HOME
+        run_loop.PLUGINS_HOME = Path(tmp) / "plugins-home"
+        try:
+            with installed(tmp, "0.0.1"):
+                loop = ScriptedLoop(slice_dir, [W_DONE, R_GO])
+                assert run_to_exit(loop) == 0
+        finally:
+            run_loop.PLUGINS_HOME = saved
+        said = [line for line in
+                (slice_dir / "plan_log.txt").read_text().splitlines()
+                if "[plugin]" in line]
+        assert len(said) == 1, said
+        assert f"runs plugin {OURS} from a checkout" in said[0]
+        assert "load the installed 0.0.1" in said[0]
 
 
 def test_the_relaunch_after_a_plugin_version_bail_needs_no_hand_cleanup():

@@ -92,6 +92,10 @@ run_loop._user_home = lambda: NO_HOME
 # tree's version. Pointed at a file that does not exist, the guard fails open;
 # the tests that exercise it write their own (`installed`).
 run_loop.INSTALLED_PLUGINS = NO_HOME / "installed_plugins.json"
+# The suite's loops run from this checkout, which the guard lets pass as a
+# --plugin-dir run's (runs_from_checkout). Stood in for an install here, so
+# the guard's tests see it bail; the tests of a checkout point it elsewhere.
+run_loop.PLUGINS_HOME = run_loop.TOOLS_DIR.parent.parent
 
 # Pilot's halt file is the host's (`/work/...`): a pod running the suite while
 # a halt holds would halt every run in it. Pointed at a file that does not
@@ -12953,6 +12957,37 @@ def test_a_plugin_version_mismatch_bails_at_startup_and_resumes_on_relaunch():
         with patched(run_loop, INSTALLED_PLUGINS=path):
             assert run_to_exit(r) == 0
         assert not r.script
+
+
+def test_runs_from_checkout_is_anywhere_outside_claude_codes_plugin_home():
+    home = Path("/h/.claude/plugins")
+    with patched(run_loop, PLUGINS_HOME=home):
+        assert not run_loop.runs_from_checkout(
+            home / "cache" / "aiworkflow" / "dev" / "0.9.1" / "tools")
+        assert not run_loop.runs_from_checkout(
+            home / "marketplaces" / "aiworkflow" / "plugins" / "dev" / "tools")
+        assert run_loop.runs_from_checkout(Path("/work/AIWorkflow/plugins/dev/tools"))
+
+
+def test_a_plugin_dir_run_passes_the_version_guard_and_says_so_once():
+    """A loop run from a checkout — a branch a session was given with
+    `--plugin-dir` — dispatches agents that load the installed plugin, since
+    a kc session takes no plugin directory. That is the run's premise, not a
+    stale copy: no bail, and one line in the log naming both versions."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        path, _ = write_installed(tmp, "0.0.1")
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        with patched(run_loop, INSTALLED_PLUGINS=path,
+                     PLUGINS_HOME=Path(tmp) / "plugins-home"):
+            assert run_to_exit(r) == 0
+        assert not r.script
+        said = [line for line in (slice_dir / "log.txt").read_text().splitlines()
+                if "[plugin]" in line]
+        assert len(said) == 1, said
+        assert f"runs plugin {OURS} from a checkout" in said[0]
+        assert "load the installed 0.0.1" in said[0]
 
 
 def test_a_matching_or_unknown_installed_plugin_proceeds():

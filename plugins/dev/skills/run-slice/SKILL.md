@@ -31,9 +31,7 @@ nothing from you between launch and close-out.
    if it is clearly environmental, otherwise notify the operator. A Target repo the environment
    declares but has not cloned is environmental: the message names the clone and the
    `kc project setup` that fix it. A dirty working tree — or a repo preflight refused to pull — is
-   never yours to clean up. A line it prints on exit 0 names the installed `run_loop.py`:
-   this session's plugin copy is stale, so launch and relaunch from that path wherever this
-   skill says `${CLAUDE_PLUGIN_ROOT}/tools/run_loop.py`.
+   never yours to clean up.
 2. Advance the slice's tracker card — the id in `slice.md`'s `issue:` frontmatter; it is
    **planned** — to **in progress**.
 3. Launch it **detached** — not with `run_in_background`, whose 2 h cap a run outlasts:

@@ -386,6 +386,9 @@ class PlanLoop:
         self.state_path = self.slice_dir / "plan_state.json"
         self.log_path = self.slice_dir / "plan_log.txt"
         self.verbose = verbose
+        # Whether the log has said once that the version guard let a
+        # --plugin-dir run's checkout pass (assert_plugin_current).
+        self._checkout_logged = False
         # The plan task the planning serves, from the brief (`--step`):
         # every document the loop renders carries it; kept in
         # plan_state.json for the reruns that do not give it.
@@ -551,10 +554,13 @@ class PlanLoop:
         exit-0 seed reads the file."""
         try:
             if plugin:
-                assert_plugin_current(
+                said = assert_plugin_current(
                     Path(__file__).name,
                     " (a plan loop rerun resumes from plan_state.json on its "
                     "own)")
+                if said and not self._checkout_logged:
+                    self._checkout_logged = True
+                    self.log(f"[plugin] {said}")
             assert_verification_keys(self.slice_dir)
         except run_loop.Bailout as e:
             raise Bailout(e.reason, details=e.details) from None
