@@ -1,19 +1,22 @@
-# Plan refinement — the interview, its readout, the replacement, and its first read
+# Plan refinement — the interview, the refinement document, and the requirements asks
 
 > *Written 2026-09-02 from session notes at plugin 0.9.13; every figure re-checked on 2026-09-03
 > against the pushed `docs/research/plan-interview-2026-09-01.md`, and § What judged it added from
-> the first five slices' read.*
+> the first five slices' read. § Planning in Pilot added 2026-10-30, at 0.10.9.*
 
-This doc covers the interactive half of planning: how `/dev:plan-slice` pins a slice's requirements
-with the operator today, what a read of 49 planning sessions found wrong with the way it asked, the
-ruling that replaced the question dialogs with a per-slice refinement document, and what its first
-five slices showed. The mechanics of the plan loop that follows the interview
+This doc covers the half of planning that puts the slice's open questions to the operator. Since
+0.10.9 planning is a stage Pilot runs: the `plan-preparer` grounds the slice and writes the
+requirements asks, and the operator answers them as a document in Pilot
+([§ Planning in Pilot](#planning-in-pilot-0109)). Everything above that section is the record of
+how it got there: how `/dev:plan-slice` pinned requirements at 0.9.13, what a read of 49
+planning sessions found wrong with the way it asked, the ruling that replaced the question
+dialogs with a per-slice refinement document, and what its first five slices showed. The mechanics of the plan loop that follows the interview
 are [`plan-loop.md`](../../plugins/dev/docs/plan-loop.md); how a slice reaches planning is
 [`overview.md`](overview.md); the reporting shape this ruling borrows from is
 [`reporting.md`](reporting.md); the planner-effort experiments that preceded it are in
 [`improvements.md`](improvements.md) and [`history.md`](history.md).
 
-## Planning today (0.9.13)
+## Planning at 0.9.13
 
 `/dev:plan-slice` is the **refinement session** — in the skill's words, "the dev team going through
 the idea with the PO" ([`skills/plan-slice/SKILL.md`](../../plugins/dev/skills/plan-slice/SKILL.md)
@@ -192,7 +195,7 @@ The introduction went on 2026-09-10, before that read — the incident is in the
 
 ## What the contract's rules rest on (moved here 2026-09-09)
 
-Until 0.9.33 the contract ([`refinement.md`](../../plugins/dev/docs/refinement.md)) carried its
+Until 0.9.33 the contract (`plugins/dev/docs/refinement.md`, deleted in 0.10.9) carried its
 evidence inline — the incidents below, read by the Fable writer on every dispatch. The 2026-09-09
 prompt audit ([`platform-cost-read-2026-09-09.md`](../research/platform-cost-read-2026-09-09.md)
 § 3.2) moved them here; the rules stand in the contract without them. Slices are KubeCoder, all on
@@ -230,3 +233,33 @@ prompt audit ([`platform-cost-read-2026-09-09.md`](../research/platform-cost-rea
   into the entries: each decision opens with its context and the ask in plain words, a premise
   that no longer holds is stated once where its consequence lands, and the settled list closes
   the doc.
+
+## Planning in Pilot (0.10.9)
+
+The refinement document went in 0.10.9, with its writer and the interactive session that walked
+the operator through it. What the reads above taught stayed; the vehicle changed.
+
+- **The asks are a document in Pilot.** `/dev:plan-slice` is a stage Pilot runs as a work item
+  ([`pilot.md`](../../plugins/dev/docs/pilot.md)). Nothing is asked in chat, so a dialog cannot
+  come back, and the agree-or-comment walkthrough and the blanket "agree" have nothing to run
+  in. The operator answers each ask in the app, and Pilot writes the answers back into the file.
+- **The preparation leaves the session.** A `plan-preparer` sub-agent absorbs `slice.md` and the
+  cards routed to it, grounds every claim an ask rests on, writes `grounding.md`, and appends the
+  requirements asks to a store that `asks.py` renders. The session renders, registers and ends
+  its turn; the continuation hands each ruling to a sub-agent that writes it into `plan.md` in
+  the operator's words. The planner had been ending sessions above 250 k tokens of context, and
+  a stage may wait days for its answers (ruled 2026-10-30, the P-111 plan's decision 5).
+- **The order stayed.** The requirements asks come first and the plan loop after, as before;
+  each ask carries the approach in short, never a drafted plan the answers would then rewrite.
+  The plan-writer's questions and the plan-reviewer's findings reach the operator the same way,
+  as documents the plan loop renders at its exit 4 (0.10.5).
+- **How the asks are worded is the writing skill's.** The refinement read is one of the reads
+  `skills/writing/SKILL.md` rests on: the cold reader, only what the operator could rule the
+  other way, a settled item in one sentence, every ask with its recommendation. The rules of
+  `refinement.md` that a document in Pilot made moot — placeholders on the answer lines, a
+  second round appended to the same page, the walkthrough — went with it (0.10.7, 0.10.9).
+- **A question back is answered by a sub-agent.** A clarification Pilot asks about a block is
+  answered by a fresh sub-agent pointed at the slice's folder, never from the session's own
+  reading. Whether that costs real budget on an aged session is P-128's read.
+
+**Untested:** the first slices planned through Pilot are the read of this shape.

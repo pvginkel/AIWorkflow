@@ -34,9 +34,11 @@ round). The same sync made the review cap a budget — 2 → 3, extendable by tw
 `another_round` could buy the confirming review instead of merging a last-round fix unseen.
 
 **Readout.** The shape held through every later version; the `code-tester` never came back. The
-gate stays test-only by a later ruling (v0.7.5): the writer lints once itself, the
-loop-tail sweep runs lint + build + test per component, so a per-phase lint would tax every phase to
-save the one that fixes it.
+gate stayed test-only by a later ruling (v0.7.5): the writer linted once itself, the
+loop-tail sweep ran lint + build + test per component, so a per-phase lint would tax every phase to
+save the one that fixes it. 0.9.145 put the lint back beside each test the gate runs, after a
+frontend's type check was missing from the gate of two PilotApp slices whose plans said it was
+green (`run-loop.md` § The per-phase round).
 
 ### The funding consult with a rising bar (v0.3.0, v0.4.0)
 
@@ -277,7 +279,8 @@ cross-project bug (`docs/research/close-out-report.md` § 1.1). Counts on KubeCo
 **Change.** Everything the loops will not act on goes into one `close-out.md` per slice in one
 fixed shape, as it happens; the run's only tracker output is one card pointing at the report; the
 operator dispositions entries in one sitting and `/dev:close-out` executes
-([`close-out.md`](../../plugins/dev/docs/close-out.md)).
+([`close-out.md`](../../plugins/dev/docs/close-out.md)). Since 0.10.8 the operator answers the
+report in Pilot, the run's continuation executes, and the pointer card is gone.
 
 **Readout.** Six finished reports across two projects: 76 entries, 22 struck in-run, 14 progressed by
 the operator, 7 tracker cards — against ten cards for one slice under carding (v0.5.3) — **measured**.
@@ -321,11 +324,13 @@ and fixed in v0.9.6 (§ 5 below).
 ([`literature.md`](literature.md)).
 
 **Change.** `**Provenance:**` opens with `witnessed` or `read`; the body leads with the symptom and
-states a cause only where shown; a strike names the commit and what was re-run
-(`close-out.md` § Entry rules).
+states a cause only where shown; a strike names the commit and what was re-run. Since 0.10.7
+the rule is the writing skill's (`skills/writing/SKILL.md` § What an ask rests on), with the
+`Provenance:` line in `close-out.md` § Writing an entry.
 
 **Readout.** Not read as an instrument; the close-out skill's behaviour on a challenged claim (quote
-the entry's own evidence rather than agree) is the untested half.
+the entry's own evidence rather than agree) is the untested half. The skill went in 0.10.8, and
+the behaviour is now the writing skill's § A question back.
 
 ### No write drops what the operator wrote (v0.9.91)
 

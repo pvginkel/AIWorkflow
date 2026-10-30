@@ -5,10 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this repo is
 
 AIWorkflow is a **Claude Code plugin marketplace**, not an application — nothing is built or
-deployed from here. It hosts the `dev` plugin (the slice pipeline: `/dev:triage` →
-`/dev:plan-slice` → `/dev:run-slice` → `/dev:close-out`, plus `/dev:onboard`, `/dev:inbox`,
-`/dev:arch-design`, and `/dev:document-format`, the format of a document Pilot
-reads), and it is the workshop where that pipeline is measured and improved. The
+deployed from here. It hosts the `dev` plugin (the slice pipeline: `/dev:triage`, the operator's
+chat skill, then `/dev:plan-slice` and `/dev:run-slice`, the stages Pilot runs as work items,
+with the close-out as the run's continuation; plus `/dev:onboard`, `/dev:inbox`,
+`/dev:arch-design`, `/dev:document-format`, the format of a document Pilot reads, and
+`/dev:writing`, how what the operator reads is written), and it is the workshop where that
+pipeline is measured and improved. The
 plugin is **kc-native**: it targets the KubeCoder environment and expects `kc` on PATH, with no
 non-`kc` fallback.
 
@@ -74,7 +76,7 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   the `close-out.md` rendered from it (Markdown only before 0.9.57; the document Pilot reads,
   with `close-out-record.md` beside it, from 0.10.2).
   `plugins/dev/tools/slice_cost.py <slice_dir>` prices it per role/phase/session; `close_out.py
-  counts|list|worklist <slice_dir|close-out.md>` reads the report; `state.json`'s
+  list|show|worklist <slice_dir|close-out.md>` reads the report; `state.json`'s
   `plugin_version` says which plugin ran it. A round whose session died
   without a verdict leaves no history row — `log.txt` shows `[result] Done` with no `→ verdict`
   line — so it is absent from the report and from `slice_cost.py`; price it from the transcript
@@ -97,8 +99,9 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   Suites load their subject via `importlib.util.spec_from_file_location` (`tools/` is not a
   package) and fake sessions, git, `kc` and the gate — no agent is ever spawned by a test.
 - **`plugins/dev/agents/`** (11) and **`plugins/dev/skills/<name>/SKILL.md`** (8) — the dispatched
-  roles, the operator-triggered workflows and `document-format`, which a session loads to write a
-  document Pilot reads.
+  roles; the two stages Pilot runs and the operator's chat skills; `document-format`, which a
+  session loads to write a document Pilot reads; and `writing`, which every writer for the
+  operator loads.
 - **`plugins/dev/docs/`** — the **canonical contract** for all of the above: `run-loop.md`,
   `plan-loop.md`, `runner-state.md`, `plan-template.md`, `agent-dispatch.md`, `close-out.md`,
   `close-out-template.md`, `project-contract.md`, `preflight.md`,
@@ -119,9 +122,10 @@ Four ideas span the files and explain most design choices:
 3. **Every agent is a headless `kc session`,** spawned through `run_loop.run_kc_session` (the plan
    loop calls it too). Opus at `xhigh` everywhere via explicit flags, except the always-Sonnet
    agents (`test-agent`, `test-fixer`, `rebase-agent`) which pin `model:` in their own definitions.
-4. **The loops bail, they don't chat:** exit 3 = error, exit 4 = operator question. `state.json`,
-   `bailout.json` and the exit code are the entire interface to the launching session — loop stdout
-   never reaches it. What an agent noticed about the work but the loop will not act on has one
+4. **The loops bail, they don't chat:** exit 3 = error, exit 4 = operator question, exit 7 =
+   halted at Pilot's halt file. An exit 4 leaves a document the stage registers with Pilot
+   (`plugins/dev/docs/pilot.md`). `state.json`, `bailout.json` and the exit code are the entire
+   interface to the stage's session — loop stdout never reaches it. What an agent noticed about the work but the loop will not act on has one
    destination — the slice's close-out report (`plugins/dev/docs/close-out.md`), where its
    author labels it and a table routes it — never a tracker card per finding. What got in its
    way while working goes to Fieldnotes instead (the host's `~/.claude/CLAUDE.md`), which is
@@ -184,7 +188,8 @@ instead of reopening it.
   (rejected 2026-09-09, `docs/research/platform-cost-read-2026-09-09.md` § 4).
 - **No Fable for any role** while Fable has its own quota: "once that goes away, I will start to
   consider it" (2026-09-09, the same read's S8). The refinement-writer, the one Fable role, moved
-  to Opus at `xhigh` in 0.9.141 (2026-10-26, AIWF-112).
+  to Opus at `xhigh` in 0.9.141 (2026-10-26, AIWF-112), and went with the refinement page in
+  0.10.9.
 - **No context compression, auto-compact windows, turn or token caps, or history summarisation**
   for writers and reviewers (`docs/research/turns-plan.md` § Deliberately not in this plan). The
   turns plan itself is exhausted (`docs/research/readout-2026-09-01.md` § 7).
@@ -219,17 +224,23 @@ instead of reopening it.
   `docs/research/close-out-triage-plan-2026-09-29.md` § 5 has every decision): the author of an
   entry labels it and a table in `close_out.py` routes it — no author and no agent picks a
   disposition, and the policy is one for every project. **No Focus lines, no Summary, no sheet
-  or list over the entries** ("I don't read the summary"); **no switch for the wrap-up** ("I
+  or list over the entries** ("I don't read the summary"). The one-line `summary` in the front
+  matter of the document Pilot reads (0.10.2) is not that Summary: it is the format's line that
+  Pilot shows for the document, and it names the kinds of ask the document holds ("what is yours
+  to rule or to do, the cards asked for"), never an entry or a ranking. **No switch for the
+  wrap-up** ("I
   don't need the switch"); **no reviewer for what the wrap-up fixes**; severity keeps an entry
   from being closed and does nothing else ("I have no problem never knowing of an issue"). It
   is the wrap-up, never a sweep. The tracker as the operator's queue (the plan's § 11) is an
   idea, not ruled and not built.
 - **No triage status document, rubric or labels** (0.9.60, ruled 2026-09-29/30;
-  `docs/research/triage-read-2026-09-29.md`): the operator rules on one chat message — every
-  item on a line under its proposed fate, the questions numbered, the proposed slices — and
+  `docs/research/triage-read-2026-09-29.md`): the operator rules on one chat message, and
   nothing else in the process changed at their scoping ("the only thing that changes is the
   format"). The document decided almost nothing across twenty runs ("I hardly read them").
-  The routes, the grouping rule and the sweep floor were not reopened by it.
+  The routes and the grouping rule were not reopened by it. Since 0.10.10 the message opens with
+  the numbered questions, then a line per slice with what it `needs:`, read from the 41 runs of
+  `docs/research/triage-answers-read-2026-10-30.md`; the Solution Known lane and its sweep are
+  gone.
 - **Cross-session messaging in headless sessions is kc's switch**, off by default
   (`crossSessionInbound: refuse` + deny `ListAgents` only; `SendMessage` kept for a session's own
   sub-agents). The plugin passes nothing — no agent-frontmatter `disallowedTools`, no kc

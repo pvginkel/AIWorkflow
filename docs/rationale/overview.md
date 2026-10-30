@@ -5,9 +5,15 @@ shape it, the pipeline at altitude, what the operator actually does, and one rea
 from tracker cards to a merged, deployed, documented result. Mechanics are deliberately not
 repeated here — the contract docs hold them ([`run-loop.md`](../../plugins/dev/docs/run-loop.md),
 [`plan-loop.md`](../../plugins/dev/docs/plan-loop.md),
-[`close-out.md`](../../plugins/dev/docs/close-out.md)); how the shape came about is
-[`history.md`](history.md), each rule's origin is [`principles.md`](principles.md), and the
-numbers behind every claim are [`measurement.md`](measurement.md).
+[`close-out.md`](../../plugins/dev/docs/close-out.md), and [`pilot.md`](../../plugins/dev/docs/pilot.md)
+for a stage run by Pilot); how the shape came about is [`history.md`](history.md), each rule's
+origin is [`principles.md`](principles.md), and the numbers behind every claim are
+[`measurement.md`](measurement.md).
+
+Since the 0.10 line (2026-10-30), Pilot, the project manager, runs planning and the run as
+stages: each is a work item whose session puts every ask into a document the operator answers
+in the app. The pipeline and the touch points below are that shape; the slice walked end to end
+ran on 0.9.12, before it, and the loops it shows are the same today.
 
 ## The problem
 
@@ -44,32 +50,42 @@ incidents behind each are in [`principles.md`](principles.md)):
    roles (test-agent, test-fixer, rebase-agent). No per-task model routing — the graded lane
    was measured and withdrawn ([`agent-dispatch.md`](../../plugins/dev/docs/agent-dispatch.md)).
 4. **The loops bail, they don't chat.** Exit 3 is an error, exit 4 is a question only the operator
-   can answer; `state.json`, `bailout.json` and the exit code are the whole interface to the
-   session that launched the loop. Whatever an agent notices but the loop will not act on has one
-   destination — the slice's `close-out.md` — never a tracker card per finding.
+   can answer, rendered as a document the stage registers with Pilot, and exit 7 is a halt;
+   `state.json`, `bailout.json` and the exit code are the whole interface to the stage's session.
+   Whatever an agent notices but the loop will not act on has one destination — the slice's
+   close-out report — never a tracker card per finding.
 
 ## The pipeline at altitude
 
 ```
-tracker cards ──► /dev:triage ──► slice.md ──► /dev:plan-slice ──► plan.md + verification.json
-                  (adjudicate,                  (refinement with the operator,
-                   file survivors)               then plan_loop.py: writer → one reviewer)
-                                                                │
-                                                                ▼
-close-out.md ◄── /dev:close-out ◄── close-out.md ◄── /dev:run-slice (run_loop.py)
-(dispositions     (execute the                        per phase: fetch → branch → code-writer →
- executed)         operator's words)                  gate → reviewer rounds → ff-merge → ✅ DONE
-                                                      then: gate sweep → completion consult →
-                                                      test phase → push check → doc phase
+tracker cards ──► /dev:triage, in chat ──► slice.md
+                  (questions first,           │
+                   slices filed)              ▼
+                  Pilot work item: /dev:plan-slice ──► plan.md + verification.json
+                  (plan-preparer: requirements asks; plan_loop.py: writer → one reviewer)
+                                              │
+                                              ▼
+                  Pilot work item: /dev:run-slice (run_loop.py)
+                  per phase: fetch → branch → code-writer → gate → reviewer rounds →
+                  ff-merge → ✅ DONE; then: gate sweep → completion consult → test phase →
+                  push check → doc phase → wrap-up → close-out.md
+                                              │
+                                              ▼
+                  the run's continuation: the answers to close-out.md carried out,
+                  the slice card to done
+
+Every ask on the way — a requirement, a writer's question, a review finding, an exit 4, the
+close-out — is a document the stage registers; the operator answers it in Pilot, Pilot writes
+the answers back, and the stage carries on.
 ```
 
 | Stage | Who acts | Reads | Writes | Stops for the operator when |
 |---|---|---|---|---|
 | **Inbox** (`/dev:inbox`) | The interactive session as clerk over every project's inbox at once; the operator rules | Every project's new cards, the unattended pass's hand-backs, the operator's new actions | Dated ruling comments on the cards and the moves with them — left in the intake queue for the pass under the night-shift mark, the pre-filtered state for triage, the action queue, deferred, rejected — and hand-back marks on and off | Once, on one chat message — every card on a line under where it goes next, the one act or answer each held-back card waits on, the questions; tracker-only, no slice filed |
-| **Triage** (`/dev:triage`) | The interactive session as intake clerk; the operator rules | Tracker cards, findings docs, chat; the close-out reports waiting under `[NNN] close-out:` cards | A verbatim raw dump under `handovers/` (the archive `slice.md` quotes from); one `slice.md` per surviving subject under `slices/backlog/` | Once, on one chat message — every item on a line under its proposed fate, the questions only the operator can answer, the proposed slices; no item is ever closed by machine judgment alone |
-| **Plan** (`/dev:plan-slice`) | The interactive session pins requirements and seeds the plan header; `plan_loop.py` runs one plan-writer pass and one plan-reviewer pass | `slice.md` — the only thing planning reads, and the last time anything reads it | `plan.md` (header in the operator's words, then the writer's phases and task shape), `verification.json`, `close-out.md` (created here), `plan_review_r1.md` | Writer questions; a review with blocking or operator-decidable findings (exit 4); never auto-starts the run |
-| **Run** (`/dev:run-slice`) | `run_loop.py` drives; fresh code-writer, code-reviewer, consult, test-agent, doc-writer sessions per job; the launching session has four jobs and never drives | `plan.md` (re-parsed before every phase), `verification.json`, the target repo | Phase branches merged into the base, done-records in `plan.md`, `✅ DONE` stamps, `state.json` history, review files, `close-out.md` entries, pushes (test phase; the doc landing) | An executor's `question`, a generation-bar exhaustion, an unpushed repo, a broken plan nobody can fix (exit 4); errors (exit 3) |
-| **Close out** (`/dev:close-out`) | The operator reads and decides; the session records dispositions verbatim and executes them | `close-out.md` | `Disposition:` lines, tracker cards (`card`), `slice.md` asks (`fold into`), strikes (`close`) | Every disposition is the operator's own words |
+| **Triage** (`/dev:triage`) | The interactive session as intake clerk; the operator rules | Tracker cards, findings docs, chat | A verbatim raw dump under `handovers/` (the archive `slice.md` quotes from); one `slice.md` per surviving subject under `slices/backlog/`, with `needs:` where it must follow other slices | Once, on one chat message — the numbered questions first, each with its recommendation, then a line per slice; no item is ever closed by machine judgment alone |
+| **Plan** (`/dev:plan-slice`, a Pilot work item) | The stage's session coordinates and never reads the slice; the `plan-preparer` grounds it and writes the requirements asks; `plan_loop.py` runs one plan-writer pass and one plan-reviewer pass | `slice.md` and the cards routed to it — read by the preparer, the last time anything reads them | `grounding.md`; `plan.md` (header with the rulings in the operator's words, then the writer's phases and task shape); `verification.json`; the close-out store (created here); the asks' documents | The requirements asks; writer questions; a review with blocking or operator-decidable findings (exit 4) — each a document in Pilot; never auto-starts the run |
+| **Run** (`/dev:run-slice`, a Pilot work item) | `run_loop.py` drives; fresh code-writer, code-reviewer, consult, test-agent, doc-writer and wrap-up sessions per job; the stage's session waits on the loop inside its turn and never drives | `plan.md` (re-parsed before every phase), `verification.json`, the target repo | Phase branches merged into the base, done-records in `plan.md`, `✅ DONE` stamps, `state.json` history, review files, close-out entries, pushes (test phase; the doc landing), `close-out.md` at the end | An executor's `question`, a generation-bar exhaustion, an action owed before the run, a broken plan nobody can fix (exit 4) — each a document in Pilot; an error (exit 3) goes to a diagnosis sub-agent first |
+| **Close out** (the run's continuation) | The operator answers in Pilot; the run's session reads the answers back and carries them out | `close-out.md` as Pilot wrote it back | Tracker cards parented to the ticket, folds into an unplanned slice, fixes, strikes; `close-out-record.md`; the slice card to done | Every answer is the operator's own words, quoted verbatim; an answer Pilot gave is marked as Pilot's |
 
 Two things the table hides. First, **every stage is a preflight away from portable**: each skill
 runs `preflight.py --for <stage>` first, and the project describes itself through
@@ -88,19 +104,21 @@ The operator's touch points, in order, and nothing else:
   one act or answer each held-back card waits on; their new actions are in the same message, so
   the time they give the inbox is time they can action them (2026-10-08). A card ruled for the
   night shift is not put to them again while it waits (2026-10-09).
-- **Rules at triage** — on one chat message: the fate proposed for each item, the questions
-  only they can answer, the slices proposed. Their words ride into `slice.md` verbatim; the
-  message replaced a labelled status document on 2026-09-30 ([`reporting.md`](reporting.md)).
-- **Rules at refinement** — the `/dev:plan-slice` session pins every requirement and open choice
-  with the operator, and the rulings land in `plan.md`'s header in the operator's words. At
-  0.9.13 this is a Q&A; the dialog form was read in September and is being replaced by a
-  refinement document ([`plan-refinement.md`](plan-refinement.md)).
-- **Answers exit-4 questions mid-run** — an executor that returns `question`, a plan review with
-  operator-decidable findings, an exhausted generation. The answer is written into `plan.md`'s
-  rulings (replacing any ruling it corrects, in place) and the loop resumes; the next agent reads
-  the plan, not the chat.
-- **Dispositions the close-out report** — one word per live entry (`card`, `fix now`, `fold into`,
-  `close`, `defer`); the skill executes them.
+- **Rules at triage** — on one chat message: the questions first, then the slices as their
+  consequence. Their words ride into `slice.md` verbatim; the message replaced a labelled status
+  document on 2026-09-30 and took its questions-first shape on 2026-10-30
+  ([`reporting.md`](reporting.md)).
+- **Answers planning's asks in Pilot** — the requirements asks the plan-preparer writes, then the
+  plan-writer's questions and the plan-reviewer's findings. The rulings land in `plan.md`'s
+  header in the operator's words. The dialogs of 0.9.13 and the refinement document after them
+  are the record in [`plan-refinement.md`](plan-refinement.md).
+- **Answers the run's asks in Pilot** — an executor that returns `question`, an exhausted
+  generation, an action owed before the run. The answer is written into `plan.md`'s rulings
+  (replacing any ruling it corrects, in place) and the loop resumes; the next agent reads the
+  plan, not the chat.
+- **Answers the close-out in Pilot** — one answer per ask: card it, fix now, fold into a slice,
+  close, or their own words. The run's continuation carries them out and moves the slice card
+  to done; the answers are the operator's review of the slice.
 - **Promotes to production** — the loop's devlock hold pre-authorizes dev deploys for
   verification; prd is a separate, explicit operator decision.
 
@@ -217,6 +235,7 @@ doc-writer 13 %; the interactive sessions the operator sits in are 7 %.
 
 | Want to know… | Read |
 |---|---|
+| How a stage runs as a Pilot work item: the brief, the turns, the documents, the continuation | [`pilot.md`](../../plugins/dev/docs/pilot.md) |
 | The phase loop, the review bar, the loop tail, the generation bar | [`run-loop.md`](../../plugins/dev/docs/run-loop.md) |
 | What `state.json` and `bailout.json` record | [`runner-state.md`](../../plugins/dev/docs/runner-state.md) |
 | The one write→review planning round | [`plan-loop.md`](../../plugins/dev/docs/plan-loop.md), [`plan-template.md`](../../plugins/dev/docs/plan-template.md) |
@@ -224,5 +243,5 @@ doc-writer 13 %; the interactive sessions the operator sits in are 7 %.
 | The close-out report's contract and entry shape | [`close-out.md`](../../plugins/dev/docs/close-out.md), [`close-out-template.md`](../../plugins/dev/docs/close-out-template.md) |
 | What a repo must provide; preflight | [`project-contract.md`](../../plugins/dev/docs/project-contract.md), [`preflight.md`](../../plugins/dev/docs/preflight.md), [`docs/ADOPTING.md`](../ADOPTING.md) |
 | Each role's bounds and verdict shape | `plugins/dev/agents/*.md` (11 agents) |
-| Each operator workflow's procedure | `plugins/dev/skills/*/SKILL.md` (7 skills) |
+| Each stage's and each operator workflow's procedure | `plugins/dev/skills/*/SKILL.md` (8 skills) |
 | Every change, newest first, with the incident behind it | [`CHANGELOG-workflow.md`](../../CHANGELOG-workflow.md) |

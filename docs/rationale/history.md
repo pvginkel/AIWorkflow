@@ -1,7 +1,7 @@
 # History — how the workflow got its shape
 
 How the `dev` plugin went from a copied template to a script-driven pipeline between April and
-September 2026, told as eras: what the workflow looked like in each, what broke or was measured,
+September 2026, and to stages Pilot runs in October, told as eras: what the workflow looked like in each, what broke or was measured,
 and what that forced. The rules the eras produced are in [`principles.md`](principles.md); the
 change-by-change catalogue with each incident's numbers is [`improvements.md`](improvements.md);
 the close-out report's own story is [`reporting.md`](reporting.md); the measurement tooling and the
@@ -23,6 +23,7 @@ the frozen July 2026 investigation that started the rebuild.
 | Context economics | 08-22 → 08-27 | v0.9.3 → v0.9.9 | Turn taxonomy in every run; prefix trimmed; the plan digested per phase | Production defects on the second project |
 | Two projects in production | 08-31 → 09-01 | v0.9.10 → v0.9.13 | Facts the driver held reach every dispatch; the manifest is re-read; preflight pulls | — |
 | The unpushed tail | 09-01 → | 0.9.14 → 0.9.20 | Done-records in two parts; a written refinement doc replaces the planning dialog | **Not in this checkout** — see below |
+| Pilot runs the stages | 10-30 → 10-31 | 0.10.0 → 0.10.14 | Planning and the run are Pilot work items; every ask a document answered in the app; the close-out the run's continuation | The first slices through Pilot |
 
 ## The template (2026-04-11 → 2026-07-09)
 
@@ -275,6 +276,43 @@ each against the changelog once they are pushed.
   `phase/<slice>-` branches, the spec repo is asserted on its base before every dispatch and driver
   commit, a merge rebases onto a moved base, `triage_verbatim.py check|restore`.
 
+## Pilot runs the stages (0.10.0 → 0.10.14, 2026-10-30 → 10-31)
+
+The `dev` plugin re-envisioned for Pilot, the project manager, running it: P-111, built item by
+item on the branch `pilot-redesign` and published at the cutover. Its plan read the 91 changes
+from 0.9.57 to 0.9.147 as a whole. A third had gone into the close-out report after its rebuild,
+a quarter into git, the pod and the process the loop runs in, and none into the core loop. Four
+mechanisms had been rebuilt one patch at a time: the close-out's write model, the loop's hosting
+under a chat session, the homes for work meant for later, and the operator acts a run waits on.
+The redesign replaced those instead of porting them
+([`pilot-redesign-plan-2026-10-30.md`](../research/pilot-redesign-plan-2026-10-30.md) § 2).
+
+- **A stage is a work item** (0.10.0). Pilot starts a headless session whose brief opens with
+  `/dev:plan-slice` or `/dev:run-slice`; the skill registers its asks as documents and ends its
+  turn; the operator answers in the app; Pilot writes the answers back and continues the session
+  ([`pilot.md`](../../plugins/dev/docs/pilot.md)). Pilot ends a work item at any turn's end, so a
+  stage waits on its loop inside the turn, in the foreground (**ruled** 2026-10-30).
+- **Every ask is data** (0.10.1–0.10.5). One module, `asks.py`, renders a store of asks as the
+  document Pilot reads and reads the answers back. The close-out, both loops' exit 4 and the
+  actions owed before a run, now checked as facts (AIWF-88), all go through it.
+- **The close-out is the run's continuation** (0.10.2, 0.10.8). The report renders once, at the
+  run's end; `/dev:close-out`, its card and the `Disposition:` lines went
+  ([`reporting.md`](reporting.md) § The report in Pilot).
+- **Planning's session stays small** (0.10.9). A `plan-preparer` grounds the slice and writes the
+  requirements asks; the refinement document and its writer went
+  ([`plan-refinement.md`](plan-refinement.md) § Planning in Pilot).
+- **Triage puts the questions first** (0.10.10), redesigned from a read of 41 runs; the Solution
+  Known lane, its sweep and `/dev:slice-dag` went, and `needs:` orders the slices.
+- **One skill for the words** (0.10.7). `/dev:writing` holds every rule for what the operator
+  reads, each resting on a finding of the reads of how they read and answer; a citation is a
+  quoted line, never a line number (0.10.11, AIWF-82).
+- **The halt and the gate's output** (0.10.3, 0.10.6). Both loops stop at Pilot's halt file and
+  exit 7; preflight's failure is a check, a fact and a fix, which a stage renders as an action.
+
+The research led throughout, over taste: "What's important is that the research shows. That
+needs to be leading always" (the operator, 2026-10-30). The first slices through Pilot are the
+read of all of it.
+
 ## Reversals and dead ends
 
 ### The `code-tester` agent (2026-07-10 → 2026-07-16)
@@ -397,6 +435,31 @@ the action and marks it "**none — rejected** (lazy-loaded)". A different, veri
 *listing* of MCP tool names and skill descriptions — not the schemas — was ≈ 3.6 k tokens of every
 dispatched prefix, and v0.9.8 removed it.
 
+### The residual-sweep lane and the slice DAG (v0.1.0 / v0.4.0 → 0.10.10)
+
+`/dev:slice-dag`, a lane plan scheduling the pending slices across parallel runs, shipped with
+the plugin in v0.1.0; the residual-sweep lane, `sweep_slice.py`, came with the phased plan in
+v0.4.0 for card-described work that needs no planning, and triage's Solution Known lane fed it.
+The read of 41 triage runs found the lane used in 3. The operator did ask for an order after
+filing, in five of eight multi-slice runs. Both went in 0.10.10; what survives of the DAG is the
+`needs:` line triage writes and preflight checks before a slice is planned, and of the sweep the
+wrap-up's bar (**measured**,
+[`triage-answers-read-2026-10-30.md`](../research/triage-answers-read-2026-10-30.md)).
+
+### The refinement document (0.9.19 → 0.10.9)
+
+A per-slice document a dedicated writer composed for the operator to read, agree with or comment
+on in chat, in place of the planning dialogs. Read, reshaped and re-read over six weeks; replaced
+by planning's asks as a document in Pilot, written by the `plan-preparer` under the writing
+skill. The reads and every reshaping are [`plan-refinement.md`](plan-refinement.md).
+
+### The close-out skill and its card (v0.5.0 → 0.10.8)
+
+The skill that brought the operator what a report asked of them and executed their rulings, and
+the `[NNN] close-out:` card that pointed at the report. The skill's rules were moved to their
+homes first — the driver, the wrap-up, `close-out.md` § The continuation — and then it was
+deleted; the run's continuation does its work ([`reporting.md`](reporting.md)).
+
 ## What stayed constant
 
 - **Files are durable, sessions are ephemeral.** The title sentence of `PLAN.md` (2026-07-10); idea
@@ -413,4 +476,5 @@ dispatched prefix, and v0.9.8 removed it.
   a bound in every agent definition today.
 - **The operator decides; the loop asks by bailing.** Exit 4 as the operator question from
   `task_runner.py` onward; the plan loop's one round with rulings edited into `plan.md` (v0.4.0);
-  dispositions in the operator's own words on the close-out report (v0.5.0).
+  dispositions in the operator's own words on the close-out report (v0.5.0); since 0.10, every
+  ask a document the operator answers in Pilot, the answers read back verbatim.

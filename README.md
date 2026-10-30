@@ -11,20 +11,31 @@ a KubeCoder pod).
 
 ## The `dev` plugin
 
-The validated slice pipeline: **`/dev:triage` → `/dev:plan-slice` → `/dev:run-slice` →
-`/dev:close-out`**, plus `/dev:slice-dag`, `/dev:arch-design`, plus `/dev:onboard` to bring a
-repo onto the pipeline in the first place, and `/dev:inbox`, which sorts every project's tracker
-inbox with the operator ahead of triage — tracker-only, from any environment.
-`/dev:document-format` is no workflow: it is the format of a document Pilot, the project manager,
-reads, which a session loads before it writes one. `plan-slice`
-settles the design with the operator, then
+The slice pipeline: **`/dev:triage` → `/dev:plan-slice` → `/dev:run-slice`**.
+
+- **Triage** is the operator's own chat skill. It files a batch of cards and findings as slices,
+  the questions first and the slices as their consequence.
+- **Planning and the run are stages.** Pilot, the project manager, runs each as a work item. The
+  skill puts every ask it has into a document Pilot shows the operator, ends its turn, and
+  carries the answers out when Pilot writes them back
+  ([`pilot.md`](plugins/dev/docs/pilot.md)). The close-out is the run's continuation, not a
+  step of its own. Without Pilot, the skill prints each document's path and the operator answers
+  in the file.
+- **Beside them,** `/dev:onboard` brings a repo onto the pipeline, `/dev:inbox` sorts every
+  project's tracker inbox with the operator ahead of triage, and `/dev:arch-design` writes a
+  design with its options.
+- **Two skills are no workflow.** `/dev:document-format` is the format of a document Pilot reads,
+  and `/dev:writing` is how everything the operator reads is written.
+
+`plan-slice` has the plan-preparer ground the slice and put its requirements asks, then
 drives a plan-writer/plan-reviewer round (`plan_loop.py`) to a reviewed **phase queue**;
 `run-slice` launches a kc-native run loop (`run_loop.py`) that takes each phase through a bounded
 loop — fetch → branch → code-writer → test gate + test-fixer → consult-funded review rounds
 against a rising bar → ff-merge → `✅ DONE` — then closes the slice out with a loop-tail gate
 sweep, a completion consult, a test phase and a doc phase, spawning every agent as a headless
-`kc session`. The gate is `kc project test`, run by the loop itself: detecting green needs no
-model, only fixing red does. **Files are durable; sessions are ephemeral;** scripts drive, agents
+`kc session`. Both loops run inside the stage's turn and stop at a question with a document for
+the stage to register. The gate is `kc project test` and `lint`, run by the loop itself: detecting
+green needs no model, only fixing red does. **Files are durable; sessions are ephemeral;** scripts drive, agents
 judge.
 
 **The plan is the queue.** One `plan.md` per slice holds phases as `### P<id> — <title>` headings,
@@ -39,14 +50,14 @@ run is carded per finding. The author of an entry labels what it is, a table in 
 it, the operator answers what comes to them in Pilot and the run's continuation carries the
 answers out.
 
-- **`plugins/dev/`** — the plugin: 9 skills, 11 agents, the tools (`run_loop.py`,
-  `plan_loop.py`, `asks.py`, `close_out.py`, `checks.py`, `sweep_slice.py`, `close_slice.py`,
+- **`plugins/dev/`** — the plugin: 8 skills, 11 agents, the tools (`run_loop.py`,
+  `plan_loop.py`, `asks.py`, `close_out.py`, `checks.py`, `github_target.py`, `close_slice.py`,
   `slice_cost.py`, `turn_profile.py`, `preflight.py`, `project_config.py`, `redact_secrets.py`,
   `spec_check.py`, `allocate-next-slice.sh`, with their suites), and the
   contract docs
-  (`run-loop.md` / `runner-state.md` / `plan-loop.md` / `plan-template.md` / `refinement.md` /
-  `agent-dispatch.md` / `close-out.md` / `close-out-template.md`, plus `residual-sweep.md`,
-  `project-contract.md`, `preflight.md`).
+  (`pilot.md` / `run-loop.md` / `runner-state.md` / `plan-loop.md` / `plan-template.md` /
+  `agent-dispatch.md` / `close-out.md` / `close-out-template.md`, plus `project-contract.md`,
+  `preflight.md`, `spec-tree.md`).
 - **`.claude-plugin/marketplace.json`** — makes this repo installable.
 
 `kc project test` and `kc project lint` gate the plugin from this repo — the suites are the reason
@@ -88,14 +99,15 @@ contract and tells a new repo exactly what is missing. See **[`docs/ADOPTING.md`
 - **[`docs/rationale/`](docs/rationale/README.md)** — the explanation layer: why the pipeline is
   shaped the way it is, with the incidents and numbers behind each rule — the flow in one read, the
   design principles, the history and reversals, the improvement catalogue, how runs are measured,
-  how the research literature was used, the close-out report's case, and the planning interview.
-- **[`plugins/dev/docs/`](plugins/dev/docs/)** — the plugin's own contract: `run-loop.md` (the
+  how the research literature was used, the close-out report's case, and how planning came to
+  its documents.
+- **[`plugins/dev/docs/`](plugins/dev/docs/)** — the plugin's own contract: `pilot.md` (a stage
+  as a Pilot work item: the turns, the brief, the documents, the continuation), `run-loop.md` (the
   phase queue and the consult/test/doc ladder) with `runner-state.md`, `plan-loop.md`,
   `plan-template.md`, `agent-dispatch.md`, and `close-out.md` / `close-out-template.md` (the
   per-slice report every agent writes its out-of-scope observations to) beside it, plus
-  `project-contract.md`, `preflight.md`, `residual-sweep.md` (the planning-free lane for
-  card-described residuals), and `spec-tree.md` (the rule for every commit into the shared spec
-  tree).
+  `project-contract.md`, `preflight.md` and `spec-tree.md` (the rule for every commit into the
+  shared spec tree and for citing a line).
 - **[Fieldnotes](https://github.com/pvginkel/FieldnotesApp)** — a cross-project observation store
   beside the workflow, in a repo of its own: agents post what they now leave in close-out reports,
   and a scheduled reconciler curates it into a triage doc. It is developed in a KubeCoder environment

@@ -48,8 +48,8 @@ struck but full-bodied ahead of the six the operator had to decide on (**measure
 *Stated in:* `CLAUDE.md` § Architecture; `run-loop.md`; `close-out.md`.
 
 **The loops bail, they don't chat.** Exit 3 is an error, exit 4 a question only the operator can
-answer; loop stdout never reaches the launching session, whose four jobs are start, error,
-question, close-out.
+answer, rendered as a document the stage registers with Pilot; exit 7 a halt. Loop stdout never
+reaches the stage's session, which waits on the loop inside its turn and reads only the exit.
 *Origin:* the same orchestrator finding — a session that watches a run pays for every line it
 watches. The run-slice skill's "escalate, don't absorb" is the operator-side half.
 *Stated in:* `run-loop.md`, [`runner-state.md`](../../plugins/dev/docs/runner-state.md),
@@ -122,7 +122,9 @@ card cost that no longer existed (**measured**).
 ## Reporting
 
 **Everything out of the loops' scope goes to one close-out report per slice — never a tracker card
-per finding.** The run's only tracker output is one card pointing at the report.
+per finding.** A card is filed only where the operator's answer to the close-out asks for one;
+the slice card is the run's only other tracker output (0.10.8 retired the card that pointed at
+the report).
 *Origin:* Ansible slice 007 produced eleven entries from five uncoordinated write paths, merged
 by the operator into ten cards of which one was a must-act (`docs/research/close-out-report.md`;
 **measured**). v0.5.0 replaced the cards; [`reporting.md`](reporting.md) has the full case.
@@ -132,25 +134,30 @@ by the operator into ten cards of which one was a must-act (`docs/research/close
 the body leads with the symptom and states a cause only where it was shown.
 *Origin:* the same false-rejection study — symptom claims held at 93–100 %, cause attributions at
 44–75 % (v0.5.4; **measured** in the literature, adopted as a rule here).
-*Stated in:* `close-out.md` § Entry rules.
+*Stated in:* `skills/writing/SKILL.md` § What an ask rests on, and `close-out.md` § Writing an
+entry for the `Provenance:` line.
 
 **Reading the report is never a license to act on it.** Phase agents append only; the completion
-consult is the one reconciler, and only through `strike` and `note`; the operator dispositions.
+consult is the one reconciler, and only through `strike` and `note`; the operator answers the
+document in Pilot, and the run's continuation carries the answers out.
 *Origin:* the scope-bleed argument — a writer "fixing while here" what an earlier phase reported
 turns the report into a second work queue (**ruled**, `close-out.md` § Who writes what).
 *Stated in:* `close-out.md`.
 
 ## Git and gates
 
-**The per-phase gate is test-only; lint, build and test run per component at loop tail; a branch
-whose gates are red is not pushed.** The sweep runs before any loop-tail dispatch and rides those
-dispatches as deterministic fact.
+**The per-phase gate runs each gated project's tests and its lint; lint, build and test run per
+component at loop tail; a branch whose gates are red is not pushed.** The sweep runs before any
+loop-tail dispatch and rides those dispatches as deterministic fact.
 *Origin:* slice 152 reached the completion consult with a known-red manual build "owed to the doc
 phase"; the consult answered `complete`, the test phase pushed, and CI failed a build the tree
 could never pass (comment above `_sweep_targets` in `run_loop.py`; **measured**). The
-per-phase gate stayed test-only by operator ruling (v0.7.5): a per-phase lint taxes every
-phase to save the one that fixes it.
-*Stated in:* `run-loop.md` § After the last phase.
+per-phase gate stayed test-only by operator ruling from v0.7.5 — a per-phase lint taxes every
+phase to save the one that fixes it — until 0.9.145. PilotApp slices 008 and 020 showed the
+price of that: a frontend's type check and eslint were not in the gate while the plans said
+"tsc is green at this phase's gate", so reviewers ran lint by hand or static errors waited for
+the sweep (**measured**). Since 0.9.145 the gate lints what it tests.
+*Stated in:* `run-loop.md` § The per-phase round and § After the last phase.
 
 **The driver checks pushes, it does not push, when a test phase exists; a plan can hold a repo's
 push.** `## Push holds` in `plan.md` is one of the two `##` sections the run loop reads.
@@ -158,7 +165,7 @@ push.** `## Push holds` in `plan.md` is one of the two `##` sections the run loo
 the test agent honoured it, was nudged twice, the driver bailed `unpushed`, and the run session
 pushed 38 seconds later — `IaC/HelmCharts` #5668 deployed both stages and `kubecoder@prd`
 crash-looped (v0.8.0; **measured**).
-*Stated in:* `run-loop.md`, `plan-template.md`, `skills/run-slice/SKILL.md` Job 3.
+*Stated in:* `run-loop.md`, `plan-template.md`, `skills/run-slice/SKILL.md` § The continuation.
 
 **A ruling that bends a driver rule needs a machine-readable half.** The driver doesn't read
 prose, so a ruling it must obey — waive a target's gate, accept a red row, authorize prd — is a
@@ -269,12 +276,12 @@ switches, not KubeCoder-shaped defaults (v0.9.0).
 
 **No item is ever closed by machine judgment alone; the operator's words are recorded verbatim.**
 Triage recommends and the operator closes; requirements land in `slice.md` and rulings in
-`plan.md` in the operator's own words; dispositions are written as said, never paraphrased or
+`plan.md` in the operator's own words; answers are quoted as written, never paraphrased or
 completed.
 *Origin:* triage's rubric was honed against the research corpus's judge-mode bias and sycophancy
 findings (v0.4.4) — the rubric went in 0.9.60, the rule stayed: a proposed close rests on the
 source, an operator ruling or a research verdict, never on the session's belief; the plan reviewer names a dropped, softened or substituted requirement "the
 worst defect this review exists to catch", because nobody downstream reads `slice.md` again
 (**ruled**).
-*Stated in:* `skills/triage/SKILL.md`, `skills/plan-slice/SKILL.md` § Your role,
-`skills/close-out/SKILL.md` § Bounds, `agents/plan-reviewer.md`.
+*Stated in:* `skills/triage/SKILL.md`, `plugins/dev/docs/pilot.md` § The continuation,
+`close-out.md` § The continuation, `agents/plan-reviewer.md`.

@@ -690,7 +690,7 @@ sessions in all.
 
 **Phase D — the docs**
 
-- [ ] **D1.** `README.md`, this repo's `CLAUDE.md`, `docs/ADOPTING.md`, `project-contract.md`,
+- [x] **D1.** `README.md`, this repo's `CLAUDE.md`, `docs/ADOPTING.md`, `project-contract.md`,
   `preflight.md`; `docs/rationale/`: `plan-refinement.md` and `reporting.md` rewritten or moved
   to `history.md`, `principles.md` § Git and gates corrected, `overview.md` the new flow; the
   0.10.0 changelog entry that tells the story once.

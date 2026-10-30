@@ -19,14 +19,16 @@ From any Claude Code session:
 ```
 
 Installed into `~/.claude`, the plugin's skills resolve as `/dev:triage`, `/dev:plan-slice`,
-`/dev:run-slice`, `/dev:close-out`, `/dev:slice-dag`, `/dev:arch-design`, and its agents as
-`dev:code-writer`, `dev:code-reviewer`, … . The run loop spawns those agents by their namespaced name
+`/dev:run-slice`, `/dev:inbox`, `/dev:onboard`, `/dev:arch-design`, `/dev:document-format` and
+`/dev:writing`, and its agents as `dev:code-writer`, `dev:code-reviewer`, … . The run loop spawns those agents by their namespaced name
 through `kc session create-headless --agent dev:<role>`, so the kc-spawned headless sessions must
 see the same `~/.claude` install (they do — same home).
 
 > **Iterating on the plugin itself?** `--plugin-dir` only reaches your own operator session, not the
-> kc-spawned headless agents. Develop by adding this repo as a local marketplace, installing `dev`,
-> and re-installing after edits.
+> kc-spawned headless agents. A loop launched from such a checkout runs its own code and passes the
+> version guard, logging the difference once, but every agent it dispatches is the installed one.
+> Develop by adding this repo as a local marketplace, installing `dev`, and re-installing after
+> edits.
 
 ## 2. Make a repo adoptable — the project contract
 
@@ -93,8 +95,9 @@ Slices live in the spec repo under `slices/` (backlog → active → `completed/
 specific layout — `/dev:onboard` scaffolds a new spec repo and brings an old one's tree into shape,
 so run it rather than building the tree by hand. Slice numbers come from the plugin's own flock-guarded allocator
 (`${CLAUDE_PLUGIN_ROOT}/tools/allocate-next-slice.sh <spec-repo>`), which `/dev:triage` calls; the
-spec repo carries no copy. Commit spec-repo artifacts early and often, staging **by name** (it is a
-shared working tree).
+spec repo carries no copy. Where a slice must follow others, triage writes their numbers under
+`needs:` in its `slice.md` front matter, and preflight refuses to plan it until each has completed.
+Commit spec-repo artifacts early and often, staging **by name** (it is a shared working tree).
 
 ## 2e. Onboard a repo
 
@@ -141,14 +144,24 @@ Kestrel is a two-component service: an `api` and a `worker`.
 - Testability is critical — a feature without a test is incomplete.
 ```
 
-Then, from the `Kestrel` repo:
+Then, from the `Kestrel` repo, triage in chat:
 
 ```
-/dev:triage            # groups findings/cards into slice folders in ../KestrelSpecs/slices/backlog/
-/dev:plan-slice 042    # settles the slice with you, then plans it as an ordered phase queue
-/dev:run-slice 042     # launches the run loop; drives write→test→review→merge, then test + docs
-/dev:close-out 042     # brings you what the slice's close-out report asks of you and executes your rulings
+/dev:triage            # puts its questions to you, then files slice folders in ../KestrelSpecs/slices/backlog/
 ```
 
-If any contract piece is missing, the first skill's preflight tells you the exact line or file to
-add — a new repo self-onboards from the error text.
+Planning and the run are stages Pilot runs as work items in a Kestrel environment. Each work
+item's brief opens with the stage's command, and the skill registers its asks as documents you
+answer in Pilot ([`pilot.md`](../plugins/dev/docs/pilot.md)):
+
+```
+/dev:plan-slice 042    # grounds the slice, asks what is yours to rule, then plans it as an ordered phase queue
+/dev:run-slice 042     # runs the loop: write→test→review→merge per phase, then test + docs;
+                       # its continuation carries out your answers to the close-out
+```
+
+Without Pilot, the same commands run in a session of your own: each document's path is printed,
+you write the answer lines into the file, and say `continue`.
+
+If any contract piece is missing, the first skill's preflight tells you the check that failed, what
+it found and the exact line or file to add — a new repo self-onboards from the error text.

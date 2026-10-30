@@ -16,8 +16,9 @@ operator decision) or **untested** (built or proposed, not yet read).
 | [`improvements.md`](improvements.md) | What specifically changed, on what evidence, and what did the readout show? A catalogue by theme. |
 | [`measurement.md`](measurement.md) | How are the conversations mined — the tools, the definitions, the findings, today's corpus numbers, and the research method? |
 | [`literature.md`](literature.md) | How were the research papers used — the corpus pipeline, the paper-to-rule pairs, what did not transfer? |
-| [`reporting.md`](reporting.md) | Why one close-out report per slice instead of a tracker card per finding, and what do the reports show? |
-| [`plan-refinement.md`](plan-refinement.md) | What was wrong with the planning interview, and what replaces it? The one untested change in the set. |
+| [`reporting.md`](reporting.md) | Why one close-out report per slice instead of a tracker card per finding, what do the reports show, and why is it now a document answered in Pilot? |
+| [`plan-refinement.md`](plan-refinement.md) | What was wrong with the planning interview, what replaced it, and why are planning's asks now a document in Pilot? |
 
-Written 2026-09-02 at plugin 0.9.13. Slice ids are KubeCoderSpecs unless marked Ansible; runs are
+Written 2026-09-02 at plugin 0.9.13; brought to the 0.10 line, where Pilot runs the stages, on
+2026-10-30. Slice ids are KubeCoderSpecs unless marked Ansible; runs are
 priced at API sticker prices from token counts, as [`measurement.md`](measurement.md) explains.

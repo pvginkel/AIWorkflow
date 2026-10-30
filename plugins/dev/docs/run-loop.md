@@ -228,12 +228,11 @@ whole plan is a feature of the review, not a cost. Then:
   each side holds and which of origin's changed paths the phase's own section of the plan names
   word for word. Agents carry the other half of the rule — never conclude a commit is missing
   from a tree you have not fetched yourself.
-- **Gate** — the driver runs the target's deterministic gate itself, and that gate is **test
-  only**: the executor runs the linter once itself before handing back, and lint or build
-  breakage is caught deterministically by the loop-tail sweep and the doc gate — so a per-phase
-  lint would tax every phase to save the one that fixes it. Green is recorded
-  commit+log and stated in the reviewer's dispatch so the review never re-runs the suite; the
-  claim is about tests, never lint. A red gate spawns a **fresh executor fix round** (cap 3,
+- **Gate** — the driver runs the target's deterministic gate itself: each gated project's
+  `kc project test` with its `kc project lint` beside it (*The gate lints what it tests*, below).
+  A build breakage is caught deterministically by the loop-tail sweep and the doc gate. Green is
+  recorded commit+log and stated in the reviewer's dispatch so the review never re-runs the
+  suite; the claim covers a lint only where one ran. A red gate spawns a **fresh executor fix round** (cap 3,
   then `gate_red` bails); there is no separate fixer in the phase loop. A gate kc says **ran
   nothing** (exit 3: the target defines no tests) is neither: the phase proceeds as with no
   gate, no green is recorded, and the reviewer is told the target defines no tests, so the

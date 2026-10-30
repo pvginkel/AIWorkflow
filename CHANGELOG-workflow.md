@@ -4,6 +4,64 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-31 — The 0.10 line: the `dev` plugin re-envisioned for Pilot running it (v0.10.14)
+
+Pilot, the project manager, now runs the workflow's two stages. `/dev:plan-slice` and
+`/dev:run-slice` are each a work item: Pilot starts a headless session whose brief opens with the
+command, the skill puts every ask it has into a document and registers it, the operator answers
+in the app, and Pilot writes the answers back and continues the session. `/dev:triage` stays the
+operator's chat skill. This entry tells the redesign once (P-111,
+`docs/research/pilot-redesign-plan-2026-10-30.md`); the entries below it, 0.10.0 to 0.10.13,
+are its detail, one item each.
+
+**Why.** The plan read the 91 changes from 0.9.57 to 0.9.147 as a whole, and none had touched the
+core loop. Four mechanisms had been rebuilt one patch at a time: the close-out's write model, the
+loop's hosting under a chat session, the homes for work meant for later, and the operator acts a
+run waits on. The redesign replaces them instead of porting them. The research leads
+throughout: what an ask shows, and how it is worded, is cut to what the reads of the operator's
+own answers show they use.
+
+**What changes for the operator.**
+
+- **Every ask is a document in Pilot:** the requirements, a plan-writer's question, a review's
+  finding, a run's question or the action it waits on, and the close-out. Nothing is asked in
+  chat, and no word accepts everything.
+- **The close-out is the run's continuation.** The answers are the operator's review of the
+  slice; the run carries them out and moves the slice card to done. `/dev:close-out` and its card
+  are gone.
+- **Triage opens with its questions,** and the slices follow as their consequence, each with the
+  slices it `needs:`.
+- **What they read is written under one skill,** `/dev:writing`, every rule resting on a finding
+  of how they read and answer.
+
+**What changes underneath.**
+
+- **One store for every ask.** `asks.py` renders it as the document Pilot reads and reads the
+  answers back (0.10.1). The close-out store sits on it and renders once, at the run's end
+  (0.10.2).
+- **A stage waits inside its turn.** Pilot ends a work item at any turn's end, so a stage waits on
+  its loop in the foreground (0.10.0, ruled). Both loops run detached with a `wait` and leave a
+  document at every exit 4 (0.10.4, 0.10.5); both stop at Pilot's halt file with exit 7
+  (0.10.3); the run loop checks the actions it waits on as facts (0.10.4, AIWF-88).
+- **The stage sessions stay small.** What has to be read goes to a sub-agent in the foreground,
+  the `plan-preparer` for planning (0.10.8, 0.10.9).
+- **Preflight's failure is data** a stage renders as an action (0.10.6), and a citation is a
+  quoted line, never a line number (0.10.11).
+
+**What went** (0.10.8 to 0.10.13): `/dev:close-out`, `/dev:slice-dag`, the refinement page and
+its writer, the residual sweep and the Solution Known lane, the 55-minute check, the take-back
+verbs and the `Disposition:` read-back, the blanket accepts and the by-hand hints, and the code
+nothing called after them.
+
+**The docs, in this version.** The README, this repo's `CLAUDE.md`, `docs/ADOPTING.md` and the
+marketplace's description describe the pipeline Pilot runs. In `docs/rationale/`, the overview
+walks the new flow, the history has the 0.10 era and its three reversals, `reporting.md` and
+`plan-refinement.md` each gain the section on how the report and planning work in Pilot with
+their earlier sections kept as the record, and `principles.md` § Git and gates states the gate
+0.9.145 built. `run-loop.md` no longer calls the phase gate test-only.
+
+**Not yet read:** the rehearsal, and the first slices through Pilot.
+
 ## 2026-10-30 — The code the redesign left with no caller goes (v0.10.13)
 
 Item C4 of the P-111 plan: the dead code in `plugins/dev/tools/`, each piece checked against the

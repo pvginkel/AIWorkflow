@@ -1,12 +1,14 @@
 # From per-finding cards to the close-out report
 
 Why the loops stopped filing a tracker card per finding and started writing one document per
-slice, what that document's shape is for, what the first forty-one reports show, and why the
-entries are since 0.9.57 labelled by their authors and routed by a table. The
-report's contract — the labels and the routes, who writes what, the entry rules, the lifecycle — is
+slice, what that document's shape is for, what the first forty-one reports show, why the
+entries are since 0.9.57 labelled by their authors and routed by a table, and why since 0.10 the
+report reaches the operator as a document they answer in Pilot. The report's contract — the
+labels and the routes, who writes what, the continuation, the lifecycle — is
 [`plugins/dev/docs/close-out.md`](../../plugins/dev/docs/close-out.md) and its shape
-[`close-out-template.md`](../../plugins/dev/docs/close-out-template.md); this doc does not
-restate them. The papers behind the design are in [`literature.md`](literature.md), the
+[`close-out-template.md`](../../plugins/dev/docs/close-out-template.md); how an entry is worded
+is the writing skill's ([`skills/writing/SKILL.md`](../../plugins/dev/skills/writing/SKILL.md));
+this doc does not restate them. The papers behind the design are in [`literature.md`](literature.md), the
 generation bar's place in the run loop in [`overview.md`](overview.md), and the report's
 entries in the improvement catalogue in [`improvements.md`](improvements.md).
 
@@ -156,6 +158,9 @@ which lets the doc-writer strike what its own commit resolved whole: the doc pha
 the last consult, and 58 live entries in 25 reports had reached the operator already fixed
 (`../research/close-out-read-2026-09-28.md`, finding 9). 0.9.57 kept the pen and changed what
 it writes on: a store, from which the report is rendered ([below](#triage-at-the-source)).
+0.10.2 renders it once, at the run's end, as the document Pilot reads, and 0.10.13 retired
+`stamp` and `counts`, whose one caller was the close-out skill
+([below](#the-report-in-pilot-010)).
 
 Two later versions closed what the tool's own interface cost. The template's head comment still
 spelled out the whole entry shape as if an author typed it, and had drifted from what the tool
@@ -172,10 +177,14 @@ own parser (`verb_usage`), so no `--help` turn is spent and the block cannot dri
 
 ## Dispositions and the close-out skill
 
+This section is the record of 0.5.0 to 0.9.147. The skill, the `Disposition:` lines and the
+close-out card went in 0.10.8; [§ The report in Pilot](#the-report-in-pilot-010) says what
+replaced them.
+
 The operator rules on an entry in a line; the suggested vocabulary is `card [board]` · `fix now`
 · `fold into <slice>` · `close` · `defer`, free form. The `/dev:close-out` skill
-([`SKILL.md`](../../plugins/dev/skills/close-out/SKILL.md)) presents what the report brings
-them and asks nothing, then executes: `card` files one tracker card with the entry verbatim as
+(`skills/close-out/SKILL.md`, deleted in 0.10.8) presented what the report brings
+them and asked nothing, then executed: `card` files one tracker card with the entry verbatim as
 its body, `fix now` does the small thing only if the project's own conventions class it as ad
 hoc work, `fold into` appends the entry to a backlog slice's `slice.md`, `close` strikes,
 `defer` leaves it for `/dev:triage`. A blanket ruling ("close the rest") is a `close` on every
@@ -198,8 +207,8 @@ time they had seen that there was little to progress, two thirds they were "doin
 fourth close out report in a sitting and I'm fed up with them". A sort learned from such
 rulings learns the sheet.
 
-The run's only tracker output is one card, `[NNN] close-out: <title>`, whose body is the report's
-path and its entry counts; it is closed when the report is.
+The run's only tracker output was one card, `[NNN] close-out: <title>`, whose body was the
+report's path and its entry counts; it was closed when the report was.
 
 Triage got the same durable seam one stage earlier and one day later (v0.5.2, 2026-08-16): after
 a run of 86 in-scope cards over two days, the rubric verdict — the skill's main product — turned
@@ -227,7 +236,15 @@ under its proposed fate, the questions numbered, the proposed slices with a phas
 The rubric, the justification quotes, the `Note:` lines, the ruling vocabulary for labels and
 `triage_verbatim.py` (which repaired what the operator's editor did to the document) went with
 it; the collection, the standing-decisions check, the routes, the grouping rule, the sweep and
-the filing are unchanged. The verbatim dump stays, as the archive `slice.md` quotes from.
+the filing stayed. The verbatim dump stays, as the archive `slice.md` quotes from.
+
+The message was redesigned in 0.10.10 from a read of the operator's answers in 41 runs
+([`../research/triage-answers-read-2026-10-30.md`](../research/triage-answers-read-2026-10-30.md)).
+The questions were what they answered, 40 % of their turns and nearly every typed one, while the
+scheme drew one regrouping in 63 turns. So the message opens with the numbered questions, and
+the slices follow as one line each, with the slices each `needs:` first. The phase estimate,
+"go" and the fixed answer forms went, and so did the Solution Known lane with its sweep, used in
+3 of the 41 runs.
 
 ## A report, read
 
@@ -393,8 +410,9 @@ entry's fate from the words on it, at 88 % agreement.
 
 **The wrap-up** automates what the operator did by hand — "fix inline please": it fixes what is
 decided and safe, asks for a card where a likely problem is more than it can fix responsibly,
-and the rest stays closed. Its bar is the residual sweep's litmus, calibrated on the same class
-of work. No reviewer reads its fixes: a review writes advisory findings, those are entries, and
+and the rest stays closed. Its bar is the litmus the residual sweep used, calibrated on the same
+class of work; since the sweep went in 0.10.10 it lives in the wrap-up's own definition
+([`agents/wrap-up.md`](../../plugins/dev/agents/wrap-up.md) § Your bar). No reviewer reads its fixes: a review writes advisory findings, those are entries, and
 entries go to a wrap-up — the loop has no end, and fix rounds on advisory findings are a
 settled no. Its assurance is the bar, the gate, and one commit per entry.
 
@@ -454,10 +472,53 @@ as does a Route that only names the kind. 0.9.70's ask stays first: the headline
 proposal are where they were. A closed entry shows its consequence where it says more than none,
 and a struck one's reason stops at its first `; `.
 
+## The report in Pilot (0.10)
+
+The 0.10 line (2026-10-30, P-111) made the report a document the operator answers in Pilot, the
+project manager, and the run's own continuation the session that carries the answers out. The
+reading of the six weeks before it found the close-out's mechanisms rebuilt one patch at a time
+in three places, and replaced them rather than port them (the plan's § 2, in
+[`../research/pilot-redesign-plan-2026-10-30.md`](../research/pilot-redesign-plan-2026-10-30.md)):
+
+- **The write model.** Ten changes in four weeks (0.9.65 to 0.9.142) had added take-back and
+  correction verbs to an append-only, author-owned store, and synced it both ways through the
+  rendered file. Since 0.10.2 the store is open to every author until the render and frozen
+  after it, and it renders once, at the run's end, after the wrap-up. The take-backs, `held`,
+  `import`, the `Disposition:` read-back, the report's hash and the run loop's `report_edited`
+  stop went.
+- **The page.** `close-out.md` is now the document Pilot reads, one ask per entry that comes to
+  the operator or is a card request, rendered by the same `asks.py` every stage's asks go
+  through. Everything else — what the table closed, the rulings, the run's events, the strikes —
+  is `close-out-record.md`, attached to it. The evidence stays one click away, never cut: the
+  operator deep-dives an entry now and then, and a fresh session answering a question about one
+  has nothing else to answer from (ruled, 2026-10-30).
+- **Work meant for later.** Tracker marks, `for` entries folded into a later `slice.md` and cards
+  linked after triage were three homes for the same thing, nine changes between them. An entry
+  for a slice not filed yet now comes to the operator proposed to be held for it, and Pilot
+  defers it there. The workflow keeps nothing to revive a deferred entry.
+- **Who carries the answers out.** The close-out skill, its card and the `Disposition:` lines
+  went in 0.10.8. Pilot writes the answers back into `close-out.md`, `close_out.py absorb` reads
+  them into the store, and the run's continuation files the cards a ruling asks for, parented to
+  the brief's ticket, folds, fixes now where the project allows it, strikes the rest, and moves
+  the slice card to done. The operator's words travel verbatim, and an answer Pilot gave in their
+  place is marked as Pilot's ([`pilot.md`](../../plugins/dev/docs/pilot.md) § The continuation).
+- **The wrap-up vets what comes to the operator.** It checks that each such entry's claim still
+  holds, gives a proposal where its author gave none, and makes sure the proposal has a vehicle
+  once the run is over: never a phase of this run, never a slice already planned or shipped.
+  It runs before the render a completed run registers; a bail's render is a record nobody
+  registers.
+
+**Measured:** all 68 close-out stores in six spec repos render as documents PilotApp's own
+parser accepts, 1,044 blocks, and each answered copy absorbs back into rulings (0.10.2).
+**Untested:** whether the operator rules faster or deeper from the document in Pilot than from
+the page and the skill; the first slices through Pilot are that read. One case is open by
+design: a run stopped for good never registers its close-out, so its entries reach no one.
+
 ## Deliberately absent
 
 From the contract's own closing section (`plugins/dev/docs/close-out.md`): no dedup tooling —
 `render` orders, it never merges, and every agent runs `list` before it writes; no table of a
 project's own and no switch on the routing or on the wrap-up — the operator's word on the
 switch was "I don't need the switch"; and nothing written over the entries by anyone, no list,
-no summary, no ranking: the report is its entries.
+no summary, no ranking: the report is its entries. The one-line `summary` in the document's front
+matter is the format's, naming the kinds of ask it holds, not a summary of the entries.
