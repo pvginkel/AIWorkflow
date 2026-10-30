@@ -12,7 +12,13 @@ operator rules before the first build session; §8 the items, in order.
 §7, `design/the-brain.md` §5 and §6.4, `design/aiworkflow-structured-data.md` (0.9.93, stale in
 places); PilotApp `docs/round-trip.md`, `docs/mcp.md`, `docs/work.md`; PilotProjects
 `rules/stages.md`, `rules/work-items.md`; this plugin at 0.9.147, surveyed subsystem by subsystem;
-and the 91 changes from 0.9.57 to 0.9.147, read as a whole (§2).
+and the 91 changes from 0.9.57 to 0.9.147, read as a whole (§2). Added 2026-10-30, at the
+operator's review of the first version: the reads of the operator's own reading and answering —
+`close-out-read-2026-09-28.md`, `close-out-triage-plan-2026-09-29.md`, `triage-read-2026-09-29.md`,
+`refinement-read-2026-09-03.md`, `plan-interview-2026-09-01.md` and its rubric, `interventions.md`,
+`doc-phase-read-2026-09-04.md` — synthesised into `operator-reading-synthesis-2026-10-30.md`, the
+evidence base of §5.7; the operator's remarks on the first version, recorded in §9; and the read
+of their answers to `/dev:triage` since 0.9.60 (§5.4).
 
 **Working the plan.** A session starts in `/work/PilotApp` (the project whose memory points here),
 checks out `pilot-redesign` in `/work/AIWorkflow`, reads §1 and §9, and takes the first unticked
@@ -55,6 +61,16 @@ stamp), the gate as it is computed today, the tail (sweep, consult, test phase, 
 wrap-up), the roles and their verdicts, detach and resume, the label vocabulary and the route
 table, worktrees for shared repos, uniform Opus at xhigh, the phase target, the cost tooling.
 
+**Leading throughout: the research.** What an entry tracks, what a document shows and how its
+prose is written is cut to what the reads of the operator's own answers show they use, and a
+cut that went too far is put back when a read shows it — never on taste (the operator,
+2026-10-30: "What's important is that the research shows. That needs to be leading always").
+The reads are listed under *Inputs read*; §5.7 turns them into the writing skill.
+
+**Parked for later, not in this rework:** PilotApp managing the loop's process itself — the
+plan or run loop handed to PilotApp to run and supervise, instead of hosted under a session's
+backgrounded wait (the operator, 2026-10-30).
+
 ## 1. Decisions for the operator
 
 Each with the recommendation first. A decision not overruled before the item that needs it is
@@ -81,10 +97,15 @@ record, as rows in PilotAppSpecs `decisions.md` at the cutover.
 4. **The question verdict of code-writer and doc-writer gains optional `options` and
    `recommend`** (§5.2). A touch on roles FM §7 called untouched, additive: a question without
    options renders as a `question` block, one with them as a `decision`. *Recommend:* yes.
-5. **The order of planning stays** (§5.4). *Recommend:* the requirements asks first, the plan
-   loop after, as today; each ask carries the approach in short, not a drafted plan. The
-   alternative — a writer round before the asks so that each carries the draft — pays for a
-   plan that the answers then rewrite.
+5. **The order of planning stays, and the preparation leaves the session** (§5.3). *Recommend:*
+   the requirements asks first, the plan loop after, as today; each ask carries the approach in
+   short, not a drafted plan. The alternative — a writer round before the asks so that each
+   carries the draft — pays for a plan that the answers then rewrite. *Ruled 2026-10-30 with a
+   change:* the session itself stays small. A sub-agent sets up the folder, absorbs the slice,
+   grounds and writes the requirements entries and the grounding file; the session renders,
+   registers and ends its turn; every later turn — a ruling to absorb, a question to answer —
+   is worked by a sub-agent pointed at the folder, never from the session's own reading (the
+   planner today ends over 250k, "forced to keep an eye on it").
 6. **Arch-design stays the operator's own chat skill**, touched only by the blanket-accept scan;
    plan-slice puts "this slice needs an arch design first" as a decision block when it does.
    *Recommend:* yes (the operator runs designs of judgment themselves, 2026-10-25).
@@ -95,9 +116,10 @@ record, as rows in PilotAppSpecs `decisions.md` at the cutover.
    number; the writers' prompts and the format skill say so, and `close_out.py append` and the
    plan-reviewer flag a `:<digits>` citation. The alternative is to leave the card open past
    this rework.
-9. **The AIWF sweep's fates** (§7). *Recommend:* AIWF-36 built, AIWF-88 built as its design
-   recommends, AIWF-84 answered by Pilot's deferral, AIWF-82 by decision 8, AIWF-113 already
-   landed; AIWF-1, -35 and -40 closed as not pursued, with a line each saying why.
+9. **The AIWF sweep's fates** (§7). *Recommend:* AIWF-88 built as its design recommends,
+   AIWF-84 answered by Pilot's deferral, AIWF-82 by decision 8, AIWF-113 already landed;
+   AIWF-1, -35, -36 and -40 closed as not pursued, with a line each saying why (AIWF-36 was
+   recommended built; the operator closed it, 2026-10-30).
 10. **The rehearsal before the cutover** (§8 phase E). *Recommend:* the stages run end to end in
     ad hoc sessions with `--plugin-dir` on a throwaway slice, the fallback path showing the
     documents; then one rehearsal through pilot-dev with a free-form work item whose brief points
@@ -126,8 +148,8 @@ or by-hand help Pilot makes moot:
 | Work meant for later: tracker marks (night shift, hand-back), `for` entries folded into a later `slice.md`, cards linked after triage (0.9.81, 82, 87, 89, 100, 128, 129, 131, 135) | 9 | **Replace with Pilot's deferral.** Three homes, each change a patch on a seam between them (a fold into a planned slice, a proposal naming a shipped one, a slice not yet created). `for` stays as the author's hint; the route is Pilot's `deferred`/`to` |
 | Operator acts the run waits on: pre-run entries struck by hand, push holds, `push.enabled`, `owed_after`, promotion behind a ruling (0.9.66, 96, 97, 102, 118, 119, 123) | 7 | **One shape**: an `action` block with a `check` (AIWF-88's vocabulary), rendered where it arises — before the run, during it, after the deploy. `## Push holds` and `## Driver rulings` stay as the machine half |
 | The phase gate: root, the manifest at gate time, touched components, the spec check, lint, the writer's own run reused (0.9.67, 115, 120, 125, 127, 134, 136, 137, 145) | 9 | **Converged, keep.** The scope is one function over the diff against a re-read merge base (`gate_projects`). The remaining churn rescues kc's output (0.9.120, 0.9.134): a kc gap, not the plugin's |
-| Git: the spec tree branched in place, its lease, hook and `spec_commit.py`, then worktrees; bases that move (0.9.64, 79, 86, 88, 93, 103, 139) | 7 | **Replaced already** (0.9.93), now converged. Consider worktrees as the one mode for code repos too, so there is one path; not in this rework unless it falls out |
-| Environment readiness: eleven pre-checks inferring needs by scanning other repos' manifests (0.9.68, 74, 75, 77, 83, 106, 109, 111, 113, 117, 121) | 11 | **A wrong tool that belongs to KubeCoder.** The plugin reverse-engineers the environment model; a `needs:` declaration per component and one readiness answer from `kc` would end the scans. Kept as is here; a KC card at the cutover. The stale-plugin check (0.9.75) is moot once Pilot launches the plugin |
+| Git: the spec tree branched in place, its lease, hook and `spec_commit.py`, then worktrees; bases that move (0.9.64, 79, 86, 88, 93, 103, 139) | 7 | **Replaced already** (0.9.93), now converged. Worktrees stay the shared repos' mode and nothing more: for a code repo they break `kc project setup`, and parallel work is the environment's to allow (the operator, 2026-10-30) |
+| Environment readiness: eleven pre-checks inferring needs by scanning other repos' manifests (0.9.68, 74, 75, 77, 83, 106, 109, 111, 113, 117, 121) | 11 | **Kept as is.** The scans reverse-engineer the environment model, and a `needs:` declaration in KubeCoder would end them — but the way environments are managed is changing and `kc env reset` already ensures most of what the checks infer, so no KC card and no change to preflight; revisited later if at all (the operator, 2026-10-30). The stale-plugin check (0.9.75) is moot once Pilot launches the plugin |
 | Loop hosting under a chat session: detach, 55-minute waits, locks across pods, resume after a kill, "you are a headless session" (0.9.69, 95, 101, 114, 143, 146) | 6 | **Moot**, with lessons kept: the exit recorded first, a stage's completion before its side effects, dead work set aside not reset, an interruption never an outcome |
 | What a role is handed: review sets, the `Review:` ledger, diffs, secrets, skills, MCP servers (0.9.76, 80, 92, 98, 104, 108, 110) | 7 | Mixed. The hand-written `Review:` ledger was fixed three times: compute the review set from HEAD before and after in every repo the session committed to (optional, §8 C6). Redaction fails closed: keep |
 | Planning and triage rules, two measured retargets (0.9.60, 62, 107, 130, 147) | 5 | **Converged**, prompt content that ports |
@@ -141,6 +163,13 @@ Summary, the Focus lines) removed. The pattern the operator suspected is real in
 the close-out's write model, the loop's hosting, the homes for later work, the operator acts a
 run waits on — and the rework replaces those mechanisms rather than porting them. Stale after
 0.9.145: `docs/rationale/principles.md` § Git and gates still states the test-only gate.
+
+Two rulings on this read (2026-10-30). The operator has made or allowed changes to the prose
+rules and the tracked fields that did not help them and were not all reverted, so the axe is
+allowed there: the reads decide what stays (§0). And one reversal is settled the other way for
+good — the evidence behind an ask stays available, below the ask on the page or attached, never
+cut to the ask alone: the operator deep-dives a decision or a proposal now and then, and a fresh
+session answering a question about one has nothing else to answer from.
 
 ## 3. The stage as a work item — the contract
 
@@ -178,8 +207,9 @@ for the workflow — the block's fate is Pilot's, the entry closes as deferred, 
 bring it back (point 7, FM §7).
 
 **The clarification turn.** A turn opening "Pilot asks about <path>:" is the pass's question to
-the writer (F52.2, D059): the skill answers each under `## <local id>` in words, registers
-nothing, starts nothing, and ends its turn.
+the writer (F52.2, D059): the skill has a fresh sub-agent pointed at the slice folder answer
+each, relays it under `## <local id>` in words, registers nothing, starts nothing, and ends its
+turn — never answering from its own reading (§5.3).
 
 **The nudge.** A turn that is neither the continuation's message nor a clarification — the nudge
 after a halt or a pause (F135.3, F141.3) — resumes what the session was doing: a loop that exited
@@ -200,24 +230,40 @@ path, end the turn; the continuation is the operator's "continue".
 ruling from prose, edit a rendered file by hand or ask anyone to, wait by polling, tell "the
 operator" anything that is not in a document.
 
-## 4. The shared module: `blocks.py`
+## 4. The shared module: `asks.py`
 
-Stdlib, beside the other tools, imported by `close_out.py`, `plan_loop.py`, `run_loop.py` and
-called by the triage skill through a small CLI. Two halves:
+One store, one renderer and one read-back for every ask a stage puts to the operator or to
+Pilot — the requirements, the plan loop's questions and findings, the triage's fates, the run's
+bail-outs, and the close-out, which is the same store with its labels and route table on top
+(the operator, 2026-10-30: requirements should work as `close-out.json` does, "in the end it's
+just decisions and actions for the operator (or pilot)"). Stdlib, beside the other tools,
+imported by `close_out.py`, `plan_loop.py` and `run_loop.py`, with a CLI for the skills and the
+sub-agents. Three parts:
 
-- **Render.** `render(document) -> str` from `{title, summary?, step?, for?, context: [lines],
-  entries: [{id, kind, headline, body: [lines], options?: [{label, line?}], recommend?,
-  proposal?, default?, check?}]}`: the front matter, the context, then per entry `## <headline>`,
-  the body, the block last, the kind's keys in the format skill's order, every value quoted where
-  YAML would read it as something else (a colon-space, a leading `#`, `- `, `[`, a quote, a
-  backtick), a multi-line value as a literal block. It refuses what Pilot would refuse (a duplicate
-  id, `recommend` naming no option, `options` beside `proposal`, a heading inside an ask).
-- **Read back.** `answers(text) -> {id: {answer, by, at, note, to, done, via}}` over a
-  written-back file: the fences found by their info string, the answer lines read with a parser of
-  the subset the record writes — `key: value` scalars, quoted or plain, a `|` literal block for a
-  note — and nothing else of the body touched. The grammar whole is PilotApp `docs/block-dsl.md`;
-  the format skill is the writer's view of it, and a test pins the module against the skill's own
-  example.
+- **The store.** `asks/<n>-<slug>.json`, beside the document it renders to: `{title, summary?,
+  step?, for?, context: [paragraphs], entries: [{id, kind, headline, body, options?: [{label,
+  line?}], recommend?, proposal?, default?, check?, due?}]}`. `append` adds an entry and refuses
+  one missing what its kind carries, as `close_out.py append` refuses today; `amend` and `note`
+  change one before the render; `show` and `list` read. A body is Markdown — paragraphs, lists,
+  run-in heads — passed through as written: the writing skill (§5.7) keeps it readable, not the
+  tool.
+- **Render.** `render` writes the document: the front matter, the context, then per entry
+  `## <headline>`, the body, the block last, the kind's keys in the format skill's order, every
+  value quoted where YAML would read it as something else (a colon-space, a leading `#`, `- `,
+  `[`, a quote, a backtick), a multi-line value as a literal block. It refuses what Pilot would
+  refuse (a duplicate id, `recommend` naming no option, `options` beside `proposal`, a heading
+  inside an ask).
+- **Read back.** `absorb` reads a written-back document into its store: the fences found by their
+  info string, the answer lines (`answer`, `by`, `at`, `note`, `to`, `done`, `via`) read with a
+  parser of the subset the record writes — `key: value` scalars, quoted or plain, a `|` literal
+  block for a note — and nothing else of the body touched; each entry's ruling then stands in
+  the store for the continuation to execute. The grammar whole is PilotApp `docs/block-dsl.md`;
+  the format skill is the writer's view of it, and a test pins the module against the skill's
+  own example.
+
+`close-out.json` is an `asks.py` store whose entries also carry the labels and the grade;
+`close_out.py` is the layer on top — the route table, the wrap-up's verbs, the record — and
+takes the entries' shape, the render and the read-back from the module (§5.1).
 
 Not used: the backend's `pilot-dsl` package (the operator, 2026-10-30: no use for the shared
 library here; stdlib-only stands).
@@ -241,7 +287,7 @@ run goes, with the labels and the route table of 0.9.57 (§2). What changes:
   `ReportEdited`, `--overwrite` and the `report_edited` bail go. The report is rendered once, at
   the run's end, after the wrap-up; no render on every write (0.9.85 reversed).
 - **The document.** `close_out.py render` writes `close-out.md` through `blocks.py`: `title`
-  "Close-out of slice NNN — <title>", `summary`, `step`; the context — the slice in two lines,
+  "Close-out of slice NNN — \<title>", `summary`, `step`; the context — the slice in two lines,
   what shipped, what the wrap-up fixed in a line, the record attached; then one section per entry
   the table routes to the operator or to a card request, or the wrap-up marked `card`/`word`:
   `A` → `action` (`check`, `due`, options where the entry gives what to report back); `D` →
@@ -256,7 +302,46 @@ run goes, with the labels and the route table of 0.9.57 (§2). What changes:
   the ticket, a fold, a fix now where the project's `CLAUDE.md` allows ad hoc fixes, a settle —
   and records `--did`; `close` strikes what is left; the final render writes the record under the
   answered asks; the session commits by name.
-- **The wrap-up** keeps its bar and its fixes; its asks become proposals on the entries.
+- **The wrap-up** keeps its bar and its fixes; its asks become proposals on the entries. It runs
+  before the render whatever the run's exit, so no entry ever waits for a wrap-up nobody
+  dispatched; an entry it did not reach comes to the operator said as what it is. And it checks
+  **every proposal's vehicle**, as the close-out session does today: a vehicle exists when the
+  document is read, which is after the run — never a phase of this run ("append to phase 4"
+  reaches nobody, since nothing reads the report before the run is over; the operator,
+  2026-10-30), never a slice already planned or running, never a slice that has shipped since.
+  A proposal with no vehicle gets `fix now`, `card` or a slice still to run, with the reason.
+
+**The close-out skill's rules, by home.** The skill goes as a chat entry point (there is no
+chat); its rules do not all go with it (the operator, 2026-10-30: "there's stuff in there I'm not
+convinced we should lose"). Each rule of `skills/close-out/SKILL.md` lands in one of four
+places, and A2 and B1 move them:
+
+- *To the run's end, in the driver:* the wrap-up before the render at every exit; the scratch
+  clones the driver left for a `github:` Target removed when clean and level, said in the record.
+- *To the wrap-up agent:* the ageing check — a claim a command or two settles is checked, an
+  entry fixed since is presented as that with the commit, never whether the entry was right; a
+  proposal for an entry whose author gave none; the vehicle check above.
+- *To the continuation* (`docs/close-out.md`'s procedure, which run-slice follows): the operator's
+  words verbatim, never paraphrased or completed; a word of assent is a ruling for the proposal;
+  the executions — `card` (one per entry, the title the headline without its grade, the body the
+  entry as `show` prints it; actions the operator cards go on one card in their action queue),
+  `fix now` only where the project's `CLAUDE.md` classes the change as ad hoc work, `fold into`
+  (the entry verbatim as an ask in that `slice.md`, refused for a slice planned or running),
+  `close`, and `settle` for an owed-after action into `verification.json`; what cannot be
+  executed as ruled — a `fix now` no rule allows, a fold into a running slice — is a new
+  document with the alternatives as a `decision`, never a quiet substitution; neither
+  `close-out.json` nor `verification.json` is edited by hand; the record rendered and committed
+  by name.
+- *To the clarification turn:* a question about an entry's claim is answered from its body and
+  `Provenance:`, quoting what supports or fails the reading — never re-derived, and agreeing is
+  not an answer.
+- *Gone:* locating the card; the Disposition read-back and `--overwrite`; present-and-wait; the
+  blanket ruling (every block is answered); `unrule`, `--append`, `--replace`; the offer to
+  close; `defer` (Pilot's `deferred`/`to`); the close-out card and its closure.
+
+What Pilot's brain needs of the workflow is none of these rules but what each stage's fates
+mean when it pre-rules a document — card, fold, fix now, close; a slice, Solution Known, later —
+and that is F2's `rules/stages.md`, written for the pass (§8).
 
 ### 5.2 The run
 
@@ -269,7 +354,10 @@ and when it stops:
   the grants allow (a restart is a fleet call), the operator does the rest, and the continuation
   runs in the mended environment. Open pre-run actions are an `action` document the same way.
   Then `run_loop.py run <slice> --detach --step <tN>` and one backgrounded `wait` that re-invokes
-  the session when the run ends or stops; no status posts, no re-arm for a person.
+  the session when the run ends or stops. The 55-minute check goes whole (the operator,
+  2026-10-30: it never found an error): `wait` keeps the loop's own cap, a return of 5 is
+  re-armed with no word said and no log read, 6 relaunches, 0 goes on to the exit; while the
+  run runs, the session reports to nobody.
 - **Exit 4.** The driver renders every operator question as a document in `asks/` before it
   exits — the role's question with its options where the verdict gives them (decision 4),
   `generation_exhausted` and `plan_doc` as decisions with the driver's proposal — and the session
@@ -291,29 +379,63 @@ and when it stops:
 
 ### 5.3 Planning
 
-The plan-slice skill becomes the stage's turns; the refinement-writer and `docs/refinement.md`
-go (point 1):
+The plan-slice skill becomes the stage's turns, and the session a small coordinator that never
+reads the slice itself (decision 5 as ruled 2026-10-30: the planner today ends over 250k, and the
+operator watches its context for it). The refinement-writer and `docs/refinement.md` go (point 1).
 
-- **The requirements document.** The session reads `slice.md`, the card and the cards linked
-  after triage, grounds every claim with read-only sub-agents and checks a checkable premise
-  before it asks (point 13), then writes its asks as entries: a decision the operator could
-  plausibly rule the other way as a `decision` with options, the recommendation, what it
-  optimises for and the card it serves named in the prose (the card-id ban lifted, FM §7); an
-  open fact as a `question`; a new repository to create as a `decision` with a proposal; "this
-  slice needs an arch design first" as a decision when it does (decision 6). The settled items
-  and the approach in short are the shared context (decision 5). `blocks.py` renders
-  `asks/1-requirements.md`; the grounding, the sub-agents' findings and `slice.md` are attached;
-  the turn ends. A slice with nothing to ask skips the document.
-- **The continuation** writes the rulings into `plan.md`'s rulings section verbatim (`by: agent`
-  marked), seeds the header, commits, and launches `plan_loop.py` with a backgrounded wait.
-- **The plan loop's exits.** The plan-writer writes its questions as `plan_questions_rN.json`
-  and the plan-reviewer its findings as `plan_review_rN.json` (the prose review kept beside it,
-  attached); the loop renders each exit-4 as a document in `asks/` — a question per block, a
-  blocking finding per `decision` with the reviewer's disposition recommended — and exits; the
-  session registers, attaches the draft plan, ends its turn; the continuation writes the answers
-  into `plan.md` and reruns; the fix pass runs by default, there being no operator sanity-read.
-- **Exit 0.** The dry run, the promotion to `slices/`, the commit, the card to planned, as today;
-  the turn ends with one line.
+**Start.** Parse the brief; preflight `--for plan`, an environment fact an `action` document as
+in §5.2. Then one sub-agent, the **plan-preparer** (`agents/plan-preparer.md`, in the
+refinement-writer's place, Opus at xhigh), does what the session did:
+
+- sets up the plan folder and absorbs `slice.md`, the card and the cards linked after triage;
+- grounds every claim with read-only sub-agents of its own, and checks a checkable premise
+  before it is asked (point 13);
+- writes `grounding.md` into the folder — what it read, what it checked and what it found, the
+  settled items in a sentence each, the approach in short — so that any later agent pointed at
+  the folder knows what it knows;
+- appends the asks to `asks/1-requirements.json` through `asks.py`, under the writing skill: a
+  decision the operator could plausibly rule the other way as a `decision` with options, the
+  recommendation, what it optimises for and the card it serves named in the prose (the card-id
+  ban lifted, FM §7); an open fact as a `question`; a new repository to create as a `decision`
+  with a proposal; "this slice needs an arch design first" as a decision when it does
+  (decision 6). The settled items and the approach in short are the shared context; the rest of
+  the grounding stays in `grounding.md`;
+- hands back one line.
+
+The session renders `asks/1-requirements.md`, registers it, attaches `grounding.md` and
+`slice.md`, commits, and ends its turn. A slice with nothing to ask skips the document and goes
+straight to the loop.
+
+**The continuation.** A sub-agent pointed at the folder absorbs the rulings into `plan.md`'s
+rulings section verbatim (`by: agent` marked) and seeds the header; the session commits and
+launches `plan_loop.py` with a backgrounded wait, as the run does (§5.2). The loop's writer and
+reviewer are its own sub-agents, as today.
+
+**The plan loop's exits.** The plan-writer writes its questions as `plan_questions_rN.json` and
+the plan-reviewer its findings as `plan_review_rN.json` (the prose review kept beside it,
+attached); the loop renders each exit-4 as a document in `asks/` — a question per block, a
+blocking finding per `decision` with the reviewer's disposition recommended — and exits; the
+session registers, attaches the draft plan, ends its turn. The continuation's sub-agent writes
+the answers into `plan.md`, the session reruns the loop; the fix pass runs by default, there
+being no operator sanity-read. This loops as often as the loop asks; most of these Pilot's pass
+rules itself (`by: agent`).
+
+**Questions about the slice.** A clarification turn ("Pilot asks about <path>:") or a nudge that
+turns on a fact of the slice is answered by a fresh sub-agent pointed at the folder —
+`grounding.md`, the asks, `slice.md`, the plan — never from the session's own reading (the
+operator, 2026-10-30: "for questions we should never attempt to use the running session, but
+instead use dedicated sessions"; the risk otherwise is a session that "figures it out itself,
+blowing up its context"). The session relays the answer under `## <local id>` and ends its turn.
+The folder carries enough for this; that is what `grounding.md` is for. The operator's own
+practice, a new session pointed at the folder with the question, is the same move by hand and
+stays theirs. An answer in the operator's chat whose referent is not in it ("yes, that's what I
+want") is Pilot's to write into the document with its context, since it writes the answer line.
+*Open (asked 2026-10-30):* whether Pilot's clarification turn to the writer's session (D059) stays
+the mechanism, with the sub-agent inside it and no change to Pilot, or Pilot starts a dedicated
+session per question, a PilotApp change; the plan assumes the former.
+
+**Exit 0.** The dry run, the promotion to `slices/`, the commit, the card to planned, as today;
+the turn ends with one line.
 
 ### 5.4 Triage
 
@@ -349,9 +471,75 @@ Pilot's halt did not prevent, halt-aware.
 
 Preflight keeps every check as a program's fact and loses the person's text: a failure is
 structured — the check, the fact, the fix — for the session to render into an `action` document;
-the stale-plugin line goes. `/dev:onboard` stays an operator-driven skill with its by-hand steps
+the stale-plugin line goes. The checks themselves, the environment ones included, stay as they
+are (§2). `/dev:onboard` stays an operator-driven skill with its by-hand steps
 trimmed, its "pre-ruled headless" shape the template for a later Pilot-driven onboard.
 `/dev:inbox` stays until v1.1 (decision 7), its "go approves the scheme" gone.
+
+### 5.7 The writing skill
+
+**What it is.** One skill, `dev:writing`, on how to write what the operator reads: a close-out
+entry, a requirements ask, a triage line, a plan question, a proposal. Every role that writes
+one loads it — the code-writer and the reviewer for their entries, the wrap-up, the plan-slice
+preparation sub-agent, the plan-writer and plan-reviewer, the test agent, the triage's
+sub-agents — and `/dev:document-format` points at it for the prose inside its grammar, as
+`close-out.md`'s entry rules do. Its every rule cites a finding of
+`operator-reading-synthesis-2026-10-30.md`; a rule with no finding behind it is not in it (§0,
+the research leading). The operator's ask (2026-10-30): "All the findings need to lead to a
+writer skill that helps write better close-out/requirement etc records."
+
+**What the findings say it must carry**, each with its finding (synthesis §.n):
+
+- *Write for the reader's path.* The operator reads the summary, then the headline and the
+  proposal, judged for safety, then half the context on a doubt, the rest one time in twenty
+  (1.1, 1.2). So the `summary` and each ask's headline and proposal are rulable alone, the context
+  after them, the evidence after that — present, never cut (§2's ruling), never first.
+- *Shape over density.* A paragraph carries one point; three or more of anything is a list; a
+  number, a command, a quoted line stands on its own line; run-in heads inside an ask. No
+  200-word paragraph (4.1, 4.2): "3 paragraphs and 2 bullet lists". Length is what the body
+  needs — a cap produces more, not less (4.5) — but the body is structured, not dense.
+- *Ask only what they could rule the other way.* Eight of twelve refinement decisions were
+  implementation picks whose own alternatives said "loses" (4.11); the ones engaged with changed
+  what a user sees or what the operator runs (5.3). An implementation pick is the writer's, said
+  in a sentence of the context, not asked.
+- *Every ask carries its recommendation; alternatives only when live.* 77 % took the
+  recommendation, padded alternatives were rejected 0 of 13 (2.3, 6.2). The delegation phrases
+  — "pick the simple option", "I want to follow your recommendations" (2.5) — are a reader
+  asking for the recommendation to be there.
+- *Self-contained for a cold reader.* Half the plan questions were not readable cold, and
+  confused or delegated answers rose with every handle leaned on (1.11, 4.8). No bare id: a
+  decision, a requirement, a card is named with what it says; a citation is a path and a quoted
+  line (decision 8); nothing assumes the slice is fresh in the reader's mind.
+- *A premise is a claim, checked, with its class.* Fifteen questions rested on a false premise
+  written as background (4.9). A premise a command settles is checked before it is asked; one
+  that is not is stated as what it is — read or witnessed — not folded into an option.
+- *Price it.* What the operator asks back is what the entry says, whether it can happen and how
+  bad, and what the fix costs (3.1, 3.2); advice that traced reach and priced the fix was followed
+  35 of 41 times (5.6). An ask about a problem says whether it is reachable, what a user would
+  meet, and what the fix takes, in a line each.
+- *Severity first and visible.* "an agent trying to get my eyes on something that I then don't
+  see" (4.12, 4.13; 2.8: "High severity needs to come to me, even if it's very unlikely"). What
+  the author thinks the operator must not miss is the first line, said as such.
+- *Reports are asks.* "just a dump of thoughts and ideas. They aren't questions" (4.4). An entry
+  that reports and proposes nothing is not written; its author takes a position.
+- *A card request is one line and a card.* Never read today (1.3); nobody has measured whether a
+  card can be ruled from its text (4.15). The ask is a line — what the card would say, why it is
+  more than a fix — and the body is the card's text, written for the card.
+- *Settled items in a sentence each, or not at all.* "I should not have to see the details. The
+  planner agent will have this already" (4.10; 6.3).
+- *One line per item for a batch.* The one-line-per-item chat message was the triage format
+  that worked, ruled by numbered reply (5.7); in a document, the headline is that line.
+- *No restating.* A proposal that restates the headline, or a consequence that restates the
+  mechanism, sends the reader into the body for what the line should have said (`close-out.md`
+  entry rules; 4.4).
+
+**What it replaces.** `close-out.md`'s "Entry rules", the prose guidance in the role prompts
+(`code-writer.md`, `code-reviewer.md`, `wrap-up.md`, `plan-writer.md`), and whatever of
+`refinement.md`'s writing rules survives its deletion; each keeps a pointer and loses its copy.
+
+**How it is checked.** Nothing mechanical: E1's read of the rehearsal's documents against the
+findings, and the next read of the operator's answers once Pilot has run a few slices (the
+reads' method, `triage-read-2026-09-29.md` § Corpus and method).
 
 ## 6. What goes
 
@@ -362,7 +550,7 @@ trimmed, its "pre-ruled headless" shape the template for a later Pilot-driven on
   `reporting.md` rewritten or moved to `history.md`.
 - **In `close_out.py`:** the verbs of §5.1; the rendering of the old page; `held`.
 - **In `run_loop.py`:** the `report_edited` bail; `wait`'s prose for a person; the stale-plugin
-  relaunch; the close-out card and the chat summary in the skill.
+  relaunch; the close-out card, the chat summary and the 55-minute status update in the skill.
 - **In `plan_loop.py`:** nothing of the loop; the free-Markdown questions file as the surface.
 - **In `preflight.py`:** the stale-plugin check; the person-directed fix text.
 - **Everywhere:** every wording that offers or invites a one-word accept-all (point 11): the
@@ -377,7 +565,7 @@ trimmed, its "pre-ruled headless" shape the template for a later Pilot-driven on
 | AIWF-88 pre-run checks as facts | built | `append --check` with the design's vocabulary (`env`, `file`, `origin … contains`, `slice … completed`, `manual`), a hash or an environment id refused; the driver evaluates at start and on resume, an unmet check the `action` document of §5.2; the design's D1–D5 as recommended unless overruled |
 | AIWF-84 a card against code a backlog slice still writes | answered by the design | the entry's `for` renders as a proposal to hold for that slice; Pilot defers it to the task (`deferred`, `to`); no card, no `held` state |
 | AIWF-82 stale `file:line` citations | decision 8 | the citation rule in the writers' prompts and the format skill; `append` and the plan-reviewer flag `:<digits>` |
-| AIWF-36 risk level in the reviewer's dispatch | built | `[risk]` in `.aiworkflowrc` (`base`, `paths`, dotfiles high), the driver classifies the phase's diff after each writer round, records it in `state.json`, and the reviewer's dispatch carries the sentence; no skip |
+| AIWF-36 risk level in the reviewer's dispatch | closed, not pursued | the operator's ruling, 2026-10-30, on the recommendation to build it; closed on the tracker the same day |
 | AIWF-35 risk-based review (the skip) | closed, not pursued | the 2026-08-27 research: documentation is not low risk in this pipeline; AIWF-36 is the part that lowers exposure |
 | AIWF-40 a project hook for a mid-run publish | closed, not pursued | 0.9.102's in-phase push ruling at seeding covers the case seen; the operator expected it to come up less |
 | AIWF-1 `code_health` grading Go | closed, not pursued | the quality tool's rebuild is no part of this rework; `archive/quality/` stays the frozen record |
@@ -394,14 +582,16 @@ sessions in all.
   rules for a stage skill (headless, ends its turn, the brief, the documents, the continuation,
   the clarification turn, the fallback). *Done when:* the page reads as the one home and the
   operator has read it — this is P-111's "Designed" box, with this plan.
-- [ ] **A1. `blocks.py`** (§4) with its suite, pinned against the format skill's example and the
-  quoting rules. *Done when:* a rendered document of every kind round-trips through the read-back
-  with Pilot's answer lines added.
-- [ ] **A2. `close_out.py`** (§5.1): the fields, the write model, `render` as the document plus the
-  record, `absorb`, the verbs removed, the dispatch line, `close-out.md` and
-  `close-out-template.md` rewritten; the suite reworked (the render and read-back half of
-  `test_close_out.py`). *Done when:* a store of the old fixtures renders as a document that
-  `register_document` would take, and an answered copy absorbs into rulings. The largest item.
+- [ ] **A1. `asks.py`** (§4): the store, its CLI, the render and the read-back, with its suite,
+  pinned against the format skill's example and the quoting rules. *Done when:* a store of every
+  kind renders to a document that round-trips through the read-back with Pilot's answer lines
+  added.
+- [ ] **A2. `close_out.py`** (§5.1) on `asks.py`: the fields, the write model, `render` as the
+  document plus the record, `absorb`, the verbs removed, the dispatch line, the vehicle rule, the
+  rules of the close-out skill moved to their homes in `close-out.md`, `close-out-template.md`
+  and `wrap-up.md`; the suite reworked (the render and read-back half of `test_close_out.py`).
+  *Done when:* a store of the old fixtures renders as a document that `register_document` would
+  take, and an answered copy absorbs into rulings. The largest item.
 - [ ] **A3. The halt file** (§5.5) in both loops, `plan_loop.py stop`, the exit `halted`, tests.
 - [ ] **A4. The run loop's asks** (§5.2): every exit-4 rendered as a document before the exit, `--step`,
   the question verdict's optional `options`/`recommend` in `code-writer.md` and `doc-writer.md`,
@@ -412,20 +602,27 @@ sessions in all.
   pass by default; tests (the exit-4 tests of `test_plan_loop.py`).
 - [ ] **A6. Preflight** (§5.6): structured failures, the stale-plugin check gone, the version guard
   relaxed for `--plugin-dir`; tests.
+- [ ] **A7. The writing skill** (§5.7): `skills/writing/SKILL.md` from the synthesis, every rule
+  with its finding; the role prompts and `document-format` pointed at it, their own prose rules
+  removed; `close-out.md`'s entry rules moved. Before phase B: the stages' documents are written
+  under it. *Done when:* every writer loads it and no prose rule stands twice.
 
 **Phase B — the stages**
 
 - [ ] **B1. Run-slice** (§5.2): the skill rewritten as the stage's turns with the close-out
   continuation; `/dev:close-out` deleted; the close-out card gone; the wrap-up's asks as
   proposals; `run-loop.md`, `runner-state.md`, `agent-dispatch.md` brought to it.
-- [ ] **B2. Plan-slice** (§5.3): the skill rewritten; `refinement-writer.md` and `refinement.md`
-  deleted; `plan-template.md` and `plan-loop.md` brought to it.
+- [ ] **B2. Plan-slice** (§5.3): the skill rewritten as the small coordinator; `plan-preparer.md`
+  written, `grounding.md`, the continuation and the clarification turn by sub-agent;
+  `refinement-writer.md` and `refinement.md` deleted; `plan-template.md` and `plan-loop.md`
+  brought to it.
 - [ ] **B3. Triage** (§5.4): the skill rewritten; `slice-dag` deleted; `needs:` in `slice.md`'s front
   matter read by preflight's "ready to plan"; `residual-sweep.md` brought to it.
 
 **Phase C — the sweep and the gutting**
 
-- [ ] **C1. AIWF-36**, the risk table and the reviewer's dispatch line.
+- ~~**C1. AIWF-36**, the risk table and the reviewer's dispatch line.~~ Closed by the operator,
+  2026-10-30; nothing to build.
 - [ ] **C2. AIWF-82's rule** (after decision 8): the prompts, the format skill, the checks.
 - [ ] **C3. The blanket-accept scan** and the trims of `inbox`, `onboard`, `arch-design` (§6).
 - [ ] **C4. Dead code and the research tools** that read gone artifacts: `close_out_readout.py`'s
@@ -460,11 +657,36 @@ sessions in all.
   marked as the 0.9.93 survey it is; the ledger's F92 row ticked; the rulings of §1 as rows in
   `decisions.md` where they bind the record. PilotApp: `CLAUDE.md`'s dev-pipeline paragraph,
   `.aiworkflowrc` checked (unchanged unless `[risk]` is added).
-- [ ] **F4.** The AIWF cards closed; a KC card for the environment-readiness declaration (§2).
+- [ ] **F4.** The AIWF cards closed (AIWF-36 already is).
 - [ ] **F5.** The first slice through Pilot, the phone's layout (031), on 0.10.0.
 
 ## 9. Rulings
 
 Recorded here as the operator gives them, dated, each naming the decision of §1 it answers.
 
-*(none yet)*
+**2026-10-30, on the plan as written** (the operator's review, actioned the same day):
+
+- Decisions 1, 3, 4, 6, 7, 10, 12: agreed as recommended.
+- Decision 2: agreed, with the caveat that the continuation of the run session is a cache miss
+  on a session over an hour old (small context, so cheap) and that the close-out skill's rules
+  must not be lost with the skill — §5.1 lists them by home. The operator asked whether the
+  store agent needs a running-the-workflow skill: no — it pre-rules, it does not run; what it
+  needs is F2.
+- Decision 5: agreed, with the preparation moved into a sub-agent and the session kept small
+  (§1.5, §5.3); questions about the slice are answered by a sub-agent pointed at the folder,
+  never from the session's own reading.
+- Decision 8: agreed ("prose can change also", but quotes are easier to resolve, to detect and
+  to read).
+- Decision 9: as recommended, except AIWF-36, closed (§7).
+- Decision 11: agreed, kept minimal.
+- §2: worktrees stay the shared repos' mode only; the KubeCoder `needs:` declaration is not
+  pursued and preflight's checks stay; the axe is allowed on prose rules and tracked fields, the
+  research leading; the evidence behind an ask stays available (§2's tail).
+- §4: requirements follow `close-out.json`'s mechanism, and one tool serves both — `asks.py`.
+- §5.2: the 55-minute check goes whole.
+- §5.4: the triage output is to be redesigned from a read of the operator's answers, not from
+  the template; see §5.4.
+- Rich prose — paragraphs, lists, formatting, no 200-word paragraph — is a must of the writing
+  skill (§5.7).
+- Parked for later: PilotApp managing the loop's process (§0).
+- §8 not yet reviewed by the operator.
