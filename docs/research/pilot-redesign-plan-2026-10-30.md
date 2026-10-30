@@ -46,7 +46,7 @@ Three things make it one design rather than four reworks:
    store rendered to Markdown and read back; the refinement's decisions, the plan-writer's
    questions, the plan-reviewer's findings, the run loop's bail-outs and the triage's fates get
    the same treatment: the agent that judges writes structured entries, a new stdlib module
-   `blocks.py` renders them in the format skill's grammar (front matter, shared context, one ask
+   `asks.py` renders them in the format skill's grammar (front matter, shared context, one ask
    per heading section, the block last) and reads `answer`/`by`/`note`/`to`/`done` back. An
    agent writes prose under `/dev:document-format` only where nothing programmatic consumes the
    answer (an arch design, a free report).
@@ -80,7 +80,7 @@ built as recommended; the rulings are recorded in this page's §9 and, where the
 record, as rows in PilotAppSpecs `decisions.md` at the cutover.
 
 1. **The dividing line between coded and written documents** (§0 point 1). *Recommend:* an ask a
-   program acts on is data rendered by `blocks.py`; prose under the format skill only where no
+   program acts on is data rendered by `asks.py`; prose under the format skill only where no
    program reads the answer. The alternative — every stage's agent writes its document under the
    format skill and a parser reads the answers — keeps the prose in the agent's hands at the cost
    of a Markdown parser in every loop and a mapping from blocks to cards, rulings and entries that
@@ -189,7 +189,7 @@ as today. A brief without a ticket files no parented card and says so in its doc
 
 **The documents.** Every ask goes into a file under the slice's folder in the spec repo,
 `slices/<NNN>/asks/<n>-<slug>.md`, numbered in the order written, except the close-out, which is
-`close-out.md`. Each is rendered by `blocks.py` from entries: the front matter (`title`,
+`close-out.md`. Each is rendered by `asks.py` from entries: the front matter (`title`,
 `summary` on more than one ask, `step` from the brief, `for` only for a person's handle), the
 shared context, one ask per heading section with its block last, ids unique in the document. The
 session registers it with `register_document`, attaches what backs it with `attach_file` (the
@@ -199,7 +199,7 @@ and a revised ask is a new document.
 
 **The continuation.** The resumed session's first message is Pilot's, verbatim: "Your documents
 were answered and written back in place: <path>, <path>. Read the answers and continue." The
-skill reads the answers back through `blocks.py` (`answer`, `by`, `at`, `note`, `to`, `done`,
+skill reads the answers back through `asks.py` (`answer`, `by`, `at`, `note`, `to`, `done`,
 `via`), acts on each — a ruling into `plan.md`, a card, a fold, a strike, a slice folder — and
 goes on. Three readings are fixed: the operator's words travel **verbatim**, `answer` and `note`
 quoted wherever the ruling is restated (`aiworkflow-redesign.md` point 3); an answer `by: agent`
@@ -290,7 +290,7 @@ run goes, with the labels and the route table of 0.9.57 (§2). What changes:
   `rule --words/--append/--replace`, `close --words`, the Disposition read-back, `rendered`,
   `ReportEdited`, `--overwrite` and the `report_edited` bail go. The report is rendered once, at
   the run's end, after the wrap-up; no render on every write (0.9.85 reversed).
-- **The document.** `close_out.py render` writes `close-out.md` through `blocks.py`: `title`
+- **The document.** `close_out.py render` writes `close-out.md` through `asks.py`: `title`
   "Close-out of slice NNN — \<title>", `summary`, `step`; the context — the slice in two lines,
   what shipped, what the wrap-up fixed in a line, the record attached; then one section per entry
   the table routes to the operator or to a card request, or the wrap-up marked `card`/`word`:
