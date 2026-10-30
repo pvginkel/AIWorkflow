@@ -656,7 +656,7 @@ sessions in all.
   pass by default; tests (the exit-4 tests of `test_plan_loop.py`).
 - [x] **A6. Preflight** (§5.6): structured failures, the stale-plugin check gone, the version guard
   relaxed for `--plugin-dir`; tests.
-- [ ] **A7. The writing skill** (§5.7): `skills/writing/SKILL.md` from the synthesis, every rule
+- [x] **A7. The writing skill** (§5.7): `skills/writing/SKILL.md` from the synthesis, every rule
   with its finding; the role prompts and `document-format` pointed at it, their own prose rules
   removed; `close-out.md`'s entry rules moved. Before phase B: the stages' documents are written
   under it. *Done when:* every writer loads it and no prose rule stands twice.

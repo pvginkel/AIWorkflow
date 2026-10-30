@@ -40,11 +40,9 @@ document itself as a plan attachment where a phase needs it.
    requirements leave room: independent of each other (or say which depends on which),
    consequential for callers, tests or extensibility, and non-obvious — a choice with one
    reasonable option is a constraint.
-6. **Options are concrete, few and honest.** Two or three per decision, each described so someone
-   could implement it; trade-offs specific ("touches 12 callers" against "touches 3 and adds an
-   indirection"); impact by file, test and caller; a recommendation whose strength is stated —
-   "strongly recommend" and "slight preference" are different. No option for symmetry, no
-   padding: a straightforward decision is said in a line, depth goes to the hard ones.
+6. **Options are concrete and few.** Two or three per decision, each described so someone could
+   implement it, its impact by file, test and caller; the recommendation, which alternatives are
+   live and what each costs are written under `${CLAUDE_PLUGIN_ROOT}/skills/writing/SKILL.md`.
 7. **Responsibilities and boundaries, not implementation.** No code, no class names, no
    pseudo-code. No final decisions — the operator decides. No plan phases or acceptance criteria
    — `/dev:plan-slice` owns those. Stay inside the question.

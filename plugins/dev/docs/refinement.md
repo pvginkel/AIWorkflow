@@ -26,19 +26,12 @@ Three parties, one artifact:
 
 ## What is a decision
 
-A decision is put to the operator only where they could plausibly rule the other way: the
-choice changes something a user sees (the line `/ls` prints, the message a Windows desktop
-shows), an outage window or a procedure the operator runs (which repo is pushed first, a
-controller down for minutes on each stage), a risk they carry (a homelab literal surviving one
-more release), or a preference the material cannot settle. The test is the alternative — if the
-writer's own alternative line would read "loses" or "not worth it", it is not a decision.
-Engineering choices the session can rank on its own grounds — strict versus lenient argument
-parsing in a test stub, a capture script versus attached fixtures, a request header versus a
-process lookup, a new boolean versus reusing an old one, a flat map versus a nested one, an
-environment variable versus a config key — are **settled by the session**: made, stated in one
-sentence with their grounds where the operator could care, and corrected by the operator if
-they disagree on reading. Most slices have one or two decisions; a slice with none gets a doc
-that says so.
+What is a decision, and how a call the session settled itself is shown, is `/dev:writing`'s
+bar: a decision is put to the operator only where they could rule the other way — a risk they
+carry, a preference the material cannot settle, among them — and engineering choices the session
+can rank on its own grounds (strict versus lenient argument parsing in a test stub, a request
+header versus a process lookup, an environment variable versus a config key) are **settled by
+the session**. Most slices have one or two decisions; a slice with none gets a doc that says so.
 
 Neither form carries what the slice does not leave open. A decision is what its numbered
 requirements — their own "open for the planner" items included — genuinely leave undecided. A
@@ -135,7 +128,8 @@ a premise that no longer holds first — what was believed, what is true, what c
 last — the phases this comes to and the repos it touches>
 ```
 
-Writing rules — the reader is the PO, a week away from the slice, deciding from the page:
+Writing rules — the reader is the PO, a week away from the slice, deciding from the page, and
+the prose is written under `/dev:writing`. The doc's own:
 
 - **No introduction; each entry stands alone.** The doc is the list of what is asked. What an
   introduction would carry — what the slice is, what was already ruled, what no longer holds —
@@ -145,19 +139,6 @@ Writing rules — the reader is the PO, a week away from the slice, deciding fro
   premise that no longer holds is stated once, where its consequence lands: in the entry it
   produces — a decision's *Context*, a fact question — otherwise as a settled item. A slice
   with no decision says so in one line under the title, where the first decision would be.
-- **No code, no handles.** No fenced blocks, no `file:line`, no card ids, decision ids or
-  requirement numbers: things are named in words ("the route that streams an environment's
-  state", "the card that reported the Windows share"). The one exception is text the operator
-  is ruling on verbatim — a message a user will read on screen, a config shape they will type.
-- **Short.** A decision is about 300 words — its *Context* and its ask a few sentences each,
-  not the slice retold; a settled item is one sentence; the whole doc reads in five minutes.
-  Context, not volume — what the operator needs to judge, not what the session did to get
-  there.
-- **Recommendation first, one alternative at most.** The trade-off is the sentence the operator
-  disagrees with when they disagree — write it so it can be. An alternative that loses on the
-  material is not listed; a decision with no live alternative is a settled item.
-- **A claim a recommendation rests on that the session did not verify is said so** in the
-  decision's prose ("not verified: …") — never smoothed into a fact, never dropped.
 - **Fact questions are plain questions, each with its own answer line.** No options on "do you
   ever kill an env pod by hand?"; numbered like the decisions, an *Operator* line under each — a
   fact that sits as a bullet reads as a remark and goes unanswered.

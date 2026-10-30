@@ -217,14 +217,13 @@ I'd <recommendation>.
 Q2 …
 ```
 
-- **Every item appears exactly once**, on one line: its id and the ask in the card's words,
-  shortened to a line — the title is part of the ask. No card text, no label, no note: the
-  operator opens a card when they want it. A ruling the card already carries is on its line
-  ("— you ruled yes on 2026-09-25").
+- **Every item appears exactly once**, on its line, written as `/dev:writing` has a batch's line
+  — the title is part of the ask, and the operator opens a card when they want it. A ruling the
+  card already carries is on its line ("— you ruled yes on 2026-09-25").
 - **The slices carry a phase estimate**, a guess from the cards alone — say so once in the
   message; the planner sets the number.
-- **The questions are numbered**, each with the fact it turns on and your recommendation,
-  answerable from memory. An item's line cites its question.
+- **The questions are numbered**, each answerable from memory. An item's line cites its
+  question.
 - **Nothing is asked twice.** An answer folded in, only what moved is re-presented — the lines
   that changed fate, the questions still open.
 

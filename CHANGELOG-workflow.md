@@ -4,6 +4,38 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-30 — What the operator reads is written under one skill, `/dev:writing`, every rule with its finding (v0.10.7)
+
+The writing skill, P-111's A7 (the plan's §5.7).
+
+**One skill for the words.** `/dev:writing` says how a close-out entry, a plan question, a
+review's finding, a requirements ask, a card request, a proposal and the line of a triage
+message are written. What is read, in what order: the first lines carry the ruling, what must not
+be missed opens the ask, nothing is restated. The shape: one point to a paragraph and three to a
+list, code only where it is what is ruled on, self-contained for a cold reader. What is asked:
+only what the operator could rule the other way, every ask with its recommendation and only
+live alternatives, an entry that takes a position, a settled item in one sentence, a card
+request as a line and a card, a batch as one line per item. What it rests on: a premise as a
+claim with its class, a problem priced. And a question back answered in prose, not re-asked.
+Fifteen rules, each ending with the findings it rests on in
+`docs/research/operator-reading-synthesis-2026-10-30.md`; a rule no finding supports is not in
+it, and a rule changes on a read, never on taste (the operator, 2026-10-30: the research leads,
+and rich prose is a must).
+
+**Every writer loads it, and no prose rule stands twice.** The code-writer, code-reviewer,
+doc-writer, plan-writer, plan-reviewer, test-agent, wrap-up, refinement-writer and arch-design
+point at it for what they write for the operator, as do `plan-slice`, `triage`, `inbox`,
+`close-out` and `refinement.md`; each keeps its own mechanics and loses its copy of the rules.
+`close-out.md`'s "Entry rules" section is gone: its prose went into the skill, the grade into
+§ The labels, and the store's own rules — the provenance class, one entry per thing, in doubt add
+it — into a short § Writing an entry that points at the skill. `/dev:document-format`'s "An ask"
+section is gone with it: the format skill is the grammar and the writing skill the words, and
+neither restates the other. What that section carried with no finding behind it — the lead per
+kind of ask, the tool that exists already, the handbook's preferences applied — is the host's
+standing instruction and the brief `pilot.md` describes, which the plugin does not restate.
+`pilot.md` names the skill beside the format, and `docs/AUTHORING.md` carries the rule that
+keeps it the one home.
+
 ## 2026-10-30 — Preflight's failure is data, its stale-plugin line is gone, and a `--plugin-dir` run passes the version guard (v0.10.6)
 
 Preflight's side of a stage that renders every ask as a document, P-111's A6.

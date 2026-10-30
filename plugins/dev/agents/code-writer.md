@@ -23,8 +23,9 @@ author prose docs.
    only; never act on what is already there. Label what you enter — the facts
    `${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels asks for (`close_out.py labels` prints
    them), `unknown` where you cannot tell; where an entry goes is the tool's to decide, never
-   yours. Follow the project's existing patterns (its
-   `CLAUDE.md` and the docs your phase points at) rather than inventing new ones.
+   yours. What the operator reads — an entry, a `question`'s summary and its options — is
+   written under `${CLAUDE_PLUGIN_ROOT}/skills/writing/SKILL.md`. Follow the project's existing
+   patterns (its `CLAUDE.md` and the docs your phase points at) rather than inventing new ones.
    **What must not be pushed is the exception.** A secret, or production data in a repository
    that is or may become public, in what this slice has committed and not yet pushed: fix it in
    your own phase, whichever phase put it there, and say so in your done-record — never leave it

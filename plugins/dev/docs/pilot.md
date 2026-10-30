@@ -64,7 +64,7 @@ are applied in every ask.
 
 Every ask is a document in the slice's folder in the spec repo, rendered from a store by
 `${CLAUDE_PLUGIN_ROOT}/tools/asks.py`; nobody writes a block by hand. The format is
-`/dev:document-format`'s, which the renderer keeps.
+`/dev:document-format`'s, which the renderer keeps, and the words are `/dev:writing`'s.
 
 - **Where.** `asks/<n>-<slug>.md`, numbered from 1 in the order written over the slice's life,
   its store `asks/<n>-<slug>.json` beside it. The close-out is `close-out.md` at the folder's

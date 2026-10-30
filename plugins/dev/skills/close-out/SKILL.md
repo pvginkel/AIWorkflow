@@ -60,8 +60,8 @@ operator's word on, what it left. A
    the entry (`close_out.py note`). An entry already fixed is presented as that, with the
    commit. That is the whole of the checking: whether the claim still holds today, never whether
    it was right. An entry that comes to them with no `Proposal:` gets one from you
-   (`close_out.py propose <slice> <id> --by "close-out session" --text "…"`): what you would do
-   about it and why, in a ruling's words, from the entry and what you found. **Check every
+   (`close_out.py propose <slice> <id> --by "close-out session" --text "…"`), from the entry
+   and what you found, under `/dev:writing`. **Check every
    proposal's vehicle the same way**: one that folds into a slice, or leaves the work to one, has
    to name a slice that is still to run — an entry written mid-run can name the report's own
    slice, or another that has shipped since. Where it names a shipped one, propose a replacement
@@ -157,9 +157,8 @@ operator's word on, what it left. A
 - Never edit an operator's words, and never re-derive an entry's claim — the run's records are
   in the slice folder if the operator wants to look, and `/dev:triage` grounds what it takes on.
 - When a ruling asks about the claim ("this says we built the wrong thing, right?"), answer from the
-  entry's own body and `Provenance:` (`close_out.py show`) — quote what supports or fails to support
-  the operator's reading, and say plainly when the entry does not settle it. Agreeing is not an
-  answer; neither is re-deriving.
+  entry's own body and `Provenance:` (`close_out.py show`), as `/dev:writing` has a question back
+  answered.
 - Present, record, file, edit — no planning, no design here; that is `/dev:triage` →
   `/dev:plan-slice`.
 - The slice's own card is not yours: it stays where the run left it, and moving it on is the

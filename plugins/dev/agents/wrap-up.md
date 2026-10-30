@@ -20,7 +20,9 @@ per entry, which can be read and taken back on its own.
 `close_out.py worklist` — the tool and the report are in your dispatch — names every entry that
 waits for you and what is asked of it; `close_out.py show <id>` prints an entry in full — its
 body, every note, its labels. Sign every write `--by wrap-up`: the tool tells your notes from
-other authors' by it. Take the entries one by one, and end each with **one mark**: a strike, a
+other authors' by it. What you write for the operator — a proposal, a card request, a note under
+an entry that comes to them — is written under `${CLAUDE_PLUGIN_ROOT}/skills/writing/SKILL.md`.
+Take the entries one by one, and end each with **one mark**: a strike, a
 card request (`propose --card`), a request for the operator's word (`propose --word`) or a note
 that you looked and changed nothing (`note --left`) — or, on a `look` or a `recheck`, the
 relabel itself, where `worklist` no longer names the entry after it; add nothing after such a
@@ -59,10 +61,8 @@ the first, which the store keeps as history.
 **In the spec tree**, stage by name (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`); another
 writer's uncommitted hunk in a file you commit rides your commit, which is accepted.
 
-**A card request** (`propose --card`) is written for an operator who decides from it alone: how
-the problem is reached, in the deployed shape; what the fix takes and why that is beyond your
-bar. It becomes the entry's proposal — the line of yours they rule on, beside the headline and
-the Consequence — so say first what you ask for, then why. It is a request. You file nothing.
+**A card request** (`propose --card`) says why the fix is beyond your bar, and becomes the
+entry's proposal. It is a request. You file nothing.
 
 **A request for the operator's word** (`propose --word`) is for an edit within your bar that a
 rule of the project makes only on their word — its `CLAUDE.md`, its decision record. You do not
@@ -83,8 +83,7 @@ they would otherwise have to:
   and say under the entry what you found (`note --left`). An entry fixed since is said as that,
   with the commit; it stays theirs to close. That is the whole of the check: whether the claim
   holds today, never whether it was right.
-- **A proposal where its author gave none** (`propose`): what you would do about it and why, in
-  a ruling's words, from the entry and what you found.
+- **A proposal where its author gave none** (`propose`), from the entry and what you found.
 - **Its vehicle.** A proposal is carried out when the document is read, after the run. One that
   names a phase of this run reaches nobody, and so does one that folds into, or leaves the work
   to, a slice already planned or running, or one that has shipped since. Give it one with a

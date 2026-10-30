@@ -1,6 +1,6 @@
 ---
 name: document-format
-description: The format of a document Pilot, the project manager, reads — its front matter, its decision, question and action blocks and their answer lines, an ask written with the lead first and one ask to a section, and what Pilot refuses as a fault. Load it before you write or revise a document you will register with Pilot through its `register_document` tool, and before you write an item, a document or an answer line in Pilot's store. Not for a document nothing registers with Pilot.
+description: The format of a document Pilot, the project manager, reads — its front matter, its decision, question and action blocks and their answer lines, one ask to a section, and what Pilot refuses as a fault. Load it before you write or revise a document you will register with Pilot through its `register_document` tool, and before you write an item, a document or an answer line in Pilot's store. Not for a document nothing registers with Pilot.
 argument-hint: "[the document to write or check]"
 ---
 
@@ -9,43 +9,10 @@ argument-hint: "[the document to write or check]"
 Pilot reads Markdown. A document it reads — a decision document a work item writes and registers
 with Pilot, an item or a document in Pilot's store — is prose for a person around fenced blocks,
 the asks. Pilot's record reads the front matter and the blocks, and nothing else: the prose is the
-writer's and is never parsed. This skill is that grammar as a writer needs it, and how an ask is
-written so that the person answering reads it once. The grammar whole, as Pilot's engine reads
-and writes it, is PilotApp's `docs/block-dsl.md`. Argument (optional): the document to write or
-check against this page.
-
-## An ask
-
-**The lead, then the evidence.** The first screen of an ask says what is asked, what you
-recommend, what changes for the person and what happens once they answer. The diagnosis, the
-endpoints and the fuller comparison stay right under it, or behind the document in an attachment.
-The lead fits what the reader has to do:
-
-- *decide*: the choice, the recommendation, and the consequences that tell the options apart;
-- *do*: the exact step, where, and what result to report back;
-- *judge a look*: a working preview or a real capture, the change pointed out;
-- *verify*: the real entry point and one concrete case to try, Works or Doesn't;
-- *understand*: the result, and what still qualifies it.
-
-Write the smallest form that is enough: these are not five templates. Keep designed, implemented,
-deployed and verified apart, and say who checked what against what. A link or a capture is real,
-its version and its access named; one that is stale or out of reach is said to be so, never
-replaced by a confident description. `for` goes to whoever can judge — the reporter checks the
-fix, the operator picks the mechanism — not to whoever is a member or wrote it.
-
-**The ask's shape.**
-
-- The need first, in one line: what has to be possible, for whom, by when.
-- Then the tool that exists already: the capability, grant or mechanism in place that answers the
-  need, named plainly. Building something is the deviation, and an ask that proposes building
-  says why the existing tool is not enough.
-- Options with their consequences, the recommendation marked, what it optimises for and how sure
-  you are of it.
-- The operator's standing preferences applied, those you know of: the project's handbook, which a
-  work item's brief carries, and the project's own docs. An ask that runs against a known
-  preference is reframed before it is written, never put as it stands.
-- One ask per block. A routing — card it, fold it, fix it now — is never bundled with a
-  substantive recommendation.
+writer's and is never parsed. This skill is that grammar as a writer needs it; the words inside
+it — what an ask says first, its shape, its recommendation, its price — are written under
+`/dev:writing`. The grammar whole, as Pilot's engine reads and writes it, is PilotApp's
+`docs/block-dsl.md`. Argument (optional): the document to write or check against this page.
 
 ## A document of more than one ask
 
@@ -79,7 +46,8 @@ closing `---` opens no front matter. The keys Pilot reads, any other ignored:
 - `step`: the id of the plan task the document serves. A work item's brief names it; in Pilot's
   store the task ids are `plan.json`'s.
 - `urgent`: `true` or `false`.
-- `for`: the handle of the person who should answer, whoever can judge (above).
+- `for`: the handle of the person who should answer — whoever can judge: the reporter checks the
+  fix, the operator picks the mechanism — not whoever is a member or wrote it.
 - `slug`, read in the draft only: the slug the project takes when it is created. Lower-case
   letters, digits and hyphens, not starting with `draft-`, and no other project's. A draft without
   one is no fault.

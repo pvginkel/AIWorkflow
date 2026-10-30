@@ -79,8 +79,8 @@ absorbed as spec, not reopened.
    pre-read code ranges yourself that the planner will read again: what you read rides your
    context for the rest of the slice — then your recommendation and its trade-off, the one
    alternative the operator could plausibly pick, and the impact if you are wrong. Only an item
-   the operator could plausibly rule the other way is a decision (the contract's test); the rest
-   you settle yourself and list one line each, marked routine or not. The evidence stays in the
+   the operator could rule the other way is a decision (`/dev:writing`'s bar); the rest you
+   settle yourself and list one line each, marked routine or not. The evidence stays in the
    material and, where it binds the plan, goes to `plan.md` in §3 — the doc carries none of it.
    What only the operator knows is an open fact. The size in phases goes in the material too.
    Two premises are grounded like any other, because they are the ones a slice is most often
@@ -100,8 +100,8 @@ absorbed as spec, not reopened.
    *Operator* line in `refinement.md`, in the operator's words; a ruling that moves later
    replaces the line (the contract's walkthrough section). The doc is the page the operator
    returns to. A single decent choice with impact is put to
-   them in chat as agree-or-comment; a reframe or "walk me through this" is answered in prose,
-   and the decision is not re-posed until they have said what they think.
+   them in chat as agree-or-comment; a reframe or "walk me through this" is answered as
+   `/dev:writing` has a question back answered.
    **A hedged answer is not a ruling**: an answer that rules conditionally ("if X, then fine")
    stays open — verify the condition and re-surface it with the evidence.
 4. A slice whose shape is wrong is re-shaped here with the operator: split it, kick an item back

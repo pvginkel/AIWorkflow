@@ -146,6 +146,12 @@ bring and what it would take:
 | `action`, `decision` | `trigger`, `impact` and `signal`; the others where the entry names a fix |
 | `improvement` | `benefit`, `felt`, `change`, `size`, `product-call`, `prevents`, `area`, `repo` |
 
+**The grade** is for an entry of any kind that has one: `major` (a wrong result or a broken
+flow, unfixed) · `minor` (a real defect with a contained consequence) · `nit` (true, no
+practical consequence today) · `cosmetic` (no behavioural or informational consequence — a
+stale line pointer). The reviewer's own Blocker/Major/Minor never reaches the report: a Blocker
+gets fixed.
+
 **Where the line is drawn:**
 
 - **Wrong today, or better tomorrow.** A defect, prose and a test gap say that something should
@@ -157,9 +163,8 @@ bring and what it would take:
   revert, a migration, a changed contract, work redone — and the one its author would pick is
   `--recommend`, in place of a proposal. `Consequence:` is what is experienced while the choice
   in effect stands, as for every kind. An account of what the writer did, with the alternatives
-  somewhere in a paragraph, is not a decision — the operator reads it and has to ask "what's the
-  decision?" — and an entry that ends in "the operator's call" is what it was before that
-  sentence. A ratification — a change already shipped, with no alternative but undoing it — says
+  somewhere in a paragraph, is not a decision, and an entry that ends in "the operator's call"
+  is what it was before that sentence. A ratification — a change already shipped, with no alternative but undoing it — says
   so in its first line, and its options are keep and revert.
 - **An action is one thing to do, and nothing waits on a notice.** Its headline is the
   imperative, and its author can say who waits on it — a criterion, a push, the run. An "if"
@@ -195,10 +200,7 @@ bring and what it would take:
   strike.
 
 **The proposal.** Beside its labels an entry says what its author would do about it and why,
-in a sentence or two, in a ruling's words — card · fix now · fold into <slice> · close · do it
-(`append --proposal`). The operator reads it with the headline and the `Consequence:` line, so
-that one word back is a complete ruling: it is the reasoning they would otherwise redo. An
-action and an improvement carry one from their author, and a decision its options and the one
+in a sentence or two (`append --proposal`). An action and an improvement carry one from their author, and a decision its options and the one
 it recommends in its place; the tool refuses them without. A defect, a test gap or prose may
 carry one, and gets the wrap-up's where the table brings it to the operator — a card request is
 the proposal (`propose --card`); a risk gets one where its author gave none or the code says
@@ -441,48 +443,25 @@ lands what it committed with the doc phase; it never fails a run ([run-loop.md](
 nobody dispatches: an entry it did not reach comes to the operator in the document, said as what
 it is — an entry nobody looked at.
 
-## Entry rules
+## Writing an entry
 
-- **The ask leads the entry and stands alone.** The headline, the proposal — a decision's
-  options and the one it recommends — and the `Consequence:` line are what the operator rules
-  on: write them so that one word back is a complete ruling, and so that none of them needs the
-  body to be understood. The body is on the page with them, and it is what a question about the
-  entry, the wrap-up and the card an entry may become work from; those have only the store, so
-  quote liberally there: the sentence that is wrong, the command and its output, the file and
-  the quoted line. Provenance ids (`P3 r1 F3`, `V10`) belong on the `Provenance:` line, not in
-  the body as load-bearing references.
-- **`Consequence:` is a line of its own, written for triage.** What an operator or user actually
-  experiences if the entry stays as it is — unfixed, undone, unanswered; for a decision, while
-  the choice in effect stands — in the deployed shape,
-  in plain words, with what has to happen for it to be reached; or `none`, said plainly. It is the
-  stated consequence `/dev:triage` puts to the operator, who reads it the same way, so it is not
-  "better than before", not "none to behaviour" when a human would notice something, and not a
-  restatement of the mechanism the body already gave. A body that leaves the reader asking "what
-  is the risk in a real environment?" has an entry without a consequence, however long it is.
-  The labels say the same in the tool's words, and the tool holds the two against each other.
-- **Every claim carries its evidence class.** `**Provenance:**` opens with `witnessed` (the author
-  ran, measured, reproduced or mutated it — the command, the output, the probe are in the body)
-  or `read` (inferred from reading code or text). The body leads with the symptom and states a
-  cause only where it was shown: symptom claims hold up, cause attributions are the half that does
-  not, and a reader deciding what to trust needs the class before the body. The same holds for
-  a strike — resolved, refuted, does-not-reproduce names the commit and what was re-run.
-- **No limit on prose, no limit on count — and no filler.** Long sections are fine; a cap produces
-  more, not less. Length is what the body needs, and the page shows it whole beside the ask. A
-  proposal that restates the headline, or a consequence that restates the mechanism, leaves the
-  ask nothing to rule from and sends the operator into the body for what that line should have
-  said.
+An entry's words are written under `/dev:writing`
+(`${CLAUDE_PLUGIN_ROOT}/skills/writing/SKILL.md`): its headline, its proposal or its options and
+its `Consequence:` are the lines the operator rules from, and the body is what a question about
+the entry, the wrap-up and the card an entry may become work from. Those have only the store, so
+the body quotes what they will need: the sentence that is wrong, the command and its output, the
+file and the quoted line. Three rules are the store's own:
+
+- **`Provenance:` opens with the claim's class** — `witnessed`, the author ran, measured,
+  reproduced or mutated it and the command, the output or the probe is in the body, or `read`,
+  inferred from code or text — then the author, phase and round. A strike's reason names the
+  commit and what was re-run the same way.
 - **One entry per thing, not per turn.** A later observation about an entry that already exists —
   its premise moved, its symptom was re-tested, a phase resolved it, a reviewer refuted it — is
   `close_out.py note <close-out.md> <id>`: a dated paragraph at the end of that entry's body,
-  never a new entry.
-  The reader who decides on B1 finds everything about B1 under B1.
+  never a new entry. The reader who decides on B1 finds everything about B1 under B1.
 - **In doubt, add it.** Nobody pre-dedups: every agent runs `list` before it writes, the
   completion consult strikes duplicates it is sure of, the operator merges the rest by reading.
-- **The grade** is for an entry of any kind that has one: `major` (a wrong result or a broken
-  flow, unfixed) · `minor` (a real defect with a contained consequence) · `nit` (true, no
-  practical consequence today) · `cosmetic` (no behavioural or informational consequence — a
-  stale line pointer). The reviewer's own Blocker/Major/Minor never reaches the report: a
-  Blocker gets fixed.
 
 ## The continuation
 
@@ -521,9 +500,8 @@ there is one), which closes the entry, and closes the report.
   record by name.
 
 **A question about an entry** — Pilot's clarification turn, or the operator's in chat — is
-answered from the entry's body and `Provenance:` (`close_out.py show`): quote what supports or
-fails the reading, and say plainly when the entry does not settle it. Never re-derive the claim;
-agreeing is not an answer.
+answered from the entry's body and `Provenance:` (`close_out.py show`), as `/dev:writing` has a
+question back answered.
 
 ## Lifecycle
 

@@ -5,8 +5,8 @@ record, and the two files `${CLAUDE_PLUGIN_ROOT}/tools/close_out.py render` writ
 `close-out.md`, the document Pilot reads, and `close-out-record.md`, attached to it. No author
 types any of them: the tool writes every entry, note, strike and ruling, and its verbs are
 listed [below](#the-verbs). Semantics — what the report is for, the labels and the routes, who
-writes what and when, the entry rules, the continuation and the lifecycle — are
-[close-out.md](close-out.md); this doc is the shape.
+writes what and when, the continuation and the lifecycle — are [close-out.md](close-out.md), and
+an entry's words are `/dev:writing`'s; this doc is the shape.
 
 ## The store
 
@@ -48,8 +48,8 @@ writes what and when, the entry rules, the continuation and the lifecycle — ar
 - **`labels`** holds the labels of the entry's kind, by the names and values of
   [close-out.md](close-out.md#the-labels); `null` on an entry that has none yet. A correction
   (`relabel`) changes them in place and leaves a note that says what changed and why.
-- **`proposal`** is what its author would do about the entry and why, in a sentence or two, in
-  a ruling's words. `append --proposal` writes it; `propose` replaces it, the one before kept as
+- **`proposal`** is what its author would do about the entry and why, in a sentence or two.
+  `append --proposal` writes it; `propose` replaces it, the one before kept as
   a history note. `null` on an entry that has none, and on a decision, which carries its
   options in its place.
 - **`options`**, **`recommend`**, **`check`** and **`due`** are there only where given: a

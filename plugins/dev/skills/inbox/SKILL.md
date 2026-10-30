@@ -146,10 +146,9 @@ One chat message, however long the inbox — never a dialog, never a document �
 Q1 (<id>). <What the card asks.> <The question?> I'd <recommendation>.
 ```
 
-Every card exactly once, on one line: its id, the ask in the card's words shortened to a line (the
-title is part of the ask), and for a held-back card what it waits on; no card text, no label, no
-note — the operator opens a card when they want it. The questions numbered, each with the fact it
-turns on and your recommendation. The operator answers in chat, in their own words: **go** approves
+Every card exactly once, on its line, written as `/dev:writing` has a batch's line (the title is
+part of the ask, and the operator opens a card when they want it), and for a held-back card what
+it waits on. The questions numbered. The operator answers in chat, in their own words: **go** approves
 the scheme as it stands; **night shift**, **slice**, **close**, **later** and **yours** on a card
 move it; **done: <what they did>** on a *yours* card is the act performed, and the card takes the
 fate that follows — for an action of theirs, that is closed resolved; an answer to a question is the

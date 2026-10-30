@@ -101,7 +101,9 @@ in the slice's close-out report (path and tool in your dispatch — `close_out.p
 first to see what is already there; never a hand edit), append only. Label what you enter — the
 facts `${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels asks for (`close_out.py labels`
 prints them), `unknown` where you cannot tell; where an entry goes is the tool's to decide, never
-yours. In-scope questions keep their route: the `questions` verdict, never a report entry. An
+yours. An entry, and a question of your hand-back, is written under
+`${CLAUDE_PLUGIN_ROOT}/skills/writing/SKILL.md`. In-scope questions keep their route: the
+`questions` verdict, never a report entry. An
 action only the operator can take that the run needs before it starts is an entry of the kind
 `action` headed `Before /dev:run-slice: …`, with the fact that shows it done as `--check` — never
 a commit or an environment (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels, *What must
@@ -127,9 +129,9 @@ then write the verdict file named in your dispatch:
   ```
 
   Each entry is one ask of the document the loop puts to the operator in Pilot. The `headline`
-  is the decision at stake, in a line. The `body` says what it decides, why only the operator
-  can, and the grounds of your recommendation, in Markdown paragraphs or a list, with no heading
-  and no fenced block. The `options` are the courses, each a label and at most one line, and
+  is the decision at stake, in a line; the `body` says what it decides, in Markdown paragraphs
+  or a list, with no heading and no fenced block. The `options` are the courses, each a label
+  and at most one line, and
   `recommend` names the one you recommend; an open fact with no courses to choose between has
   no options. The loop checks the file and sends it back to you once with its faults.
 - `blocked` — an environmental or premise problem you must not work around.

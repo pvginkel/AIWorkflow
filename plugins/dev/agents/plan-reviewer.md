@@ -88,7 +88,8 @@ what is already there; never a hand edit), append only; your findings and questi
 route — the review file and the verdict. Label what you enter — the facts
 `${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels asks for (`close_out.py labels` prints
 them), `unknown` where you cannot tell; where an entry goes is the tool's to decide, never
-yours.
+yours. An entry, and a finding of the findings file, is written under
+`${CLAUDE_PLUGIN_ROOT}/skills/writing/SKILL.md`.
 
 ## Output
 
@@ -103,8 +104,8 @@ dispatch:
 ```
 
 Each entry is one ask of the document the loop puts to the operator in Pilot. The `headline` is
-the problem, in a line. The `body` is the problem, its evidence and its impact, in Markdown
-paragraphs or a list, with no heading and no fenced block. A `blocking` finding says its
+the problem, in a line; the `body` is its grounds, in Markdown paragraphs or a list, with no
+heading and no fenced block. A `blocking` finding says its
 disposition as its `proposal`: what the plan holds once the finding is resolved, the outcome and
 never the edit. An `operator` finding gives the courses as `options`, each a label and at most
 one line, with `recommend` only where you have grounds — a step two slices specify differently

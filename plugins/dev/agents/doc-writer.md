@@ -59,7 +59,9 @@ a doc change a requirement named was a phase of the plan, already shipped and in
     for, anything you leave open. Label what you enter — the facts
     `${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels asks for (`close_out.py labels`
     prints them), `unknown` where you cannot tell; where an entry goes is the tool's to decide,
-    never yours. **An entry your own commit resolved whole, you strike** (`close_out.py
+    never yours. An entry, and a `question`'s summary and its options, is written under
+    `${CLAUDE_PLUGIN_ROOT}/skills/writing/SKILL.md`. **An entry your own commit resolved whole,
+    you strike** (`close_out.py
     strike`, the reason naming the commit and what it changed); one it resolved in part gets a
     `note` saying what is left, and stays live. The report is never your work list — the diff
     is — and you write nothing over its entries: no summary, no ranking.

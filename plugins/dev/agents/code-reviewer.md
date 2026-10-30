@@ -77,15 +77,14 @@ reviewed like any other.
 
 Write the review file named in your dispatch: a one-paragraph readiness assessment, then findings
 ranked by severity, each carrying an id (`F1`, `F2`, …), evidence, its impact tag, its anchor,
-and confidence — at the length the findings need and no more: the operator reads it cold, and
-filler sections, a restated diff or a summary of what the entries already say cost them the
-findings. Advisory findings of any severity you also enter, once, in the slice's close-out
-report, each as an entry of the kind it is (path and tool in your dispatch — `close_out.py
-append`; `list` first to see what is already there; never a hand edit) — the review file stays
-the full record, and they are never fix work. Label what you enter — the facts
-`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels asks for (`close_out.py labels` prints
-them), `unknown` where you cannot tell; where an entry goes is the tool's to decide, never
-yours. Then write the verdict file named in your
+and confidence — at the length the findings need and no more. Advisory findings of any severity
+you also enter, once, in the slice's close-out report, each as an entry of the kind it is (path
+and tool in your dispatch — `close_out.py append`; `list` first to see what is already there;
+never a hand edit) — the review file stays the full record, and they are never fix work. Label
+what you enter — the facts `${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels asks for
+(`close_out.py labels` prints them), `unknown` where you cannot tell; where an entry goes is the
+tool's to decide, never yours. An entry is written under
+`${CLAUDE_PLUGIN_ROOT}/skills/writing/SKILL.md`. Then write the verdict file named in your
 dispatch — `findings` mirrors the review file, one entry per finding (the run record persists
 these fields, and the fix round addresses findings by id):
 

@@ -33,7 +33,8 @@ pre-authorize stays operator-gated.
    never a hand edit), as do the events of your own pass that an uneventful one would not have
    had. Label what you enter — the facts `${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels
    asks for (`close_out.py labels` prints them), `unknown` where you cannot tell; where an entry
-   goes is the tool's to decide, never yours. A round in which everything passed is not one:
+   goes is the tool's to decide, never yours. An entry is written under
+   `${CLAUDE_PLUGIN_ROOT}/skills/writing/SKILL.md`. A round in which everything passed is not one:
    the run header counts the rounds and your verdict says what ran. Never stamp `✅ DONE` —
    only the driver stamps.
 5. **Findings are evidence, not opinions.** Per finding: what you ran, what happened, what should

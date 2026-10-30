@@ -98,6 +98,16 @@ restates none of it. Writing one:
 - **One procedure, with Pilot or without.** The fallback changes the register-and-attach step
   alone; a skill grows no second path for it.
 
+## What the operator reads — one skill, every rule with its finding
+
+How a close-out entry, a plan question, a requirements ask, a card request, a proposal or the
+line of a triage message is written is `plugins/dev/skills/writing/SKILL.md`, `/dev:writing`, and
+nowhere else: a role prompt, a skill or a contract doc that writes for the operator points at it
+and carries no prose rule of its own. Every rule there cites a finding of the reads of how the
+operator reads and answers (`docs/research/operator-reading-synthesis-2026-10-30.md`); a rule
+without one does not go in, and a rule is changed by a read, never by taste. The grammar of a
+document Pilot reads is `/dev:document-format`'s, and neither skill restates the other.
+
 ## `CLAUDE.md` discipline (the project side)
 
 The plugin can't ship a `CLAUDE.md` (it is project/user memory, discovered by walking the repo). A
