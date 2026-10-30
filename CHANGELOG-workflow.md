@@ -4,6 +4,30 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-30 — One store for every ask, rendered as the document Pilot reads and read back from its answers (v0.10.1)
+
+`plugins/dev/tools/asks.py` is the module the P-111 plan's §4 names. A stage's asks are entries in
+a store, `asks/<n>-<slug>.json` under the slice folder. The tool renders the store as the
+document beside it, and `absorb` reads the answer lines Pilot writes back into that document.
+Nothing uses it yet: the loops, `close_out.py` and the skills move onto it in the items that
+follow.
+
+- **The store.** An entry's kind is its block's: a decision with options or a proposal, a
+  question, an action. `append` refuses an entry that lacks what its kind carries, naming every
+  fault. An action's `due` stays in the store for the driver, because no block takes it.
+- **The render.** It writes the format skill's grammar. Values are quoted where YAML would
+  misread them, and a value of several lines becomes a literal block. The render refuses what
+  Pilot would refuse, and a heading or a block in the prose. It never writes over a document
+  that already carries answers.
+- **The read-back.** It reads only the answer lines, with a parser of the subset Pilot's
+  record writes. It refuses a document whose blocks are not the store's asks.
+
+The suite pins the render against the skill's own example, which it reproduces byte for byte,
+and against the skill's quoting rules. It pins the read-back against answer lines captured from
+PilotApp's `pilot_dsl` writer. A run against `pilot_dsl` itself read 238 rendered blocks back as
+stored, with no fault. It also read every answer Pilot's writer wrote, including Done with the
+recommendations and Undo, exactly as Pilot reads them.
+
 ## 2026-10-30 — A stage of the workflow as a Pilot work item, on one page (v0.10.0)
 
 The first commit of the 0.10 line, the `dev` plugin re-envisioned for Pilot running it (P-111,

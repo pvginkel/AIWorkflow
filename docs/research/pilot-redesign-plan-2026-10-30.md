@@ -636,7 +636,7 @@ sessions in all.
   rules for a stage skill (headless, ends its turn, the brief, the documents, the continuation,
   the clarification turn, the fallback). *Done when:* the page reads as the one home and the
   operator has read it — this is P-111's "Designed" box, with this plan.
-- [ ] **A1. `asks.py`** (§4): the store, its CLI, the render and the read-back, with its suite,
+- [x] **A1. `asks.py`** (§4): the store, its CLI, the render and the read-back, with its suite,
   pinned against the format skill's example and the quoting rules. *Done when:* a store of every
   kind renders to a document that round-trips through the read-back with Pilot's answer lines
   added.

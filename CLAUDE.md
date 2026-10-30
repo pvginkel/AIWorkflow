@@ -83,8 +83,10 @@ kc project lint        # cexec python uv run --with ruff ruff check .
 
 - **`plugins/dev/tools/`** — the drivers, each with a `test_*.py` beside it. `run_loop.py` (~3k
   lines) and `plan_loop.py` carry most of the logic and most of the ~4.4k lines of suite; plus
-  `close_out.py` (the close-out report: its store, the policy tables that route an entry from
-  its labels, the rendering; imported by both loops), `github_target.py`
+  `asks.py` (the store of a stage's asks, rendered as the document Pilot reads, and the
+  read-back of the answers Pilot writes into it), `close_out.py` (the close-out report: its
+  store, the policy tables that route an entry from its labels, the rendering; imported by both
+  loops), `github_target.py`
   (the `github:` Target's scratch clone), `preflight.py`,
   `sweep_slice.py`, `close_slice.py`, `redact_secrets.py` (the `kind: Secret` stubbing of
   every diff the driver hands an agent), `spec_check.py` (the spec repo's phase gate),
