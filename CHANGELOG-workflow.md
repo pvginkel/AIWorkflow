@@ -4,6 +4,42 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-30 — Run-slice is the run's stage in Pilot, and the close-out is its continuation; `/dev:close-out` goes (v0.10.8)
+
+`/dev:run-slice` is rewritten as the turns Pilot sends a stage (`docs/pilot.md`): the start, the
+continuation, the clarification and the nudge. The four jobs and the chat are gone, and so are
+the 55-minute check, the status updates and the notifications.
+
+- **The start** reads the brief: the slice, its `Ticket:` and the plan task as `--step`. A
+  preflight failure (`--json`), or a refusal of the run, is an `action` document. A failure
+  with no slice folder to hold one ends the turn with what failed and what fixes it.
+- **The wait** runs inside the turn: `wait` in the foreground, re-armed on 5 with nothing read,
+  a relaunch on 6, the run's exit acted on at 0.
+- **Exit 4** registers the document the driver rendered, attaches the plan and the phase's
+  review, and commits `asks/`. **Exit 3** goes to a diagnosis sub-agent. It fixes what is the
+  workflow's, or writes a decision with retry, change the plan and stop here. **Exit 7** and
+  **130** end the turn, and the nudge resumes the run.
+- **The continuation** writes each ruling into `plan.md` verbatim, with its `## Push holds` or
+  `## Driver rulings` bullet, and resumes. A manual pre-run action answered done is struck.
+  *Stop here* leaves the run stopped and resumable, with nothing registered for its close-out.
+- **At exit 0** the session runs `slice_cost.py` and `close_slice.py`, renders the report with
+  the slice in two lines and the step, commits, moves the card to delivered, and registers
+  `close-out.md` with the record, the plan and `verification.json` attached. Its continuation
+  carries out close-out.md § The continuation and moves the card to done. A report with no ask
+  goes straight to that end.
+
+What has to be read goes to a sub-agent, run in the foreground with `run_in_background: false`,
+so the session stays small and its turn never ends on a background task. `pilot.md` now says
+so, for both stages. It also says that a brief without a ticket is noted in the document whose
+answers would file a card, which for the run is the close-out.
+
+The close-out skill is deleted. Each of its rules has the home the P-111 plan's §5.1 gives it,
+in the driver, `agents/wrap-up.md` or close-out.md § The continuation. The close-out card and
+its mark are gone with it: `project-contract.md` says the continuation moves the card to done.
+`run-loop.md`, `runner-state.md`, `agent-dispatch.md` and `spec-tree.md` no longer speak of a
+close-out session or a close-out card. Pilot's server is not promoted to the roles, and the
+wrap-up's left-out event no longer points at a close-out session.
+
 ## 2026-10-30 — What the operator reads is written under one skill, `/dev:writing`, every rule with its finding (v0.10.7)
 
 The writing skill, P-111's A7 (the plan's §5.7).

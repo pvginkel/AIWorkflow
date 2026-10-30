@@ -663,7 +663,7 @@ sessions in all.
 
 **Phase B — the stages**
 
-- [ ] **B1. Run-slice** (§5.2): the skill rewritten as the stage's turns with the close-out
+- [x] **B1. Run-slice** (§5.2): the skill rewritten as the stage's turns with the close-out
   continuation; `/dev:close-out` deleted; the close-out card gone; the wrap-up's asks as
   proposals; `run-loop.md`, `runner-state.md`, `agent-dispatch.md` brought to it.
 - [ ] **B2. Plan-slice** (§5.3): the skill rewritten as the small coordinator; `plan-preparer.md`

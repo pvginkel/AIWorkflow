@@ -1,7 +1,7 @@
 # Committing into the spec tree
 
 The spec repo is one working tree that every session in every environment commits into: the
-loops and the sessions they dispatch, the operator's triage, plan-slice, run-slice and close-out
+loops and the sessions they dispatch, the operator's triage, the plan-slice and run-slice
 sessions, and the operator by hand. This page is the rule for a commit there. A phase whose
 `Target:` is the spec repo — or any repo kc marks shared — never commits into that tree: it works
 in a worktree of its own, and the driver merges it ([run-loop.md](run-loop.md) § The plan is the

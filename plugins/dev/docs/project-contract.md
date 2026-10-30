@@ -101,10 +101,10 @@ another's is the host's. A project has an **intake queue**; the operator has an 
 A card is **closed** with one of three dispositions — **resolved** (the work happened),
 **absorbed** (folded into a slice, under whose card it then hangs) or **rejected** (ruled out,
 invalid, a duplicate) — or **deferred**, which parks it open. One **slice card** per slice advances
-**triaged → planned → in progress → delivered → done**: a run ends at *delivered*, merged and
-waiting for the operator's review, and *done* is the operator's own move. The **Solution Known**
-mark is a flag beside all that ([residual-sweep.md](residual-sweep.md)), and so is the
-**close-out** mark, on the one card a run files for its report ([close-out.md](close-out.md)).
+**triaged → planned → in progress → delivered → done**: a run ends at *delivered*, merged, and
+its continuation moves it to *done* once it has carried out the close-out's answers, the
+operator's review of the slice ([pilot.md](pilot.md) § Cards). The **Solution Known** mark is a
+flag beside all that ([residual-sweep.md](residual-sweep.md)).
 The tracker holds no triage verdict. A host may also run an **unattended pass** over the intake
 queues — a resolver that takes what is in its lane and leaves a **hand-back mark** on what is
 not, meaning *waits for the operator*; the convention names the marks, says where the pass's

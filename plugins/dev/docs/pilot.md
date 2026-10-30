@@ -39,9 +39,10 @@ refuse it: "Cannot call pilot-work because session <id> has no turn running".
 
 So a stage ends its turn only when the turn's work is done: its documents registered, the stage
 over, or a halt. It never ends a turn to wait for work of its own. A loop it launched is waited
-on inside the turn, in the foreground. A turn that a backgrounded task's notification starts is
-one Pilot never sent and does not count as the work item's, and its `register_document` is
-refused.
+on inside the turn, in the foreground, and so is a sub-agent it dispatches: the Agent tool's
+`run_in_background: false`, whose report is the tool's result. A turn that a backgrounded task's
+notification starts, a sub-agent's included, is one Pilot never sent and does not count as the
+work item's, and its `register_document` is refused.
 
 ## The brief
 
@@ -56,7 +57,8 @@ The start's message is the work item's brief, which Pilot's brain writes and Pil
 
 The skill reads the slice from the first line, the ticket and the step from the brief, and the
 spec repo from the cwd's `.aiworkflowrc`, as everywhere else. A brief without a ticket files no
-parented card, and the stage's first document says so; one without a plan task leaves `step` out.
+parented card, and the document whose answers would file one says so; one without a plan task
+leaves `step` out.
 The grants bind the session as they bind any work item, and the handbook's standing preferences
 are applied in every ask.
 

@@ -518,7 +518,9 @@ question back answered.
    it holds no stash and every commit on its branches is on a remote, and says so under the
    clone's event; otherwise it says what it found and leaves it.
 3. `/dev:run-slice` registers `close-out.md` with Pilot, attaches the record and the rest of
-   the slice's evidence, and ends its turn. With no ask, there is nothing to register.
+   the slice's evidence, and ends its turn. With no ask, there is nothing to register, and the
+   continuation's end runs at once: the report closed, the record rendered and committed, the
+   slice's card done.
 4. Pilot's pass pre-rules what it can, the operator answers the rest, Pilot writes the answers
    back, and the continuation carries them out ([above](#the-continuation)); it moves the
    slice's card to done ([pilot.md](pilot.md) § Cards). Git in the spec repo holds the history.

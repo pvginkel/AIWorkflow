@@ -3,8 +3,9 @@
 `${CLAUDE_PLUGIN_ROOT}/tools/run_loop.py` drives a slice end to end from one operator-legible
 phased plan (`<slice>/plan.md`). It owns the whole flow — every phase's dev round, the completion
 consult, the test phase, the doc phase — and bails only on **errors** (exit 3) and **operator
-questions** (exit 4); the `/dev:run-slice` session that launches it has exactly four jobs and never
-drives. What the loop records is [runner-state.md](runner-state.md); session mechanics and models
+questions** (exit 4). The `/dev:run-slice` session that launches it is a stage of Pilot's
+([pilot.md](pilot.md)): it waits on the run inside its turn, registers what the run asks and the
+close-out, carries the answers back, and never drives. What the loop records is [runner-state.md](runner-state.md); session mechanics and models
 are [agent-dispatch.md](agent-dispatch.md); the plan's authoring is [plan-loop.md](plan-loop.md);
 where every agent puts what the loop will not act on is [close-out.md](close-out.md).
 
@@ -90,8 +91,8 @@ event — otherwise it says what it found there and leaves it.
 **A shared repo is never branched in place.** A repo kc marks `shared` (`kc env describe
 --output=json`, `repos[].shared` — one clone mounted into every environment of the project; the
 spec repo, in every onboarded project) is one working tree every session in every environment
-commits into: the loops and the sessions they dispatch, the operator's triage, plan-slice,
-run-slice and close-out sessions, the operator by hand. So a phase whose `Target:` resolves to
+commits into: the loops and the sessions they dispatch, the operator's triage, the plan-slice
+and run-slice sessions, the operator by hand. So a phase whose `Target:` resolves to
 one — or to the spec repo, whether kc marks it shared or not: that tree holds the slice folder
 the run writes into, and the spec repo is a legal `Target:` (a slice whose whole deliverable is
 the wire contracts names it) — works in a **linked worktree** of that repo,
@@ -599,8 +600,8 @@ merges and every stop of the run (written by the resume that follows the stop, f
 `state.json`'s `bailouts`, at that resume's first dispatch), dispatches the wrap-up, and renders the report — before the doc
 phase, after the wrap-up, whenever the run stops, and when it completes, the run header from
 `state.json` with it; the launching session
-renders once more when the cost block has landed and files **one** tracker card pointing at the
-report.
+renders once more when the cost block has landed and registers the report with Pilot
+([pilot.md](pilot.md) § The documents).
 
 ## Protocol invariants
 

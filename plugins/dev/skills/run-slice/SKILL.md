@@ -1,173 +1,199 @@
 ---
 name: run-slice
-description: Execute a planned slice — launch ${CLAUDE_PLUGIN_ROOT}/tools/run_loop.py detached and wait on it, correct errors, relay operator questions into plan.md, close out. The loop drives; this session has exactly four jobs.
-argument-hint: <slice-number-or-path>
+description: The run of a planned slice, as a stage Pilot runs — a headless session that launches ${CLAUDE_PLUGIN_ROOT}/tools/run_loop.py detached and waits on it inside its turn, registers what the run asks as documents, carries the answers back into the run, and at the run's end registers the close-out and carries out its answers. Started by a work item whose brief opens `/dev:run-slice <slice>`; without Pilot, the operator starts it the same way and writes the answers into the documents.
+argument-hint: <slice-number-or-path>, then the brief
 ---
 
 # Run Slice
 
-Execute a planned slice. Argument: the slice number (e.g., `074`). Requires a slice folder under
-`<spec-repo>/slices/` that `/dev:plan-slice` has filled with a `plan.md` phase queue and
-`verification.json` — if there is no plan, stop and tell the operator to run `/dev:plan-slice` first.
+The run of one planned slice, as a stage of Pilot. The contract every stage keeps — the brief,
+the four ways a turn opens, the documents, the continuation, the clarification, the nudge and the
+halt, the cards, the fallback without Pilot — is `${CLAUDE_PLUGIN_ROOT}/docs/pilot.md`. This skill
+restates none of it: it says what the run does in each turn, and where the turn ends.
 
-`<spec-repo>` is the path in your `.aiworkflowrc`'s `spec_repo`. Run this from the **target
-code repo**. The loop's mechanics are `${CLAUDE_PLUGIN_ROOT}/docs/run-loop.md`; what it records
-is `${CLAUDE_PLUGIN_ROOT}/docs/runner-state.md`. The tracker — what realises the slice card's
-states, the intake queue and a related card — and the notification wiring come from your host
-convention (`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md`, section 3). **Load that convention
-before the first tracker call** — where the host ships it as a skill, invoke the skill: nothing
-in the pipeline loads it for you, and a convention that is not in context gets guessed at.
+**The loop drives the slice, not you.** `run_loop.py` owns every phase's round, the completion
+consult, the test phase (it holds the devlock; pushing and rolling dev under that hold is
+pre-authorized), the doc phase and the wrap-up (`${CLAUDE_PLUGIN_ROOT}/docs/run-loop.md`). What it
+records is `${CLAUDE_PLUGIN_ROOT}/docs/runner-state.md`, and the close-out report is
+`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`. This session launches, waits, registers, carries out
+and commits. What has to be read — a bail to diagnose, an answer to carry into the plan, a
+question about the slice — goes to a sub-agent pointed at the slice folder, so the session stays
+small over a run that may last days.
 
-**The loop drives the slice, not you.** `${CLAUDE_PLUGIN_ROOT}/tools/run_loop.py` owns the whole
-flow — every phase's executor→gate→review→merge round, the completion consult, the test phase
-(it holds the devlock; pushing and rolling dev for verification under that hold is
-pre-authorized), and the doc phase. You have exactly four jobs; an uneventful slice needs
-nothing from you between launch and close-out.
+Below, `<spec-repo>` is your `.aiworkflowrc`'s `spec_repo`, `<slice>` the slice folder under
+`<spec-repo>/slices/` that the brief's first line names, `<task>` the brief's plan task, and a
+tool is `python3 ${CLAUDE_PLUGIN_ROOT}/tools/<tool>`. Run from the target code repo.
 
-## Job 1 — start the loop
+- **A sub-agent runs in the foreground**, `run_in_background: false`, its report the Agent
+  tool's result: a turn never ends to wait for one. Brief it with the slice folder, the paths it
+  works on and the section of this skill it follows; it loads `/dev:writing` before it writes an
+  ask, and hands back a receipt — what it did, with the commits, and the path of any store of
+  asks it wrote.
+- **The tracker** — the slice card, the cards a ruling asks for — speaks your host convention
+  (`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md` §3). Load it before the first tracker call,
+  yours or a sub-agent's: nothing in the pipeline loads it for you. The slice card's id is
+  `slice.md`'s `issue:`.
+- **An ask is a document**: a store under `<slice>/asks/` through `asks.py` (`init`, `append`,
+  `render`), its words under `/dev:writing`, `--step <task>`, registered and backed as pilot.md
+  § The documents says. Commit every store and document by name before the turn ends
+  (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`).
 
-1. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for run --slice <the slice number or
-   path>`. On a non-zero exit, **relay its message verbatim** and stop — fix the root cause only
-   if it is clearly environmental, otherwise notify the operator. A Target repo the environment
-   declares but has not cloned is environmental: the message names the clone and the
-   `kc project setup` that fix it. A dirty working tree — or a repo preflight refused to pull — is
-   never yours to clean up.
-2. Advance the slice's tracker card — the id in `slice.md`'s `issue:` frontmatter; it is
-   **planned** — to **in progress**.
-3. Launch it **detached** — not with `run_in_background`, whose 2 h cap a run outlasts:
+## The start
 
-   ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/tools/run_loop.py run <spec-repo>/slices/<SLICE_DIR> --detach
-   ```
+1. **Read the brief** (pilot.md § The brief): the slice from the first line, the ticket from its
+   `Ticket:` line, `<task>` from "This work item serves plan task `<id>`". While
+   `/work/.quota-limit-halt-requested` exists, do not start: end the turn saying so.
+2. **Preflight**: `preflight.py --for run --slice <slice> --json`. A failure is an `action`
+   document: its heading the fix in a line, its body the `fact`, the `fix` and the `output`,
+   `--check "preflight --for run passes its <check> check"`. Register it and end the turn; its
+   continuation starts again at this step. Fix nothing in the environment yourself: a dirty tree,
+   a refused pull or a clone not made is the action's, and a restart ends this session. A failure
+   with no slice folder to hold a document — no slice of that name in the spec repo, or no spec
+   repo — ends the turn with its last line saying what failed and what fixes it.
+3. **Move the slice card** from planned to in progress, unless an earlier run moved it.
+4. **Launch, detached**: `run_loop.py run <slice> --detach --step <task>`, with `--resume`
+   where `<slice>/state.json` exists. It returns once the run holds the slice, its last line the
+   `next:` wait. Refused (exit 2) because another driver holds the slice, the run is live: wait
+   on it, `run_loop.py wait <slice>`. Any other refusal — no plan, an agent definition missing —
+   is an `action` document as in step 2.
+5. **Wait**, as below.
 
-   It returns once the run holds the slice, printing the driver's pid and, on its last line, the
-   `wait` command to run next. A non-zero exit is a refusal — another driver holds the slice, or
-   a precondition failed: relay it verbatim, as with preflight. (`--dry-run` validates the plan
-   without running.)
-4. **Wait on it**: run the `next:` line's command with `run_in_background: true` and
-   `timeout: 3600000`, and end your turn. It returns within 55 minutes — inside the hour this
-   conversation's prompt cache lives — and its exit code says what to do:
-   - **0** — the run ended. The run's own exit code is printed first; go to Job 2, 3 or 4 by it.
-   - **5** — still running. Give the operator a small status update in chat, a few lines from
-     what `wait` printed: what landed since the last check, what is in flight, anything that
-     looks off. Then run the new `next:` line the same way. That is the whole check — the loop
-     bounds every session and every wait with a cap that turns a hang into a bail. The one case
-     to look further is a log silent for over an hour with nothing in flight, a driver wedged
-     where its caps do not reach: read `log.txt`'s tail and tell the operator what it shows.
-   - **6** — the driver is gone and recorded no exit (a host restart, a quota stop, a kill).
-     Relaunch with the `next:` line, then wait again.
+## The wait, and the run's end
 
-   Do **not** read or tail `log.txt` otherwise: `wait` prints the driver's own lines, and the
-   outcome lives in the run's exit code, `state.json`, and `bailout.json`. Grep the log only
-   when diagnosing a specific bail. **Every relaunch below** is `run … --resume --detach`
-   followed by this step's wait.
+Run the `next:` line's `wait` in the foreground, a plain Bash call; it returns within nine
+minutes. Its exit code is a signal, and the lines it prints are all there is to read:
 
-## Job 2 — errors (exit 3)
+- **5, running** — run the new `next:` line again at once. Read nothing in between: no log, no
+  state, no word to anyone.
+- **6, gone** — the driver died with no exit recorded (a host restart, a kill): run the `next:`
+  relaunch, then wait again.
+- **0, ended** — act on `ended: exit <n>`:
 
-Read `bailout.json` and the referenced files **before deciding anything** — `plan.md`'s
-requirements/rulings section among them, for whatever the bail is about. The driver's message is
-a diagnosis from a process that cannot see the plan, not an instruction: "push it, then resume"
-over a repo the plan holds is a ruling losing to a state check, and what the working tree says
-is never on its own evidence of the right move. **When the plan and the driver disagree, the
-plan wins and the operator decides**; a ruling overtaken by events is replaced in place and
-committed before `--resume`. Then diagnose the root cause. Fix it only when it is genuinely
-environmental or mechanical-at-the-workflow-level (a stale checkout, a dead service, a wrong
-path in the plan's `Target:`) — never by telling an agent to work around it, never by patching
-application code yourself, and never by re-running suites or re-deriving an agent's work in your
-own context. Then relaunch with `--resume`. If the cause is unclear or the fix isn't yours,
-summarize and notify the operator.
+| The run's exit | The turn |
+|---|---|
+| **0**, complete | [the close-out](#the-close-out) |
+| **4**, a question | register the `document:` line's file; attach `plan.md`, and the phase's review where the bail names a phase; commit `asks/`; end the turn. With no `document:` line, put `bailout.json`'s details as a `question` document first. |
+| **3**, an error, or **1** | [the diagnosis](#an-error) |
+| **7**, halted | end the turn, its last line the `halted:` line |
+| **130**, interrupted | someone stopped the driver: end the turn saying where; a nudge resumes it |
 
-A `plugin_version` bail is the one relaunch that does not use `${CLAUDE_PLUGIN_ROOT}`: this
-session's copy is the stale one. Relaunch `--resume` from the installed path `bailout.json`
-names.
+A `plugin_version` bail is relaunched from the installed `tools/` path `bailout.json` names, not
+from `${CLAUDE_PLUGIN_ROOT}`: this session's copy is the stale one.
 
-## Job 3 — operator questions (exit 4)
+## An error
 
-The loop paused on something only the operator can decide (`bailout.json` carries the question —
-an executor's `question` verdict, a contested plan edit, an exhausted follow-up generation). Ask
-the operator, then **write the answer into plan.md's requirements/rulings section — in the
-operator's words — and commit it (stage by name) before resuming**: the next executor reads the
-plan, not this chat. A ruling that corrects an earlier one **replaces it in place** — no
-correction-chains; git holds the history. A ruling that forbids pushing a repo needs its
-machine-readable half too — a `- <repo> — <why>` bullet under `## Push holds`
-(`${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md`) — or the driver nudges the test agent for that
-push and bails `unpushed` over the ruling it was told to honour. The same goes for a ruling
-that replaces a target's test gate, accepts a red sweep row, or authorizes a promotion: it needs a
-`## Driver rulings` bullet (`gate` / `accept` / `prd`, same doc). Without one, the driver runs
-the waived gate again on resume and bails `gate_red` or `blocked` where it bailed before. Then
-relaunch with `--resume`.
+A sub-agent diagnoses the bail by this section. It reads `bailout.json` and the files it names
+before deciding anything, `plan.md`'s requirements and rulings among them. The driver's message
+is a diagnosis from a process that cannot see the plan, not an instruction: "push it, then
+resume" over a repo the plan holds is a ruling losing to a state check, and what a working tree
+says is never on its own evidence of the right move. When the plan and the driver disagree, the
+plan wins and the operator decides. Then the root cause:
 
-A `prerun_action` bail is the close-out's `Before /dev:run-slice` entry still live: the run
-needs an action only the operator can take. Put it to them; once it is done — by them, or by you
-on their word — strike it (`close_out.py strike <slice_dir> <id> --reason "<what was done>" --by
-"run-slice session"`), commit `close-out.json`, and relaunch with `--resume`.
+- **Mechanical or environmental, and the workflow's** — a stale checkout, a dead service, a wrong
+  path in a `Target:`, the spec repo checked out off its base: the sub-agent fixes it and says
+  so, and the session resumes (`run_loop.py run <slice> --resume --detach`) and waits.
+- **Anything else** — the sub-agent writes a `decision` store: the diagnosis, and of retry (the
+  resume, once what the diagnosis names is done), change the plan and stop here the options that
+  are live, with its recommendation. The session renders and registers it, attaches
+  `bailout.json` and the files it names, commits and ends the turn.
 
-A `missing_tools` bail is the environment's: a Target repo's manifest calls a `cexec <tool>` this
-environment does not run. `bailout.json` names each tool, the repo whose manifest calls it, and
-the `- use: <tool>` line for the host's `.kubecoder/config.yaml` — or, where that line is already
-there, that the pod predates it and `kc env restart` applies it. Neither is yours: the restart
-ends this session. Put it to the operator; the relaunch is `--resume`, in the environment that
-has the tool. A `missing_services` bail is the same, for a service the host's own
-`.kubecoder/config.yaml` declares, or one a Target repo's declares where its gate went red: the
-line to add goes under the host's `services:`.
+Never by telling an agent to work around it, never by patching application code, never by
+re-running suites or re-deriving an agent's work.
 
-## Job 4 — close out (exit 0)
+## The continuation
 
-1. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/slice_cost.py <slice_dir> --write-state` — it appends
-   the slice's derived cost ratios and its per-role turn profile to `state.json` as `cost`, so the
-   committed run record prices itself. Report its warnings if any; never hand-edit the numbers.
-2. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py stamp <slice_dir>` — it renders the
-   close-out report again, its `Run:` header now with the cost line — and
-   `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_out.py counts <slice_dir>` for the entry counts
-   step 4 needs.
-3. Run `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_slice.py <slice_dir>` (moves the README slice
-   entry Pending → Completed, `git mv`s the folder to `slices/completed/` and deletes the loop's
-   `run.lock` from it, staging by name);
-   commit together with the slice artifacts, **including `state.json`, `log.txt`,
-   `close-out.json` and `close-out.md`** (the run's who-did-what record, the report's store and
-   the report rendered from it; only a stale `bailout.json` is dropped).
-4. File **one** tracker card in the intake queue (per the host convention) —
-   `[NNN] close-out: <slice title>` — whose body is the report's path in the spec repo (its
-   `slices/completed/…` form, after step 3's move) and its entry counts, and nothing else: a
-   card points at the report and never mirrors it. Give it the
-   **close-out** mark, and link it to the slice's card as related, never under it: what hangs
-   under a slice card is what the slice absorbed. That card is the "a report is waiting" marker,
-   never an ask; nothing else from the run is carded — the operator rules on what the report
-   brings them (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`).
-5. Advance the slice's tracker card to **delivered** — merged, waiting for the operator's review;
-   **done** is the operator's move, never yours — notify the operator per the host's notification
-   convention, and report short: per-phase rounds from `state.json`, test/doc phase outcomes,
-   the report's entry counts, anything owed.
+A sub-agent reads back the documents Pilot's message names and carries them out by this section
+and pilot.md § The continuation; the close-out's by [its own](#the-close-out-answered). A run's
+ask is read back with `asks.py absorb <document>`, and its ruling lands by what it answers:
 
-Nothing else is yours: no test running, no pre-exploration, no re-derivation of agent results,
-no suite re-runs, no doc work. **Escalate, don't absorb** — if you find yourself dispatching dev
-agents or fixing code, stop; that work belongs in a phase the loop executes.
+- **A question or a plan problem** — the ruling into `plan.md`'s requirements and rulings section
+  in the operator's words, committed by name before the resume: the next writer reads the plan,
+  not the document. A ruling that corrects an earlier one replaces it in place. One that forbids
+  pushing a repo needs its `- <repo> — <why>` bullet under `## Push holds`; one that waives a
+  target's gate, accepts a red sweep row or authorizes a promotion needs its `## Driver rulings`
+  bullet (`gate`, `accept`, `prd`; `${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md`). Without it the
+  driver bails over the ruling again. A plan problem or a follow-up cap is corrected in `plan.md`
+  as the ruling says.
+- **A pre-run action, done** — one whose check is `manual`, or that has none, is struck in the
+  close-out store, `close_out.py strike <slice> <id> --reason "done: '<their note>'" --by
+  run-slice`, and committed; one with a check is the run's to evaluate when it resumes.
+- **An environment or preflight action, done** — nothing to write: the start, or the run when it
+  resumes, checks it again.
+- **The error's decision** — retry resumes; change the plan lands as a ruling does above, then
+  the resume. **Stop here** lands as a ruling too, and the run stays stopped where it bailed,
+  resumable by a later `/dev:run-slice` of the slice; the turn ends. Nothing is registered for the
+  close-out of a run that has not ended.
+- **An ask the run waits on, deferred** — the run stays stopped, as stop here leaves it.
 
-## Notes
+Then the session resumes the run (`run_loop.py run <slice> --resume --detach`) and waits. What the
+sub-agent could not carry out as ruled comes back as a store of asks, which the session renders,
+registers and ends the turn on instead.
 
-- **Notifications:** notify on completion, on anything you defer to the operator, and on nothing
-  else — Job 1's status updates are chat, never notifications.
-- **The loop outlives this session.** Closing the session does not stop the slice; a later
-  session on it meets the `run.lock` refusal while the run lives, and picks it up with
-  `run_loop.py wait <slice_dir>`. Stopping the `wait` command stops the wait, not the loop:
-  `run_loop.py stop <slice_dir>` interrupts the run as Ctrl-C would — `state.json` current, the
-  in-flight session left for `--resume` to reattach. A loop is dead only when its log has gone
-  quiet, never on `ps`, which sees only this pod: the run may live in another environment of the
-  project, which `run.lock`'s note and `run_loop.py status` name.
-- **Shared spec tree:** commits from other sessions appearing in `<spec-repo>` for your slice
-  usually mean a parallel session swept your files into its commit — accepted, not a defect
-  (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`); build on the latest state. No run moves the shared
-  tree: a phase targeting it works in a worktree under `/work/scratch/worktrees/`, which a bail
-  leaves for the resume. A `blocked` naming the spec repo off its base is a hand checkout —
-  check the base branch out there and resume. A bail leaves every code repo the run touched back
-  on its base branch (a tree still on a `phase/…` branch afterwards either had uncommitted work
-  on it or is another run's branch — the log says which).
-- **Treat the suite as green before every slice** — preflight does not run it. A failure during
-  the run is the slice's regression — never accept "flaky" or "pre-existing" from anyone.
-- **Promotion stays operator-gated; pushing does not.** The loop's devlock hold pre-authorizes
-  the pushes the slice needs — for dev verification, and to production where the project's
-  deploy path is a push (a shared chart reconciles every environment it deploys; a single-stage
-  project deploys production on push). Running a promotion pipeline is the operator's separate,
-  explicit decision: assume a project has one wherever it has more than one stage, unless its
-  deploy-operations doc says the stages are separate environments with nothing promoted between
-  them.
+## The close-out
+
+At exit 0, in this order:
+
+1. `slice_cost.py <slice> --write-state` — the slice's cost into `state.json`. Say its warnings
+   in the turn's last line; never hand-edit the numbers.
+2. `close_slice.py <slice>` — the README entry to Completed, the folder `git mv`ed to
+   `slices/completed/`, `run.lock` deleted, all staged by name. Below, `<slice>` is the folder at
+   its new path. No document of the slice is open at exit 0, so the move is safe (pilot.md § The
+   documents).
+3. `close_out.py render <slice> --step <task> --context "<the slice in two lines>"` — the report
+   once more, the cost in its record. The two lines come from `slice.md`'s title and the head of
+   its ask. With no ticket in the brief, a second `--context`: the cards the answers ask for are
+   filed without a parent.
+4. Commit the folder by name — `state.json`, `log.txt`, `close-out.json`, `close-out.md`,
+   `close-out-record.md`, `asks/` — dropping only a stale `bailout.json`.
+5. Move the slice card to delivered.
+6. Register `close-out.md`, attach `close-out-record.md`, `plan.md` and `verification.json` to
+   it, and end the turn. A report with no ask renders no `close-out.md`: then its end runs at once,
+   `close_out.py close`, `render`, the commit and the slice card to done, and the turn ends.
+
+## The close-out answered
+
+A sub-agent carries out close-out.md § The continuation: `close_out.py absorb`, every ruling
+carried out and recorded (`rule --did`), `close`, `render`, the store and the record committed by
+name. Then the session moves the slice card to done (pilot.md § Cards) and ends the turn. What
+the sub-agent could not carry out as ruled comes back as a store of asks: the session renders and
+registers it and ends the turn, and the card waits for that document's continuation.
+
+## The clarification
+
+A fresh sub-agent pointed at the slice folder answers each question (pilot.md § The
+clarification); one about a close-out entry is answered as close-out.md says. The turn's last
+message is its answers, as the sub-agent gave them.
+
+## The nudge
+
+Carry on from where the session stood (pilot.md § The nudge and the halt): a run still live is
+waited on (`run_loop.py wait <slice>`); one that exited 7 or 130 is resumed and waited on; a
+document still unanswered is left as it is, and the turn ends; one answered in place is read back
+as the continuation reads it.
+
+## Bounds
+
+- **Nothing else is yours**: no test running, no pre-exploration, no re-derivation of an agent's
+  result, no suite re-run, no doc work. Escalate, don't absorb: work that dispatches dev agents or
+  changes code belongs in a phase the loop executes — the one exception is a close-out's
+  `fix now`, where close-out.md allows it.
+- **Notify nobody, and tell nothing outside a document.** Pilot puts what the operator needs in
+  front of them.
+- **The loop outlives this session.** A later session meets the `run.lock` refusal while the run
+  lives, and waits on it. `run_loop.py stop <slice>` interrupts the run as Ctrl-C would —
+  `state.json` current, the in-flight session left for `--resume` to reattach. A loop is dead
+  only when its log has gone quiet, never on `ps`, which sees only this pod: the run may live in
+  another environment of the project, which `run.lock`'s note and `run_loop.py status` name.
+- **The shared spec tree**: commits from other sessions that carry your slice's files mean a
+  parallel session swept them into its commit — accepted, not a defect; build on the latest
+  state. No run moves the shared tree: a phase targeting it works in a worktree under
+  `/work/scratch/worktrees/`, which a bail leaves for the resume. A bail leaves every code repo
+  the run touched on its base branch; a tree still on a `phase/…` branch afterwards either had
+  uncommitted work on it or is another run's branch, and the log says which.
+- **The suite is green before every slice** — preflight does not run it. A failure during the run
+  is the slice's regression; never accept "flaky" or "pre-existing" from anyone.
+- **Promotion is the operator's; pushing is not.** The devlock hold pre-authorizes the pushes the
+  slice needs — for dev verification, and to production where the project deploys on a push.
+  Running a promotion pipeline is the operator's separate decision: assume a project has one
+  wherever it has more than one stage, unless its deploy-operations doc says the stages are
+  separate environments with nothing promoted between them.

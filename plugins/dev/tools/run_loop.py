@@ -3439,11 +3439,12 @@ WRAP_UP_HOLD_BLOCK = """\
 
 # The event a soft failure of the wrap-up enters. Its Consequence opens with
 # "none", so the tool labels it closed and it sits in the record — never on
-# the wrap-up's own work list, which a close-out session then reads.
+# the wrap-up's own work list, whose entries the close-out document then
+# brings the operator as not reached.
 WRAP_UP_LEFT_OUT_HEADLINE = "The wrap-up was left out of the landing: {reason}"
 WRAP_UP_LEFT_OUT_CONSEQUENCE = (
-    "none in this run — what the table gave the wrap-up still waits, and the "
-    "close-out session dispatches it")
+    "none in this run — what the table gave the wrap-up comes to the operator "
+    "in the close-out, said as not reached")
 
 # The test-phase dispatch's prd line: fixed, unless plan.md's `## Driver
 # rulings` authorize prd for named targets.

@@ -53,8 +53,9 @@ validation.
   environment does not check out; it carries no token and reaches no tracker. `kubecoder-worker`,
   the environment's own worker, for its `notification` tool, so a ruling that asks a role to keep
   the operator posted works as written; its session header (`${KUBECODER_SESSION_NAME:-}`) is
-  copied unexpanded and the spawned claude expands it. The loop copies each
-  named entry verbatim out of the user-level `mcpServers` of `~/.claude.json` into
+  copied unexpanded and the spawned claude expands it. Pilot's own server is not promoted: the
+  stage's session registers every document on the roles' behalf ([pilot.md](pilot.md)). The loop
+  copies each named entry verbatim out of the user-level `mcpServers` of `~/.claude.json` into
   `~/.claude/aiworkflow-promoted-mcp.json` (mode 0600, written atomically, once per process at the
   first dispatch) and passes that path as `--mcp-config` beside `--strict-mcp-config`. An entry
   may carry a bearer token, which is why it travels as a file under the home and never on a command
@@ -83,12 +84,13 @@ inherit from the dispatching session — the intended mechanism; ambient inherit
 The only exceptions are the **always-Sonnet agents**, which additionally pin `model: sonnet` in
 their own definitions so they stay Sonnet even as sub-agents: **test-agent** (the test phase),
 **test-fixer** (mechanical suite repair), and the **rebase-agent**. Two Opus agents pin their
-model too, because the interactive session that dispatches each may run on any model. The
+model too. The
 **refinement-writer** pins `model: opus` and `effort: xhigh`: it writes the operator's decision
 document from the plan-slice session's material and nothing else
 ([refinement.md](refinement.md)), and the page does not inherit the operator's choice of model
-for the session. The **wrap-up** pins `model: opus`: what fixes code unreviewed does not inherit
-the close-out session's model ([close-out.md](close-out.md#the-wrap-up)).
+for the session. The **wrap-up** pins `model: opus` too, though the driver is its one caller now
+and passes the same flags: what fixes code unreviewed runs on Opus whoever dispatches it
+([close-out.md](close-out.md#the-wrap-up)).
 
 There is no per-task grading and no model routing by difficulty — the graded lane measured out:
 the premium tier bought nothing on an inflated base, and "mechanical" routing produced Opus redos
@@ -122,9 +124,7 @@ red-suite repair — goes to a sub-agent that returns conclusions. Every verdict
 and write-back stays with the dispatching agent. The one delegated *write* is the interview's:
 the plan-slice session hands its grounded material to the `dev:refinement-writer`, which writes
 `refinement.md` for the operator and returns a receipt; the grounding, the rulings and the plan
-stay with the session ([refinement.md](refinement.md)); and the close-out session hands what
-waits in a report to the `dev:wrap-up`, whose writes are its own role's
-([close-out.md](close-out.md#the-wrap-up)). The doc phase's pages are not delegated:
+stay with the session ([refinement.md](refinement.md)). The doc phase's pages are not delegated:
 a per-scope authoring sub-agent was built (0.9.14) and read on nine slices — about twice the cost
 per phase of shipped work, a fresh session re-orienting on every hand-over brief — and reverted
 (`docs/research/doc-phase-read-2026-09-04.md` § 5–6); the doc-writer surveys through sub-agents
@@ -144,7 +144,10 @@ longer needs: in the doc-writer sessions read for the doc-phase rework
 (`docs/research/doc-phase-plan.md` § 1), every survey report landed 18–49 turns after dispatch,
 past the writer's first edit, at 15–21 % of the session. So a role that delegates ends the turn
 with nothing else in flight; the doc-writer's contract says so in its own words, and the
-plan-writer/plan-reviewer overlap (17–18 %) is the same pattern, not yet addressed.
+plan-writer/plan-reviewer overlap (17–18 %) is the same pattern, not yet addressed. A stage's
+own session, `/dev:plan-slice` or `/dev:run-slice` under Pilot, is no role and waits the other
+way: a turn's end is its work item's, so it dispatches every sub-agent in the foreground
+([pilot.md](pilot.md) § A turn's end is the run's end).
 
 **Ending the turn is a reply with no tool call.** A no-op command — `true`, `echo waiting` — is
 a spin, not a wait: every tool call re-invokes the model, and each return re-reads the whole
