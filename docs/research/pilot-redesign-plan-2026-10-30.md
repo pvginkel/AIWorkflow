@@ -685,8 +685,9 @@ sessions in all.
 - [x] **C4. Dead code and the research tools** that read gone artifacts: `close_out_readout.py`'s
   snapshot import left as research, noted in its header; nothing else.
 - [x] **C5. The AIWF cards** commented with their fate (§7); closed at the cutover.
-- [ ] **C6. Optional, if it falls out of A4:** the review set computed from HEAD before and after in
-  every repo a session committed to, in place of the `Review:` ledger (§2).
+- ~~**C6. Optional, if it falls out of A4:** the review set computed from HEAD before and after in
+  every repo a session committed to, in place of the `Review:` ledger (§2).~~ It did not fall out
+  of A4 (0.10.4); not built, 2026-10-31.
 
 **Phase D — the docs**
 
@@ -700,7 +701,15 @@ sessions in all.
 - [ ] **E1.** Plan-slice and run-slice end to end in ad hoc sessions with `--plugin-dir` on a
   throwaway slice of a test spec repo, the fallback path showing each document, the answer lines
   edited by hand; `/dev:triage` once in chat with its new output; the documents read against the
-  synthesis (§5.7).
+  synthesis (§5.7). *Before E1, the operator's to rule:* the loops start every role with
+  `kc session create-headless --agent dev:<role>`, which resolves the installed 0.9.x plugin, and
+  a kc session takes no plugin dir (`docs/ADOPTING.md` says so since 0.10.14). A `--plugin-dir`
+  rehearsal therefore runs the branch's stage skills and drivers against the old role prompts:
+  the writers' question options (A4), the plan loop's hand-back shapes (A5), the wrap-up's vet
+  (A2) and the writing skill (A7) never show. Recommended: a KubeCoder feature giving a headless
+  session a plugin dir, used by the loops when they run from one. Otherwise E1 is accepted as
+  partial and the roles first run at F5, or the branch is installed in the shared marketplace
+  for a window, which reaches every environment.
 - [ ] **E2.** One rehearsal through pilot-dev: a test project, a free-form work item whose brief points
   at the branch's skill by path with `CLAUDE_PLUGIN_ROOT` named; the round trip watched —
   register, the pass, the operator's answer from the phone, the write-back, the continuation, a
@@ -709,6 +718,9 @@ sessions in all.
 **Phase F — the cutover** (with implementation-plan step 17)
 
 - [ ] **F1.** Merge to `main`, publish 0.10.0, the marketplace updated in every environment.
+  "0.10.0" is the line: the branch bumped the patch per item, so what publishes is the branch's
+  head version, under 0.10.14's story entry. First clear the close-out cards that 0.9 runs left
+  open: 0.10 has no `/dev:close-out` and no handler for them (B1, C3).
 - [ ] **F2.** PilotProjects: `rules/stages.md` rewritten — the two commands, the brief's arguments,
   what each stage registers, the ticket in the brief, what each fate means for the pass (§5.1);
   `rules/work-items.md`'s brief for a stage; the definition chat's skill given triage's substance
