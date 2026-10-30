@@ -201,11 +201,9 @@ Every verb takes the slice directory or the report's path as its first argument.
 | `fold` | the wrap-up, the continuation | appends an entry verbatim — its `show`, quoted, under a line naming the slice, the entry and the report — to the `slice.md` of the slice it is `for` (or `--into`), which has to be still to run and unplanned, and stages that file; prints the strike that follows the commit. Refused on a struck entry, on the report's own slice and on a fold `slice.md` holds already; writes neither the store nor the report |
 | `worklist` | the wrap-up | what waits for the wrap-up, entry by entry, with what is asked of each |
 | `render` | the loops, `/dev:run-slice` | writes the record, and the document unless Pilot wrote it back; `--step`, `--summary` and `--context` set the document's own fields |
-| `stamp` | by hand | `render`, printing the run header — what the driver does at the run's end |
 | `absorb` | the continuation | reads `close-out.md`, as Pilot wrote it back, into the store: each block's answer lines into its entry's ruling; `deferred` and an action's `done` close the entry; refused on a document whose blocks are no entries of the store |
 | `rule` | the continuation | records what was done on an entry's ruling, which strikes it |
 | `settle` | the continuation | settles a criterion owed after an operator's action: writes its `pass` or `fail`, rationale and evidence into `verification.json` in the file's own escaping, `owed_after` kept ([plan-template.md](plan-template.md) § verification.json), and strikes the action that waited on it — a push hold's action listing several criteria takes a note until the last of them is settled; refused on a criterion without `owed_after` or already settled |
 | `close` | the continuation | closes the report: every entry still live is struck, but one whose ruling nobody carried out — that one stays, and the report stays open over it |
-| `counts` | the run loop, by hand | live entries per place of the report and per id letter, on one line |
 
 No verb renders: the store changes, and the files follow at the next `render`.

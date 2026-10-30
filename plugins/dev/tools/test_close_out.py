@@ -10,7 +10,6 @@ Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_close_out.py` or via pytest.
 
 import contextlib
 import difflib
-import hashlib
 import importlib.util
 import io
 import json
@@ -43,10 +42,6 @@ def make_slice(tmp, name="007_argocd_tools_presync_hook", later=("012_later_slic
 
 def report(slice_dir):
     return (slice_dir / "close-out.md").read_text()
-
-
-def sha256(text):
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def store(slice_dir):
@@ -520,18 +515,6 @@ def test_owed_before_push_without_a_store_is_a_report_error():
 
 # -- to fix before the test phase --------------------------------------------------
 
-def _test_slice(tmp, name="058_secret_rotation"):
-    slice_dir = make_slice(tmp, name=name)
-    (slice_dir / "verification.json").write_text(json.dumps({"items": [
-        {"id": vid, "area": "a", "description": "d"} for vid in ("V01", "V02", "V15")]}))
-    close_out.init_report(slice_dir)
-    return slice_dir
-
-
-def _to_test(slice_dir):
-    return {e["id"]: vids for e, vids in close_out.owed_before_test(slice_dir)}
-
-
 def test_owed_before_test_without_a_store_is_a_report_error():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp, name="058_secret_rotation")
@@ -715,7 +698,7 @@ def plan(folder, how="state"):
                                         "Target: app\n")
 
 
-def test_slices_to_run_carries_each_slices_stage():
+def test_slice_stages_carries_each_slice_still_to_run_with_its_stage():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp, later=("012_later_slice", "013_running"))
         root = slice_dir.parent
@@ -729,10 +712,12 @@ def test_slices_to_run_carries_each_slices_stage():
             "# Plan\n\n## Requirements\n\n## P1 — not a phase\n### P1 - hyphen\n")
         # a plan.md that cannot be read has no phases
         (root / "backlog" / "042_odd" / "plan.md").mkdir()
-        assert close_out.slices_to_run(slice_dir) == {
+        to_run = {n: stage for n, stage in close_out.slice_stages(slice_dir).items()
+                  if stage[1] in ("planned", "unplanned")}
+        assert to_run == {
             12: ("012", "unplanned"), 13: ("013", "planned"), 31: ("031", "unplanned"),
             40: ("040", "planned"), 41: ("041", "unplanned"), 42: ("042", "unplanned")}
-        assert close_out.slices_to_run(Path(tmp) / "007_x") is None
+        assert close_out.slice_stages(Path(tmp) / "007_x") is None
 
 
 def test_append_takes_a_for_naming_a_planned_slice_and_routes_it_to_the_operator():
@@ -1269,22 +1254,6 @@ def git(cwd, *args):
                    cwd=cwd, check=True, capture_output=True)
 
 
-def commit_store(slice_dir, text=None):
-    """Commit the slice's store in the spec repo around it, made one first
-    where it is not; with `text`, that is what the commit holds, the store
-    on disk kept as it is."""
-    spec = slice_dir.parent.parent
-    if not (spec / ".git").exists():
-        git(spec, "init", "-q")
-    path = slice_dir / "close-out.json"
-    kept = path.read_bytes()
-    if text is not None:
-        path.write_text(text)
-    git(spec, "add", str(path))
-    git(spec, "commit", "-q", "--no-verify", "-m", "close-out")
-    path.write_bytes(kept)
-
-
 # -- amend: the appender corrects an entry that is not committed -------------------
 
 BY = "code-reviewer P3 r1"
@@ -1430,7 +1399,7 @@ def test_amend_merges_the_labels_over_the_entrys_and_for_none_clears_for():
 
 # -- the wrap-up: marks and worklist ---------------------------------------------
 
-def test_request_card_and_leave_mark_the_entry_and_the_card_is_its_proposal():
+def test_a_card_request_and_leave_mark_the_entry_and_the_card_is_its_proposal():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         close_out.init_report(slice_dir)
@@ -1544,7 +1513,7 @@ WORD = ("design/engine-and-sync.md, the line \"The engine syncs on demand.\" —
 WORD_ROUTE = ("operator:word", "to you — the wrap-up asks for your word on its edit")
 
 
-def test_request_word_brings_the_entry_to_the_operator_whatever_the_table_said():
+def test_a_word_request_brings_the_entry_to_the_operator_whatever_the_table_said():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         close_out.init_report(slice_dir)
@@ -1556,7 +1525,7 @@ def test_request_word_brings_the_entry_to_the_operator_whatever_the_table_said()
                                  "-", "--date", "2026-10-24", stdin=WORD + "\n")
         assert code == 0, err
         assert out == f"**Proposal:** {WORD}\n"
-        close_out.request_word(slice_dir, "B2", WU, WORD, date="2026-10-24")
+        close_out.propose_entry(slice_dir, "B2", WU, WORD, date="2026-10-24", mark="word")
         b1 = entry_of(slice_dir, "B1")
         assert b1["wrap_up"] == {"outcome": "word", "by": WU, "date": "2026-10-24",
                                  "text": [WORD]}
@@ -1628,7 +1597,7 @@ def test_worklist_names_what_waits_and_what_is_asked():
                                       "    Proposal: Drop it now: one caller, one edit."]
         # a mark takes the entry off the list; a struck one is off it too
         close_out.leave_entry(slice_dir, "B6", "wrap-up", "the fault cannot occur")
-        close_out.request_card(slice_dir, "B5", "wrap-up", "more than the bar")
+        close_out.propose_entry(slice_dir, "B5", "wrap-up", "more than the bar", mark="card")
         close_out.strike_entry(slice_dir, "B3", "fixed", commit="abc123")
         remaining = [e["id"] for e, _ in close_out.worklist(slice_dir)]
         assert remaining == ["B1", "B2", "B4", "I1", "B7", "B8", "A1"]
@@ -1944,13 +1913,6 @@ def test_fold_is_in_the_verb_block_and_writes_no_store():
 # -- rule, the read-back, close ------------------------------------------------------
 
 
-def _edit(slice_dir, old, new):
-    """The operator edits close-out.md by hand: `old` becomes `new`."""
-    text = report(slice_dir)
-    assert old in text, old
-    (slice_dir / "close-out.md").write_text(text.replace(old, new, 1))
-
-
 def _files(slice_dir):
     """The store and the two rendered files, as bytes; None for a file that is not
     there."""
@@ -2189,16 +2151,6 @@ def test_settling_a_push_holds_criteria_notes_its_action_until_the_last_is_settl
 
 # -- render ----------------------------------------------------------------------
 
-def _heads(section_text):
-    return re.findall(r"^### .*$", section_text, re.M)
-
-
-def _section(text, title):
-    start = text.index(f"\n## {title}\n")
-    nxt = text.find("\n## ", start + 1)
-    return text[start:nxt if nxt != -1 else len(text)]
-
-
 def test_render_header_with_and_without_state_and_stamp():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
@@ -2220,9 +2172,8 @@ def test_render_header_with_and_without_state_and_stamp():
         state = dict(STATE, cost={"cost_usd": 118.41, "planner_share": 0.18,
                                   "research_share": 0.04, "rework_share": 0.14})
         (slice_dir / "state.json").write_text(json.dumps(state))
-        code, out, _ = run_cli("stamp", slice_dir)
-        assert code == 0
-        assert out.strip().endswith("· $118.41 (planner 18 %, research 4 %, rework 14 %)")
+        header = close_out.stamp_header(slice_dir)
+        assert header.endswith("· $118.41 (planner 18 %, research 4 %, rework 14 %)")
         record = (slice_dir / "close-out-record.md").read_text()
         assert record.count("Run:") == 1
         # wrapped at the report's width
@@ -2305,7 +2256,7 @@ def test_init_creates_the_store_once_and_renders_it():
         assert len(store(slice_dir)["entries"]) == 1
         code, out, _ = run_cli("init", slice_dir)
         assert code == 0 and out.startswith("exists ")
-        code, _, err = run_cli("counts", Path(tmp) / "nowhere")
+        code, _, err = run_cli("list", Path(tmp) / "nowhere")
         assert code == 2 and "not found" in err
 
 
@@ -2326,8 +2277,7 @@ def test_counts_live_entries_per_section_and_per_letter_on_one_line():
         close_out.append_entry(slice_dir, "defect", "unlabelled", "b")
         close_out.strike_entry(slice_dir, "B2", "dup")
         close_out.strike_entry(slice_dir, "E2", "dup")
-        code, out, _ = run_cli("counts", slice_dir)
-        assert out.strip() == (
+        assert close_out.counts_line(close_out.entry_counts(slice_dir)) == (
             "to you 1 · card requests 0 · wrap-up 1 · unlabelled 1 · closed 1 · "
             "record 1 "
             "— A 1 · D 0 · E 1 · B 3 · P 0 · T 0 · I 0 · 1 entry without a Consequence "
@@ -2340,7 +2290,7 @@ def test_counts_live_entries_per_section_and_per_letter_on_one_line():
         assert line.endswith("line · 1 entry that comes to you without a Proposal line")
         run_cli("append", slice_dir, *with_flags(DEFECT, trigger="fault",
                                                  impact="severe"))              # B5
-        close_out.request_card(slice_dir, "B1", "wrap-up", "needs a design")
+        close_out.propose_entry(slice_dir, "B1", "wrap-up", "needs a design", mark="card")
         counts = close_out.entry_counts(slice_dir)
         assert counts[close_out.NO_PROPOSAL] == 2
         assert close_out.counts_line(counts).endswith(
@@ -2458,106 +2408,6 @@ def test_find_by_headline_and_live_entries_on_a_new_store():
                 raise AssertionError(f"{section} must raise")
             except ReportError:
                 pass
-
-
-OLD_REPORT = """\
-# Close-out — slice 146 worker_robustness
-
-<!-- Run header: stamped by the driver at close-out from state.json. Agents never edit it. -->
-Run: 2026-08-15 20:28 → 21:46 · 4 phases
-
-## Summary
-
-What shipped, in a few lines.
-
-## Outstanding actions
-
-Focus: nothing is owed.
-
-<!-- The operator runbook. -->
-
-### A1 — Push HelmCharts by hand when its hold lifts
-
-The hold stands.
-
-**Consequence:** none in this run.
-
-**Provenance:** witnessed — the driver
-**Disposition:** done, pushed 2026-08-20
-
-## Notable events
-
-Focus: an uneventful run.
-
-<!-- Everything that deviated. -->
-
-### Consult 1 (2026-08-15) appended P4
-
-The consult quoted the report it read:
-
-```markdown
-## Bugs
-
-### B3 — not an entry
-```
-
-and moved on.
-
-### N1 — the test phase was clean
-
-Nothing to add.
-
-**Consequence:** none
-
-**Provenance:** read P4
-**Disposition:**
-
-## Bugs
-
-Focus: the worst one first.
-
-### B1 — the reset is unbounded · minor
-
-Seen on the dev pod.
-
-consult 1, 2026-08-15 — still true after P4.
-
-**Consequence:** a failed build leaves layers
-behind for the next one.
-
-**Provenance:** read, code-reviewer P2 r1
-**Disposition:** card KC
-
-### ~~B2 — a traceback on a bad cert · nit~~ — resolved by P3 (abc123); struck by consult 1
-
-<details><summary>struck — body kept for the record</summary>
-
-The hook exits with a traceback.
-
-**Consequence:** an operator sees a traceback.
-
-**Provenance:** witnessed — P1 r1
-**Disposition:**
-
-</details>
-
-### minor — a heading without an id
-
-Hand-typed body.
-
-## Open questions and rulings
-
-Focus: none.
-
-## Suggestions
-
-### S1 — pin the image
-
-**Consequence:** none
-
-**Provenance:** read P2
-**Disposition:**
-"""
 
 
 # -- the lock ------------------------------------------------------------------------
@@ -2907,8 +2757,8 @@ def _every_place(tmp):
                                              proposal="Card it: it needs a design."))  # B1
     run_cli("append", slice_dir, *with_flags(DEFECT, repo="HelmCharts"))        # B2
     run_cli("append", slice_dir, *with_flags(EASY, body="## the page\n\n```\n# k\n```"))
-    close_out.request_word(slice_dir, "B3", "wrap-up", "edit the page; a rule reserves it",
-                           date="2026-08-14")                                   # B3
+    close_out.propose_entry(slice_dir, "B3", "wrap-up", "edit the page; a rule reserves it",
+                            date="2026-08-14", mark="word")                     # B3
     run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "77"}))          # B4
     run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "51"}))          # B5
     run_cli("append", slice_dir, *DEFECT)                                       # B6

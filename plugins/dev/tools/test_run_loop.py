@@ -12641,11 +12641,11 @@ def test_the_pre_run_match_takes_backticks_and_any_case():
             assert run_to_exit(r) == 4, headline
             assert f"- A1 — {headline}" in json.loads(
                 (slice_dir / "bailout.json").read_text())["details"]
-    assert run_loop.open_prerun_actions(Path("/nonexistent")) == []
+    assert run_loop.prerun_actions(Path("/nonexistent")) == []
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, _ = make_slice(tmp, repo=False)
         close_out.init_report(slice_dir)
-        assert run_loop.open_prerun_actions(slice_dir) == []
+        assert run_loop.prerun_actions(slice_dir) == []
 
 
 def test_a_dry_run_lists_open_pre_run_actions_without_failing():
@@ -13905,7 +13905,7 @@ def test_a_github_phase_runs_in_its_clone_and_reports_it_once():
             assert load_state(slice_dir)["scratch_clones_reported"] == [
                 str(clone.resolve())]
             assert run_loop.live_entries(slice_dir, "Outstanding actions") == []
-            assert run_loop.open_prerun_actions(slice_dir) == []
+            assert run_loop.prerun_actions(slice_dir) == []
             # a later run whose state lost the record finds the entry
             again = ScriptedLoop(slice_dir, [], repo_root=repo)
             again.state = {"bases": {}}

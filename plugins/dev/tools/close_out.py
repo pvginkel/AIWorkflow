@@ -54,8 +54,7 @@ the agents and the skills:
                — unless Pilot wrote that one back, its answers in it;
                `--step`, `--summary` and `--context` set the document's own
                fields.
-  stamp        render, printing the run header.
-  absorb       read close-out.md, as Pilot wrote it back, into the store:
+  absorb      read close-out.md, as Pilot wrote it back, into the store:
                each block's answer lines into its entry's ruling; a
                `deferred` closes the entry as Pilot's, an action's `done`
                is what was done on it.
@@ -68,7 +67,6 @@ the agents and the skills:
                lists more criteria takes a note until the last is settled.
   close        close the report once its answers are carried out: every
                live entry struck, but one whose ruling nobody carried out.
-  counts       live entries per place of the report and per id letter.
 
 The store is open to every author — the appender, the reviewers, the
 consults, the wrap-up — until the report is rendered at the run's end; after
@@ -185,21 +183,13 @@ KINDS: dict[str, str] = {
 OLD_LETTERS = ("N", "Q", "S")
 
 # The five sections of the old report, taken as kinds wherever a caller
-# passes one (the loops still do), and the letter an imported entry's id
-# carried under each.
+# passes one (the loops still do).
 SECTIONS: dict[str, str] = {
     "Outstanding actions": "action",
     "Notable events": "event",
     "Bugs": "defect",
     "Open questions and rulings": "decision",
     "Suggestions": "improvement",
-}
-SECTION_LETTERS: dict[str, str] = {
-    "Outstanding actions": "A",
-    "Notable events": "N",
-    "Bugs": "B",
-    "Open questions and rulings": "Q",
-    "Suggestions": "S",
 }
 
 SEVERITIES = ("major", "minor", "nit", "cosmetic")
@@ -622,10 +612,9 @@ def _entry(eid: str, kind: str | None, headline: str, body: list[str],
     }
 
 
-# The fields an entry carries for the block it renders to, and for the
-# driver (`due`): each only where given. Which kind takes which is
-# `_ask_problems`'.
-ASK_FIELDS = ("options", "recommend", "check", "due")
+# The kinds that take each field an entry carries for the block it renders
+# to, each only where given; `due`, the driver's, any kind takes.
+# `_ask_problems` applies it.
 _ASK_TAKES = {"options": ("decision", "action"), "recommend": ("decision",),
               "check": ("action",)}
 
@@ -1094,18 +1083,6 @@ def _mark_text(mark: dict) -> str:
                        "text": _wrap_up_lines(mark)})
 
 
-def request_card(slice_dir: Path | str, eid: str, by: str, text: str,
-                 date: str | None = None) -> str:
-    """The wrap-up asks for a card on an entry (`propose --card`)."""
-    return propose_entry(slice_dir, eid, by, text, date, mark="card")
-
-
-def request_word(slice_dir: Path | str, eid: str, by: str, text: str,
-                 date: str | None = None) -> str:
-    """The wrap-up asks for the operator's word on an edit (`propose --word`)."""
-    return propose_entry(slice_dir, eid, by, text, date, mark="word")
-
-
 def leave_entry(slice_dir: Path | str, eid: str, by: str, text: str,
                 date: str | None = None) -> str:
     """The wrap-up looked at an entry and changed nothing (`note --left`):
@@ -1478,17 +1455,6 @@ def _folders_to_run(slice_dir: Path | str) -> dict[int, Path] | None:
                     and int(m.group(1)) not in out:
                 out[int(m.group(1))] = child
     return out
-
-
-def slices_to_run(slice_dir: Path | str) -> dict[int, tuple[str, str]] | None:
-    """Number → (folder number as written, stage), of every slice still to
-    run (`_folders_to_run`). The stage is `planned` or `unplanned`
-    (`_stage`). None without a `slices` ancestor."""
-    folders = _folders_to_run(slice_dir)
-    if folders is None:
-        return None
-    return {n: (re.match(r"(\d+)_", folder.name).group(1), _stage(folder))
-            for n, folder in folders.items()}
 
 
 _FOLDER_RE = re.compile(r"(\d+)_")
@@ -3254,7 +3220,6 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p.add_argument("--context", action="append", metavar="PARAGRAPH",
                    help="a paragraph the asks share, before the run's own — the slice "
                         "in two lines; repeat it for each; kept")
-    verb("stamp", "render, printing the run header from state.json")
 
     p = verb("absorb", "read close-out.md, as Pilot wrote it back, into the store: each "
                        "block's answer lines into its entry's ruling")
@@ -3290,7 +3255,6 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p.add_argument("--by", help="who closes")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
-    verb("counts", "live entries per place and per id letter, one line")
     for p in sub.choices.values():
         _positionals_first(p)
     return parser, sub.choices
@@ -3474,8 +3438,6 @@ def main(argv=None) -> int:
         elif command == "render":
             print(render_report(slice_dir, step=args.step, summary=args.summary,
                                 context=args.context))
-        elif command == "stamp":
-            print(stamp_header(slice_dir))
         elif command == "absorb":
             print("\n".join(absorb_report(slice_dir, date=args.date)))
         elif command == "rule":
@@ -3492,8 +3454,6 @@ def main(argv=None) -> int:
                       f"open over {', '.join(stay)}, ruled and not carried out")
             else:
                 print(f"closed, {_plural(n, 'entry', 'entries')} with it")
-        elif command == "counts":
-            print(counts_line(entry_counts(slice_dir)))
     except ReportError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 2

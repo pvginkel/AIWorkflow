@@ -90,8 +90,8 @@ log.txt. Its exit code goes to disk instead: every run that got that far
 records `exit: {code, ts}` in state.json as its last write, and a --resume
 clears it — so a run with no `exit` and no live driver was killed from
 outside. `wait` blocks on the run.lock flock (liveness is the lock, never
-the pid) for at most --for seconds and reports the run's state with the
-driver's log lines since --from; `stop` SIGINTs the driver — its
+the pid) for at most --for seconds and prints a signal — running, ended
+with its exit, or gone; `stop` SIGINTs the driver — its
 KeyboardInterrupt path, the same as Ctrl-C on an attached run. run.lock's
 note names the driver's KubeCoder environment, host and pid, with a
 heartbeat rewritten every minute while it holds the lock; state.json's
@@ -99,8 +99,8 @@ heartbeat rewritten every minute while it holds the lock; state.json's
 liveness — a pod's `ps` cannot see a driver in another environment.
 
 Usage:
-    run_loop.py run <slice-dir> [--resume] [--detach] [--verbose] [--dry-run]
-    run_loop.py wait <slice-dir> [--for SECONDS] [--from OFFSET]
+    run_loop.py run <slice-dir> [--resume] [--detach] [--step ID] [--verbose] [--dry-run]
+    run_loop.py wait <slice-dir> [--for SECONDS]
     run_loop.py stop <slice-dir>
     run_loop.py status <slice-dir>
     run_loop.py gate <phase-outputs>/gate_spec.json
@@ -747,8 +747,8 @@ def resolve_skills(text: str) -> list[tuple[str, Path | None]]:
 def stale_plugin(script: str) -> tuple[str, str, str] | None:
     """(this plugin's version, the installed one's, where the installed copy
     of `script` is) when the two versions differ, else None. Fail open — an
-    unknown version on either side is no evidence of a mismatch. Shared by
-    the loops' guard and preflight, which names the path before a launch."""
+    unknown version on either side is no evidence of a mismatch. The loops'
+    guard (`assert_plugin_current`) is its one caller."""
     ours = plugin_version()
     installed = installed_plugin()
     if not ours or installed is None or installed[0] == ours:
@@ -838,13 +838,6 @@ def scratch_clone_findings(clone: Path) -> list[str]:
     except (OSError, subprocess.TimeoutExpired) as e:
         found.append(f"git could not read it ({e})")
     return found
-
-
-def open_prerun_actions(slice_dir: Path) -> list[tuple[str, str]]:
-    """(id, headline) of every live action the run needs before it starts
-    (`close_out.prerun_actions`). A missing report has none."""
-    return [(a["id"], a["headline"]) for a in prerun_actions(slice_dir)
-            if not a["struck"]]
 
 
 def prerun_status(slice_dir: Path, repo_root: Path, spec_root: Path,

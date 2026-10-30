@@ -682,7 +682,7 @@ sessions in all.
   2026-10-30; nothing to build.
 - [x] **C2. AIWF-82's rule** (after decision 8): the prompts, the format skill, the checks.
 - [x] **C3. The blanket-accept scan** and the trims of `inbox`, `onboard`, `arch-design` (§6).
-- [ ] **C4. Dead code and the research tools** that read gone artifacts: `close_out_readout.py`'s
+- [x] **C4. Dead code and the research tools** that read gone artifacts: `close_out_readout.py`'s
   snapshot import left as research, noted in its header; nothing else.
 - [x] **C5. The AIWF cards** commented with their fate (§7); closed at the cutover.
 - [ ] **C6. Optional, if it falls out of A4:** the review set computed from HEAD before and after in

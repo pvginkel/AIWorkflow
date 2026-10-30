@@ -46,6 +46,9 @@ first treatment and simpler rules, § 3.10's "silent is not closed" and "both", 
 (note 26) — are this tool's own code. ``table-check`` holds the tool's routes against the plan's
 numbers, ``corpus-check`` imports and renders each hand-over snapshot with the plugin's tool and
 holds it against the tool before the store (``--before``); both exit 1 on a difference.
+``corpus-check``'s snapshot import is kept as research: it calls the plugin's ``close_out.py
+import``, which 0.10.2 removed with the Markdown report, so it runs against a plugin checkout
+from before 0.10.2 (0.9.147, the tip of ``main`` before the P-111 redesign), not against this one.
 
 ``order`` says where in a report the entries the operator progressed sit, under three reading
 orders: the one ``close_out.py render`` gives today, a mechanical one (severity across kinds),

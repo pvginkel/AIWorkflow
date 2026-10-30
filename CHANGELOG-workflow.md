@@ -4,6 +4,32 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-30 — The code the redesign left with no caller goes (v0.10.13)
+
+Item C4 of the P-111 plan: the dead code in `plugins/dev/tools/`, each piece checked against the
+agents, skills, docs and research tools before it went, with its tests brought to what stays.
+
+- **`close_out.py`** loses the `stamp` and `counts` verbs, whose one caller was the run-slice
+  skill before 0.10.8 rewrote it and the close-out skill it deleted. The driver keeps calling
+  `stamp_header`, `entry_counts` and `counts_line` itself. Also gone: the `request_card` and
+  `request_word` wrappers of the verbs 0.10.2 removed (`propose --card`/`--word` stay),
+  `slices_to_run`, which nothing called (`slice_stages` gives the same map, and its test now
+  reads that), and the unused `SECTION_LETTERS` and `ASK_FIELDS`. The template's verb table
+  drops the two rows.
+- **`run_loop.py`** loses `open_prerun_actions`, which 0.10.4's evaluated checks replaced. Its
+  usage line drops `wait --from OFFSET`, a flag that never existed, and gains `run --step`.
+  The `wait` and `stale_plugin` docstrings now say what each does today.
+- **The close-out suite** loses eight helpers no test called after 0.10.2: the old Markdown
+  report fixture, a store-commit helper, the hash, edit and section helpers, and the
+  `owed_before_test` scaffolding.
+- **The research tools** keep their code. `close_out_readout.py`'s header says its
+  `corpus-check` imports snapshots through `close_out.py import`, which 0.10.2 removed, so it
+  runs against a plugin from before the redesign.
+- **Kept on purpose:** `append`'s hidden `--section`, a shim for an author that names a section
+  instead of a kind, which predates the redesign. `TEMPLATE_DOC` and `github_target.reset_cache`
+  are the suites' seams. `turn_profile.py` still counts `stamp` as a close-out write, because it
+  replays old transcripts.
+
 ## 2026-10-30 — No word approves the lot in the inbox, and the chat skills stop pointing at the next command (v0.10.12)
 
 Item C3 of the P-111 plan: the blanket-accept scan and the trims of `inbox`, `onboard` and
