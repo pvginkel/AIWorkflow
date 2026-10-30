@@ -632,7 +632,7 @@ sessions in all.
 
 **Phase A — the contract and the foundation**
 
-- [ ] **A0. The contract page.** `plugins/dev/docs/pilot.md` as §3 states it, and `docs/AUTHORING.md`'s
+- [x] **A0. The contract page.** `plugins/dev/docs/pilot.md` as §3 states it, and `docs/AUTHORING.md`'s
   rules for a stage skill (headless, ends its turn, the brief, the documents, the continuation,
   the clarification turn, the fallback). *Done when:* the page reads as the one home and the
   operator has read it — this is P-111's "Designed" box, with this plan.
@@ -719,6 +719,9 @@ sessions in all.
   marked as the 0.9.93 survey it is; the ledger's F92 row ticked; the rulings of §1 and §9 as rows
   in `decisions.md` where they bind the record — triage as the definition chat's among them.
   PilotApp: `CLAUDE.md`'s dev-pipeline paragraph, `.aiworkflowrc` checked (unchanged).
+  KubeCoderConfig: the `youtrack-usage` skill's "done is the operator's move" brought to the
+  run's continuation moving the slice card to Resolved, its plugin version bumped; not before F1,
+  since the 0.9.x plugin still leaves done to the operator.
 - [ ] **F4.** The AIWF cards closed (AIWF-36 already is).
 - [ ] **F5.** The first slice through Pilot, the phone's layout (031), on 0.10.0.
 
@@ -764,3 +767,14 @@ Recorded here as the operator gives them, dated, each naming the decision of §1
 - The later-phase proposal bug is fixed on the branch only, no patch on `main`.
 - The Solution Known lane and `sweep_slice.py` are dropped as unused (§5.4, §6, B3).
 - The branch may be pushed (pushed 2026-10-30). §8 stands as written, the build may start.
+
+**2026-10-30, at A0:**
+
+- The contract page, `plugins/dev/docs/pilot.md`, is approved: A0 is done. With it, against
+  §5.2's and §5.3's backgrounded wait: Pilot as built makes a work item done at any turn's end
+  and refuses `register_document` between turns, so a stage waits on its own loop inside the
+  turn, in the foreground, and Pilot is not changed for it. A4, B1 and B2 build to the page.
+- The branch is pushed as needed, item by item, without asking.
+- KubeCoderConfig's `youtrack-usage` skill, whose "done is the operator's move" the
+  continuation's Resolved reverses, is brought to it at the cutover, in F3 (placed there on the
+  operator's "no preference").
