@@ -58,7 +58,8 @@ merge hierarchically from the session cwd up to the git root, if a project adds 
 
 A skill is a task-specific workflow the user triggers by name. It contains: what it does (one
 paragraph), the numbered procedure, real shell invocations (reference plugin files via
-`${CLAUDE_PLUGIN_ROOT}/...`), and the decision points where it stops and asks. Frontmatter carries
+`${CLAUDE_PLUGIN_ROOT}/...`), and the decision points where it stops and asks — a stage skill has
+none (below). Frontmatter carries
 `name` (mandatory, kebab-case, **identical to the directory name**), `description`, and an
 `argument-hint`; `allowed-tools` and `model` are available when a skill needs them.
 
@@ -74,6 +75,28 @@ a place to explain what they do.
 `description` is the **trigger**, not just a label: it is always in context, and Claude reads it to
 decide whether to invoke the skill on its own. Say when to use the skill, not merely what it is. To
 keep one operator-only (no autonomous invocation), set `disable-model-invocation: true`.
+
+## Stage skills — the turns Pilot sends
+
+A stage skill is one Pilot runs as a work item: `plan-slice` and `run-slice`. Its contract — the
+brief, the four ways a turn opens, the documents, the continuation, the clarification, the nudge,
+the halt file, the cards and the fallback — is
+[`plugins/dev/docs/pilot.md`](../plugins/dev/docs/pilot.md); the skill cites that page and
+restates none of it. Writing one:
+
+- **Headless throughout.** No decision point stops to ask. An ask is an entry in a store, rendered
+  and registered as a document, and the turn ends; no `AskUserQuestion`, no question in a final
+  message, no word that approves the lot.
+- **The procedure is the turns.** The numbered procedure is laid out by the four ways a turn
+  opens, and says for each what the stage does and where that turn ends.
+- **The session coordinates; sub-agents read.** Reading the slice, grounding, absorbing rulings
+  and answering a clarification go to sub-agents pointed at the slice's folder. The session
+  launches, renders, registers and commits, and its context stays small across a stage that may
+  run for days.
+- **Asks are data.** An ask a program acts on goes through `asks.py`, never a block written by
+  hand. Prose under `/dev:document-format` is for a document no program reads back.
+- **One procedure, with Pilot or without.** The fallback changes the register-and-attach step
+  alone; a skill grows no second path for it.
 
 ## `CLAUDE.md` discipline (the project side)
 

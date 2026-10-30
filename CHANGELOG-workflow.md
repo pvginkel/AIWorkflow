@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-30 — A stage of the workflow as a Pilot work item, on one page (v0.10.0)
+
+The first commit of the 0.10 line, the `dev` plugin re-envisioned for Pilot running it (P-111,
+`docs/research/pilot-redesign-plan-2026-10-30.md`), built on the branch `pilot-redesign` until
+the cutover. Nothing runs differently yet: the skills are brought to the page later on the
+branch.
+
+`plugins/dev/docs/pilot.md` is the contract every stage skill follows when Pilot runs it as a
+work item. It covers the brief whose first line is the stage's command, the four ways a turn
+opens, the documents rendered by `asks.py` and registered, the continuation and its three fixed
+readings, the clarification answered by a sub-agent, the nudge, the halt file, the cards
+parented to the brief's ticket, and the fallback without Pilot. `docs/AUTHORING.md` gains the
+rules for writing a stage skill, pointing at the page.
+
+The page follows Pilot as built where the plan's §3 left it open. Pilot takes a turn's `result`
+as the work item's end, and its tools refuse a session between turns. So a stage never ends its
+turn to wait for a loop of its own, and waits on it inside the turn. A registered file's folder
+does not move while the document is open, since the write-back writes to the registered path.
+
 ## 2026-10-27 — Triage aims a slice at about ten to twelve phases, with fourteen as the ceiling (v0.9.147)
 
 Step 6 of `/dev:triage` aimed a group at about seven phases, with ten as the ceiling. Seven came

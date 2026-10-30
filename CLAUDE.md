@@ -98,7 +98,7 @@ kc project lint        # cexec python uv run --with ruff ruff check .
 - **`plugins/dev/docs/`** — the **canonical contract** for all of the above: `run-loop.md`,
   `plan-loop.md`, `runner-state.md`, `plan-template.md`, `refinement.md`, `agent-dispatch.md`, `close-out.md`,
   `close-out-template.md`, `project-contract.md`, `preflight.md`, `residual-sweep.md`,
-  `spec-tree.md`. Behaviour
+  `spec-tree.md`, and `pilot.md`, a stage as a Pilot work item. Behaviour
   changes here and in the code together; a doc that describes a loop the code no longer runs is a
   defect.
 
