@@ -698,18 +698,13 @@ sessions in all.
 
 **Phase E — the rehearsal** (decision 10)
 
-- [ ] **E1.** Plan-slice and run-slice end to end in ad hoc sessions with `--plugin-dir` on a
-  throwaway slice of a test spec repo, the fallback path showing each document, the answer lines
-  edited by hand; `/dev:triage` once in chat with its new output; the documents read against the
-  synthesis (§5.7). *Before E1, the operator's to rule:* the loops start every role with
-  `kc session create-headless --agent dev:<role>`, which resolves the installed 0.9.x plugin, and
-  a kc session takes no plugin dir (`docs/ADOPTING.md` says so since 0.10.14). A `--plugin-dir`
-  rehearsal therefore runs the branch's stage skills and drivers against the old role prompts:
-  the writers' question options (A4), the plan loop's hand-back shapes (A5), the wrap-up's vet
-  (A2) and the writing skill (A7) never show. Recommended: a KubeCoder feature giving a headless
-  session a plugin dir, used by the loops when they run from one. Otherwise E1 is accepted as
-  partial and the roles first run at F5, or the branch is installed in the shared marketplace
-  for a window, which reaches every environment.
+- [ ] **E1.** Plan-slice and run-slice end to end in ad hoc sessions on a throwaway slice of a
+  test spec repo, the fallback path showing each document, the answer lines edited by hand;
+  `/dev:triage` once in chat with its new output; the documents read against the synthesis
+  (§5.7). The branch is the installed plugin for the rehearsal (ruled 2026-10-31, §9): the loops
+  start every role with `kc session create-headless --agent dev:<role>`, which resolves the
+  installed plugin, and a kc session takes no plugin dir, so a `--plugin-dir` run would have met
+  the old role prompts.
 - [ ] **E2.** One rehearsal through pilot-dev: a test project, a free-form work item whose brief points
   at the branch's skill by path with `CLAUDE_PLUGIN_ROOT` named; the round trip watched —
   register, the pass, the operator's answer from the phone, the write-back, the continuation, a
@@ -720,7 +715,10 @@ sessions in all.
 - [ ] **F1.** Merge to `main`, publish 0.10.0, the marketplace updated in every environment.
   "0.10.0" is the line: the branch bumped the patch per item, so what publishes is the branch's
   head version, under 0.10.14's story entry. First clear the close-out cards that 0.9 runs left
-  open: 0.10 has no `/dev:close-out` and no handler for them (B1, C3).
+  open: 0.10 has no `/dev:close-out` and no handler for them (B1, C3). After the merge, the
+  marketplace's `ref: pilot-redesign` comes out of both its declarations in the shared home,
+  `~/.claude/settings.json` (`extraKnownMarketplaces`) and `~/.claude/plugins/known_marketplaces.json`,
+  so that it follows `main` again.
 - [ ] **F2.** PilotProjects: `rules/stages.md` rewritten — the two commands, the brief's arguments,
   what each stage registers, the ticket in the brief, what each fate means for the pass (§5.1);
   `rules/work-items.md`'s brief for a stage; the definition chat's skill given triage's substance
@@ -790,3 +788,10 @@ Recorded here as the operator gives them, dated, each naming the decision of §1
 - KubeCoderConfig's `youtrack-usage` skill, whose "done is the operator's move" the
   continuation's Resolved reverses, is brought to it at the cutover, in F3 (placed there on the
   operator's "no preference").
+
+**2026-10-31, before E1:**
+
+- The branch is installed globally for the rehearsal, the shared marketplace's option, over the
+  recommended KubeCoder feature ("Just install it globally"). Done the same day: the `aiworkflow`
+  marketplace takes `ref: pilot-redesign` in both its declarations in the shared home, and
+  `dev@aiworkflow` is 0.10.15 for every environment until F1 points it back at `main`.
