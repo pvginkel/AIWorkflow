@@ -255,9 +255,17 @@ the operator through it. What the reads above taught stayed; the vehicle changed
   as documents the plan loop renders at its exit 4 (0.10.5).
 - **How the asks are worded is the writing skill's.** The refinement read is one of the reads
   `skills/writing/SKILL.md` rests on: the cold reader, only what the operator could rule the
-  other way, a settled item in one sentence, every ask with its recommendation. The rules of
+  other way, a pick of the planner's an ask or off the page, every ask with its
+  recommendation. The rules of
   `refinement.md` that a document in Pilot made moot — placeholders on the answer lines, a
   second round appended to the same page, the walkthrough — went with it (0.10.7, 0.10.9).
+- **The opening is data, and holds no pick.** The requirements document opened on free
+  paragraphs until 0.10.17, and the rehearsal's showed what they carried: four of the preparer's
+  calls under "a note overrules any of them", decisions with no block to answer them in. The
+  store now types what an opening says — the premises that do not hold, what is left out, the
+  size — and the render builds it, as the close-out's is built; a pick the operator could rule
+  the other way is an ask, and a plain reading of their words is the plan's, marked as the
+  preparer's (ruled 2026-10-31).
 - **A question back is answered by a sub-agent.** A clarification Pilot asks about a block is
   answered by a fresh sub-agent pointed at the slice's folder, never from the session's own
   reading. Whether that costs real budget on an aged session is P-128's read.

@@ -108,3 +108,17 @@ read's own words.
 6. Clean-round Notable events, no longer recorded (progressed 6 %), and already-fixed entries, now struck by whoever fixed them (58 entries, 10,500 words) (0.9.56). — close-out-read § 3, findings 7 and 9; § 7 R2–R3.
 7. What reaches the operator: a median 2 of 11 entries, with closed entries folded to one line. — close-out-triage-plan § 3.9; § 4.8.
 8. **Contradiction.** The original close-out design expected "Focus lines and ids" to keep the report from becoming "a document nobody reads". The operator never read the Focus lines. — interventions § 6 C7; close-out-triage-plan § 2.
+
+## 7. Read since
+
+1. Calls put as settled in the opening of a requirements document. In the rehearsal's slice 002
+   (P-111 E1, a throwaway project), the plan-preparer wrote four of its own calls into the
+   opening, under "Settled while preparing; a note overrules any of them": what `--keep-common`
+   does, that the filter is `top`'s alone, that `-n N` still lists N words, that the list is
+   English only. Slice 001's preparer had settled `top`'s default, `-n`, the tie order and the
+   JSON shapes with no ask at all. The operator, on the opening: "What's the introduction of that
+   document? Where does it come from?"; "I asked to make requirements gathering same as close
+   out: a single structured json file, rendered. Is this just prose?"; "You found that the
+   context is used to piggyback decisions?" They ruled for a pick they could rule the other way
+   as an ask, a plain reading of their words off the page, and the opening built from typed
+   fields: "I'll follow your recommendation" (built as 0.10.17). — the rehearsal, 2026-10-31.

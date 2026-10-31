@@ -795,3 +795,14 @@ Recorded here as the operator gives them, dated, each naming the decision of §1
   recommended KubeCoder feature ("Just install it globally"). Done the same day: the `aiworkflow`
   marketplace takes `ref: pilot-redesign` in both its declarations in the shared home, and
   `dev@aiworkflow` is 0.10.15 for every environment until F1 points it back at `main`.
+
+**2026-10-31, in E1** (the rehearsal's documents, read by the operator):
+
+- The close-out tells each ask once: the section is the card, its heading the ask and its body
+  the current story; a proposal is a line; the consult's and the wrap-up's notes go to the
+  record (built as 0.10.16).
+- The requirements document holds no settled picks, against §5.3's "the settled items and the
+  approach in short are the shared context": a pick the operator could rule the other way is an
+  ask, a plain reading of their words is off the page and stands in `plan.md` as the preparer's;
+  the opening is built from typed fields of the store — the premises that do not hold, what is
+  left out, the size — and an author's context is one line (built as 0.10.17).

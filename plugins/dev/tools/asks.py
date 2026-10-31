@@ -13,7 +13,8 @@ by the loops and by close_out.py, and a CLI for the skills and the
 sub-agents:
 
   init     create `asks/<n>-<slug>.json` under a slice folder, numbered after
-           every file already there; prints its path.
+           every file already there, with its opening's typed fields; prints
+           its path.
   append   add one ask; refused, naming each fault, when the entry does not
            carry what its kind does. Prints its id: the kind's letter and the
            next number under it (D, Q, A), unless --id names one.
@@ -28,22 +29,31 @@ sub-agents:
   absorb   read a written-back document's answer lines into its store and
            print each ask's state.
 
-**The store.** `{title, summary?, step?, for?, context: [paragraph], entries:
-[entry]}`, an entry `{id, kind, headline, body, options?: [{label, line?}],
-recommend?, proposal?, default?, check?, due?, notes?: [{by, date, text}],
-answer_lines?}`. The kind is the block's: a `decision` carries `options`
-(with an optional `recommend`) or a `proposal`, and may carry `check`; a
-`question` may carry `default`; an `action` may carry `options` and `check`,
-and `due` (merge, test, push or close), which the store keeps for the driver
-and the document never shows, since no block takes it. A body, a context
+**The store.** `{title, summary?, step?, for?, context: [paragraph],
+premises?: [{premise, fact, changes}], out_of_scope?: [line], size?: {phases,
+repos: [name], tests?}, entries: [entry]}`, an entry `{id, kind, headline,
+body, options?: [{label, line?}], recommend?, proposal?, default?, check?,
+due?, notes?: [{by, date, text}], answer_lines?}`. The kind is the block's:
+a `decision` carries `options` (with an optional `recommend`) or a
+`proposal`, and may carry `check`; a `question` may carry `default`; an
+`action` may carry `options` and `check`, and `due` (merge, test, push or
+close), which the store keeps for the driver and the document never shows,
+since no block takes it. A body, a context
 paragraph and a note are Markdown, with no heading and no block in them.
+The opening's typed fields are lines: each premise that does not hold, what
+it holds, what is true and what that changes; each matter the work leaves
+out; the size, the phases it comes to, the repositories it touches and the
+existing tests it changes. A loop's context is its own paragraphs; an
+author's is one line, what those fields do not say.
 
 **The render.** The front matter (`title`; `summary` on a document of more
-than one ask, where it is required; `step`; `for`), the context, then per
-entry `## <headline>`, the body, the notes as paragraphs with a run-in head,
-and the block last, its keys in the format skill's order. The headline, the
-body, the context and the notes are written as given but for every `<`
-outside code and autolinks, escaped `\\<` (`escape_tags`), so that a viewer
+than one ask, where it is required; `step`; `for`), the context, the
+opening built from its typed fields — the premises that do not hold, the
+size, what is left out, each under a run-in head, a list where there are
+several — then per entry `## <headline>`, the body, the notes as paragraphs
+with a run-in head, and the block last, its keys in the format skill's
+order. The headline, the body, the context and the notes are written as
+given but for every `<` outside code and autolinks, escaped `\\<` (`escape_tags`), so that a viewer
 that passes HTML through shows the words instead of a tag; the front matter
 and the block's values, plain text in Pilot, are written as they are. A value
 is written plain where YAML reads it back as written, double-quoted with
@@ -71,8 +81,11 @@ line cited by its number outside a fenced block, `path:12` or `path:12-30`
 `append` and `amend` refuse a `--proposal` of more than one line or longer
 than `PROPOSAL_MAX` (`proposal_problems`): in Pilot a proposal is the label
 of the decision's one Agree row, and the line the closed block shows as the
-answer. The functions the loops import check neither: a driver's text quotes
-tool output.
+answer. `init` and `amend` refuse a context of more than one line, and a line
+of the opening longer than `OPENING_MAX` (`opening_problems`): the evidence
+is `grounding.md`'s, and a pick the operator could rule the other way is an
+ask, never a sentence of the opening. The functions the loops import check
+none of these: a driver's text quotes tool output.
 
 `<store>` is the store's path or its document's: a `.md` argument resolves
 to the `.json` beside it. Every read-modify-write holds an exclusive flock on
@@ -111,6 +124,15 @@ DUES = ("merge", "test", "push", "close")
 # Pilot a proposal is the label of the decision's one Agree row, and the line
 # its closed block shows as the answer.
 PROPOSAL_MAX = 300
+# The opening an author gives in typed fields, in place of free paragraphs of
+# context: the premises that do not hold, what the work leaves out, its size.
+# The render builds the paragraphs before the first ask from them.
+OPENING_FIELDS = ("premises", "out_of_scope", "size")
+PREMISE_PARTS = ("premise", "fact", "changes")
+SIZE_FIELDS = ("phases", "repos", "tests")
+# How long a line of the opening, the context's one line among them, an
+# author's CLI takes (`opening_problems`).
+OPENING_MAX = 300
 ANSWER_KEYS = ("answer", "by", "at", "note", "via", "to", "done")
 VIAS = ("app", "chat", "recommended", "autopilot")
 DEFERRED = "deferred"
@@ -119,7 +141,7 @@ AGENT = "agent"
 
 ENTRY_FIELDS = ("id", "kind", "headline", "body", *BLOCK_KEYS, "due", "notes",
                 "answer_lines")
-FRAME_FIELDS = ("title", "summary", "step", "for", "context")
+FRAME_FIELDS = ("title", "summary", "step", "for", "context", *OPENING_FIELDS)
 STORE_FIELDS = (*FRAME_FIELDS, "entries")
 
 ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -390,6 +412,32 @@ def proposal_problems(text, what: str) -> list[str]:
     return []
 
 
+def opening_problems(context, premises, out_of_scope, tests) -> list[str]:
+    """What an author's CLI refuses of a document's opening: a context of
+    more than one line, and any line of it longer than `OPENING_MAX`. The
+    opening is the typed fields; the context is the one line they do not
+    say, and the evidence is `grounding.md`'s. A field not given is not
+    checked; a driver's own text is never checked."""
+    found: list[str] = []
+    context = context or []
+    said = [c.strip() for c in context if isinstance(c, str)]
+    if len(context) > 1 or any(c in s for s in said for c in _BREAKS):
+        found.append("the context is one line: what the opening's fields — the premises, "
+                     "what is left out, the size — do not say; the evidence is "
+                     "grounding.md's, never the document's")
+    lines = [("the context", s) for s in said]
+    for n, parts in enumerate(premises or (), 1):
+        lines += [(f"premise {n}'s {part}", value.strip())
+                  for part, value in zip(PREMISE_PARTS, parts, strict=False)]
+    lines += [(f"out-of-scope line {n}", v.strip()) for n, v in enumerate(out_of_scope or (), 1)]
+    if isinstance(tests, str):
+        lines.append(("the size's tests", tests.strip()))
+    found += [f"{what} is {len(value)} characters, and a line of the opening is at most "
+              f"{OPENING_MAX}: a sentence, its evidence left to grounding.md"
+              for what, value in lines if len(value) > OPENING_MAX]
+    return found
+
+
 def _options_problems(options, who: str) -> list[str]:
     if not isinstance(options, list) or not options:
         return [f"{who}: `options` is no list of options"]
@@ -495,6 +543,51 @@ def _frame_problems(store: dict) -> list[str]:
             found += _text_problems(paragraph, f"context paragraph {n}", one_line=False)
             if isinstance(paragraph, str):
                 found += _markdown_problems(paragraph, f"context paragraph {n}")
+    return found + _opening_problems(store)
+
+
+def _opening_problems(store: dict) -> list[str]:
+    """The typed opening's shape: each premise its three parts, what is left
+    out a list of lines, the size its phases, its repositories and the tests
+    it changes where given — every value a line."""
+    found: list[str] = []
+    if "premises" in store:
+        premises = store["premises"]
+        if not isinstance(premises, list) or not premises:
+            found.append("`premises` is no list of premises")
+        else:
+            for n, premise in enumerate(premises, 1):
+                what = f"premise {n}"
+                if not isinstance(premise, dict) or set(premise) != set(PREMISE_PARTS):
+                    found.append(f"{what} is not its {', '.join(PREMISE_PARTS)}")
+                    continue
+                for part in PREMISE_PARTS:
+                    found += _text_problems(premise[part], f"{what}'s {part}", one_line=True)
+    if "out_of_scope" in store:
+        left = store["out_of_scope"]
+        if not isinstance(left, list) or not left:
+            found.append("`out_of_scope` is no list of lines")
+        else:
+            for n, line in enumerate(left, 1):
+                found += _text_problems(line, f"out-of-scope line {n}", one_line=True)
+    if "size" in store:
+        size = store["size"]
+        if not isinstance(size, dict):
+            return [*found, "`size` is not its phases, repos and tests"]
+        unknown = set(size) - set(SIZE_FIELDS)
+        if unknown:
+            found.append(f"the size has no field {', '.join(f'`{k}`' for k in sorted(unknown))}")
+        phases = size.get("phases")
+        if isinstance(phases, bool) or not isinstance(phases, int) or phases < 1:
+            found.append("the size's `phases` is no count of one or more")
+        repos = size.get("repos")
+        if not isinstance(repos, list) or not repos:
+            found.append("the size names no repository")
+        else:
+            for n, repo in enumerate(repos, 1):
+                found += _text_problems(repo, f"the size's repository {n}", one_line=True)
+        if "tests" in size:
+            found += _text_problems(size["tests"], "the size's tests", one_line=True)
     return found
 
 
@@ -701,6 +794,42 @@ def section(entry: dict, *, answers: bool = False) -> list[str]:
     return [*lines, *_block(entry, answers=answers), ""]
 
 
+def _and(items: list[str]) -> str:
+    items = [i.strip() for i in items]
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def _run_in(head: str, heads: str, items: list[str]) -> list[str]:
+    """One item as a paragraph under its run-in head, several as a list
+    under the plural head."""
+    if len(items) == 1:
+        return _paragraph(escape_tags(f"**{head}.** {items[0]}"))
+    return [f"**{heads}.**", "", *(f"- {escape_tags(i)}" for i in items), ""]
+
+
+def _opening_lines(store: dict) -> list[str]:
+    """The opening built from the typed fields, before the first ask: the
+    premises that do not hold, each its premise, its fact and what it
+    changes; the size; what the work leaves out."""
+    lines: list[str] = []
+    premises = [" ".join(p[part].strip() for part in PREMISE_PARTS)
+                for p in store.get("premises") or ()]
+    if premises:
+        lines += _run_in("A premise that does not hold", "Premises that do not hold",
+                         premises)
+    size = store.get("size")
+    if size:
+        n = size["phases"]
+        said = f"**The size.** About {n} phase{'' if n == 1 else 's'}, over {_and(size['repos'])}."
+        if size.get("tests"):
+            said += f" {size['tests'].strip()}"
+        lines += _paragraph(escape_tags(said))
+    left = [line.strip() for line in store.get("out_of_scope") or ()]
+    if left:
+        lines += _run_in("Left out of this slice", "Left out of this slice", left)
+    return lines
+
+
 def render(store: dict) -> str:
     """The document's text; AskError naming every fault while there are any."""
     _refuse("the document cannot be rendered", problems(store))
@@ -714,6 +843,7 @@ def render(store: dict) -> str:
     lines += ["---", ""]
     for paragraph in store.get("context", []):
         lines += _paragraph(escape_tags(paragraph))
+    lines += _opening_lines(store)
     for entry in entries:
         lines += section(entry)
     return "\n".join(lines).rstrip("\n") + "\n"
@@ -1061,12 +1191,17 @@ def absorb_file(path: Path | str) -> list[str]:
 # ---------------------------------------------------------------- writes
 
 def new_store(title: str, *, summary: str | None = None, step: str | None = None,
-              for_: str | None = None, context: list[str] | tuple = ()) -> dict:
+              for_: str | None = None, context: list[str] | tuple = (),
+              premises: list[dict] | None = None, out_of_scope: list[str] | None = None,
+              size: dict | None = None) -> dict:
     store: dict = {"title": title.strip()}
     for key, value in (("summary", summary), ("step", step), ("for", for_)):
         if value is not None and value.strip():
             store[key] = value.strip()
     store["context"] = list(context)
+    for key, value in (("premises", premises), ("out_of_scope", out_of_scope),
+                       ("size", size)):
+        _set_opening(store, key, value)
     store["entries"] = []
     _refuse("the store cannot be created", _frame_problems(store))
     return store
@@ -1168,10 +1303,43 @@ def amend(store: dict, eid: str, **fields) -> None:
     entry.update(changed)
 
 
+def _set_opening(store: dict, key: str, value) -> None:
+    """A typed field of the opening given: an empty one removes it. A size
+    given in part keeps the rest of the one there, its repositories replaced
+    whole where given."""
+    if value is None:
+        return
+
+    def strip(v):
+        return v.strip() if isinstance(v, str) else v
+
+    if key == "premises" and isinstance(value, list):
+        value = [{k: strip(v) for k, v in p.items()} if isinstance(p, dict) else p
+                 for p in value]
+    elif key == "out_of_scope" and isinstance(value, list):
+        value = [strip(v) for v in value]
+    elif key == "size" and isinstance(value, dict) and value:
+        value = {**(store.get("size") or {}),
+                 **{k: v for k, v in value.items() if v is not None}}
+        if isinstance(value.get("repos"), list):
+            value["repos"] = [strip(r) for r in value["repos"]]
+        if isinstance(value.get("tests"), str):
+            value["tests"] = value["tests"].strip()
+            if not value["tests"]:
+                del value["tests"]
+    if value in ([], {}):
+        store.pop(key, None)
+    else:
+        store[key] = value
+
+
 def amend_frame(store: dict, **fields) -> None:
     """Replace the document's own fields given: `title`, `summary`, `step`,
-    `for_`, `context`; an empty value removes an optional one."""
-    unknown = set(fields) - {"title", "summary", "step", "for_", "context"}
+    `for_`, `context`, and the opening's `premises`, `out_of_scope` and
+    `size` (in part: its fields given replace the size's); an empty value
+    removes an optional one."""
+    unknown = (set(fields) - {"title", "summary", "step", "for_", "context"}
+               - set(OPENING_FIELDS))
     if unknown:
         raise AskError(f"amend changes no {', '.join(sorted(unknown))}")
     changed = json.loads(json.dumps(store))
@@ -1179,7 +1347,9 @@ def amend_frame(store: dict, **fields) -> None:
         key = "for" if key == "for_" else key
         if value is None:
             continue
-        if key == "context":
+        if key in OPENING_FIELDS:
+            _set_opening(changed, key, value)
+        elif key == "context":
             changed["context"] = list(value)
         elif value.strip():
             changed[key] = value.strip()
@@ -1228,9 +1398,22 @@ def _frame_args(p: argparse.ArgumentParser, *, title_required: bool) -> None:
     p.add_argument("--step", help="the plan task the brief names, as `step`")
     p.add_argument("--for", dest="for_", metavar="HANDLE",
                    help="the handle of the person who should answer")
-    p.add_argument("--context", action="append", metavar="PARAGRAPH",
-                   help="a paragraph of the context the asks share, before the first; "
-                        "repeat it for each, - for stdin")
+    p.add_argument("--context", action="append", metavar="LINE",
+                   help="the one line the asks share that the opening's fields do not "
+                        f"say, at most {OPENING_MAX} characters; - for stdin")
+    p.add_argument("--premise", action="append", nargs=3,
+                   metavar=("PREMISE", "FACT", "CHANGES"),
+                   help="a premise of the slice that does not hold: what it holds, what "
+                        "is true, what that changes — a sentence each, no evidence; "
+                        "repeat it for each")
+    p.add_argument("--out-of-scope", dest="out_of_scope", action="append", metavar="LINE",
+                   help="a matter the work found and leaves out, a line; repeat it for each")
+    p.add_argument("--phases", type=int, metavar="N",
+                   help="the size: the phases the work comes to")
+    p.add_argument("--repo", action="append", metavar="NAME",
+                   help="the size: a repository the work touches; repeat it for each")
+    p.add_argument("--tests", metavar="SENTENCE",
+                   help="the size: the existing tests the work changes, a sentence")
 
 
 def _ask_args(p: argparse.ArgumentParser) -> None:
@@ -1320,7 +1503,7 @@ def _stdin(args: argparse.Namespace, *names: str) -> None:
 
 
 _CLEAR_ASK = ("options", "recommend", "proposal", "default", "check", "due")
-_CLEAR_FRAME = ("summary", "step", "for", "context")
+_CLEAR_FRAME = ("summary", "step", "for", "context", "premises", "out-of-scope", "size")
 
 
 def _ask_fields(args: argparse.Namespace) -> dict:
@@ -1333,8 +1516,14 @@ def _ask_fields(args: argparse.Namespace) -> dict:
 
 
 def _frame_fields(args: argparse.Namespace) -> dict:
+    premises = None if args.premise is None else [
+        dict(zip(PREMISE_PARTS, parts, strict=True)) for parts in args.premise]
+    size = None
+    if (args.phases, args.repo, args.tests) != (None, None, None):
+        size = {"phases": args.phases, "repos": args.repo, "tests": args.tests}
     return {"title": args.title, "summary": args.summary, "step": args.step,
-            "for_": args.for_, "context": args.context}
+            "for_": args.for_, "context": args.context, "premises": premises,
+            "out_of_scope": args.out_of_scope, "size": size}
 
 
 def _cli_citations(fields: dict) -> list[str]:
@@ -1359,7 +1548,8 @@ def _ask_texts(args: argparse.Namespace) -> dict:
 
 def _frame_texts(args: argparse.Namespace) -> dict:
     return {"the title": args.title, "the summary": args.summary,
-            "the context": args.context}
+            "the context": args.context, "a `--premise`": args.premise,
+            "an `--out-of-scope`": args.out_of_scope, "`--tests`": args.tests}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1373,6 +1563,9 @@ def main(argv: list[str] | None = None) -> int:
             _refuse(f"{command} is refused", _cli_citations(texts[command](args)))
         if command in ("append", "amend"):
             _refuse(f"{command} is refused", proposal_problems(args.proposal, "`--proposal`"))
+        if command in ("init", "amend"):
+            _refuse(f"{command} is refused", opening_problems(
+                args.context, args.premise, args.out_of_scope, args.tests))
         if command == "init":
             frame = _frame_fields(args)
             title = frame.pop("title")
@@ -1390,8 +1583,10 @@ def main(argv: list[str] | None = None) -> int:
             for field in args.clear or ():
                 if field in _CLEAR_ASK:
                     ask[field] = ""
-                elif field == "context":
-                    frame["context"] = []
+                elif field in ("context", "premises", "out-of-scope"):
+                    frame[field.replace("-", "_")] = []
+                elif field == "size":
+                    frame["size"] = {}
                 else:
                     frame["for_" if field == "for" else field] = ""
             with editing(args.store) as store:

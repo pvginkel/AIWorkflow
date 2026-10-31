@@ -691,6 +691,102 @@ def test_the_cli_refuses_an_authors_line_number_and_the_loops_api_does_not():
         assert run_cli("note", store, eid, "--by", "me", "--text", "and `def w(`")[0] == 0
 
 
+def opening_store(**opening) -> dict:
+    store = asks.new_store("Slice 002: requirements", step="t3", **opening)
+    asks.append(store, "decision", "Which words top leaves out", "Two lists are live.",
+                options=["standard", "short"], recommend="standard")
+    return store
+
+
+def test_the_opening_renders_from_the_typed_fields():
+    store = opening_store(
+        premises=[{"premise": "AIWF-120 says count misses a last line with no newline.",
+                   "fact": "It does not: the file is split on whitespace.",
+                   "changes": "The slice does nothing for it."}],
+        size={"phases": 3, "repos": ["Pebble", "PebbleSpecs"],
+              "tests": "Four `top` tests expect <the> and change."},
+        out_of_scope=["A UTF-16 file stops pebble with a decoding error."])
+    text = asks.render(store)
+    opening = text.split("---\n\n", 1)[1].split("## ", 1)[0]
+    assert opening == (
+        "**A premise that does not hold.** AIWF-120 says count misses a last line with no "
+        "newline. It does not: the file is split on whitespace. The slice does nothing for "
+        "it.\n\n"
+        "**The size.** About 3 phases, over Pebble and PebbleSpecs. Four `top` tests "
+        "expect \\<the> and change.\n\n"
+        "**Left out of this slice.** A UTF-16 file stops pebble with a decoding error.\n\n"
+    ), opening
+    store = opening_store(
+        premises=[{"premise": "A.", "fact": "B.", "changes": "C."},
+                  {"premise": "D.", "fact": "E.", "changes": "F."}],
+        size={"phases": 1, "repos": ["Pebble"]}, out_of_scope=["x", "y"])
+    opening = asks.render(store).split("---\n\n", 1)[1].split("## ", 1)[0]
+    assert opening == ("**Premises that do not hold.**\n\n- A. B. C.\n- D. E. F.\n\n"
+                       "**The size.** About 1 phase, over Pebble.\n\n"
+                       "**Left out of this slice.**\n\n- x\n- y\n\n"), opening
+    # the opening is prose: the read-back finds the asks as before
+    answered = with_answer(asks.render(store), "D1", ["answer: short", "by: ada"])
+    assert asks.absorb(store, answered) == ["D1  answered by ada: short"]
+
+
+def test_the_frame_refuses_a_malformed_opening():
+    for opening, says in [
+        ({"premises": [{"premise": "A.", "fact": "B."}]}, "premise 1 is not its premise"),
+        ({"premises": [{"premise": "A.", "fact": "B\nC.", "changes": "D."}]},
+         "premise 1's fact is more than one line"),
+        ({"premises": "A."}, "`premises` is no list"),
+        ({"out_of_scope": [""]}, "out-of-scope line 1 is empty"),
+        ({"size": {"phases": 0, "repos": ["P"]}}, "`phases` is no count"),
+        ({"size": {"phases": True, "repos": ["P"]}}, "`phases` is no count"),
+        ({"size": {"phases": 2}}, "the size names no repository"),
+        ({"size": {"phases": 2, "repos": ["P"], "cost": "x"}}, "the size has no field `cost`"),
+    ]:
+        try:
+            asks.new_store("T", **opening)
+        except AskError as e:
+            assert says in str(e), (opening, str(e))
+        else:
+            raise AssertionError(f"{opening} was taken")
+
+
+def test_the_cli_takes_the_opening_and_bounds_the_context():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = scratch_slice(tmp)
+        code, out, err = run_cli(
+            "init", slice_dir, "requirements", "--title", "Requirements", "--step", "t3",
+            "--premise", "The card says X.", "It is Y.", "So no phase.",
+            "--out-of-scope", "UTF-16 input.", "--phases", "3", "--repo", "Pebble",
+            "--repo", "PebbleSpecs", "--tests", "Four tests change.")
+        assert code == 0, err
+        store = Path(out.strip())
+        data = asks.load(store)
+        assert data["premises"] == [{"premise": "The card says X.", "fact": "It is Y.",
+                                     "changes": "So no phase."}]
+        assert data["out_of_scope"] == ["UTF-16 input."]
+        assert data["size"] == {"phases": 3, "repos": ["Pebble", "PebbleSpecs"],
+                                "tests": "Four tests change."}
+        # a size amended in part keeps the rest; a clear removes a field
+        assert run_cli("amend", store, "--repo", "Pebble")[0] == 0
+        assert asks.load(store)["size"] == {"phases": 3, "repos": ["Pebble"],
+                                            "tests": "Four tests change."}
+        assert run_cli("amend", store, "--clear", "out-of-scope", "--clear", "premises")[0] == 0
+        assert {"out_of_scope", "premises"}.isdisjoint(asks.load(store))
+        long = "x" * (asks.OPENING_MAX + 1)
+        for argv, says in [
+            (("--context", "One.", "--context", "Two."), "the context is one line"),
+            (("--context", "One.\nTwo."), "the context is one line"),
+            (("--context", long), f"the context is {asks.OPENING_MAX + 1} characters"),
+            (("--premise", "A.", long, "C."), "premise 1's fact is"),
+            (("--out-of-scope", long), "out-of-scope line 1 is"),
+            (("--tests", long), "the size's tests is"),
+            (("--premise", "See x.py:3.", "B.", "C."), "a `--premise` cites a line"),
+        ]:
+            code, _, err = run_cli("amend", store, *argv)
+            assert code == 2 and says in err, (argv, err)
+        code, _, err = run_cli("init", slice_dir, "other", "--title", "T", "--phases", "2")
+        assert code == 2 and "the size names no repository" in err, err
+
+
 def test_the_docstring_lists_every_verb():
     listed = re.findall(r"^  ([a-z]+) {2,}", asks.__doc__, re.M)
     parser = asks.build_parser()

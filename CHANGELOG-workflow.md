@@ -4,6 +4,34 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-31 — The requirements document holds no settled picks, and its opening is data (v0.10.17)
+
+The rehearsal's second slice (P-111, E1) put its requirements to the operator with three free
+paragraphs ahead of the two asks. They carried a corrected premise with its witnessed runs, an
+out-of-scope finding, the size, and four of the preparer's own calls under "Settled while
+preparing; a note overrules any of them". Those calls were decisions with no block to answer
+them in. The first slice's preparer had settled four more with no ask at all. The operator
+ruled: a pick they could rule the other way is an ask, a plain reading of their words stays off
+the page, and the opening is built from typed fields, as the close-out's is.
+
+- **The store types the opening.** `asks.py` stores `premises` (each what the slice holds, what
+  is true, what that changes), `out_of_scope` (a line each) and `size` (the phases, the
+  repositories, and the existing tests that change). `init` and `amend` take them as
+  `--premise`, `--out-of-scope`, `--phases`, `--repo` and `--tests`; `amend` keeps the rest of a
+  size given in part, and `--clear` takes `premises`, `out-of-scope` and `size`. The render
+  builds the opening from them, after the context: each under a run-in head, a list where there
+  are several.
+- **An author's context is a line.** The CLI refuses a context of more than one line, and any
+  line of the opening over 300 characters (`asks.OPENING_MAX`): the evidence is
+  `grounding.md`'s. The loops' own context paragraphs, which they write in code, are not
+  bounded.
+- **The plan-preparer** puts every pick as an ask or as its reading. A reading is off the page,
+  and in `plan.md`'s rulings section it is marked as the preparer's and not the operator's. Its
+  store is the typed opening with no `--context`. The writing skill's settled-item rule now says
+  the same: a pick is an ask or off the page, nothing between, with the rehearsal's read added
+  to the synthesis as finding 7.1. The refinement rationale and the P-111 plan's §9 record the
+  ruling.
+
 ## 2026-10-31 — The close-out tells each ask once: the section is the card (v0.10.16)
 
 The rehearsal's first close-out (P-111, E1, slice 001 of a throwaway project) put one bug to the

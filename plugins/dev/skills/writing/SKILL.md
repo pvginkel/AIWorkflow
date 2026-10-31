@@ -99,12 +99,14 @@ the third report in a sitting is handed over unread. An entry that reports and p
 is not written; one that is written says what its author would do (1.6, 1.7, 2.2, 4.3, 4.4,
 5.2).
 
-**A settled item is one sentence, or absent.** "I should not have to see the details. The planner
-agent will have this already." A pick of yours is on the page only where they could care — it
-changes what a user sees, moves a file between repositories, changes a default they set or a
-procedure they run — and then as one sentence with its ground; a premise that no longer holds is
-one sentence, what was believed, what is true, what changes; the rest is not on the page (1.9,
-4.10, 6.3).
+**A pick of yours is an ask, or off the page.** "I should not have to see the details. The
+planner agent will have this already"; and calls put as settled, a note to overrule them, read
+as decisions piggybacked on the page. Where they could rule it the other way — it changes what a
+user sees, moves a file between repositories, changes a default they set or a procedure they run
+— it is an ask, with its live options and your recommendation; where they could not, a plain
+reading of their own words, it is not on the page. There is nothing between: no list of picks
+shown as settled. A premise that no longer holds is one sentence, what was believed, what is
+true, what changes (1.9, 4.10, 4.11, 6.3, 7.1).
 
 **A card request is a line and a card.** Card requests are never read: "especially in the Card
 request ones. I never read those." The ask is one line — what the card would say, and why it is
