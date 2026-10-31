@@ -725,13 +725,16 @@ sessions in all.
 
 **Phase F — the cutover** (with implementation-plan step 17)
 
-- [ ] **F1.** Merge to `main`, publish 0.10.0, the marketplace updated in every environment.
+- [x] **F1.** Merge to `main`, publish 0.10.0, the marketplace updated in every environment.
   "0.10.0" is the line: the branch bumped the patch per item, so what publishes is the branch's
   head version, under 0.10.14's story entry. First clear the close-out cards that 0.9 runs left
   open: 0.10 has no `/dev:close-out` and no handler for them (B1, C3). After the merge, the
   marketplace's `ref: pilot-redesign` comes out of both its declarations in the shared home,
   `~/.claude/settings.json` (`extraKnownMarketplaces`) and `~/.claude/plugins/known_marketplaces.json`,
-  so that it follows `main` again.
+  so that it follows `main` again. Done 2026-10-31: no 0.9 close-out card was open in any
+  project. `main` was fast-forwarded from 0.9.147 to the branch head, 0.10.22, on the operator's
+  word, with no merge commit. The ref came out of both shared homes, production KubeCoder's and
+  kubecoder-dev's (through a Pebble work item on pilot-dev). Both marketplaces follow `main`.
 - [ ] **F2.** PilotProjects: `rules/stages.md` rewritten — the two commands, the brief's arguments,
   what each stage registers, the ticket in the brief, what each fate means for the pass (§5.1);
   `rules/work-items.md`'s brief for a stage; the definition chat's skill given triage's substance
