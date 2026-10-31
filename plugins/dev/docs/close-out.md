@@ -15,8 +15,8 @@ the document Pilot reads, and `close-out-record.md`, the record attached to it**
 whole life, from the plan loop's first append to the continuation's last ruling.
 `${CLAUDE_PLUGIN_ROOT}/tools/close_out.py` is the one pen: it writes every author's entries
 (`append`), notes (`note`) and strikes (`strike`); the corrections of an entry (`amend`), of its
-labels (`relabel`) and of its proposal (`propose`); the wrap-up's marks (`propose --card`,
-`propose --word`, `note --left`); the fold of an entry into a later slice's `slice.md` (`fold`,
+labels (`relabel`) and of its proposal (`propose`); the section the document shows for an entry
+(`restate`); the wrap-up's marks (`propose --card`, `propose --word`, `note --left`); the fold of an entry into a later slice's `slice.md` (`fold`,
 which stages that file and writes nothing else); the render (`render`); the answers Pilot wrote
 back (`absorb`) and what was done on them (`rule`); the criterion an owed-after action settles
 (`settle`, which writes `verification.json` too); and the close (`close`). It prints an entry in
@@ -200,12 +200,15 @@ gets fixed.
   strike.
 
 **The proposal.** Beside its labels an entry says what its author would do about it and why,
-in a sentence or two (`append --proposal`). An action and an improvement carry one from their author, and a decision its options and the one
-it recommends in its place; the tool refuses them without. A defect, a test gap or prose may
-carry one, and gets the wrap-up's where the table brings it to the operator — a card request is
-the proposal (`propose --card`); a risk gets one where its author gave none or the code says
-otherwise (`propose`). A proposal is a recommendation, never a route: the table decides who sees
-the entry, the operator what happens to it.
+in a sentence or two (`append --proposal`), one line of at most 300 characters, which the CLI
+refuses past: in Pilot it is the label of the one row that agrees, and the line the answered
+block shows, so what it rests on goes into the body. An action and an improvement carry one from
+their author, and a decision its options and the one it recommends in its place; the tool
+refuses them without. A defect, a test gap or prose may carry one, and gets the wrap-up's where
+the table brings it to the operator — a card request is a one-line proposal on the entry
+restated as the card (`restate`, then `propose --card`); a risk gets one where its author gave
+none or the code says otherwise (`propose`). A proposal is a recommendation, never a route: the
+table decides who sees the entry, the operator what happens to it.
 
 **What must land first.** An entry whose fix must not wait for the run's end says what it must
 land before (`--due`): the phase's merge, the test phase, the push, or the report's close. The
@@ -294,11 +297,13 @@ An improvement takes the first of these that fits:
 
 **A card request** is an entry that comes to the operator with a card asked for: by the table
 where the fix lives elsewhere (row 5), by the wrap-up where a likely problem is more than it
-can fix responsibly (row 8, `propose --card`). Nothing is filed before the operator's word. **A
-request for the operator's word** is the wrap-up's for an edit it would make but a rule of the
-project reserves for them (`propose --word`): it comes to them whatever the table's route, with
-the edit as its proposal, so that their assent is the ruling and the continuation makes the
-edit.
+can fix responsibly (row 8, `propose --card`). Its section is the card — the heading what the
+card would say, the body the card's text — and its proposal the line Agree files it on; the
+continuation files the section. Nothing is filed before the operator's word. **A request for the
+operator's word** is the wrap-up's for an edit it would make but a rule of the project reserves
+for them (`propose --word`): it comes to them whatever the table's route, the entry restated as
+the exact edit and the rule, its proposal the line their assent makes it on, so that their
+assent is the ruling and the continuation makes the edit.
 
 ## The document and the record
 
@@ -308,9 +313,12 @@ edit.
 through `${CLAUDE_PLUGIN_ROOT}/tools/asks.py` — the format, the quoting and the refusals are
 that module's. It holds one ask per entry the table brings to the operator, per card request,
 and per entry no wrap-up reached or nobody labelled, which comes to the operator said as what
-it is: in that order, each place by grade, kind and id. An entry's ask is its headline as the
-section's heading, its body, an action's proposal, its `Consequence:` and its `Provenance:` as
-prose, its notes under them, and its block last, the block's id the entry's: an action is an
+it is: in that order, each place by grade, kind and id. An entry's ask is its section, the
+current story told once — its headline as the section's heading, its body, an action's
+proposal, its `Consequence:` and its `Provenance:` as prose, each the restatement's where the
+entry has one (`restate`), else its author's — and its block last, the block's id the entry's.
+No note stands in a section: every note is the record's, and what a note changed, the wrap-up,
+which vets every entry that comes to the operator, says by restating the entry. An action is an
 `action` block with its options and its check; a decision with options a `decision` block with
 them and the one recommended; every other entry a `decision` on its proposal — or, where the
 table brought it for a reason of its own, the one that reason makes: a card for the repository
@@ -322,12 +330,15 @@ header and the old page's sections are not on it. A report with no ask renders n
 
 **`close-out-record.md` is the record**, attached to the document: the run header, what was
 ruled and what was done on it, the operator's words verbatim and an answer Pilot chose said as
-Pilot's; what is asked and open, by heading; what the table closed, with its consequence, its
+Pilot's; what is asked and open, under the heading it is asked by, with the trail its section
+leaves out — the author's own text where a restatement took its place, every note and the
+wrap-up's mark; what the table closed, with its consequence, its
 labels in words, its evidence and the ground of the close, so that a close can be questioned
 from one line; and the record — the run's events, then every entry struck, with its reason.
 
-`close_out.py show <id>` prints an entry in full — body, every note, its fields, labels, marks
-and ruling — and is how the wrap-up, the continuation and a card filing read one.
+`close_out.py show <id>` prints an entry in full — its restatement, its author's body, every
+note, its fields, labels, marks and ruling — and is how the wrap-up, the continuation and a
+clarification read one; `show <id> --card` prints the card an agreed card request files.
 `close_out.py list` is the view an agent takes before it appends: ids, headlines and
 Consequence lines, without the bodies.
 
@@ -413,14 +424,15 @@ theirs, and no card is filed without their word.
 | a dated note says the run fixed the entry, and the commit is there | a strike naming that commit |
 | the change is within its bar | the edit, the gate, one commit for the entry, a strike naming it |
 | the label said one edit and the code says otherwise | the label corrected, with a note of what it found (`relabel`) |
-| a likely problem it cannot fix within its bar | a card request: how it is reached, what the fix takes (`propose --card`) — it becomes the entry's proposal |
-| an edit within its bar that a rule of the project makes only on the operator's word — a decision record, its `CLAUDE.md` | a request for their word: the exact edit and the rule (`propose --word`) — it becomes the entry's proposal, and the entry comes to the operator; the edit is not made |
+| a likely problem it cannot fix within its bar | a card request: the entry restated as the card — what it would say, how the problem is reached, what the fix takes (`restate`) — and the line Agree files it on (`propose --card`) |
+| an edit within its bar that a rule of the project makes only on the operator's word — a decision record, its `CLAUDE.md` | a request for their word: the entry restated as the exact edit and the rule (`restate`), and the line Agree makes it on (`propose --word`) — the entry comes to the operator; the edit is not made |
 | a trigger or an impact the author could not tell | the label, from the code |
 | an entry without labels | its labels, from its text |
 | input for a slice still unplanned | the entry appended to that slice's `slice.md` (`fold`), and a strike naming the slice |
 | a close that rests on one label, on an entry that breaks a flow | that label checked in the code — its trigger, or its signal — and corrected where the code says otherwise |
 | a closed entry that someone other than the wrap-up noted after the table closed it | its labels checked against the note, and corrected where the note shows them wrong (`relabel`), else that it left it, and why (`note --left`) |
-| a risk that comes to the operator | a proposal, where its author gave none or the code says otherwise (`propose`), and what the code shows under it (`note --left`); the entry stays theirs |
+| a risk that comes to the operator | a proposal, where its author gave none or the code says otherwise (`propose`); what the code shows — how it is reached, what a fix takes — in its section (`restate`); what it checked as its mark (`note --left`); the entry stays theirs |
+| an entry that comes to the operator, and what it found changes its story — a claim fixed since, a reach wider than its author saw | the entry restated as it now stands (`restate`), and what it ran as its mark (`note --left`) |
 | a gate that goes red on its fix | the fix taken back, and a card request or a note that says so |
 | anything else it looked at and does not change | that it left it, and why (`note --left`) |
 
@@ -459,8 +471,9 @@ the CLI enforces). Three rules are the store's own:
   commit and what was re-run the same way.
 - **One entry per thing, not per turn.** A later observation about an entry that already exists —
   its premise moved, its symptom was re-tested, a phase resolved it, a reviewer refuted it — is
-  `close_out.py note <close-out.md> <id>`: a dated paragraph at the end of that entry's body,
-  never a new entry. The reader who decides on B1 finds everything about B1 under B1.
+  `close_out.py note <close-out.md> <id>`: a dated paragraph under that entry, never a new
+  entry. Everything about B1 is under B1, in the record; what the operator reads in B1's section
+  is the wrap-up's to bring up to date (`restate`).
 - **In doubt, add it.** Nobody pre-dedups: every agent runs `list` before it writes, the
   completion consult strikes duplicates it is sure of, the operator merges the rest by reading.
 
@@ -480,8 +493,9 @@ there is one), which closes the entry, and closes the report.
 - **A word of assent is a ruling for the proposal** — "agreed", "ok", "do it": carry out the
   proposal as it stands, and what you record as done names it.
 - **`card [project]`** — one tracker card per entry, parented to the brief's ticket, in the
-  named project, else this one: the title is the entry's headline without its grade, the body
-  the entry as `close_out.py show <id>` prints it, and the report's path. Entries that are one
+  named project, else this one: the card is the section the operator agreed to, as
+  `close_out.py show <id> --card` prints it — its first line the title, the rest the body —
+  then the report's path. Entries that are one
   fix are one card. Actions the operator wants carded go together, on one card in their action
   queue: a list they work from, not a card each.
 - **`fix now`** — made here only where the project's `CLAUDE.md` classes the change as ad hoc

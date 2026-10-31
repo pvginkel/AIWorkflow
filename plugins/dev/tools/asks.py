@@ -67,9 +67,12 @@ the store's asks, by id and kind, is refused. The grammar whole is PilotApp's
 
 **An author's text.** `init`, `append`, `amend` and `note` also refuse a
 line cited by its number outside a fenced block, `path:12` or `path:12-30`
-(`citation_problems`; the rule is `docs/spec-tree.md` § Citing a line). The
-functions the loops import do not check it: a driver's text quotes tool
-output.
+(`citation_problems`; the rule is `docs/spec-tree.md` § Citing a line).
+`append` and `amend` refuse a `--proposal` of more than one line or longer
+than `PROPOSAL_MAX` (`proposal_problems`): in Pilot a proposal is the label
+of the decision's one Agree row, and the line the closed block shows as the
+answer. The functions the loops import check neither: a driver's text quotes
+tool output.
 
 `<store>` is the store's path or its document's: a `.md` argument resolves
 to the `.json` beside it. Every read-modify-write holds an exclusive flock on
@@ -104,6 +107,10 @@ TAKES = {
 # The keys in the order the format skill's table lists them.
 BLOCK_KEYS = ("options", "recommend", "proposal", "default", "check")
 DUES = ("merge", "test", "push", "close")
+# How long a proposal an author's CLI takes may be (`proposal_problems`): in
+# Pilot a proposal is the label of the decision's one Agree row, and the line
+# its closed block shows as the answer.
+PROPOSAL_MAX = 300
 ANSWER_KEYS = ("answer", "by", "at", "note", "via", "to", "done")
 VIAS = ("app", "chat", "recommended", "autopilot")
 DEFERRED = "deferred"
@@ -363,6 +370,24 @@ def citation_problems(text, what: str) -> list[str]:
                     "itself (docs/spec-tree.md § Citing a line); a command's output goes in "
                     "a fenced block, which this check passes")
     return found
+
+
+def proposal_problems(text, what: str) -> list[str]:
+    """A proposal an author's CLI refuses: more than one line, or longer
+    than `PROPOSAL_MAX`. It says what Agree does, in a ruling's words; what
+    it rests on is the ask's body. This tool's CLI and `close_out.py`'s
+    check it; a driver's own text is never checked."""
+    if not isinstance(text, str):
+        return []
+    said = text.strip()
+    if "\n" in said:
+        return [f"{what} is one line: what Agree does, in a ruling's words — what it "
+                "rests on goes into the body"]
+    if len(said) > PROPOSAL_MAX:
+        return [f"{what} is {len(said)} characters, and a proposal is a line of at most "
+                f"{PROPOSAL_MAX}: what Agree does, in a ruling's words — what it rests "
+                "on goes into the body"]
+    return []
 
 
 def _options_problems(options, who: str) -> list[str]:
@@ -1213,7 +1238,8 @@ def _ask_args(p: argparse.ArgumentParser) -> None:
                    help="an option: its label, and one line of text if it has one; "
                         "repeat it for each")
     p.add_argument("--recommend", help="the label of the option recommended")
-    p.add_argument("--proposal", help="what is proposed, in place of options; - for stdin")
+    p.add_argument("--proposal", help="what is proposed, in place of options: one line of "
+                                      f"at most {PROPOSAL_MAX} characters; - for stdin")
     p.add_argument("--default", help="a question's suggested answer")
     p.add_argument("--check", help="what tells that the ask is met; read and kept, "
                                    "never acted on by Pilot")
@@ -1345,6 +1371,8 @@ def main(argv: list[str] | None = None) -> int:
             "the note": a.text}, "amend": lambda a: {**_ask_texts(a), **_frame_texts(a)}}
         if command in texts:
             _refuse(f"{command} is refused", _cli_citations(texts[command](args)))
+        if command in ("append", "amend"):
+            _refuse(f"{command} is refused", proposal_problems(args.proposal, "`--proposal`"))
         if command == "init":
             frame = _frame_fields(args)
             title = frame.pop("title")

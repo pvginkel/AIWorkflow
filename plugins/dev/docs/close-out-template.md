@@ -58,6 +58,11 @@ an entry's words are `/dev:writing`'s; this doc is the shape.
   or `close`, what it must land before, which the document never shows.
 - **`by`** is the `--by` the entry was appended with, or `amend --by`'s; `author` is the
   provenance's own text. Neither is matched.
+- **`restated`** is the section the document shows for the entry, where someone gave it one
+  (`restate`): `{"by", "date", "headline", "body", "consequence"?, "evidence"?, "author"?}`. It
+  stands in place of the author's headline and body, and of the consequence and the provenance
+  where it gives them; the author's stay in the entry, and the record shows them. A second
+  restatement replaces the first, which stays as a history note.
 - **`wrap_up`** is what the wrap-up did with an entry it did not strike: `{"outcome", "by",
   "date", "text"}`, the outcome being `card` (it asks for a card), `word` (it asks for the
   operator's word on an edit) or `left` (it looked and changed nothing). A second mark replaces
@@ -102,8 +107,6 @@ reviewer notices.
 
 **Provenance:** read — code-writer, P3
 
-**consult 1, 2026-09-30.** <a note, in full>
-
 ```decision id=D1
 options:
   - Exit 3: in effect; nothing changes
@@ -119,19 +122,22 @@ recommend: Exit 3
 | a card request the table made, the fix in a repo the slice did not touch | `decision`, `proposal: Card it for <repo>: …` where its author gave none |
 | one for a slice planned or running | `decision`, `proposal: Add a phase to slice <N>'s plan, or rule on its run.` where its author gave none |
 | one for a slice not created yet | `decision`, `proposal: Hold it for slice <N>, which is not created yet.`, the author's proposal after it |
+| a card request the wrap-up made, or a request for the operator's word | `decision`, its one-line `proposal`, under the section it restated the entry to |
 | any other with a proposal | `decision`, its `proposal` |
 | any other without | `question` |
 
 The asks stand in the order of their places — what comes to the operator, the card requests,
 what no wrap-up reached (opening **Not reached.**), what nobody labelled (opening
 **Unlabelled.**) — and inside a place by grade (`major`, `minor`, ungraded, `nit`, `cosmetic`),
-then the kind in the order of [its table](close-out.md#the-labels), then the id. The heading is
-the headline, without the id or the grade; an action the plan loop seeded for a criterion owed
+then the kind in the order of [its table](close-out.md#the-labels), then the id. A section is
+the entry as it now stands, told once: the restatement's headline, body, consequence and
+provenance where it has one, else the author's. The heading is that headline, without the id or
+the grade; an action the plan loop seeded for a criterion owed
 after an operator's step is headed `Settle <Vnn> (<its area>) after <owed_after>`, both from
 `verification.json`, the wait in full, and its stock proposal and consequence, the same on every
 one, are left off. A line of an entry's text Markdown would read as a heading, outside a fence,
-is escaped. The notes stand under the body, a history note — a replaced proposal, an earlier
-mark — left to the record; the wrap-up's `left` mark is a note. Answered, the block carries
+is escaped. No note stands in a section: every note, the wrap-up's mark among them, is the
+record's, and what a note changed is the restatement's to say. Answered, the block carries
 Pilot's answer lines after its keys.
 
 ## The record
@@ -153,7 +159,15 @@ Closed: 2026-10-30 — by run-slice
 
 ## Asked
 
-### B4 — <headline> · minor
+### B4 — <the section's headline> · minor
+
+**As its author wrote it:** <the author's headline>
+
+<the author's body>
+
+**consult 1, 2026-09-30.** <a note, in full>
+
+**wrap-up, 2026-09-30.** asks for a card: <its one-line proposal>
 
 ## Closed
 
@@ -176,7 +190,10 @@ The run header is one block of plain lines written from `state.json` when the sl
 holds one — every piece present in the state, nothing guessed for the pieces that are not;
 `Run: <not yet stamped>` without it. **Ruled** is every entry with a ruling, its heading struck
 once it is carried out, the ruling on one line, never wrapped: the answer lines, then ` — ` and
-what was done. **Asked** is the headings of what the document asks and nobody has answered.
+what was done; then its trail, as Asked has it. **Asked** is what the document asks and nobody
+has answered, under the heading it is asked by, each with the trail its section leaves out: the
+author's own text where a restatement took its place, then every note in order — a consult's, a
+relabel's, a replaced proposal or restatement — and the wrap-up's mark last.
 **Closed** is what the table closed, with the ground of the close. **Record** is the run's
 events that describe no problem, then what was struck and not ruled on, each by id, a struck
 one's reason up to its first `; ` (`show` has it whole). A section with nothing in it is left
@@ -192,12 +209,13 @@ Every verb takes the slice directory or the report's path as its first argument.
 | `labels` | an author | prints [the labels](close-out.md#the-labels) |
 | `append` | an author | adds one entry with its labels and what its kind owes — a proposal, or a decision's options and the one it recommends; `--check`, `--due`; prints its id |
 | `list` | an author | ids, headlines and Consequence lines by kind, struck entries marked |
-| `show` | the wrap-up, the continuation | one or more entries in full — body, notes, fields, labels, marks, ruling; without an id, every live entry |
+| `show` | the wrap-up, the continuation | one or more entries in full — a restatement, then the author's body, notes, fields, labels, marks, ruling; without an id, every live entry; `--card`, the card each named entry files: the section's heading, then its body |
 | `note` | anyone | adds a dated paragraph to one entry; `--left` is the wrap-up's mark that it looked and changed nothing |
 | `strike` | whoever resolved the entry | strikes it, with the reason and the commit |
 | `amend` | anyone, until the render | corrects a live entry: each field given replaces the entry's, checked as `append` checks it; no note is left, and the id and the kind stay |
 | `relabel` | the wrap-up, a role offered it | gives an entry its labels or corrects them, with a note of what it found; `--for none` clears a `for`; `--dry-run` prints the note and the route, and writes nothing |
-| `propose` | the wrap-up, an author | gives an entry its proposal, or replaces it — the one before is kept as a note; `--card` makes it a card request, `--word` a request for the operator's word on an edit, which brings the entry to them |
+| `restate` | the wrap-up | gives an entry the section the document shows for it — the heading, the body, and the consequence and the provenance where given — in place of the author's text, which stays; the one before is kept as a note |
+| `propose` | the wrap-up, an author | gives an entry its proposal, one line of at most 300 characters, or replaces it — the one before is kept as a note; `--card` makes it a card request, `--word` a request for the operator's word on an edit, which brings the entry to them; both take an entry restated first |
 | `fold` | the wrap-up, the continuation | appends an entry verbatim — its `show`, quoted, under a line naming the slice, the entry and the report — to the `slice.md` of the slice it is `for` (or `--into`), which has to be still to run and unplanned, and stages that file; prints the strike that follows the commit. Refused on a struck entry, on the report's own slice and on a fold `slice.md` holds already; writes neither the store nor the report |
 | `worklist` | the wrap-up | what waits for the wrap-up, entry by entry, with what is asked of each |
 | `render` | the loops, `/dev:run-slice` | writes the record, and the document unless Pilot wrote it back; `--step`, `--summary` and `--context` set the document's own fields |

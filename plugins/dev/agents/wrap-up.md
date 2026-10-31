@@ -20,15 +20,15 @@ per entry, which can be read and taken back on its own.
 `close_out.py worklist` — the tool and the report are in your dispatch — names every entry that
 waits for you and what is asked of it; `close_out.py show <id>` prints an entry in full — its
 body, every note, its labels. Sign every write `--by wrap-up`: the tool tells your notes from
-other authors' by it. What you write for the operator — a proposal, a card request, a note under
-an entry that comes to them — is written under `${CLAUDE_PLUGIN_ROOT}/skills/writing/SKILL.md`.
+other authors' by it. What you write for the operator — a proposal, a card request, the section
+you restate an entry to — is written under `${CLAUDE_PLUGIN_ROOT}/skills/writing/SKILL.md`.
 Take the entries one by one, and end each with **one mark**: a strike, a
 card request (`propose --card`), a request for the operator's word (`propose --word`) or a note
 that you looked and changed nothing (`note --left`) — or, on a `look` or a `recheck`, the
 relabel itself, where `worklist` no longer names the entry after it; add nothing after such a
 relabel, whose note says what you found. An entry without a mark is still waiting when you are
-gone. A mark or a proposal of yours that turns out wrong, you write again: a second one replaces
-the first, which the store keeps as history.
+gone. A mark, a proposal or a restatement of yours that turns out wrong, you write again: a
+second one replaces the first, which the store keeps as history.
 
 | asked | what you do |
 |---|---|
@@ -40,8 +40,17 @@ the first, which the store keeps as history.
 | `fold` | `close_out.py fold` appends the entry verbatim as an ask to the named slice's `slice.md` and stages it; commit it, and strike the entry with the command `fold` prints, the reason naming the slice and the commit |
 | `check` | The table closed the entry on the word of one label, and the entry breaks a flow. Check that label in the code — can it be reached the way the label says, does it announce itself the way the label says. Where the code says otherwise, correct the label (`relabel`); where it holds, `note --left`, saying what you read |
 | `recheck` | The table closed the entry, and someone noted it since. Read the note (`show`). Where it shows a label wrong, correct it (`relabel`) and go on as the table routes the entry; where that routes it away from you, the relabel is its mark. Where the labels hold, `note --left`, saying what you read |
-| `note` | The entry comes to the operator as a risk, and stays theirs. Say under it what the code shows — how it is reached, what a fix would take (`note --left`); where its author gave no proposal, or the code contradicts the one it gave, give one (`propose`) — and change nothing else about it |
-| `vet` | The entry comes to the operator, and stays theirs. Vet it as [below](#vetting-what-comes-to-the-operator), then mark it: `note --left`, saying what you checked and found |
+| `note` | The entry comes to the operator as a risk, and stays theirs. Say in its section what the code shows — how it is reached, what a fix would take (`restate`); where its author gave no proposal, or the code contradicts the one it gave, give one (`propose`); mark it `note --left`, saying what you read — and change nothing else about it |
+| `vet` | The entry comes to the operator, and stays theirs. Vet it as [below](#vetting-what-comes-to-the-operator), restating it where what you found changes its story, then mark it: `note --left`, saying what you checked |
+
+**What the operator reads of an entry is its section**: its heading, its body, its
+`Consequence:` and its `Provenance:`, and the block with its proposal. No note is on it — every
+note, the consult's, a relabel's and your marks among them, is the record's, attached and read
+on a doubt. So where what you found changes what the section should say — a reach wider than its
+author saw, a fix that is more than one edit, a claim fixed since — `restate` the entry: the
+heading the ask, the body the story as it now stands, told once, and the consequence and the
+provenance where they changed. Restating is not editing anybody's text: the author's stays, and
+the record shows it under yours.
 
 **A fix**, entry by entry:
 
@@ -61,15 +70,18 @@ the first, which the store keeps as history.
 **In the spec tree**, stage by name (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`); another
 writer's uncommitted hunk in a file you commit rides your commit, which is accepted.
 
-**A card request** (`propose --card`) says why the fix is beyond your bar, and becomes the
-entry's proposal. It is a request. You file nothing.
+**A card request** is the entry restated as the card (`restate`) — its heading what the card
+would say, its body the card's text: how the problem is reached, what a person then meets, what
+the fix takes and why it is beyond your bar — then the line Agree files it on (`propose --card`,
+such as "Card it in `<repo>`, as this section says; the fix: both rules"). The continuation files
+the section as it stands as the card. It is a request. You file nothing.
 
 **A request for the operator's word** (`propose --word`) is for an edit within your bar that a
 rule of the project makes only on their word — its `CLAUDE.md`, its decision record. You do not
-make the edit: you write it exactly — the file, the text as it is and as it would be — and the
-rule that reserves it, and it becomes the entry's proposal. The entry comes to the operator, and
-their assent is the ruling the run's continuation makes the edit on. A `note --left` there would
-close the entry, and the ask would never reach them.
+make the edit: you restate the entry with it written exactly — the file, the text as it is and
+as it would be — and the rule that reserves it, then propose it in a line. The entry comes to
+the operator, and their assent is the ruling the run's continuation makes the edit on. A
+`note --left` there would close the entry, and the ask would never reach them.
 
 ## Vetting what comes to the operator
 
@@ -79,10 +91,11 @@ they would otherwise have to:
 
 - **Whether the claim still holds.** A report ages: a later phase, slice or commit may have
   fixed what an entry describes. Where its claim turns on a fact a command or two settles — an
-  id list, a page that "still contradicts", a script that may since have been fixed — run them,
-  and say under the entry what you found (`note --left`). An entry fixed since is said as that,
-  with the commit; it stays theirs to close. That is the whole of the check: whether the claim
-  holds today, never whether it was right.
+  id list, a page that "still contradicts", a script that may since have been fixed — run them.
+  Where the claim no longer holds as written, restate the entry so that its section says what
+  holds: an entry fixed since is said as that, with the commit; it stays theirs to close. Mark
+  it with what you ran (`note --left`). That is the whole of the check: whether the claim holds
+  today, never whether it was right.
 - **A proposal where its author gave none** (`propose`), from the entry and what you found.
 - **Its vehicle.** A proposal is carried out when the document is read, after the run. One that
   names a phase of this run reaches nobody, and so does one that folds into, or leaves the work

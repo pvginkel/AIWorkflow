@@ -39,9 +39,14 @@ the agents and the skills:
                changed and why. The id never changes, not even with the kind.
                `--dry-run` prints the note and the route it would give the
                entry, and writes nothing.
+  restate      give an entry the section the document shows for it — the
+               heading, the body, the consequence and the provenance, in
+               place of its author's, which the record keeps; a second
+               restatement replaces the first, kept as a note.
   propose      give an entry its proposal, or replace it, the old one kept as
                a note; `--card` and `--word` make it the wrap-up's request
-               for a card, or for the operator's word on an edit.
+               for a card, or for the operator's word on an edit, and take a
+               restated entry: the section is the card, or the edit.
   fold         append an entry verbatim — its `show`, quoted, under a line
                naming the slice, the entry and the report — to the slice.md
                of the slice still unplanned it is `for` (or `--into`), and
@@ -49,7 +54,8 @@ the agents and the skills:
                Writes neither the store nor the report.
   worklist     what waits for the wrap-up, with what is asked of each.
   show         one or more entries in full — what the document and the
-               record cut short.
+               record cut short; `--card`, the card an agreed card request
+               files: the section's heading, then its body.
   render       write close-out-record.md, and close-out.md through asks.py
                — unless Pilot wrote that one back, its answers in it;
                `--step`, `--summary` and `--context` set the document's own
@@ -74,8 +80,10 @@ it, only the continuation writes, through `absorb`, `rule`, `fold`, `settle`
 and `close`. Nothing renders on a write. `append`, `amend`, `note` and
 `propose` refuse an author's text that cites a line by its number outside a
 fenced block (`asks.citation_problems`; the rule is `docs/spec-tree.md`
-§ Citing a line); the functions the loops call do not, since a driver's
-text quotes tool output.
+§ Citing a line), and `restate` does too; `append`, `amend` and `propose`
+refuse a proposal longer than `asks.PROPOSAL_MAX` once its lines are
+joined (`asks.proposal_problems`). The functions the loops call check
+neither, since a driver's text quotes tool output.
 
 The route is computed at every render, never stored: `route()` reads an
 entry's kind and labels, the repositories the slice touched, and the stage
@@ -1066,10 +1074,62 @@ def propose_entry(slice_dir: Path | str, eid: str, by: str, text: str,
         entry = _find(store, eid)
         if entry.get("strike"):
             raise ReportError(f"{eid} is struck — a struck entry is settled")
+        if mark is not None and not entry.get("restated"):
+            what = ("the card's summary, its body the card's text" if mark == "card"
+                    else "the edit asked for, its body the exact edit and the rule "
+                         "that reserves it")
+            raise ReportError(
+                f"{entry['id']} is not restated: the section is what Agree carries out, so "
+                f"`restate` it first — its heading {what} — and propose in one line")
         _set_proposal(entry, who, day, proposal)
         if mark is not None:
             _mark(entry, mark, who, day, _lines(text.strip()))
     return f"**Proposal:** {proposal}"
+
+
+def _restated_note(who: str, day: str, old: dict) -> dict:
+    """The history note a restatement becomes when a later one replaces it."""
+    return {"by": who, "date": day,
+            "text": [f"restatement replaced — was: {old['headline']}", "", *old["body"]],
+            "history": "restated"}
+
+
+def restate_entry(slice_dir: Path | str, eid: str, by: str, headline: str, body: str,
+                  consequence: str | None = None, provenance: str | None = None,
+                  date: str | None = None) -> str:
+    """Give a live entry the section the document shows for it: its
+    heading, its body, and the consequence and the provenance where given,
+    in place of its author's — the current story, told once, where a note
+    would have told it again under the author's. The author's text stays
+    in the entry, and the record shows it; a restatement already there,
+    and that says something else, stays as a history note. Returns the
+    section's heading."""
+    who = _collapse(by)
+    if not who:
+        raise ReportError("a restatement needs --by")
+    head = _collapse(headline)
+    if not head:
+        raise ReportError("a restatement needs --headline: the ask, in one line")
+    lines = _lines(body)
+    if not lines:
+        raise ReportError("a restatement needs --body: the story the section tells")
+    day = _date(date)
+    new: dict = {"by": who, "date": day, "headline": head, "body": lines}
+    if _collapse(consequence):
+        new["consequence"] = _collapse(consequence)
+    evidence, author = _split_provenance(provenance)
+    if evidence or author:
+        new.update(evidence=evidence, author=author)
+    with _writing(slice_dir) as store:
+        entry = _find(store, eid)
+        if entry.get("strike"):
+            raise ReportError(f"{entry['id']} is struck — a struck entry is settled")
+        old = entry.get("restated")
+        said = {k: v for k, v in new.items() if k not in ("by", "date")}
+        if old and {k: v for k, v in old.items() if k not in ("by", "date")} != said:
+            entry["notes"].append(_restated_note(who, day, old))
+        entry["restated"] = new
+    return f"## {head}"
 
 
 def _mark_note(mark: dict) -> dict:
@@ -2313,10 +2373,44 @@ def _render_entry(entry: dict, form: str, route_words: str | None) -> str:
     note, the proposal, the options, check and due, then every line the
     entry is triaged on and its ruling — `show`'s), `closed` (the heading,
     the Consequence unless it says none, Triage, Provenance and Route — what
-    the table closed), `ruled` (the heading and the ruling) and `record` (the
-    heading alone, a struck one's reason cut short). All of it is Markdown,
-    so every `<` outside code is escaped (`asks.escape_tags`)."""
+    the table closed), `asked` (the heading the document asks it under and
+    its trail), `ruled` (that heading, the ruling and the trail) and
+    `record` (the heading alone, a struck one's reason cut short). All of it
+    is Markdown, so every `<` outside code is escaped (`asks.escape_tags`)."""
     return asks.escape_tags(_entry_markdown(entry, form, route_words))
+
+
+def _asked_heading(entry: dict) -> str:
+    """The record's heading of an entry the document asked: the section's
+    headline — the restatement's, where there is one — with the grade."""
+    told = entry.get("restated")
+    head = (f"{told['headline']} · {entry['grade']}" if told and entry.get("grade")
+            else told["headline"] if told else _headline_with_grade(entry))
+    if entry.get("strike"):
+        return f"### ~~{entry['id']} — {head}~~ — " + _strike_tail(entry["strike"])
+    return f"### {entry['id']} — {head}"
+
+
+def _trail(entry: dict) -> list[str]:
+    """What the document's section leaves to the record, in paragraphs:
+    the author's own text where a restatement took its place, then every
+    note in order — the consults', the relabels', a replaced proposal or
+    restatement — and the wrap-up's mark last."""
+    paras: list[str] = []
+    if entry.get("restated"):
+        paras.append(f"**As its author wrote it:** {entry['headline']}")
+        paras.append(_prose(entry.get("body") or []))
+        if entry.get("consequence"):
+            paras.append(f"**Consequence:** {entry['consequence']}")
+        if _provenance(entry):
+            paras.append(f"**Provenance:** {_provenance(entry)}")
+    notes = list(entry.get("notes") or [])
+    if entry.get("wrap_up"):
+        mark = entry["wrap_up"]
+        notes.append({"by": mark["by"], "date": mark["date"], "text": _wrap_up_lines(mark)})
+    for note in notes:
+        paras.append(f"**{note['by']}, {note['date']}.** " + _prose(note["text"]))
+    return [p for p in paras if p.strip()]
 
 
 def _entry_markdown(entry: dict, form: str, route_words: str | None) -> str:
@@ -2325,10 +2419,20 @@ def _entry_markdown(entry: dict, form: str, route_words: str | None) -> str:
             return (f"### ~~{entry['id']} — {_headline_with_grade(entry)}~~ — "
                     + _short_strike_tail(entry["strike"]))
         return _heading(entry)
-    if form == "ruled":
-        return "\n".join([_heading(entry), "", f"**Ruling:** {_ruling_text(entry)}"])
+    if form in ("asked", "ruled"):
+        ruling = [f"**Ruling:** {_ruling_text(entry)}"] if form == "ruled" else []
+        return "\n\n".join([_asked_heading(entry), *ruling, *_trail(entry)])
     if form == "full":
         lines = [_heading(entry), ""]
+        told = entry.get("restated")
+        if told:
+            lines += [f"**Restated** ({told['by']}, {told['date']}): {told['headline']}", "",
+                      _prose(told["body"]), ""]
+            if told.get("consequence"):
+                lines += [f"**Restated consequence:** {told['consequence']}", ""]
+            if _provenance(told):
+                lines += [f"**Restated provenance:** {_provenance(told)}", ""]
+            lines += ["**As its author wrote it:**", ""]
         body = _body_and_notes(entry)
         if body:
             lines += [body, ""]
@@ -2426,9 +2530,11 @@ def _prose(lines: list[str]) -> str:
 
 
 def _ask_headline(entry: dict, vmap: dict[str, dict]) -> str:
-    """The ask's heading: the entry's headline, its grade left off; an
-    owed-after action's criterion named by its area and its owed-after in
-    full, where plan_loop.py shortened them."""
+    """The ask's heading: the restatement's, else the entry's headline, its
+    grade left off; an owed-after action's criterion named by its area and
+    its owed-after in full, where plan_loop.py shortened them."""
+    if entry.get("restated"):
+        return entry["restated"]["headline"]
     m = _OWED_HEADLINE_RE.match(entry.get("headline") or "")
     item = vmap.get(m.group("vid")) if m else None
     if item and item.get("owed_after"):
@@ -2483,27 +2589,37 @@ def _ask_proposal(entry: dict, key: str) -> str | None:
     return None
 
 
+def _section(entry: dict) -> list[str]:
+    """The paragraphs of the entry's section, the current story told once:
+    the body, an action's proposal, the consequence and the provenance —
+    each the restatement's where it gives one, else the author's. No note:
+    every note is the record's, and what one changed is the restatement's
+    to say."""
+    told = entry.get("restated") or {}
+    paras = [_prose(told.get("body") or entry.get("body") or [])]
+    proposal = entry.get("proposal")
+    if entry.get("kind") == "action" and proposal and not _OWED_PROPOSAL_RE.match(proposal):
+        paras.append(f"**Proposal:** {proposal}")
+    consequence = told.get("consequence") or entry.get("consequence")
+    if consequence and not _OWED_CONSEQUENCE_RE.match(consequence):
+        paras.append(f"**Consequence:** {consequence}")
+    provenance = _provenance(told) or _provenance(entry)
+    if provenance:
+        paras.append(f"**Provenance:** {provenance}")
+    return [p for p in paras if p and p.strip()]
+
+
 def _ask(entry: dict, place: str, key: str, words: str,
          vmap: dict[str, dict]) -> dict:
     """The entry as an ask of the document, in asks.py's shape: the block
     by kind — an action's with its options and check, a decision's with
     its options and the one recommended, any other a decision on its
     proposal, or a question where nobody proposed anything — and above it
-    the body, an action's proposal, the consequence and the provenance; the
-    notes under the body, those the tool keeps as history left to the
-    record. The id is the entry's, so the answers come back to it."""
+    the section (`_section`), opening with what a reason of the table's own
+    says. The id is the entry's, so the answers come back to it."""
     kind = entry.get("kind")
-    paras = [p for p in (_ask_lead(entry, place, key, words),
-                         _prose(entry.get("body") or [])) if p and p.strip()]
-    proposal = entry.get("proposal")
-    if kind == "action" and proposal and not _OWED_PROPOSAL_RE.match(proposal):
-        paras.append(f"**Proposal:** {proposal}")
-    consequence = entry.get("consequence")
-    if consequence and not _OWED_CONSEQUENCE_RE.match(consequence):
-        paras.append(f"**Consequence:** {consequence}")
-    provenance = _provenance(entry)
-    if provenance:
-        paras.append(f"**Provenance:** {provenance}")
+    lead = _ask_lead(entry, place, key, words)
+    paras = ([lead] if lead else []) + _section(entry)
     ask: dict = {"id": entry["id"], "headline": _ask_headline(entry, vmap),
                  "body": "\n\n".join(paras) or "The entry has no body."}
     if kind == "action":
@@ -2519,14 +2635,22 @@ def _ask(entry: dict, place: str, key: str, words: str,
         ask.update(kind="decision", proposal=said)
     else:
         ask["kind"] = "question"
-    notes = [n for n in entry.get("notes") or [] if not n.get("history")]
-    mark = entry.get("wrap_up")
-    if mark and mark.get("outcome") == "left":
-        notes.append({"by": mark["by"], "date": mark["date"], "text": _wrap_up_lines(mark)})
-    if notes:
-        ask["notes"] = [{"by": n["by"], "date": n["date"], "text": _prose(n["text"])}
-                        for n in notes]
     return ask
+
+
+def card_view(slice_dir: Path | str, ids: list[str]) -> str:
+    """The card each named entry files once its card request is agreed:
+    the section's heading as the card's summary, on the first line, then
+    its body as the card's description — the text the operator agreed to,
+    as the document showed it. Several are separated by a `---` line."""
+    store = _read_store(slice_dir)
+    vmap = _verification(slice_dir)
+    cards = []
+    for eid in ids:
+        entry = _find(store, eid)
+        cards.append(asks.escape_tags(
+            "\n\n".join([_ask_headline(entry, vmap), *_section(entry)])))
+    return "\n\n---\n\n".join(cards)
 
 
 # What a document's summary says it holds, by the place its asks come from.
@@ -2635,7 +2759,7 @@ def _record(store: dict, slice_dir: Path | str) -> str:
     asked = [(e, w) for place in ASKED for e, _, w in placed[place] if not _ruled(e)]
     sections = dict(zip(RECORD_SECTIONS, (
         [_render_entry(e, "ruled", None) for e in ruled],
-        [_render_entry(e, "record", None) for e, _ in asked],
+        [_render_entry(e, "asked", None) for e, _ in asked],
         [_render_entry(e, "closed", w) for e, _, w in placed["Closed"]],
         [_render_entry(e, "record", None) for e, _, _ in placed["Record"] if not _ruled(e)],
     ), strict=True))
@@ -3120,7 +3244,8 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     consequence_help = ("what an operator or user experiences if this stays as it is, "
                         "or none — the line the operator triages on")
     proposal_help = (f"{PROPOSAL_HELP}, in a ruling's words (card · fix now · "
-                     "fold into <slice> · close · do it) — the operator reads it "
+                     "fold into <slice> · close · do it), one line of at most "
+                     f"{asks.PROPOSAL_MAX} characters — the operator reads it "
                      "with the headline and the Consequence; required for an "
                      "action and an improvement, refused on a decision")
     provenance_help = ("witnessed | read, then role, phase, round, and the artifact "
@@ -3188,18 +3313,33 @@ def build_parser() -> tuple[argparse.ArgumentParser,
                    help="print the note and the route the entry would take, and "
                         "write nothing")
 
+    p = verb("restate", "give an entry the section the document shows for it, in place "
+                        "of its author's text, which the record keeps", entry=True)
+    p.add_argument("--by", required=True, help="who restates")
+    p.add_argument("--headline", required=True,
+                   help="the section's heading: the ask, as the operator reads it")
+    p.add_argument("--body", required=True,
+                   help="the story as it stands, told once — for a card request the "
+                        "card's text, for a word request the exact edit and the rule; "
+                        "or - for stdin")
+    p.add_argument("--consequence", help="the Consequence line, where the story changed it")
+    p.add_argument("--provenance", help="the Provenance line, where you witnessed or read "
+                                        "it anew: " + provenance_help)
+    p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
+
     p = verb("propose", "give an entry its proposal, or replace it", entry=True)
     p.add_argument("--by", required=True, help="who proposes")
     p.add_argument("--text", required=True,
-                   help="what you would do about it and why, or - for stdin")
+                   help="what Agree does, in a ruling's words, one line of at most "
+                        f"{asks.PROPOSAL_MAX} characters, or - for stdin")
     mark = p.add_mutually_exclusive_group()
     mark.add_argument("--card", dest="mark", action="store_const", const="card",
-                      help="the wrap-up asks for a card: how the problem is reached and "
-                           "what the fix takes; the entry becomes a card request")
+                      help="the wrap-up asks for a card, the entry restated as the card; "
+                           "it becomes a card request")
     mark.add_argument("--word", dest="mark", action="store_const", const="word",
                       help="the wrap-up asks for the operator's word on an edit a rule of "
-                           "the project reserves for them: the exact edit and the rule; "
-                           "the entry comes to them")
+                           "the project reserves for them, the entry restated as the exact "
+                           "edit and the rule; the entry comes to them")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
     p = verb("fold", "append an entry verbatim to the slice.md of the slice still "
@@ -3216,6 +3356,9 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p = verb("show", "one or more entries in full — body, notes, labels, marks, the "
                      "ruling; without an id, every live entry")
     p.add_argument("ids", nargs="*", metavar="<id>", help=id_help)
+    p.add_argument("--card", action="store_true",
+                   help="the card each named entry files: the section's heading, then "
+                        "its body")
 
     p = verb("render", "write close-out-record.md, and close-out.md — the document "
                        "Pilot reads — unless Pilot wrote it back")
@@ -3353,6 +3496,7 @@ def _append_cli(slice_dir: Path, args) -> str:
     errors = check_labels(kind, labels, args.consequence, slice_dir)
     errors += author_problems(candidate)
     errors += _citations(args, body)
+    errors += asks.proposal_problems(_collapse(args.proposal), "--proposal")
     if errors:
         raise ReportError("\n".join(errors))
     labels = normalise_for(labels, slice_dir)
@@ -3384,6 +3528,8 @@ def _refuse_citations(what: str, text: str) -> str:
 def _amend_cli(slice_dir: Path, args) -> str:
     body = None if args.body is None else _stdin_or(args.body)
     errors = _citations(args, body)
+    if args.proposal is not None:
+        errors += asks.proposal_problems(_collapse(args.proposal), "--proposal")
     if errors:
         raise ReportError("\n".join(errors))
     return amend_entry(slice_dir, args.id, by=args.by, headline=args.headline,
@@ -3392,6 +3538,25 @@ def _amend_cli(slice_dir: Path, args) -> str:
                        provenance=args.provenance, severity=args.severity,
                        labels=_labels_from(args), options=_options_from(args),
                        recommend=args.recommend, check=_check_of(args), due=args.due)
+
+
+def _restate_cli(slice_dir: Path, args) -> str:
+    body = _stdin_or(args.body)
+    errors = asks._cli_citations({"--headline": args.headline, "--body": body,
+                                  "--consequence": args.consequence})
+    if errors:
+        raise ReportError("\n".join(errors))
+    return restate_entry(slice_dir, args.id, args.by, args.headline, body,
+                         consequence=args.consequence, provenance=args.provenance,
+                         date=args.date)
+
+
+def _propose_cli(slice_dir: Path, args) -> str:
+    text = _refuse_citations("the proposal", _stdin_or(args.text))
+    errors = asks.proposal_problems(_collapse(text), "the proposal")
+    if errors:
+        raise ReportError("\n".join(errors))
+    return propose_entry(slice_dir, args.id, args.by, text, date=args.date, mark=args.mark)
 
 
 def main(argv=None) -> int:
@@ -3430,16 +3595,19 @@ def main(argv=None) -> int:
                                 kind=args.kind,
                                 labels=normalise_for(_labels_from(args), slice_dir),
                                 date=args.date, dry_run=args.dry_run))
+        elif command == "restate":
+            print(_restate_cli(slice_dir, args))
         elif command == "propose":
-            print(propose_entry(slice_dir, args.id, args.by,
-                                _refuse_citations("the proposal", _stdin_or(args.text)),
-                                date=args.date, mark=args.mark))
+            print(_propose_cli(slice_dir, args))
         elif command == "fold":
             print(fold_entry(slice_dir, args.id, into=args.into, date=args.date))
         elif command == "worklist":
             print(worklist_view(slice_dir))
         elif command == "show":
-            print(show_view(slice_dir, args.ids))
+            if args.card and not args.ids:
+                raise ReportError("show --card names the entries whose card it prints")
+            print(card_view(slice_dir, args.ids) if args.card
+                  else show_view(slice_dir, args.ids))
         elif command == "render":
             print(render_report(slice_dir, step=args.step, summary=args.summary,
                                 context=args.context))

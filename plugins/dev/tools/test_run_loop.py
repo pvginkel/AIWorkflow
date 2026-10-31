@@ -10497,7 +10497,7 @@ def test_a_green_wrap_up_lands_with_the_doc_phase():
         # every row naming a `--project <component>` gate says what exit 3 is
         assert prompt.count(run_loop.NOTHING_RAN_HINT) == 2
         verbs = "\n".join("  " + v for v in close_out.verb_usage(
-            "worklist", "show", "list", "relabel", "propose", "fold",
+            "worklist", "show", "list", "relabel", "restate", "propose", "fold",
             "amend").splitlines())
         assert ("  The other verbs the wrap-up uses, with their arguments:\n"
                 + verbs + "\n") in prompt

@@ -4,6 +4,39 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-31 — The close-out tells each ask once: the section is the card (v0.10.16)
+
+The rehearsal's first close-out (P-111, E1, slice 001 of a throwaway project) put one bug to the
+operator four times in one section. The reviewer's first, narrower reading was in the heading
+and the opening lines. The consult's note and the wrap-up's correction came next, and the
+correction overturned it. The card text was last, as the block's proposal: 1,400 characters on
+one line. In Pilot a proposal is the label of the decision's one Agree row, and the line the
+answered block shows. Read on a phone, the block ran off the screen. The operator ruled: tell it
+once, the section is the card.
+
+- **`close_out.py restate`** gives an entry the section the document shows for it: the heading,
+  the body, and the consequence and the provenance where given. They stand in place of the
+  author's text, which stays in the entry. A second restatement replaces the first, which is
+  kept as a history note. `propose --card` and `--word` refuse an entry not restated first:
+  Agree carries out the section, whether that is the card's text or the exact edit.
+- **The section shows no note.** It is the entry as it stands, told once: the restatement's
+  heading, body, consequence and provenance where there is one, else the author's.
+  `close-out-record.md` keeps the trail under each asked entry, and under each ruled one: the
+  author's own text where a restatement replaced it, every note in order, the wrap-up's mark
+  last.
+- **A proposal is a line.** The CLIs of both `close_out.py` and `asks.py` refuse a proposal
+  longer than 300 characters (`asks.PROPOSAL_MAX`). `asks.py` also refuses one that runs over
+  several lines, and `close_out.py` collapses one first. Across every completed close-out, the
+  wrap-up's card requests ran 600 to 1,400 characters and the other proposals had a median of
+  128. The functions the loops call are not bounded.
+- **`show --card`** prints the card an agreed card request files: the section's heading as the
+  title, then its body. The continuation files the card from it, in place of the entry's
+  headline and its `show`.
+- **The wrap-up** restates an entry when what it found changes the story: a card request, a
+  word request, a risk's reach and fix, a claim fixed since. It puts what it checked in its
+  `note --left`, which goes to the record. Its dispatch names `restate`. `close-out.md`,
+  `close-out-template.md` and `wrap-up.md` are brought to the new shape.
+
 ## 2026-10-31 — The documents escape an author's `<` outside code, so no viewer reads it as a tag (v0.10.15)
 
 Close-out reports render an author's words as Markdown, and in slices 028 and 029 a `<` in them,

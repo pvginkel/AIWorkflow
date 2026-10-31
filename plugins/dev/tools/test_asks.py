@@ -609,6 +609,12 @@ def test_the_cli_amends_clears_and_refuses_with_exit_2():
               "--option", "a", "b", "c"), "at most one line of text"),
             (("append", store, "--kind", "action", "--headline", "H", "--body", "-",
               "--proposal", "-"), "only one argument reads stdin"),
+            (("amend", store, "D1", "--proposal", "do a\nthen b"),
+             "`--proposal` is one line"),
+            (("append", store, "--kind", "decision", "--headline", "H", "--body", "B.",
+              "--proposal", "x" * (asks.PROPOSAL_MAX + 1)),
+             f"is {asks.PROPOSAL_MAX + 1} characters, and a proposal is a line of at most "
+             f"{asks.PROPOSAL_MAX}"),
             (("absorb", Path(tmp) / "none.md"), "cannot be read"),
             (("list", Path(tmp) / "none.json"), "does not exist"),
         ]:

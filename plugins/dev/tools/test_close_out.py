@@ -1408,6 +1408,11 @@ def test_a_card_request_and_leave_mark_the_entry_and_the_card_is_its_proposal():
                                                  area="plain"))                 # B2
         close_out.propose_entry(slice_dir, "B1", "code-reviewer, P3 r1",
                                 "Close it: it needs a fault.", date="2026-09-30")
+        # a card request is the section Agree files: the entry restated first
+        code, _, err = run_cli("propose", slice_dir, "B1", "--by", "wrap-up", "--card",
+                               "--text", "Card it.")
+        assert code == 2 and "B1 is not restated" in err and "`restate` it first" in err
+        restated(slice_dir, "B1")
         code, out, err = run_cli("propose", slice_dir, "B1", "--by", "wrap-up", "--card",
                                  "--text", "reached on every restart;\nneeds a design",
                                  "--date", "2026-09-30")
@@ -1506,6 +1511,12 @@ def test_a_store_written_before_the_proposal_reads_as_without_one():
 
 
 WU = "wrap-up"
+
+
+def restated(slice_dir, eid, headline="the ask, as the wrap-up puts it",
+             body="the story as it stands", date="2026-09-30"):
+    """The restatement a card or a word request takes before its proposal."""
+    return close_out.restate_entry(slice_dir, eid, WU, headline, body, date=date)
 EASY = with_flags(DEFECT, fix="one-edit", area="plain")     # the wrap-up's, to fix
 WORD = ("design/engine-and-sync.md, the line \"The engine syncs on demand.\" — say it syncs "
         "on start; a design record is corrected on the operator's word (CLAUDE.md § Design "
@@ -1521,6 +1532,8 @@ def test_a_word_request_brings_the_entry_to_the_operator_whatever_the_table_said
         run_cli("append", slice_dir, *with_flags(DEFECT, trigger="fault"))       # B2
         assert route_of(slice_dir, "B1")[0] == "wrap-up:fix"
         assert route_of(slice_dir, "B2")[0].startswith("closed:")
+        restated(slice_dir, "B1")
+        restated(slice_dir, "B2")
         code, out, err = run_cli("propose", slice_dir, "B1", "--by", WU, "--word", "--text",
                                  "-", "--date", "2026-10-24", stdin=WORD + "\n")
         assert code == 0, err
@@ -1550,6 +1563,129 @@ def test_a_word_request_brings_the_entry_to_the_operator_whatever_the_table_said
         assert close_out.verb_usage("propose").splitlines()[0] == (
             "close_out.py propose <close-out.md> <id> --by BY --text TEXT [--card | --word] "
             "[--date DATE]")
+
+
+def test_restate_gives_the_section_and_the_record_keeps_the_authors_text():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *with_flags(DEFECT, severity="minor",
+                                                 trigger="normal-use"))       # B1
+        close_out.add_note(slice_dir, "B1", "consult 1", "not owed as a phase",
+                           date="2026-10-31")
+        restate = ("restate", slice_dir, "B1", "--by", WU, "--date", "2026-10-31")
+        code, out, err = run_cli(
+            *restate, "--headline", "Card it: the status line is wrong after every restart",
+            "--body", "-", "--consequence", "every operator reads a wrong status",
+            "--provenance", "witnessed — wrap-up, on abc1234",
+            stdin="How it is reached:\n\n- a restart\n- any reload\n")
+        assert code == 0, err
+        assert out == "## Card it: the status line is wrong after every restart\n"
+        b1 = entry_of(slice_dir, "B1")
+        assert b1["restated"] == {
+            "by": WU, "date": "2026-10-31",
+            "headline": "Card it: the status line is wrong after every restart",
+            "body": ["How it is reached:", "", "- a restart", "- any reload"],
+            "consequence": "every operator reads a wrong status",
+            "evidence": "witnessed", "author": "wrap-up, on abc1234"}
+        # the author's own text is untouched
+        assert b1["headline"] == "controller: the status line is wrong"
+        assert b1["body"] == ["the body"] and b1["notes"][0]["by"] == "consult 1"
+        code, out, err = run_cli("propose", slice_dir, "B1", "--by", WU, "--card", "--text",
+                                 "Card it in KubeCoder, as the section says.",
+                                 "--date", "2026-10-31")
+        assert code == 0, err
+        close_out.render_report(slice_dir)
+        doc = report(slice_dir)
+        # the section is the restatement, told once: no note, no author's text
+        assert ("## Card it: the status line is wrong after every restart\n\n"
+                "How it is reached:\n\n- a restart\n- any reload\n\n"
+                "**Consequence:** every operator reads a wrong status\n\n"
+                "**Provenance:** witnessed — wrap-up, on abc1234\n\n"
+                "```decision id=B1\nproposal: Card it in KubeCoder, as the section says.\n"
+                "```") in doc
+        for gone in ("the body", "not owed as a phase", "controller: the status line"):
+            assert gone not in doc, gone
+        # the record keeps the trail under the heading the document asked it by
+        record = (slice_dir / "close-out-record.md").read_text()
+        assert ("### B1 — Card it: the status line is wrong after every restart · minor\n\n"
+                "**As its author wrote it:** controller: the status line is wrong\n\n"
+                "the body\n\n**Consequence:** an operator reads a wrong status\n\n"
+                "**Provenance:** witnessed — code-reviewer, P3 r1\n\n"
+                "**consult 1, 2026-10-31.** not owed as a phase\n\n"
+                "**wrap-up, 2026-10-31.** asks for a card: Card it in KubeCoder, as the "
+                "section says.") in record
+        # the card an agreed card request files: the section's heading, then its body
+        code, out, err = run_cli("show", slice_dir, "B1", "--card")
+        assert code == 0, err
+        assert out == ("Card it: the status line is wrong after every restart\n\n"
+                       "How it is reached:\n\n- a restart\n- any reload\n\n"
+                       "**Consequence:** every operator reads a wrong status\n\n"
+                       "**Provenance:** witnessed — wrap-up, on abc1234\n")
+        code, _, err = run_cli("show", slice_dir, "--card")
+        assert code == 2 and "names the entries" in err
+        # the full view shows both, the restatement first
+        shown = close_out.show_view(slice_dir, ["B1"])
+        assert shown.startswith(
+            "### B1 — controller: the status line is wrong · minor\n\n"
+            "**Restated** (wrap-up, 2026-10-31): Card it: the status line is wrong after "
+            "every restart\n\nHow it is reached:")
+        assert "**As its author wrote it:**\n\nthe body\n\n" in shown
+        # a second restatement replaces the first, kept as history; the same again
+        # adds nothing
+        close_out.restate_entry(slice_dir, "B1", WU, "Card it: the status line",
+                                "the new story", date="2026-11-01")
+        b1 = entry_of(slice_dir, "B1")
+        assert b1["restated"]["headline"] == "Card it: the status line"
+        assert "consequence" not in b1["restated"]
+        assert b1["notes"][-1] == {
+            "by": WU, "date": "2026-11-01",
+            "text": ["restatement replaced — was: Card it: the status line is wrong after "
+                     "every restart", "", "How it is reached:", "", "- a restart",
+                     "- any reload"], "history": "restated"}
+        close_out.restate_entry(slice_dir, "B1", WU, "Card it: the status line",
+                                "the new story", date="2026-11-02")
+        assert len(entry_of(slice_dir, "B1")["notes"]) == len(b1["notes"])
+        # the consequence and the provenance it does not give are the author's
+        close_out.render_report(slice_dir)
+        assert ("the new story\n\n**Consequence:** an operator reads a wrong status\n\n"
+                "**Provenance:** witnessed — code-reviewer, P3 r1") in report(slice_dir)
+        # refused: no headline, no body, a line cited by its number, a struck entry
+        for argv, says in [
+            (("--headline", " ", "--body", "b"), "needs --headline"),
+            (("--headline", "h", "--body", " "), "needs --body"),
+            (("--headline", "h", "--body", "see close_out.py:12"), "cites a line"),
+            (("--headline", "h", "--body", "b", "--by", " "), "needs --by"),
+        ]:
+            code, _, err = run_cli(*restate, *argv)
+            assert code == 2 and says in err, (argv, err)
+        close_out.strike_entry(slice_dir, "B1", "gone")
+        code, _, err = run_cli(*restate, "--headline", "h", "--body", "b")
+        assert code == 2 and "B1 is struck" in err
+
+
+def test_a_proposal_is_one_line_of_at_most_the_bound():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        long = "Card it: " + "x" * close_out.asks.PROPOSAL_MAX
+        code, _, err = run_cli("append", slice_dir, *with_flags(DEFECT, proposal=long))
+        assert code == 2 and "a proposal is a line of at most 300" in err, err
+        assert store(slice_dir)["entries"] == []
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        code, _, err = run_cli("amend", slice_dir, "B1", "--proposal", long)
+        assert code == 2 and "--proposal is" in err, err
+        code, _, err = run_cli("propose", slice_dir, "B1", "--by", WU, "--text", long)
+        assert code == 2 and "the proposal is" in err, err
+        assert entry_of(slice_dir, "B1")["proposal"] is None
+        # a proposal over several lines is collapsed into one, then bounded
+        code, _, err = run_cli("propose", slice_dir, "B1", "--by", WU, "--text",
+                               "Card it:\n  it needs a design.")
+        assert code == 0, err
+        assert entry_of(slice_dir, "B1")["proposal"] == "Card it: it needs a design."
+        # the functions the loops call are not bounded
+        close_out.propose_entry(slice_dir, "B1", "the run loop", long)
+        assert entry_of(slice_dir, "B1")["proposal"] == long
 
 
 def test_worklist_names_what_waits_and_what_is_asked():
@@ -1597,6 +1733,7 @@ def test_worklist_names_what_waits_and_what_is_asked():
                                       "    Proposal: Drop it now: one caller, one edit."]
         # a mark takes the entry off the list; a struck one is off it too
         close_out.leave_entry(slice_dir, "B6", "wrap-up", "the fault cannot occur")
+        restated(slice_dir, "B5")
         close_out.propose_entry(slice_dir, "B5", "wrap-up", "more than the bar", mark="card")
         close_out.strike_entry(slice_dir, "B3", "fixed", commit="abc123")
         remaining = [e["id"] for e, _ in close_out.worklist(slice_dir)]
@@ -2290,6 +2427,7 @@ def test_counts_live_entries_per_section_and_per_letter_on_one_line():
         assert line.endswith("line · 1 entry that comes to you without a Proposal line")
         run_cli("append", slice_dir, *with_flags(DEFECT, trigger="fault",
                                                  impact="severe"))              # B5
+        restated(slice_dir, "B1")
         close_out.propose_entry(slice_dir, "B1", "wrap-up", "needs a design", mark="card")
         counts = close_out.entry_counts(slice_dir)
         assert counts[close_out.NO_PROPOSAL] == 2
@@ -2543,9 +2681,9 @@ def test_verb_usage_renders_append_compactly_with_its_help_strings():
             ("--body", "entry body, or - for stdin"),
             ("--proposal", "what you would do about it and why, in a sentence or two, in "
                            "a ruling's words (card · fix now · fold into <slice> · close · "
-                           "do it) — the operator reads it with the headline and the "
-                           "Consequence; required for an action and an improvement, "
-                           "refused on a decision"),
+                           "do it), one line of at most 300 characters — the operator "
+                           "reads it with the headline and the Consequence; required for "
+                           "an action and an improvement, refused on a decision"),
             ("--option", "a decision's option, or an answer an action asks "
                                     "for: the label, then one line saying what it is or "
                                     "costs; repeat it for each — a decision puts two or "
@@ -2568,14 +2706,19 @@ def test_verb_usage_renders_append_compactly_with_its_help_strings():
                       "run never reads slice.md"),
             ("--prevents", "improvement: the worst it would prevent")):
         assert f"    {flag}: {help_}" in lines, flag
-    wrap_up = close_out.verb_usage("show", "propose").splitlines()
-    assert wrap_up[0] == "close_out.py show <close-out.md> [<id> ...]"
+    wrap_up = close_out.verb_usage("show", "restate", "propose").splitlines()
+    assert wrap_up[0] == "close_out.py show <close-out.md> [<id> ...] [--card]"
+    assert ("close_out.py restate <close-out.md> <id> --by BY --headline HEADLINE "
+            "--body BODY [--consequence CONSEQUENCE] [--provenance PROVENANCE] "
+            "[--date DATE]") in wrap_up
     assert ("close_out.py propose <close-out.md> <id> --by BY --text TEXT "
             "[--card | --word] [--date DATE]") in wrap_up
     for help_ in ("    --by: who proposes",
-                  "    --text: what you would do about it and why, or - for stdin",
-                  "    --card: the wrap-up asks for a card: how the problem is reached and "
-                  "what the fix takes; the entry becomes a card request"):
+                  "    --text: what Agree does, in a ruling's words, one line of at most "
+                  "300 characters, or - for stdin",
+                  "    --card: the wrap-up asks for a card, the entry restated as the card; "
+                  "it becomes a card request",
+                  "    --headline: the section's heading: the ask, as the operator reads it"):
         assert help_ in wrap_up, help_
     notes = close_out.verb_usage("list", "note", "strike")
     assert notes.splitlines()[0] == "close_out.py list <close-out.md>"
@@ -2757,6 +2900,9 @@ def _every_place(tmp):
                                              proposal="Card it: it needs a design."))  # B1
     run_cli("append", slice_dir, *with_flags(DEFECT, repo="HelmCharts"))        # B2
     run_cli("append", slice_dir, *with_flags(EASY, body="## the page\n\n```\n# k\n```"))
+    restated(slice_dir, "B3", headline="edit the page, on your word",
+             body="## the page, as it would be\n\n```\n# k\n```\n\nthe rule that reserves it",
+             date="2026-08-14")
     close_out.propose_entry(slice_dir, "B3", "wrap-up", "edit the page; a rule reserves it",
                             date="2026-08-14", mark="word")                     # B3
     run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "77"}))          # B4
@@ -2808,19 +2954,24 @@ def test_render_writes_the_asks_as_the_document_pilot_reads():
                 "its run.\n```") in doc
         assert "```question id=B7\n```" in doc
         # the prose above each block: an action's proposal, the consequence, the
-        # provenance; the notes below the body; no route, no grade, no labels
+        # provenance; no note, no route, no grade, no labels
         assert ("**Proposal:** Do it before the next run: one command.\n\n**Consequence:** "
                 "an operator reads a wrong status\n\n**Provenance:** witnessed — "
                 "code-reviewer, P3 r1\n\n```action id=A1") in doc
-        assert "**consult 1, 2026-08-14.** still true" in doc
+        assert "still true" not in doc
+        # a restated entry's section is its restatement, a heading in its text
+        # escaped and one inside a fence left alone
+        assert ("## edit the page, on your word\n\n\\## the page, as it would be\n\n```\n"
+                "# k\n```\n\nthe rule that reserves it\n\n**Consequence:** an operator "
+                "reads a wrong status\n\n**Provenance:** witnessed — code-reviewer, P3 r1"
+                "\n\n```decision id=B3\nproposal: edit the page; a rule reserves it\n```"
+                ) in doc
         assert "**Not reached.** The table gave this entry to the wrap-up" in doc
         assert "**Unlabelled.** The entry carries no labels" in doc
         assert "**For slice 077**, which no folder holds yet." in doc
         for gone in ("**Route:**", "**Triage:**", "**Disposition:**", " · minor",
                      "**Latest**", "due"):
             assert gone not in doc, gone
-        # a heading in an entry's text is escaped, one inside a fence left alone
-        assert "\\## the page\n\n```\n# k\n```" in doc
         # the document is one Pilot takes: the store it came from has no fault
         assert asks.problems(close_out._document(close_out._read_store(slice_dir),
                                                  slice_dir)) == []
@@ -2829,6 +2980,18 @@ def test_render_writes_the_asks_as_the_document_pilot_reads():
         assert record.startswith("# Close-out record — slice 007 argocd tools presync hook"
                                  "\n\nRun: 2026-08-14 19:49 → 23:53")
         assert re.findall(r"^## (.+)$", record, re.M) == ["Asked", "Closed", "Record"]
+        # what the document asks, with the trail its section leaves out: the
+        # author's own text where a restatement took its place, every note, the
+        # wrap-up's mark
+        asked = record[record.index("## Asked"):record.index("## Closed")]
+        assert ("### B3 — edit the page, on your word\n\n**As its author wrote it:** "
+                "controller: the status line is wrong\n\n\\## the page\n\n```\n# k\n```"
+                "\n\n**Consequence:** an operator reads a wrong status") in asked
+        assert ("**wrap-up, 2026-08-14.** asks for the operator's word: edit the page; a "
+                "rule reserves it") in asked
+        assert ("### B6 — controller: the status line is wrong\n\n**consult 1, "
+                "2026-08-14.** still true") in asked
+        assert "### D1 — " in asked and "### A1 — " in asked
         closed = record[record.index("## Closed"):record.index("## Record")]
         assert "### B8 — controller: the status line is wrong" in closed
         assert "**Route:** closed — it needs a fault" in closed
