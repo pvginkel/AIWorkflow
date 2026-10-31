@@ -748,7 +748,8 @@ sessions in all.
   KubeCoderConfig: the `youtrack-usage` skill's "done is the operator's move" brought to the
   run's continuation moving the slice card to Resolved, its plugin version bumped; not before F1,
   since the 0.9.x plugin still leaves done to the operator.
-- [ ] **F4.** The AIWF cards closed (AIWF-36 already is).
+- [x] **F4.** The AIWF cards closed (AIWF-36 already is). Done 2026-10-31, each with its §7 fate as
+  the closing comment: AIWF-113, -88, -84 and -82 as Resolved, AIWF-35, -40 and -1 as Won't Do.
 - [ ] **F5.** The first slice through Pilot, the phone's layout (031), on 0.10.0.
 
 ## 9. Rulings
