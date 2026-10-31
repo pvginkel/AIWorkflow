@@ -698,13 +698,19 @@ sessions in all.
 
 **Phase E — the rehearsal** (decision 10)
 
-- [ ] **E1.** Plan-slice and run-slice end to end in ad hoc sessions on a throwaway slice of a
+- [x] **E1.** Plan-slice and run-slice end to end in ad hoc sessions on a throwaway slice of a
   test spec repo, the fallback path showing each document, the answer lines edited by hand;
   `/dev:triage` once in chat with its new output; the documents read against the synthesis
   (§5.7). The branch is the installed plugin for the rehearsal (ruled 2026-10-31, §9): the loops
   start every role with `kc session create-headless --agent dev:<role>`, which resolves the
   installed plugin, and a kc session takes no plugin dir, so a `--plugin-dir` run would have met
-  the old role prompts.
+  the old role prompts. Done 2026-10-31 on Pebble, a local throwaway project, over three slices
+  (001–003), with 0.10.16–0.10.22 built from what they showed (§9). Not exercised: the run's
+  mid-run halt and the nudge after it. The waiter meant to write the halt file looked for the
+  wrong key in `state.json` and never fired, and the 13-minute run ended first. The operator
+  moved the halt and the nudge to E2, where Pilot's own pause writes the file. The loops' mid-run
+  asks (the plan loop's exit 4, the run loop's questions) were never forced; their suites cover
+  them.
 - [ ] **E2.** One rehearsal through pilot-dev: a test project, a free-form work item whose brief points
   at the branch's skill by path with `CLAUDE_PLUGIN_ROOT` named; the round trip watched —
   register, the pass, the operator's answer from the phone, the write-back, the continuation, a
@@ -806,3 +812,22 @@ Recorded here as the operator gives them, dated, each naming the decision of §1
   ask, a plain reading of their words is off the page and stands in `plan.md` as the preparer's;
   the opening is built from typed fields of the store — the premises that do not hold, what is
   left out, the size — and an author's context is one line (built as 0.10.17).
+- A card request's section is at most 200 words, the tracker's limit for a card an agent
+  writes (built as 0.10.18).
+- While auto pilot is off, a run whose push deploys asks once before it launches: one decision,
+  `.aiworkflowrc`'s new `[push] deploys` saying whether a push deploys, true by default (built
+  as 0.10.19).
+- Auto pilot off for slice 002's plan and run, so that the grants' asks were seen; slice 003
+  from slice 002's close-out card, with a planted dirty tree, one clarification and a halt.
+- The end-of-E1 fix batch, "All ten (Recommended)" (built as 0.10.21 and 0.10.22):
+  - the close-out document opens on its asks, and the run's account is the record's;
+  - an entry the table closed keeps its route in the record;
+  - an answer that takes an option takes what the option carried;
+  - the preparer bounds a "never" by its grounding and carries the neighbouring case;
+  - a left-out matter says its fate, and one worth a card is an ask;
+  - a card request whose fix is a choice names its pick;
+  - the clarification is written under `/dev:writing`;
+  - the push ask says whether the file or the default made a push a deploying one;
+  - every stage pushes the spec repo at its end where the grants pre-approve it;
+  - the size's tests figure is labelled, and the report commit's log line names its files.
+- The mid-run halt and the nudge are rehearsed in E2, not E1.
