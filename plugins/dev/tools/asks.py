@@ -36,20 +36,24 @@ answer_lines?}`. The kind is the block's: a `decision` carries `options`
 `question` may carry `default`; an `action` may carry `options` and `check`,
 and `due` (merge, test, push or close), which the store keeps for the driver
 and the document never shows, since no block takes it. A body, a context
-paragraph and a note are Markdown, passed through as written, with no heading
-and no block in them.
+paragraph and a note are Markdown, with no heading and no block in them.
 
 **The render.** The front matter (`title`; `summary` on a document of more
 than one ask, where it is required; `step`; `for`), the context, then per
 entry `## <headline>`, the body, the notes as paragraphs with a run-in head,
-and the block last, its keys in the format skill's order. A value is written
-plain where YAML reads it back as written, double-quoted with escapes where
-it would not, and as a literal block over several lines. Refused, with every
-fault named: a document with no ask; two asks with one id; a key the kind
-does not take; `recommend` naming no option; `options` beside `proposal`;
-two options with one label; a heading or a block in the prose, or a fence it
-leaves open; a first heading that repeats the title, which Pilot would read
-as the title's own and so leave the ask without its section.
+and the block last, its keys in the format skill's order. The headline, the
+body, the context and the notes are written as given but for every `<`
+outside code and autolinks, escaped `\\<` (`escape_tags`), so that a viewer
+that passes HTML through shows the words instead of a tag; the front matter
+and the block's values, plain text in Pilot, are written as they are. A value
+is written plain where YAML reads it back as written, double-quoted with
+escapes where it would not, and as a literal block over several lines.
+Refused, with every fault named: a document with no ask; two asks with one
+id; a key the kind does not take; `recommend` naming no option; `options`
+beside `proposal`; two options with one label; a heading or a block in the
+prose, or a fence it leaves open; a first heading that repeats the title,
+which Pilot would read as the title's own and so leave the ask without its
+section.
 
 **The read-back.** `absorb` finds each block by its fence's info string, as
 Pilot's reader does, and reads the answer lines (`answer`, `by`, `at`,
@@ -558,6 +562,84 @@ def key_value(key: str, value: str) -> list[str]:
 
 # ---------------------------------------------------------------- render
 
+# What `escape_tags` stops at in a paragraph: a backslash escape (`\` and an
+# ASCII punctuation character), a backtick run, a `<`.
+_INLINE = re.compile(r"\\[!-/:-@\[-`{-~]|`+|<")
+_BACKTICKS = re.compile(r"`+")
+# CommonMark's autolinks: `<scheme:…>` and `<address@host>`.
+_AUTOLINK = re.compile(
+    r"<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\x00-\x20\x7f<>]*"
+    r"|[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*)>"
+)
+
+
+def _escape_inline(text: str) -> str:
+    """One paragraph's `<`s escaped, its code spans, autolinks and backslash
+    escapes as written: whichever starts first holds, as CommonMark reads
+    them, and a backtick run with no run of its length after it is text."""
+    out: list[str] = []
+    pos = 0
+    while (m := _INLINE.search(text, pos)) is not None:
+        out.append(text[pos:m.start()])
+        token = m.group(0)
+        if token == "<":
+            link = _AUTOLINK.match(text, m.start())
+            end = m.end() if link is None else link.end()
+            out.append("\\<" if link is None else link.group(0))
+        elif token[0] == "`":
+            close = next((c for c in _BACKTICKS.finditer(text, m.end())
+                          if len(c.group(0)) == len(token)), None)
+            end = m.end() if close is None else close.end()
+            out.append(text[m.start():end])
+        else:
+            end = m.end()
+            out.append(token)
+        pos = end
+    out.append(text[pos:])
+    return "".join(out)
+
+
+def escape_tags(text: str) -> str:
+    """An author's Markdown with every `<` escaped (`\\<`), so that a viewer
+    that passes HTML through, as VSCode's and GitHub's do, shows the words
+    and does not swallow them as a tag; Pilot draws a `<` as text either way,
+    and `\\<` as `<`. Left as written: a fenced block, found as Pilot's reader
+    finds one, an unclosed fence holding the rest; a code span, read as
+    CommonMark reads one within a paragraph, over its line breaks; an
+    autolink; and a backslash escape, so that `\\<` stays one and a second
+    pass changes nothing. An indented code block is not told from prose: a
+    `<` in one is escaped too. Nothing but a `<` is ever escaped."""
+    lines = text.split("\n")
+    bare = [line.removesuffix("\r") for line in lines]
+    out: list[str] = []
+    paragraph: list[str] = []
+
+    def flush() -> None:
+        if paragraph:
+            out.extend(_escape_inline("\n".join(paragraph)).split("\n"))
+            paragraph.clear()
+
+    i = 0
+    while i < len(lines):
+        m = _opening(bare[i])
+        if m is not None:
+            flush()
+            close = _closing(bare, i, m["marker"])
+            end = len(lines) if close is None else close + 1
+            out.extend(lines[i:end])
+            i = end
+            continue
+        if bare[i].strip():
+            paragraph.append(lines[i])
+        else:
+            flush()
+            out.append(lines[i])
+        i += 1
+    flush()
+    return "\n".join(out)
+
+
 def _paragraph(text: str) -> list[str]:
     return [*text.strip("\n").rstrip().split("\n"), ""]
 
@@ -583,11 +665,14 @@ def _block(entry: dict, *, answers: bool = False) -> list[str]:
 
 def section(entry: dict, *, answers: bool = False) -> list[str]:
     """One ask as the document shows it: its heading, its body, its notes,
-    its block last; with `answers`, the answer lines read back."""
-    lines = [f"## {entry['headline'].strip()}", "", *_paragraph(entry["body"])]
+    its block last; with `answers`, the answer lines read back. The heading,
+    the body and the notes are Markdown and escaped (`escape_tags`); the
+    block's values are plain text in Pilot and written as they are."""
+    lines = [f"## {escape_tags(entry['headline'].strip())}", "",
+             *_paragraph(escape_tags(entry["body"]))]
     for note in entry.get("notes") or ():
-        lines += _paragraph(f"**{note['by'].strip()}, {note['date']}.** "
-                            f"{note['text'].strip()}")
+        lines += _paragraph(escape_tags(f"**{note['by'].strip()}, {note['date']}.** "
+                                        f"{note['text'].strip()}"))
     return [*lines, *_block(entry, answers=answers), ""]
 
 
@@ -603,7 +688,7 @@ def render(store: dict) -> str:
             lines.append(f"{key}: {scalar(store[key])}")
     lines += ["---", ""]
     for paragraph in store.get("context", []):
-        lines += _paragraph(paragraph)
+        lines += _paragraph(escape_tags(paragraph))
     for entry in entries:
         lines += section(entry)
     return "\n".join(lines).rstrip("\n") + "\n"

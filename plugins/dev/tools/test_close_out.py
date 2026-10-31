@@ -3008,6 +3008,40 @@ def test_owed_before_push_and_before_the_test_phase_read_the_due_an_author_set()
         assert [e["id"] for e, _ in close_out.owed_before_push(slice_dir)] == ["B3"]
 
 
+def test_the_record_show_and_document_escape_an_authors_less_than_outside_code():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        code, _, err = run_cli("append", slice_dir, *with_flags(
+            ACTION, headline="controller: the <time> line is wrong",
+            body="It shows `<time>` raw and <time> after.",
+            proposal="Fix the <time> line: `fmt(<time>)`."))
+        assert code == 0, err
+        code, _, err = run_cli(
+            "append", slice_dir,
+            *with_flags(ACTION, kind="decision", proposal=None,
+                        headline="which <tag> the line keeps"),
+            "--option", "Keep <it>", "nothing changes", "--option", "Change it",
+            "costs a release", "--recommend", "Keep <it>")
+        assert code == 0, err
+        close_out.render_report(slice_dir)
+        record = (slice_dir / "close-out-record.md").read_text()
+        assert "A1 — controller: the \\<time> line is wrong" in record
+        assert "D1 — which \\<tag> the line keeps" in record
+        assert "Run: \\<not yet stamped>" in record
+        assert "<" not in record.replace("\\<", "")
+        document = report(slice_dir)
+        for line in ("## controller: the \\<time> line is wrong",
+                     "It shows `<time>` raw and \\<time> after.",
+                     "**Proposal:** Fix the \\<time> line: `fmt(<time>)`.",
+                     "## which \\<tag> the line keeps",
+                     "  - Keep <it>: nothing changes", "recommend: Keep <it>"):
+            assert f"\n{line}\n" in document, line
+        shown = close_out.show_view(slice_dir, ["A1", "D1"])
+        assert "It shows `<time>` raw and \\<time> after." in shown
+        assert "- **Keep \\<it>** (recommended): nothing changes" in shown
+
+
 if __name__ == "__main__":
     _tests = [v for k, v in sorted(globals().items())
               if k.startswith("test_") and callable(v)]

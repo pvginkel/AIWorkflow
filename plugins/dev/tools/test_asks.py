@@ -457,6 +457,49 @@ def test_a_note_is_a_paragraph_with_a_run_in_head_and_a_value_of_lines_a_literal
         raise AssertionError("a heading in a note")
 
 
+def test_escape_tags_escapes_a_less_than_outside_code_autolinks_and_escapes():
+    cases = [
+        ("It ends at <time>.", "It ends at \\<time>."),
+        ("`close <id>` and <id>", "`close <id>` and \\<id>"),
+        ("``a ` <b>`` and <c>", "``a ` <b>`` and \\<c>"),
+        ("see `run\n<id>` then <x>", "see `run\n<id>` then \\<x>"),
+        ("a ` lone <b>", "a ` lone \\<b>"),
+        ("a `x\n\n<b>` c", "a `x\n\n\\<b>` c"),
+        ("x <a>\n```\n<b>\n```\ny <c>", "x \\<a>\n```\n<b>\n```\ny \\<c>"),
+        ("x <a>\n~~~\n<b> to the end", "x \\<a>\n~~~\n<b> to the end"),
+        ("<https://pilot.example.org/x?a=1> and <ada@example.org>",
+         "<https://pilot.example.org/x?a=1> and <ada@example.org>"),
+        ("<https://pilot.example.org/a b>", "\\<https://pilot.example.org/a b>"),
+        ("already \\<x> and \\` <y> `", "already \\<x> and \\` \\<y> `"),
+        ("a > b, ~c~, $1, &lt; and <!-- d -->", "a > b, ~c~, $1, &lt; and \\<!-- d -->"),
+        ("a <b>\r\n```\r\n<c>\r\n```\r\n", "a \\<b>\r\n```\r\n<c>\r\n```\r\n"),
+    ]
+    for given, written in cases:
+        assert asks.escape_tags(given) == written, (given, asks.escape_tags(given))
+        assert asks.escape_tags(written) == written, written
+
+
+def test_the_render_escapes_the_markdown_and_never_the_front_matter_or_a_block():
+    store = asks.new_store("The <draft> title", summary="Both <asks> of it", step="t2",
+                           context=["The <time> it took, `at <t>`."])
+    asks.append(store, "decision", "When the <time> shows",
+                "It reads `<time>` and <time>.\n\n```\n<raw>\n```",
+                options=[("At <noon>", "the <line>"), "Later"], recommend="At <noon>")
+    asks.append(store, "question", "Who <owns> it", "Nobody.", default="The <team>")
+    asks.append(store, "decision", "Card <it>", "B.", proposal="card <it>")
+    asks.note(store, "D1", "plan-reviewer", "It said <x>.", date="2026-10-30")
+    text = asks.render(store)
+    for line in ("title: The <draft> title", "summary: Both <asks> of it",
+                 "The \\<time> it took, `at <t>`.", "## When the \\<time> shows",
+                 "It reads `<time>` and \\<time>.", "<raw>",
+                 "**plan-reviewer, 2026-10-30.** It said \\<x>.",
+                 "  - At <noon>: the <line>", "recommend: At <noon>", "## Who \\<owns> it",
+                 "default: The <team>", "## Card \\<it>", "proposal: card <it>"):
+        assert f"\n{line}\n" in text, line
+    assert set(asks.read_back(text)) == {"D1", "Q1", "D2"}
+    assert asks.show_view(store, ["D1"]).count("\\<") == 3
+
+
 def test_render_file_writes_beside_the_store_and_never_over_an_answered_document():
     with tempfile.TemporaryDirectory() as tmp:
         path = asks.create(scratch_slice(tmp), "requirements", "Requirements")

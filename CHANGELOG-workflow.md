@@ -4,6 +4,27 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-31 — The documents escape an author's `<` outside code, so no viewer reads it as a tag (v0.10.15)
+
+Close-out reports render an author's words as Markdown, and in slices 028 and 029 a `<` in them,
+in `The turn ended · <time>` and `as of <time>`, read as an HTML tag. VSCode's and GitHub's
+viewers pass HTML through, so they swallowed the word. Pilot draws a `<` as text, so its view was
+right, but the files in the spec repo are read in those viewers too.
+
+- **`asks.py`** gains `escape_tags`: every `<` in an author's Markdown becomes `\<`, which every
+  viewer, Pilot included, draws as `<`. Left as written: fenced blocks, code spans (across a
+  paragraph's line breaks too), autolinks and backslash escapes, so a second pass changes
+  nothing. The render applies it to each ask's heading, body and notes and to the context
+  paragraphs. The close-out document gets it through that render.
+- **`close_out.py`** applies it to everything `close-out-record.md` and `show` give for an entry,
+  so a fold into `slice.md` carries it too, and to the record's run header and closing words,
+  the header's own `Run: <not yet stamped>` included.
+- **Left alone:** the front matter and every block value (options, recommend, proposal,
+  default, check, the answer lines), which Pilot draws as plain text, where a backslash would
+  show; `>`, which makes no tag; a single `~`, which strikes text in GFM viewers and Pilot alike
+  and is Pilot's to stop (P-139); and `$`, which only a viewer that renders math reads. An
+  indented code block is not told from prose: a `<` in one is escaped too.
+
 ## 2026-10-31 — The 0.10 line: the `dev` plugin re-envisioned for Pilot running it (v0.10.14)
 
 Pilot, the project manager, now runs the workflow's two stages. `/dev:plan-slice` and

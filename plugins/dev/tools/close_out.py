@@ -2314,7 +2314,12 @@ def _render_entry(entry: dict, form: str, route_words: str | None) -> str:
     entry is triaged on and its ruling — `show`'s), `closed` (the heading,
     the Consequence unless it says none, Triage, Provenance and Route — what
     the table closed), `ruled` (the heading and the ruling) and `record` (the
-    heading alone, a struck one's reason cut short)."""
+    heading alone, a struck one's reason cut short). All of it is Markdown,
+    so every `<` outside code is escaped (`asks.escape_tags`)."""
+    return asks.escape_tags(_entry_markdown(entry, form, route_words))
+
+
+def _entry_markdown(entry: dict, form: str, route_words: str | None) -> str:
     if form == "record":
         if entry.get("strike"):
             return (f"### ~~{entry['id']} — {_headline_with_grade(entry)}~~ — "
@@ -2619,12 +2624,12 @@ def _record(store: dict, slice_dir: Path | str) -> str:
     run's events, then every entry struck."""
     num, name = _slice_name(store)
     out = [f"# Close-out record — slice {num} {name}".rstrip(), "",
-           *_wrap(_header(slice_dir))]
+           *_wrap(asks.escape_tags(_header(slice_dir)))]
     closed = store.get("closed")
     if closed:
         said = closed.get("words") or (f"by {closed['by']}" if closed.get("by") else "")
-        out += ["", *_wrap(f"Closed: {closed['date']}" + (f" — {_collapse(said)}"
-                                                         if said else ""))]
+        out += ["", *_wrap(asks.escape_tags(
+            f"Closed: {closed['date']}" + (f" — {_collapse(said)}" if said else "")))]
     placed = dict(_placed(store, slice_dir))
     ruled = sorted((e for e in store["entries"] if _ruled(e)), key=_id_key)
     asked = [(e, w) for place in ASKED for e, _, w in placed[place] if not _ruled(e)]
