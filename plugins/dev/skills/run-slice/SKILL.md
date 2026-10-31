@@ -20,9 +20,10 @@ and commits. What has to be read — a bail to diagnose, an answer to carry into
 question about the slice — goes to a sub-agent pointed at the slice folder, so the session stays
 small over a run that may last days.
 
-Below, `<spec-repo>` is your `.aiworkflowrc`'s `spec_repo`, `<slice>` the slice folder under
-`<spec-repo>/slices/` that the brief's first line names, `<task>` the brief's plan task, and a
-tool is `python3 ${CLAUDE_PLUGIN_ROOT}/tools/<tool>`. Run from the target code repo.
+Below, `<spec-repo>` is your `.aiworkflowrc`'s `spec_repo`, `<slice>` the path of the folder,
+`<spec-repo>/slices/<NNN_slug>`, of the slice the brief's first line names, which every tool
+takes, `<task>` the brief's plan task, and a tool is
+`python3 ${CLAUDE_PLUGIN_ROOT}/tools/<tool>`. Run from the target code repo.
 
 - **A sub-agent runs in the foreground**, `run_in_background: false`, its report the Agent
   tool's result: a turn never ends to wait for one. Brief it with the slice folder, the paths it
@@ -49,7 +50,7 @@ tool is `python3 ${CLAUDE_PLUGIN_ROOT}/tools/<tool>`. Run from the target code r
    continuation starts again at this step. Fix nothing in the environment yourself: a dirty tree,
    a refused pull or a clone not made is the action's, and a restart ends this session. A failure
    with no slice folder to hold a document — no slice of that name in the spec repo, or no spec
-   repo — ends the turn with its last line saying what failed and what fixes it.
+   repo — ends the turn with its last message saying what failed and what fixes it.
 3. **A push that deploys asks first.** Where the brief carries grants that do not pre-approve a
    push that deploys — Pilot's text while auto pilot is off — and preflight's pass says `push`
    is `enabled` and `deploys`, the run's pushes go to the operator before anything moves. The
@@ -85,7 +86,7 @@ minutes. Its exit code is a signal, and the lines it prints are all there is to 
 | **0**, complete | [the close-out](#the-close-out) |
 | **4**, a question | register the `document:` line's file; attach `plan.md`, and the phase's review where the bail names a phase; commit `asks/`; end the turn. With no `document:` line, put `bailout.json`'s details as a `question` document first. |
 | **3**, an error, or **1** | [the diagnosis](#an-error) |
-| **7**, halted | end the turn, its last line the `halted:` line |
+| **7**, halted | end the turn, its last message the `halted:` line |
 | **130**, interrupted | someone stopped the driver: end the turn saying where; a nudge resumes it |
 
 A `plugin_version` bail is relaunched from the installed `tools/` path `bailout.json` names, not
@@ -150,15 +151,14 @@ registers and ends the turn on instead.
 At exit 0, in this order:
 
 1. `slice_cost.py <slice> --write-state` — the slice's cost into `state.json`. Say its warnings
-   in the turn's last line; never hand-edit the numbers.
+   in the turn's last message; never hand-edit the numbers.
 2. `close_slice.py <slice>` — the README entry to Completed, the folder `git mv`ed to
    `slices/completed/`, `run.lock` deleted, all staged by name. Below, `<slice>` is the folder at
    its new path. No document of the slice is open at exit 0, so the move is safe (pilot.md § The
    documents).
-3. `close_out.py render <slice> --step <task> --context "<the slice in two lines>"` — the report
-   once more, the cost in its record. The two lines come from `slice.md`'s title and the head of
-   its ask. With no ticket in the brief, a second `--context`: the cards the answers ask for are
-   filed without a parent.
+3. `close_out.py render <slice> --step <task>` — the report once more, the cost in its record,
+   its title the plan's one-liner, which says the slice as it was planned. With no ticket in the
+   brief, a `--context`: the cards the answers ask for are filed without a parent.
 4. Commit the folder by name — `state.json`, `log.txt`, `close-out.json`, `close-out.md`,
    `close-out-record.md`, `asks/` — dropping only a stale `bailout.json`.
 5. Move the slice card to delivered.
@@ -194,7 +194,11 @@ as the continuation reads it.
   changes code belongs in a phase the loop executes — the one exception is a close-out's
   `fix now`, where close-out.md allows it.
 - **Notify nobody, and tell nothing outside a document.** Pilot puts what the operator needs in
-  front of them.
+  front of them. The turn's last message is one line, the one this skill names where the turn
+  ends, else where the stage stands with the path of each document the turn registered or
+  printed (pilot.md § The turns). Nothing comes before it in that message: no retelling of a
+  document, no summary of the work, no finding, no offer and no question — an ask is a document,
+  and a finding is the close-out's.
 - **The loop outlives this session.** A later session meets the `run.lock` refusal while the run
   lives, and waits on it. `run_loop.py stop <slice>` interrupts the run as Ctrl-C would —
   `state.json` current, the in-flight session left for `--resume` to reattach. A loop is dead

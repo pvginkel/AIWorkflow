@@ -19,9 +19,10 @@ out and commits. What has to be read — the slice, an answer to carry into the 
 diagnose, a question about the slice — goes to a sub-agent pointed at the slice folder. Nobody
 downstream reads `slice.md` or a document: what reaches the executors is `plan.md`.
 
-Below, `<spec-repo>` is your `.aiworkflowrc`'s `spec_repo`, `<slice>` the slice folder under
-`<spec-repo>/slices/backlog/` that the brief's first line names, `<task>` the brief's plan task,
-and a tool is `python3 ${CLAUDE_PLUGIN_ROOT}/tools/<tool>`. Run from the target code repo.
+Below, `<spec-repo>` is your `.aiworkflowrc`'s `spec_repo`, `<slice>` the path of the folder,
+`<spec-repo>/slices/backlog/<NNN_slug>`, of the slice the brief's first line names, which every
+tool takes, `<task>` the brief's plan task, and a tool is
+`python3 ${CLAUDE_PLUGIN_ROOT}/tools/<tool>`. Run from the target code repo.
 
 - **A sub-agent runs in the foreground** (pilot.md § A turn's end is the run's end). Brief it with
   the slice folder, the paths it works on and the section of this skill it follows. It loads
@@ -46,8 +47,8 @@ and a tool is `python3 ${CLAUDE_PLUGIN_ROOT}/tools/<tool>`. Run from the target 
    `--check "preflight --for plan passes its <check> check"`. Register it and end the turn; its
    continuation starts again at this step. Fix nothing in the environment yourself. A failure
    with no slice folder to hold a document — no slice of that name, or no spec repo — ends the
-   turn with its last line saying what failed and what fixes it. A pass's notes go into the
-   turn's last line.
+   turn with its last message saying what failed and what fixes it. A pass's notes go into the
+   turn's last message.
 3. **Prepare**: dispatch `dev:plan-preparer` with `<slice>`, `<task>` and the ticket. It leaves
    `grounding.md` and `plan.md`'s seeded header in the folder and hands back the path of
    `asks/1-requirements.json`, or `nothing to ask`.
@@ -77,7 +78,7 @@ nine minutes. Its exit code is a signal, and the lines it prints are all there i
 | **0**, plan complete | [the promotion](#the-promotion) |
 | **4**, the writer's questions or the review's findings | register the `document:` line's file; attach `plan.md`, and for a review its prose, `plan_review_rN.md`; commit `asks/`; end the turn. With no `document:` line, a sub-agent puts the hand-back file the exit names as a `question` document first. |
 | **3**, a bail, or **1** | [the diagnosis](#an-error) |
-| **7**, halted | end the turn, its last line the `halted:` line |
+| **7**, halted | end the turn, its last message the `halted:` line |
 | **130**, interrupted | someone stopped the loop: end the turn saying where; a nudge resumes it |
 
 A `plugin_version` bail is rerun from the installed `tools/` path `plan_bailout.json` names, not
@@ -167,10 +168,12 @@ At exit 0, in this order:
    slice is open at exit 0, so the move is safe (pilot.md § The documents).
 3. A sub-agent brings the tracker in line with the plan. The slice card goes from triaged to
    planned, its highlights matching the plan's scope where planning moved it. Each card
-   `grounding.md` names as routed to the slice is closed as the convention closes an absorbed
-   task where the plan carries its ask, and is left open with a comment quoting the ruling where
-   it does not.
-4. End the turn, its last line the plan's path and its phases, counted.
+   `grounding.md` names as routed to the slice and still open is closed as the convention closes
+   an absorbed task where the plan carries its ask, and is left open with a comment quoting the
+   ruling where it does not. A card triage already closed as absorbed keeps its state either
+   way: where the plan does not carry its ask, it takes a comment quoting why — the ruling, or
+   the premise the grounding found false — and nothing else.
+4. End the turn, its last message the plan's path and its phases, counted.
 
 ## The clarification
 
@@ -192,7 +195,11 @@ step it stood at again.
   what a sub-agent writes by this skill, no phases. Never answer a pending question from your own
   judgment.
 - **Notify nobody, and tell nothing outside a document.** Pilot puts what the operator needs in
-  front of them.
+  front of them. The turn's last message is one line, the one this skill names where the turn
+  ends, else where the stage stands with the path of each document the turn registered or
+  printed (pilot.md § The turns). Nothing comes before it in that message: no retelling of a
+  document, no summary of the work, no finding, no offer and no question — an ask is a document,
+  and a finding is the close-out's.
 - **The loop outlives this session.** A later session meets the `plan.lock` refusal while the
   loop lives, and waits on it. `plan_loop.py stop <slice>` interrupts it as Ctrl-C would. A loop
   is dead only when `plan_log.txt` has gone quiet, never on `ps`, which sees only this pod.

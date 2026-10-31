@@ -2948,6 +2948,29 @@ def _every_place(tmp):
     return slice_dir
 
 
+def test_the_close_out_is_titled_by_the_plans_one_liner():
+    """The title and the record's heading say the slice as planned — the
+    plan's `# Slice NNN — <what ships>` — not the folder name triage gave
+    it, which planning may have moved on from; the folder's words only where
+    plan.md has no such line."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp, name="002_marks_last_line_common_words")
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        close_out.render_report(slice_dir)
+        assert "title: Close-out of slice 002 — marks last line common words\n" in \
+            report(slice_dir)
+        (slice_dir / "plan.md").write_text(
+            "# Slice 002 — A word keeps its combining marks, and top leaves common "
+            "words out\n\n## Requirements / rulings\n")
+        close_out.render_report(slice_dir)
+        assert ("title: Close-out of slice 002 — A word keeps its combining marks, and "
+                "top leaves common words out\n") in report(slice_dir)
+        assert (slice_dir / "close-out-record.md").read_text().startswith(
+            "# Close-out record — slice 002 — A word keeps its combining marks, and top "
+            "leaves common words out\n")
+
+
 def test_render_writes_the_asks_as_the_document_pilot_reads():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = _every_place(tmp)
@@ -3008,7 +3031,7 @@ def test_render_writes_the_asks_as_the_document_pilot_reads():
                                                  slice_dir)) == []
         # the record holds what the document leaves out
         record = (slice_dir / "close-out-record.md").read_text()
-        assert record.startswith("# Close-out record — slice 007 argocd tools presync hook"
+        assert record.startswith("# Close-out record — slice 007 — argocd tools presync hook"
                                  "\n\nRun: 2026-08-14 19:49 → 23:53")
         assert re.findall(r"^## (.+)$", record, re.M) == ["Asked", "Closed", "Record"]
         # what the document asks, with the trail its section leaves out: the

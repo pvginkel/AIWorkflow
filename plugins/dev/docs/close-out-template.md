@@ -84,7 +84,7 @@ an entry's words are `/dev:writing`'s; this doc is the shape.
 
 ````markdown
 ---
-title: Close-out of slice NNN — <the slice's name>
+title: Close-out of slice NNN — <the plan's one-liner, else the folder name's words>
 summary: "Slice NNN's close-out: what is yours to rule or to do and the cards asked for"
 step: T7
 ---

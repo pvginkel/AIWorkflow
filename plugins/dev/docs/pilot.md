@@ -26,8 +26,11 @@ Only Pilot speaks to a stage's session, and every turn opens in one of four ways
 | anything else | a nudge | carries on from where the session stood |
 
 Every turn ends with no tool call pending and nothing left running that the session waits for.
-Its last message is a line saying where the stage stands, except a clarification's, which is the
-answers alone.
+Its last message is one line saying where the stage stands — the documents it waits on, by path,
+or planned, delivered, done, halted, stopped — except a clarification's, which is the answers
+alone. That line is the whole message: it retells no document, sums up no work, reports no
+finding, and offers and asks nothing, since what the operator needs from a turn is in its
+documents.
 
 ## A turn's end is the run's end
 

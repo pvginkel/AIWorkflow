@@ -158,7 +158,8 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   `/work/scratch/` that the run loop made or adopted for a `github:` Target (it marks them;
   a hand clone there is not the environment's and is left alone).
 - **Which repos block, under `plan`.** The target repo, the spec repo, and every repo a Target
-  of the slice's `plan.md` names — `/dev:plan-slice` passes the slice as `--slice <N|path>`, and
+  of the slice's `plan.md` names — `/dev:plan-slice` passes the slice as `--slice <path>` (its number or its folder's name
+  finds it too), and
   without a `plan.md` yet that is the first two. A `../Repo` Target is that sibling, a `github:`
   Target its scratch clone, a component the target repo (a component living in a sibling is not
   looked up). Every other repo is still synced, but a refusal there — any of the ones below — is

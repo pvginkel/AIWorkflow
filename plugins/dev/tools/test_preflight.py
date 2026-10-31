@@ -984,10 +984,12 @@ def test_a_slice_whose_plan_targets_a_component_leaves_the_siblings_warned():
 
 
 def test_a_slice_number_finds_its_zero_padded_folder_and_a_path_is_taken_as_given():
+    """The number the brief names, the folder's name a skill's `<slice>` is
+    read as, and its path all find the one folder."""
     with tempfile.TemporaryDirectory() as tmp:
         _, _, cfg = a_slice_layout(tmp, "../Sib")
         folder = cfg.spec_repo / "slices" / "007_widget"
-        for given in ("7", "007", str(folder)):
+        for given in ("7", "007", "007_widget", str(folder)):
             assert preflight.find_slice(cfg, given) == folder, given
 
 

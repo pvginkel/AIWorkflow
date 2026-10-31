@@ -2504,6 +2504,26 @@ def _slice_name(store: dict) -> tuple[str, str]:
     return num, re.sub(r"[_-]+", " ", slug).strip()
 
 
+PLAN_TITLE_RE = re.compile(r"^#\s+Slice\s+\d+\s+—\s+(.+?)\s*$")
+
+
+def _slice_title(store: dict, slice_dir: Path | str) -> tuple[str, str]:
+    """(the slice's number, what it is in words): the plan's one-liner,
+    `# Slice NNN — <what ships>`, which says the scope as planned; the
+    folder name's words where plan.md has none — triage's title, which
+    planning may have moved on from."""
+    num, name = _slice_name(store)
+    try:
+        lines = (Path(slice_dir) / "plan.md").read_text(encoding="utf-8").split("\n")
+    except OSError:
+        return num, name
+    for line in lines:
+        m = PLAN_TITLE_RE.match(line)
+        if m:
+            return num, m.group(1)
+    return num, name
+
+
 def _state(slice_dir: Path | str) -> dict | None:
     try:
         state = json.loads((Path(slice_dir) / "state.json").read_text())
@@ -2762,7 +2782,7 @@ def _document(store: dict, slice_dir: Path | str) -> dict | None:
         entries += [_ask(entry, place, key, words, vmap) for entry, key, words in items]
     if not entries:
         return None
-    num, name = _slice_name(store)
+    num, name = _slice_title(store, slice_dir)
     doc: dict = {"title": f"Close-out of slice {num} — {name}" if name
                  else f"Close-out of slice {num}"}
     if len(entries) > 1:
@@ -2780,8 +2800,9 @@ def _record(store: dict, slice_dir: Path | str) -> str:
     header; what the operator ruled and what was done on it; what is asked
     and open; what the table closed, with its ground; and the record — the
     run's events, then every entry struck."""
-    num, name = _slice_name(store)
-    out = [f"# Close-out record — slice {num} {name}".rstrip(), "",
+    num, name = _slice_title(store, slice_dir)
+    out = [f"# Close-out record — slice {num} — {name}" if name
+           else f"# Close-out record — slice {num}", "",
            *_wrap(asks.escape_tags(_header(slice_dir)))]
     closed = store.get("closed")
     if closed:

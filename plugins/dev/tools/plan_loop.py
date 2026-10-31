@@ -46,8 +46,8 @@ close-out.md and close-out-record.md rendered from it are docs/close-out.md's)
 before its first dispatch. At exit 0 it seeds that report's actions from the plan: one entry
 per `## Push holds` repo, listing the criteria verification.json marks
 `owed_after` that push, and one per criterion owed after anything else —
-each entered once, however often the loop reruns. It renders the report at
-every exit.
+each entered once, however often the loop reruns. It renders nothing: the
+report is the run's to render, and registering it the run's continuation.
 
 All loop and session output goes to <slice>/plan_log.txt; stdout carries the
 log-file line plus one terse timestamped line per pass start and the final
@@ -105,7 +105,6 @@ from close_out import (  # noqa: E402
     dispatch_line,
     find_by_headline,
     init_report,
-    render_report,
     report_path,
     store_path,
 )
@@ -382,7 +381,6 @@ class PlanLoop:
         self.slice_num = self.slice_name.split("_")[0]
         self.plan_path = self.slice_dir / "plan.md"
         self.report_path = report_path(self.slice_dir)
-        self._report_ready = False   # set once _ensure_report has run
         self.state_path = self.slice_dir / "plan_state.json"
         self.log_path = self.slice_dir / "plan_log.txt"
         self.verbose = verbose
@@ -1052,24 +1050,6 @@ class PlanLoop:
             self.git("commit", "-m",
                      f"slice {self.slice_num}: close-out report")
             self.log(f"created {store.name}")
-        self._report_ready = True
-
-    def _render_report(self) -> None:
-        """The report rendered from the store, at the loop's exit — any
-        exit. Never a failure and never a change to the exit: a report that
-        does not render is logged. Only on the loop's base branch: the tree
-        is shared, and a render onto another session's branch would leave
-        this slice's report modified there."""
-        if not self._report_ready:
-            return
-        try:
-            if self._current_branch() != self.state.get("base"):
-                self.log("close-out not rendered: the spec repo is not on "
-                         "this loop's base branch")
-                return
-            self.log("close-out rendered: " + render_report(self.slice_dir))
-        except (ReportError, Bailout, OSError) as e:
-            self.log(f"close-out not rendered: {getattr(e, 'details', e)}")
 
     # -- the exit-0 seed: the actions the plan already owes ---------------------
 
@@ -1300,51 +1280,46 @@ class PlanLoop:
             self.state["phase"] = "fixing"
             self._save_state()
 
-        # Every exit from here on — 0, the questions and adjudication exits,
-        # a bail, an interrupt — renders the report on its way out.
         try:
-            try:
-                self._assert_current()
-                self._ensure_report()
-                while True:
-                    phase = self.state["phase"]
-                    # Pilot's halt, between passes — the safe point: the
-                    # pass in flight finishes, and the rerun takes the next
-                    # one from `phase`, its round not yet drawn.
-                    if phase in HALT_PASSES and run_loop.halt_requested():
-                        raise Halted(f"before the {HALT_PASSES[phase]}")
-                    if phase == "writing":
-                        self._writer_pass(initial=True)
-                    elif phase == "fixing":
-                        self._writer_pass(initial=False)
-                    elif phase == "reviewing":
-                        self._review_round()
-                    elif phase == "done":
-                        break
-                    else:
-                        raise Bailout("protocol_failure",
-                                      details=f"unknown phase {phase!r}")
-                self._assert_current(plugin=False)
-                self._verify_review_on_file()
-                self._verify_plan_parses()
-                self._seed_outstanding()
-            except Bailout as bail:
-                self._bail(bail)
-            except KeyboardInterrupt:
-                self.log("interrupted — plan_state.json is current; rerun to "
-                         "continue")
-                print("Interrupted — rerun to continue.", file=sys.stderr)
-                sys.exit(130)
-            except Halted as halt:
-                self._exit_facts = {"halted": halt.where}
-                self.log(f"HALTED {halt.where}: {run_loop.HALT_FILE} is "
-                         "present — plan_state.json is current; rerun once "
-                         "it is gone")
-                print(f"Halted {halt.where}: {run_loop.HALT_FILE} is present "
-                      "— rerun once it is gone.", file=sys.stderr)
-                sys.exit(EXIT_HALTED)
-        finally:
-            self._render_report()
+            self._assert_current()
+            self._ensure_report()
+            while True:
+                phase = self.state["phase"]
+                # Pilot's halt, between passes — the safe point: the
+                # pass in flight finishes, and the rerun takes the next
+                # one from `phase`, its round not yet drawn.
+                if phase in HALT_PASSES and run_loop.halt_requested():
+                    raise Halted(f"before the {HALT_PASSES[phase]}")
+                if phase == "writing":
+                    self._writer_pass(initial=True)
+                elif phase == "fixing":
+                    self._writer_pass(initial=False)
+                elif phase == "reviewing":
+                    self._review_round()
+                elif phase == "done":
+                    break
+                else:
+                    raise Bailout("protocol_failure",
+                                  details=f"unknown phase {phase!r}")
+            self._assert_current(plugin=False)
+            self._verify_review_on_file()
+            self._verify_plan_parses()
+            self._seed_outstanding()
+        except Bailout as bail:
+            self._bail(bail)
+        except KeyboardInterrupt:
+            self.log("interrupted — plan_state.json is current; rerun to "
+                     "continue")
+            print("Interrupted — rerun to continue.", file=sys.stderr)
+            sys.exit(130)
+        except Halted as halt:
+            self._exit_facts = {"halted": halt.where}
+            self.log(f"HALTED {halt.where}: {run_loop.HALT_FILE} is "
+                     "present — plan_state.json is current; rerun once "
+                     "it is gone")
+            print(f"Halted {halt.where}: {run_loop.HALT_FILE} is present "
+                  "— rerun once it is gone.", file=sys.stderr)
+            sys.exit(EXIT_HALTED)
 
         self.log(f"plan complete: {self.state['writer_rounds']} writer "
                  f"pass(es), review on file")

@@ -4998,7 +4998,7 @@ def test_run_start_creates_and_commits_the_report_once():
                                      *TAIL], repo_root=repo)
         assert run_to_exit(r) == 0
         record = (slice_dir / "close-out-record.md").read_text()
-        assert record.startswith("# Close-out record — slice 074 test slice\n")
+        assert record.startswith("# Close-out record — slice 074 — test slice\n")
         specs = r.fake_git.specs_ops()
         creates = [c for c in specs if c[2] == "commit"
                    and c[4] == "slice 074: close-out report"]

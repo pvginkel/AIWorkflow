@@ -4,6 +4,38 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-31 — What the rehearsal's stages got wrong in passing (v0.10.20)
+
+Five fixes, each seen in the rehearsal's two slices (P-111, E1):
+
+- **A stage's last message is one line.** Every stage turn ended on a report. Sessions retold
+  the document, listed findings, and offered or asked things in chat: "Shall I push it?",
+  "reopen it if you'd rather", "Two cases you haven't seen". `pilot.md` § The turns now says
+  that the line is the whole message: where the stage stands, the documents it waits on by
+  path. Both stage skills say it in their bounds, and every turn end they name reads "last
+  message" where it said "last line".
+- **Triage's close names no next command.** Both closes ended on "the next step is
+  `/dev:plan-slice 00N`". § 8's "planning is the operator's next move" invited the pointer.
+  The closing message is the receipt alone.
+- **`--slice` takes the folder's name.** The skills define `<slice>` as the slice folder. The
+  sessions passed the folder's name, and preflight took a number or a path but not a name. Every
+  session failed once and filed a fieldnote. Preflight now finds a folder by its name too, and
+  both stage skills define `<slice>` as the folder's path, which every tool takes.
+- **The plan loop renders no report.** It rendered `close-out-record.md`, and `close-out.md`
+  where there was an ask, at every exit. Nothing registers those files at planning, and the
+  promotion found them untracked: the first slice's session deleted a stub it took for the dry
+  run's. The report is the run's to render. The plan loop creates and seeds the store and
+  nothing more.
+- **An absorbed card keeps its state.** The promotion's tracker step assumed the cards routed
+  to the slice were open. Triage had already closed them as absorbed, so a card whose premise
+  the grounding found false went from Absorbed to Won't Do. Such a card now takes a comment
+  quoting why, and nothing else.
+- **The close-out is titled by the plan's one-liner.** Its title used the folder name's words
+  ("marks last line common words"), and its opening repeated `slice.md`'s title. Where planning
+  had moved the scope, that title was stale ("the last line counted"). The title and the
+  record's heading now come from `plan.md`'s `# Slice NNN — <what ships>`. Run-slice's render
+  passes no context describing the slice.
+
 ## 2026-10-31 — A push that deploys asks first while auto pilot is off (v0.10.19)
 
 Pilot's grants pre-approve the spec repo's push and hold back "a push that deploys" while auto

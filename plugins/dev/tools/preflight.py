@@ -542,11 +542,15 @@ def sync_roots(root: Path,
 
 
 def find_slice(cfg: project_config.ProjectConfig, given: str) -> Path:
-    """`--slice`'s folder: a directory path as given, else slice `given`
-    by number in the spec repo — zero-padded to the folders' three digits
-    when the number as given finds none."""
+    """`--slice`'s folder: a directory path as given, else the folder of
+    that name in the spec repo, else slice `given` by number — zero-padded
+    to the folders' three digits when the number as given finds none."""
     if Path(given).is_dir():
         return Path(given)
+    for parent in ("slices", "slices/backlog", "slices/completed"):
+        named = cfg.spec_repo / parent / given
+        if "/" not in given and named.is_dir():
+            return named
     nums = [given]
     if given.isdigit() and given.zfill(3) != given:
         nums.append(given.zfill(3))
@@ -559,7 +563,7 @@ def find_slice(cfg: project_config.ProjectConfig, given: str) -> Path:
          f"directory, and the spec repo {cfg.spec_repo} has no slice "
          f"{' or '.join(nums)} under slices/, slices/backlog/ or "
          f"slices/completed/.",
-         "Give the slice's number or its folder's path.")
+         "Give the slice's number, its folder's name or its folder's path.")
 
 
 def plan_targets(root: Path, slice_dir: Path) -> set[Path]:
@@ -1027,8 +1031,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--for", dest="profile", required=True,
                         choices=sorted(PROFILES), help="which command's profile to run")
-    parser.add_argument("--slice", metavar="N|PATH",
-                        help="plan and run: the slice (its number or folder) "
+    parser.add_argument("--slice", metavar="N|NAME|PATH",
+                        help="plan and run: the slice (its number, its "
+                             "folder's name or its folder's path) "
                              "whose plan's Targets must not name a repo the "
                              "environment declares and has not cloned; under "
                              "plan, its Targets may also block the sync")
