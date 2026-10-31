@@ -10526,10 +10526,16 @@ class RunLoop:
                  # one a render removed is committed as removed
                  if p.exists() or self.specs_git("ls-files", "--", str(p)).strip()]
         self._assert_spec_on_base()
-        if paths and self.specs_git("status", "--porcelain", "--", *paths):
+        changed = self.specs_git("status", "--porcelain", "--", *paths) if paths else ""
+        if changed:
             self.specs_git("add", "--", *paths)
             self.specs_git("commit", "-m", message, "--", *paths)
-            self.log(f"{label} committed {self.report_path.name}: "
+            # the files the commit took, by name: a report with no ask has
+            # no close-out.md
+            took = {Path(line[3:].strip().strip('"')).name
+                    for line in changed.splitlines() if line.strip()}
+            names = [Path(p).name for p in paths if Path(p).name in took]
+            self.log(f"{label} committed {', '.join(names) or 'the close-out report'}: "
                      f"{message}")
         return self.specs_git("rev-parse", "HEAD")
 

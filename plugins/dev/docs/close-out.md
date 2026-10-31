@@ -326,17 +326,19 @@ them and the one recommended; every other entry a `decision` on its proposal —
 table brought it for a reason of its own, the one that reason makes: a card for the repository
 the fix lives in, a phase for a planned slice, holding it for a slice not created yet — and a
 `question` where nobody proposed anything. The front matter carries the title, a summary over
-more than one ask and the brief's `step`; the shared context, the run in a line, what shipped,
-what the wrap-up settled, and the record attached. The labels, the route, the grade, the run
-header and the old page's sections are not on it. A report with no ask renders no document.
+more than one ask and the brief's `step`, and the document opens on its first ask, after the
+session's own context where it gave one. The run, what shipped and what the wrap-up settled are
+the record's, and so are the labels, the route, the grade and the old page's sections. A report
+with no ask renders no document.
 
-**`close-out-record.md` is the record**, attached to the document: the run header, what was
-ruled and what was done on it, the operator's words verbatim and an answer Pilot chose said as
+**`close-out-record.md` is the record**, attached to the document: the run header, what
+shipped and what the wrap-up settled, what was ruled and what was done on it, the operator's words verbatim and an answer Pilot chose said as
 Pilot's; what is asked and open, under the heading it is asked by, with the trail its section
 leaves out — the author's own text where a restatement took its place, every note and the
 wrap-up's mark; what the table closed, with its consequence, its
 labels in words, its evidence and the ground of the close, so that a close can be questioned
-from one line; and the record — the run's events, then every entry struck, with its reason.
+from one line; and the record — the run's events, then every entry struck, with its reason,
+which keeps the route of an entry the table closed when the report's close struck it.
 
 `close_out.py show <id>` prints an entry in full — its restatement, its author's body, every
 note, its fields, labels, marks and ruling — and is how the wrap-up, the continuation and a

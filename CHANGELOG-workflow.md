@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-31 — The close-out opens on its asks, and a closed entry keeps why (v0.10.21)
+
+From the end-of-E1 reading of the rehearsal's documents (P-111):
+
+- **The document opens on its first ask.** Its opening carried the run in a line, what shipped
+  and what the wrap-up fixed ("**The run.** … **What shipped.** P1 … **The wrap-up** fixed T1"),
+  the account the operator does not read (synthesis 1.4, 6.5), with a bare id among it. The
+  document now holds only the session's own context, where it gives one, before its first ask.
+  What shipped and what the wrap-up settled stand under the record's run header.
+- **An entry the table closed keeps its route.** A report with nothing to ask is closed at once,
+  and the close struck every live entry "closed with the report". Struck, an entry has no route,
+  so the record showed slice 003's B2 — a silent wrong count, the very harm its slice was ruled
+  against — as "· nit~~ — closed with the report" and nothing else. The close's reason now ends
+  on the route its labels took: "as the table routed it: it needs a fault".
+- **The report commit's log line names what it took.** It read "committed close-out.md" for a
+  report with no ask, which has no `close-out.md`. It now names the files committed.
+
 ## 2026-10-31 — What the rehearsal's stages got wrong in passing (v0.10.20)
 
 Five fixes, each seen in the rehearsal's two slices (P-111, E1):

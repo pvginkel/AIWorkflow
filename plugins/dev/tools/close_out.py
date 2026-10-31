@@ -1314,10 +1314,13 @@ def close_report(slice_dir: Path | str, by: str | None = None,
     """Close the report once the continuation has carried out its answers:
     every entry still live is struck as closed with the report, but one that
     holds a ruling nobody carried out, which stays, and a report that keeps
-    one is not closed. Returns how many entries were closed, and the ids
+    one is not closed. An entry the table closed keeps why in its reason —
+    the route its labels took — since the strike puts it in the record, where
+    no route is computed. Returns how many entries were closed, and the ids
     that stay."""
     day = _date(date)
     who = _collapse(by) or None
+    touched, stages = touched_repos(slice_dir), slice_stages(slice_dir)
     with _writing(slice_dir) as store:
         if store.get("closed"):
             raise ReportError(f"the report was closed on {store['closed']['date']}")
@@ -1328,7 +1331,11 @@ def close_report(slice_dir: Path | str, by: str | None = None,
             if _pending(entry):
                 stay.append(entry["id"])
                 continue
-            _strike(entry, f"closed with the report, {day}", who, None, day)
+            key, words = route(entry, touched, stages)
+            reason = f"closed with the report, {day}"
+            if key.startswith("closed:"):
+                reason += f", as the table routed it: {words.removeprefix('closed — ')}"
+            _strike(entry, reason, who, None, day)
             n += 1
         if not stay:
             store["closed"] = {"date": day, "by": who}
@@ -2749,23 +2756,25 @@ def _wrap_up_said(store: dict) -> str | None:
     return f"**The wrap-up** {' and '.join(said)}." if said else None
 
 
-def _context(store: dict, slice_dir: Path | str) -> list[str]:
-    """The paragraphs the asks share: those the session gave (`render
-    --context`), then the run in a line, what shipped, what the wrap-up
-    settled, and where the record is."""
-    paras = list(store.get("context") or [])
-    state = _state(slice_dir)
-    if state is not None:
-        paras.append(f"**The run.** {run_header(state, slice_dir).removeprefix('Run: ')}.")
+def _context(store: dict) -> list[str]:
+    """The paragraphs before the first ask: those the session gave
+    (`render --context`) and nothing else. The document opens on its asks;
+    the run, what shipped and what the wrap-up settled are the record's
+    (`_account`)."""
+    return [_prose(p.split("\n")) for p in store.get("context") or []]
+
+
+def _account(store: dict, slice_dir: Path | str) -> list[str]:
+    """The run's account under the record's header, a paragraph each: what
+    shipped, and what the wrap-up settled."""
+    paras = []
     shipped = _shipped(slice_dir)
     if shipped:
         paras.append("**What shipped.** " + "; ".join(shipped) + ".")
     wrap_up = _wrap_up_said(store)
     if wrap_up:
         paras.append(wrap_up)
-    paras.append(f"**The record**, `{RECORD_NAME}`, attached, holds the rest: what the "
-                 "table closed, the run's events, and every entry struck.")
-    return [_prose(p.split("\n")) for p in paras]
+    return paras
 
 
 def _document(store: dict, slice_dir: Path | str) -> dict | None:
@@ -2790,7 +2799,9 @@ def _document(store: dict, slice_dir: Path | str) -> dict | None:
             f"Slice {num}'s close-out: " + _join([SUMMARY_WORDS[p] for p in present]))
     if store.get("step"):
         doc["step"] = store["step"]
-    doc["context"] = _context(store, slice_dir)
+    context = _context(store)
+    if context:
+        doc["context"] = context
     doc["entries"] = entries
     return doc
 
@@ -2804,6 +2815,8 @@ def _record(store: dict, slice_dir: Path | str) -> str:
     out = [f"# Close-out record — slice {num} — {name}" if name
            else f"# Close-out record — slice {num}", "",
            *_wrap(asks.escape_tags(_header(slice_dir)))]
+    for para in _account(store, slice_dir):
+        out += ["", *_wrap(asks.escape_tags(para))]
     closed = store.get("closed")
     if closed:
         said = closed.get("words") or (f"by {closed['by']}" if closed.get("by") else "")

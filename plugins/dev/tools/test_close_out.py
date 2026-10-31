@@ -2346,12 +2346,12 @@ def test_render_header_with_and_without_state_and_stamp():
         assert record.count("Run:") == 1
         # wrapped at the report's width
         assert all(len(line) <= close_out.HEADER_WIDTH for line in record.splitlines())
-        # the document carries the run in its context, once there is an ask
+        # the document opens on its first ask: the run is the record's alone
         run_cli("append", slice_dir, *ACTION)
         close_out.render_report(slice_dir)
-        assert ("**The run.** 2026-08-14 19:49 → 23:53 · 11 phases (8 planned, P9, P10, "
-                "P11 appended) · 2 bail-outs · 1 test round · doc phase done · $118.41 "
-                "(planner 18 %, research 4 %, rework 14 %).") in report(slice_dir)
+        doc = report(slice_dir)
+        assert "Run:" not in doc and "**The run.**" not in doc
+        assert doc.split("---\n\n", 1)[1].startswith("## "), doc
 
 
 def test_run_header_pieces():
@@ -2992,10 +2992,12 @@ def test_render_writes_the_asks_as_the_document_pilot_reads():
             "---\ntitle: Close-out of slice 007 — argocd tools presync hook\n"
             "summary: \"Slice 007's close-out: what is yours to rule or to do, the cards "
             "asked for, what no wrap-up reached and what nobody routed\"\nstep: T7\n---\n")
-        assert ("**The run.** 2026-08-14 19:49 → 23:53 · 11 phases (8 planned, P9, P10, "
-                "P11 appended) · 2 bail-outs · 1 test round · doc phase done.") in doc
-        assert "**What shipped.** P1 the hook." in doc
-        assert "**The wrap-up** fixed B9, a commit each." in doc
+        # it opens on its first ask; the run's account is the record's
+        assert doc.split("---\n\n", 1)[1].startswith("## "), doc
+        assert "**The run.**" not in doc and "**What shipped.**" not in doc
+        record = (slice_dir / "close-out-record.md").read_text()
+        assert "**What shipped.** P1 the hook." in record
+        assert "**The wrap-up** fixed B9, a commit each." in record
         # the blocks, each as its kind takes it
         assert ("```action id=A1\noptions:\n  - Done\n  - Not possible: say why\n"
                 "check: file deploy:jobs/nightly.yaml\n```") in doc
@@ -3172,6 +3174,26 @@ def test_absorb_reads_the_answers_back_into_rulings_the_continuation_carries_out
                 "2026-10-30T12:00:00Z — kept the design open") in ruled
         assert "**Ruling:** answer: deferred · to: T9 · chosen by Pilot" in ruled
         assert "## Asked" not in record
+
+
+def test_closing_the_report_keeps_why_the_table_closed_an_entry():
+    """A report with nothing to ask is closed at once, and an entry the
+    table closed keeps the route its labels took in its strike's reason,
+    which the record shows: once struck, no route is computed for it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *with_flags(DEFECT, trigger="fault"))           # B1
+        close_out.append_entry(slice_dir, "event", "resumed", "b", consequence="none")  # E1
+        assert close_out.route(entry_of(slice_dir, "B1"))[0] == "closed:fault"
+        assert close_out.close_report(slice_dir, by="run-slice", date="2026-10-31") == (2, [])
+        assert entry_of(slice_dir, "B1")["strike"]["reason"] == (
+            "closed with the report, 2026-10-31, as the table routed it: it needs a fault")
+        assert entry_of(slice_dir, "E1")["strike"]["reason"] == (
+            "closed with the report, 2026-10-31")
+        close_out.render_report(slice_dir)
+        record = (slice_dir / "close-out-record.md").read_text()
+        assert "as the table routed it: it needs a fault; struck by run-slice" in record
 
 
 def test_absorb_refuses_a_document_not_the_stores_and_an_undo_reopens_the_ask():

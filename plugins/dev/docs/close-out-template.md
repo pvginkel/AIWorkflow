@@ -89,14 +89,6 @@ summary: "Slice NNN's close-out: what is yours to rule or to do and the cards as
 step: T7
 ---
 
-**The run.** 2026-08-14 19:49 → 23:53 · 11 phases (8 planned, P9, P10, P11 appended) · ….
-
-**What shipped.** P1 <title>; P2 <title>.
-
-**The wrap-up** fixed B3 and P2, a commit each.
-
-**The record**, `close-out-record.md`, attached, holds the rest: what the table closed, the run's events, and every entry struck.
-
 ## a component that declares no tests: keep kc's exit 3, or add an exit 8?
 
 Shipped in P3 (4f1c2a9): `kc project test --project <component>` on a component without
@@ -143,11 +135,15 @@ Pilot's answer lines after its keys.
 ## The record
 
 ```markdown
-# Close-out record — slice NNN <the slice's name>
+# Close-out record — slice NNN — <the plan's one-liner, else the folder name's words>
 
 Run: 2026-08-14 19:49 → 23:53 · 11 phases (8 planned, P9–P11 appended) · 2 bail-outs ·
 1 test round · doc phase done · wrap-up landed · $118.41 (planner 18 %, research 4 %,
 rework 14 %)
+
+**What shipped.** P1 <title>; P2 <title>.
+
+**The wrap-up** fixed B3 and P2, a commit each.
 
 Closed: 2026-10-30 — by run-slice
 
@@ -184,11 +180,15 @@ Closed: 2026-10-30 — by run-slice
 ### E2 — The run stopped at P4 r2: the session hit its cap
 
 ### ~~B5 — <headline> · minor~~ — resolved by P4 (19640d9): suite re-run; struck by consult 1
+
+### ~~B8 — <headline> · nit~~ — closed with the report, 2026-10-30, as the table routed it: it needs a fault; struck by run-slice
 ```
 
 The run header is one block of plain lines written from `state.json` when the slice folder
 holds one — every piece present in the state, nothing guessed for the pieces that are not;
-`Run: <not yet stamped>` without it. **Ruled** is every entry with a ruling, its heading struck
+`Run: <not yet stamped>` without it. Under it stand what shipped, the phases `plan.md` stamps
+done, and what the wrap-up settled, each where there is any: the run's account, which the
+document does not carry. **Ruled** is every entry with a ruling, its heading struck
 once it is carried out, the ruling on one line, never wrapped: the answer lines, then ` — ` and
 what was done; then its trail, as Asked has it. **Asked** is what the document asks and nobody
 has answered, under the heading it is asked by, each with the trail its section leaves out: the
@@ -196,7 +196,8 @@ author's own text where a restatement took its place, then every note in order �
 relabel's, a replaced proposal or restatement — and the wrap-up's mark last.
 **Closed** is what the table closed, with the ground of the close. **Record** is the run's
 events that describe no problem, then what was struck and not ruled on, each by id, a struck
-one's reason up to its first `; ` (`show` has it whole). A section with nothing in it is left
+one's reason up to its first `; ` (`show` has it whole); an entry the table closed and the
+report's close struck keeps the route its labels took in that reason. A section with nothing in it is left
 out.
 
 ## The verbs

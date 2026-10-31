@@ -5396,8 +5396,9 @@ def test_the_drivers_entries_are_committed_before_the_next_dispatch():
         assert seen["role"] == ["E1", "B1"]
         # the store it committed is no reason for another commit
         assert seen["review"] == [BEFORE_P1_WRITER, "slice 074: P1 built"]
-        assert (f"[close-out] committed close-out.md: {BEFORE_P1_WRITER}"
-                in (slice_dir / "log.txt").read_text())
+        # the line names the files the commit took, the store alone here
+        log = (slice_dir / "log.txt").read_text()
+        assert f"[close-out] committed close-out.json: {BEFORE_P1_WRITER}" in log
 
 
 def test_a_render_changed_alone_is_not_committed_before_a_dispatch():
