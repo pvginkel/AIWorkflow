@@ -735,11 +735,17 @@ sessions in all.
   project. `main` was fast-forwarded from 0.9.147 to the branch head, 0.10.22, on the operator's
   word, with no merge commit. The ref came out of both shared homes, production KubeCoder's and
   kubecoder-dev's (through a Pebble work item on pilot-dev). Both marketplaces follow `main`.
-- [ ] **F2.** PilotProjects: `rules/stages.md` rewritten — the two commands, the brief's arguments,
+- [x] **F2.** PilotProjects: `rules/stages.md` rewritten — the two commands, the brief's arguments,
   what each stage registers, the ticket in the brief, what each fate means for the pass (§5.1);
   `rules/work-items.md`'s brief for a stage; the definition chat's skill given triage's substance
   — the standing-decisions check, the questions first with a recommendation, `slice.md` from
-  `project.md` (§5.4).
+  `project.md` (§5.4). Done 2026-10-31 as PilotProjects 65719cd.
+  - A slice is filed by a free-form work item that runs triage's steps 6 to 8 for a conversation
+    that already decided, from the opening and `project.md` verbatim.
+  - A stage's brief carries the plan's ticket and the grants text.
+  - Pilot's pass makes no card and folds nothing in a stage's document: the stage's continuation
+    carries out every fate.
+  - The requirements and a plan review's findings are routed as any choice (D103).
 - [ ] **F3.** PilotAppSpecs: `feed-model.md` §7 brought to what was built; `aiworkflow-redesign.md`
   reworked into the record of the points and their fates, or retired; `aiworkflow-structured-data.md`
   marked as the 0.9.93 survey it is; the ledger's F92 row ticked; the rulings of §1 and §9 as rows
