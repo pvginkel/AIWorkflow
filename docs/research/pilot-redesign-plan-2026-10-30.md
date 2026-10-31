@@ -746,14 +746,18 @@ sessions in all.
   - Pilot's pass makes no card and folds nothing in a stage's document: the stage's continuation
     carries out every fate.
   - The requirements and a plan review's findings are routed as any choice (D103).
-- [ ] **F3.** PilotAppSpecs: `feed-model.md` §7 brought to what was built; `aiworkflow-redesign.md`
+- [x] **F3.** PilotAppSpecs: `feed-model.md` §7 brought to what was built; `aiworkflow-redesign.md`
   reworked into the record of the points and their fates, or retired; `aiworkflow-structured-data.md`
   marked as the 0.9.93 survey it is; the ledger's F92 row ticked; the rulings of §1 and §9 as rows
   in `decisions.md` where they bind the record — triage as the definition chat's among them.
   PilotApp: `CLAUDE.md`'s dev-pipeline paragraph, `.aiworkflowrc` checked (unchanged).
   KubeCoderConfig: the `youtrack-usage` skill's "done is the operator's move" brought to the
   run's continuation moving the slice card to Resolved, its plugin version bumped; not before F1,
-  since the 0.9.x plugin still leaves done to the operator.
+  since the 0.9.x plugin still leaves done to the operator. Done 2026-10-31:
+  - PilotAppSpecs 06bff17: D104 to D109. F92 is delivered, and `aiworkflow-redesign.md` is kept
+    as the record of its points' fates, since the record cites their numbers.
+  - PilotApp c2c7bbe.
+  - KubeCoderConfig e78530f (0.14.12): the continuation moves a delivered slice to Done.
 - [x] **F4.** The AIWF cards closed (AIWF-36 already is). Done 2026-10-31, each with its §7 fate as
   the closing comment: AIWF-113, -88, -84 and -82 as Resolved, AIWF-35, -40 and -1 as Won't Do.
 - [ ] **F5.** The first slice through Pilot, the phone's layout (031), on 0.10.0.
