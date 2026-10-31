@@ -711,10 +711,17 @@ sessions in all.
   moved the halt and the nudge to E2, where Pilot's own pause writes the file. The loops' mid-run
   asks (the plan loop's exit 4, the run loop's questions) were never forced; their suites cover
   them.
-- [ ] **E2.** One rehearsal through pilot-dev: a test project, a free-form work item whose brief points
+- [x] **E2.** One rehearsal through pilot-dev: a test project, a free-form work item whose brief points
   at the branch's skill by path with `CLAUDE_PLUGIN_ROOT` named; the round trip watched —
   register, the pass, the operator's answer from the phone, the write-back, the continuation, a
-  clarification turn.
+  clarification turn. Done 2026-10-31 on Pebble, moved to private GitHub repos so that Pilot
+  could create its environments on kubecoder-dev. It ran over slice 004, planned and run, and
+  slice 005, planned only. The branch was installed in kubecoder-dev's shared home, so the briefs
+  opened `/dev:<stage>` rather than a path. The items were placed through pilot-dev's testing
+  route. Every step of the round trip was watched, and so were the push decision answered from
+  the phone, the halt through Pilot's pause (the loop exited 7 at its safe point and the nudge
+  resumed it) and one clarification put to the plan-slice conversation. What it showed for
+  Pilot rather than the plugin is carded in P (P-144, P-145) or ruled (§9).
 
 **Phase F — the cutover** (with implementation-plan step 17)
 
@@ -831,3 +838,10 @@ Recorded here as the operator gives them, dated, each naming the decision of §1
   - every stage pushes the spec repo at its end where the grants pre-approve it;
   - the size's tests figure is labelled, and the report commit's log line names its files.
 - The mid-run halt and the nudge are rehearsed in E2, not E1.
+- E2's rulings (2026-10-31):
+  - Pebble moves to private GitHub repos for E2, to delete after F.
+  - A slice's requirements went to the operator for now (P-143). After slice 005's plan review,
+    the operator reversed this: "If it can rule safely, let it." Pilot's pass rules a slice's
+    requirements and a plan review's findings as any choice outside the grants table (PilotAppSpecs
+    D103).
+  - Slice 005 is planned only, to exercise the clarification turn and the requirements' route.
