@@ -298,8 +298,10 @@ An improvement takes the first of these that fits:
 **A card request** is an entry that comes to the operator with a card asked for: by the table
 where the fix lives elsewhere (row 5), by the wrap-up where a likely problem is more than it
 can fix responsibly (row 8, `propose --card`). Its section is the card — the heading what the
-card would say, the body the card's text — and its proposal the line Agree files it on; the
-continuation files the section. Nothing is filed before the operator's word. **A request for the
+card would say, the body the card's text, at most 200 words together (`CARD_WORDS_MAX`, the
+tracker's limit for a card an agent writes, which `propose --card` and a restatement of a card
+request hold it to; the detail is the record's) — and its proposal the line Agree files it on;
+the continuation files the section. Nothing is filed before the operator's word. **A request for the
 operator's word** is the wrap-up's for an edit it would make but a rule of the project reserves
 for them (`propose --word`): it comes to them whatever the table's route, the entry restated as
 the exact edit and the rule, its proposal the line their assent makes it on, so that their

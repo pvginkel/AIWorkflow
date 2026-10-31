@@ -4,6 +4,21 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-31 — A card request's section is at most 200 words (v0.10.18)
+
+The rehearsal's second close-out (P-111, E1) filed its card request, AIWF-122, as its section
+word for word, as 0.10.16 has it: about 400 words. The tracker's convention caps a card an agent
+writes at 200. The first close-out's continuation had trimmed its card to fit, so the operator
+had agreed to text the card no longer held. The operator ruled that the section gives way.
+
+- **`CARD_WORDS_MAX`, 200 words, heading and body counted.** The card counted is the one
+  `show --card` prints: the heading, then the body, the consequence and the provenance.
+  `propose --card` refuses a longer section, and so does a restatement of an entry that is
+  already a card request. The error says to restate it shorter and leave the detail to the
+  record, where the author's text and every note already are.
+- **The wrap-up** writes a card request's section within the bound (`agents/wrap-up.md`), and
+  `close-out.md` § The routes says so where it defines a card request.
+
 ## 2026-10-31 — The requirements document holds no settled picks, and its opening is data (v0.10.17)
 
 The rehearsal's second slice (P-111, E1) put its requirements to the operator with three free

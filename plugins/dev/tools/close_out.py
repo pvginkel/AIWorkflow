@@ -82,8 +82,10 @@ and `close`. Nothing renders on a write. `append`, `amend`, `note` and
 fenced block (`asks.citation_problems`; the rule is `docs/spec-tree.md`
 § Citing a line), and `restate` does too; `append`, `amend` and `propose`
 refuse a proposal longer than `asks.PROPOSAL_MAX` once its lines are
-joined (`asks.proposal_problems`). The functions the loops call check
-neither, since a driver's text quotes tool output.
+joined (`asks.proposal_problems`); `propose --card`, and `restate` on a card
+request, refuse a section — the card it files — over `CARD_WORDS_MAX` words.
+The functions the loops call check neither of the first two, since a
+driver's text quotes tool output.
 
 The route is computed at every render, never stored: `route()` reads an
 entry's kind and labels, the repositories the slice touched, and the stage
@@ -1028,6 +1030,32 @@ MARKS = {
 }
 
 
+# A card request's section — the card it files, as `show --card` prints it:
+# its heading, then its body, consequence and provenance — is at most this
+# many words: the tracker's limit for a card an agent writes ("descriptions are
+# pointers, not mirrors"). What does not fit stays in the record, where the
+# author's text and every note already are.
+CARD_WORDS_MAX = 200
+
+
+def _card_text(entry: dict, vmap: dict[str, dict]) -> str:
+    """The card an entry files once its card request is agreed: the
+    section's heading, then its paragraphs."""
+    return "\n\n".join([_ask_headline(entry, vmap), *_section(entry)])
+
+
+def _card_problems(entry: dict, vmap: dict[str, dict]) -> list[str]:
+    """What keeps an entry's section from being the card it files: more
+    words than `CARD_WORDS_MAX`, heading and body counted."""
+    words = len(_card_text(entry, vmap).split())
+    if words <= CARD_WORDS_MAX:
+        return []
+    return [f"{entry['id']}'s section is {words} words, and a card request's is at most "
+            f"{CARD_WORDS_MAX}, heading and body counted: the tracker's limit for a card an "
+            f"agent writes. `restate` it shorter, the card's text alone: the detail stays in "
+            f"the record, where the author's text and every note already are"]
+
+
 def _proposal_note(who: str, day: str, old: str) -> dict:
     return {"by": who, "date": day, "text": [f"proposal replaced — was: {old}"],
             "history": "proposal"}
@@ -1081,6 +1109,10 @@ def propose_entry(slice_dir: Path | str, eid: str, by: str, text: str,
             raise ReportError(
                 f"{entry['id']} is not restated: the section is what Agree carries out, so "
                 f"`restate` it first — its heading {what} — and propose in one line")
+        if mark == "card":
+            problems = _card_problems(entry, _verification(slice_dir))
+            if problems:
+                raise ReportError(problems[0])
         _set_proposal(entry, who, day, proposal)
         if mark is not None:
             _mark(entry, mark, who, day, _lines(text.strip()))
@@ -1125,6 +1157,10 @@ def restate_entry(slice_dir: Path | str, eid: str, by: str, headline: str, body:
         if entry.get("strike"):
             raise ReportError(f"{entry['id']} is struck — a struck entry is settled")
         old = entry.get("restated")
+        if (entry.get("wrap_up") or {}).get("outcome") == "card":
+            problems = _card_problems({**entry, "restated": new}, _verification(slice_dir))
+            if problems:
+                raise ReportError(problems[0])
         said = {k: v for k, v in new.items() if k not in ("by", "date")}
         if old and {k: v for k, v in old.items() if k not in ("by", "date")} != said:
             entry["notes"].append(_restated_note(who, day, old))
@@ -2647,9 +2683,7 @@ def card_view(slice_dir: Path | str, ids: list[str]) -> str:
     vmap = _verification(slice_dir)
     cards = []
     for eid in ids:
-        entry = _find(store, eid)
-        cards.append(asks.escape_tags(
-            "\n\n".join([_ask_headline(entry, vmap), *_section(entry)])))
+        cards.append(asks.escape_tags(_card_text(_find(store, eid), vmap)))
     return "\n\n---\n\n".join(cards)
 
 

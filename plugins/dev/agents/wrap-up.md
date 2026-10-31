@@ -72,9 +72,12 @@ writer's uncommitted hunk in a file you commit rides your commit, which is accep
 
 **A card request** is the entry restated as the card (`restate`) — its heading what the card
 would say, its body the card's text: how the problem is reached, what a person then meets, what
-the fix takes and why it is beyond your bar — then the line Agree files it on (`propose --card`,
-such as "Card it in `<repo>`, as this section says; the fix: both rules"). The continuation files
-the section as it stands as the card. It is a request. You file nothing.
+the fix takes and why it is beyond your bar — in at most 200 words, heading and body counted,
+the tracker's limit for a card an agent writes; what does not fit is the record's, where the
+author's text and every note already are. Then the line Agree files it on (`propose --card`,
+such as "Card it in `<repo>`, as this section says; the fix: both rules"), which refuses a
+longer section. The continuation files the section as it stands as the card. It is a request.
+You file nothing.
 
 **A request for the operator's word** (`propose --word`) is for an edit within your bar that a
 rule of the project makes only on their word — its `CLAUDE.md`, its decision record. You do not

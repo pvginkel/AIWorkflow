@@ -1664,6 +1664,37 @@ def test_restate_gives_the_section_and_the_record_keeps_the_authors_text():
         assert code == 2 and "B1 is struck" in err
 
 
+def test_a_card_requests_section_is_at_most_the_trackers_card_length():
+    """The card an agreed card request files is its section, so the section
+    is at most `CARD_WORDS_MAX` words, heading and body counted: `propose
+    --card` refuses a longer one, and so does a restatement of a card
+    request; the detail stays in the record."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        long = " ".join(["word"] * close_out.CARD_WORDS_MAX)
+        restated(slice_dir, "B1", body=long)
+        code, _, err = run_cli("propose", slice_dir, "B1", "--by", WU, "--card",
+                               "--text", "Card it, as this section says.")
+        assert code == 2 and "B1's section is" in err and "at most 200" in err, err
+        assert "the detail stays in the record" in err
+        assert entry_of(slice_dir, "B1").get("wrap_up") is None
+        # a section within the bound is the card request…
+        restated(slice_dir, "B1", body="reached on every restart; the fix needs a design")
+        code, _, err = run_cli("propose", slice_dir, "B1", "--by", WU, "--card",
+                               "--text", "Card it, as this section says.")
+        assert code == 0, err
+        # …and a restatement of it is held to the same bound
+        code, _, err = run_cli("restate", slice_dir, "B1", "--by", WU, "--headline",
+                               "Card it", "--body", long)
+        assert code == 2 and "B1's section is" in err, err
+        assert entry_of(slice_dir, "B1")["restated"]["body"] == [
+            "reached on every restart; the fix needs a design"]
+        card = close_out.card_view(slice_dir, ["B1"])
+        assert len(card.split()) <= close_out.CARD_WORDS_MAX
+
+
 def test_a_proposal_is_one_line_of_at_most_the_bound():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
