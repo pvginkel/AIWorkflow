@@ -245,7 +245,7 @@ def a_config(**over):
               "spec_repo": None, "design_philosophy": None,
               "test_phase": True, "test_strategy": None,
               "doc_phase": True, "doc_plan": None,
-              "devlock_lease": None, "push": True}
+              "devlock_lease": None, "push": True, "push_deploys": True}
     fields.update(over)
     return preflight.project_config.ProjectConfig(**fields)
 
@@ -1582,6 +1582,24 @@ def test_a_pass_under_json_is_one_object_with_its_notes():
     with patched(preflight, **triage_stubs([], [removed])):
         code, stdout, _ = _main("triage", fake_subprocess())
     assert code is None and stdout == removed + "\n"
+
+
+def test_a_run_pass_under_json_says_what_the_runs_pushes_are():
+    """`/dev:run-slice` asks first before a push that deploys while Pilot's
+    auto pilot is off, so the run profile's pass says whether the run pushes
+    and whether its push deploys; the other profiles' passes do not."""
+    for over, said in (({}, {"enabled": True, "deploys": True}),
+                       ({"push_deploys": False}, {"enabled": True, "deploys": False}),
+                       ({"push": False, "push_deploys": False},
+                        {"enabled": False, "deploys": False})):
+        cfg = a_config(**over)
+        with patched(preflight, run_profile=lambda args, cfg=cfg: cfg):
+            code, report, stderr = run_json("run", fake_subprocess())
+        assert code is None and stderr == ""
+        assert report == {"result": "pass", "profile": "run", "notes": [], "push": said}
+    with patched(preflight, run_profile=lambda args: a_config()):
+        _, report, _ = run_json("plan", fake_subprocess())
+    assert "push" not in report
 
 
 def test_a_repo_planning_passes_over_is_a_note_of_the_sync_under_json():

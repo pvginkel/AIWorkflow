@@ -412,6 +412,9 @@ whole plan is a feature of the review, not a cost. Then:
   phase is clean and the push check below has passed. Under that hold pushing and rolling dev for
   verification is pre-authorized — the lock *is* the coordination — and so is pushing to
   production where the project's deploy path is a push: a slice is expected to reach production.
+  A push that deploys is the run's only once Pilot's grants allow it or the operator agreed to the
+  run's pushes before it launched (`/dev:run-slice`'s start, `push.deploys` in
+  [project-contract.md](project-contract.md)); a repo they did not agree to is a push hold.
   What is operator-gated is running a promotion pipeline — assume a project has one wherever it
   has more than one stage, unless its deploy-operations doc says the stages are separate
   environments with nothing promoted between them — except for a target a `prd` ruling names

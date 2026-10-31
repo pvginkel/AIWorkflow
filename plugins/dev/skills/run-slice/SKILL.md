@@ -12,9 +12,9 @@ halt, the cards, the fallback without Pilot — is `${CLAUDE_PLUGIN_ROOT}/docs/p
 restates none of it: it says what the run does in each turn, and where the turn ends.
 
 **The loop drives the slice, not you.** `run_loop.py` owns every phase's round, the completion
-consult, the test phase (it holds the devlock; pushing and rolling dev under that hold is
-pre-authorized), the doc phase and the wrap-up (`${CLAUDE_PLUGIN_ROOT}/docs/run-loop.md`). What it
-records is `${CLAUDE_PLUGIN_ROOT}/docs/runner-state.md`, and the close-out report is
+consult, the test phase (it holds the devlock and pushes, on the brief's grants or the
+operator's word at the start's step 3), the doc phase and the wrap-up
+(`${CLAUDE_PLUGIN_ROOT}/docs/run-loop.md`). What it records is `${CLAUDE_PLUGIN_ROOT}/docs/runner-state.md`, and the close-out report is
 `${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`. This session launches, waits, registers, carries out
 and commits. What has to be read — a bail to diagnose, an answer to carry into the plan, a
 question about the slice — goes to a sub-agent pointed at the slice folder, so the session stays
@@ -50,13 +50,24 @@ tool is `python3 ${CLAUDE_PLUGIN_ROOT}/tools/<tool>`. Run from the target code r
    a refused pull or a clone not made is the action's, and a restart ends this session. A failure
    with no slice folder to hold a document — no slice of that name in the spec repo, or no spec
    repo — ends the turn with its last line saying what failed and what fixes it.
-3. **Move the slice card** from planned to in progress, unless an earlier run moved it.
-4. **Launch, detached**: `run_loop.py run <slice> --detach --step <task>`, with `--resume`
+3. **A push that deploys asks first.** Where the brief carries grants that do not pre-approve a
+   push that deploys — Pilot's text while auto pilot is off — and preflight's pass says `push`
+   is `enabled` and `deploys`, the run's pushes go to the operator before anything moves. The
+   repos are the code repos `run_loop.py run <slice> --dry-run` names as `target=`, less any
+   `## Push holds` already holds; the spec repo's push is pre-approved and is not asked.
+   `asks.py init <slice> push --title "Slice <NNN>'s pushes" --step <task>`, then one
+   `decision`: its headline the pushes in a line, its body the repos and that a push of theirs
+   deploys, and its `--proposal` the line Agree pushes on ("Push this run's commits to
+   `<repos>` as it goes, the test phase's push deploying them"). Render it, register it, commit
+   `asks/`, and end the turn. It is asked once a run: a start that finds it answered goes on as
+   the continuation says, and with every such repo held there is nothing to ask.
+4. **Move the slice card** from planned to in progress, unless an earlier run moved it.
+5. **Launch, detached**: `run_loop.py run <slice> --detach --step <task>`, with `--resume`
    where `<slice>/state.json` exists. It returns once the run holds the slice, its last line the
    `next:` wait. Refused (exit 2) because another driver holds the slice, the run is live: wait
    on it, `run_loop.py wait <slice>`. Any other refusal — no plan, an agent definition missing —
    is an `action` document as in step 2.
-5. **Wait**, as below.
+6. **Wait**, as below.
 
 ## The wait, and the run's end
 
@@ -114,6 +125,11 @@ ask is read back with `asks.py absorb <document>`, and its ruling lands by what 
   bullet (`gate`, `accept`, `prd`; `${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md`). Without it the
   driver bails over the ruling again. A plan problem or a follow-up cap is corrected in `plan.md`
   as the ruling says.
+- **The run's pushes** — `Agree`: the start goes on at its step 4. Any other answer holds every
+  repo the ask named: a `- <repo> — <their words, quoted>` bullet each under `## Push holds`,
+  committed by name, and then the start's step 4. The run pushes none of them, and the close-out
+  carries each held push as an action (`${CLAUDE_PLUGIN_ROOT}/docs/run-loop.md`, the push
+  check). Deferred, the run is not started, as stop here leaves it.
 - **A pre-run action, done** — one whose check is `manual`, or that has none, is struck in the
   close-out store, `close_out.py strike <slice> <id> --reason "done: '<their note>'" --by
   run-slice`, and committed; one with a check is the run's to evaluate when it resumes.
@@ -192,8 +208,9 @@ as the continuation reads it.
   uncommitted work on it or is another run's branch, and the log says which.
 - **The suite is green before every slice** — preflight does not run it. A failure during the run
   is the slice's regression; never accept "flaky" or "pre-existing" from anyone.
-- **Promotion is the operator's; pushing is not.** The devlock hold pre-authorizes the pushes the
-  slice needs — for dev verification, and to production where the project deploys on a push.
+- **Promotion is the operator's; pushing is not.** The brief's grants, or the operator's word on
+  the start's push ask, authorize the pushes the slice needs — for dev verification, and to
+  production where the project deploys on a push — and the devlock hold serialises them.
   Running a promotion pipeline is the operator's separate decision: assume a project has one
   wherever it has more than one stage, unless its deploy-operations doc says the stages are
   separate environments with nothing promoted between them.

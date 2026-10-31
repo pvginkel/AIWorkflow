@@ -283,8 +283,8 @@ before writing it down**.
 repo with nothing to deploy-verify or nothing to document — an Ansible tree, a config repo — and
 the wrong answer for a repo that simply has not written the doc yet. The difference is the
 operator's to state, so put the question to them rather than inferring it from an empty `docs/`.
-Same for `[push] enabled` and `[devlock] lease`: ask what the repo deploys and whether anything
-contends over it.
+Same for `[push] enabled`, `[push] deploys` and `[devlock] lease`: ask what the repo deploys and
+whether anything contends over it.
 
 While in `CLAUDE.md`, apply the diet in `project-contract.md` ("Keeping `CLAUDE.md` disciplined") —
 one screen, every fact stated once, demote to a `docs/` topic doc rather than inline. A repo

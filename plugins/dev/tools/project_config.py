@@ -26,6 +26,7 @@ TOML, parsed with `tomllib` (read-only, stdlib). Nothing writes this file —
 
     [push]
     enabled = true
+    deploys = true
 
 Paths are absolute or relative to the repo root, except `devlock.lease`, which
 is relative to the **spec repo** — the lease is the one key whose subject is
@@ -34,8 +35,12 @@ instance.
 
 Defaults are the pipeline's full behaviour, so a repo that names only its
 pointers runs every phase: `test_phase.enabled`, `doc_phase.enabled` and
-`push.enabled` are all true when unstated. The devlock is the exception — a
-lease that is not named cannot be taken, so an absent `[devlock]` is off.
+`push.enabled` are all true when unstated. So is `push.deploys`, whether a
+run's push deploys something — the project's dev stage rolled, a build
+triggered: a push not known to be harmless is taken as one that deploys, which
+Pilot's grants hold back while auto pilot is off (`/dev:run-slice` asks first).
+The devlock is the exception — a lease that is not named cannot be taken, so an
+absent `[devlock]` is off.
 
 Unknown keys and tables are rejected rather than ignored, so a typo
 (`enable = false`) fails loudly instead of silently running a phase the project
@@ -60,7 +65,7 @@ _TABLES = {
     "test_phase": {"enabled", "strategy"},
     "doc_phase": {"enabled", "plan"},
     "devlock": {"lease"},
-    "push": {"enabled"},
+    "push": {"enabled", "deploys"},
 }
 
 
@@ -84,6 +89,7 @@ class ProjectConfig:
     doc_plan: Path | None
     devlock_lease: Path | None
     push: bool
+    push_deploys: bool
 
 
 def config_path(root: Path) -> Path:
@@ -174,6 +180,7 @@ def load(root: Path) -> ProjectConfig:
     test_on = _bool(test_tbl, "enabled", "test_phase.enabled", path, True)
     doc_on = _bool(doc_tbl, "enabled", "doc_phase.enabled", path, True)
     push_on = _bool(push_tbl, "enabled", "push.enabled", path, True)
+    deploys = _bool(push_tbl, "deploys", "push.deploys", path, True)
     strategy = _string(test_tbl, "strategy", "test_phase.strategy", path)
     doc_plan = _string(doc_tbl, "plan", "doc_phase.plan", path)
     lease = _string(lock_tbl, "lease", "devlock.lease", path)
@@ -188,6 +195,14 @@ def load(root: Path) -> ProjectConfig:
                 f"`[{table}]` in {path} is disabled but still names "
                 f"`{key}`. Delete the pointer, or set `enabled = true` — a "
                 f"phase cannot be off and have a procedure doc.")
+
+    # Whether a push deploys is a fact about the pushes a run makes; with
+    # none, the key says something the file does not do.
+    if "deploys" in push_tbl and not push_on:
+        raise ConfigError(
+            f"`[push]` in {path} is disabled but still sets `deploys`. Delete "
+            f"it, or set `enabled = true` — a run that pushes nothing deploys "
+            f"nothing.")
 
     # The lease lives in the spec repo — the shared mount every contending repo
     # can see — so a lease named with nowhere to resolve it against is broken,
@@ -210,4 +225,5 @@ def load(root: Path) -> ProjectConfig:
         doc_plan=_resolve(root, doc_plan) if doc_plan else None,
         devlock_lease=_resolve(spec_repo, lease) if lease else None,
         push=push_on,
+        push_deploys=push_on and deploys,
     )

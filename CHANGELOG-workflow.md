@@ -4,6 +4,29 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-31 — A push that deploys asks first while auto pilot is off (v0.10.19)
+
+Pilot's grants pre-approve the spec repo's push and hold back "a push that deploys" while auto
+pilot is off. Nothing in a run asked: the test phase pushed on the project's standing
+`push.enabled`, which for PilotApp rolls pilot-dev. In the rehearsal (P-111, E1) the session
+asked "Shall I push it?" in chat at the run's end instead. The operator ruled that the run asks
+once, before it launches.
+
+- **`push.deploys`** in `.aiworkflowrc`'s `[push]`, default true: a push not known to be
+  harmless counts as one that deploys. False says the push reaches `origin` and nothing else.
+  It is refused beside `enabled = false`.
+- **Preflight's `run` pass** reports `"push": {"enabled", "deploys"}`, for the stage.
+- **`/dev:run-slice`'s start, step 3.** The brief's grants may not pre-approve a push that
+  deploys, which is Pilot's text with auto pilot off. If so, and the run pushes a repo that
+  deploys, the session puts the run's pushes as one decision before it moves the card or
+  launches. The repos come from the dry run's targets, less the plan's holds; the spec repo's
+  push is not asked. Agree launches. Any other answer holds each repo under `## Push holds`, in
+  the operator's words, and the run launches without pushing them, so the close-out carries each
+  held push as an action. Deferred, the run does not start.
+- **A decision with a proposal, not a confirmation.** The document format reserves `type:
+  confirmation` and `because` for Pilot. A work item names the act in a proposal, and Pilot's
+  pass asks.
+
 ## 2026-10-31 — A card request's section is at most 200 words (v0.10.18)
 
 The rehearsal's second close-out (P-111, E1) filed its card request, AIWF-122, as its section

@@ -42,6 +42,7 @@ lease = "scripts/.devlock.lock"
 
 [push]
 enabled = true
+deploys = true
 ```
 
 Paths are absolute or relative to the repo root, except `devlock.lease` — the one key whose subject
@@ -81,6 +82,12 @@ every phase and nobody loses one by omission. Each switch is an opt-*out*:
   as a project's first deploy slice does, takes effect in that same run. This is the project's
   standing mode; a single slice holding a single repo is [`plan.md`'s `## Push holds`](run-loop.md)
   instead, which is reported as an outstanding action where this is not.
+- **`push.deploys`** (default true) — whether a run's push deploys something: rolls the project's
+  dev stage, triggers a build that ships. Pilot's grants hold back "a push that deploys" while auto
+  pilot is off, so `/dev:run-slice` asks the operator first and launches on their word; a push not
+  known to be harmless counts as one that deploys. Set it false for a project whose push reaches
+  `origin` and nothing else. Refused beside `enabled = false`: a run that pushes nothing deploys
+  nothing. Preflight's `run` pass reports both keys ([preflight.md](preflight.md) § Output).
 - **`devlock.lease`** — the flock inode for the cooperative occupancy lease over a single dev
   instance, held for the test phase and again for the doc landing's push — never for the doc
   phase's writing ([run-loop.md](run-loop.md)). This one defaults **off**: one dev instance is a

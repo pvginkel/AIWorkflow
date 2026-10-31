@@ -53,6 +53,23 @@ def test_a_config_naming_only_its_pointers_runs_every_phase():
                         '[test_phase]\nstrategy = "t.md"\n'
                         '[doc_phase]\nplan = "d.md"\n')
         assert cfg.test_phase and cfg.doc_phase and cfg.push
+        assert cfg.push_deploys, "a push not known to be harmless deploys"
+
+
+def test_a_push_that_deploys_nothing_says_so_and_a_push_switched_off_deploys_nothing():
+    """`push.deploys` is what `/dev:run-slice` asks first on while Pilot's
+    auto pilot is off: false for a project whose push is harmless, refused
+    beside a push switched off, which deploys nothing."""
+    with tempfile.TemporaryDirectory() as tmp:
+        assert not load(tmp, 'spec_repo = "../specs"\n'
+                             '[push]\ndeploys = false\n').push_deploys
+        assert load(tmp, 'spec_repo = "../specs"\n'
+                         '[push]\ndeploys = true\n').push_deploys
+        assert not load(tmp, 'spec_repo = "../specs"\n'
+                             '[push]\nenabled = false\n').push_deploys
+        refuses(tmp, 'spec_repo = "../specs"\n[push]\nenabled = false\ndeploys = true\n',
+                "disabled but still sets `deploys`")
+        refuses(tmp, '[push]\ndeploys = "yes"\n', "must be true or false")
 
 
 def test_an_unnamed_lease_is_a_devlock_that_never_engages():

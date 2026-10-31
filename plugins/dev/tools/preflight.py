@@ -1045,20 +1045,25 @@ def main() -> None:
     NOTES = []
     try:
         try:
-            run_profile(args)
+            cfg = run_profile(args)
         except Failure as failure:
             report = {"result": "fail", "profile": args.profile,
                       **failure.data(), "notes": NOTES}
             print(json.dumps(report, indent=2))
             raise
-        print(json.dumps({"result": "pass", "profile": args.profile,
-                          "notes": NOTES}, indent=2))
+        report = {"result": "pass", "profile": args.profile, "notes": NOTES}
+        if args.profile == "run" and cfg is not None:
+            # What the run's pushes are, for the stage that asks before a
+            # push that deploys while Pilot's auto pilot is off.
+            report["push"] = {"enabled": cfg.push, "deploys": cfg.push_deploys}
+        print(json.dumps(report, indent=2))
     finally:
         NOTES = None
 
 
-def run_profile(args) -> None:
-    """The profile's checks in order; a Failure at the first that fails."""
+def run_profile(args) -> project_config.ProjectConfig | None:
+    """The profile's checks in order; a Failure at the first that fails.
+    Returns the project's config, where the profile loads it."""
     checks = PROFILES[args.profile]
 
     # kc first (env gate), before anything that shells out to it; the control
@@ -1094,6 +1099,7 @@ def run_profile(args) -> None:
     if "baseline_build" in checks:
         check_baseline_build(root)
     # Silent on success, but for the notes.
+    return cfg
 
 
 if __name__ == "__main__":

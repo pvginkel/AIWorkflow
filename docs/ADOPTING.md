@@ -70,7 +70,8 @@ plan = "<path to the project's slice-doc-plan doc>"
 
 **A project need not run every phase.** `[test_phase] enabled = false` and `[doc_phase] enabled =
 false` switch them off (both default true, so nobody loses a phase by omission), `[push] enabled =
-false` keeps a run's commits local, and `[devlock] lease = "..."` names the occupancy lease for a
+false` keeps a run's commits local, `[push] deploys = false` says a push deploys nothing (so no
+run asks first while Pilot's auto pilot is off), and `[devlock] lease = "..."` names the occupancy lease for a
 project that has one dev instance to contend over — off unless named. The full schema, and what
 each switch changes in the loop, is in
 [`project-contract.md`](../plugins/dev/docs/project-contract.md).
