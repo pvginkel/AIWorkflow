@@ -760,7 +760,10 @@ sessions in all.
   - KubeCoderConfig e78530f (0.14.12): the continuation moves a delivered slice to Done.
 - [x] **F4.** The AIWF cards closed (AIWF-36 already is). Done 2026-10-31, each with its §7 fate as
   the closing comment: AIWF-113, -88, -84 and -82 as Resolved, AIWF-35, -40 and -1 as Won't Do.
-- [ ] **F5.** The first slice through Pilot, the phone's layout (031), on 0.10.0.
+- [ ] **F5.** The first slice through Pilot, the phone's layout (031), on 0.10.0. Since the cutover
+  of 2026-10-31, which came ahead of self-hosting (PilotAppSpecs D111), it is implementation-plan
+  step 17's first slice: the sweep's four bugs (P-64, P-103, P-28, P-76), on 0.10.22, in the
+  PilotApp project the operator creates in production.
 
 ## 9. Rulings
 
