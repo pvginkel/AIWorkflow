@@ -65,6 +65,12 @@ leaves `step` out.
 The grants bind the session as they bind any work item, and the handbook's standing preferences
 are applied in every ask.
 
+**The spec repo is pushed at the stage's end**, where the grants pre-approve a push of the spec
+repository, as both of Pilot's texts do: once the stage is over — planned, done, or stopped
+where it stood — and after its last commit, a plain `git push` of the spec repo's branch, never
+forced. A refused push is named in the turn's last message and left as it is. Without that
+grant, nothing is pushed.
+
 ## The documents
 
 Every ask is a document in the slice's folder in the spec repo, rendered from a store by
@@ -115,8 +121,11 @@ A turn opening "Pilot asks about <path>:" is Pilot's pass asking the writer abou
 not read: a line `- <local id>: <question>` per block, grouped by document, closing with "Answer
 each under a heading per block id (`## D2`, `## D4`); register nothing, start nothing; then end
 your turn." The skill has a fresh sub-agent, pointed at the slice's folder, answer each question
-from what the folder holds, quoting what supports the answer; the session never answers from its
-own reading. The turn's last message is the answers and nothing else, each under `## <local id>`,
+from what the folder holds; the session never answers from its own reading. The operator reads
+the answers beside their blocks, so the sub-agent loads `/dev:writing` first: each answer opens
+on the answer, in the operator's terms, with the words that support it quoted and not the file
+or the section they sit in as the argument, and what it leaves open carries what its writer
+would do about it. The turn's last message is the answers and nothing else, each under `## <local id>`,
 or `## <path> <local id>` where two asked documents share an id: Pilot splits that message by its
 headings and shows each part beside its block.
 

@@ -54,6 +54,7 @@ def test_a_config_naming_only_its_pointers_runs_every_phase():
                         '[doc_phase]\nplan = "d.md"\n')
         assert cfg.test_phase and cfg.doc_phase and cfg.push
         assert cfg.push_deploys, "a push not known to be harmless deploys"
+        assert not cfg.push_deploys_stated, "and the file did not say so"
 
 
 def test_a_push_that_deploys_nothing_says_so_and_a_push_switched_off_deploys_nothing():
@@ -63,8 +64,8 @@ def test_a_push_that_deploys_nothing_says_so_and_a_push_switched_off_deploys_not
     with tempfile.TemporaryDirectory() as tmp:
         assert not load(tmp, 'spec_repo = "../specs"\n'
                              '[push]\ndeploys = false\n').push_deploys
-        assert load(tmp, 'spec_repo = "../specs"\n'
-                         '[push]\ndeploys = true\n').push_deploys
+        stated = load(tmp, 'spec_repo = "../specs"\n[push]\ndeploys = true\n')
+        assert stated.push_deploys and stated.push_deploys_stated
         assert not load(tmp, 'spec_repo = "../specs"\n'
                              '[push]\nenabled = false\n').push_deploys
         refuses(tmp, 'spec_repo = "../specs"\n[push]\nenabled = false\ndeploys = true\n',

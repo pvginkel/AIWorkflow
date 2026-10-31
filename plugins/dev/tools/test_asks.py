@@ -712,8 +712,9 @@ def test_the_opening_renders_from_the_typed_fields():
         "**A premise that does not hold.** AIWF-120 says count misses a last line with no "
         "newline. It does not: the file is split on whitespace. The slice does nothing for "
         "it.\n\n"
-        "**The size.** About 3 phases, over Pebble and PebbleSpecs. Four `top` tests "
-        "expect \\<the> and change.\n\n"
+        "**The size.** About 3 phases, over Pebble and PebbleSpecs.\n\n"
+        "**The existing tests that change.** Four `top` tests expect \\<the> and "
+        "change.\n\n"
         "**Left out of this slice.** A UTF-16 file stops pebble with a decoding error.\n\n"
     ), opening
     store = opening_store(

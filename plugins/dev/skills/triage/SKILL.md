@@ -234,6 +234,10 @@ ruling for what it does:
 - **A close or a later is binding**: no re-derivation, no argument. A close closes the card as
   rejected, with a one-line comment carrying the ruling ("closed at triage: duplicate of
   KC-12"); a later takes the deferred disposition.
+- **An answer that takes an option the message put takes the whole option.** The option's own
+  text is recorded beside the operator's words, in the requirement it rules and in the Q&A, and
+  what the option carried is ruled with it: never written up as open, never left for the planner
+  to ask again. A word that goes against part of the option rules that part, as the word says.
 - **A ruling that limits a card to the literal change it names is a ceiling.** It is recorded
   verbatim and bounds the slice that carries it, the planner included.
 - **A ruling that splits a card** makes the named part its own item, filed or fated as the ruling

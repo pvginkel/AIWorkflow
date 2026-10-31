@@ -38,6 +38,8 @@ takes, `<task>` the brief's plan task, and a tool is
   `render`), its words under `/dev:writing`, `--step <task>`, registered and backed as pilot.md
   § The documents says. Commit every store and document by name before the turn ends
   (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`).
+- **The spec repo is pushed at the stage's end**, after its last commit, where the brief's grants
+  pre-approve it (pilot.md § The brief): a refused push is named in the last message.
 
 ## The start
 
@@ -57,8 +59,12 @@ takes, `<task>` the brief's plan task, and a tool is
    repos are the code repos `run_loop.py run <slice> --dry-run` names as `target=`, less any
    `## Push holds` already holds; the spec repo's push is pre-approved and is not asked.
    `asks.py init <slice> push --title "Slice <NNN>'s pushes" --step <task>`, then one
-   `decision`: its headline the pushes in a line, its body the repos and that a push of theirs
-   deploys, and its `--proposal` the line Agree pushes on ("Push this run's commits to
+   `decision`: its headline the pushes in a line; its body the repos, why a push of theirs
+   counts as deploying — `.aiworkflowrc` says so, or it says nothing and the default takes a
+   push not known to be harmless as one that deploys (preflight's `deploys_stated`) — and what
+   a push of each is known to reach, which a sub-agent reads from the project's test-phase
+   strategy doc: the pipeline or the stage it starts, or plainly that the doc names none; and
+   its `--proposal` the line Agree pushes on ("Push this run's commits to
    `<repos>` as it goes, the test phase's push deploying them"). Render it, register it, commit
    `asks/`, and end the turn. It is asked once a run: a start that finds it answered goes on as
    the continuation says, and with every such repo held there is nothing to ask.
@@ -176,8 +182,8 @@ registers it and ends the turn, and the card waits for that document's continuat
 
 ## The clarification
 
-A fresh sub-agent pointed at the slice folder answers each question (pilot.md § The
-clarification); one about a close-out entry is answered as close-out.md says. The turn's last
+A fresh sub-agent pointed at the slice folder loads `/dev:writing` and answers each question
+(pilot.md § The clarification); one about a close-out entry is answered as close-out.md says. The turn's last
 message is its answers, as the sub-agent gave them.
 
 ## The nudge

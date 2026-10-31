@@ -36,6 +36,8 @@ tool takes, `<task>` the brief's plan task, and a tool is
   rendered, registered and backed as pilot.md § The documents says. Commit every store, document
   and file of the folder you changed by name before the turn ends
   (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`).
+- **The spec repo is pushed at the stage's end**, after its last commit, where the brief's grants
+  pre-approve it (pilot.md § The brief): a refused push is named in the last message.
 
 ## The start
 
@@ -125,6 +127,8 @@ By what the document asked:
     ruled lands as its ordering constraint too;
   - a repository to create, ruled so, is created now, as
     [below](#a-repository-the-slice-creates);
+  - a card, a `card:` proposal agreed, is filed now, parented to the brief's ticket (pilot.md
+    § Cards), its text the ask's section as the document showed it;
   - a slice split, or an item kicked back, gets its folders from the allocator under
     `/dev:triage`'s conventions, and an adjacent slice pulled in is absorbed as the preparer
     absorbs a card;
@@ -178,8 +182,8 @@ At exit 0, in this order:
 ## The clarification
 
 A fresh sub-agent pointed at the slice folder — `grounding.md`, the asks, `slice.md`, `plan.md` —
-answers each question (pilot.md § The clarification). The turn's last message is its answers, as
-the sub-agent gave them.
+loads `/dev:writing` and answers each question (pilot.md § The clarification). The turn's last
+message is its answers, as the sub-agent gave them.
 
 ## The nudge
 

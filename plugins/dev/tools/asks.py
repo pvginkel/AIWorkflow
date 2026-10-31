@@ -42,8 +42,8 @@ since no block takes it. A body, a context
 paragraph and a note are Markdown, with no heading and no block in them.
 The opening's typed fields are lines: each premise that does not hold, what
 it holds, what is true and what that changes; each matter the work leaves
-out; the size, the phases it comes to, the repositories it touches and the
-existing tests it changes. A loop's context is its own paragraphs; an
+out, ending on its fate; the size, the phases it comes to, the repositories
+it touches and the existing tests it changes. A loop's context is its own paragraphs; an
 author's is one line, what those fields do not say.
 
 **The render.** The front matter (`title`; `summary` on a document of more
@@ -810,7 +810,8 @@ def _run_in(head: str, heads: str, items: list[str]) -> list[str]:
 def _opening_lines(store: dict) -> list[str]:
     """The opening built from the typed fields, before the first ask: the
     premises that do not hold, each its premise, its fact and what it
-    changes; the size; what the work leaves out."""
+    changes; the size, and the existing tests that change under a head of
+    their own; what the work leaves out."""
     lines: list[str] = []
     premises = [" ".join(p[part].strip() for part in PREMISE_PARTS)
                 for p in store.get("premises") or ()]
@@ -821,9 +822,10 @@ def _opening_lines(store: dict) -> list[str]:
     if size:
         n = size["phases"]
         said = f"**The size.** About {n} phase{'' if n == 1 else 's'}, over {_and(size['repos'])}."
-        if size.get("tests"):
-            said += f" {size['tests'].strip()}"
         lines += _paragraph(escape_tags(said))
+        if size.get("tests"):
+            lines += _paragraph(escape_tags(f"**The existing tests that change.** "
+                                            f"{size['tests'].strip()}"))
     left = [line.strip() for line in store.get("out_of_scope") or ()]
     if left:
         lines += _run_in("Left out of this slice", "Left out of this slice", left)
@@ -1407,7 +1409,8 @@ def _frame_args(p: argparse.ArgumentParser, *, title_required: bool) -> None:
                         "is true, what that changes — a sentence each, no evidence; "
                         "repeat it for each")
     p.add_argument("--out-of-scope", dest="out_of_scope", action="append", metavar="LINE",
-                   help="a matter the work found and leaves out, a line; repeat it for each")
+                   help="a matter the work found and leaves out, a line ending on its fate: "
+                        "closed and why, or the slice that holds it; repeat it for each")
     p.add_argument("--phases", type=int, metavar="N",
                    help="the size: the phases the work comes to")
     p.add_argument("--repo", action="append", metavar="NAME",

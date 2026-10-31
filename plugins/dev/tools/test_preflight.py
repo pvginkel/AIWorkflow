@@ -245,7 +245,8 @@ def a_config(**over):
               "spec_repo": None, "design_philosophy": None,
               "test_phase": True, "test_strategy": None,
               "doc_phase": True, "doc_plan": None,
-              "devlock_lease": None, "push": True, "push_deploys": True}
+              "devlock_lease": None, "push": True, "push_deploys": True,
+              "push_deploys_stated": False}
     fields.update(over)
     return preflight.project_config.ProjectConfig(**fields)
 
@@ -1589,11 +1590,13 @@ def test_a_pass_under_json_is_one_object_with_its_notes():
 def test_a_run_pass_under_json_says_what_the_runs_pushes_are():
     """`/dev:run-slice` asks first before a push that deploys while Pilot's
     auto pilot is off, so the run profile's pass says whether the run pushes
-    and whether its push deploys; the other profiles' passes do not."""
-    for over, said in (({}, {"enabled": True, "deploys": True}),
-                       ({"push_deploys": False}, {"enabled": True, "deploys": False}),
+    and whether its push deploys, and whether the file says so or the
+    default does; the other profiles' passes do not."""
+    for over, said in (({}, {"enabled": True, "deploys": True, "deploys_stated": False}),
+                       ({"push_deploys": False, "push_deploys_stated": True},
+                        {"enabled": True, "deploys": False, "deploys_stated": True}),
                        ({"push": False, "push_deploys": False},
-                        {"enabled": False, "deploys": False})):
+                        {"enabled": False, "deploys": False, "deploys_stated": False})):
         cfg = a_config(**over)
         with patched(preflight, run_profile=lambda args, cfg=cfg: cfg):
             code, report, stderr = run_json("run", fake_subprocess())

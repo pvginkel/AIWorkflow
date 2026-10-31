@@ -4,6 +4,46 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-10-31 — What an ask carries, and the stages' pushes (v0.10.22)
+
+From the end-of-E1 reading of the rehearsal's documents, and its findings list (P-111):
+
+- **An answer that takes an option takes the whole option.** At triage, slice 003's answer
+  took the option that carried "the refusal path plus a second way of reading files". Triage
+  recorded the answer as a ceiling and wrote the refusal up as open, so planning asked it
+  again. Triage now records the option's own text beside the operator's words, and what the
+  option carried is ruled with it.
+- **The preparer checks a "never" against its grounding.** D1's heading said `pebble top`
+  "never" prints a wrong list. Its own grounding said the check holds only where the text has
+  an ASCII character, and close-out B2 was that hole. A "never", "always", "every" or "only" in
+  an ask holds over every case the grounding found, or says its bound.
+- **The neighbouring case goes into the ask.** The grounding had witnessed that a UTF-8 file
+  with a BOM reads as today. The ask left it out, and the rehearsal's one clarification asked
+  exactly that. Where the grounding witnessed the case a reader asks about next, the ask carries
+  it in a line.
+- **A left-out matter says its fate.** "Left out of this slice" showed a missing FILE's
+  traceback, and the table later closed it with no card, so that line was the operator's last
+  sight of it. An out-of-scope line now ends on closed-and-why or the slice that holds it. A
+  matter worth a card is an ask, a `card:` proposal the continuation files on Agree.
+- **A card request whose fix is a choice names its pick.** Slice 002's B1 offered two fixes
+  and picked none, so triage had to supply the recommendation. The wrap-up's card text now says
+  which way it would go, and why.
+- **The clarification is written for the operator.** The answers stand beside the blocks, but
+  their writer loaded no writing rules and argued from "grounding.md, 'Found in passing'". The
+  answering sub-agent now loads `/dev:writing`, quotes the words rather than naming their file,
+  and takes a position on what it leaves open.
+- **The tests figure is labelled.** The size line read "About 2 phases, over Pebble and
+  PebbleSpecs. None: every existing test …". The existing tests that change now stand under a
+  run-in head of their own.
+- **The push ask says why a push deploys.** Pebble has no pipeline, and its push counted as
+  deploying only by the default. Preflight's run pass now reports `deploys_stated`. The ask's
+  body says whether the file or the default made the push a deploying one, and what a push is
+  known to reach, or plainly that nothing names a pipeline.
+- **The spec repo is pushed at the stage's end.** No stage pushed it, though both of Pilot's
+  grant texts pre-approve it, and PebbleSpecs stood 29 commits ahead of its origin after slice
+  003. `pilot.md` § The brief now has a stage push it once over, after its last commit, never
+  forced, a refused push named in the last message. Without the grant nothing is pushed.
+
 ## 2026-10-31 — The close-out opens on its asks, and a closed entry keeps why (v0.10.21)
 
 From the end-of-E1 reading of the rehearsal's documents (P-111):

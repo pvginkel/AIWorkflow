@@ -36,9 +36,9 @@ carries one object and stderr nothing, pass or fail:
 ```
 
 A pass is `{"result": "pass", "profile": …, "notes": [{"check": …, "note": …}]}`; the `run`
-profile's adds `"push": {"enabled": …, "deploys": …}`, the project's `[push]` keys as
-[`project-contract.md`](project-contract.md) reads them, for the stage that asks before a push
-that deploys. A stage runs
+profile's adds `"push": {"enabled": …, "deploys": …, "deploys_stated": …}`, the project's
+`[push]` keys as [`project-contract.md`](project-contract.md) reads them, and whether the file
+sets `deploys` or the default stands, for the stage that asks before a push that deploys. A stage runs
 `--json` and renders a failure into an `action` document ([pilot.md](pilot.md) § The
 documents). The exit code is the same either way.
 

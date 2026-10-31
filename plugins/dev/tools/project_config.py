@@ -90,6 +90,8 @@ class ProjectConfig:
     devlock_lease: Path | None
     push: bool
     push_deploys: bool
+    # whether the file sets `deploys`, or push_deploys is the default's
+    push_deploys_stated: bool
 
 
 def config_path(root: Path) -> Path:
@@ -226,4 +228,5 @@ def load(root: Path) -> ProjectConfig:
         devlock_lease=_resolve(spec_repo, lease) if lease else None,
         push=push_on,
         push_deploys=push_on and deploys,
+        push_deploys_stated="deploys" in push_tbl,
     )

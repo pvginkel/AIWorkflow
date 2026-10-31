@@ -1060,7 +1060,8 @@ def main() -> None:
         if args.profile == "run" and cfg is not None:
             # What the run's pushes are, for the stage that asks before a
             # push that deploys while Pilot's auto pilot is off.
-            report["push"] = {"enabled": cfg.push, "deploys": cfg.push_deploys}
+            report["push"] = {"enabled": cfg.push, "deploys": cfg.push_deploys,
+                              "deploys_stated": cfg.push_deploys_stated}
         print(json.dumps(report, indent=2))
     finally:
         NOTES = None

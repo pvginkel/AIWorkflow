@@ -98,12 +98,21 @@ rendering, registering, the operator's answers, the plan loop — is the stage's
    sentence each and no evidence: a `--premise` per premise that does not hold (what it holds,
    what is true, what that changes), an `--out-of-scope` per matter the grounding found and
    leaves out, and the size (`--phases`, a `--repo` per repository, `--tests` for the existing
-   tests that change). No `--context`: the title says the slice, and the evidence is
-   `grounding.md`'s. Then one `append` per ask:
+   tests that change). An out-of-scope line ends on the matter's fate: closed, with why it is
+   worth no card, or the slice already filed that holds it, by its number and title. A matter
+   worth a card is no line of the opening but an ask, a `decision` whose `--proposal` is the
+   card (`card: <what it would say>`), which the continuation files on Agree: a line with no
+   block is the operator's last sight of it. No `--context`: the title says the slice, and the
+   evidence is `grounding.md`'s. Then one `append` per ask:
    a decision with its live options and `--recommend`, what it optimises for and the card it
    serves named in its prose; one with a single course, a repository or the arch design first,
    with `--proposal`; an open fact as a `question`. Load `${CLAUDE_PLUGIN_ROOT}/skills/writing/SKILL.md`
-   before the first: every word an ask carries is written under it.
+   before the first: every word an ask carries is written under it. Two checks against
+   `grounding.md` before each `append`:
+   - a "never", "always", "every" or "only" in the heading or the body holds over every case
+     the grounding found, or is bounded to the cases it holds for, in the words that bound it;
+   - where the grounding witnessed the case a reader asks about next, the one beside the case
+     the choice is about, that fact is in the ask, in a line.
 
 ## Hand-back
 
