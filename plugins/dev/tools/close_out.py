@@ -1782,8 +1782,10 @@ def touched_repos(slice_dir: Path | str) -> set[str] | None:
     """The basenames of the slice's repositories, read off its state.json:
     every `root` in it — the repositories its phases landed in — plus its
     `target_roots`, those the plan's unfinished phases target, as the run
-    loop resolved them at its last plan load. None without a state.json, or
-    one that names neither: every repository is then the slice's own."""
+    loop resolved them at its last plan load; and with them the spec repo
+    the slice folder sits in, which the doc phase and the wrap-up commit to
+    (none without a `slices` ancestor). None without a state.json, or one
+    that names neither: every repository is then the slice's own."""
     try:
         state = json.loads((Path(slice_dir) / "state.json").read_text())
     except (OSError, json.JSONDecodeError):
@@ -1806,7 +1808,12 @@ def touched_repos(slice_dir: Path | str) -> set[str] | None:
     if isinstance(targets, list):
         roots.update(Path(value).name for value in targets
                      if isinstance(value, str) and value)
-    return roots or None
+    if not roots:
+        return None
+    slices = _slices_root(slice_dir)
+    if slices is not None:
+        roots.add(slices.parent.name)
+    return roots
 
 
 def _elsewhere(lab: dict, touched: set[str] | None) -> str | None:
@@ -2178,9 +2185,10 @@ def entry_counts(slice_dir: Path | str) -> dict[str, int]:
     """Live entries per place of the report — the events in the record
     counted, the struck ones not — then live entries per id letter (the
     old letters only where the store holds such entries), then the smoke
-    counts: live entries without a Consequence or a Provenance line, and
-    those that come to the operator (to you, card requests) without a
-    proposal, or a decision without its options."""
+    counts: live entries without a Consequence, or without a Provenance
+    line where neither the restatement nor the entry gives one, as the
+    document shows it; and those that come to the operator (to you, card
+    requests) without a proposal, or a decision without its options."""
     store = _read_store(slice_dir)
     touched, stages = touched_repos(slice_dir), slice_stages(slice_dir)
     counts = dict.fromkeys(COUNT_NAMES, 0)
@@ -2199,7 +2207,8 @@ def entry_counts(slice_dir: Path | str) -> dict[str, int]:
         letter = _ID_RE.fullmatch(entry["id"]).group(1)
         letters[letter] = letters.get(letter, 0) + 1
         no_consequence += not entry.get("consequence")
-        no_provenance += not (entry.get("evidence") or entry.get("author"))
+        no_provenance += not (_provenance(entry.get("restated") or {})
+                              or _provenance(entry))
         no_proposal += (key.startswith(("operator:", "card:"))
                         and not (entry.get("proposal") or entry.get("options")))
     counts.update(letters)

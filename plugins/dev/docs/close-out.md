@@ -300,7 +300,8 @@ An improvement takes the first of these that fits:
   roots its phases landed in, and the repositories its unfinished phases' `Target:` lines
   resolve to (`target_roots`). A phase counts from the moment the plan names it, so an entry
   for the repository of a phase still in review, or still to run, routes as the slice's own.
-  Without a run record every repository is taken as the slice's own.
+  The spec repo is always the slice's own: the slice's folder is in it, and the doc phase and
+  the wrap-up commit there. Without a run record every repository is taken as the slice's own.
 - **An entry without labels** — a report written before the labels existed — has no route. It
   waits, in a section of its own, until it is labelled.
 

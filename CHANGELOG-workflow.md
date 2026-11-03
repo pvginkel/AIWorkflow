@@ -4,6 +4,24 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-03 — A fix in the spec repo is the slice's own, and the Provenance count follows the document (v0.10.25)
+
+From slice 030's run (PilotApp; AIWF-131, item 1). Its summary read "card requests 1 · … · 2
+entries without a Provenance line". The report held no card request as the operator saw it, and
+one of the two entries showed a Provenance:
+
+- **The spec repo counts as touched.** `close_out.touched_repos` read only `state.json`'s roots,
+  and no phase lands in the spec repo, though the slice's folder is there and the doc phase and
+  the wrap-up commit there. So P1, a one-edit fix to PilotAppSpecs' `decisions.md`, routed
+  `card:table` ("the fix lives in PilotAppSpecs, which the slice did not touch") where the table
+  gives such a fix to the wrap-up. The spec repo's name now joins the roots whenever the run
+  record names any. A state that names none still means every repository is the slice's own.
+  `docs/close-out.md` § The routes says so.
+- **An entry lacks a Provenance line only where the document shows none.** The count read the
+  author's `evidence` and `author` alone, but the document renders the wrap-up's restated
+  Provenance first. A1 carried its Provenance only in the restatement. Slice 030 would now read
+  1 (P1, whose author gave none), not 2.
+
 ## 2026-11-03 — A product choice names the record it would overrule (v0.10.24)
 
 From the operator's rule of 2026-11-01 after slice 030 (PilotApp; AIWF-130):

@@ -587,7 +587,8 @@ def test_touched_repos_are_the_roots_of_the_state():
         (slice_dir / "state.json").write_text(json.dumps({"phases": {}}))
         assert close_out.touched_repos(slice_dir) is None
         (slice_dir / "state.json").write_text(json.dumps(STATE))
-        assert close_out.touched_repos(slice_dir) == {"KubeCoder", "KubeCoderSpecs"}
+        # with the spec repo the slice folder sits in (make_slice's `specs`)
+        assert close_out.touched_repos(slice_dir) == {"KubeCoder", "KubeCoderSpecs", "specs"}
 
 
 def test_touched_repos_add_the_repos_the_plans_pending_phases_target():
@@ -598,15 +599,15 @@ def test_touched_repos_add_the_repos_the_plans_pending_phases_target():
         state.write_text(json.dumps({"phases": {}, "target_roots": [
             "/work/KubeCoderSpecs", "/work/scratch/ElasticsearchDeploy"]}))
         assert close_out.touched_repos(slice_dir) == {
-            "KubeCoderSpecs", "ElasticsearchDeploy"}
+            "KubeCoderSpecs", "ElasticsearchDeploy", "specs"}
         # with the landed roots: the union
         state.write_text(json.dumps({**STATE, "target_roots": [
             "/work/KubeCoder", "/work/scratch/ElasticsearchDeploy"]}))
         assert close_out.touched_repos(slice_dir) == {
-            "KubeCoder", "KubeCoderSpecs", "ElasticsearchDeploy"}
+            "KubeCoder", "KubeCoderSpecs", "ElasticsearchDeploy", "specs"}
         # an empty list, or junk in it, adds nothing — and names no root alone
         state.write_text(json.dumps({**STATE, "target_roots": []}))
-        assert close_out.touched_repos(slice_dir) == {"KubeCoder", "KubeCoderSpecs"}
+        assert close_out.touched_repos(slice_dir) == {"KubeCoder", "KubeCoderSpecs", "specs"}
         state.write_text(json.dumps({"phases": {}, "target_roots": ["", None, 3]}))
         assert close_out.touched_repos(slice_dir) is None
         state.write_text(json.dumps({"phases": {}, "target_roots": "/work/KubeCoder"}))
@@ -634,6 +635,45 @@ def test_a_repo_a_pending_phase_targets_is_not_elsewhere():
             "card:table"
         assert R(E("defect", labels={**quiet, "repo": "HelmCharts"}), touched) == \
             "closed:elsewhere"
+
+
+def test_touched_repos_add_the_spec_repo_the_slice_folder_sits_in():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = Path(tmp) / "PilotAppSpecs" / "slices" / "completed" / "030_x"
+        slice_dir.mkdir(parents=True)
+        state = slice_dir / "state.json"
+        # the doc phase and the wrap-up commit to it, though no phase landed there
+        state.write_text(json.dumps({"phases": {
+            "1": {"landed": {"root": "/work/PilotApp"}},
+            "4": {"landed": {"root": "/work/PilotProjects"}}}, "target_roots": []}))
+        assert close_out.touched_repos(slice_dir) == {
+            "PilotApp", "PilotProjects", "PilotAppSpecs"}
+        # it never stands alone: a state that names nothing, or none, is still None
+        state.write_text(json.dumps({"phases": {}, "target_roots": []}))
+        assert close_out.touched_repos(slice_dir) is None
+        state.unlink()
+        assert close_out.touched_repos(slice_dir) is None
+        # a slice folder without a `slices` ancestor adds none
+        bare = Path(tmp) / "PilotAppSpecs" / "030_x"
+        bare.mkdir()
+        (bare / "state.json").write_text(json.dumps({"phases": {
+            "1": {"landed": {"root": "/work/PilotApp"}}}}))
+        assert close_out.touched_repos(bare) == {"PilotApp"}
+
+
+def test_a_fix_in_the_spec_repo_is_the_wrap_ups_not_a_card_request():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = Path(tmp) / "PilotAppSpecs" / "slices" / "completed" / "030_x"
+        slice_dir.mkdir(parents=True)
+        (slice_dir / "state.json").write_text(json.dumps({"phases": {
+            "1": {"landed": {"root": "/work/PilotApp"}}}}))
+        touched = close_out.touched_repos(slice_dir)
+        prose = fix_labels(fix="one-edit", area=None, repo="PilotAppSpecs")
+        assert close_out.route(E("prose", labels=prose), touched) == (
+            "wrap-up:fix", "the wrap-up — fix")
+        # a repo the slice did not touch is still elsewhere
+        assert R(E("prose", labels={**prose, "repo": "HelmCharts"}), touched) == \
+            "card:table"
 
 
 # -- owed before the push ---------------------------------------------------------
@@ -2634,6 +2674,28 @@ def test_counts_live_entries_per_section_and_per_letter_on_one_line():
         assert counts[close_out.NO_PROPOSAL] == 2
         assert close_out.counts_line(counts).endswith(
             " · 2 entries that come to you without a Proposal line")
+
+
+def test_an_entry_whose_restatement_gives_the_provenance_is_not_counted_without_one():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        for headline in ("Do X", "Do Y"):                                   # A1, A2
+            close_out.append_entry(slice_dir, "action", headline, "b", consequence="none",
+                                   proposal="Do it before the next run.")
+        assert close_out.entry_counts(slice_dir)[close_out.NO_PROVENANCE] == 2
+        restated(slice_dir, "A1")
+        assert close_out.entry_counts(slice_dir)[close_out.NO_PROVENANCE] == 2
+        close_out.restate_entry(slice_dir, "A1", WU, "Do X", "b",
+                                provenance="witnessed — the wrap-up")
+        counts = close_out.entry_counts(slice_dir)
+        assert counts[close_out.NO_PROVENANCE] == 1
+        assert close_out.counts_line(counts).endswith(" · 1 entry without a Provenance line")
+        # the count follows the document: A1 shows the restatement's line, A2 none
+        close_out.render_report(slice_dir)
+        doc = report(slice_dir)
+        assert doc.count("**Provenance:**") == 1
+        assert "**Provenance:** witnessed — the wrap-up" in doc
 
 
 def test_list_groups_by_kind_with_consequence_lines_and_struck_entries_marked():
