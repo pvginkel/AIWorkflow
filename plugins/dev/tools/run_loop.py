@@ -376,16 +376,24 @@ MCP_ROLES = frozenset({"test-agent"})
 # search the code of repos the environment does not check out (a slice ruling
 # may point it at gitblit's `find_files`); it needs no token. The KubeCoder
 # worker carries `notification`, so a ruling that asks a role to keep the
-# operator posted works as written; Jenkins stays the test-agent's. Naming the
-# servers here is fine: AIWorkflow is bespoke to this host.
+# operator posted works as written. Naming the servers here is fine:
+# AIWorkflow is bespoke to this host.
 PROMOTED_MCP_SERVERS = ("fieldnotes", "gitblit", "kubecoder-worker")
+
+# The servers a strict role keeps beyond the promoted ones, copied the same
+# way into a config of its own (AIWF-131). Jenkins is the test-agent's to
+# drive and the wrap-up's to read: the wrap-up checks an entry whose claim
+# turns on a build in the build itself, its log and its tests, and its agent
+# file says never to trigger one. No other role gets it.
+ROLE_MCP_SERVERS = {"wrap-up": ("jenkins",)}
 
 # The two sides of that copy. A promoted entry may carry a bearer token, so the
 # copy lives under the user's home, which no repo contains — never a command
 # line, a log line, state.json or a slice folder. The path is stable and the
 # content identical from every writer (one home serves the environments
 # running loops concurrently) and the write is atomic, so a concurrent reader
-# sees one version or the other, never half a file.
+# sees one version or the other, never half a file. A role with servers of
+# its own has its own file beside it (`promoted_mcp_file`).
 USER_CLAUDE_JSON = ".claude.json"
 PROMOTED_MCP_FILE = ".claude/aiworkflow-promoted-mcp.json"
 
@@ -396,13 +404,30 @@ def _user_home() -> Path:
     return Path.home()
 
 
-def promoted_mcp_config(source: Path | None = None) -> tuple[dict, list[str]]:
-    """PROMOTED_MCP_SERVERS as an `--mcp-config` payload, copied verbatim out
-    of the user-level `~/.claude.json`, plus the promoted names that file did
-    not hold. A missing file, unreadable JSON or a missing `mcpServers`
-    promotes nothing and is not an error — the role spawns without the server
-    rather than the run failing. Only user-level `mcpServers` is read; the
-    per-project sections of that file are not."""
+def promoted_mcp_servers(role: str | None = None) -> tuple[str, ...]:
+    """The servers a strict role's session keeps: PROMOTED_MCP_SERVERS, then
+    the role's own (ROLE_MCP_SERVERS)."""
+    return PROMOTED_MCP_SERVERS + ROLE_MCP_SERVERS.get(role, ())
+
+
+def promoted_mcp_file(role: str | None = None) -> str:
+    """The home-relative config a role's `--mcp-config` names:
+    PROMOTED_MCP_FILE, shared by every role without servers of its own, or
+    `aiworkflow-promoted-mcp-<role>.json` beside it for one with them — a
+    role's file is the same on every call, as a nudge's flags must be."""
+    if role not in ROLE_MCP_SERVERS:
+        return PROMOTED_MCP_FILE
+    return f"{PROMOTED_MCP_FILE.removesuffix('.json')}-{role}.json"
+
+
+def promoted_mcp_config(source: Path | None = None,
+                        role: str | None = None) -> tuple[dict, list[str]]:
+    """The role's servers (`promoted_mcp_servers`) as an `--mcp-config`
+    payload, copied verbatim out of the user-level `~/.claude.json`, plus
+    the names that file did not hold. A missing file, unreadable JSON or a
+    missing `mcpServers` promotes nothing and is not an error — the role
+    spawns without the server rather than the run failing. Only user-level
+    `mcpServers` is read; the per-project sections of that file are not."""
     src = Path(source) if source is not None else _user_home() / USER_CLAUDE_JSON
     try:
         data = json.loads(src.read_text())
@@ -411,25 +436,30 @@ def promoted_mcp_config(source: Path | None = None) -> tuple[dict, list[str]]:
     servers = data.get("mcpServers") if isinstance(data, dict) else None
     if not isinstance(servers, dict):
         servers = {}
-    promoted = {name: servers[name]
-                for name in PROMOTED_MCP_SERVERS if name in servers}
-    missing = [name for name in PROMOTED_MCP_SERVERS if name not in promoted]
+    wanted = promoted_mcp_servers(role)
+    promoted = {name: servers[name] for name in wanted if name in servers}
+    missing = [name for name in wanted if name not in promoted]
     return {"mcpServers": promoted}, missing
 
 
 def write_promoted_mcp_config(source: Path | None = None,
-                              dest: Path | None = None
+                              dest: Path | None = None,
+                              role: str | None = None
                               ) -> tuple[Path | None, list[str]]:
-    """Write the promoted config to `dest` — mode 0600, atomically (temp file
-    in the same directory, then os.replace) — and return (its path, the lines
+    """Write the role's promoted config to `dest` (by default its
+    `promoted_mcp_file` under the home) — mode 0600, atomically (temp file in
+    the same directory, then os.replace) — and return (its path, the lines
     to log). The path is None when nothing was promoted or the write failed;
     neither stops a run."""
-    config, missing = promoted_mcp_config(source)
+    config, missing = promoted_mcp_config(source, role)
+    who = (f"the {role} spawns" if role in ROLE_MCP_SERVERS
+           else "dispatched roles spawn")
     notes = [f"promoted MCP server {name!r} is not in ~/{USER_CLAUDE_JSON} — "
-             "dispatched roles spawn without it" for name in missing]
+             f"{who} without it" for name in missing]
     if not config["mcpServers"]:
         return None, notes
-    target = Path(dest) if dest is not None else _user_home() / PROMOTED_MCP_FILE
+    target = (Path(dest) if dest is not None
+              else _user_home() / promoted_mcp_file(role))
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=str(target.parent),
@@ -449,26 +479,28 @@ def write_promoted_mcp_config(source: Path | None = None,
     return target, notes
 
 
-# The promoted flags, computed once per process: a nudge resumes the session a
-# dispatch created and must carry the same prefix, so the answer cannot move
-# mid-run. Rewritten at the first dispatch, which is what picks up a changed
-# `~/.claude.json` on the next run.
-_PROMOTED_MCP: list[list[str]] = []
+# The promoted flags, computed once per process for each config
+# (`promoted_mcp_file`): a nudge resumes the session a dispatch created and
+# must carry the same prefix, so the answer cannot move mid-run. Each is
+# rewritten at the first dispatch that names it, which is what picks up a
+# changed `~/.claude.json` on the next run.
+_PROMOTED_MCP: dict[str, list[str]] = {}
 
 
 def _silent(_msg: str) -> None:
     """The default log sink — a caller that passes none hears nothing."""
 
 
-def _promoted_mcp_flags(log=None) -> list[str]:
-    """`--mcp-config <path>` for the promoted servers, or nothing at all when
-    none of them was found."""
-    if not _PROMOTED_MCP:
-        path, notes = write_promoted_mcp_config()
+def _promoted_mcp_flags(role: str | None = None, log=None) -> list[str]:
+    """`--mcp-config <path>` for the role's promoted servers, or nothing at
+    all when none of them was found."""
+    key = promoted_mcp_file(role)
+    if key not in _PROMOTED_MCP:
+        path, notes = write_promoted_mcp_config(role=role)
         for note in notes:
             (log or _silent)(note)
-        _PROMOTED_MCP.append(["--mcp-config", str(path)] if path else [])
-    return list(_PROMOTED_MCP[0])
+        _PROMOTED_MCP[key] = ["--mcp-config", str(path)] if path else []
+    return list(_PROMOTED_MCP[key])
 
 
 def spawn_flags(role: str | None, log=None) -> list[str]:
@@ -477,7 +509,7 @@ def spawn_flags(role: str | None, log=None) -> list[str]:
     flags = list(SPAWN_FLAGS)
     if role not in MCP_ROLES:
         flags.append("--strict-mcp-config")
-        flags += _promoted_mcp_flags(log)
+        flags += _promoted_mcp_flags(role, log)
     return flags
 
 # The devlock wait: poll the flock nonblocking so the wait is loggable and

@@ -4,6 +4,20 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-03 — The wrap-up reads Jenkins (v0.10.27)
+
+From slice 030's run (PilotApp; AIWF-131, item 3):
+
+- **The wrap-up keeps the Jenkins MCP server.** Every role except the test-agent spawns under
+  `--strict-mcp-config` with the promoted servers alone (fieldnotes, gitblit, kubecoder-worker).
+  Slice 030's wrap-up vetted E1, a switch-warning spec that failed once in Build-Main #116, "with
+  no Jenkins tool" and diagnosed it from the code alone. The test-agent in the same run had
+  rebuilt that build. `ROLE_MCP_SERVERS` in `run_loop.py` now gives the wrap-up `jenkins` beside
+  the promoted three, copied the same way into a config of its own,
+  `~/.claude/aiworkflow-promoted-mcp-wrap-up.json`. The shared file and every other role are as
+  before. `agents/wrap-up.md` says CI is read, never driven: read builds, never trigger,
+  rebuild, replay or update one. `docs/agent-dispatch.md` § Spawning gives the why.
+
 ## 2026-11-03 — Another Target repo's services are not read at start (v0.10.26)
 
 From slice 030's run (PilotApp; AIWF-131, item 2):

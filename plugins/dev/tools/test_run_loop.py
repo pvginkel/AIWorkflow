@@ -888,8 +888,8 @@ class promoted_home(patched):
 
 # An invented ~/.claude.json: the promoted servers (fieldnotes with a bearer
 # token, gitblit with none, the KubeCoder worker with the session header kc
-# writes, as on the host), one that must not travel, and the rest of the
-# file's top-level keys the copy must ignore.
+# writes, as on the host), Jenkins, which travels to the wrap-up alone, and
+# the rest of the file's top-level keys the copy must ignore.
 FAKE_CLAUDE_JSON = json.dumps({
     "numStartups": 12,
     "mcpServers": {
@@ -11703,6 +11703,89 @@ def test_the_promoted_flags_are_fixed_for_the_process():
             first = run_loop.spawn_flags("code-writer")
             (home.home / run_loop.USER_CLAUDE_JSON).write_text("{}")
             assert run_loop.spawn_flags("code-writer") == first
+
+
+def test_the_wrap_up_keeps_jenkins_beside_the_promoted_servers():
+    """AIWF-131: the wrap-up reads a build, its log and its tests where an
+    entry's claim turns on one, so its config holds Jenkins as well as the
+    promoted three — verbatim, in a 0600 file of its own beside the shared
+    one. A code-writer's holds no Jenkins, and the test-agent keeps every
+    server of the operator's, as before."""
+    with tempfile.TemporaryDirectory() as tmp:
+        with promoted_home(Path(tmp) / "home", FAKE_CLAUDE_JSON) as home:
+            logged = []
+            flags = run_loop.spawn_flags("wrap-up", logged.append)
+            path = (home.home / ".claude"
+                    / "aiworkflow-promoted-mcp-wrap-up.json")
+            assert flags == ["--disable-slash-commands", "--strict-mcp-config",
+                             "--mcp-config", str(path)]
+            assert logged == []
+            servers = json.loads(path.read_text())["mcpServers"]
+            assert list(servers) == ["fieldnotes", "gitblit",
+                                     "kubecoder-worker", "jenkins"]
+            assert servers["jenkins"] == {"type": "http",
+                                          "url": "https://jenkins.invalid/mcp"}
+            assert servers["fieldnotes"]["headers"] == {
+                "Authorization": "Bearer sekrit-token"}
+            assert stat.S_IMODE(path.stat().st_mode) == 0o600
+            assert "sekrit-token" not in " ".join(flags)
+            writer = run_loop.spawn_flags("code-writer")
+            assert writer == ["--disable-slash-commands", "--strict-mcp-config",
+                              "--mcp-config", str(home.config_path)]
+            assert list(json.loads(home.config_path.read_text())[
+                "mcpServers"]) == ["fieldnotes", "gitblit", "kubecoder-worker"]
+            assert run_loop.spawn_flags("test-agent") == [
+                "--disable-slash-commands"]
+
+
+def test_the_wrap_up_is_dispatched_with_its_own_config():
+    """The role the wrap-up stage hands `spawn_flags` is the one
+    ROLE_MCP_SERVERS names, so its session spawns with Jenkins."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = sibling_phase_slice(tmp)
+        plant_waiting(slice_dir)
+        r = ScriptedLoop(slice_dir, wrap_script(repo, sib), repo_root=repo,
+                         wrap_ups=[(WRAP_DONE, wrap_up_fixes(repo, sib))])
+        with promoted_home(Path(tmp) / "home", FAKE_CLAUDE_JSON) as home:
+            assert run_to_exit(r) == 0
+            [session] = r.wrap_up_sessions
+            assert session["flags"] == [
+                "--disable-slash-commands", "--strict-mcp-config",
+                "--mcp-config",
+                str(home.home / run_loop.promoted_mcp_file("wrap-up"))]
+
+
+def test_a_claude_json_without_jenkins_gives_the_wrap_up_the_promoted_three():
+    """Jenkins missing is a note like any promoted server's, and the wrap-up
+    spawns with the rest."""
+    data = json.loads(FAKE_CLAUDE_JSON)
+    del data["mcpServers"]["jenkins"]
+    with tempfile.TemporaryDirectory() as tmp:
+        with promoted_home(Path(tmp) / "home", json.dumps(data)) as home:
+            logged = []
+            flags = run_loop.spawn_flags("wrap-up", logged.append)
+            path = home.home / run_loop.promoted_mcp_file("wrap-up")
+            assert flags[-2:] == ["--mcp-config", str(path)]
+            assert list(json.loads(path.read_text())["mcpServers"]) == [
+                "fieldnotes", "gitblit", "kubecoder-worker"]
+            assert logged == ["promoted MCP server 'jenkins' is not in "
+                              "~/.claude.json — the wrap-up spawns without it"]
+
+
+def test_the_wrap_ups_flags_are_fixed_for_the_process():
+    """Its own config is computed once, as the shared one is; each config
+    is computed at the first dispatch that names it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        with promoted_home(Path(tmp) / "home", FAKE_CLAUDE_JSON) as home:
+            first = run_loop.spawn_flags("wrap-up")
+            path = home.home / run_loop.promoted_mcp_file("wrap-up")
+            written = path.read_text()
+            (home.home / run_loop.USER_CLAUDE_JSON).write_text("{}")
+            logged = []
+            assert run_loop.spawn_flags("wrap-up", logged.append) == first
+            assert path.read_text() == written and logged == []
+            assert run_loop.spawn_flags("code-writer") == [
+                "--disable-slash-commands", "--strict-mcp-config"]
 
 
 def test_an_unreadable_claude_json_promotes_nothing_and_never_fails():

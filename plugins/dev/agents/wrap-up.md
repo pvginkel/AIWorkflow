@@ -70,6 +70,11 @@ the record shows it under yours.
 **In the spec tree**, stage by name (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`); another
 writer's uncommitted hunk in a file you commit rides your commit, which is accepted.
 
+**CI you read, never drive.** Your session holds the Jenkins tools, so that an entry whose claim
+turns on a build — the failure an event names, the build an action waits on — is checked in the
+build, its log and its test results, not guessed from the code. Read builds; never trigger,
+rebuild, replay or update one.
+
 **A card request** is the entry restated as the card (`restate`) — its heading what the card
 would say, its body the card's text: how the problem is reached, what a person then meets, what
 the fix takes and why it is beyond your bar; where the fix is a choice between ways, the one you

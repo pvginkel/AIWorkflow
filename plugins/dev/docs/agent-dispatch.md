@@ -45,7 +45,7 @@ validation.
   servers out of a role's session: their instructions leave the prefix (their tool schemas were
   never in it — Claude Code defers them since 2.1.212), and with them a reach no role's contract
   ever gave it — a finding about the work goes to the close-out report, never to a tracker; CI is
-  the test-agent's. **The promoted servers are the exception**: `PROMOTED_MCP_SERVERS` in
+  the test-agent's to drive. **The promoted servers are the exception**: `PROMOTED_MCP_SERVERS` in
   `run_loop.py` names them. `fieldnotes`, because what got in a role's way while it worked goes
   there and not into the report ([close-out.md](close-out.md#what-it-is--and-is-not)), and a role
   that cannot post cannot follow that rule. `gitblit`, the read-only mirror of the operator's
@@ -54,10 +54,16 @@ validation.
   the environment's own worker, for its `notification` tool, so a ruling that asks a role to keep
   the operator posted works as written; its session header (`${KUBECODER_SESSION_NAME:-}`) is
   copied unexpanded and the spawned claude expands it. Pilot's own server is not promoted: the
-  stage's session registers every document on the roles' behalf ([pilot.md](pilot.md)). The loop
-  copies each named entry verbatim out of the user-level `mcpServers` of `~/.claude.json` into
-  `~/.claude/aiworkflow-promoted-mcp.json` (mode 0600, written atomically, once per process at the
-  first dispatch) and passes that path as `--mcp-config` beside `--strict-mcp-config`. An entry
+  stage's session registers every document on the roles' behalf ([pilot.md](pilot.md)). The
+  wrap-up alone keeps `jenkins` beside them (`ROLE_MCP_SERVERS`): it vets entries whose claim
+  turns on a build — the failure an event names, the build an action waits on — and slice 030's
+  wrap-up, without it, diagnosed a failed main build from the code alone. It reads builds and
+  never starts one ([wrap-up](../agents/wrap-up.md)). The loop copies each named entry verbatim
+  out of the user-level `mcpServers` of `~/.claude.json` into
+  `~/.claude/aiworkflow-promoted-mcp.json`, and the wrap-up's set into
+  `aiworkflow-promoted-mcp-wrap-up.json` beside it (each mode 0600, written atomically, once per
+  process at the first dispatch that names it), and passes the role's path as `--mcp-config`
+  beside `--strict-mcp-config`. An entry
   may carry a bearer token, which is why it travels as a file under the home and never on a command
   line, in the log or in a slice folder. A promoted server the operator's config does not hold is
   one line in `log.txt` and a role spawned without it, never a failed run. The test-agent keeps
