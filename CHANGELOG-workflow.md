@@ -4,6 +4,22 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-03 — A product choice names the record it would overrule (v0.10.24)
+
+From the operator's rule of 2026-11-01 after slice 030 (PilotApp; AIWF-130):
+
+- **An ask that puts a product choice ends on a `Record:` line.** This covers a requirement, a
+  plan review's question and a close-out decision. For the recommended option and each other
+  one, the line names the passage of the project's design record, or the decision, that the
+  option would overrule, or says `none`. Pilot's pass may rule such a requirement only on the
+  operator's own words for that very change. A side effect that lands on another passage is the
+  operator's to rule: "the decision record pins the y, like a unit test". Slice 030 said this for
+  one option in a sentence of prose, which the pass could not read as a line. `none` means the
+  record was read. An author who did not read it writes `Record: not checked`. The line is body
+  text, since Pilot refuses a block key the kind does not take. The rule is stated once, in
+  `/dev:writing` § What an ask rests on. The plan-preparer's grounding now reports what the
+  record pins for each requirement, and a third check before each `append` asks for the line.
+
 ## 2026-11-03 — A card its author asks for is a card request (v0.10.23)
 
 From slice 030's close-out (PilotApp, the first through Pilot; AIWF-129, P-135):

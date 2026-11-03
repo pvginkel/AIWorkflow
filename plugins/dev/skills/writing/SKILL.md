@@ -134,6 +134,20 @@ version and whether it can be reached, and one that is stale or out of reach sai
 replaced by a confident description. A cause is a claim like any other: shown, or said to be
 read. In a close-out entry the class opens the `Provenance:` line, before the body (3.4, 4.9).
 
+**A product choice names the record it would overrule.** Pilot's pass rules a requirement that
+overrules the project's design record only where the operator's own words ask for that change and
+the passage is the record of that very behaviour; a ruling whose side effect lands on another
+passage or decision is the operator's — "the decision record pins the y, like a unit test" (the
+operator, 2026-11-01). Slice 030's requirements said what one option overruled in a sentence of
+prose, "It overrules the brain's design, 'Opus unless the work says otherwise'", and nowhere as a
+line the pass reads. So an ask that puts a product choice — a requirement, a plan review's
+question, a close-out decision — ends its body on a paragraph of its own, the `Record:` line: for
+the recommended option and for each other, the passage or the decision it would overrule, cited
+by path and quoted line or by the decision's id and what it says, or `none`. `none` says the
+record was read and holds nothing the option overrules; an author who did not read it writes
+`Record: not checked`, never `none`. The line is body text, never a key of the block, which
+Pilot refuses.
+
 **Price it.** What the operator asks back about an entry is what it says, whether it can happen
 and how bad it is, and whether the fix is cheap and worth it — "I also don't know what the effort
 is to fix this"; "is there maybe not really a problem?" — and some closes are about effort, not

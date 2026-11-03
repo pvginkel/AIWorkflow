@@ -26,8 +26,9 @@ rendering, registering, the operator's answers, the plan loop — is the stage's
 2. **Ground it.** Every claim and citation the slice and those cards carry is unverified input,
    a pinned requirement included: triage read no code, and what a card cites rots between filing
    and planning. One read-only sub-agent over the whole slice checks what each requirement rests
-   on — does the thing it cites still exist, and say what the slice says it says — and reports
-   per requirement. A premise that no longer holds is corrected by the facts — what it holds,
+   on — does the thing it cites still exist, and say what the slice says it says, and which
+   passage of the project's design record or which decision pins the behaviour it changes — and
+   reports per requirement. A premise that no longer holds is corrected by the facts — what it holds,
    what is true, what that changes — and the correction opens the document (step 6); about a
    fifth of a backlog slice goes that way. Beyond that, ground only load-bearing
    uncertainty: one focused sub-agent per question, never a fan-out, and no code range read that
@@ -107,12 +108,15 @@ rendering, registering, the operator's answers, the plan loop — is the stage's
    a decision with its live options and `--recommend`, what it optimises for and the card it
    serves named in its prose; one with a single course, a repository or the arch design first,
    with `--proposal`; an open fact as a `question`. Load `${CLAUDE_PLUGIN_ROOT}/skills/writing/SKILL.md`
-   before the first: every word an ask carries is written under it. Two checks against
+   before the first: every word an ask carries is written under it. Three checks against
    `grounding.md` before each `append`:
    - a "never", "always", "every" or "only" in the heading or the body holds over every case
      the grounding found, or is bounded to the cases it holds for, in the words that bound it;
    - where the grounding witnessed the case a reader asks about next, the one beside the case
-     the choice is about, that fact is in the ask, in a line.
+     the choice is about, that fact is in the ask, in a line;
+   - a decision that puts a product choice ends on its `Record:` line (`/dev:writing`, What an
+     ask rests on), each option's from what the grounding found the record pins, and
+     `Record: not checked` where it did not read the record for that choice.
 
 ## Hand-back
 
