@@ -605,6 +605,49 @@ phase, after the wrap-up, whenever the run stops, and when it completes, the run
 renders once more when the cost block has landed and registers the report with Pilot
 ([pilot.md](pilot.md) § The documents).
 
+## The steps Pilot shows
+
+The run keeps the steps it goes through in `state.json`'s `progress`, and the `wait` its stage's
+session runs publishes them as the work item's progress ([pilot.md](pilot.md) § The progress).
+The driver writes the list and calls nothing. A step is a `code`, a `label` short enough for a
+phone and a `state`: `pending`, `active` or `done`, with no failed and no skipped state. The code
+is `[<phase>.]<kind>[-<round>]`, its kind from a fixed set that a later ETA keys on, and a round
+past the first is a step of its own, never a reused one, so the tile shows the work growing:
+
+| Kind | Codes and labels | Active from, until the next step starts |
+|---|---|---|
+| `code` | `P3.code` "P3 · \<title\>", `P3.code-2` "P3 · code 2" | a code-writer round's dispatch (the first, a gate fix, a review fix, the writer-direct resume), through the gate after it |
+| `review` | `P3.review` "P3 · review", `P3.review-2` "P3 · review 2" | a review round's dispatch, through its funding consult; the last one through the merge |
+| `sweep` | `sweep` "Gate sweep", `sweep-2` "Gate sweep 2" | a loop-tail sweep that runs, to its record; a reused record is no step |
+| `consult` | `consult` "Completion consult", `consult-2` "Completion consult 2" | the completion consult's dispatch, to its answer; one a resume finds answered is no step |
+| `test` | `test` "Test phase", `test-2` "Test phase 2" | a test round's dispatch, to its verdict and the push check after it |
+| `docs` | `docs` "Doc phase" | the doc-writer's dispatch |
+| `wrap-up` | `wrap-up` "Wrap-up" | the wrap-up, then the doc gate and its nudges, the landing and the other repos' pushes, to the ladder's end |
+
+The round is the one the run counts: the phase's code-writer rounds, its review rounds, the sweep
+runs, the completion consults answered, the test rounds. A reattached round keeps its number and
+so its step.
+
+At the start, on disk before the start is reported, so that the first `wait` finds it, the whole
+known list goes in `pending`: each phase's `code` and `review` in the plan's order, then `test`
+and `docs` where the project runs those phases, then `wrap-up`. A resume keeps the list it finds,
+and one whose state has none, a run started before 0.10.29, seeds it from where the run stands:
+each phase already `✅ DONE` as `done`, the steps of the stages behind it `done`, and the
+wrap-up `active` from the doc gate on. A phase the plan gains, a consult's, the test phase's or
+the operator's, has its two steps added `pending` at the next parse, before the first pending
+step of a later phase or of the run's tail. A step that starts goes in before the first pending step, so the list
+reads in the order the run went, and starting it marks the step before it `done`. A merged
+phase's steps are all `done`, and so is a run's every step at exit 0. The wrap-up that a run with
+no doc phase and nothing waiting passes over is `done` too: the run reached it.
+
+A stop leaves the list as it stood: a bail, a halt or an interrupt keeps the active step active,
+so a stopped run's tile says where it stopped, and the resume's next step marks it `done`. A step
+the run never reaches stays `pending`. What fits no kind is folded into the step it happens in,
+never given a kind of its own: the gate into the code round before it; the review-funding
+consult, the merge and a rebase onto a moved base into the review round; the doc gate and the
+landing into the wrap-up. The run's start (preflight, the tool and service checks, the setup) and
+the driver's push where there is no test phase are in no step.
+
 ## Protocol invariants
 
 Every spawned agent ends by writing the verdict JSON named in its dispatch and leaves the

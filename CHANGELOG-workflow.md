@@ -4,6 +4,33 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-03 — The loops publish their steps to Pilot from `wait` (v0.10.29)
+
+AIWF-128 (PilotAppSpecs F92.7, F145; Pilot's side shipped as PilotApp slice 034):
+
+- **Each loop keeps its steps in its state file.** `progress` in `state.json` and
+  `plan_state.json` is the list of steps a work item's tile shows on its donut, each a `code`, a
+  `label` and a state, `pending`, `active` or `done`. The code is `[<phase>.]<kind>[-<round>]`,
+  from a fixed set of kinds: the run's `code`, `review`, `sweep`, `consult`, `test`, `docs` and
+  `wrap-up`, the plan's `write` and `review`. The list is seeded at the start from the plan, a
+  round past the first is a step of its own, and a phase the plan gains gets its steps
+  `pending`. What fits no kind is folded into the step it happens in: the gate into the code
+  round, the review-funding consult and the merge into the review round, the doc gate and the
+  landing into the wrap-up. A stop leaves the active step active, so a stopped run's tile says
+  where it stopped. `docs/run-loop.md` § The steps Pilot shows has the mapping, and
+  `docs/plan-loop.md` and `docs/runner-state.md` the plan's steps and the field.
+- **`wait` publishes the list.** The drivers call nothing. `wait_on_driver` sends the whole list
+  through `pilot-work`'s `set_progress` at its first probe, at each probe where it changed and
+  once more as it returns. The waiting process is the Pilot session's own, so its token is the
+  live one. The new `tools/pilot_progress.py` is the stdlib client, one `tools/call` POSTed to
+  `$PILOT_MCP_URL` with both headers the server requires and no `initialize`, its answer read
+  from the event stream's `data:` line, and three seconds at most a call. It holds the list to
+  Pilot's limits before it goes. It is best-effort and silent: no credentials, no answer and a
+  refusal each go to `log.txt` or `plan_log.txt`, once per kind per `wait`, and `wait`'s output
+  and exit codes are unchanged. A state file from an older plugin, with no list, publishes
+  nothing. `docs/pilot.md` § The progress has the contract and points at PilotApp's
+  `docs/mcp.md` for the tool.
+
 ## 2026-11-03 — A gate log keeps the head and the tail of a long kc output (v0.10.28)
 
 From slice 030's run (PilotApp; AIWF-131, item 4):

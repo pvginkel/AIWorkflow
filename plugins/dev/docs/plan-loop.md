@@ -64,6 +64,14 @@ codes): **0** `ended: exit <n>`, then for an exit 4 its `reason:` and the `docum
 for a bail its `reason:` and the `bailout:` file, for a halt where it stopped; **5** `running`,
 with the `next:` wait to re-arm; **6** `gone`, with the `next:` relaunch, `run … --detach`.
 
+**The steps Pilot shows.** `plan_state.json` keeps `progress` as the run loop's `state.json`
+does, by the same rules ([run-loop.md](run-loop.md) § The steps Pilot shows), and `wait`
+publishes it ([pilot.md](pilot.md) § The progress). The first run seeds `write`, "Plan · write",
+and `review`, "Plan · review", both `pending`; a reset re-plan, which enters at review, seeds
+`review` alone. Each writer pass is a step, `write`, then `write-2` and on, "Plan · write 2", and
+so is each review. A questions or review exit leaves its step active, and the rerun's pass is a
+step of its own after it. Exit 0 marks the active step done. A rerun keeps the list it finds.
+
 **One plan loop per slice.** The loop holds a `flock` on `<slice>/plan.lock` for the whole run —
 the run loop's lock, its note and heartbeat ([runner-state.md](runner-state.md) § Resume and crash
 recovery) — and records the same holder in `plan_state.json`'s `driver`, which `status` prints

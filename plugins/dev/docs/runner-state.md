@@ -60,6 +60,11 @@ run stood, the `run_phase` it stopped in and `ts`; a halt is not a bail, and not
 that gives none keeps it), `prerun_held` (the ids of the actions owed before the run whose
 checks held, or that a person struck, once all of them were met: never evaluated again, so the
 checks gate the start and nothing after it; [run-loop.md](run-loop.md) § Protocol invariants),
+`progress` (the steps the run shows on its Pilot work item, in order, each `{code, label,
+state}`: seeded before the start is reported, edited as each round starts and ends, and read by
+`wait`, which publishes it, never by the driver, which calls nothing; which round is which step
+is [run-loop.md](run-loop.md) § The steps Pilot shows, the publishing [pilot.md](pilot.md)
+§ The progress; absent on a run started before 0.10.29 until its first resume),
 `appended_phases`
 (the ids the plan gained after the run started — a consult's, the test phase's, or the
 operator's, as opposed to the phases it began with), `holds_reported` (the repos held by the
@@ -222,7 +227,8 @@ the run's end). It is a signal, not a report, and answers **0** the run ended (`
 where there is one, and the `bailout:` file), **5** still running (`running`, and the `next:`
 wait to re-arm with nothing read) or **6** `gone`, with no `exit` recorded (and the `next:`
 relaunch). Liveness is the `flock`, never the pid. `run_loop.py stop <slice-dir>`
-sends the driver SIGINT: the 130 path, as Ctrl-C.
+sends the driver SIGINT: the 130 path, as Ctrl-C. While it waits, `wait` publishes the run's
+`progress` to Pilot ([pilot.md](pilot.md) § The progress).
 
 ## Resume and crash recovery
 

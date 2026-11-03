@@ -47,6 +47,30 @@ on inside the turn, in the foreground, and so is a sub-agent it dispatches: the 
 notification starts, a sub-agent's included, is one Pilot never sent and does not count as the
 work item's, and its `register_document` is refused.
 
+## The progress
+
+A work item's tile shows the steps its run goes through on a donut, and a stage's steps are its
+loop's: the plan and run loops keep the list in their state file ([run-loop.md](run-loop.md)
+§ The steps Pilot shows) and publish it from their `wait`, never from the skill or the driver.
+`wait` is a process of the waiting session, so its `PILOT_TOKEN` is the live one, where the
+detached loop outlives the session that launched it and a continuation is a work item of its own:
+that work item's list starts empty, and its first `wait` publishes the whole list.
+
+`wait` sends the whole list through `pilot-work`'s `set_progress` at its first probe, at each
+ten-second probe where the list differs from what this `wait` last sent, and once more as it
+returns: one JSON-RPC `tools/call` POSTed to `$PILOT_MCP_URL` with no MCP client. The call is
+PilotApp's `docs/mcp.md` § A tool called with no MCP client, the tool its § `set_progress(steps)`
+and `set_progress_step(code, state)`. The list is held to the tool's limits before it goes, so a
+code past 64 characters or repeated is left out, a label past 120 is cut, and past 100 steps the
+oldest go. A call waits three seconds at most, so a slow Pilot never pushes a `wait` past the
+Bash tool's ten minutes.
+
+Publishing is best-effort and silent. No `PILOT_TOKEN` or `PILOT_MCP_URL` (a session started
+outside Pilot, or one alive across the deploy that brought the variable), no answer, and a refusal
+each go to the slice's log, `log.txt` or `plan_log.txt`, once per kind per `wait`. `wait`'s
+output and exit code never change, and nothing in the stage reads the answer. A state file with no
+list, from a loop started on a plugin before 0.10.29, publishes nothing.
+
 ## The brief
 
 The start's message is the work item's brief, which Pilot's brain writes and Pilot extends:
