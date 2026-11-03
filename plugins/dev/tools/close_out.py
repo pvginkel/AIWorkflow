@@ -1948,18 +1948,39 @@ def _route_improvement(entry: dict, lab: dict, touched: set[str] | None,
     return "operator:improvement", "to you — an improvement"        # 5
 
 
+# A proposal that opens `card:` or `card —` asks for a card (P-135: slice
+# 030's B1 and B2 were closed "it needs a fault" with a card proposed).
+_CARD_PROPOSAL_RE = re.compile(r"^card\s*[:—]", re.IGNORECASE)
+_CARD_AUTHOR = "card request — its author proposes a card"
+
+
+def _card_proposed(entry: dict, key: str, words: str) -> tuple[str, str]:
+    """A close made a card request, where the entry's author proposes a
+    card; any other route as it is."""
+    if not key.startswith("closed:") \
+            or not _CARD_PROPOSAL_RE.match(_collapse(entry.get("proposal"))):
+        return key, words
+    if key == "closed:left":
+        return "card:author", f"{_CARD_AUTHOR}; the wrap-up looked and left it"
+    return ("card:author", f"{_CARD_AUTHOR}; the table alone would close it: "
+            + words.removeprefix("closed — "))
+
+
 def table_route(entry: dict, touched: set[str] | None = None,
                 stages: dict | None = None) -> tuple[str, str]:
     """(key, the Route line's words) of a live entry by the tables alone —
     the wrap-up's mark not applied. `unlabelled` when the entry has no
-    labels and is not a kind the tool labels itself. `touched` is
+    labels and is not a kind the tool labels itself. A close is a card
+    request where the author proposes a card (`card: …`). `touched` is
     `touched_repos()`, `stages` `slice_stages()`, of the slice."""
     lab = effective_labels(entry)
     if lab is None or entry.get("kind") not in KINDS:
         return "unlabelled", "none yet — the entry has no labels"
     if entry["kind"] == "improvement":
-        return _route_improvement(entry, lab, touched, stages)
-    return _route_fix(entry, lab, touched, stages)
+        key, words = _route_improvement(entry, lab, touched, stages)
+    else:
+        key, words = _route_fix(entry, lab, touched, stages)
+    return _card_proposed(entry, key, words)
 
 
 def route(entry: dict, touched: set[str] | None = None,
@@ -1969,7 +1990,8 @@ def route(entry: dict, touched: set[str] | None = None,
     overrides the table: a card asked for makes a card request; the
     operator's word asked for brings the entry to them, whatever the
     table's route; an entry it looked at and left is closed, where the
-    table sent it to the wrap-up."""
+    table sent it to the wrap-up — or a card request, where its author
+    proposes a card."""
     if entry.get("strike"):
         return "record", "the record"
     key, words = table_route(entry, touched, stages)
@@ -1979,7 +2001,8 @@ def route(entry: dict, touched: set[str] | None = None,
     if mark == "word":
         return "operator:word", "to you — the wrap-up asks for your word on its edit"
     if mark == "left" and key.startswith("wrap-up:"):
-        return "closed:left", "closed — the wrap-up looked and left it"
+        return _card_proposed(entry, "closed:left",
+                              "closed — the wrap-up looked and left it")
     return key, words
 
 
@@ -2081,7 +2104,8 @@ def _asked(entry: dict, touched: set[str] | None,
     it breaks a flow, else a `recheck` where it was noted since its labels
     last changed (`_noted_since`). One that comes to the operator is asked a
     `note` where it is a risk, else a `vet`: the checks the operator would
-    otherwise have to make before ruling."""
+    otherwise have to make before ruling — and, a card its author asks for,
+    its section held to the card it files."""
     if entry.get("strike") or entry.get("wrap_up") or _ruled(entry):
         return None
     key, _ = table_route(entry, touched, stages)
@@ -2106,6 +2130,10 @@ def _asked(entry: dict, touched: set[str] | None,
                 "against the note")
     if key == "operator:risk":
         return "note — note what the code says under it; the entry stays the operator's"
+    if key == "card:author":
+        return ("vet — a card its author asks for: before the operator reads it, what a "
+                "command settles, and its section the card it files, at most "
+                f"{CARD_WORDS_MAX} words (`restate`)")
     if key.startswith(("operator:", "card:")):
         return ("vet — before the operator reads it: what a command settles, a proposal "
                 "where none, its vehicle")
@@ -2416,8 +2444,10 @@ def _render_entry(entry: dict, form: str, route_words: str | None) -> str:
     note, the proposal, the options, check and due, then every line the
     entry is triaged on and its ruling — `show`'s), `closed` (the heading,
     the Consequence unless it says none, Triage, Provenance and Route — what
-    the table closed), `asked` (the heading the document asks it under and
-    its trail), `ruled` (that heading, the ruling and the trail) and
+    the table closed), `asked` (the heading the document asks it under, the
+    Route where words are given — the record gives a card its author
+    proposes its own — and its trail), `ruled` (that heading, the ruling,
+    the Route where given and the trail) and
     `record` (the heading alone, a struck one's reason cut short). All of it
     is Markdown, so every `<` outside code is escaped (`asks.escape_tags`)."""
     return asks.escape_tags(_entry_markdown(entry, form, route_words))
@@ -2464,7 +2494,8 @@ def _entry_markdown(entry: dict, form: str, route_words: str | None) -> str:
         return _heading(entry)
     if form in ("asked", "ruled"):
         ruling = [f"**Ruling:** {_ruling_text(entry)}"] if form == "ruled" else []
-        return "\n\n".join([_asked_heading(entry), *ruling, *_trail(entry)])
+        said = [f"**Route:** {route_words}"] if route_words else []
+        return "\n\n".join([_asked_heading(entry), *ruling, *said, *_trail(entry)])
     if form == "full":
         lines = [_heading(entry), ""]
         told = entry.get("restated")
@@ -2823,11 +2854,14 @@ def _record(store: dict, slice_dir: Path | str) -> str:
         out += ["", *_wrap(asks.escape_tags(
             f"Closed: {closed['date']}" + (f" — {_collapse(said)}" if said else "")))]
     placed = dict(_placed(store, slice_dir))
+    # the table's reason for a card its author proposes: its section carries no note
+    reason = {e["id"]: w for items in placed.values() for e, key, w in items
+              if key == "card:author"}
     ruled = sorted((e for e in store["entries"] if _ruled(e)), key=_id_key)
-    asked = [(e, w) for place in ASKED for e, _, w in placed[place] if not _ruled(e)]
+    asked = [e for place in ASKED for e, _, _ in placed[place] if not _ruled(e)]
     sections = dict(zip(RECORD_SECTIONS, (
-        [_render_entry(e, "ruled", None) for e in ruled],
-        [_render_entry(e, "asked", None) for e, _ in asked],
+        [_render_entry(e, "ruled", reason.get(e["id"])) for e in ruled],
+        [_render_entry(e, "asked", reason.get(e["id"])) for e in asked],
         [_render_entry(e, "closed", w) for e, _, w in placed["Closed"]],
         [_render_entry(e, "record", None) for e, _, _ in placed["Record"] if not _ruled(e)],
     ), strict=True))
@@ -3311,11 +3345,12 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     body_help = "entry body, or - for stdin"
     consequence_help = ("what an operator or user experiences if this stays as it is, "
                         "or none — the line the operator triages on")
-    proposal_help = (f"{PROPOSAL_HELP}, in a ruling's words (card · fix now · "
+    proposal_help = (f"{PROPOSAL_HELP}, in a ruling's words (card: … · fix now · "
                      "fold into <slice> · close · do it), one line of at most "
                      f"{asks.PROPOSAL_MAX} characters — the operator reads it "
-                     "with the headline and the Consequence; required for an "
-                     "action and an improvement, refused on a decision")
+                     "with the headline and the Consequence; one that opens `card:` "
+                     "makes a card request where the table would close the entry; "
+                     "required for an action and an improvement, refused on a decision")
     provenance_help = ("witnessed | read, then role, phase, round, and the artifact "
                        "with the full record")
     severity_help = "the grade, where the entry has one"

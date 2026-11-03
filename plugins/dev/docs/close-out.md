@@ -208,7 +208,9 @@ refuses them without. A defect, a test gap or prose may carry one, and gets the 
 the table brings it to the operator — a card request is a one-line proposal on the entry
 restated as the card (`restate`, then `propose --card`); a risk gets one where its author gave
 none or the code says otherwise (`propose`). A proposal is a recommendation, never a route: the
-table decides who sees the entry, the operator what happens to it.
+table decides who sees the entry, the operator what happens to it — but for one. A proposal that
+opens `card:` or `card —` asks for a card, and an entry that carries one is not closed: it
+comes to the operator as a card request ([below](#the-routes)).
 
 **What must land first.** An entry whose fix must not wait for the run's end says what it must
 land before (`--due`): the phase's merge, the test phase, the push, or the report's close. The
@@ -277,6 +279,13 @@ An improvement takes the first of these that fits:
   — a number no folder under `slices/` holds, at any stage: a slice the project's plan names
   that triage has not filed — the entry comes to the operator, proposed to be held for that
   slice, and Pilot defers it to that slice's task: the workflow keeps nothing for it.
+- **A card its author asks for is not closed.** An entry whose proposal opens `card:` or
+  `card —` comes to the operator as a card request wherever either table would close it, and
+  where the wrap-up looked and left it: "everything that passes the sweep phase, and is
+  suggested for a card, can just become a card" (P-135, 2026-11-01). What the close rested on
+  stays on its Route line in the record ("the table alone would close it: it needs a fault"),
+  since a section carries no note. What the table sends the wrap-up still goes there first: a
+  fix or a fold strikes the entry, and the strike stands.
 - **Severity stands where the close would have been, and nowhere else** (row 9, and row 3 of
   the second table). What is severe is not closed for being unlikely; where the table would fix
   it or ask for a card, it does.
@@ -297,7 +306,8 @@ An improvement takes the first of these that fits:
 
 **A card request** is an entry that comes to the operator with a card asked for: by the table
 where the fix lives elsewhere (row 5), by the wrap-up where a likely problem is more than it
-can fix responsibly (row 8, `propose --card`). Its section is the card — the heading what the
+can fix responsibly (row 8, `propose --card`), by its author where it would otherwise be closed
+(a `card:` proposal, which the wrap-up vets). Its section is the card — the heading what the
 card would say, the body the card's text, at most 200 words together (`CARD_WORDS_MAX`, the
 tracker's limit for a card an agent writes, which `propose --card` and a restatement of a card
 request hold it to; the detail is the record's) — and its proposal the line Agree files it on;

@@ -193,7 +193,9 @@ once it is carried out, the ruling on one line, never wrapped: the answer lines,
 what was done; then its trail, as Asked has it. **Asked** is what the document asks and nobody
 has answered, under the heading it is asked by, each with the trail its section leaves out: the
 author's own text where a restatement took its place, then every note in order — a consult's, a
-relabel's, a replaced proposal or restatement — and the wrap-up's mark last.
+relabel's, a replaced proposal or restatement — and the wrap-up's mark last. A card its author
+asked for, where a close would have stood, carries its Route line under its heading, in Ruled as
+in Asked: what the close rested on ("the table alone would close it: it needs a fault").
 **Closed** is what the table closed, with the ground of the close. **Record** is the run's
 events that describe no problem, then what was struck and not ruled on, each by id, a struck
 one's reason up to its first `; ` (`show` has it whole); an entry the table closed and the

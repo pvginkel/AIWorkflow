@@ -128,7 +128,7 @@ def E(kind, grade=None, labels=None, **kw):
     """An entry as the store holds one, for the route function."""
     return {"id": "X1", "kind": kind, "grade": grade, "labels": labels,
             "consequence": kw.get("consequence"), "strike": kw.get("strike"),
-            "wrap_up": kw.get("wrap_up")}
+            "wrap_up": kw.get("wrap_up"), "proposal": kw.get("proposal")}
 
 
 def fix_labels(trigger="normal-use", impact="broken", signal="silent", fix="design",
@@ -408,6 +408,176 @@ def test_unlabelled_struck_and_the_wrap_ups_marks():
     assert R(E("defect", labels=fix_labels(trigger="fault"), wrap_up=left)) == \
         "closed:fault"
     assert R(E("action", labels={}, wrap_up=left)) == "operator:action"
+
+
+# -- routes: a card its author proposes ---------------------------------------
+
+# PilotApp slice 030's B1 and B2, its first close-out through Pilot
+# (2026-11-01): the table closed both "it needs a fault", and their authors
+# had proposed a card.
+B1_030 = {"kind": "defect", "grade": "minor",
+          "labels": fix_labels(trigger="fault", impact="broken", area="sensitive",
+                               repo="PilotApp"),
+          "proposal": "card — a retry cap for the turn-end read's own refusals, ruled "
+                      "with its failed read's finality in view",
+          "wrap_up": {"outcome": "left", "by": "wrap-up", "date": "2026-11-01",
+                      "text": ["Checked the trigger the close rests on, needs a fault … "
+                               "It holds."]}}
+B2_030 = {"kind": "defect", "grade": "minor",
+          "labels": fix_labels(trigger="fault", impact="degraded", repo="PilotApp"),
+          "proposal": "card: give the halt file's calls the write-back's capped retry "
+                      "(RefusalWaits), then say on the work item's line that the stop "
+                      "could not be asked for"}
+CARD_REQUEST = "card request — its author proposes a card"
+CARD_FAULT = ("card:author",
+              f"{CARD_REQUEST}; the table alone would close it: it needs a fault")
+CARD_LEFT = ("card:author", f"{CARD_REQUEST}; the wrap-up looked and left it")
+CARD_VET = ("vet — a card its author asks for: before the operator reads it, what a "
+            "command settles, and its section the card it files, at most 200 words "
+            "(`restate`)")
+
+
+def test_every_close_is_a_card_request_where_its_author_proposes_a_card():
+    assert close_out.route(E(**B1_030)) == CARD_FAULT
+    assert close_out.route(E(**B2_030)) == CARD_FAULT
+    # the table's own route, so the wrap-up is asked to vet it, not to check it
+    assert close_out.table_route(E(**{**B1_030, "wrap_up": None})) == CARD_FAULT
+    # without the card proposed, the table closes them as it did
+    assert R(E(**{**B1_030, "proposal": None})) == "closed:fault"
+    assert R(E(**{**B2_030, "proposal": None})) == "closed:fault"
+    card = "card: give it a design"
+    for labels, ground in (
+            (fix_labels(trigger="future-change"), "it cannot show with the code as it is"),
+            (fix_labels(trigger="ordinary-condition", signal="loud"),
+             "it is loud on an ordinary condition"),
+            (fix_labels(trigger="fault", impact="none", signal="none"), "it has no impact")):
+        assert close_out.route(E("defect", labels=labels, proposal=card)) == (
+            "card:author", f"{CARD_REQUEST}; the table alone would close it: {ground}")
+    elsewhere = fix_labels(trigger="fault", impact="degraded", repo="HelmCharts")
+    assert close_out.route(E("defect", labels=elsewhere, proposal=card), {"KubeCoder"}) \
+        == ("card:author", f"{CARD_REQUEST}; the table alone would close it: the fix "
+                           "lives in HelmCharts, which the slice did not touch")
+    unfelt = imp_labels(change="add", size="design", felt="after-incident",
+                        prevents="broken")
+    assert close_out.route(E("improvement", labels=unfelt, proposal=card)) == (
+        "card:author", f"{CARD_REQUEST}; the table alone would close it: it adds "
+                       "something for a benefit that is not felt in use")
+    # what the table sent to the wrap-up, which looked and left it
+    left = {"outcome": "left", "by": "wrap-up", "date": "2026-11-01", "text": ["x"]}
+    assert close_out.route(E("defect", labels=fix_labels(), proposal=card,
+                             wrap_up=left)) == CARD_LEFT
+    assert R(E("defect", labels=fix_labels(trigger="unknown"), proposal=card,
+               wrap_up=left)) == "card:author"
+    assert R(E("defect", labels=fix_labels(), wrap_up=left)) == "closed:left"
+    assert close_out.report_section("card:author") == "Card requests"
+
+
+def test_what_strikes_or_routes_an_entry_first_wins_over_its_authors_card():
+    card = "card: give it a design"
+    for reason in ("fixed", "folded into slice 012"):
+        struck = {"reason": reason, "by": "wrap-up", "date": "2026-11-01", "commit": None}
+        assert close_out.route(E(**{**B2_030, "strike": struck})) == ("record", "the record")
+    # what the table gives the wrap-up stays its: it fixes or folds first
+    assert R(E("defect", labels=fix_labels(fix="one-edit"), proposal=card)) == "wrap-up:fix"
+    assert R(E("defect", labels=fix_labels(fix="one-edit", **{"for": "012"}),
+               proposal=card)) == "wrap-up:fold"
+    assert R(E("defect", labels=fix_labels(), proposal=card)) == "wrap-up:fix-or-card"
+    assert R(E("defect", labels=fix_labels(trigger="unknown"), proposal=card)) == \
+        "wrap-up:look"
+    assert R(E("improvement", labels=imp_labels(), proposal=card)) == "wrap-up:improvement"
+    # a risk stays the operator's; a card the table asks for stays the table's
+    assert R(E("defect", labels=fix_labels(trigger="fault", impact="severe"),
+               proposal=card)) == "operator:risk"
+    assert R(E("defect", "major", labels=fix_labels(trigger="fault"), proposal=card)) == \
+        "operator:risk"
+    assert R(E("defect", labels=fix_labels(repo="HelmCharts"), proposal=card),
+             {"KubeCoder"}) == "card:table"
+    assert R(E("action", labels={}, proposal=card)) == "operator:action"
+    assert R(E("event", labels=fix_labels(trigger="none"), proposal=card)) == "record"
+    # the wrap-up's card and word marks as before
+    mark = {"by": "wrap-up", "date": "2026-11-01", "text": ["x"]}
+    assert close_out.route(E(**{**B2_030, "wrap_up": {**mark, "outcome": "card"}})) == (
+        "card:wrap-up", "card request — the wrap-up asks for a card")
+    assert R(E(**{**B2_030, "wrap_up": {**mark, "outcome": "word"}})) == "operator:word"
+
+
+def test_only_a_proposal_that_opens_card_and_a_colon_or_dash_asks_for_a_card():
+    fault = fix_labels(trigger="fault")
+    for proposal in ("Card it in PilotApp", "carding is not worth it", "fix now: one edit",
+                     "Card it: it needs a design.", "no card: it needs a fault", "cards: x",
+                     "card - x", "", None):
+        assert R(E("defect", labels=fault, proposal=proposal)) == "closed:fault", proposal
+    for proposal in ("Card: a design", "CARD — a design", "card:a design", "card —a design",
+                     "card : a design", "  card:\n a design"):
+        assert close_out.route(E("defect", labels=fault, proposal=proposal)) == \
+            CARD_FAULT, proposal
+
+
+def test_slice_030s_card_proposals_come_to_the_operator_as_card_requests():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp, name="030_turn_end_read")
+        (slice_dir / "state.json").write_text(json.dumps(
+            {"phases": {"1": {"landed": {"root": "/work/PilotApp"}}}}))
+        close_out.init_report(slice_dir)
+        base = with_flags(DEFECT, trigger="fault", repo="PilotApp", severity="minor")
+        for flags in (with_flags(base, impact="broken", proposal=B1_030["proposal"]),
+                      with_flags(base, impact="degraded", area="plain",
+                                 proposal=B2_030["proposal"]),
+                      with_flags(base, impact="degraded", area="plain",
+                                 proposal="Close it: it needs a fault.")):
+            code, _, err = run_cli("append", slice_dir, *flags)              # B1, B2, B3
+            assert code == 0, err
+        # the wrap-up vets the two its authors card; it checks no close
+        assert {e["id"]: a for e, a in close_out.worklist(slice_dir)} == {
+            "B1": CARD_VET, "B2": CARD_VET}
+        close_out.leave_entry(slice_dir, "B1", "wrap-up", B1_030["wrap_up"]["text"][0],
+                              date="2026-11-01")
+        assert [e["id"] for e, _ in close_out.worklist(slice_dir)] == ["B2"]
+        assert route_of(slice_dir, "B1") == route_of(slice_dir, "B2") == CARD_FAULT
+        assert route_of(slice_dir, "B3")[0] == "closed:fault"
+        assert places(slice_dir) == {"Card requests": ["B1", "B2"], "Closed": ["B3"]}
+        run_cli("append", slice_dir, *ACTION)                                    # A1
+        close_out.render_report(slice_dir)
+        doc = report(slice_dir)
+        blocks = close_out.asks.read_back(doc)
+        assert {bid: b["kind"] for bid, b in blocks.items()} == {
+            "A1": "action", "B1": "decision", "B2": "decision"}
+        assert "the cards asked for\"\n" in doc
+        for entry in (B1_030, B2_030):
+            assert entry["proposal"] in doc
+        assert "**Route:**" not in doc
+        record = (slice_dir / "close-out-record.md").read_text()
+        asked = record[record.index("## Asked"):record.index("## Closed")]
+        closed = record[record.index("## Closed"):]
+        assert "### B1 — " not in closed and "### B2 — " not in closed
+        assert "### B3 — " in closed and "**Route:** closed — it needs a fault" in closed
+        # the table's reason rides on the record's Route line, since a section
+        # carries no note: after the heading, before the trail
+        for eid in ("B1", "B2"):
+            assert (f"### {eid} — controller: the status line is wrong · minor\n\n"
+                    f"**Route:** {CARD_FAULT[1]}") in asked, eid
+        assert (f"**Route:** {CARD_FAULT[1]}\n\n**wrap-up, 2026-11-01.** looked and left "
+                "it: Checked the trigger") in asked
+        # any other asked entry carries none
+        a1 = asked[asked.index("### A1 — "):asked.index("### B1 — ")]
+        assert "**Route:**" not in a1
+        shown = close_out.show_view(slice_dir, ["B1", "B2"])
+        assert shown.count(f"**Route:** {CARD_FAULT[1]}") == 2
+        # ruled on, it keeps it, after the ruling
+        answer(slice_dir, "B2", answer="Agree", by="pvginkel")
+        answer(slice_dir, "A1", answer="Done", by="pvginkel")
+        close_out.render_report(slice_dir)
+        record = (slice_dir / "close-out-record.md").read_text()
+        ruled = record[record.index("## Ruled"):record.index("## Asked")]
+        assert (f"### B2 — controller: the status line is wrong · minor\n\n**Ruling:** "
+                f"answer: Agree · by pvginkel\n\n**Route:** {CARD_FAULT[1]}") in ruled
+        assert "### A1 — " in ruled and ruled.count("**Route:**") == 1
+        # closed with the report, a card request is not one the table closed
+        close_out.close_report(slice_dir, by="pvginkel", date="2026-11-02")
+        assert entry_of(slice_dir, "B1")["strike"]["reason"] == \
+            "closed with the report, 2026-11-02"
+        assert entry_of(slice_dir, "B3")["strike"]["reason"] == \
+            "closed with the report, 2026-11-02, as the table routed it: it needs a fault"
 
 
 def test_touched_repos_are_the_roots_of_the_state():
@@ -2711,10 +2881,12 @@ def test_verb_usage_renders_append_compactly_with_its_help_strings():
                        "entry carries"),
             ("--body", "entry body, or - for stdin"),
             ("--proposal", "what you would do about it and why, in a sentence or two, in "
-                           "a ruling's words (card · fix now · fold into <slice> · close · "
-                           "do it), one line of at most 300 characters — the operator "
-                           "reads it with the headline and the Consequence; required for "
-                           "an action and an improvement, refused on a decision"),
+                           "a ruling's words (card: … · fix now · fold into <slice> · "
+                           "close · do it), one line of at most 300 characters — the "
+                           "operator reads it with the headline and the Consequence; one "
+                           "that opens `card:` makes a card request where the table would "
+                           "close the entry; required for an action and an improvement, "
+                           "refused on a decision"),
             ("--option", "a decision's option, or an answer an action asks "
                                     "for: the label, then one line saying what it is or "
                                     "costs; repeat it for each — a decision puts two or "

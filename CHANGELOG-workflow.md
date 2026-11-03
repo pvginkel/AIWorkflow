@@ -4,6 +4,22 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-03 — A card its author asks for is a card request (v0.10.23)
+
+From slice 030's close-out (PilotApp, the first through Pilot; AIWF-129, P-135):
+
+- **An entry whose author proposes a card is never closed.** Slice 030's B1 and B2 were minor
+  defects. Each author's proposal opened "card", yet the table's row 10 closed both as "it
+  needs a fault", so they never reached Pilot, which would have carded them. The operator had
+  asked otherwise in P-135 and restated it on 2026-11-01: "everything that passes the sweep
+  phase, and is suggested for a card, can just become a card. I quite explicitly requested
+  that." A proposal that opens `card:` or `card —` now makes a card request (`card:author`)
+  wherever a close would have stood: every close of both tables, and the wrap-up's
+  `note --left`. The close's ground stays on the record's Route line ("the table alone would
+  close it: it needs a fault"). A fix or a fold still strikes the entry first. The wrap-up vets
+  such a request and holds its section to the card's 200 words. `--proposal`'s help names the
+  `card:` opening.
+
 ## 2026-10-31 — What an ask carries, and the stages' pushes (v0.10.22)
 
 From the end-of-E1 reading of the rehearsal's documents, and its findings list (P-111):
