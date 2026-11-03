@@ -3660,6 +3660,10 @@ CEXEC_MISSING_RE = re.compile(r'cexec: tool "([^"]+)" is not available')
 # The line `kc project <verb>` ends on: it prints a status line and the last
 # few lines per statement, and keeps the whole run in a file it names here.
 KC_FULL_OUTPUT_RE = re.compile(r"^full output: (/\S+)\s*$", re.M)
+# How much of that file a gate log takes, in bytes: one longer is inlined as
+# its head and its tail (`_inline_kc_full_output`).
+FULL_OUTPUT_HEAD = 256 * 1024
+FULL_OUTPUT_TAIL = 1024 * 1024
 
 MANIFEST_REL = Path(".kubecoder") / "project.yaml"
 ENV_CONFIG_REL = Path(".kubecoder") / "config.yaml"
@@ -3991,16 +3995,52 @@ def kc_full_output(log_path: Path, start: int = 0) -> str | None:
     return matches[-1] if matches else None
 
 
+def _byte_size(n: int) -> str:
+    """A byte count as the cut line gives it — `256 KiB`, `1 MiB`, else in
+    bytes."""
+    for unit, size in (("MiB", 1024 * 1024), ("KiB", 1024)):
+        if n >= size and n % size == 0:
+            return f"{n // size} {unit}"
+    return f"{n} bytes"
+
+
+def _full_output_text(path: Path) -> str:
+    """kc's full output as a gate log takes it: verbatim up to
+    FULL_OUTPUT_HEAD + FULL_OUTPUT_TAIL bytes, else its first
+    FULL_OUTPUT_HEAD bytes, a line saying how many were cut, and its last
+    FULL_OUTPUT_TAIL — which end on the output's own last line, a test
+    runner's summary. Cut by bytes and decoded with replacement, so a
+    character split at a cut is one replacement character. Raises OSError
+    as reading the file does."""
+    head, tail = FULL_OUTPUT_HEAD, FULL_OUTPUT_TAIL
+    size = path.stat().st_size
+    if size <= head + tail:
+        return path.read_text(errors="replace")
+    with open(path, "rb") as f:
+        first = f.read(head).decode(errors="replace")
+        f.seek(size - tail)
+        last = f.read().decode(errors="replace")
+    cut = (f"=== … {size - head - tail} bytes of kc's full output cut here: "
+           f"the first {_byte_size(head)} and the last {_byte_size(tail)} "
+           "are kept ===\n")
+    return first + ("" if first.endswith("\n") else "\n") + cut + last
+
+
 def _inline_kc_full_output(log_file, log_path: Path, start: int) -> None:
     """Append the file the command that began at byte `start` points at
     (`kc_full_output`) to its gate log: a blank line, a marker naming it,
-    its text verbatim. No pointer, no block; a file kc has rotated out or
-    a restart took is one line saying so, never a raise."""
+    its text (`_full_output_text`) — verbatim, or its head and tail when it
+    is long (AIWF-131: slice 030's backend gate logs were 35 MB each, nearly
+    all of it this file, and a slice folder commits them whole). The cut
+    changes no outcome: the inline comes after the command is classified,
+    and its last line stays the file's own. No pointer, no block; a file kc
+    has rotated out or a restart took is one line saying so, never a
+    raise."""
     path = kc_full_output(log_path, start)
     if path is None:
         return
     try:
-        text = Path(path).read_text(errors="replace")
+        text = _full_output_text(Path(path))
     except OSError:
         log_file.write(f"\n=== kc's full output ({path}) is gone — "
                        "not inlined ===\n")
@@ -6518,7 +6558,8 @@ class RunLoop:
         in the file its closing `full output:` line names, under
         /tmp/kc/project — which holds 20 runs and does not survive a
         restart — so that file is appended to the log once the command is
-        classified, on a bailout too. After, because the scans read kc's
+        classified, on a bailout too, its head and tail when it is long
+        (`_inline_kc_full_output`). After, because the scans read kc's
         own lines alone: a failing test's output quoting cexec's line is
         not a missing tool.
 

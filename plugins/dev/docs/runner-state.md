@@ -152,8 +152,10 @@ one per commit its `Review:` ledger gained past `review_set_start`, rewritten at
 every doc-writer dispatch — git's answer written down, not an agent's copy, with every `kind:
 Secret`'s data lines stubbed; the folder's own `.gitignore`, `*`, keeps it out of any `git add -A`
 in the spec repo). A phase gate's `gate_r<N>.log` holds kc's own lines and, below them, the full
-output kc keeps under `/tmp/kc/project`, inlined whole, so the log stands on its own once that
-file is gone; when the driver took the writer's own run instead, it says so at its top. Beside
+output kc keeps under `/tmp/kc/project`, inlined so the log stands on its own once that file is
+gone — whole up to 1.25 MiB; past that its first 256 KiB and its last 1 MiB, with a line between
+them saying how many bytes were cut (slice 030's backend gate logs ran to 35 MB each, committed
+to the spec repo); when the driver took the writer's own run instead, it says so at its top. Beside
 it, `gate_spec.json` is what the writer's gate wrapper runs, rewritten at every code-writer
 dispatch — on a spec-repo phase with the spec check's command as its `check`, its `argv` the
 repo's own `kc project test` or `null`; `lint_argv` and `lint_fallback` beside the test's, and

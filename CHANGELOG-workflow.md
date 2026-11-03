@@ -4,6 +4,20 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-03 — A gate log keeps the head and the tail of a long kc output (v0.10.28)
+
+From slice 030's run (PilotApp; AIWF-131, item 4):
+
+- **kc's full output is capped where a gate log inlines it.** Slice 030's backend gate logs,
+  committed whole to the spec repo with the slice's folder, were 35 MB each, almost all of it
+  the file kc keeps under `/tmp/kc/project`. The cause was a PilotApp test id, carded in that
+  project. `_inline_kc_full_output` still inlines output of up to 1.25 MiB verbatim. Past that it
+  keeps the first 256 KiB and the last 1 MiB (`FULL_OUTPUT_HEAD`, `FULL_OUTPUT_TAIL`), with a
+  line between them: `=== … <N> bytes of kc's full output cut here: the first 256 KiB and the
+  last 1 MiB are kept ===`. The tail ends on the output's own last line, a test runner's summary.
+  The cut changes no outcome: a command is classified before its output is inlined.
+  `docs/runner-state.md` says so where it describes `gate_r<N>.log`.
+
 ## 2026-11-03 — The wrap-up reads Jenkins (v0.10.27)
 
 From slice 030's run (PilotApp; AIWF-131, item 3):

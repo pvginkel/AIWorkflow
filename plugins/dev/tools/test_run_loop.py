@@ -4578,6 +4578,80 @@ def test_the_gate_log_inlines_kcs_full_output_after_kcs_own_lines():
         assert row["summary"] == f"full output: {full}"
 
 
+# kc's full output past the cap, in bytes the tests can write by hand: a
+# 16-byte head, a 32-byte tail (AIWF-131).
+SMALL_CAP = {"FULL_OUTPUT_HEAD": 16, "FULL_OUTPUT_TAIL": 32}
+FULL_HEAD = "collected 99 it\n"                     # 16 bytes
+FULL_TAIL = "tail-line-abcde\n== 12 passed ==\n"   # 32 bytes
+
+
+def test_a_full_output_over_the_cap_keeps_its_head_and_its_tail():
+    """Slice 030's gate logs were 35 MB, nearly all kc's full output: past
+    the cap the log takes its head, a line saying how much was cut, and its
+    tail — which ends on the output's own last line, the runner's summary.
+    The history row's summary stays kc's own last line."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        full = kc_full_log(tmp, "test-huge.log",
+                           FULL_HEAD + "cut me\n" + FULL_TAIL)
+        r = KcFullOutputLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                         *TAIL],
+                             repo_root=repo, gate_rcs=[0],
+                             full_outputs=[full])
+        with patched(run_loop, **SMALL_CAP):
+            assert run_to_exit(r) == 0
+        state = load_state(slice_dir)
+        log = Path(state["phases"]["1"]["gate_green_log"]).read_text()
+        lint = " ".join(lint_argv(PROJECT))
+        assert log == (f"kc project test --project {PROJECT}: exit 0\n"
+                       f"full output: {full}\n"
+                       f"\n=== kc's full output ({full}) ===\n"
+                       + FULL_HEAD
+                       + "=== … 7 bytes of kc's full output cut here: the "
+                       "first 16 bytes and the last 32 bytes are kept ===\n"
+                       + FULL_TAIL
+                       + f"\n=== `{lint}` from {repo} ===\n{lint}: exit 3\n")
+        assert "cut me" not in log
+        row = next(h for h in state["history"] if h["role"] == "gate")
+        assert row["summary"] == f"full output: {full}"
+
+
+def test_a_full_output_of_exactly_the_cap_is_inlined_whole():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        full = kc_full_log(tmp, "test-cap.log", FULL_HEAD + FULL_TAIL)
+        r = KcFullOutputLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                         *TAIL],
+                             repo_root=repo, gate_rcs=[0],
+                             full_outputs=[full])
+        with patched(run_loop, **SMALL_CAP):
+            assert run_to_exit(r) == 0
+        state = load_state(slice_dir)
+        log = Path(state["phases"]["1"]["gate_green_log"]).read_text()
+        assert (f"\n=== kc's full output ({full}) ===\n"
+                + FULL_HEAD + FULL_TAIL + "\n=== `") in log
+        assert "cut here" not in log
+
+
+def test_the_cut_line_has_its_own_line_and_the_cap_is_counted_in_bytes():
+    """A head that ends mid-line still puts the cut line on a line of its
+    own; a cut through a multi-byte character costs that character, not the
+    inline; the real cap reads as 256 KiB and 1 MiB."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "full.log"
+        # 15 bytes, then a 2-byte é the head's 16th byte splits
+        path.write_bytes(b"abcdefghijklmno" + "é".encode()
+                         + b"m" * 40 + FULL_TAIL.encode())
+        with patched(run_loop, **SMALL_CAP):
+            text = run_loop._full_output_text(path)
+        assert text == ("abcdefghijklmno\ufffd\n"
+                        "=== … 41 bytes of kc's full output cut here: the "
+                        "first 16 bytes and the last 32 bytes are kept ===\n"
+                        + FULL_TAIL)
+        assert run_loop._byte_size(run_loop.FULL_OUTPUT_HEAD) == "256 KiB"
+        assert run_loop._byte_size(run_loop.FULL_OUTPUT_TAIL) == "1 MiB"
+
+
 def test_a_full_output_file_that_is_gone_is_said_and_not_inlined():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
