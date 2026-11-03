@@ -97,6 +97,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # plugin these tools ship in, never the repo being planned.
 import asks  # noqa: E402
 import github_target  # noqa: E402
+import pilot_progress  # noqa: E402
 import project_config  # noqa: E402
 import run_loop  # noqa: E402
 from close_out import (  # noqa: E402
@@ -446,6 +447,43 @@ class PlanLoop:
         })
         self._save_state()
 
+    def _progress(self, edit) -> None:
+        """`edit` applied to plan_state.json's `progress` — the steps the
+        loop's `wait` publishes to Pilot (pilot_progress) — and saved when it
+        changed it."""
+        steps = self.state.get("progress")
+        if not isinstance(steps, list):
+            return
+        edited = edit(steps)
+        if edited != steps:
+            self.state["progress"] = edited
+            self._save_state()
+
+    def _progress_start(self, kind: str, round_: int, label: str) -> None:
+        """The pass's step active, the one before it done. A questions or
+        review exit leaves it active: the rerun's next pass finishes it."""
+        code = pilot_progress.step_code(kind, round_)
+        label += f" {round_}" if round_ >= 2 else ""
+        self._progress(lambda steps: pilot_progress.start(steps, code, label))
+
+    def _seed_progress(self) -> list[dict]:
+        """The loop's steps as far as they are known: the writer's pass
+        unless the loop enters at review with no pass behind it (a reset
+        re-plan), then the review. A state from an older plugin has its
+        first passes done where its counts say they ran."""
+        state = self.state
+        steps = []
+        if not (state["phase"] == "reviewing" and not state["writer_rounds"]):
+            steps.append(pilot_progress.make_step(
+                "write", "Plan · write",
+                pilot_progress.DONE if state["writer_rounds"] >= 1
+                else pilot_progress.PENDING))
+        steps.append(pilot_progress.make_step(
+            "review", "Plan · review",
+            pilot_progress.DONE if state["review_rounds"] >= 1
+            else pilot_progress.PENDING))
+        return steps
+
     def _emit(self, line: str) -> None:
         if self._log_file is None:
             self._log_file = open(self.log_path, "a", buffering=1)
@@ -739,6 +777,7 @@ class PlanLoop:
 
     def _writer_pass(self, initial: bool) -> None:
         w, verdict_path, questions_path = self._writer_paths()
+        self._progress_start("write", w, "Plan · write")
         if initial:
             prompt = WRITER_INITIAL_PROMPT.format(
                 slice_name=self.slice_name, slice_dir=self.slice_dir,
@@ -781,6 +820,7 @@ class PlanLoop:
         self.state["review_rounds"] += 1
         r = self.state["review_rounds"]
         self._save_state()
+        self._progress_start("review", r, "Plan · review")
         review_path = self.slice_dir / f"plan_review_r{r}.md"
         findings_path = self.slice_dir / f"plan_review_r{r}.json"
         verdict_path = self.slice_dir / f"plan_review_result_r{r}.json"
@@ -1020,6 +1060,10 @@ class PlanLoop:
                 "pending_questions": None,
                 "history": [],
             }
+        # Kept as it is on a rerun; seeded once, saved below before the
+        # start is reported, so the first `wait` finds it.
+        if "progress" not in self.state:
+            self.state["progress"] = self._seed_progress()
         # This run's driver, over whichever run recorded itself last; the
         # last run's exit cleared, so a `wait` under this run never reads it
         # as this one's end; the plan task kept for the reruns without one.
@@ -1321,6 +1365,7 @@ class PlanLoop:
                   "— rerun once it is gone.", file=sys.stderr)
             sys.exit(EXIT_HALTED)
 
+        self._progress(pilot_progress.finish_active)
         self.log(f"plan complete: {self.state['writer_rounds']} writer "
                  f"pass(es), review on file")
         self.announce(f"plan complete: {self.state['writer_rounds']} writer "
@@ -1369,9 +1414,11 @@ def cmd_wait(args) -> None:
     """Block until the loop ends or `--for` seconds pass, then say which:
     `running` with the wait to re-arm, `ended: exit <n>` with what the exit
     leaves, or `gone` with the relaunch — run_loop's `wait`, on plan.lock
-    and plan_state.json."""
+    and plan_state.json, with what it could not publish to Pilot in
+    plan_log.txt."""
     wait_on_driver(Path(args.slice_dir), "plan_state.json", "plan.lock",
-                   args.for_seconds, SCRIPT, "--detach", _ended_lines)
+                   "plan_log.txt", args.for_seconds, SCRIPT, "--detach",
+                   _ended_lines)
 
 
 def cmd_stop(args) -> None:

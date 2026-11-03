@@ -60,6 +60,17 @@ run_loop.HALT_FILE = (Path(tempfile.gettempdir()) / "planloop-no-home"
 run_loop.running_tools = lambda: {"python"}
 run_loop.running_services = lambda: set()
 
+
+# `wait` publishes a loop's steps to the Pilot its session's environment names
+# (`PILOT_MCP_URL`), and a pod running the suite inside a Pilot session has
+# one. The opener seam is pointed at a refusal, so no test reaches it; the
+# test of the publishing puts a fake of its own there.
+def _no_pilot(request, timeout=None):
+    raise AssertionError(f"a test reached Pilot at {request.full_url}")
+
+
+run_loop.pilot_progress.OPENER = _no_pilot
+
 PLAN_HEADER = """\
 # Test slice — plan
 
@@ -2140,6 +2151,122 @@ def test_a_detached_plan_loop_runs_through_the_real_handshake():
         (slice_dir / "plan.md").unlink()
         pid, code, text = detached(ScriptedLoop(slice_dir, []))
         assert (pid, code) == (None, 2) and "does not exist" in text
+
+
+# -- the steps Pilot shows ----------------------------------------------------
+
+def progress_of(slice_dir):
+    return [(s["code"], s["label"], s["state"])
+            for s in load_state(slice_dir)["progress"]]
+
+
+def test_a_plan_run_seeds_its_steps_and_takes_them_in_order():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [W_DONE, R_GO])
+        seeded, active = [], []
+        loop.on_start = lambda: seeded.append(progress_of(slice_dir))
+        real = loop._spawn
+
+        def spawn(role, prompt, verdict_path, round_):
+            active.append([code for code, _, state in progress_of(slice_dir)
+                           if state == "active"])
+            return real(role, prompt, verdict_path, round_)
+        loop._spawn = spawn
+        assert run_to_exit(loop) == 0
+        assert seeded == [[("write", "Plan · write", "pending"),
+                           ("review", "Plan · review", "pending")]]
+        assert active == [["write"], ["review"]]
+        assert progress_of(slice_dir) == [
+            ("write", "Plan · write", "done"),
+            ("review", "Plan · review", "done")]
+
+
+def test_a_questions_exit_leaves_its_pass_active_and_the_rerun_takes_write_2():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        assert run_to_exit(ScriptedLoop(slice_dir, [W_Q])) == 4
+        assert progress_of(slice_dir) == [
+            ("write", "Plan · write", "active"),
+            ("review", "Plan · review", "pending")]
+        assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE, R_ISSUES])) == 4
+        assert progress_of(slice_dir) == [
+            ("write", "Plan · write", "done"),
+            ("write-2", "Plan · write 2", "done"),
+            ("review", "Plan · review", "active")]
+        assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE])) == 0
+        assert [(c, s) for c, _, s in progress_of(slice_dir)] == [
+            ("write", "done"), ("write-2", "done"), ("review", "done"),
+            ("write-3", "done")]
+
+
+def test_a_reset_re_plan_has_no_write_step():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp, phases=True)
+        assert run_to_exit(ScriptedLoop(slice_dir, [R_GO])) == 0
+        assert progress_of(slice_dir) == [
+            ("review", "Plan · review", "done")]
+
+
+def test_a_state_from_an_older_plugin_seeds_the_passes_it_ran_done():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE, R_ISSUES])) == 4
+        state = load_state(slice_dir)
+        del state["progress"]
+        (slice_dir / "plan_state.json").write_text(json.dumps(state))
+        loop = ScriptedLoop(slice_dir, [W_DONE])
+        seeded = []
+        loop.on_start = lambda: seeded.append(progress_of(slice_dir))
+        assert run_to_exit(loop) == 0
+        assert seeded == [[("write", "Plan · write", "done"),
+                           ("review", "Plan · review", "done")]]
+        assert [(c, s) for c, _, s in progress_of(slice_dir)] == [
+            ("write", "done"), ("review", "done"), ("write-2", "done")]
+
+
+class FakePilot:
+    """Pilot's MCP endpoint at the opener seam: each call's list recorded
+    and taken."""
+
+    def __init__(self):
+        self.sent = []
+
+    def __call__(self, request, timeout=None):
+        steps = json.loads(request.data)["params"]["arguments"]["steps"]
+        self.sent.append(steps)
+        body = json.dumps({"jsonrpc": "2.0", "id": 1, "result": {
+            "structuredContent": {"steps": steps}}})
+        response = io.BytesIO(f"data: {body}\n\n".encode())
+        response.headers = {"Content-Type": "text/event-stream"}
+        return response
+
+
+def test_wait_publishes_the_plan_loops_steps_and_logs_to_plan_log():
+    steps = [{"code": "write", "label": "Plan · write", "state": "active"}]
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("PILOT_TOKEN", "PILOT_MCP_URL")}
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = plan_record(tmp, {"code": 4, "ts": "t"})
+        state = load_state(slice_dir)
+        state["progress"] = steps
+        (slice_dir / "plan_state.json").write_text(json.dumps(state))
+        fake = FakePilot()
+        with patched(os, environ=dict(env, PILOT_TOKEN="t",
+                                      PILOT_MCP_URL="http://pilot.invalid/mcp")), \
+                patched(run_loop.pilot_progress, OPENER=fake):
+            code, out, _ = wait(slice_dir)
+        assert (code, out.splitlines()[0]) == (0, "ended: exit 4")
+        assert fake.sent == [steps, steps]
+        assert not (slice_dir / "plan_log.txt").exists()
+        with patched(os, environ=env):
+            code, _, _ = wait(slice_dir)
+        assert code == 0
+        [line] = (slice_dir / "plan_log.txt").read_text().splitlines()
+        assert re.fullmatch(
+            r"\[\d\d:\d\d:\d\d\] \[wait\] Pilot progress not published: no "
+            r"PILOT_TOKEN/PILOT_MCP_URL in this session's environment", line)
+        assert not (slice_dir / "log.txt").exists()
 
 
 if __name__ == "__main__":

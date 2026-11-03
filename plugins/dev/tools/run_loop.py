@@ -91,7 +91,9 @@ records `exit: {code, ts}` in state.json as its last write, and a --resume
 clears it — so a run with no `exit` and no live driver was killed from
 outside. `wait` blocks on the run.lock flock (liveness is the lock, never
 the pid) for at most --for seconds and prints a signal — running, ended
-with its exit, or gone; `stop` SIGINTs the driver — its
+with its exit, or gone — and meanwhile publishes the steps the driver keeps
+in state.json's `progress` to Pilot (pilot_progress.py), which the driver
+never calls itself; `stop` SIGINTs the driver — its
 KeyboardInterrupt path, the same as Ctrl-C on an attached run. run.lock's
 note names the driver's KubeCoder environment, host and pid, with a
 heartbeat rewritten every minute while it holds the lock; state.json's
@@ -155,6 +157,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import asks  # noqa: E402
 import checks  # noqa: E402
 import github_target  # noqa: E402
+import pilot_progress  # noqa: E402
 import project_config  # noqa: E402
 from close_out import (  # noqa: E402
     ReportError,
@@ -5120,6 +5123,7 @@ class RunLoop:
             errors.extend(self._rulings(text)[1])
             if not errors:
                 self._track_phases(phases)
+                self._sync_progress(phases)
                 self._track_target_roots(roots)
                 return phases
             session, role = self._last_session()
@@ -5347,6 +5351,112 @@ class RunLoop:
         if roots != self.state.get("target_roots"):
             self.state["target_roots"] = roots
             self._save_state()
+
+    # -- the steps Pilot shows (`progress`, pilot_progress) --------------------
+
+    def _progress(self, edit) -> None:
+        """`edit` applied to state.json's `progress` — the steps `wait`
+        publishes to Pilot — and saved when it changed it. A state with no
+        list is left as it is: only the seed makes one."""
+        steps = self.state.get("progress")
+        if not isinstance(steps, list):
+            return
+        edited = edit(steps)
+        if edited != steps:
+            self.state["progress"] = edited
+            self._save_state()
+
+    def _progress_start(self, kind: str, round_: int, label: str,
+                        phase_id: str | None = None) -> None:
+        """The step of `kind` and round `round_` (of phase `phase_id`)
+        active, and the one before it done. It stays active until the next
+        start, its phase's merge or its stage's end: a bail, an interrupt or
+        a halt leaves it as it stood, so a stopped run's active step says
+        where it stopped."""
+        code = pilot_progress.step_code(kind, round_, phase_id)
+        self._progress(lambda steps: pilot_progress.start(steps, code, label))
+
+    def _progress_done(self) -> None:
+        self._progress(pilot_progress.finish_active)
+
+    @staticmethod
+    def _plain_title(phase: Phase) -> str:
+        """The phase's title without the driver's `✅ DONE <date>` stamp."""
+        stamp = DONE_STAMP_RE.search(phase.title)
+        return (phase.title[:stamp.start()] if stamp else phase.title).strip()
+
+    def _seed_progress(self, phases: list[Phase]) -> None:
+        """The whole list as far as it is known, where the state has none —
+        a fresh run, or a resume of a run started on an older plugin: each
+        phase's code and review steps in document order, done where the
+        phase is stamped, then the test phase and the doc phase where the
+        project runs them, and the wrap-up, which every run reaches. A
+        resume's closing steps follow the stage it stopped in: the test
+        phase is behind a run in the doc phase, the doc writer behind its
+        ladder's later stages, and the wrap-up is where the run is from the
+        doc gate on. A list the state holds is kept as it is."""
+        if "progress" in self.state:
+            return
+        steps = []
+        for phase in phases:
+            steps += pilot_progress.phase_steps(
+                phase.id, self._plain_title(phase), phase.done)
+        doc_stage = (self.state.get("doc_phase") or {}).get("stage")
+        states = {
+            "test": (pilot_progress.DONE
+                     if self.state.get("run_phase") == "docs"
+                     else pilot_progress.PENDING),
+            "docs": (pilot_progress.DONE if doc_stage not in (None, "writer")
+                     else pilot_progress.PENDING),
+            "wrap-up": (pilot_progress.ACTIVE
+                        if doc_stage in ("gate", "landing", "siblings")
+                        else pilot_progress.DONE if doc_stage == "done"
+                        else pilot_progress.PENDING),
+        }
+        for code, label, runs in (("test", "Test phase", self.cfg.test_phase),
+                                  ("docs", "Doc phase", self.cfg.doc_phase),
+                                  ("wrap-up", "Wrap-up", True)):
+            if runs:
+                steps.append(pilot_progress.make_step(code, label,
+                                                      states[code]))
+        self.state["progress"] = steps
+        self._save_state()
+
+    def _seed_progress_from_plan(self) -> None:
+        """The seed at the run's start, so the first `wait` after a detached
+        start finds the list. A plan that cannot be read or parsed here
+        seeds nothing: the first load that parses it (`_sync_progress`)
+        does."""
+        if "progress" in self.state:
+            return
+        try:
+            phases, errors = parse_plan(self.plan_path.read_text())
+        except OSError:
+            return
+        if not errors:
+            self._seed_progress(phases)
+
+    def _sync_progress(self, phases: list[Phase]) -> None:
+        """The list against the plan as a load parsed it: seeded if it is
+        still absent, the steps of a phase it lacks — one a consult, the
+        test phase or the operator appended — put where the run will take
+        them, and every step of a phase stamped done done, which covers the
+        merge, the reconcile that stamps a merge already landed, and a
+        resume."""
+        self._seed_progress(phases)
+        order = [p.id for p in phases]
+
+        def sync(steps: list[dict]) -> list[dict]:
+            for phase in phases:
+                if not pilot_progress.has_phase(steps, phase.id):
+                    steps = pilot_progress.insert_phase(
+                        steps, phase.id, self._plain_title(phase), order,
+                        phase.done)
+                if phase.done:
+                    steps = pilot_progress.finish_phase(steps, phase.id)
+            return steps
+
+        self._progress(sync)
 
     def _last_session(self) -> tuple[str | None, str | None]:
         """The last recorded session and its role — the one that last
@@ -7514,6 +7624,11 @@ class RunLoop:
                 ps["executor_rounds"] += 1
             r = ps["executor_rounds"] if pending is None else pending
             self._save_state()
+            # The driver's gate after the round is the round's step too.
+            self._progress_start(
+                "code", r, f"P{phase_id} · "
+                + (self._plain_title(phase) if r == 1 else f"code {r}"),
+                phase_id)
             if self._has_gate(target):
                 self._write_gate_spec(phase_id, r, outputs, target, base)
             prompt = (build_prompt(executor_verdict_path(r)) + "\n"
@@ -7631,6 +7746,8 @@ class RunLoop:
                       landed={"root": str(root), "base": merge_base,
                               "head": head})
             self._save_state()
+            self._progress(
+                lambda steps: pilot_progress.finish_phase(steps, phase_id))
             self.log(f"[P{phase_id}] merged into {base}")
             self.announce(f"P{phase_id} merged")
             self._stamp_done(phase_id)
@@ -8168,6 +8285,12 @@ class RunLoop:
                     skill_line=self._skill_line(phase_id),
                     close_out_line=self._close_out_line(relabel=True),
                 )
+            # The funding consult after the round, and the merge with its
+            # rebase and re-gate, are the round's step too.
+            self._progress_start(
+                "review", r,
+                f"P{phase_id} · review" + (f" {r}" if r >= 2 else ""),
+                phase_id)
             verdict, _ = self._spawn(
                 "code-reviewer", prompt, self.repo_root, verdict_path,
                 phase_id, r, agent="code-reviewer",
@@ -8440,6 +8563,8 @@ class RunLoop:
     def _run_gate_sweep(self, targets: list[Path], heads: dict) -> dict:
         n = self.state["sweep_runs"] = self.state.get("sweep_runs", 0) + 1
         self._save_state()
+        self._progress_start("sweep", n,
+                             "Gate sweep" + (f" {n}" if n >= 2 else ""))
         out_dir = self.slice_dir / "sweeps" / f"r{n}"
         out_dir.mkdir(parents=True, exist_ok=True)
         self.announce(f"gate sweep r{n} (lint+build+test, "
@@ -8487,6 +8612,7 @@ class RunLoop:
         if unrunnable:
             summary += f" ({unrunnable} unrunnable — tool missing)"
         self._record(None, "sweep", n, outcome, summary, None, duration_s)
+        self._progress_done()
         self.announce(f"gate sweep r{n} → "
                       + ("RED (" + ", ".join(reds) + ")" if reds
                          else GATE_OUTCOME_LABELS[outcome].lower())
@@ -8894,6 +9020,10 @@ class RunLoop:
         self._save_state()
         if not self._consult_already_complete():
             sweep = self._ensure_gate_sweep()
+            n = self._completion_consults() + 1
+            self._progress_start(
+                "consult", n,
+                "Completion consult" + (f" {n}" if n >= 2 else ""))
             choice = self._consult(
                 "completion",
                 COMPLETION_CONSULT_SITUATION.format(
@@ -8913,6 +9043,7 @@ class RunLoop:
                 },
                 [self.plan_path, self.verification_path], None,
             )
+            self._progress_done()
             if choice["outcome"] != "complete":
                 self._after_session_plan_check()
                 if self._has_unfinished_phase():
@@ -8926,6 +9057,15 @@ class RunLoop:
                 "sweep": sweep.get("run")}
             self._save_state()
         return self._resweep_after_complete()
+
+    def _completion_consults(self) -> int:
+        """The completion consults answered so far — the consult rows of no
+        phase (a review-funding consult carries its phase), a session-limit
+        wait aside. One a kill cut off left no row, so its redispatch keeps
+        its step."""
+        return sum(1 for row in self.state.get("history", [])
+                   if row.get("role") == "consult" and row.get("phase") is None
+                   and row.get("outcome") != "session_limit")
 
     def _consult_already_complete(self) -> bool:
         """Whether the completion consult already answered `complete` on the
@@ -9019,6 +9159,9 @@ class RunLoop:
         prd_line, prd_rulings = self._prd_line()
         for ruling in prd_rulings:
             self._report_ruling(ruling, "test-phase dispatch")
+        # Its push check's nudges are the round's step too.
+        self._progress_start("test", r,
+                             "Test phase" + (f" {r}" if r >= 2 else ""))
         verdict, session = self._spawn(
             "test-agent",
             TEST_PHASE_PROMPT.format(
@@ -9046,6 +9189,7 @@ class RunLoop:
             # session that made it is still resumable
             self._after_session_plan_check()
             self._assert_pushed(session)
+            self._progress_done()
             return False
         # findings → blocking phases were appended
         self._after_session_plan_check()
@@ -9054,8 +9198,10 @@ class RunLoop:
                      "— its findings are in the close-out report; treating "
                      "as clean")
             self._assert_pushed(session)
+            self._progress_done()
             return False
         self._spend_generation("the test phase")
+        self._progress_done()
         return True
 
     def _push_check(self) -> tuple[list[str], list[tuple[Path, str]]]:
@@ -9324,6 +9470,9 @@ class RunLoop:
             if not self._wrap_up_waits():
                 self.log(f"doc phase disabled in {self.cfg.path.name} — "
                          "skipped; nothing waits for the wrap-up")
+                # Reached, with nothing to do.
+                self._progress(lambda steps: pilot_progress.finish_step(
+                    steps, "wrap-up"))
                 return
             self.log(f"doc phase disabled in {self.cfg.path.name} — the "
                      "ladder starts at the wrap-up")
@@ -9397,6 +9546,7 @@ class RunLoop:
             # Rendered before the writer starts, so a run that stalls in the
             # doc phase leaves a report that can be read.
             self._render_report()
+            self._progress_start("docs", 1, "Doc phase")
             verdict, session = self._spawn(
                 "doc-writer",
                 DOC_PHASE_PROMPT.format(
@@ -9417,6 +9567,11 @@ class RunLoop:
             self._save_state()
 
         if ds["stage"] == "wrap-up":
+            # Its step runs on through the doc gate (its nudges of the
+            # writer included), the landing and the other repos' pushes —
+            # the rest of the ladder lands what it did. A resume into those
+            # stages starts nothing.
+            self._progress_start("wrap-up", 1, "Wrap-up")
             # Never raises a Bailout: whatever goes wrong in it is left out
             # of the landing, and the stage moves on.
             self._wrap_up(ds, branch)
@@ -9437,6 +9592,10 @@ class RunLoop:
             self._push_doc_siblings()
             ds["stage"] = "done"
             self._save_state()
+        # The ladder's end, here or where the wrap-up decided that nothing
+        # of it lands.
+        if ds["stage"] == "done":
+            self._progress_done()
         self.devlock.release(self.log)
 
     def _push_doc_siblings(self) -> None:
@@ -10870,7 +11029,9 @@ class RunLoop:
             if not self.resume:
                 self.preflight()
             # On disk before the start is reported: the `wait` that follows
-            # a detached start at once must find the run.
+            # a detached start at once must find the run, and the steps it
+            # publishes.
+            self._seed_progress_from_plan()
             if not self.state_path.exists():
                 self._save_state()
             # The start point: every refusal is behind it. A detached driver
@@ -10935,6 +11096,7 @@ class RunLoop:
 
         self.state["run_phase"] = "done"
         self._save_state()
+        self._progress_done()
         # A resume that completed without dispatching anything enters its
         # stops here, with the tree on its base and the run over.
         self._report_bailouts()
@@ -11368,20 +11530,28 @@ def cmd_wait(args) -> None:
     """Block until the run ends or `--for` seconds pass, then say which, and
     nothing a session must read: `running` with the wait to re-arm, `ended:
     exit <n>` with what the exit leaves, or `gone` with the relaunch."""
-    wait_on_driver(Path(args.slice_dir), "state.json", "run.lock",
+    wait_on_driver(Path(args.slice_dir), "state.json", "run.lock", "log.txt",
                    args.for_seconds, SCRIPT, "--resume --detach",
                    lambda record, slice_dir: _ended_lines(record.get("code"),
                                                           slice_dir))
 
 
 def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
-                   for_seconds: float, script: Path, relaunch: str,
-                   ended) -> None:
+                   log_name: str, for_seconds: float, script: Path,
+                   relaunch: str, ended) -> None:
     """Either loop's `wait`: block while the driver holds `lock_name` or
     until `for_seconds` pass, then print the signal and exit with its code —
     `running` and the wait to re-arm (5), `ended(record, slice_dir)`'s lines
     for the exit recorded in `state_name` (0), or `gone` and the relaunch
-    with `relaunch`'s flags (6). Liveness is the flock, never the pid."""
+    with `relaunch`'s flags (6). Liveness is the flock, never the pid.
+
+    Meanwhile it publishes the driver's steps to Pilot (pilot_progress): at
+    its first probe, at every probe that finds the list changed, and once
+    more as it returns. The driver holds no Pilot credential — this process
+    is the Pilot session's, so its token is the live one. What could not be
+    published goes to the slice's log `log_name`, never to the output: the
+    signal and the exit code are the same with Pilot there, failing or
+    absent."""
     state_path = slice_dir / state_name
     if not slice_dir.is_dir():
         print(f"Error: slice directory not found: {slice_dir}",
@@ -11393,12 +11563,17 @@ def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
         sys.exit(2)
     lock_path = slice_dir / lock_name
     deadline = time.monotonic() + for_seconds
+    progress = pilot_progress.Publisher(
+        state_path, lambda text: _append_wait_line(slice_dir / log_name, text))
+    progress.publish(force=True)
     while lock_held(lock_path):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
         time.sleep(min(WAIT_POLL, remaining))
+        progress.publish()
 
+    progress.publish(force=True)
     where = os.path.abspath(slice_dir)
     record = (_read_json(state_path) or {}).get("exit")
     if lock_held(lock_path):
@@ -11412,6 +11587,22 @@ def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
             f"next: python3 {script} run {where} {relaunch}"]
     print("\n".join(lines), flush=True)
     sys.exit(code)
+
+
+def _append_wait_line(log_path: Path, text: str) -> None:
+    """One `[wait]` line in the slice's log, in the loops' line format. The
+    driver may be appending to the same file: one write of the whole line
+    on an O_APPEND descriptor, so the two never interleave inside a line.
+    A log that cannot be written loses the line, nothing more."""
+    line = f"[{_now_hms()}] [wait] {text}\n".encode()
+    try:
+        fd = os.open(log_path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+        try:
+            os.write(fd, line)
+        finally:
+            os.close(fd)
+    except OSError:
+        pass
 
 
 def cmd_stop(args) -> None:
