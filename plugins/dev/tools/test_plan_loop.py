@@ -1675,20 +1675,22 @@ def service_plan(tmp, *rulings):
     return step
 
 
-def test_go_with_a_sibling_needing_a_missing_service_warns_and_proceeds():
+def test_go_with_a_sibling_declaring_unrun_services_proceeds_without_asking():
     """Another repo's config declares services for its own workspace, and
-    nothing says which its gates use: logged, and a red gate there is where
-    the run loop asks (AIWF-75)."""
+    nothing says which its gates use: not read at GO — no warning, kc not
+    asked — and a red gate there is where the run loop asks (AIWF-75,
+    AIWF-131)."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         loop = ScriptedLoop(slice_dir, [service_plan(tmp), R_GO])
-        assert run_to_exit(loop) == 0
+        asked = []
+        with patched(run_loop,
+                     running_services=lambda: asked.append(1) or set()):
+            assert run_to_exit(loop) == 0
         assert not (slice_dir / "plan_bailout.json").exists()
-        assert ("warning: services not held — Deploy/.kubecoder/config.yaml "
-                "declares postgres, s3storage, which this pod does not run; "
-                "only the host's own are held, and a gate that goes red in "
-                "Deploy bails missing_services") \
-            in (slice_dir / "plan_log.txt").read_text()
+        assert asked == []
+        assert "services not held" \
+            not in (slice_dir / "plan_log.txt").read_text()
 
 
 def host_with_services(loop, tmp):

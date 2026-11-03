@@ -14458,21 +14458,26 @@ def test_missing_services_name_each_service_its_configs_and_the_fix():
 
 def test_a_describe_that_fails_passes_the_service_check_with_a_warning():
     with tempfile.TemporaryDirectory() as tmp:
-        sib = inventory_repo(tmp)
+        host = Path(tmp) / "host"
+        host_services(host, "postgres")
 
         def broken():
             raise ValueError("`kc env describe --output=json` failed (rc=1)")
 
         logged = []
         with patched(run_loop, running_services=broken):
-            assert run_loop.services_check([sib], [], Path(tmp),
+            assert run_loop.services_check([host], [], host,
                                            logged.append) is None
             assert logged and logged[0].startswith(
                 "warning: service check skipped")
-            # a repo whose config declares no service asks kc nothing
+            # a host whose config declares no service asks kc nothing
             logged.clear()
             plain = make_sibling(tmp, name="Plain")
-            assert run_loop.services_check([plain], [], Path(tmp),
+            assert run_loop.services_check([plain], [], plain,
+                                           logged.append) is None
+            # nor does a sibling's that declares some
+            sib = inventory_repo(tmp)
+            assert run_loop.services_check([sib, plain], [], plain,
                                            logged.append) is None
             assert not logged
         # the seam: describe's top-level `services`, by name, state unread
@@ -14519,20 +14524,28 @@ def services_run(tmp, *, target="../Inventory", rulings=(), declared=(),
 
 # A run's whole script: the one phase, then the tail.
 SERVICES_SCRIPT = [V["exec_done"], V["review_signoff"], *TAIL]
-NOT_HELD = ("warning: services not held — Inventory/.kubecoder/config.yaml "
-            "declares postgres, s3storage, which this pod does not run; only "
-            "the host's own are held, and a gate that goes red in Inventory "
-            "bails missing_services")
 
 
-def test_a_sibling_target_needing_a_missing_service_is_warned_about_not_held():
-    """KubeCoder slice 244: another repo's config declares services for its
-    own workspace, and nothing says which its gates use."""
+def counting_services(asked):
+    """A `running_services` stand-in that records each time kc is asked."""
+    def running():
+        asked.append("services")
+        return set(RUNNING_SERVICES)
+    return running
+
+
+def test_a_sibling_target_declaring_unrun_services_is_not_read_at_start():
+    """KubeCoder slice 244, PilotProjects' pilot-sync: another repo's config
+    declares services for its own workspace, and nothing says which its
+    gates use — no warning, and kc is not asked."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo, r = services_run(tmp, script=SERVICES_SCRIPT)
-        assert run_to_exit(r) == 0
+        asked = []
+        with patched(run_loop, running_services=counting_services(asked)):
+            assert run_to_exit(r) == 0
         assert not r.script
-        assert NOT_HELD in (slice_dir / "log.txt").read_text()
+        assert asked == []
+        assert "services not held" not in (slice_dir / "log.txt").read_text()
 
 
 def test_a_host_declaring_a_missing_service_bails_before_any_dispatch():
@@ -14570,7 +14583,7 @@ def test_a_resume_runs_the_service_check_too():
         assert not r3.script
 
 
-def test_a_sibling_the_run_already_touched_is_warned_about_not_held():
+def test_a_sibling_the_run_already_touched_is_not_read_at_start():
     """No pending phase targets the repo any more, but the run's `bases`
     hold it — the loop-tail sweep would run its suites, and a red there is
     where its services are asked."""
@@ -14583,10 +14596,11 @@ def test_a_sibling_the_run_already_touched_is_warned_about_not_held():
             + "\n" + phase_section("2", "App change"))
         r = ScriptedLoop(slice_dir, [], repo_root=repo)
         r.state = {"bases": {str(sib): "main"}}
-        logged = []
+        logged, asked = [], []
         r.log = logged.append
-        assert r._missing_services() is None
-        assert logged == [NOT_HELD]
+        with patched(run_loop, running_services=counting_services(asked)):
+            assert r._missing_services() is None
+        assert logged == [] and asked == []
 
 
 HOST_WAIVERS = (
@@ -14625,7 +14639,7 @@ def test_a_sibling_the_rulings_waive_whole_is_not_warned_about():
         assert "services not held" not in (slice_dir / "log.txt").read_text()
 
 
-def test_a_dry_run_warns_once_of_a_siblings_unheld_services():
+def test_a_dry_run_passes_a_siblings_unrun_services_without_a_word():
     with tempfile.TemporaryDirectory() as tmp:
         inventory_repo(tmp)
         root = dry_run_repo(tmp)
@@ -14633,11 +14647,13 @@ def test_a_dry_run_warns_once_of_a_siblings_unheld_services():
         (slice_dir / "plan.md").write_text(
             "# plan\n\n"
             + phase_section("1", "Inventory change", "../Inventory"))
-        code, out, err = dry_run_from(RunLoop(slice_dir, resume=False), root)
+        asked = []
+        with patched(run_loop, running_services=counting_services(asked)):
+            code, out, err = dry_run_from(RunLoop(slice_dir, resume=False),
+                                          root)
         assert code == 0, err
-        assert err.count("warning: services not held — ") == 1, err
-        assert f"{NOT_HELD}\n" in err
-        assert "warning: warning:" not in err
+        assert asked == []
+        assert "services not held" not in out + err
         assert "plan problems:" not in err
 
 
@@ -14688,7 +14704,7 @@ def test_a_red_gate_in_a_repo_missing_its_services_bails_without_a_fix_round():
 
 
 def test_a_red_gate_in_a_sibling_missing_its_services_bails_too():
-    """The startup check only warns of a sibling's services; a gate gone red
+    """The startup check does not read a sibling's services; a gate gone red
     there is where they are asked."""
     with tempfile.TemporaryDirectory() as tmp:
         inventory_repo(tmp)
@@ -14700,7 +14716,7 @@ def test_a_red_gate_in_a_sibling_missing_its_services_bails_too():
                        gate_rcs=[1])
         assert run_to_exit(r) == 4
         assert not r.script and len(r.spawned) == 1, "no fix round"
-        assert NOT_HELD in (slice_dir / "log.txt").read_text()
+        assert "services not held" not in (slice_dir / "log.txt").read_text()
         bail = json.loads((slice_dir / "bailout.json").read_text())
         assert bail["reason"] == "missing_services" and bail["question"]
         assert bail["phase"] == "1"

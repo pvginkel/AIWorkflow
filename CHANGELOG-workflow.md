@@ -4,6 +4,22 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-03 — Another Target repo's services are not read at start (v0.10.26)
+
+From slice 030's run (PilotApp; AIWF-131, item 2):
+
+- **No `services not held` warning at every start.** `run_loop.services_check` now reads the
+  host's `.kubecoder/config.yaml` alone. Since 0.9.113 it also logged a `warning:` line for every
+  other Target repo whose config declares a service the pod does not run, at each plan loop GO,
+  each run loop start, fresh and `--resume`, and in `--dry-run`. Slice 030 logged PilotProjects'
+  `pilot-sync` every time, and PilotProjects' gate never needs it. kc is now asked only when the
+  host declares a service and the rulings do not waive the host whole. The host's check and the
+  backstop are unchanged: a phase gate that goes red in any repo whose declared services the pod
+  does not run still bails `missing_services`. That bail's reason can mislead, as it would have
+  for PilotProjects. A fix needs a `needs:` key in kc's manifest naming the services a gate
+  uses, and that is outside this plugin. `docs/run-loop.md` § Protocol invariants,
+  `plan-loop.md`'s exits and `runner-state.md`'s bail table say so.
+
 ## 2026-11-03 — A fix in the spec repo is the slice's own, and the Provenance count follows the document (v0.10.25)
 
 From slice 030's run (PilotApp; AIWF-131, item 1). Its summary read "card requests 1 · … · 2

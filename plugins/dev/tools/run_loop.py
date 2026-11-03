@@ -4099,8 +4099,8 @@ def _ticked(cmds: Sequence[str]) -> str:
 # The fix is the tools' fix — a config.yaml line and `kc env restart` — so a
 # gate gone red in a repo whose services the pod lacks bails for it, never a
 # fix round (`RunLoop._unrun_services`). Before any dispatch only the host's
-# own config is held, another Target repo's logged (AIWF-75, `services_check`
-# says why).
+# own config is held; another Target repo's services are asked only where a
+# gate goes red there (`services_check` says why).
 # ---------------------------------------------------------------------------
 
 # An item of the environment config's `services:` list: the bare name
@@ -4198,48 +4198,32 @@ def services_check(roots: Sequence[Path],
                    rulings: list[tuple[Ruling, ResolvedTarget]],
                    host_root: Path, log, relaunch: str = RUN_RELAUNCH
                    ) -> str | None:
-    """The missing-services message for the host among `roots` (a bail's
-    `details`), None when the pod runs every service the host's environment
-    config declares — or when it cannot say which it runs (logged as a
-    warning, and the check passes). Only the host is held (AIWF-75): its
-    config is the pod's, while another Target repo's declares services for
-    that repo's own workspace, and nothing in it says which its gates use —
-    KubeCoder slice 244 stopped in planning over Ansible's
-    terraform-backend-git for a phase editing one sentence of Ansible's
-    docs, whose gates never touch it. Such a repo's unrun services are a
-    logged warning, and a gate gone red there bails for them
-    (`RunLoop._unrun_services`). kc is asked only when some root's config
-    declares a service; a repo the rulings waive whole (`tools_waived`: no
-    gate it must pass runs its suites) is neither held nor warned about."""
+    """The missing-services message for the host when it is among `roots`
+    (a bail's `details`), None when the pod runs every service the host's
+    environment config declares — or when it cannot say which it runs
+    (logged as a warning, and the check passes). Only the host is held
+    (AIWF-75, AIWF-131): its config is the pod's, while another Target
+    repo's declares services for that repo's own workspace, and nothing in
+    it says which its gates use — KubeCoder slice 244 stopped in planning
+    over Ansible's terraform-backend-git for a phase editing one sentence of
+    Ansible's docs, whose gates never touch it, and PilotProjects'
+    pilot-sync, which its gate never uses, put a warning in every start's
+    log. Such a repo's services are not read here: they are asked only
+    where a gate goes red there (`RunLoop._unrun_services`). kc is asked
+    only when the host's config declares a service and the rulings do not
+    waive the host whole (`tools_waived`: no gate it must pass runs its
+    suites)."""
     host = Path(host_root).resolve()
-    seen: set[Path] = set()
-    declaring = []
-    for root in roots:
-        key = Path(root).resolve()
-        if key not in seen and config_services(
-                _read_text(key / ENV_CONFIG_REL)):
-            seen.add(key)
-            declaring.append(key)
-    if not declaring:
+    if (host not in {Path(root).resolve() for root in roots}
+            or not config_services(_read_text(host / ENV_CONFIG_REL))
+            or tools_waived(host, rulings)):
         return None
     try:
         running = running_services()
     except ValueError as e:
         log(f"warning: service check skipped — {e}")
         return None
-    held = []
-    for root in declaring:
-        unrun = missing_services([root], host_root, running)
-        if not unrun or tools_waived(root, rulings):
-            continue
-        if root == host:
-            held.append(root)
-            continue
-        log(f"warning: services not held — {root.name}/{ENV_CONFIG_REL} "
-            f"declares {', '.join(m.service for m in unrun)}, which this pod "
-            "does not run; only the host's own are held, and a gate that goes "
-            f"red in {root.name} bails missing_services")
-    missing = missing_services(held, host_root, running)
+    missing = missing_services([host], host_root, running)
     return (missing_services_details(missing, host_root, relaunch)
             if missing else None)
 
@@ -5198,9 +5182,9 @@ class RunLoop:
 
     def _missing_services(self) -> str | None:
         """The missing-services message for this run's repos
-        (`services_check`, over `_tool_roots`: the host held, another repo's
-        unrun services logged), None when the pod runs every service the
-        host's environment config declares."""
+        (`services_check`, over `_tool_roots`: the host alone is held), None
+        when the pod runs every service the host's environment config
+        declares."""
         return services_check(self._tool_roots(), self._current_rulings(),
                               self.repo_root, self.log)
 

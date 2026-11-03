@@ -42,7 +42,7 @@ document above; answer it, rerun — the loop resumes where it paused) · **3** 
 `blocked`, `timeout`, `protocol_failure`, `missing_tools` — a plan Target's manifest calls a
 `cexec` tool this environment does not run, `missing_services` — the host's own
 `.kubecoder/config.yaml` declares a service this environment does not run (another Target repo's
-is a warning in the log), both checked at GO as
+are not read), both checked at GO as
 the run loop checks them at start ([run-loop.md](run-loop.md) § Protocol invariants),
 `plugin_version` — the installed plugin is not the loop's own version, checked with
 `verification.json`'s keys at startup, before every dispatch and, for the keys, before exit 0;
