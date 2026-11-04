@@ -47,6 +47,8 @@ plan-reviewer pass judges it, and there is no review loop — "a writer pass, a 
 exit — findings go to the operator for adjudication, whose rulings land in `plan.md` and drive
 exactly one fix pass" (v0.4.0, [`CHANGELOG-workflow.md`](../../CHANGELOG-workflow.md)). Exit 4 is
 the loop's only way of talking to the operator: writer questions, or a review pending adjudication.
+A gap, a blocking finding whose fix needs no product choice, skips the operator and goes to that
+fix pass (0.10.32).
 Rulings are edited in place, never chained; the round history lives in `plan_review_r*.md`. Nobody
 re-reviews the fix pass: "the operator's read is the second look, and it is the cheapest review pass
 there is" ([`plan-loop.md`](../../plugins/dev/docs/plan-loop.md)).

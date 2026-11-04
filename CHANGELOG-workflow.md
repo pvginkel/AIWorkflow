@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-04 — A plan review's gap goes to the writer, not to the operator (v0.10.32)
+
+AIWF-137 (session review 2 of Pilot in production, change 1; the operator: "In full"):
+
+- **A gap skips the operator.** A plan-review finding that is `blocking` with a proposal and no
+  options needs no product choice. It is left out of the review's document and goes to the one
+  writer fix pass with the rulings. Slice 032's plan review raised one such gap, "a sentence or
+  two in P11", and it cost an exit 4, an orchestrator turn, Pilot's pass and a second writer
+  round, with a "waits on 2 rulings" document in front of the operator.
+- **A review of gaps alone goes straight on** to the fix pass, with no exit and no document;
+  `plan_state.json`'s `review_ruled` is false, and the fix prompt opens by saying the findings
+  are gaps that come with no ruling. A finding with options, or an operator-decidable one,
+  still pauses the loop, now with only those findings in the document.
+- **The plan-reviewer** gives a blocking finding options only where the fix is a choice the
+  operator could make either way. No field was added to its hand-back: the class and the options
+  already tell the two apart.
+
 ## 2026-11-04 — A red gate in another repo is an ordinary red (v0.10.31)
 
 AIWF-133 (the operator, 2026-11-04: no `needs:` key in KubeCoder's manifest):

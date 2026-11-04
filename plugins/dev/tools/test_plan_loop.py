@@ -241,8 +241,14 @@ W_DONE = ("plan-writer", {"outcome": "done", "summary": "written"},
 W_Q = ("plan-writer", {"outcome": "questions", "summary": "need a ruling"},
        asks_questions(QUESTION))
 R_GO = ("plan-reviewer", {"outcome": "go", "summary": "clean"})
+# A review the operator rules on: a choice, and a gap the fix pass closes
+# with the ruling.
 R_ISSUES = ("plan-reviewer", {"outcome": "issues",
-                              "summary": "two blocking"}, finds(BLOCKING))
+                              "summary": "a choice and a gap"},
+            finds(OPERATOR, BLOCKING))
+# A review of gaps alone, which goes on to the fix pass with no ruling.
+R_GAPS = ("plan-reviewer", {"outcome": "issues", "summary": "one gap"},
+          finds(BLOCKING))
 R_Q = ("plan-reviewer", {"outcome": "questions",
                          "summary": "undecided semantics"}, finds(OPERATOR))
 
@@ -396,6 +402,69 @@ def test_review_issues_exit_for_adjudication_then_one_fix_pass():
         assert "rulings recorded in plan.md supersede" in fix_prompt
 
 
+def test_a_review_of_gaps_alone_ends_in_the_writers_fix_pass_not_exit_4():
+    """A gap — a blocking finding that says its disposition, with no options
+    to choose between — needs no product choice: a review of gaps alone goes
+    on to the one writer fix pass in the same run, with no document and no
+    exit 4, and no review follows the pass."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [W_DONE, R_GAPS, W_DONE])
+        code, out, _ = quiet(loop)
+        assert code == 0
+        assert not loop.script
+        assert loop.spawned == [("plan-writer", 1, "done"),
+                                ("plan-reviewer", 1, "issues"),
+                                ("plan-writer", 2, "done")]
+        assert not (slice_dir / "asks").exists()
+        assert "document:" not in out
+        state = load_state(slice_dir)
+        assert (state["phase"], state["pending_review"], state["review_ruled"],
+                state["exit"]["code"]) == ("done", 1, False, 0)
+        fix_prompt = loop.prompts[2][1]
+        assert "plan_review_r1.md" in fix_prompt
+        assert ("findings on slice 099_test_slice's plan are gaps that\n"
+                "need no ruling") in fix_prompt
+        assert "The operator has ruled" not in fix_prompt
+        assert ("[plan-reviewer r1] 1 gap(s) need no ruling — the writer's "
+                "fix pass closes them\n") in (slice_dir / "plan_log.txt").read_text()
+
+
+def test_a_review_with_a_choice_puts_the_choice_alone_and_the_fix_pass_closes_its_gap():
+    """The finding with options exits 4 as the document's one ask; the gap
+    beside it stays out of the document and goes to the fix pass the ruling
+    drives. A state from before the gaps' route reads as a ruled review."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        assert quiet(ScriptedLoop(slice_dir, [W_DONE, R_ISSUES]))[0] == 4
+        store = asks.load(slice_dir / "asks" / "1-plan-review.md")
+        assert [e["headline"] for e in store["entries"]] == [OPERATOR["headline"]]
+        state = load_state(slice_dir)
+        assert (state["phase"], state["review_ruled"]) == ("adjudicating", True)
+        assert "[plan-reviewer r1] 1 gap(s) need no ruling" in \
+            (slice_dir / "plan_log.txt").read_text()
+        del state["review_ruled"]
+        (slice_dir / "plan_state.json").write_text(json.dumps(state))
+        loop = ScriptedLoop(slice_dir, [W_DONE])
+        assert run_to_exit(loop) == 0
+        assert loop.prompts[0][1].startswith(
+            "The operator has ruled on the plan-reviewer's findings on slice\n"
+            "099_test_slice's plan. Slice folder: ")
+
+
+def test_a_gap_fix_pass_resumed_after_its_questions_still_has_no_ruling_behind_it():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        assert quiet(ScriptedLoop(slice_dir, [W_DONE, R_GAPS, W_Q]))[0] == 4
+        assert load_state(slice_dir)["phase"] == "questions"
+        loop = ScriptedLoop(slice_dir, [W_DONE])
+        assert run_to_exit(loop) == 0
+        prompt = loop.prompts[0][1]
+        assert "are gaps that\nneed no ruling" in prompt
+        assert "plan_questions_r2.json" in prompt
+        assert "rulings section now holds the answers" in prompt
+
+
 def test_plan_edits_during_adjudication_still_dispatch_the_fix_pass():
     """Regression, Triage #460 + #511 — the loop must not infer "the fixes
     are in" from the plan's content.
@@ -516,16 +585,21 @@ def test_writer_questions_exit_with_a_document_for_the_session_to_register():
 
 
 def test_review_findings_put_one_ask_each_and_leave_the_advisory_in_the_review():
-    """A blocking finding goes as a decision on the reviewer's disposition,
-    an operator-decidable one as a decision on its options with no winner
-    named, or as a question where it gives none; an advisory note stays in
-    the prose review."""
+    """An operator-decidable finding goes as a decision on its options with
+    no winner named, or as a question where it gives none, and a blocking
+    one with options as a decision on them; a gap, a blocking finding on the
+    reviewer's disposition, goes to the writer's fix pass, and an advisory
+    note stays in the prose review."""
     advisory = {"class": "advisory", "headline": "P1 runs long",
                 "body": "It could split."}
     open_fact = {"class": "operator", "headline": "Which tenant owns the data",
                  "body": "Neither slice.md nor the code says."}
+    choice = {"class": "blocking", "headline": "P1 and P2 both build the queue",
+              "body": "Each phase's outcome carries the queue.",
+              "options": [{"label": "P1", "line": "the producer builds it"},
+                          {"label": "P2", "line": "the consumer builds it"}]}
     review = ("plan-reviewer", {"outcome": "issues", "summary": "x"},
-              finds(OPERATOR, BLOCKING, advisory, open_fact))
+              finds(OPERATOR, BLOCKING, choice, advisory, open_fact))
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         code, out, _ = quiet(ScriptedLoop(slice_dir, [W_DONE, review]))
@@ -544,8 +618,8 @@ def test_review_findings_put_one_ask_each_and_leave_the_advisory_in_the_review()
         assert entries == [
             {"id": "D1", "kind": "decision", "headline": OPERATOR["headline"],
              "proposal": None, "recommend": None},
-            {"id": "D2", "kind": "decision", "headline": BLOCKING["headline"],
-             "proposal": BLOCKING["proposal"], "recommend": None},
+            {"id": "D2", "kind": "decision", "headline": choice["headline"],
+             "proposal": None, "recommend": None},
             {"id": "Q1", "kind": "question", "headline": open_fact["headline"],
              "proposal": None, "recommend": None}]
         assert load_state(slice_dir)["exit"]["reason"] == "review"

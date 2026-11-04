@@ -19,6 +19,9 @@ finding, for the session to register with Pilot (docs/pilot.md). The
 answers go into plan.md's rulings section; the rerun resumes the paused
 pass, and after a review it always dispatches ONE writer fix pass, which
 resolves every finding the rulings do not overrule. No review follows it.
+A review finding that is a gap (`is_gap`: blocking, no options to choose
+between) needs no product choice and never reaches the operator: it goes to
+that same fix pass, and a review of gaps alone goes on to it with no exit.
 
   exit 0 — plan complete: a reviewer verdict is on file and the plan parses
            as run_loop.py's phase queue.
@@ -199,6 +202,15 @@ SLICE_FOLDER_RE = re.compile(r"^\d{3,}_")
 FINDING_CLASSES = ("blocking", "operator")
 
 
+def is_gap(finding: dict) -> bool:
+    """Whether a review finding is a gap: a `blocking` one that says its
+    disposition as a `proposal`, with no `options` to choose between. A gap
+    needs no product choice, so it goes to the writer's fix pass and never
+    to the operator; an `operator` finding, or any with options, is the
+    operator's to rule."""
+    return finding.get("class") == "blocking" and not finding.get("options")
+
+
 def _target_key(target: str) -> str:
     """A hold target or an `owed_after` as the seed compares them — the
     backticks and trailing slash a hand-written one may carry set aside."""
@@ -232,8 +244,9 @@ def read_handback(role: str, path: Path) -> tuple[list[dict], list[str]]:
     `proposal`, a question otherwise. Of a review, a `blocking` finding must
     say its disposition, as a proposal or options, an `operator` one may
     leave the choice open, and an `advisory` one is left in the prose
-    review. Every ask is checked as asks.py will render it, so a hand-back
-    without faults is a document that renders."""
+    review; a review's ask keeps its `class`, which `is_gap` reads. Every
+    ask is checked as asks.py will render it, so a hand-back without faults
+    is a document that renders."""
     key, fields = _HANDBACK[role]
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -279,8 +292,11 @@ def read_handback(role: str, path: Path) -> tuple[list[dict], list[str]]:
         except (asks.AskError, AttributeError, TypeError) as e:
             found.append(f"{who}: {e}")
             continue
-        out.append({"kind": kind, "headline": item["headline"],
-                    "body": item["body"], **block})
+        ask = {"kind": kind, "headline": item["headline"],
+               "body": item["body"], **block}
+        if role == "plan-reviewer":
+            ask["class"] = item["class"]
+        out.append(ask)
     if not out and not found:
         found.append(f"{path.name} holds no {key[:-1]} that needs a ruling")
     return out, found
@@ -310,8 +326,7 @@ to {verdict_path}. Questions only the operator can rule go to
 """
 
 WRITER_FIX_PROMPT = """\
-The operator has ruled on the plan-reviewer's findings on slice
-{slice_name}'s plan. Slice folder: {slice_dir}
+{opening} Slice folder: {slice_dir}
 
 Read {review_path} and plan.md — the rulings recorded in plan.md supersede
 the review where they speak. Apply every ruling the plan does not yet
@@ -324,6 +339,16 @@ finding the rulings leave genuinely unresolved goes to {questions_path},
 shaped as your hand-back section says, with verdict `questions`.
 """
 
+# The fix pass's opening: after the operator ruled on the review, or after a
+# review of gaps alone, which reach the writer with no ruling
+# (plan_state.json's `review_ruled`).
+FIX_OPENING_RULED = """\
+The operator has ruled on the plan-reviewer's findings on slice
+{slice_name}'s plan."""
+FIX_OPENING_GAPS = """\
+The plan-reviewer's findings on slice {slice_name}'s plan are gaps that
+need no ruling: they come to you without going to the operator."""
+
 WRITER_RESUME_NOTE = """\
 An earlier pass paused on the questions in {questions_file}; plan.md's
 rulings section now holds the answers. Continue that pass with them applied.
@@ -331,7 +356,8 @@ rulings section now holds the answers. Continue that pass with them applied.
 
 REVIEWER_PROMPT = """\
 Review the plan for slice {slice_name} — the full plan, in your one and
-only round: no fix-verify loop follows; your findings go to the operator.
+only round: no fix-verify loop follows; a finding with options goes to the
+operator, a blocking gap straight to the one writer fix pass.
 Slice folder: {slice_dir}
 {philosophy_line}{skill_line}{close_out_line}{other_holds_line}
 
@@ -788,7 +814,12 @@ class PlanLoop:
         else:
             review_path = (self.slice_dir /
                            f"plan_review_r{self.state['pending_review']}.md")
+            # A state from before the gaps' route has no `review_ruled`:
+            # its review went to the operator whole.
+            opening = (FIX_OPENING_RULED if self.state.get("review_ruled", True)
+                       else FIX_OPENING_GAPS)
             prompt = WRITER_FIX_PROMPT.format(
+                opening=opening.format(slice_name=self.slice_name),
                 slice_name=self.slice_name, slice_dir=self.slice_dir,
                 philosophy_line=self._philosophy_line(),
                 skill_line=self._skill_line(f"[plan-writer r{w}]"),
@@ -839,12 +870,21 @@ class PlanLoop:
             self.state.update(pending_review=r, phase="done")
             self._save_state()
             return
-        # issues / questions: both are the operator's, as one document of
-        # the findings that need a ruling; there is no fix-verify loop.
+        # issues / questions: the findings that need a ruling are the
+        # operator's, as one document; a gap needs none, and the one writer
+        # fix pass closes it with the rulings. A review of gaps alone goes on
+        # to that pass with no exit. There is no fix-verify loop.
         entries = self._handback("plan-reviewer", findings_path, r)
-        self.state.update(pending_review=r, phase="adjudicating")
+        rulings = [e for e in entries if not is_gap(e)]
+        gaps = len(entries) - len(rulings)
+        if gaps:
+            self.log(f"[plan-reviewer r{r}] {gaps} gap(s) need no ruling — "
+                     "the writer's fix pass closes them")
+        self.state.update(pending_review=r, review_ruled=bool(rulings),
+                          phase="adjudicating" if rulings else "fixing")
         self._save_state()
-        self._exit_adjudication(entries, r)
+        if rulings:
+            self._exit_adjudication(rulings, r)
 
     # -- the hand-backs: what goes to the operator ---------------------------
 

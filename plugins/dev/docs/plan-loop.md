@@ -9,12 +9,16 @@ nobody downstream reads slice.md again. Session mechanics and models are
 [agent-dispatch.md](agent-dispatch.md); the loop that executes the result is
 [run-loop.md](run-loop.md).
 
-**There is no review loop.** A `go` verdict completes the plan. Anything else — blocking
-findings or questions only the operator can rule — pauses with the findings put to the operator as
-a document (below). Their answers go into plan.md's rulings section, **edited in place** (a ruling
+**There is no review loop.** A `go` verdict completes the plan. A finding that is a gap — a
+blocking finding with a proposal and no options, whose fix needs no product choice — never goes
+to the operator: it goes to the writer's fix pass, and a review of gaps alone goes on to that pass
+at once, with no exit (slice 032's plan review raised one gap, "a sentence or two in P11", and
+cost an exit, Pilot's pass and a document in front of the operator). A finding with options, or
+an operator-decidable one, pauses the loop with those findings put to the operator as a document
+(below). Their answers go into plan.md's rulings section, **edited in place** (a ruling
 that corrects an earlier one replaces it; the round history lives in `plan_review_r*.md`), and the
 rerun **always** dispatches one writer fix pass that reads the review plus the rulings and
-resolves every blocking finding the rulings do not overrule. Nothing suppresses the pass, and the
+resolves every blocking finding the rulings do not overrule, the gaps among them. Nothing suppresses the pass, and the
 loop reads nothing off the plan to guess whether the fixes are in: recording the rulings is
 required either way, and a reversed ruling routinely falsifies an ordering or not-in-scope
 bullet, so plan maintenance and applied fixes look identical in the file. Nobody re-reviews the
@@ -29,9 +33,11 @@ faults, and then the loop bails `protocol_failure`. It renders the asks into the
 `asks/<n>-plan-questions.md` or `asks/<n>-plan-review.md` through `asks.py` and exits 4, the path on
 stdout and in `plan_state.json`'s `exit`, for the stage to register with Pilot
 ([pilot.md](pilot.md) § The documents). A question with options is a decision with its
-recommendation, one without them a question. A blocking finding is a decision on the reviewer's
-disposition, an operator-decidable one a decision on its options or a question, and an advisory
-note stays in the review. The document carries `run --step`'s plan task as its `step`, kept in
+recommendation, one without them a question. A gap is not in the document; a blocking finding
+with options is a decision on them, an operator-decidable one a decision on its options or a
+question, and an advisory note stays in the review.
+`plan_state.json`'s `review_ruled` says whether the fix pass follows a ruling or a review of gaps
+alone, and its prompt opens accordingly. The document carries `run --step`'s plan task as its `step`, kept in
 `plan_state.json` for the reruns that do not give it. The loop commits none of it: the session
 commits what it registers, as it commits the rulings before the rerun. A document that cannot be
 written is logged, and the exit stands without it.
@@ -164,4 +170,5 @@ lists the push holds the other plans under `slices/` and `slices/backlog/` decla
 ordering constraint shares with a named sibling slice is compared with that slice's `plan.md`,
 its done-record too once it has run; each difference is an operator-decidable finding that
 names no winner. Findings describe problems, never corrections.
-One round, ever — the findings go to the operator. Verdicts: `go` / `issues` / `questions`.
+One round, ever — a gap goes to the writer's fix pass, every other finding to the operator.
+Verdicts: `go` / `issues` / `questions`.
