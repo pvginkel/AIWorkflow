@@ -106,12 +106,16 @@ or waived — the Target first, then every other component the phase's diff touc
 its `project`, `cmd` and `outcome`, `green` | `red` | `nothing_ran` | `waived`, and its `lint`
 beside it, `cmd` and `outcome` — `green` | `red` | `nothing_ran` | `waived` | `accepted`; on a
 spec-repo phase the spec check's entry first, `project` `spec_check`, with no `lint`, then the
-repo's own `kc project test` where it has a manifest; the reviewer's gate line names the green ones as covered and the rest as not, a fix
+repo's own `kc project test` where it has a manifest; where the phase owes the migration
+check, its entry last, `project` `migration_check`, with no `lint`; the reviewer's gate line names the green ones as covered and the rest as not, a fix
 round's prompt names the red ones; each gate history row carries its run's copy as `projects`.
 A whole-repo Target records its one entry from 0.9.145 on; before, it recorded none. Absent or
 `null` on a phase begun before 0.9.125, where `gate_cmd` is what both name, and an entry with
 no `lint` is from before 0.9.145),
-`rebase_requested` (set when a merge-time rebase bails `blocked` and hands the
+`origin_taken` (how the phase's start took a moved origin into a diverged base — `how`,
+`rebased` or `merged`, `base`, the `own` and `behind` counts, and the slice's `migrations` there
+when origin came in over them, which the phase's gate then owes the check for; every
+code-writer dispatch of the phase says it), `rebase_requested` (set when a merge-time rebase bails `blocked` and hands the
 rebase to the operator — `base`, `from` (the branch head it asked to rebase), `ts`; cleared when
 the resume takes the rebased branch, and at the merge), `set_aside` (what a resume set aside
 from a dead round's tree — each entry's `round`, `patch`, `untracked` and `files`; named in the
@@ -177,7 +181,8 @@ it, `gate_spec.json` is what the writer's gate wrapper runs, rewritten at every 
 dispatch — on a spec-repo phase with the spec check's command as its `check`, its `argv` the
 repo's own `kc project test` or `null`; `lint_argv` and `lint_fallback` beside the test's, and
 each touched component's lint beside its test, none where an `accept` ruling covers the lint,
-which `touched.lint_accepted` names instead — and `writer_gate_r<N>.json` the wrapper's record of its last run in code-writer round
+which `touched.lint_accepted` names instead; and `migrations`, the check's command and the
+files that owe it (`owed`), where the phase owes the migration check — and `writer_gate_r<N>.json` the wrapper's record of its last run in code-writer round
 `N`: the commands with their exit codes and output, and the tree's content hash when the run
 began and ended ([run-loop.md](run-loop.md) § The per-phase round). A review round whose range
 changes Secret data leaves `review_r<N>.diff` beside its review, the range redacted the same

@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-04 — A phase start takes a moved origin, and a migration collision is red at the phase (v0.10.39)
+
+AIWF-140 (session review 2 of Pilot in production, change 6; the operator: "In full"):
+
+- **A fresh phase's diverged base takes origin at its start.** Where the slice's earlier phases
+  sit unpushed on the base and `origin/<base>` has moved, the driver rebases the base onto it (a
+  shared repo's: merges, never rebases) before it cuts the phase's branch, and every writer
+  round of the phase is told. PilotApp slice 036 diverged at P3 and its test phase rebased for
+  18 minutes over conflicts in 15 or more files; slice 031's took 29. Left as it stands, with a
+  log line: the spec repo, a project or repo that does not push, a dirty tree, a base checked
+  out elsewhere, and a rebase git does not finish — the test phase's rebase-agent stays the
+  backstop for conflicts. A failed fetch at a phase start is logged and the phase goes on.
+- **`[migrations]` in `.aiworkflowrc`** — `paths`, the globs a migration file matches, and
+  `check`, the project's command that exits 0 while the migrations have one head. The check
+  closes the gate of a phase that adds a file under `paths`, or whose start took origin over the
+  slice's own migrations, in the gate and the writer's wrapper alike; red takes the fix round.
+  Slice 036's migrations reused revision ids origin's had, and nothing said so until the push.
+  Preflight's run profile checks each glob matches a tracked file.
+
 ## 2026-11-04 — A gate takes a green the run already has on the same tree (v0.10.38)
 
 AIWF-142 (session review 2 of Pilot in production, change 6; the operator: "In full", and on

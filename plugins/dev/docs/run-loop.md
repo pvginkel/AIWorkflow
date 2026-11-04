@@ -220,16 +220,36 @@ whole plan is a feature of the review, not a cost. Then:
   A base checked out in another worktree, or a fast-forward git refuses (a dirty file the commits
   touch), is left with a log line, never a bail. Ansible slice 049's P10 was cut from a `main`
   ten commits behind origin, where slice 052 had edited the same anchors, and its push needed a
-  hand merge. A base with commits of its own is never moved — the bases have diverged and the
-  driver chooses nothing for the phase; the pull that rebases those is preflight's, made once
-  before the run ([`preflight.md`](preflight.md) § Notes on the sync). Wherever `origin/<base>`
-  still holds commits the base lacks — diverged, a fast-forward left, or a resume after origin
-  moved — every code-writer dispatch of the phase, first round and fix rounds, says how many
-  each side holds and which of origin's changed paths the phase's own section of the plan names
-  word for word. Agents carry the other half of the rule — never conclude a commit is missing
+  hand merge. **A base with commits of its own** — the slice's earlier phases, unpushed until
+  the test phase — **takes origin at the fresh phase's start** where the run pushes that repo: a
+  repo of this environment's own is rebased onto `origin/<base>` in place, a shared repo's base
+  merged with it in the shared checkout, never rebased. PilotApp slice 036 diverged at P3 and its
+  test phase rebased for 18 minutes over conflicts in 15 or more files; slice 031 diverged at P5
+  and its test phase's rebase took 29. Left with a log line, never a bail, the phase cut from the
+  base as it stands: the spec repo, whose commits land at close-out; a project that does not
+  push and a repo the plan holds, which no push will be rejected for; a base checked out
+  anywhere but there, a dirty tree, a rebase or merge already under way; and a rebase or merge
+  git does not finish, which is aborted — conflicts stay the test phase's rebase-agent's, the
+  backstop. A resumed phase is never moved, and a fetch that fails here is logged and the phase
+  goes on. Where origin was taken, every code-writer dispatch of the phase says how many commits
+  each side held and how the driver took them (`origin_taken`). Wherever `origin/<base>` still
+  holds commits the base lacks — a fast-forward or a move left, or a resume after origin moved —
+  every code-writer dispatch of the phase, first round and fix rounds, says how many each side
+  holds and which of origin's changed paths the phase's own section of the plan names word for
+  word. Agents carry the other half of the rule — never conclude a commit is missing
   from a tree you have not fetched yourself.
 - **Gate** — the driver runs the target's deterministic gate itself: each gated project's
   `kc project test` with its `kc project lint` beside it (*The gate lints what it tests*, below).
+  **The migration check closes the gate** where the project names one (`.aiworkflowrc`'s
+  `[migrations]`, [project-contract.md](project-contract.md) § 2) and the phase's Target is in the
+  repo that holds it: when the phase's diff adds a file under its `paths`, or when the phase's
+  start took origin over migrations the slice's merged phases added there. It runs last, its
+  command through `sh -c` from the phase's tree, in the gate and in the writer's gate wrapper
+  alike; any exit but 0 is a red gate, which takes the writer's fix round like any red, and its
+  green never makes a gate green whose tests ran nothing. Slice 036's P1 and P5 added migrations
+  that reused revision ids origin's already had, and nothing said so until the test phase's push
+  was rejected; now the collision is red at the phase that made it, or at the first phase start
+  that brings origin's in.
   A build breakage is caught deterministically by the loop-tail sweep and the doc gate. Green is
   recorded commit+log and stated in the reviewer's dispatch so the review never re-runs the
   suite; the claim covers a lint only where one ran. A red gate spawns a **fresh executor fix round** (cap 3,

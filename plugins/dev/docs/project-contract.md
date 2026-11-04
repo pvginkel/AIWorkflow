@@ -43,6 +43,10 @@ lease = "scripts/.devlock.lock"
 [push]
 enabled = true
 deploys = true
+
+[migrations]
+paths = ["backend/app/migrations/versions/*.py"]
+check = "cd backend && test \"$(uv run alembic heads | wc -l)\" -eq 1"
 ```
 
 Paths are absolute or relative to the repo root, except `devlock.lease` — the one key whose subject
@@ -95,6 +99,16 @@ every phase and nobody loses one by omission. Each switch is an opt-*out*:
   taken. Run profile checks the directory it would live in
   exists — a typo'd path takes a lock nothing else contends for, which looks exactly like
   coordination and is none.
+
+- **`[migrations]`** (default off) — the project's migration check. `paths` are git glob
+  pathspecs, relative to the repo root, that a migration file matches; `check` is a command, run
+  through `sh -c` from the phase's tree, that exits 0 while the migrations are consistent — for
+  alembic, that `alembic heads` prints one head. Both keys or neither. The run loop closes a
+  phase's gate with it, for a phase whose Target is in this repo, when the phase adds a file
+  under `paths` or its start brought origin's commits in over the slice's own migrations
+  ([run-loop.md](run-loop.md) § The per-phase round); a red takes the writer's fix round. The
+  run profile checks each glob matches a tracked file: one that matches nothing is a typo the
+  check would never fire on. The pipeline names no migration tool; the command is the project's.
 
 A phase that is off is not checked for anything: preflight requires a procedure doc only for a
 phase that runs, or an optional phase would be mandatory again.

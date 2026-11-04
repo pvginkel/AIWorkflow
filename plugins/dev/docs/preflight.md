@@ -65,6 +65,7 @@ documents). The exit code is the same either way.
 | `test_phase.strategy` set + exists — only when the phase runs | `test_phase.strategy` | – | – | ✓ |
 | `doc_phase.plan` set + exists — only when the phase runs | `doc_phase.plan` | – | – | ✓ |
 | `devlock.lease` resolvable — only when one is named | `devlock` | – | – | ✓ |
+| Each `migrations.paths` glob matches a file the repo tracks — only when `[migrations]` is set | `migrations` | – | – | ✓ |
 | `--slice` names a slice folder — only with `--slice` | `slice` | – | ✓ | ✓ |
 | Declared Target repos cloned: no pending phase of the `--slice` plan targets a repo path `.kubecoder/config.yaml` declares and the pod has not cloned — only with `--slice` | `targets_cloned` | – | ✓ | ✓ |
 | Clean working tree | `clean_tree` | – | – | ✓ |
@@ -203,10 +204,12 @@ phase mandatory again. See [`project-contract.md`](project-contract.md) for the 
   upstream or a rebase that does not apply is the operator's to resolve by hand (exit 1) — the
   session that ran preflight does not resolve it either. A repo on a phase branch is exit 1 too, but a
   live run's branch is waited out, not resolved.
-- **Mid-run, the loop only fast-forwards.** Its own fetches are refs-only, save that a fresh
-  phase's base with no commits of its own is fast-forwarded to its origin before the branch is
-  cut ([`run-loop.md`](run-loop.md) § Fetch); the pull that rebases local commits onto origin is
-  the operator's call, made once here.
+- **Mid-run, the loop moves a base only at a fresh phase's start.** Its own fetches are
+  refs-only, save that a fresh phase's base is brought to its origin before the branch is cut:
+  fast-forwarded where it has no commits of its own, and where it has — the slice's earlier
+  phases — rebased onto origin, or merged with it in a shared repo, where the run pushes that
+  repo ([`run-loop.md`](run-loop.md) § Fetch). The pull that rebases the operator's own local
+  commits onto origin is their call, made once here.
 
 ## Notes on the run baseline
 
