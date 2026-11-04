@@ -3195,11 +3195,15 @@ def test_only_the_latest_writer_rounds_run_can_be_the_drivers_gate():
     """A review-fix round that never ran the wrapper leaves round 1's record
     the only one: the gate after it runs, and says nothing of round 1's."""
     app = component_argv(PROJECT)
-    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
+    trees = [TREE]
+    # the fix round's commit is a tree no gate has seen (AIWF-142)
+    fixed = ("code-writer", DONE, lambda loop: trees.__setitem__(0, OTHER_TREE))
+    with tempfile.TemporaryDirectory() as tmp, \
+            patched(run_loop, content_tree=lambda root: trees[0]):
         slice_dir, repo = make_slice(tmp)
         r = KcExitLoop(slice_dir, [wrote_gate(*with_lint(app, 0)),
                                    V["review_issues"],
-                                   V["exec_done"], V["review_signoff"],
+                                   fixed, V["review_signoff"],
                                    *TAIL], repo_root=repo)
         assert run_to_exit(r) == 0 and not r.script
         rows = gate_rows(slice_dir)
@@ -3211,6 +3215,40 @@ def test_only_the_latest_writer_rounds_run_can_be_the_drivers_gate():
         narration = (slice_dir / "log.txt").read_text()
         assert "not reused" not in narration
         assert "[P1] gate #2 running (" in narration
+
+
+def test_a_gate_takes_an_earlier_gates_green_on_the_same_tree():
+    """AIWF-142: a command an earlier gate of this run ran green, or that
+    ran nothing, on the tree a gate is to run on is not run again — not by
+    the next phase's gate, not by the sweep — and the history row maps it
+    to that run."""
+    app, lint = component_argv(PROJECT), lint_argv(PROJECT)
+    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First"),
+                                                  ("2", "Second")])
+        r = KcExitLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                   V["exec_done"], V["review_signoff"],
+                                   *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0 and not r.script
+        # P1's gate ran the test and the lint; P2's, on the same tree, ran
+        # nothing, and is green as P1's was
+        assert [argv for argv, _, _ in r.phase_gate_order] == [app, lint]
+        p1_log = outputs_of(r) / "gate_r1.log"
+        rows = gate_rows(slice_dir)
+        assert [(h["phase"], h["outcome"], h.get("reused")) for h in rows] == [
+            ("1", "green", None),
+            ("2", "green", {" ".join(app): "P1 gate r1",
+                            " ".join(lint): "P1 gate r1"})]
+        assert load_state(slice_dir)["phases"]["2"]["gate_green_commit"] \
+            == r.fake_git.head
+        narration = (slice_dir / "log.txt").read_text()
+        assert (f"[P2] `{' '.join(app)}` not run: GREEN in P1 gate r1, on the "
+                f"same tree (its output: {p1_log})") in narration
+        assert (f"[P2] `{' '.join(lint)}` not run: nothing ran in P1 gate r1, "
+                "on the same tree") in narration
+        # the sweep took them too, and ran the build alone
+        assert [argv for argv, _, _ in r.kc_runs[2:]] == [
+            ["kc", "project", "build", "--project", PROJECT]]
 
 
 def test_every_code_writer_dispatch_writes_the_gate_spec_with_its_round():
@@ -3649,6 +3687,28 @@ def test_content_tree_is_the_tree_a_commit_of_the_working_tree_makes():
                 assert "git rev-parse --git-path index" in str(e), e
             else:
                 raise AssertionError(f"{where} hashed")
+
+
+def test_markdown_only_is_a_change_of_markdown_files_alone():
+    """The one change across which a gate takes an earlier green `test`
+    (AIWF-142): `.md` files, and nothing else — not a code comment."""
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        repo, _ = wrapper_repo(tmp)
+        base = sh(repo, "rev-parse", "HEAD^{tree}")
+        (repo / "README.md").write_text("more\n")
+        (repo / "docs").mkdir()
+        (repo / "docs" / "page.md").write_text("page\n")
+        docs = run_loop.content_tree(repo)
+        assert run_loop.markdown_only(repo, base, docs)
+        (repo / "backend" / "api.py").write_text("# a comment\nbackend/api.py\n")
+        assert not run_loop.markdown_only(repo, base, run_loop.content_tree(repo))
+        # a file renamed to Markdown is a change to code: its old end counts
+        sh(repo, "checkout", "-q", "--", "backend/api.py")
+        sh(repo, "mv", "backend/worker/job.py", "backend/worker/job.md")
+        assert not run_loop.markdown_only(repo, base, run_loop.content_tree(repo))
+        # no change at all is none of Markdown; git that cannot say is no
+        assert not run_loop.markdown_only(repo, base, base)
+        assert not run_loop.markdown_only(Path(tmp) / "gone", base, docs)
 
 
 def test_the_drivers_gate_is_the_wrappers_own_run_on_the_tree_handed_back():
@@ -9128,6 +9188,118 @@ def test_doc_gate_goes_on_past_a_verb_that_ran_nothing():
         passed, _ = loop._run_doc_gate(ds)
         assert not passed
         assert loop.state["history"][-1]["outcome"] == "red"
+
+
+# -- a green of this run taken in place of a run (AIWF-142) ---------------------
+#
+# Slice 034's doc gate ran lint, build and test for 575 s over a diff of docs
+# alone, minutes after the sweep had run them green; slice 033 re-ran the whole
+# sweep for 6.6 minutes after a consult's two small edits. Every gate records
+# what it ran green, with the content hash of the tree it ran on, and a later
+# gate takes it: on the same tree, and a `test` across Markdown files alone.
+
+def greens_repo(tmp):
+    """A slice and its repo under real git, code and docs committed."""
+    slice_dir, repo = make_slice(tmp)
+    (repo / "app.py").write_text("print('app')\n")
+    sh(repo, "init", "-q", "-b", "main")
+    sh(repo, "add", "-A")
+    sh(repo, "commit", "-qm", "init")
+    return slice_dir, repo
+
+
+def doc_gate_runs(loop):
+    """What the doc gate runs from here on, each command as a string."""
+    calls = []
+    loop._doc_gate_exec = lambda argv, log_file: calls.append(
+        " ".join(argv)) or 0
+    return calls
+
+
+def test_a_doc_gate_over_docs_alone_after_a_green_sweep_reruns_no_suite():
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo = greens_repo(tmp)
+        r = SweepRunLoop(slice_dir, [], repo_root=repo)
+        sweep, _ = run_sweep(r, repo)
+        assert sweep["outcome"] == "green"
+        # the doc phase commits a page of docs
+        (repo / "doc-plan.md").write_text("doc procedure, updated\n")
+        sh(repo, "commit", "-qam", "docs")
+        calls = doc_gate_runs(r)
+        ds = {"gate_runs": 0}
+        green, log_path = RunLoop._run_doc_gate(r, ds)
+        # a docs build or a Markdown lint reads the page: those run; the
+        # suites are the sweep's
+        assert green and calls == ["kc project lint", "kc project build"]
+        row = r.state["history"][-1]
+        assert (row["role"], row["outcome"]) == ("doc-gate", "green")
+        assert row["reused"] == {"kc project test": "sweep r1"}
+        assert ("$ kc project test → not run: GREEN in sweep r1, each "
+                "component's own, only Markdown files changed since\n") \
+            in log_path.read_text()
+        assert ("— not run, an earlier green standing: `kc project test` "
+                "(sweep r1)") in (slice_dir / "log.txt").read_text()
+        # the same tree once more — the wrap-up stage's re-run, the gate
+        # stage after it: nothing runs
+        calls.clear()
+        green, _ = RunLoop._run_doc_gate(r, ds)
+        assert green and calls == []
+        assert r.state["history"][-1]["reused"] == {
+            "kc project lint": "doc-gate r1", "kc project build": "doc-gate r1",
+            "kc project test": "sweep r1"}
+        # a code comment is code: everything runs
+        (repo / "app.py").write_text("# the app\nprint('app')\n")
+        sh(repo, "commit", "-qam", "a comment")
+        calls.clear()
+        green, _ = RunLoop._run_doc_gate(r, ds)
+        assert green and calls == ["kc project lint", "kc project build",
+                                   "kc project test"]
+        assert "reused" not in r.state["history"][-1]
+
+
+def test_a_sweep_takes_an_earlier_green_and_never_a_red():
+    lint, build, test = (["kc", "project", verb, "--project", PROJECT]
+                         for verb in ("lint", "build", "test"))
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo = greens_repo(tmp)
+        r = SweepRunLoop(slice_dir, [], repo_root=repo,
+                         sweep_steps={(PROJECT, "lint"): [1]})
+        run_sweep(r, repo)
+        # the same tree: the red lint runs again, the greens are taken
+        r.sweep_argvs.clear()
+        sweep, _ = run_sweep(r, repo)
+        assert r.sweep_argvs == [lint]
+        assert sweep["outcome"] == "green"
+        assert sweep_row(sweep, PROJECT)["reused"] == "sweep r1"
+        assert sweep_row(sweep, PROJECT)["log"] == str(
+            slice_dir / "sweeps" / "r1" / f"repo_{PROJECT}_test.log")
+        assert "reused" not in sweep_row(sweep, PROJECT, "lint")
+        row = r.state["history"][-1]
+        assert row["reused"] == {f"repo/{PROJECT} build": "sweep r1",
+                                 f"repo/{PROJECT} test": "sweep r1"}
+        assert row["summary"] == "3 command(s) (2 reused from an earlier run)"
+        block = r._sweep_block(sweep, "GREEN-STANCE", "RED-STANCE")
+        assert f"  - {PROJECT} test → GREEN (reused from sweep r1) — " in block
+        # a consult commits a test plan's edit: the suite is taken across it,
+        # lint and build run
+        (repo / "test-plan.md").write_text("test procedure, edited\n")
+        sh(repo, "commit", "-qam", "test plan")
+        r.sweep_argvs.clear()
+        sweep, _ = run_sweep(r, repo)
+        assert r.sweep_argvs == [lint, build]
+        assert sweep_row(sweep, PROJECT)["reused"] == "sweep r1"
+        # a suite that leaves a file in the tree ran on a tree that is gone:
+        # nothing of that run is taken later
+        (repo / "app.py").write_text("print('app 2')\n")
+        sh(repo, "commit", "-qam", "code")
+        r.sweep_steps[(PROJECT, "test")] = [
+            suite_writes(0, {repo / "leftover.txt": "x"})]
+        r.sweep_argvs.clear()
+        run_sweep(r, repo)
+        assert r.sweep_argvs == [lint, build, test]
+        r.sweep_argvs.clear()
+        run_sweep(r, repo)
+        assert r.sweep_argvs == [lint, build, test]
 
 
 # -- the fetch: nobody reads a remote-tracking ref as old as the clone --------

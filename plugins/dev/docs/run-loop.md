@@ -285,11 +285,25 @@ whole plan is a feature of the review, not a cost. Then:
   as they are on disk and untracked files git does not ignore, never ignored files or
   timestamps, so a commit of the tree after the run changes nothing. The green is not taken on
   an agent's word: the commands are the driver's, run and recorded by its code, and the driver
-  checks the tree itself. Only this re-run is spared: an earlier round's record is never read,
-  and every other gate runs. A flake that passes the writer's run is an accepted risk; a second
+  checks the tree itself. A flake that passes the writer's run is an accepted risk; a second
   run could pass it just the same, and CI catches it. Across ten PilotApp slices, 93 of 124
   driver gates (133 of their 170 minutes) re-ran a green the writer had seen on an unchanged
   tree.
+
+  **A green the driver ran is not run again on the same tree.** Every gate the driver runs — a
+  phase gate, the sweep, the doc gate, a wrap-up gate in a sibling — records each `kc project`
+  command that went green or ran nothing with the content hash of the tree it ran on, in
+  `state.json`'s `gate_greens`, and only where the tree is unchanged after the run. A later gate
+  that finds a record of the same command on its tree takes it in place of running it, and a
+  `test` takes one across a change of Markdown files (`.md`) alone too; a `lint` or a `build`
+  reads those (a docs build, a Markdown lint), so it takes one on the same tree only. A red is
+  never recorded, so never taken; the spec check always runs. The row's `reused` maps each
+  command taken to the run it came from. Slice 034's doc gate ran lint, build and test for 575
+  s over a diff of docs alone, minutes after the sweep had run them green. Left out: a change
+  to a code comment is a change to code, since telling one apart needs a parser per language
+  (slice 033's consult edited a comment and the sweep ran 6.6 minutes again), and a suite that
+  reads Markdown files, a fixture or a docs test, is not run again after a change to them
+  alone. The writer's own run, above, stays the first that stands for a phase gate.
 - **Review** — fresh **code-reviewer** per round against the phase's outcome, the acceptance
   criteria (`verification.json`) and repo conventions. Round 1 full branch diff; rounds 2+ are
   delta-scoped to the fix range, save after a merge base that moved since the last review (the
@@ -352,10 +366,11 @@ whole plan is a feature of the review, not a cost. Then:
   `kc project lint` + `build` + `test`, per component so every red is visible (component sets
   re-read at sweep time), across every repo
   in `state.json`'s `bases` that carries a kc manifest (spec repo excluded). Full logs land in
-  `<slice>/sweeps/r<N>/`; the record is commit-stamped in `state.json` and reused only while
-  every swept HEAD is exactly the swept commit — any movement (a consult committing mechanical
-  residue, an appended phase merging) re-runs it, so the report a dispatch carries always
-  describes the tree that dispatch sees. A command kc says ran nothing (exit 3, no statement
+  `<slice>/sweeps/r<N>/`; the record is commit-stamped in `state.json` and reused whole only
+  while every swept HEAD is exactly the swept commit — any movement (a consult committing
+  mechanical residue, an appended phase merging) sweeps again, so the report a dispatch carries
+  always describes the tree that dispatch sees; that sweep takes, row by row, a green an
+  earlier gate recorded on the row's tree (§ The per-phase round). A command kc says ran nothing (exit 3, no statement
   for that verb) is its own row, `nothing ran`: it neither reds the sweep nor holds the push,
   and the green stance claims only the rows that ran. A sweep in which nothing ran at all is
   unverified, not green. Rows a `gate` or `accept` ruling covers are shown as waived or

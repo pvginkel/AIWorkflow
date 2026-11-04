@@ -1964,6 +1964,22 @@ def lint_twin(test_argv: list[str]) -> list[str]:
     return [*test_argv[:2], "lint", *test_argv[3:]]
 
 
+def gate_cmd_key(argv: Sequence[str]) -> tuple[str | None, str] | None:
+    """(the component, the verb) of a `kc project <verb> [--project <c>]`
+    gate command — the component None for the whole repo's — or None for
+    any other command (the spec check), which no gate takes from an earlier
+    run (AIWF-142)."""
+    argv = list(argv)
+    if len(argv) < 3 or argv[:2] != ["kc", "project"] \
+            or argv[2] not in SWEEP_VERBS:
+        return None
+    if len(argv) == 3:
+        return None, argv[2]
+    if len(argv) == 5 and argv[3] == "--project":
+        return argv[4], argv[2]
+    return None
+
+
 # A `gate_projects` entry's outcome; its `lint`'s (AIWF-105) is one of these
 # or `accepted`, not run because an accept ruling covers it.
 GATE_ENTRY_OUTCOMES = ("green", "red", "nothing_ran", "waived")
@@ -2069,6 +2085,30 @@ def content_tree(root: Path) -> str:
     except OSError as e:
         raise ValueError(f"the index of {root} could not be copied: "
                          f"{e}") from None
+
+
+# markdown_only's answers: a pair of trees never changes, so neither does it.
+_MARKDOWN_ONLY: dict[tuple[str, str, str], bool] = {}
+
+
+def markdown_only(root: Path | str, old: str, new: str) -> bool:
+    """Whether every file that differs between the trees `old` and `new` of
+    the repo at `root` is a Markdown file (`.md`) — the one change across
+    which a gate takes an earlier green `test` (AIWF-142). A code comment is
+    a change to code: telling one from code would take a parser per
+    language. Both ends of a rename are named, so a file renamed to
+    Markdown is a change to code too. False where git cannot say."""
+    key = (str(root), old, new)
+    if key not in _MARKDOWN_ONLY:
+        try:
+            out = _git_in(Path(root), "diff-tree", "-r", "-z", "--no-renames",
+                          "--name-only", old, new)
+        except ValueError:
+            return False
+        paths = [p for p in out.split("\0") if p.strip()]
+        _MARKDOWN_ONLY[key] = bool(paths) and all(p.endswith(".md")
+                                                   for p in paths)
+    return _MARKDOWN_ONLY[key]
 
 
 def _is_argv(value) -> bool:
@@ -6341,6 +6381,14 @@ class RunLoop:
         logged with why, and the gate runs as it always did. A flaky suite
         green once on that tree is taken as green: an accepted risk.
 
+        Where no writer's run stands for it, a command an earlier gate of
+        this run — a phase gate, the sweep, the doc gate — ran green, or ran
+        nothing, on this tree is not run either (`_earlier_runner`,
+        AIWF-142), nor a `test` across a change of Markdown files alone; the
+        history row's `reused` then maps each such command to its run. Every
+        command that ran green or nothing is recorded for a later gate
+        (`_note_greens`).
+
         A phase on the spec repo opens its gate with the plugin's spec check
         (AIWF-68, `spec_check_argv`) over what the phase changed since
         `merge_base`, and goes on to the Target's own gate where the phase's
@@ -6377,6 +6425,14 @@ class RunLoop:
                 tree = found
                 replay = self._writer_gate_replay(phase_id, record_path,
                                                   record)
+        # Where no writer's run stands for the gate, a command an earlier
+        # green of this run stands for on the phase's tree is not run
+        # (`_earlier_runner`, AIWF-142); `reused` maps each to its run.
+        reused: dict[str, str] = {}
+        if replay is None:
+            tree = self._tree_now(target.work_root)
+        runner = replay or (self._earlier_runner(phase_id, target, tree,
+                                                 reused) if tree else None)
         also = (f", and for the components the phase's diff touches: "
                 f"{', '.join(touched)}" if touched else "")
         if replay is None:
@@ -6401,7 +6457,7 @@ class RunLoop:
                 log_file.write(f"=== the spec check: `{' '.join(check)}` "
                                "===\n")
                 runs.append(self._gate_cmd_outcome(
-                    phase_id, check, target, log_file, log_path, replay,
+                    phase_id, check, target, log_file, log_path, runner,
                     kc=False))
                 projects.append({"project": SPEC_CHECK_NAME,
                                  "cmd": " ".join(check),
@@ -6412,9 +6468,9 @@ class RunLoop:
                                    f"{target.gate_cwd} ===\n")
                 lint = lint_twin(argv)
                 argv, outcome = self._gate_target_verb(
-                    phase_id, argv, target, log_file, log_path, replay, runs)
+                    phase_id, argv, target, log_file, log_path, runner, runs)
                 lint, lint_outcome = self._gate_target_verb(
-                    phase_id, lint, target, log_file, log_path, replay, runs,
+                    phase_id, lint, target, log_file, log_path, runner, runs,
                     accepts=accepts)
                 projects.append({"project": target.name,
                                  "cmd": " ".join(argv), "outcome": outcome,
@@ -6423,7 +6479,7 @@ class RunLoop:
                 for component in touched or ():
                     projects.append(self._gate_touched_component(
                         phase_id, component, target, gates, accepts,
-                        log_file, log_path, replay, runs))
+                        log_file, log_path, runner, runs))
         duration_s = int(time.monotonic() - t0)
         gate_cmd = " ".join(argv or check)
         ps["gate_cmd"] = gate_cmd
@@ -6449,9 +6505,16 @@ class RunLoop:
         elif outcome == "nothing_ran":
             ps["gate_nothing_ran_commit"] = self.git("rev-parse", "HEAD",
                                                      root=target.work_root)
+        self._note_greens(
+            target.git_root, tree,
+            [(cmd.split(), o, str(log_path)) for p in projects
+             for cmd, o in gate_entry_cmds(p) if cmd not in reused],
+            f"P{phase_id} gate r{n}", work_root=target.work_root)
         extra = {"projects": projects}
         if replay:
             extra["reused"] = str(record_path)
+        elif reused:
+            extra["reused"] = reused
         self._record(phase_id, "gate", n, outcome, tail, None, duration_s,
                      extra=extra)
         self.log(f"[P{phase_id}] gate #{n} → "
@@ -6630,6 +6693,28 @@ class RunLoop:
             return command["rc"]
 
         return replay
+
+    def _earlier_runner(self, phase_id: str, target: ResolvedTarget,
+                        tree: str, reused: dict[str, str]) -> Callable:
+        """`_gate_cmd_outcome`'s replay for a gate no writer's run stands
+        for: a command an earlier green of this run stands for on `tree`
+        (`_earlier_green`, AIWF-142) is not run — the log and the narration
+        say whose green it takes, `reused` maps the command to that run, and
+        its exit code is the one that run's outcome reads as — and any other
+        runs as ever."""
+        def run(argv: list[str], log_file) -> int:
+            found = self._earlier_green(target.git_root, argv, tree,
+                                        work_root=target.work_root)
+            if found is None:
+                return self._gate_exec(argv, target.gate_cwd, log_file)
+            cmd = " ".join(argv)
+            reused[cmd] = found["run"]
+            said = self._earlier_said(found)
+            self.log(f"[P{phase_id}] `{cmd}` not run: {said}")
+            log_file.write(f"`{cmd}` not run: {said}\n")
+            return 0 if found["outcome"] == "green" else KC_NOTHING_RAN
+
+        return run
 
     def _spec_check_argv(self, target: ResolvedTarget,
                          merge_base: str) -> list[str] | None:
@@ -6854,6 +6939,117 @@ class RunLoop:
         return subprocess.run(
             argv, cwd=cwd, stdout=log_file, stderr=subprocess.STDOUT,
             timeout=GATE_TIMEOUT).returncode
+
+    # -- a green taken from an earlier run (AIWF-142) --------------------------
+    #
+    # Slice 034's doc gate ran lint, build and test for 575 s over a diff of
+    # docs alone, minutes after the sweep had run them green; slice 033's
+    # sweep ran again for 6.6 minutes after a consult's comment edit. Every
+    # gate the driver runs records each command that went green or ran
+    # nothing, with the content hash of the tree it ran on (`content_tree`,
+    # AIWF-93's), in `state["gate_greens"]`; a later gate takes it in place
+    # of running the command (`_earlier_green`).
+
+    def _tree_now(self, root: Path) -> str | None:
+        """`content_tree` of `root`, None where git cannot say: the gate then
+        takes nothing from an earlier run and leaves nothing for a later
+        one."""
+        try:
+            return content_tree(root)
+        except ValueError:
+            return None
+
+    def _green_of(self, root: Path, component: str | None, verb: str,
+                  tree: str) -> dict | None:
+        """The latest record of `kc project <verb>` for `component` (None:
+        the whole repo's command) at `root` that stands on `tree` — run on
+        it, or, for a `test`, on a tree from which only Markdown files have
+        changed (`markdown_only`) — with `why` it stands; else None."""
+        repo = str(Path(root).resolve())
+        rows = [g for g in reversed(self.state.get("gate_greens") or [])
+                if (g.get("repo"), g.get("component"), g.get("verb"))
+                == (repo, component, verb)]
+        for g in rows:
+            if g.get("tree") == tree:
+                return {**g, "why": "on the same tree"}
+        if verb == "test":
+            for g in rows:
+                if markdown_only(repo, g.get("tree") or "", tree):
+                    return {**g, "why": "only Markdown files changed since"}
+        return None
+
+    def _earlier_green(self, root: Path, argv: list[str], tree: str | None,
+                       work_root: Path | None = None) -> dict | None:
+        """What stands for the gate command `argv` at `root` on `tree`: a
+        green — or a "nothing ran" — of the same command recorded earlier in
+        this run, on the same tree; for a `test`, also on a tree from which
+        only Markdown files have changed. A `lint` or `build` reads those
+        files (a docs build, a Markdown lint), so it is taken on the same
+        tree alone. The whole repo's command (`kc project <verb>`, bare) is
+        every component's: it is taken from a run of it, or else from each
+        component's own, where every one stands. A red is never recorded,
+        so never taken. None where nothing stands, and without a tree. The
+        record: `outcome`, the `run` it came from, its `log` (None for each
+        component's own) and `why` it stands. `root` is the repo's own
+        checkout, which names it whatever tree the gate runs in;
+        `work_root`, where that tree is when it is elsewhere (a shared
+        repo's worktree), lists its components."""
+        key = gate_cmd_key(argv)
+        if key is None or not tree:
+            return None
+        component, verb = key
+        found = self._green_of(root, component, verb, tree)
+        if found is not None or component is not None:
+            return found
+        try:
+            components = list(load_project_dirs(Path(work_root or root)))
+        except Exception:   # kc cannot list them: nothing stands
+            return None
+        parts = [self._green_of(root, c, verb, tree) for c in components]
+        if not parts or None in parts:
+            return None
+        same = all(p["why"] == "on the same tree" for p in parts)
+        return {"outcome": ("green" if any(p["outcome"] == "green"
+                                           for p in parts) else "nothing_ran"),
+                "run": ", ".join(dict.fromkeys(p["run"] for p in parts)),
+                "log": None,
+                "why": ("each component's own, "
+                        + ("on the same tree" if same
+                           else "only Markdown files changed since"))}
+
+    @staticmethod
+    def _earlier_said(found: dict) -> str:
+        """An earlier green as a gate's log and the narration say it."""
+        return (f"{GATE_OUTCOME_LABELS[found['outcome']]} in {found['run']}, "
+                f"{found['why']}"
+                + (f" (its output: {found['log']})" if found.get("log") else ""))
+
+    def _note_greens(self, root: Path, tree: str | None,
+                     ran: list[tuple[list[str], str, str]], run: str,
+                     work_root: Path | None = None) -> None:
+        """Record each gate command in `ran` — (argv, outcome, log) — that
+        went green or ran nothing on `tree`, the tree of the repo at `root`
+        (in `work_root`, where it is elsewhere) when the run began, as
+        `run`'s (the history row's role and round, as the narration names
+        it), for a later gate to take (`_earlier_green`). Only where the
+        tree is still `tree`: a suite that changed it ran on a tree that is
+        not there any more. A command an earlier run stood for is not in
+        `ran`; a red is never recorded."""
+        kept = [(gate_cmd_key(argv), outcome, log) for argv, outcome, log in ran
+                if gate_cmd_key(argv) is not None
+                and outcome in ("green", "nothing_ran")]
+        if not tree or not kept or self._tree_now(work_root or root) != tree:
+            return
+        repo = str(Path(root).resolve())
+        greens = self.state.setdefault("gate_greens", [])
+        for (component, verb), outcome, log in kept:
+            greens[:] = [g for g in greens
+                         if (g.get("repo"), g.get("component"), g.get("verb"),
+                             g.get("tree")) != (repo, component, verb, tree)]
+            greens.append({"repo": repo, "component": component, "verb": verb,
+                           "tree": tree, "outcome": outcome, "run": run,
+                           "log": str(log)})
+        self._save_state()
 
     def _gate_line(self, ps: dict, head: str, target: ResolvedTarget,
                    review_repos: list[str] | None = None) -> str:
@@ -8662,15 +8858,29 @@ class RunLoop:
             # a phase may have registered a component since the run started,
             # and a sweep that skipped it would leave it untested (#746).
             components = load_project_dirs(root)
+            # A command a green of this run stands for is not run again
+            # (AIWF-142): the sweep after a consult's commit, above all.
+            tree = self._tree_now(root)
+            ran: list[tuple[list[str], str, str]] = []
             for component, component_dir in components.items():
                 for verb in SWEEP_VERBS:
                     ruling = (self._covering(gates, root, component)
                               if verb == "test" else None)
-                    results.append(
-                        self._waived_row(root, component, ruling)
-                        if ruling is not None else
-                        self._run_sweep_cmd(root, component, verb, out_dir,
-                                            component_dir))
+                    argv = ["kc", "project", verb, "--project", component]
+                    found = (self._earlier_green(root, argv, tree)
+                             if ruling is None else None)
+                    if ruling is not None:
+                        row = self._waived_row(root, component, ruling)
+                    elif found is not None:
+                        row = self._reused_sweep_row(root, component, verb,
+                                                     found)
+                    else:
+                        row = self._run_sweep_cmd(root, component, verb,
+                                                  out_dir, component_dir)
+                        ran.append((argv, sweep_row_outcome(row),
+                                    row.get("log")))
+                    results.append(row)
+            self._note_greens(root, tree, ran, f"sweep r{n}")
         duration_s = int(time.monotonic() - t0)
         # Red only on a red row: a row that ran nothing is not a failure,
         # and a sweep in which nothing ran at all proved nothing — it is not
@@ -8695,13 +8905,30 @@ class RunLoop:
             summary += f" ({waived} waived by ruling)"
         if unrunnable:
             summary += f" ({unrunnable} unrunnable — tool missing)"
-        self._record(None, "sweep", n, outcome, summary, None, duration_s)
+        reused = {f"{Path(r['repo']).name}/{r['component']} {r['verb']}":
+                  r["reused"] for r in results if r.get("reused")}
+        if reused:
+            summary += f" ({len(reused)} reused from an earlier run)"
+        self._record(None, "sweep", n, outcome, summary, None, duration_s,
+                     extra={"reused": reused} if reused else None)
         self._progress_done()
         self.announce(f"gate sweep r{n} → "
                       + ("RED (" + ", ".join(reds) + ")" if reds
                          else GATE_OUTCOME_LABELS[outcome].lower())
                       + f" ({duration_s}s)")
         return self.state["gate_sweep"]
+
+    def _reused_sweep_row(self, root: Path, component: str, verb: str,
+                          found: dict) -> dict:
+        """A sweep row an earlier green of this run stands for
+        (`_earlier_green`, AIWF-142): not run — its outcome and log those of
+        the run it names in `reused`."""
+        self.log(f"[sweep] {Path(root).name}/{component} {verb} → not run: "
+                 f"{self._earlier_said(found)}")
+        return {"repo": str(root), "component": component, "verb": verb,
+                "outcome": found["outcome"],
+                "green": found["outcome"] == "green", "log": found["log"],
+                "duration_s": 0, "reused": found["run"]}
 
     def _waived_row(self, root: Path, component: str,
                     ruling: Ruling) -> dict:
@@ -8962,7 +9189,8 @@ class RunLoop:
             return (f"{GATE_OUTCOME_LABELS[outcome]} — cexec tool "
                     f"`{row.get('tool')}` is not in this environment")
         if outcome != "waived":
-            return GATE_OUTCOME_LABELS[outcome]
+            return GATE_OUTCOME_LABELS[outcome] + (
+                f" (reused from {row['reused']})" if row.get("reused") else "")
         substitute = (ruling.substitute_text if ruling is not None
                       else row.get("substitute") or "no substitute")
         why = ruling.why if ruling is not None else row.get("why", "")
@@ -10313,11 +10541,21 @@ class RunLoop:
         repo (a gate ruling's `test`, an accept ruling's verb) runs per
         component instead, so the ruling can be honoured for its component
         alone: a waived `test` is skipped, an accepted red is not red. Still
-        fail-fast, on the first red no ruling covers."""
+        fail-fast, on the first red no ruling covers.
+
+        A command an earlier green of this run stands for is not run
+        (`_earlier_green`, AIWF-142 — slice 034's doc gate ran for 575 s
+        what the sweep had run green minutes before, over a diff of docs
+        alone): on the same tree, or, for `test`, with only Markdown files
+        changed since. Its line in the log names that run, and the history
+        row's `reused` maps the command to it."""
         ds["gate_runs"] += 1
         n = ds["gate_runs"]
         self._save_state()
         log_path = self.slice_dir / f"doc_gate_r{n}.log"
+        tree = self._tree_now(self.repo_root)
+        reused: dict[str, str] = {}
+        ran: list[tuple[list[str], str, str]] = []
         rulings = [(r, t) for r, t in self._current_rulings()
                    if r.kind in ("gate", "accept")
                    and self._covering([(r, t)], self.repo_root, None)]
@@ -10341,7 +10579,10 @@ class RunLoop:
                     commands = [(verb, ["kc", "project", verb], None)]
                 for label, argv, component in commands:
                     outcomes[label] = self._doc_gate_cmd(
-                        argv, verb, component, rulings, log_file, log_path)
+                        argv, verb, component, rulings, log_file, log_path,
+                        tree=tree, reused=reused)
+                    if " ".join(argv) not in reused:
+                        ran.append((argv, outcomes[label], str(log_path)))
                     if outcomes[label] == "red":
                         break
                 if "red" in outcomes.values():
@@ -10357,7 +10598,9 @@ class RunLoop:
             tail = lines[-1] if lines else ""
         except OSError:
             pass
-        self._record(None, "doc-gate", n, outcome, tail, None, duration_s)
+        self._note_greens(self.repo_root, tree, ran, f"doc-gate r{n}")
+        self._record(None, "doc-gate", n, outcome, tail, None, duration_s,
+                     extra={"reused": reused} if reused else None)
         empty = [verb for verb, o in outcomes.items() if o == "nothing_ran"]
         unrunnable = [verb for verb, o in outcomes.items()
                       if o == "unrunnable"]
@@ -10365,17 +10608,25 @@ class RunLoop:
                  f"({duration_s}s) {tail[:120]}"
                  + (f" — {', '.join(empty)} ran nothing" if empty else "")
                  + (f" — {', '.join(unrunnable)} unrunnable (tool missing)"
-                    if unrunnable else ""))
+                    if unrunnable else "")
+                 + (" — not run, an earlier green standing: "
+                    + "; ".join(f"`{cmd}` ({run})"
+                                for cmd, run in reused.items())
+                    if reused else ""))
         return outcome != "red", log_path
 
     def _doc_gate_cmd(self, argv: list[str], verb: str,
                       component: str | None,
                       rulings: list[tuple[Ruling, ResolvedTarget]],
-                      log_file, log_path: Path) -> str:
+                      log_file, log_path: Path, tree: str | None = None,
+                      reused: dict[str, str] | None = None) -> str:
         """One doc-gate command's outcome, the rulings applied: `waived`
         (not run) or `accepted` (ran red) where a ruling covers it. A red
         that is cexec's missing-tool line is `unrunnable` — logged, not red,
-        so the gate goes on: nothing a doc writer changed can fix it."""
+        so the gate goes on: nothing a doc writer changed can fix it. One an
+        earlier green of this run stands for on `tree` (`_earlier_green`)
+        is not run either: its outcome is that run's, and `reused` maps the
+        command to the run."""
         if component is not None and verb == "test":
             waiver = self._covering([(r, t) for r, t in rulings
                                      if r.kind == "gate"],
@@ -10386,6 +10637,13 @@ class RunLoop:
                                f"{waiver.substitute_text})\n")
                 self._report_ruling(waiver, "doc gate")
                 return "waived"
+        found = self._earlier_green(self.repo_root, argv, tree)
+        if found is not None:
+            log_file.write(f"$ {' '.join(argv)} → not run: "
+                           f"{self._earlier_said(found)}\n")
+            if reused is not None:
+                reused[" ".join(argv)] = found["run"]
+            return found["outcome"]
         log_file.write(f"$ {' '.join(argv)}\n")
         log_file.flush()
         start = _file_size(log_path)
@@ -11054,7 +11312,10 @@ class RunLoop:
         driver on the wrap-up branch: (passed, where its output is). A repo
         with no manifest, or one a gate ruling waives, passes unrun, as such
         a phase does. The run leaves a `wrap-up-gate` history row, and
-        nothing in it bails: a gate that times out is red."""
+        nothing in it bails: a gate that times out is red. An earlier green
+        of this run that stands for the command on the branch's tree
+        (`_earlier_green`, AIWF-142) is taken in place of running it, the
+        row's `reused` naming its run."""
         target = self._repo_path_target(str(root), root)
         ruling = self._gate_ruling(target)
         if ruling is not None:
@@ -11075,14 +11336,28 @@ class RunLoop:
                  f"({' '.join(argv)})")
         self.git("checkout", branch, root=root)
         t0 = time.monotonic()
+        found = None
         try:
+            tree = self._tree_now(root)
+            found = self._earlier_green(root, argv, tree)
             with open(log_path, "w") as log_file:
-                try:
-                    returncode = self._wrap_up_gate_exec(argv, target.gate_cwd,
-                                                         log_file)
-                except subprocess.TimeoutExpired:
-                    log_file.write(f"→ timed out after {GATE_TIMEOUT}s\n")
-                    returncode = None
+                if found is not None:
+                    log_file.write(f"`{' '.join(argv)}` not run: "
+                                   f"{self._earlier_said(found)}\n")
+                    returncode = (0 if found["outcome"] == "green"
+                                  else KC_NOTHING_RAN)
+                else:
+                    try:
+                        returncode = self._wrap_up_gate_exec(
+                            argv, target.gate_cwd, log_file)
+                    except subprocess.TimeoutExpired:
+                        log_file.write(f"→ timed out after {GATE_TIMEOUT}s\n")
+                        returncode = None
+            if found is None and returncode is not None:
+                self._note_greens(root, tree,
+                                  [(argv, kc_outcome(returncode),
+                                    str(log_path))],
+                                  f"wrap-up-gate r{n}")
         finally:
             self.git("checkout", base, root=root)
         duration_s = int(time.monotonic() - t0)
@@ -11094,7 +11369,9 @@ class RunLoop:
             lines = []
         tail = lines[-1] if lines else ""
         self._record(None, "wrap-up-gate", n, outcome, tail, None, duration_s,
-                     extra={"repo": str(root)})
+                     extra={"repo": str(root),
+                            **({"reused": {" ".join(argv): found["run"]}}
+                               if found is not None else {})})
         self.log(f"[wrap-up] gate #{n} → {GATE_OUTCOME_LABELS[outcome]} "
                  f"({duration_s}s) {tail[:120]}")
         return outcome != "red", str(log_path)

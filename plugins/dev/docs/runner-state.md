@@ -41,7 +41,10 @@ row that ran also lists the files it kept (`artifacts`), and a red one its singl
 `duration_s`, `artifacts`), which marks it reproduced or flaky and never changes its outcome — the
 sweep's own `outcome` (red on any red row, else green on any green row, else `nothing_ran`) and
 `green`, and the exact `commits` it ran on — reused while every swept HEAD matches, re-run
-otherwise),
+otherwise), `gate_greens` (each `kc project` command a driver gate ran green or with nothing
+run: its `repo`, `component` — none for the whole repo's — `verb`, `outcome`, the content-hash
+`tree` it ran on, the `run` it came from and its `log`; what a later gate takes in place of
+running the command, [run-loop.md](run-loop.md) § The per-phase round),
 `consult_seq`, `consult_complete` (the completion consult's `complete`: the `consult` number,
 the `phases` it judged, as `known_phases`, and the `sweep` run it was handed; after a `flake`,
 also `flakes`, the red rows it judged flaky and its summary, the test-fixer's brief; a resume finds it
@@ -129,7 +132,9 @@ branch outside the primary repo (role `wrap-up-gate`), one per test-fixer round 
 `phase`, `role`, `round`, `outcome`, `summary`, `session`, `transcript`, `duration_s` (a gate,
 sweep or doc-gate row's outcome is `green`, `red` or `nothing_ran`; a `wrap-up-gate` row names
 its `repo`; a gate row taken from the writer's own run of the gate names that run's record in
-`reused`, and its `duration_s` is the replay's). A wrap-up row carries the id lists of its
+`reused`, and its `duration_s` is the replay's; a gate, sweep, doc-gate or wrap-up-gate row
+that took a command from an earlier gate's green has `reused` as a map of each such command to
+that run). A wrap-up row carries the id lists of its
 verdict. A code-reviewer row additionally carries the verdict's `findings` list (id, severity,
 impact, category, anchor per finding — the review contract's telemetry) and a review-fix executor
 row its `refuted` list, exactly as the agent reported them. The

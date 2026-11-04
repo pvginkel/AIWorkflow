@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-04 — A gate takes a green the run already has on the same tree (v0.10.38)
+
+AIWF-142 (session review 2 of Pilot in production, change 6; the operator: "In full", and on
+2026-11-04 that AIWF-93's ruling against a cache was about kc, not the plugin):
+
+- **Every driver gate records its greens** — each `kc project` command that went green or ran
+  nothing, with the content hash of the tree it ran on (AIWF-93's), in `state.json`'s
+  `gate_greens`. A later gate, the phase gates, the sweep after a consult, the doc gate and a
+  sibling's wrap-up gate among them, takes a record of the same command on its tree in place of
+  running it; the row's `reused` maps each to its run. A red is never recorded.
+- **A `test` also takes one across a change of Markdown files alone.** Slice 034's doc gate ran
+  lint, build and test for 575 s over a docs-only diff, minutes after the sweep had run them
+  green; now its `test` is taken, and `lint` and `build`, which read those files, still run.
+- Left out: a code comment is a change to code (slice 033's comment edit still sweeps again),
+  and a suite that reads Markdown files is not run again after a change to them alone.
+- `CLAUDE.md`'s settled ruling now says the no-cache ruling is kc's.
+
 ## 2026-11-04 — A red wrap-up gate runs again before the landing is left out (v0.10.37)
 
 AIWF-143 (session review 2 of Pilot in production, change 6; the operator: "In full"):
