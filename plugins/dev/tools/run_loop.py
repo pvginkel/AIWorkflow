@@ -2032,6 +2032,16 @@ def migration_check_argv(check: str) -> list[str]:
     return ["sh", "-c", check]
 
 
+def migration_check_why(added: list[str], owed: list[str]) -> str:
+    """Why a phase's gate runs the migration check, as its log header says:
+    the migrations the phase adds, else the slice's own that the phase's
+    start took origin over (AIWF-140)."""
+    if added:
+        return f"the phase adds {', '.join(added)} under `migrations.paths`"
+    return ("origin came in at this phase's start over the slice's own "
+            f"migrations {', '.join(owed)}")
+
+
 def touched_components(components: dict[str, Path], work_root: Path,
                        changed_names: str,
                        target_name: str) -> tuple[list[str], bool]:
@@ -2161,7 +2171,8 @@ def gate_spec_problem(spec) -> str | None:
     the components whose lint an accept ruling keeps from running, are
     absent from a spec an older driver wrote, whose gate lints nothing; so
     is `migrations`, the migration check's `paths` and `check` (AIWF-140),
-    and its gate runs none."""
+    and its gate runs none — and its `owed`, the slice's migrations a
+    phase's start took origin over, absent where there are none."""
     problem = _shape_problem(spec, {"phase": str, "round": int,
                                     "work_root": str, "gate_cwd": str,
                                     "base": str, "spec_check": bool})
@@ -2189,10 +2200,14 @@ def gate_spec_problem(spec) -> str | None:
     migrations = spec.get("migrations")
     if migrations is not None:
         problem = _shape_problem(migrations, {"paths": list, "check": str})
+        owed = migrations.get("owed", []) if not problem else []
         if problem or not migrations["check"] or not migrations["paths"] \
                 or not all(isinstance(g, str) and g
-                           for g in migrations["paths"]):
-            return f"`migrations` is off-shape: {problem or 'paths or check'}"
+                           for g in migrations["paths"]) \
+                or not isinstance(owed, list) \
+                or not all(isinstance(m, str) and m for m in owed):
+            return ("`migrations` is off-shape: "
+                    f"{problem or 'paths, check or owed'}")
     return None
 
 
@@ -2877,6 +2892,16 @@ did not touch may come from that.
 # ORIGIN_TAKEN_LINE's `{how}`, by how `_take_origin` took origin.
 ORIGIN_TAKEN_HOW = {"rebased": "rebased {base} onto origin/{base}",
                     "merged": "merged origin/{base} into {base}"}
+
+# Closes ORIGIN_TAKEN_LINE where origin came in over migrations the slice
+# added (`_slice_migrations`): the phase's gate owes the project's migration
+# check whatever its own diff adds. `{migrations}` is the slice's, ticked.
+ORIGIN_TAKEN_MIGRATIONS = """\
+Origin's commits came in alongside the slice's own migrations
+({migrations}), so this phase's gate closes with the project's migration
+check even if this phase adds none, and a red there is this phase's to make
+green.
+"""
 
 # `{red_cmds}` is every gate command that went red, each in backticks: a
 # component Target's gate also runs each component its diff touches (AIWF-91),
@@ -4971,7 +4996,9 @@ class RunLoop:
         """Take a moved `origin/<base>` into a fresh phase's diverged base
         before its branch is cut (AIWF-140), and return the move's record —
         {how, base, own, behind}, which every code-writer dispatch of the
-        phase carries (ORIGIN_TAKEN_LINE) — or None where the base is left.
+        phase carries (ORIGIN_TAKEN_LINE), and `migrations` where the
+        slice's work there added some, whose check the phase's gate then
+        owes — or None where the base is left.
 
         The base's own commits are the slice's earlier phases, unpushed
         until the test phase, and origin moving under them used to wait for
@@ -5057,8 +5084,42 @@ class RunLoop:
                  + (f"origin/{base} merged into {base}" if shared
                     else f"{base} rebased onto origin/{base}")
                  + f", {was[:12]} → {now[:12]}")
-        return {"how": how, "base": base, "own": int(own),
-                "behind": int(behind)}
+        record = {"how": how, "base": base, "own": int(own),
+                  "behind": int(behind)}
+        # Origin's migrations meeting the slice's own make a collision no
+        # phase's diff adds: slice 036's P1 0023 met origin's 0023 at P3's
+        # start, and no gate said so until P5 added another. This phase's
+        # gate owes the check instead (`_migration_check`).
+        owed = self._slice_migrations(root)
+        if owed:
+            record["migrations"] = owed
+            self.log(f"[P{phase_id}] origin taken over the slice's own "
+                     f"migrations in {root.name} ({', '.join(owed)}) — this "
+                     "phase's gate owes the migration check")
+        return record
+
+    def _slice_migrations(self, root: Path) -> list[str]:
+        """The files under `.aiworkflowrc`'s `migrations.paths` the slice's
+        merged phases added in `root` (AIWF-140), read from their landed
+        ranges — the run's own record of its work there, whose shas a
+        rebase at a phase start leaves readable. Empty for a repo other
+        than the invoking one, and where the project names no check."""
+        if Path(root).resolve() != Path(self.repo_root).resolve() \
+                or not self.cfg.migration_paths \
+                or not self.cfg.migration_check:
+            return []
+        found: list[str] = []
+        for _, landed in self._landed()[0]:
+            if Path(landed["root"]).resolve() != Path(root).resolve():
+                continue
+            for name in self.git(
+                    "diff", "--name-only", "--no-renames", "--diff-filter=A",
+                    f"{landed['base']}..{landed['head']}", "--",
+                    *migration_pathspecs(self.cfg.migration_paths),
+                    root=root, check=False).splitlines():
+                if name.strip() and name.strip() not in found:
+                    found.append(name.strip())
+        return found
 
     def _merge_under_way(self, root: Path) -> bool:
         """Whether a rebase or a merge stands unfinished in `root`'s tree —
@@ -5072,15 +5133,32 @@ class RunLoop:
     @staticmethod
     def _origin_taken_line(ps: dict) -> str:
         """ORIGIN_TAKEN_LINE when the phase's fresh start took origin into
-        its base (`_take_origin`), else empty."""
+        its base (`_take_origin`), else empty — closed by
+        ORIGIN_TAKEN_MIGRATIONS where it took origin over the slice's own
+        migrations."""
         taken = ps.get("origin_taken")
         if not isinstance(taken, dict) \
                 or taken.get("how") not in ORIGIN_TAKEN_HOW:
             return ""
         base = taken.get("base")
-        return ORIGIN_TAKEN_LINE.format(
+        line = ORIGIN_TAKEN_LINE.format(
             base=base, behind=taken.get("behind"), own=taken.get("own"),
             how=ORIGIN_TAKEN_HOW[taken["how"]].format(base=base))
+        owed = RunLoop._owed_migrations(ps)
+        if owed:
+            line += ORIGIN_TAKEN_MIGRATIONS.format(migrations=_ticked(owed))
+        return line
+
+    @staticmethod
+    def _owed_migrations(ps: dict) -> list[str]:
+        """The slice's own migrations the phase's start took origin over
+        (`_take_origin`), whose check the phase's gate owes — empty where it
+        took none, or took nothing."""
+        taken = ps.get("origin_taken")
+        owed = taken.get("migrations") if isinstance(taken, dict) else None
+        if not isinstance(owed, list):
+            return []
+        return [m for m in owed if isinstance(m, str) and m]
 
     def _origin_ahead_line(self, phase: Phase, root: Path, base: str) -> str:
         """ORIGIN_AHEAD_LINE when `origin/<base>` holds commits the local base
@@ -6568,7 +6646,9 @@ class RunLoop:
         project's migration check (AIWF-140, `_migration_check`), run from
         the phase's tree — cut from a base that took origin at the phase's
         start (`_take_origin`), so a revision id a migration shares with
-        origin's is red at the phase that made it. Recorded under
+        origin's is red at the phase that made it. A phase whose start took
+        origin over the slice's own migrations owes the check whatever its
+        diff adds: that start is what made the collision. Recorded under
         MIGRATION_CHECK_NAME; any exit but 0 is red, and like a lint it reds
         the gate and never makes one green."""
         argv = target.gate_argv
@@ -6587,7 +6667,8 @@ class RunLoop:
         gates = ([(r, t) for r, t in self._current_rulings()
                   if r.kind == "gate"] if touched is not None else [])
         accepts = self._lint_accepts() if argv is not None else []
-        migration = self._migration_check(target, merge_base)
+        migration = self._migration_check(target, merge_base,
+                                          self._owed_migrations(ps))
         record_path = outputs / writer_gate_record_name(ps["executor_rounds"])
         replay = tree = None
         if record_path.exists():
@@ -6614,7 +6695,11 @@ class RunLoop:
                 f"{', '.join(touched)}" if touched else "")
         if migration is not None:
             also += (f", then the migration check for the {len(migration[1])} "
-                     f"migration(s) the phase adds: `{self.cfg.migration_check}`")
+                     f"migration(s) the phase adds: `{self.cfg.migration_check}`"
+                     if migration[1] else
+                     ", then the migration check, owed for the slice's own "
+                     "migrations origin came in over at the phase's start: "
+                     f"`{self.cfg.migration_check}`")
         if replay is None:
             running = ", then ".join(
                 " ".join(a) for a in (check, argv, argv and lint_twin(argv))
@@ -6923,15 +7008,18 @@ class RunLoop:
             return ()
         return self.cfg.migration_paths
 
-    def _migration_check(self, target: ResolvedTarget, merge_base: str
-                         ) -> tuple[list[str], list[str]] | None:
-        """(the migration check's command, the migrations the phase adds)
-        when the phase's diff — `<merge_base>..HEAD` in its tree, the range
-        its reviewer reads, as the writer's `gate` wrapper reads its own —
-        adds a file under `migrations.paths`, else None (AIWF-140). Added
-        alone, never edited or deleted: a new migration is what makes a new
-        head. `--no-renames`, so a migration the phase renumbered by a
-        rename is added under its new name."""
+    def _migration_check(self, target: ResolvedTarget, merge_base: str,
+                         owed: list[str] | None = None
+                         ) -> tuple[list[str], list[str], list[str]] | None:
+        """(the migration check's command, the migrations the phase adds,
+        the slice's own it is owed for) when the phase's diff —
+        `<merge_base>..HEAD` in its tree, the range its reviewer reads, as
+        the writer's `gate` wrapper reads its own — adds a file under
+        `migrations.paths`, or its start took origin over the slice's own
+        migrations (`owed`, `_owed_migrations`), else None (AIWF-140).
+        Added alone, never edited or deleted: a new migration is what makes
+        a new head. `--no-renames`, so a migration the phase renumbered by
+        a rename is added under its new name."""
         globs = self._migration_paths(target)
         if not globs or not self.cfg.migration_check:
             return None
@@ -6939,12 +7027,14 @@ class RunLoop:
             "diff", "--name-only", "--no-renames", "--diff-filter=A",
             f"{merge_base}..HEAD", "--", *migration_pathspecs(globs),
             root=target.work_root).splitlines() if name.strip()]
-        if not added:
+        if not added and not owed:
             return None
-        return migration_check_argv(self.cfg.migration_check), added
+        return (migration_check_argv(self.cfg.migration_check), added,
+                list(owed or []))
 
     def _gate_migration_check(self, phase_id: str,
-                              migration: tuple[list[str], list[str]],
+                              migration: tuple[list[str], list[str],
+                                               list[str]],
                               target: ResolvedTarget, log_file,
                               log_path: Path, replay: Callable | None,
                               runs: list) -> dict:
@@ -6955,11 +7045,11 @@ class RunLoop:
         usage error — but a red whose output is cexec's missing-tool line
         bails `missing_tools`, as a kc command's does, since no fix round can
         add a tool container. `replay` is `_gate_cmd_outcome`'s."""
-        argv, added = migration
+        argv, added, owed = migration
         cmd = self.cfg.migration_check
-        log_file.write(f"\n=== the phase adds {', '.join(added)} under "
-                       f"`migrations.paths`: the migration check `{cmd}` "
-                       f"from {target.work_root} ===\n")
+        log_file.write(f"\n=== {migration_check_why(added, owed)}: the "
+                       f"migration check `{cmd}` from {target.work_root} "
+                       "===\n")
         log_file.flush()
         start = _file_size(log_path)
         try:
@@ -7748,7 +7838,9 @@ class RunLoop:
         (`_lint_accepted`). A phase on the invoking repo of a project that
         names a migration check carries it as `migrations`, its `paths` and
         its `check` (AIWF-140): the wrapper runs it last when the phase's
-        diff adds a file under one of them.
+        diff adds a file under one of them — or whatever the diff adds, with
+        `owed`, the slice's own migrations the phase's start took origin
+        over (`_owed_migrations`).
 
         The spec names the phase's base branch (`base`), never a merge base:
         the wrapper resolves `git merge-base <base> HEAD` itself when its run
@@ -7782,8 +7874,10 @@ class RunLoop:
         # wrapper asks the diff whether the phase adds a migration, as the
         # driver's gate does
         globs = self._migration_paths(target)
+        owed = self._owed_migrations(self.state["phases"].get(phase_id, {}))
         migrations = ({"migrations": {"paths": list(globs),
-                                      "check": self.cfg.migration_check}}
+                                      "check": self.cfg.migration_check,
+                                      **({"owed": owed} if owed else {})}}
                       if globs and self.cfg.migration_check else {})
         _write_json_atomic(outputs / GATE_SPEC_NAME, {
             "phase": phase_id, "round": round_,
@@ -12884,7 +12978,8 @@ def run_writer_gate(spec_path: Path) -> int:
     phase's diff touches that no gate ruling waives, its test and then its
     lint (AIWF-105), but no lint the spec leaves out because an accept
     ruling covers it, then the project's migration check when the phase's
-    diff adds a file under its `paths` (AIWF-140) — its output passed
+    diff adds a file under its `paths` or the spec says it is `owed`
+    (AIWF-140) — its output passed
     through as it runs, and the run
     recorded beside the spec for the driver to reuse
     (`RunLoop._reusable_writer_gate`). The exit code is the gate's:
@@ -13010,11 +13105,11 @@ def run_writer_gate(spec_path: Path) -> int:
     if uncovered:
         print("\n=== the phase's diff touches files outside every component "
               "and kc lists no root — no gate covers them ===", flush=True)
-    if added:
+    owed = (migrations or {}).get("owed") or []
+    if added or owed:
         check_cmd = migrations["check"]
-        print(f"\n=== the phase adds {', '.join(added)} under "
-              f"`migrations.paths`: the migration check `{check_cmd}` from "
-              f"{work_root} ===", flush=True)
+        print(f"\n=== {migration_check_why(added, owed)}: the migration "
+              f"check `{check_cmd}` from {work_root} ===", flush=True)
         migration_argv = migration_check_argv(check_cmd)
         returncode, output = _tee_exec(migration_argv, work_root)
         commands.append({"argv": migration_argv, "rc": returncode,

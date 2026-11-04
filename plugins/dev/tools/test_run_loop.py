@@ -4694,6 +4694,44 @@ def test_the_migration_check_runs_only_where_a_migration_is_added_and_never_make
         assert not ps.get("gate_green_commit")
 
 
+def test_a_phase_whose_start_took_origin_over_the_slices_migrations_owes_the_check():
+    """The phase adds no migration, but its start took origin over P1's: the
+    gate closes with the check, red takes the phase's fix round, and the
+    writer is told why it is owed; the gate spec says so for the wrapper."""
+    app = component_argv(PROJECT)
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc() + MIGRATIONS_RC)
+        r = KcExitLoop(slice_dir, [V["exec_done"], V["exec_done"],
+                                   V["review_signoff"], *TAIL],
+                       repo_root=repo, gate_rcs=[0, 1, 0, 0])
+        r._sync_base = lambda phase_id, root, base: {
+            "how": "rebased", "base": "main", "own": 1, "behind": 1,
+            "migrations": ["db/versions/0023_mine.py"]}
+        assert run_to_exit(r) == 0 and not r.script
+        assert [(argv, cwd) for argv, cwd, _ in r.phase_gate_runs] \
+            == [(app, repo), (MIGRATION_ARGV, repo)] * 2
+        writers = [flat(p) for role, p in r.prompts if role == "code-writer"]
+        owed = ("Origin's commits came in alongside the slice's own "
+                "migrations (`db/versions/0023_mine.py`), so this phase's "
+                "gate closes with the project's migration check even if this "
+                "phase adds none")
+        assert all(owed in w for w in writers)
+        assert "The gate went red on `heads-are-one`;" in writers[1]
+        assert ("\n=== origin came in at this phase's start over the slice's "
+                "own migrations db/versions/0023_mine.py: the migration check "
+                f"`heads-are-one` from {repo} ===\nsh -c heads-are-one: exit "
+                "1\n") in (outputs_of(r) / "gate_r1.log").read_text()
+        assert (", then the migration check, owed for the slice's own "
+                "migrations origin came in over at the phase's start: "
+                "`heads-are-one`\n") in (slice_dir / "log.txt").read_text()
+        assert gate_spec(r)["migrations"] == {
+            "paths": ["db/versions/*.py"], "check": "heads-are-one",
+            "owed": ["db/versions/0023_mine.py"]}
+        assert run_loop.gate_spec_problem(gate_spec(r)) is None
+        assert load_state(slice_dir)["phases"]["1"]["gate_projects"][-1] \
+            == migration_entry("green")
+
+
 def test_a_writer_run_is_the_drivers_gate_only_where_it_ran_the_migration_check():
     app = component_argv(PROJECT)
     with tempfile.TemporaryDirectory() as tmp:
@@ -4765,9 +4803,23 @@ def test_the_gate_wrapper_closes_with_the_migration_check_where_the_phase_adds_o
         # its green is never the gate's: a Target that ran nothing stays so
         code, _, _ = run_wrapper(spec, FakeTee(rcs=[3, 0]))
         assert code == 3
+        # owed for the slice's own migrations, the phase adding none
+        (repo / "backend" / "versions" / "0002_two.py").unlink()
+        data["migrations"]["owed"] = ["backend/versions/0001_mine.py"]
+        spec.write_text(json.dumps(data))
+        tee = FakeTee(rcs=[0, 1])
+        code, out, _ = run_wrapper(spec, tee)
+        assert code == 1
+        assert tee.calls == [(component_argv("frontend"), repo),
+                             (MIGRATION_ARGV, repo)]
+        assert ("\n=== origin came in at this phase's start over the slice's "
+                "own migrations backend/versions/0001_mine.py: the migration "
+                f"check `heads-are-one` from {repo} ===\n") in out
         for bad in ({"paths": [], "check": "heads-are-one"},
                     {"paths": ["backend/versions/*.py"], "check": ""},
-                    {"paths": ["backend/versions/*.py"]}):
+                    {"paths": ["backend/versions/*.py"]},
+                    {"paths": ["backend/versions/*.py"],
+                     "check": "heads-are-one", "owed": "0001_mine.py"}):
             data["migrations"] = bad
             assert "`migrations` is off-shape" \
                 in run_loop.gate_spec_problem(data)
@@ -9841,6 +9893,43 @@ def test_a_shared_repos_diverged_base_is_merged_with_origin_never_rebased():
                          "into main, and cut this phase's branch from the "
                          "result. A red in code this phase did not touch may "
                          "come from that.").split()
+
+
+def test_origin_taken_over_the_slices_own_migrations_owes_the_migration_check():
+    """Slice 036's case: P1 added 0023, origin's 0023 came in after. The
+    next phase start that takes origin finds the slice's migration in P1's
+    landed range and records it owed — its gate runs the check whatever the
+    phase itself adds."""
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, other = real_code_slice(tmp, push=True)
+        with open(repo / ".aiworkflowrc", "a") as rc_file:
+            rc_file.write(MIGRATIONS_RC)
+        sh(repo, "commit", "-qam", "migrations named")
+        sh(repo, "push", "-q", "origin", "main")
+        sh(other, "pull", "-q")
+        fork = sh(repo, "rev-parse", "HEAD")
+        p1 = local_commit(repo, "db/versions/0023_mine.py")
+        pushed(other, "db/versions/0023_theirs.py", "revision = '0023'\n")
+        sh(repo, "fetch", "-q")
+        r = RealGitLoop(slice_dir, [], repo_root=repo)
+        r.state = {"phases": {"1": {"status": "merged", "landed": {
+            "root": str(repo), "base": fork, "head": p1}}}}
+        taken = r._sync_base("2", repo, "main")
+        assert taken == {"how": "rebased", "base": "main", "own": 1,
+                         "behind": 1,
+                         "migrations": ["db/versions/0023_mine.py"]}
+        assert ("[P2] origin taken over the slice's own migrations in repo "
+                "(db/versions/0023_mine.py) — this phase's gate owes the "
+                "migration check") in (slice_dir / "log.txt").read_text()
+        assert ("Origin's commits came in alongside the slice's own "
+                "migrations (`db/versions/0023_mine.py`), so this phase's "
+                "gate closes with the project's migration check even if this "
+                "phase adds none, and a red there is this phase's to make "
+                "green.") \
+            in flat(run_loop.RunLoop._origin_taken_line(
+                {"origin_taken": taken}))
 
 
 def test_a_fetch_that_fails_at_a_phase_start_is_logged_and_the_phase_goes_on():
