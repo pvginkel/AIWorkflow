@@ -8305,6 +8305,246 @@ def test_a_phase_appended_after_complete_drops_the_record():
         assert "already answered" not in (slice_dir / "log.txt").read_text()
 
 
+# -- a flake in the sweep: the test-fixer, then a card (AIWF-141) -------------
+#
+# PilotApp slice 027: the frontend sweep was red twice on a spec a phase had
+# already seen flake, the completion consult found "a test race, not a
+# product bug" and appended P9 for it — two writer and review rounds and a
+# second sweep, $8.98 and 72 minutes. The consult now answers `flake`: the
+# test-fixer takes the row inside the consult's step, and a flake it cannot
+# settle is a card request in the close-out report, never a phase.
+
+FLAKE = ("consult", {"outcome": "flake",
+                     "summary": "create-project.spec.ts races the seen-mark's "
+                                "refetch against the role swap"})
+
+
+def fixes_the_flake(loop):
+    """A test-fixer step's effect: it committed a fix — HEAD moves — and the
+    suite is green on it."""
+    loop.fake_git.head = "fix456"
+    loop.sweep_reds.discard((PROJECT, "test"))
+
+
+def flake_entry(slice_dir):
+    """The store's one entry, with its route."""
+    entries = json.loads((slice_dir / "close-out.json").read_text())["entries"]
+    assert len(entries) == 1, [e["headline"] for e in entries]
+    entry = entries[0]
+    return entry, close_out.route(entry, close_out.touched_repos(slice_dir))[0]
+
+
+def test_flake_is_offered_only_where_every_red_row_is_a_test_row():
+    for reds, offered in (({(PROJECT, "test")}, True),
+                          ({(PROJECT, "test"), (PROJECT, "lint")}, False),
+                          ({(PROJECT, "build")}, False),
+                          (set(), False)):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp)
+            r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                         *TAIL], repo_root=repo,
+                             sweep_reds=reds)
+            assert run_to_exit(r) == 0
+            consult = next(p for role, p in r.prompts if role == "consult")
+            flat = consult.replace("\n", " ")
+            assert ("- `flake` — " in consult) is offered, reds
+            assert ("answer `flake`: the driver hands each to the test-fixer"
+                    in flat) is offered, reds
+            if reds:
+                # the old stance's flaky clause is gone: a phase is owed by a
+                # red the product causes, not by a flake
+                assert "a flaky RED row from it owes the phase" not in flat
+                assert "append a phase that fixes it" in flat
+
+
+def test_a_flake_the_test_fixer_settles_is_swept_again_and_appends_no_phase():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        active = []
+        script = [V["exec_done"], V["review_signoff"], FLAKE,
+                  ("test-fixer", {"outcome": "clean", "summary": "awaited it"},
+                   lambda lp: (active.append(
+                       [c for c, s in progress_of(lp.state) if s == "active"]),
+                       fixes_the_flake(lp))),
+                  V["test_clean"], V["doc_done"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo,
+                         sweep_reds={(PROJECT, "test")})
+        assert run_to_exit(r) == 0
+        assert not r.script
+        assert [role for role, *_ in r.spawned] == [
+            "code-writer", "code-reviewer", "consult", "test-fixer",
+            "test-agent", "doc-writer"]
+        assert active == [["consult"]], "the fixer is the consult's step"
+        fixer = next(p for role, p in r.prompts if role == "test-fixer")
+        assert FLAKE[1]["summary"] in fixer
+        assert f"`kc project test --project {PROJECT}`, run in {repo}" in fixer
+        assert str(slice_dir / "sweeps" / "r1" / f"repo_{PROJECT}_test.log") \
+            in fixer
+        assert str(slice_dir / "test_fixer_result_r1.json") in fixer
+        state = load_state(slice_dir)
+        assert state["generation"] == 0
+        assert state["sweep_runs"] == 2
+        assert state["test_fixer_rounds"] == 1
+        assert state["consult_complete"]["flakes"]["diagnosis"] \
+            == FLAKE[1]["summary"]
+        [rec] = state["flakes"]
+        assert (rec["repo"], rec["component"], rec["round"], rec["outcome"],
+                rec["settled"], rec["head"]) \
+            == (str(repo), PROJECT, 1, "clean", True, "fix456")
+        assert not (slice_dir / "close-out.json").exists() \
+            or not json.loads((slice_dir / "close-out.json").read_text())[
+                "entries"]
+        test_prompt = next(p for role, p in r.prompts if role == "test-agent")
+        assert f"{PROJECT} test → GREEN" in test_prompt
+        log = (slice_dir / "log.txt").read_text()
+        assert "settled — the re-sweep runs on its commit" in log
+        assert ("the completion consult's `flake` and the test-fixer left "
+                f"commits in {repo.name} — re-sweeping before the test "
+                "phase") in log
+        assert ("gate sweep r2 after the consult's `flake` → GREEN — on to "
+                "the test phase, no new consult") in log
+
+
+def test_a_flake_the_test_fixer_cannot_settle_becomes_a_card_request():
+    for fixer, why in ((("test-fixer", {"outcome": "issues",
+                                        "summary": "the page refetches"}),
+                        "answered `issues`: the page refetches"),
+                       (("test-fixer", {"outcome": "clean",
+                                        "summary": "could not reproduce"}),
+                        "answered `clean` and committed nothing")):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp)
+            script = [V["exec_done"], V["review_signoff"], FLAKE, fixer,
+                      V["test_clean"], V["doc_done"]]
+            r = ScriptedLoop(slice_dir, script, repo_root=repo,
+                             sweep_reds={(PROJECT, "test")})
+            assert run_to_exit(r) == 0
+            assert not r.script
+            assert "code-writer" not in [role for role, *_ in r.spawned[2:]]
+            state = load_state(slice_dir)
+            assert state["generation"] == 0
+            assert state["sweep_runs"] == 1, "nothing moved: nothing to sweep"
+            [rec] = state["flakes"]
+            assert rec["settled"] is False and rec["entry"] == "B1"
+            assert rec["head"] == r.fake_git.head
+            entry, route = flake_entry(slice_dir)
+            assert route == "card:author"
+            assert entry["kind"] == "defect"
+            assert entry["labels"] == {**run_loop.FLAKE_LABELS,
+                                       "repo": repo.name}
+            assert entry["proposal"].startswith("card: ")
+            shown = entries_in_full(slice_dir)
+            assert FLAKE[1]["summary"] in shown
+            assert why in shown
+            # the row stays red, noted: the test phase reads the flake, not
+            # a red that owes a phase
+            test_prompt = next(p for role, p in r.prompts
+                               if role == "test-agent")
+            flat = test_prompt.replace("\n", " ")
+            assert (f"{PROJECT} test → RED, an unsettled flake (close-out "
+                    "B1) — ") in test_prompt
+            assert "does not leave the machine" not in flat
+            assert "It does not block the push" in flat
+            assert ("Every row that ran, but those a ruling covers or marked "
+                    "an unsettled flake, is GREEN") in flat
+            log = (slice_dir / "log.txt").read_text()
+            assert ("not settled — close-out B1 asks for its card; the row "
+                    "stays red, noted, and no phase is appended") in log
+
+
+def test_a_suite_the_fixer_had_is_carded_when_it_goes_red_again():
+    """One fixer round per suite per run: a fix that did not hold goes to
+    the card, not to a second round."""
+    def fixes_but_not_for_long(loop):
+        loop.fake_git.head = "fix456"   # committed; the suite stays red
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [V["exec_done"], V["review_signoff"], FLAKE,
+                  ("test-fixer", {"outcome": "clean", "summary": "awaited it"},
+                   fixes_but_not_for_long),
+                  FLAKE, V["test_clean"], V["doc_done"]]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo,
+                         sweep_reds={(PROJECT, "test")})
+        assert run_to_exit(r) == 0
+        assert not r.script
+        roles = [role for role, *_ in r.spawned]
+        assert roles.count("test-fixer") == 1 and roles.count("consult") == 2
+        consults = [p for role, p in r.prompts if role == "consult"]
+        assert "- `flake` — " in consults[1]
+        state = load_state(slice_dir)
+        assert state["generation"] == 0
+        assert state["sweep_runs"] == 2
+        first, second = state["flakes"]
+        assert (first["round"], first["settled"]) == (1, True)
+        assert (second["round"], second["outcome"], second["settled"],
+                second["entry"], second["head"]) \
+            == (None, "not_dispatched", False, "B1", "fix456")
+        _, route = flake_entry(slice_dir)
+        assert route == "card:author"
+        assert "the suite went red again in gate sweep r2" \
+            in entries_in_full(slice_dir)
+        test_prompt = next(p for role, p in r.prompts if role == "test-agent")
+        assert "RED, an unsettled flake (close-out B1)" in test_prompt
+        assert "had its round on this suite already (r1, `clean`) — not " \
+            "dispatched again" in (slice_dir / "log.txt").read_text()
+
+
+def test_a_noted_flake_is_red_again_on_a_commit_nobody_judged():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        row = {"repo": str(repo), "component": PROJECT, "verb": "test",
+               "outcome": "red", "green": False, "log": "t.log",
+               "duration_s": 1}
+        r.state = {"flakes": [{"repo": str(repo), "component": PROJECT,
+                               "consult": 1, "sweep": 1, "round": 1,
+                               "outcome": "issues", "settled": False,
+                               "head": "abc123", "entry": "B1"}]}
+        noted = r._ruled_rows([row], {str(repo): "abc123"})
+        moved = r._ruled_rows([row], {str(repo): "def456"})
+        assert noted == [("flake", None)] and moved == [("red", None)]
+        assert r._flake_rows({"results": [row],
+                              "commits": {str(repo): "abc123"}}) == []
+        assert r._flake_rows({"results": [row],
+                              "commits": {str(repo): "def456"}}) == [row]
+
+
+def test_a_resume_mid_fixer_dispatches_its_round_and_no_consult():
+    def killed(loop):
+        raise KeyboardInterrupt
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r1 = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                      FLAKE,
+                                      ("test-fixer", {"outcome": "clean",
+                                                      "summary": "-"}, killed)],
+                          repo_root=repo, sweep_reds={(PROJECT, "test")})
+        with contextlib.redirect_stderr(io.StringIO()):
+            assert run_to_exit(r1) == 130
+        state = load_state(slice_dir)
+        assert state["flakes"][0]["round"] == 1
+        assert state["flakes"][0]["outcome"] is None
+
+        r = ScriptedLoop(slice_dir, [("test-fixer", {"outcome": "clean",
+                                                     "summary": "fixed"},
+                                      fixes_the_flake),
+                                     V["test_clean"], V["doc_done"]],
+                         resume=True, repo_root=repo,
+                         sweep_reds={(PROJECT, "test")})
+        assert run_to_exit(r) == 0
+        assert [(role, rnd) for role, _, rnd, *_ in r.spawned] == [
+            ("test-fixer", 1), ("test-agent", 1), ("doc-writer", 1)]
+        state = load_state(slice_dir)
+        assert state["consult_seq"] == 1
+        assert state["test_fixer_rounds"] == 1
+        [rec] = state["flakes"]
+        assert rec["settled"] is True
+        assert ("the completion consult already answered `flake` (consult "
+                "1)") in (slice_dir / "log.txt").read_text()
+
+
 def test_sweep_targets_exclude_the_spec_repo_and_manifestless_repos():
     with tempfile.TemporaryDirectory() as tmp:
         sib_m = make_sibling(tmp, name="WithManifest")

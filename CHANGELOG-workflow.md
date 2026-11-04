@@ -4,6 +4,24 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-04 — A sweep flake goes to the test-fixer, not to an appended phase (v0.10.36)
+
+AIWF-141 (session review 2 of Pilot in production, change 6; the operator: "In full"):
+
+- **The completion consult may answer `flake`.** Offered only where every red row of the sweep is
+  a `test` row, it is a `complete` whose reds are the tests' own timing, order or shared state,
+  and its summary names the failing tests and the race. PilotApp slice 027's consult found "a
+  test race, not a product bug" and appended P9 for it: two writer and review rounds and a
+  second sweep, $8.98 and 72 minutes. A re-run cannot decide it alone: in 027 both runs failed
+  on the same test.
+- **The driver dispatches the test-fixer** on each such suite, on the branch the sweep ran on,
+  inside the consult's step, one round per suite per run, and sweeps again on its commit.
+- **A flake the fixer does not settle becomes a card request**: a defect entry in the close-out
+  report with a `card:` proposal, its row `RED, an unsettled flake (close-out <id>)`, accepted on
+  that commit only. No phase is appended and the push is not held.
+- Left as it was: the phase gate's own red (027's P2), which the writer already fixes inside the
+  phase; and a deterministic test broken by a product change (030's P5), which is no flake.
+
 ## 2026-11-04 — `wait` says where the run is and for how long (v0.10.35)
 
 AIWF-144 (session review 2 of Pilot in production, change 6; the operator: "In full"):

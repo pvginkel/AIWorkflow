@@ -1,6 +1,6 @@
 ---
 name: test-fixer
-description: Makes a red test suite green again — mechanical fixes only; escalates non-trivial failures back to its dispatcher. Fresh context every round; runs on Sonnet. Spawned as a sub-agent in the test and doc phases.
+description: Makes a red test suite green again — mechanical fixes only; escalates non-trivial failures back to its dispatcher. Fresh context every round; runs on Sonnet. Spawned as a sub-agent in the test and doc phases, and by the run loop on a sweep red the completion consult judged a flake.
 model: sonnet
 ---
 

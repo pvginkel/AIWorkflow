@@ -375,8 +375,9 @@ whole plan is a feature of the review, not a cost. Then:
   it as deterministic fact — green suites are not re-run by agents — under one principle, stated
   in both dispatches with no special cases: **a branch whose gates are red is not pushed**. A
   red sweep is the consult's to act on — append a fixing phase, or bail with the question — and
-  deliberately not driver-enforced. A flaky red from a test older than the slice, which no phase
-  names, is no exception: it owes the phase that fixes the test. The incident this front-loads: a known-red docs build
+  deliberately not driver-enforced. A red that is a flake or a test race — the tests' own
+  timing, order or shared state, not the product — owes no phase: where every red row is a
+  `test` row the consult may answer `flake`, and the test-fixer takes it (below). The incident this front-loads: a known-red docs build
   "owed to the doc phase" was answered `complete`, pushed by the test phase, and failed
   in CI — a spent test session and a failed build for a fact knowable at loop-tail entry. The
   sweep runs before the devlock is taken, so its minute never extends the hold.
@@ -405,6 +406,17 @@ whole plan is a feature of the review, not a cost. Then:
   the test phase or, with none, before its push and the doc phase. Green, or nothing ran, goes
   straight on with no new consult. Red goes to a fresh consult handed that red, as a red sweep
   always does. No generation is spent either way. A phase appended since drops the record.
+  **A `flake` is a `complete` whose red rows are flaky.** It is offered only where every red row
+  is a `test` row, and the consult's summary, which names the failing tests and the race, is the
+  brief: PilotApp slice 027's consult found "a test race, not a product bug" and appended a phase
+  for it, two writer and review rounds and a second sweep, $8.98 and 72 minutes. The driver
+  dispatches the test-fixer on each such suite, in the repo and on the branch the sweep ran on,
+  inside the consult's step; it commits there, and the re-sweep above runs on its commit. One
+  round per suite per run. A suite it does not settle — a `clean` that committed nothing,
+  `issues`, `blocked`, or a suite it already had — becomes a defect entry in the close-out report
+  with a `card:` proposal, so it comes to the operator as a card request, and its row reads `RED,
+  an unsettled flake (close-out <id>)`: accepted on that commit only, the push not held, no phase
+  appended. A later commit in that repo is a tree nobody judged, and its red is a red.
 - **Test phase** — a fresh `test-agent` session told to read the project's slice-testing-strategy
   doc (`.aiworkflowrc`'s `test_phase.strategy`) and execute it. **The driver holds the devlock**
   for this phase (a `flock` on the inode `devlock.lease` names; it releases on crash): taken
@@ -619,7 +631,7 @@ past the first is a step of its own, never a reused one, so the tile shows the w
 | `code` | `P3.code` "P3 · \<title\>", `P3.code-2` "P3 · code 2" | a code-writer round's dispatch (the first, a gate fix, a review fix, the writer-direct resume), through the gate after it |
 | `review` | `P3.review` "P3 · review", `P3.review-2` "P3 · review 2" | a review round's dispatch, through its funding consult; the last one through the merge |
 | `sweep` | `sweep` "Gate sweep", `sweep-2` "Gate sweep 2" | a loop-tail sweep that runs, to its record; a reused record is no step |
-| `consult` | `consult` "Completion consult", `consult-2` "Completion consult 2" | the completion consult's dispatch, to its answer; one a resume finds answered is no step |
+| `consult` | `consult` "Completion consult", `consult-2` "Completion consult 2" | the completion consult's dispatch, to its answer, or after a `flake` through the test-fixer's rounds; one a resume finds answered is no step |
 | `test` | `test` "Test phase", `test-2` "Test phase 2" | a test round's dispatch, to its verdict and the push check after it |
 | `docs` | `docs` "Doc phase" | the doc-writer's dispatch |
 | `wrap-up` | `wrap-up` "Wrap-up" | the wrap-up, then the doc gate and its nudges, the landing and the other repos' pushes, to the ladder's end |

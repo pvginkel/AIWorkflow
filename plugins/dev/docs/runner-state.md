@@ -43,10 +43,15 @@ sweep's own `outcome` (red on any red row, else green on any green row, else `no
 `green`, and the exact `commits` it ran on — reused while every swept HEAD matches, re-run
 otherwise),
 `consult_seq`, `consult_complete` (the completion consult's `complete`: the `consult` number,
-the `phases` it judged, as `known_phases`, and the `sweep` run it was handed; a resume finds it
+the `phases` it judged, as `known_phases`, and the `sweep` run it was handed; after a `flake`,
+also `flakes`, the red rows it judged flaky and its summary, the test-fixer's brief; a resume finds it
 and dispatches no consult while `phases` matches. Dropped when a phase is pending again or the
 re-sweep after the consult's commit is red; absent on a run older than 0.9.143, which dispatches
-the consult as before), `in_flight`, `exit` (how the run ended — its exit `code` and `ts`, the driver's last
+the consult as before), `flakes` (one record per suite a `flake` gave the test-fixer: its
+`repo`, `component`, `consult`, `sweep`, `round` — none for a suite it already had — the
+verdict's `outcome` and `summary`, `settled`, the `head` its row was noted on, and the close-out
+`entry` that asks for its card when it was not settled; [run-loop.md](run-loop.md) § After the
+last phase), `test_fixer_rounds` (the test-fixer's rounds the run has dispatched), `in_flight`, `exit` (how the run ended — its exit `code` and `ts`, the driver's last
 write, after `bailout.json`; cleared when a `--resume` starts, so a run that is not running and
 has none was killed from outside), `bailouts` (every stop this run made — `reason`, `phase`,
 `question`, `ts`, the `run_phase` it stopped in, its `details` clipped to 600 characters and
@@ -119,7 +124,8 @@ has none, and the doc dispatch names it as missing from the files.
 
 `history` is append-only, one entry per agent run plus one per gate run (role `gate`), one per
 loop-tail sweep (role `sweep`), one per doc gate (role `doc-gate`), one per gate on a wrap-up
-branch outside the primary repo (role `wrap-up-gate`) and one per consult: `ts`,
+branch outside the primary repo (role `wrap-up-gate`), one per test-fixer round on a sweep flake
+(role `test-fixer`) and one per consult: `ts`,
 `phase`, `role`, `round`, `outcome`, `summary`, `session`, `transcript`, `duration_s` (a gate,
 sweep or doc-gate row's outcome is `green`, `red` or `nothing_ran`; a `wrap-up-gate` row names
 its `repo`; a gate row taken from the writer's own run of the gate names that run's record in

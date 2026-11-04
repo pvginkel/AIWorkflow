@@ -89,7 +89,8 @@ inherit from the dispatching session — the intended mechanism; ambient inherit
 
 The only exceptions are the **always-Sonnet agents**, which additionally pin `model: sonnet` in
 their own definitions so they stay Sonnet even as sub-agents: **test-agent** (the test phase),
-**test-fixer** (mechanical suite repair), and the **rebase-agent**. Two Opus agents pin their
+**test-fixer** (mechanical suite repair; the run loop also dispatches it itself, `--model
+sonnet`, on a sweep flake), and the **rebase-agent**. Two Opus agents pin their
 model too. The
 **plan-preparer** pins `model: opus` and `effort: xhigh`: it grounds the slice and writes the
 requirements asks the operator rules on, and that work does not inherit the model of the stage's

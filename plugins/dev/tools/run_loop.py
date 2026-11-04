@@ -201,6 +201,9 @@ MODELS: dict[str, tuple[str, str | None]] = {
     "wrap-up": ("opus", "xhigh"),
     "consult": ("opus", "xhigh"),
     "test-agent": ("sonnet", None),
+    # dispatched by the driver itself on a sweep flake (AIWF-141), and as a
+    # sub-agent by the test and doc phases
+    "test-fixer": ("sonnet", None),
 }
 
 # The plugin name. Installed agents resolve as `dev:<role>`; the driver
@@ -225,6 +228,7 @@ TIMEOUTS = {
     "code-reviewer": 3600,
     "consult": 1800,
     "test-agent": 14400,   # includes a CI build wait and live checks
+    "test-fixer": 3600,
     "doc-writer": 7200,
     "wrap-up": 7200,
 }
@@ -547,6 +551,7 @@ VERDICTS = {
     "code-writer": {"done", "question", "blocked"},
     "code-reviewer": {"signoff", "issues", "critical"},
     "test-agent": {"clean", "findings", "blocked"},
+    "test-fixer": {"clean", "issues", "blocked"},
     "doc-writer": {"done", "question", "blocked"},
     "wrap-up": {"done", "blocked"},
 }
@@ -2152,6 +2157,14 @@ RERUN_MARKS = {"red": "reproduced",
                "timeout": "re-run timed out"}
 RERUN_SHORT_MARKS = {"green": "flaky"}
 
+# The labels of the driver's close-out entry for a sweep flake the test-fixer
+# could not settle (AIWF-141), `repo` added per entry: a defect of the suite,
+# red at random on an ordinary condition and loud when it is, its fix not
+# known. The fix table closes that (row 10, loud), and the entry's `card:`
+# proposal makes it a card request instead (close_out._card_proposed).
+FLAKE_LABELS = {"trigger": "ordinary-condition", "impact": "degraded",
+                "signal": "loud", "fix": "unknown", "area": "plain"}
+
 
 def rerun_mark(row: dict, short: bool = False) -> str | None:
     """A sweep row's re-run mark, None for a row with no `rerun` — lint and
@@ -3281,7 +3294,24 @@ pushed. A RED row above is therefore outstanding work on this consult's
 table: append a phase that fixes it, or answer `bail` with the question.
 Either is acceptable; what `complete` asserts is that the tree is pushable
 exactly as it stands. A test older than this slice, which no phase names, is
-no exception: a flaky RED row from it owes the phase that fixes the test.\
+no exception.\
+"""
+
+# Appended to the completion consult's sweep block, and `flake` offered, when
+# every RED row is a `test` row (AIWF-141): PilotApp slice 027's consult
+# diagnosed a test race and appended P9 for it — two writer and review rounds
+# and a second sweep, $9 and 72 minutes, for what the test-fixer is for.
+SWEEP_FLAKE_ROUTE = """\
+A RED test row whose red is a flake or a test race — the tests' own timing,
+order or shared state, not the product — owes no phase. Where every RED row
+is one, answer `flake`: the driver hands each to the test-fixer to make those
+tests deterministic, sweeps again, and goes on as after `complete`. A flake
+the fixer cannot settle becomes a card request in the close-out report,
+never a phase. The evidence is yours to weigh — a re-run that passed or failed
+on other tests, a close-out entry or a done-record that met the same failure
+before, the failure's own trace — and your summary is the fixer's brief: name
+the failing tests and the race. A red the product causes is no flake, however
+intermittent: it owes a phase.\
 """
 
 SWEEP_STANCE_TEST_GREEN = """\
@@ -3307,6 +3337,8 @@ The same holds for any red you find after the rebase.\
 # claim narrows.
 SWEEP_EVERY_ROW = "Every row that ran"
 SWEEP_EVERY_UNRULED_ROW = "Every row that ran and no ruling covers"
+SWEEP_EVERY_UNMARKED_ROW = ("Every row that ran, but those a ruling covers or "
+                            "marked an unsettled flake,")
 
 # Appended to the stance when a row renders WAIVED or accepted, so the
 # consult and the test phase read those rows as rulings, not reds.
@@ -3337,10 +3369,51 @@ what each run left (`{results_name}`, Playwright's `{results_dir}/`), taken
 before anything else ran: read the failure there.\
 """
 
+# Appended to the stance when a row is a flake the test-fixer could not
+# settle (AIWF-141), so the consult and the test phase read it as the noted
+# flake it is — the card request is its route — never as a red owing a phase.
+SWEEP_FLAKE_NOTE = """\
+A RED row marked an unsettled flake ran red on tests the completion consult
+judged flaky — their own timing, order or shared state, not the product —
+and the test-fixer's round did not make them deterministic. The close-out
+entry named beside it asks for its card. It does not block the push: those
+tests failing again are that flake, not a finding and not a phase.\
+"""
+
 SWEEP_STANCE_NONE = """\
 Nothing ran — no swept repo carries a kc manifest, or no swept component
 defines a lint, build or test statement — so treat the tree's
 lint/build/test state as unverified.\
+"""
+
+# The test-fixer's dispatch on a sweep row the completion consult answered
+# `flake` on (AIWF-141): the driver's own, one round per suite per run.
+FLAKE_FIX_PROMPT = """\
+The loop-tail gate sweep of slice {slice_name} is red on one test suite, and
+the completion consult judged the red a flake or a test race in the tests,
+not a fault of the product. Its reasoning, which is your brief:
+
+{diagnosis}
+
+The failing command is `{command}`, run in {root} on {base_branch}. What its
+runs left, copied before anything else ran:
+{evidence}
+
+Make those tests deterministic: fix the race, the order dependence or the
+shared state in the tests, their fixtures or their helpers, so that they pass
+every time, without weakening what they assert. Repeat the failing tests
+until the fix holds, then run `{command}` once. A fix the product's code
+would need is not mechanical: hand it back with `issues`.
+
+Commit on {base_branch} in {root}, the branch the sweep ran on, staged by
+name; never branch, never push. The driver sweeps again on your commit. A
+flake you hand back unsettled goes into the slice's close-out report as a
+card request, and the run goes on without it.
+
+Write your verdict to {verdict_path} as JSON:
+  {{"outcome": "clean" | "issues" | "blocked",
+    "summary": "<what you fixed and committed, or why not>"}}
+`clean` only with your fix committed.
 """
 
 TEST_PHASE_PROMPT = """\
@@ -8407,16 +8480,18 @@ class RunLoop:
 
     def _report(self, section: str, headline: str, body: str,
                 consequence: str, provenance: str | None = None,
-                proposal: str | None = None) -> str | None:
+                proposal: str | None = None,
+                labels: dict | None = None) -> str | None:
         """The driver's own close-out entries — deterministic events the
         operator should see without reading the log, each with the stock
-        consequence line its event carries. A report an agent removed is
+        consequence line its event carries; `labels` where the kind is one
+        the tool does not label itself. A report an agent removed is
         logged, never a bail: the run's outcome does not hang on its
         narrative. Returns the entry's id, None when it was not written."""
         try:
             eid = append_entry(self.slice_dir, section, headline, body,
                                consequence=consequence, provenance=provenance,
-                               proposal=proposal)
+                               proposal=proposal, labels=labels)
         except ReportError as e:
             self.log(f"close-out entry not written ({e}): {headline}")
             return None
@@ -8812,14 +8887,18 @@ class RunLoop:
                      + ", ".join(Path(p).name for p in kept))
         return kept
 
-    def _ruled_rows(self, results: list[dict]
+    def _ruled_rows(self, results: list[dict],
+                    commits: dict | None = None
                     ) -> list[tuple[str, Ruling | None]]:
         """Each sweep row's effective outcome against the rulings as plan.md
         stands NOW, with the ruling behind it: a red `test` row a gate ruling
         covers is `waived`, any other red row an accept ruling covers is
         `accepted`. Judged at render time because the record outlives the
         rulings — it is reused while no head moves, and the operator may
-        rule on a red after the sweep that found it."""
+        rule on a red after the sweep that found it. Given the sweep's
+        `commits`, a red `test` row no ruling covers is `flake` where the
+        test-fixer could not settle its suite on that commit
+        (`_noted_flake`, AIWF-141) — red, and noted, as an accepted row is."""
         rulings = self._current_rulings()
         gates = [(r, t) for r, t in rulings if r.kind == "gate"]
         out: list[tuple[str, Ruling | None]] = []
@@ -8838,19 +8917,44 @@ class RunLoop:
                 if ruling is not None:
                     out.append(("accepted", ruling))
                     continue
+                if row["verb"] == "test" \
+                        and self._noted_flake(row, commits) is not None:
+                    out.append(("flake", None))
+                    continue
             out.append((raw, None))
         return out
 
+    def _noted_flake(self, row: dict, commits: dict | None) -> dict | None:
+        """The record (`state["flakes"]`) of a flake the test-fixer could not
+        settle in this row's suite, noted on the commit the row ran on — or
+        None. A later commit in that repo is a tree nobody judged a flake
+        on, so its red is a red."""
+        head = (commits or {}).get(row["repo"])
+        if head is None:
+            return None
+        return next((rec for rec in reversed(self.state.get("flakes") or [])
+                     if rec.get("outcome") is not None
+                     and not rec.get("settled")
+                     and rec.get("repo") == row["repo"]
+                     and rec.get("component") == row["component"]
+                     and rec.get("head") == head), None)
+
     @staticmethod
-    def _row_label(row: dict, outcome: str, ruling: Ruling | None) -> str:
+    def _row_label(row: dict, outcome: str, ruling: Ruling | None,
+                   flake: dict | None = None) -> str:
         """A row's label in the sweep block. A red row carries its re-run's
         mark — `RED (reproduced)`, `RED (flaky: passed on re-run)` — where
         it has one, under a ruling too; a row recorded before red rows
-        re-ran reads plain `RED`."""
+        re-ran reads plain `RED`. A `flake` row names the close-out entry
+        its record (`flake`) asks for the card in."""
         mark = rerun_mark(row)
         red = GATE_OUTCOME_LABELS["red"] + (f" ({mark})" if mark else "")
         if outcome == "accepted":
             return f"{red}, accepted by ruling ({ruling.why})"
+        if outcome == "flake":
+            entry = (flake or {}).get("entry")
+            return (f"{red}, an unsettled flake"
+                    + (f" (close-out {entry})" if entry else ""))
         if outcome == "red":
             return red
         if outcome == "unrunnable":
@@ -8898,16 +9002,19 @@ class RunLoop:
         if not sweep["results"]:
             rows, stance = "- (nothing ran)", SWEEP_STANCE_NONE
         else:
-            ruled = self._ruled_rows(sweep["results"])
+            commits = sweep["commits"]
+            ruled = self._ruled_rows(sweep["results"], commits)
             lines = []
-            for repo, sha in sweep["commits"].items():
+            for repo, sha in commits.items():
                 lines.append(f"- {Path(repo).name} @ {sha[:12]}:")
                 for r, (outcome, ruling) in zip(sweep["results"], ruled,
                                                 strict=True):
                     if r["repo"] != repo:
                         continue
+                    flake = (self._noted_flake(r, commits)
+                             if outcome == "flake" else None)
                     lines.append(f"  - {r['component']} {r['verb']} → "
-                                 f"{self._row_label(r, outcome, ruling)}"
+                                 f"{self._row_label(r, outcome, ruling, flake)}"
                                  + (f" — {r['log']}" if r.get("log") else ""))
                     if outcome == "red":
                         lines.extend(self._kept_lines(r))
@@ -8916,7 +9023,9 @@ class RunLoop:
             outcome = ("red" if "red" in outcomes
                        else "green" if "green" in outcomes else "nothing_ran")
             ruled_any = any(o in ("waived", "accepted") for o in outcomes)
-            every_row = (SWEEP_EVERY_UNRULED_ROW if ruled_any
+            flake_any = "flake" in outcomes
+            every_row = (SWEEP_EVERY_UNMARKED_ROW if flake_any
+                         else SWEEP_EVERY_UNRULED_ROW if ruled_any
                          else SWEEP_EVERY_ROW)
             stance = {"green": green_stance.format(every_row=every_row),
                       "red": red_stance,
@@ -8928,6 +9037,8 @@ class RunLoop:
                     results_dir=TEST_RESULTS_DIR)
             if ruled_any:
                 stance += "\n\n" + SWEEP_RULINGS_NOTE
+            if flake_any:
+                stance += "\n\n" + SWEEP_FLAKE_NOTE
             if "unrunnable" in outcomes:
                 stance += "\n\n" + SWEEP_UNRUNNABLE_NOTE
             for o, ruling in ruled:
@@ -9023,7 +9134,15 @@ class RunLoop:
         slice 008: consult 2 answered `complete` with a one-line comment fix
         committed, the driver was killed in the re-sweep, and the resume
         re-entered here — a full sweep, then a third consult on the same
-        plan, which answered the same `complete`."""
+        plan, which answered the same `complete`.
+
+        `flake` is offered where every red row of the sweep is a `test` row
+        (`_flake_rows`, AIWF-141): a `complete` whose red rows the consult
+        judged flakes or test races. It is recorded the same way, with those
+        rows and the consult's summary as `flakes`, and the test-fixer takes
+        them (`_settle_flakes`) — a resume too, for a row it has not finished
+        — before the re-sweep; the consult's step stays active through its
+        rounds."""
         self.state["run_phase"] = "consult"
         self._save_state()
         if not self._consult_already_complete():
@@ -9032,27 +9151,36 @@ class RunLoop:
             self._progress_start(
                 "consult", n,
                 "Completion consult" + (f" {n}" if n >= 2 else ""))
+            actions = {
+                "complete": "the plan describes no outstanding work",
+                "appended": "you appended phases for outstanding work "
+                            "that clears the bar; the loop re-enters",
+                "bail": "something is wrong enough to stop the slice",
+            }
+            sweep_block = self._sweep_block(sweep, SWEEP_STANCE_CONSULT_GREEN,
+                                            SWEEP_STANCE_CONSULT_RED)
+            flaky = self._flake_rows(sweep)
+            if flaky:
+                sweep_block += "\n\n" + SWEEP_FLAKE_ROUTE
+                actions["flake"] = (
+                    "the plan describes no outstanding work, and every RED "
+                    "row is a flake or a test race (above): the test-fixer "
+                    "takes them, and the run goes on as after `complete`")
             choice = self._consult(
                 "completion",
                 COMPLETION_CONSULT_SITUATION.format(
                     verification_path=self.verification_path,
                     plan_path=self.plan_path,
-                    sweep_block=self._sweep_block(sweep,
-                                                  SWEEP_STANCE_CONSULT_GREEN,
-                                                  SWEEP_STANCE_CONSULT_RED),
+                    sweep_block=sweep_block,
                     push_owed_block=self._push_owed_block(),
                     test_owed_block=self._test_owed_block(),
                     generation_bar=self._generation_bar()),
-                {
-                    "complete": "the plan describes no outstanding work",
-                    "appended": "you appended phases for outstanding work "
-                                "that clears the bar; the loop re-enters",
-                    "bail": "something is wrong enough to stop the slice",
-                },
+                actions,
                 [self.plan_path, self.verification_path], None,
             )
-            self._progress_done()
-            if choice["outcome"] != "complete":
+            if choice["outcome"] != "flake":
+                self._progress_done()
+            if choice["outcome"] == "appended":
                 self._after_session_plan_check()
                 if self._has_unfinished_phase():
                     self._spend_generation("the completion consult")
@@ -9063,7 +9191,11 @@ class RunLoop:
                 "consult": self.state.get("consult_seq"),
                 "phases": list(self.state.get("known_phases") or []),
                 "sweep": sweep.get("run")}
+            if choice["outcome"] == "flake":
+                self.state["consult_complete"]["flakes"] = {
+                    "rows": flaky, "diagnosis": choice.get("summary", "")}
             self._save_state()
+        self._settle_flakes()
         return self._resweep_after_complete()
 
     def _completion_consults(self) -> int:
@@ -9087,10 +9219,17 @@ class RunLoop:
             self.state.pop("consult_complete")
             self._save_state()
             return False
-        self.log(f"the completion consult already answered `complete` "
+        self.log(f"the completion consult already answered "
+                 f"`{self._complete_answer(done)}` "
                  f"(consult {done.get('consult')}) and the plan has gained "
                  "nothing since — not dispatched again")
         return True
+
+    @staticmethod
+    def _complete_answer(done: dict) -> str:
+        """The answer a `consult_complete` record holds, as the log names
+        it: `flake` where it carries the rows the consult judged flakes."""
+        return "flake" if done.get("flakes") else "complete"
 
     def _resweep_after_complete(self) -> bool:
         """After a `complete`: the sweep again where the consult's session
@@ -9108,8 +9247,13 @@ class RunLoop:
         spends none — so that consult's bar is the one this consult had. A
         sweep the consult was itself handed is never a reason for another:
         a `complete` over a red that commits nothing goes on, as it always
-        did, to a test phase handed the red."""
+        did, to a test phase handed the red.
+
+        After a `flake` the same, the test-fixer's commits among those that
+        moved a HEAD (`_settle_flakes`); a red row it could not settle is
+        `flake`, not red, on the commit it was noted on (`_ruled_rows`)."""
         done = self.state["consult_complete"]
+        answer = self._complete_answer(done)
         after = ("the test phase" if self.cfg.test_phase
                  else "the push and the doc phase")
         swept = (self.state.get("gate_sweep") or {}).get("commits") or {}
@@ -9117,26 +9261,226 @@ class RunLoop:
                  in self._sweep_heads(self._sweep_targets()).items()
                  if swept.get(repo) != sha]
         if moved:
-            self.log("the completion consult answered `complete` with a "
-                     f"commit in {', '.join(moved)} — re-sweeping before "
+            self.log(("the completion consult answered `complete` with a "
+                      "commit" if answer == "complete" else
+                      "the completion consult's `flake` and the test-fixer "
+                      "left commits")
+                     + f" in {', '.join(moved)} — re-sweeping before "
                      f"{after}")
         sweep = self._ensure_gate_sweep()
         if sweep.get("run") == done.get("sweep"):
             return False
-        outcomes = [o for o, _ in self._ruled_rows(sweep["results"])]
+        outcomes = [o for o, _ in self._ruled_rows(sweep["results"],
+                                                   sweep.get("commits"))]
         if "red" not in outcomes:
             self.log(f"gate sweep r{sweep.get('run')} after the consult's "
-                     "`complete` → "
+                     f"`{answer}` → "
                      + GATE_OUTCOME_LABELS["green" if "green" in outcomes
                                            else "nothing_ran"]
                      + f" — on to {after}, no new consult")
             return False
         self.log(f"gate sweep r{sweep.get('run')} after the consult's "
-                 "`complete` → RED — a fresh completion consult is handed "
+                 f"`{answer}` → RED — a fresh completion consult is handed "
                  "it; no generation spent")
         self.state.pop("consult_complete")
         self._save_state()
         return True
+
+    # -- a flake in the sweep: the test-fixer, then a card (AIWF-141) ---------
+    # PilotApp slice 027: the frontend sweep was red twice on a spec a phase
+    # had already seen fail 2 times in 15, the completion consult found "a
+    # test race, not a product bug" — and appended P9 for it: two writer and
+    # review rounds and a second full sweep, $8.98 and 72 minutes. A red the
+    # consult judges a flake now goes to the test-fixer inside the consult's
+    # step; one the fixer cannot settle becomes a card request in the
+    # close-out report, its sweep row noted, and no phase is appended.
+
+    def _flake_rows(self, sweep: dict) -> list[dict]:
+        """The rows a `flake` answer hands the test-fixer: every red row of
+        the sweep as the rulings and the noted flakes leave it — none unless
+        each is a `test` row, since a red lint or build is no flake."""
+        ruled = self._ruled_rows(sweep["results"], sweep.get("commits"))
+        reds = [row for row, (outcome, _) in zip(sweep["results"], ruled,
+                                                 strict=True)
+                if outcome == "red"]
+        if not reds or any(row["verb"] != "test" for row in reds):
+            return []
+        return reds
+
+    def _settle_flakes(self) -> None:
+        """The test-fixer on each row the consult's `flake` named, in order
+        (`_settle_flake`), and the consult's step, which a `flake` left
+        active, done after them. A resume finishes the row it was on and
+        passes over those done; a record without `flakes` has nothing here.
+
+        A row the fixer could not settle is noted on the HEAD its repo has
+        once every row is through — the tree the re-sweep runs on — so that
+        a fixer's commit for another suite in that repo does not leave the
+        note behind it."""
+        done = self.state.get("consult_complete") or {}
+        flakes = done.get("flakes")
+        if not flakes:
+            return
+        worked = [self._settle_flake(row, done, flakes.get("diagnosis", ""))
+                  for row in flakes.get("rows") or []]
+        for rec in self.state.get("flakes") or []:
+            if rec.get("consult") == done.get("consult") \
+                    and not rec.get("settled"):
+                rec["head"] = self.git("rev-parse", "HEAD",
+                                       root=Path(rec["repo"]))
+        self._save_state()
+        if any(worked):
+            self._progress_done()
+
+    def _settle_flake(self, row: dict, done: dict, diagnosis: str) -> bool:
+        """One row a `flake` answer named: True when it was worked now,
+        False when a record of this consult already settles or notes it.
+
+        Its record goes into `state["flakes"]` before the round, with the
+        round's number and the repo's HEAD, so a resume reattaches to the
+        same round and still knows what the fixer committed. One round per
+        suite per run: a suite the fixer already had is not dispatched
+        again. Settled is a `clean` that moved the repo's HEAD; anything
+        else — `issues`, `blocked`, a `clean` that committed nothing, a
+        suite already had — is a flake the fixer could not settle, entered
+        once per suite in the close-out report as a card request
+        (`_report_flake`)."""
+        records = self.state.setdefault("flakes", [])
+        suite = (row["repo"], row["component"])
+        consult = done.get("consult")
+        rec = next((r for r in records if r.get("consult") == consult
+                    and (r.get("repo"), r.get("component")) == suite), None)
+        if rec is not None and rec.get("outcome") is not None:
+            return False
+        prior = [r for r in records if r is not rec
+                 and (r.get("repo"), r.get("component")) == suite]
+        had = [r for r in prior if r.get("round") is not None]
+        root = Path(row["repo"])
+        name = f"{root.name}/{row['component']} test"
+        if rec is None:
+            rec = {"repo": row["repo"], "component": row["component"],
+                   "consult": consult, "sweep": done.get("sweep"),
+                   "round": None, "outcome": None}
+            if not had:
+                rec["round"] = self.state["test_fixer_rounds"] = \
+                    self.state.get("test_fixer_rounds", 0) + 1
+                rec["head_before"] = self.git("rev-parse", "HEAD", root=root)
+            records.append(rec)
+            self._save_state()
+        if rec["round"] is None:
+            last = had[-1]
+            self.log(f"[test-fixer] {name}: the test-fixer had its round on "
+                     f"this suite already (r{last['round']}, "
+                     f"`{last['outcome']}`) — not dispatched again")
+            rec["outcome"] = "not_dispatched"
+            settled = False
+        else:
+            verdict = self._test_fixer_round(row, rec["round"], diagnosis)
+            rec["outcome"] = verdict.get("outcome", "blocked")
+            rec["summary"] = verdict.get("summary", "")
+            moved = self.git("rev-parse", "HEAD", root=root) \
+                != rec.get("head_before")
+            settled = rec["outcome"] == "clean" and moved
+            if rec["outcome"] == "clean" and not moved:
+                self.log(f"[test-fixer] {name}: `clean` with no commit in "
+                         f"{root.name} — not settled")
+        rec["settled"] = settled
+        rec["head"] = self.git("rev-parse", "HEAD", root=root)
+        if settled:
+            self.log(f"[test-fixer] {name}: settled — the re-sweep runs on "
+                     "its commit")
+        else:
+            rec["entry"] = (next((r["entry"] for r in reversed(prior)
+                                  if r.get("entry")), None)
+                            or self._report_flake(row, rec, diagnosis, had))
+            self.log(f"[test-fixer] {name}: not settled — "
+                     + (f"close-out {rec['entry']} asks for its card"
+                        if rec["entry"] else "no close-out entry written")
+                     + "; the row stays red, noted, and no phase is "
+                     "appended")
+        self._save_state()
+        return True
+
+    def _test_fixer_round(self, row: dict, r: int, diagnosis: str) -> dict:
+        """The test-fixer's round `r` on a sweep row, in the row's repo on
+        the branch the sweep ran on: its verdict, after the tree is checked
+        committed (`_ensure_committed`)."""
+        root = Path(row["repo"])
+        verdict_path = self.slice_dir / f"test_fixer_result_r{r}.json"
+        base = (self.state.get("bases") or {}).get(row["repo"]) \
+            or self._current_branch(root)
+        verdict, session = self._spawn(
+            "test-fixer",
+            FLAKE_FIX_PROMPT.format(
+                slice_name=self.slice_name,
+                diagnosis=diagnosis.strip() or "(the consult gave none)",
+                command=f"kc project test --project {row['component']}",
+                root=root, base_branch=base,
+                evidence="\n".join(self._flake_evidence(row)),
+                verdict_path=verdict_path),
+            root, verdict_path, None, r, agent="test-fixer",
+            display="test-fixer")
+        return self._ensure_committed(None, "test-fixer", session, root,
+                                      verdict, verdict_path) or verdict
+
+    @staticmethod
+    def _flake_evidence(row: dict) -> list[str]:
+        """A sweep row's logs and kept files, as the test-fixer's dispatch
+        and the close-out entry list them."""
+        rerun = row.get("rerun") or {}
+        lines = [f"- the sweep's run: {row.get('log')}"]
+        if rerun.get("log"):
+            lines.append(f"- its re-run ({rerun_mark(row)}): {rerun['log']}")
+        kept = [*(row.get("artifacts") or []), *(rerun.get("artifacts") or [])]
+        if kept:
+            lines.append(f"- copied: {', '.join(kept)}")
+        return lines
+
+    def _report_flake(self, row: dict, rec: dict, diagnosis: str,
+                      had: list[dict]) -> str | None:
+        """The close-out entry of a flake the test-fixer could not settle:
+        a defect of the suite, labelled FLAKE_LABELS so the fix table closes
+        it — loud on an ordinary condition — and its `card:` proposal makes
+        it a card request instead (close_out.table_route)."""
+        root = Path(row["repo"])
+        suite = f"{root.name}/{row['component']}"
+        if rec.get("round") is None:
+            last = had[-1]
+            fixer = (f"The test-fixer had its round on this suite already "
+                     f"(r{last['round']}, `{last['outcome']}`), and the "
+                     f"suite went red again in gate sweep r{rec['sweep']}. "
+                     f"Its hand-back: {last.get('summary') or '(none)'}")
+        elif rec["outcome"] == "clean":
+            fixer = (f"The test-fixer's round (r{rec['round']}) answered "
+                     f"`clean` and committed nothing: "
+                     f"{rec.get('summary') or '(no summary)'}")
+        else:
+            fixer = (f"The test-fixer's round (r{rec['round']}) answered "
+                     f"`{rec['outcome']}`: "
+                     f"{rec.get('summary') or '(no summary)'}")
+        body = (f"The completion consult (consult {rec['consult']}) judged "
+                f"the red of `kc project test --project {row['component']}` "
+                f"in {root.name}, in gate sweep r{rec['sweep']}, a flake or a "
+                f"test race in the tests, not the product: "
+                f"{diagnosis.strip() or '(no reasoning given)'}\n\n{fixer}\n\n"
+                + "\n".join(self._flake_evidence(row)))
+        return self._report(
+            "defect",
+            f"{suite}'s tests are flaky, and the test-fixer could not make "
+            "them deterministic",
+            body,
+            consequence="the suite can go red at random — in a sweep, a "
+                        "phase gate or CI — until those tests are "
+                        "deterministic; this run went on past it, its sweep "
+                        "row red and noted.",
+            provenance=f"witnessed — gate sweep r{rec['sweep']}, consult "
+                       f"{rec['consult']}"
+                       + (f", test-fixer r{rec['round']}"
+                          if rec.get("round") is not None else ""),
+            proposal=f"card: make the flaky tests of {suite} deterministic, "
+                     "starting from the consult's diagnosis and the "
+                     "test-fixer's hand-back above",
+            labels={**FLAKE_LABELS, "repo": root.name})
 
     def _test_phase(self) -> bool:
         """The test phase, inside the loop: 'read the slice-testing-strategy
