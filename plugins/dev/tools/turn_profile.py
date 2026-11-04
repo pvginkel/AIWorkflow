@@ -496,13 +496,15 @@ def _tool_key(name: str, inp: dict) -> str:
 
 
 def replay(path: Path) -> dict:
-    """One transcript -> ordered turns with usage, tool calls and their results."""
+    """One transcript -> ordered turns with usage, tool calls and their results.
+    A record is one `\\n`-terminated line, so the file is read with
+    newline="\\n": a line is cut nowhere else."""
     turns: list[dict] = []
     by_id: dict[str, dict] = {}
     pending: dict[str, dict] = {}   # tool_use_id -> turn (awaiting its result)
     user_prompts = 0
     injected_chars = 0               # text blocks in user messages that are not tool results
-    with path.open(errors="replace") as fh:
+    with path.open(errors="replace", newline="\n") as fh:
         for line in fh:
             line = line.strip()
             if not line:
@@ -625,12 +627,16 @@ def first_edit_turn(turns: list[dict]) -> int | None:
 def turn_tier_cost(t: dict, cost_for) -> dict[str, float]:
     """One turn's cost, split by the tier each token was billed at. `cost_for`
     is slice_cost.cost_for — prices live there, and only there; it is handed
-    the turn's prompt size, which picks a model's long-prompt tier."""
+    the turn's prompt size, which picks a model's long-prompt tier, and its
+    cache writes split by TTL: the 1-hour ones as `cache_write_1h`, the rest
+    as `cache_write`."""
     prompt = t["input"] + t["cr"] + t["cw"]
+    hour = min(t.get("cw1h", 0), t["cw"])
     return {
         "input": cost_for(t["model"], {"input": t["input"]}, prompt_tokens=prompt),
         "cache_read": cost_for(t["model"], {"cache_read": t["cr"]}, prompt_tokens=prompt),
-        "cache_write": cost_for(t["model"], {"cache_write": t["cw"]}, prompt_tokens=prompt),
+        "cache_write": cost_for(t["model"], {"cache_write": t["cw"] - hour,
+                                             "cache_write_1h": hour}, prompt_tokens=prompt),
         "output": cost_for(t["model"], {"output": t["out"]}, prompt_tokens=prompt),
     }
 

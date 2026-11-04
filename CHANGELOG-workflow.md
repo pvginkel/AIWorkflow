@@ -4,6 +4,24 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-04 — `slice_cost.py` prices a slice as it was billed (v0.10.30)
+
+AIWF-134:
+
+- **A transcript is split on `\n` only.** `splitlines()` also cut a line at a U+2028 or U+2029
+  inside a JSON string, and that line's message was dropped: PilotApp's slice 002 priced $0.11
+  low. `turn_profile.replay` reads with `newline="\n"` for the same reason (it broke on a lone
+  `\r`).
+- **A cache write is priced by its TTL.** The 1-hour part of a usage record
+  (`cache_creation.ephemeral_1h_input_tokens`) is priced at 2× input, the rest at the 5-minute
+  1.25×; a record with no breakdown is priced as before. The stage's own sessions are not
+  spawned under the loop's 5-minute TTL, and 61 % of Opus 5.5 cache writes in prd's Pilot
+  sessions are 1-hour writes. The turn block splits the same way, so it agrees with the bill.
+- **Sonnet 5.5 reads cache at $0.10/MTok** (0.05×), as the pricing page lists it, not the default
+  0.1×.
+
+Slice 002 now prices $102.25 (was $101.34) and slice 034 $56.60 (was $57.37).
+
 ## 2026-11-03 — The loops publish their steps to Pilot from `wait` (v0.10.29)
 
 AIWF-128 (PilotAppSpecs F92.7, F145; Pilot's side shipped as PilotApp slice 034):

@@ -93,15 +93,27 @@ def test_unknown_model_prices_zero():
     assert cost_for("claude-nonexistent", {"input": 1_000_000}) == 0.0
 
 
+def test_a_one_hour_cache_write_is_priced_at_twice_base_input():
+    """`cache_write_1h` is billed at 2× base input ($8/MTok on Opus 5.5), the
+    5-minute `cache_write` beside it at 1.25× ($5/MTok)."""
+    assert cost_for("claude-opus-5-5", {"cache_write_1h": 1_000_000}) == pytest.approx(8.0)
+    assert cost_for("claude-opus-5-5", {"cache_write": 1_000_000}) == pytest.approx(5.0)
+    assert cost_for("claude-opus-5-5", {"cache_write": 400_000, "cache_write_1h": 600_000}) \
+        == pytest.approx(0.4 * 5.0 + 0.6 * 8.0)
+
+
 def test_cache_read_multiplier_is_per_model():
     """A cache hit is 0.1× base input everywhere except the Fable/Mythos 5.1
-    tier, which reads cache at 0.025× ($0.25/MTok)."""
+    tier, which reads cache at 0.025× ($0.25/MTok), and Opus 5.5 and Sonnet
+    5.5, which read it at 0.05× ($0.20 and $0.10/MTok)."""
     mtok = {"cache_read": 1_000_000}
     assert cost_for("claude-fable-5-1", mtok) == pytest.approx(0.25)
     assert cost_for("claude-mythos-5-1", mtok) == pytest.approx(0.25)
     assert cost_for("claude-fable-5", mtok) == pytest.approx(1.00)
     assert cost_for(OPUS, mtok) == pytest.approx(0.50)
     assert cost_for(SONNET, mtok) == pytest.approx(0.20)
+    assert cost_for("claude-opus-5-5", mtok) == pytest.approx(0.20)
+    assert cost_for("claude-sonnet-5-5", mtok) == pytest.approx(0.10)
 
 
 def test_fable_5_1_is_priced():
@@ -161,6 +173,48 @@ def test_duplicate_message_ids_counted_once(tmp_path):
     assert c.turns == 2
     assert c.tokens_by_class()["input"] == 150
     assert c.tokens_by_class()["output"] == 15
+
+
+def test_a_line_separator_inside_a_record_does_not_drop_its_message(tmp_path):
+    """Claude Code writes U+2028/U+2029 raw inside a JSON string; a record
+    ends at `\\n` only, so the message on that line is still priced."""
+    t = tmp_path / "proj" / "sess1.jsonl"
+    t.parent.mkdir(parents=True)
+    rec = _message("m1", input_tokens=100, output_tokens=10)
+    rec["message"]["content"] = [{"type": "text", "text": "one two three"}]
+    t.write_text(json.dumps(rec, ensure_ascii=False) + "\n"
+                 + json.dumps(_message("m2", input_tokens=50)) + "\n")
+    slice_dir = _slice(tmp_path, state={
+        "orchestrator": None, "history": [_history_entry("sess1", t)]})
+    convs, _ = collect(slice_dir)
+    (c,) = convs
+    assert c.turns == 2
+    assert c.tokens_by_class()["input"] == 150
+    assert c.cost() == pytest.approx(cost_for(OPUS, {"input": 150, "output": 10}))
+
+
+def test_cache_writes_are_priced_by_their_recorded_ttl(tmp_path):
+    """A usage record's `cache_creation` names the 1-hour part of its writes,
+    priced at 2× base input; the rest, and all of a record without the
+    breakdown, at the 5-minute 1.25×. The token count stays all writes."""
+    opus55 = "claude-opus-5-5"
+    t = tmp_path / "proj" / "orch.jsonl"
+    _write_transcript(t, [
+        _message("m1", model=opus55, cache_creation_input_tokens=1_000_000,
+                 cache_creation={"ephemeral_5m_input_tokens": 400_000,
+                                 "ephemeral_1h_input_tokens": 600_000}),
+        _message("m2", model=opus55, cache_creation_input_tokens=1_000_000),
+    ])
+    slice_dir = _slice(tmp_path, state={
+        "orchestrator": {"session": "orch", "transcript": str(t)}, "history": []})
+    convs, warnings = collect(slice_dir)
+    (c,) = convs
+    assert c.tokens_by_class()["cache_write"] == 2_000_000
+    assert c.cost() == pytest.approx((0.4 * 5.0 + 0.6 * 8.0) + 5.0)
+    report = build_report(slice_dir, convs, warnings)
+    assert report["turns"]["by_role"]["orchestrator:run"]["cost_usd"] == round(c.cost(), 2)
+    assert slice_cost.cache_write_split(1_000, None) == (1_000, 0)
+    assert slice_cost.cache_write_split(1_000, {"ephemeral_1h_input_tokens": 600}) == (400, 600)
 
 
 def test_a_transcript_is_priced_message_by_message(tmp_path):

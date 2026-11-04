@@ -137,6 +137,21 @@ def test_a_message_without_usage_is_not_a_turn():
     assert rep["turns"] == []
 
 
+def test_a_record_ends_at_a_newline_only():
+    """A U+2028/U+2029 inside a JSON string, or a lone carriage return between
+    its tokens, does not cut the record: the turn on that line is replayed."""
+    first = _assistant("m1", [{"type": "text", "text": "one two three"}],
+                       output_tokens=5)
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "session.jsonl"
+        path.write_text(json.dumps(first, ensure_ascii=False).replace(", ", ",\r", 1)
+                        + "\n" + json.dumps(_assistant("m2", output_tokens=7)) + "\n",
+                        newline="")
+        rep = tp.replay(path)
+    assert [t["out"] for t in rep["turns"]] == [5, 7]
+    assert rep["turns"][0]["text_chars"] == len("one two three")
+
+
 # -- what one Bash command did ----------------------------------------------
 
 def test_a_command_splits_into_steps_but_not_inside_quotes_or_heredocs():
@@ -341,6 +356,20 @@ def test_a_long_prompt_turn_is_priced_at_the_long_tier():
     assert abs(c["cache_read"] - 150_000 / 1e6 * 0.50 * slice_cost.CACHE_READ_MULT) < 1e-9
     short = tp.turn_tier_cost({**t, "cr": 90_000}, slice_cost.cost_for)
     assert abs(short["output"] - 0.50) < 1e-9
+
+
+def test_a_turns_cache_writes_are_priced_by_their_recorded_ttl():
+    """The replay keeps the 1-hour part of a turn's cache writes, and the
+    write tier prices it at 2× base input, the rest at 1.25×."""
+    rep = _replay([_assistant(
+        "m1", model="claude-opus-5-5", cache_creation_input_tokens=1_000_000,
+        cache_creation={"ephemeral_5m_input_tokens": 400_000,
+                        "ephemeral_1h_input_tokens": 600_000})])
+    (t,) = rep["turns"]
+    c = tp.turn_tier_cost(t, slice_cost.cost_for)
+    assert abs(c["cache_write"] - (0.4 * 5.0 + 0.6 * 8.0)) < 1e-9
+    no_breakdown = tp.turn_tier_cost({**t, "cw1h": 0}, slice_cost.cost_for)
+    assert abs(no_breakdown["cache_write"] - 5.0) < 1e-9
 
 
 def test_an_empty_transcript_analyses_to_nothing():

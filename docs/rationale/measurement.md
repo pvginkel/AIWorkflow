@@ -61,9 +61,12 @@ Definitions as the code has them, so a number in a readout can be traced to a li
 - **Context per turn.** `ctx[t] = input + cache_read + cache_creation` — the prompt the model saw
   at turn *t*; **growth** is `ctx[t] − ctx[t−1]`, what the turn added. A turn is one model
   invocation, the unit the bill is charged in.
-- **Cost tiers.** Each turn's cost split into input, cache read (0.1×), cache write (1.25×) and
-  output, priced per model from one table in `slice_cost.py`. The loop forces the 5-minute cache
-  TTL (`TTL_S = 300`).
+- **Cost tiers.** Each turn's cost split into input, cache read, cache write and output, priced
+  per model from one table in `slice_cost.py`. Cache read is per model: 0.1× by default, 0.05× on
+  Opus and Sonnet 5.5, 0.025× on Fable and Mythos 5.1. A cache write is priced by the TTL its
+  usage record names, 1.25× for 5 minutes and 2× for an hour. The loop forces the 5-minute TTL on
+  the sessions it dispatches; the stage's own sessions, which it does not spawn, also write 1-hour
+  cache. The prefix-break metric below keeps the 5-minute window (`TTL_S = 300`).
 - **Prefix break.** A turn whose `cache_read` fell more than 2,000 tokens (`BREAK_SLACK`) short of
   what the previous turn left cached: the prompt did not come back from cache and was written
   again at the write rate. `extra_cost` is the write-minus-read difference on the shortfall.

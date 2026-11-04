@@ -63,13 +63,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import turn_profile  # noqa: E402
 
 # USD per 1,000,000 tokens — public Anthropic sticker prices, checked against
-# https://platform.claude.com/docs/en/about-claude/pricing on 2026-09-09. The
-# loop's dispatches force the 5-minute cache TTL (SPAWN_ENV in run_loop.py), so
-# the 5-minute write multiplier is the right one. The cache-read multiplier is
-# per model: CACHE_READ_MULT unless the entry carries its own `cache_read` —
-# the Fable/Mythos 5.1 tier reads cache at 0.025× base ($0.25/MTok), Opus 5.5
-# at 0.05× ($0.20/MTok; its $4/$20 rates from the claude-api skill, 2026-09-22).
-# Sonnet 5.5's $2/$10 are from the same skill, 2026-09-30. Haiku 5.5's
+# https://platform.claude.com/docs/en/about-claude/pricing on 2026-09-09. A
+# cache write is priced by the TTL its usage record names: the
+# `cache_creation.ephemeral_1h_input_tokens` part at CACHE_WRITE_1H_MULT, the
+# rest of `cache_creation_input_tokens` at the 5-minute CACHE_WRITE_MULT — all
+# of it when the record has no breakdown. The loop's dispatches force the
+# 5-minute TTL (SPAWN_ENV in run_loop.py), but the orchestrator sessions are
+# not spawned under it and do write 1-hour cache. The cache-read
+# multiplier is per model: CACHE_READ_MULT unless the entry carries its own
+# `cache_read` — the Fable/Mythos 5.1 tier reads cache at 0.025× base
+# ($0.25/MTok), Opus 5.5 at 0.05× ($0.20/MTok; its $4/$20 rates from the
+# claude-api skill, 2026-09-22). Sonnet 5.5's $2/$10 are from the same skill,
+# 2026-09-30; it reads cache at 0.05× too ($0.10/MTok, the pricing page above,
+# checked 2026-11-04). Haiku 5.5's
 # $0.10/$0.50, and $0.50/$2.50 when one request's prompt is over 100K tokens,
 # are from the same skill, 2026-10-19; it reads cache at the default
 # CACHE_READ_MULT. An entry's `long_prompt` is the rate a message is billed at
@@ -84,7 +90,7 @@ PRICES: dict[str, dict] = {
     "claude-opus-4-8":           {"input": 5.0,  "output": 25.0},
     "claude-opus-4-7":           {"input": 5.0,  "output": 25.0},
     "claude-opus-4-6":           {"input": 5.0,  "output": 25.0},
-    "claude-sonnet-5-5":         {"input": 2.0,  "output": 10.0},
+    "claude-sonnet-5-5":         {"input": 2.0,  "output": 10.0, "cache_read": 0.05},
     "claude-sonnet-5":           {"input": 2.0,  "output": 10.0},
     "claude-sonnet-4-6":         {"input": 3.0,  "output": 15.0},
     "claude-haiku-5-5":          {"input": 0.10, "output": 0.50,
@@ -101,7 +107,8 @@ FAMILY_DEFAULTS = {
     "sonnet": "claude-sonnet-5-5",
     "haiku": "claude-haiku-5-5",
 }
-CACHE_WRITE_MULT = 1.25
+CACHE_WRITE_MULT = 1.25      # a 5-minute cache write
+CACHE_WRITE_1H_MULT = 2.0    # a 1-hour cache write
 CACHE_READ_MULT = 0.10
 USAGE_KEYS = {
     "input": "input_tokens",
@@ -133,6 +140,8 @@ def resolve_model(model: str) -> str | None:
 
 def cost_for(model: str, tok: dict[str, int], prompt_tokens: int | None = None) -> float:
     """What `tok` costs on `model`, $0 when resolve_model finds no price.
+    `tok` is keyed by USAGE_KEYS, plus `cache_write_1h` for the 1-hour cache
+    writes, which `cache_write` then does not count (cache_write_split).
     `prompt_tokens` is one message's prompt size: over an entry's
     `long_prompt` floor it selects that tier. Without it — an aggregate —
     the base rate applies."""
@@ -148,9 +157,20 @@ def cost_for(model: str, tok: dict[str, int], prompt_tokens: int | None = None) 
         "input": tier["input"],
         "output": tier["output"],
         "cache_write": tier["input"] * CACHE_WRITE_MULT,
+        "cache_write_1h": tier["input"] * CACHE_WRITE_1H_MULT,
         "cache_read": tier["input"] * base.get("cache_read", CACHE_READ_MULT),
     }
-    return sum(tok.get(k, 0) / 1_000_000 * rates[k] for k in USAGE_KEYS)
+    return sum(tok.get(k, 0) / 1_000_000 * rate for k, rate in rates.items())
+
+
+def cache_write_split(written: int, cache_creation: dict | None) -> tuple[int, int]:
+    """(5-minute, 1-hour) cache-write tokens of one usage record: `written`
+    is its `cache_creation_input_tokens`, `cache_creation` its breakdown by
+    TTL. What the breakdown does not name as a 1-hour write — all of it,
+    when an older transcript records none — is a 5-minute write, so the
+    two always sum to `written`."""
+    hour = min((cache_creation or {}).get("ephemeral_1h_input_tokens", 0) or 0, written)
+    return written - hour, hour
 
 
 def _parse_ts(ts) -> datetime | None:
@@ -209,10 +229,12 @@ class Conv:
 
 def scan_transcript(path: Path, conv: Conv) -> None:
     """Accumulate usage from one stream-json transcript, one record per
-    message id (the file logs each assistant message multiple times)."""
+    message id (the file logs each assistant message multiple times). A
+    record is one `\\n`-terminated line: splitlines() would also cut a line
+    at a U+2028 or U+2029 inside a JSON string, and drop its message."""
     seen: set[str] = set()
     try:
-        lines = path.read_text(errors="replace").splitlines()
+        lines = path.read_text(errors="replace").split("\n")
     except OSError:
         return
     for line in lines:
@@ -246,8 +268,9 @@ def scan_transcript(path: Path, conv: Conv) -> None:
         bucket = conv.tok_by_model[model]
         for k, v in msg_tok.items():
             bucket[k] += v
+        five_min, hour = cache_write_split(msg_tok["cache_write"], usage.get("cache_creation"))
         conv.cost_usd += cost_for(
-            model, msg_tok,
+            model, {**msg_tok, "cache_write": five_min, "cache_write_1h": hour},
             prompt_tokens=msg_tok["input"] + msg_tok["cache_read"] + msg_tok["cache_write"])
 
 
