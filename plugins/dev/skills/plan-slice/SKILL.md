@@ -68,8 +68,9 @@ because another plan loop holds `plan.lock`, the loop is live: wait on it,
 `plan_loop.py wait <slice>`. Refused because the slice's run loop holds `run.lock`, re-planning
 would rewrite the queue it executes: that is an `action` document as in the start's step 2.
 
-**Wait**: run the `next:` line's `wait` in the foreground, a plain Bash call; it returns within
-nine minutes. Its exit code is a signal, and the lines it prints are all there is to read:
+**Wait**: run the `next:` line's `wait` in the foreground, the Bash call's `timeout` the tool's
+maximum, which its description states; `wait` returns a minute inside that cap, or within nine
+minutes where the host sets none. Its exit code is a signal, and the lines it prints are all there is to read:
 
 - **5, running** — run the new `next:` line again at once. Read nothing in between.
 - **6, gone** — the loop died with no exit recorded: run the `next:` relaunch, then wait again.

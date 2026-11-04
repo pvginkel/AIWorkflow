@@ -220,7 +220,10 @@ its own, off any terminal, so no caller's cap on one command can kill it — the
 background cap is 2 h, and on 2026-09-30 it killed three runs mid-flight. It returns once the
 driver holds `run.lock`, or with the driver's own refusal and exit 2; the run is unchanged, its
 exit code on disk as `exit`. `run_loop.py wait <slice-dir> [--for S]` waits on it in the
-foreground, 540 s by default, inside the Bash tool's ten minutes: the stage's session waits
+foreground: by default a minute under the Bash tool's cap on a foreground call,
+`BASH_MAX_TIMEOUT_MS`, which the host's settings put in the session's environment, and at most
+3300 s; 540 s, inside the tool's own ten minutes, where no cap is set. Each return costs the
+session a model call, so the call is as long as the cap lets it be. The stage's session waits
 inside its turn, since a turn's end is the work item's ([pilot.md](pilot.md) § A turn's end is
 the run's end). It is a signal, not a report, and answers **0** the run ended (`ended: exit
 <n>`, then for a halt where it stopped, for a bail its `reason:`, the `document:` to register

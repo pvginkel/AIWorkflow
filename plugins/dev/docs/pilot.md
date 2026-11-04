@@ -63,7 +63,7 @@ PilotApp's `docs/mcp.md` § A tool called with no MCP client, the tool its § `s
 and `set_progress_step(code, state)`. The list is held to the tool's limits before it goes, so a
 code past 64 characters or repeated is left out, a label past 120 is cut, and past 100 steps the
 oldest go. A call waits three seconds at most, so a slow Pilot never pushes a `wait` past the
-Bash tool's ten minutes.
+cap its Bash call runs under.
 
 Publishing is best-effort and silent. No `PILOT_TOKEN` or `PILOT_MCP_URL` (a session started
 outside Pilot, or one alive across the deploy that brought the variable), no answer, and a refusal

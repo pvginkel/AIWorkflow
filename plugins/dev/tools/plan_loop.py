@@ -117,7 +117,7 @@ from run_loop import (  # noqa: E402
     EXIT_HALTED,
     PHILOSOPHY_LINE,
     SPAWN_ENV,
-    WAIT_DEFAULT,
+    WAIT_FOR_HELP,
     Halted,
     SliceLock,
     _exit_status,
@@ -1512,10 +1512,7 @@ def main() -> None:
                      "exit record)")
     wait_p.add_argument("slice_dir")
     wait_p.add_argument("--for", dest="for_seconds", type=float,
-                        default=WAIT_DEFAULT, metavar="SECONDS",
-                        help=f"give up waiting after this long (default "
-                             f"{WAIT_DEFAULT}, inside the Bash tool's ten "
-                             "minutes)")
+                        default=None, metavar="SECONDS", help=WAIT_FOR_HELP)
     wait_p.set_defaults(func=cmd_wait)
 
     stop_p = sub.add_parser("stop", help="interrupt the slice's plan loop "

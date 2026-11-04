@@ -15553,6 +15553,44 @@ def test_wait_stays_inside_the_bash_tools_ten_minutes():
     assert run_loop.WAIT_DEFAULT < 600
 
 
+def test_wait_sizes_its_default_a_minute_under_the_bash_tools_cap():
+    def default(cap):
+        return run_loop.wait_default({"BASH_MAX_TIMEOUT_MS": cap})
+
+    assert run_loop.wait_default({}) == run_loop.WAIT_DEFAULT == 540
+    assert default("3600000") == run_loop.WAIT_CEILING == 3300
+    assert [default("1200000"), default(" 900000\n"), default("600000"),
+            default("61000"), default("61999")] == [1140, 840, 540, 1, 1]
+    # not a whole number of milliseconds, or nothing left under the cap
+    for cap in ("", "an hour", "3.6e6", "3600000ms", "60999", "0", "-1"):
+        assert default(cap) == 540, cap
+
+
+def test_wait_with_no_for_waits_the_default_this_environment_gives():
+    """The CLI's `--for` default is the session's own cap, read at the
+    call: BASH_MAX_TIMEOUT_MS=61000 leaves one second."""
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("PILOT_TOKEN", "PILOT_MCP_URL")}
+    env["BASH_MAX_TIMEOUT_MS"] = "61000"
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp, state=RUNNING_STATE)
+        with holding(slice_dir):
+            t0 = time.monotonic()
+            done = subprocess.run(
+                [sys.executable, str(run_loop.SCRIPT), "wait", str(slice_dir)],
+                env=env, capture_output=True, text=True, timeout=60)
+            took = time.monotonic() - t0
+        assert done.returncode == run_loop.WAIT_RUNNING, done.stderr
+        assert done.stdout.splitlines()[0] == "running"
+        assert 1 <= took < 30
+    # in the loop's own `wait`, None is the default
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp, state=RUNNING_STATE)
+        with holding(slice_dir), patched(run_loop, wait_default=lambda: 0):
+            code, _, _ = wait(slice_dir, for_seconds=None)
+        assert code == run_loop.WAIT_RUNNING
+
+
 # -- the steps Pilot shows: `wait` publishes, the driver keeps them -----------
 
 PILOT_URL = "http://pilot.invalid/mcp"

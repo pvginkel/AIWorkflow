@@ -2190,6 +2190,19 @@ def test_wait_re_arms_while_the_loop_runs_and_relaunches_one_gone():
             f"next: python3 {plan_loop.SCRIPT} run {where} --detach"]
 
 
+def test_wait_with_no_for_waits_the_run_loops_default():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = plan_record(tmp)
+        fd = os.open(slice_dir / "plan.lock", os.O_RDWR | os.O_CREAT, 0o644)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            with patched(run_loop, wait_default=lambda: 0):
+                code, _, _ = wait(slice_dir, for_seconds=None)
+        finally:
+            os.close(fd)
+        assert code == run_loop.WAIT_RUNNING
+
+
 def test_run_detach_names_the_plan_loops_own_stop_and_wait():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)

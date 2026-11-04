@@ -78,8 +78,9 @@ takes, `<task>` the brief's plan task, and a tool is
 
 ## The wait, and the run's end
 
-Run the `next:` line's `wait` in the foreground, a plain Bash call; it returns within nine
-minutes. Its exit code is a signal, and the lines it prints are all there is to read:
+Run the `next:` line's `wait` in the foreground, the Bash call's `timeout` the tool's maximum,
+which its description states; `wait` returns a minute inside that cap, or within nine minutes
+where the host sets none. Its exit code is a signal, and the lines it prints are all there is to read:
 
 - **5, running** — run the new `next:` line again at once. Read nothing in between: no log, no
   state, no word to anyone.

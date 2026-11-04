@@ -4,6 +4,22 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-04 — `wait` waits as long as the Bash tool's cap lets it (v0.10.34)
+
+AIWF-132 (the operator, 2026-11-01, on slice 030's run: "It's not acceptable"; kept for the turn
+count only, 2026-11-04):
+
+- **`wait`'s default is a minute under the cap.** A run stage made 22 to 134 `wait` calls per
+  run, each a model call, because `wait` returned after 540 s to stay inside the Bash tool's ten
+  minutes. The host's shared `~/.claude/settings.json` now sets `BASH_MAX_TIMEOUT_MS` to an
+  hour, which Claude Code puts in a session's environment. Both loops' `wait` default to a
+  minute under that cap, at most 3300 s, and to 540 s where it is unset or unusable; `--for`
+  still overrides.
+- **The stage skills** run `wait` with the Bash call's `timeout` at the tool's maximum, which its
+  description states. A plain call would be cut at the tool's two-minute default.
+- The review is owed a week after this is installed: the `wait` calls per stage since, and any
+  `wait` that outran its call (AIWF-132).
+
 ## 2026-11-04 — What the record decides is not asked, and an ask is ruled from its first sixty words (v0.10.33)
 
 AIWF-136 and AIWF-138 (session review 2 of Pilot in production, changes 1 and 5; the operator:

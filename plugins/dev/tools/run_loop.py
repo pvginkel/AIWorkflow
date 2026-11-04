@@ -11499,15 +11499,39 @@ def run_detached(loop, slice_arg: Path, script: Path = SCRIPT) -> None:
 
 
 # `wait` — what the stage's session waits on inside its turn (pilot.md § A
-# turn's end is the run's end): a foreground call under the Bash tool's ten
-# minutes, re-armed with nothing read in between. Its output is a signal for
-# that session, never a report: one state line, then what it needs to act.
-WAIT_DEFAULT = 540
+# turn's end is the run's end): a foreground call under the Bash tool's cap,
+# re-armed with nothing read in between. Its output is a signal for that
+# session, never a report: one state line, then what it needs to act. Each
+# return costs the session a model call, so the call is as long as the cap
+# lets it be (`wait_default`).
+WAIT_DEFAULT = 540          # inside the tool's ten minutes, where no cap is set
+WAIT_CEILING = 3300         # the longest default, whatever the cap
+WAIT_HEADROOM = 60          # seconds the default leaves under the cap
+WAIT_FOR_HELP = (
+    "give up waiting after this long (default: a minute under the Bash "
+    "tool's cap, BASH_MAX_TIMEOUT_MS in this environment, at most "
+    f"{WAIT_CEILING}; {WAIT_DEFAULT} where it is unset)")
 WAIT_POLL = 10              # seconds between lock probes
 WAIT_RUNNING = 5            # wait's own exit codes, not the run's
 WAIT_KILLED = 6
 STOP_WAIT = 120
 STOP_POLL = 1
+
+
+def wait_default(environ=None) -> int:
+    """`wait`'s seconds when `--for` gives none: WAIT_HEADROOM under the
+    Bash tool's cap on a foreground call — BASH_MAX_TIMEOUT_MS, in
+    milliseconds, which the host's settings put in a session's environment
+    — and at most WAIT_CEILING. Unset, not a whole number, or a cap that
+    leaves nothing under it: WAIT_DEFAULT, inside the tool's own ten
+    minutes."""
+    env = os.environ if environ is None else environ
+    try:
+        cap_ms = int((env.get("BASH_MAX_TIMEOUT_MS") or "").strip())
+    except ValueError:
+        return WAIT_DEFAULT
+    seconds = min(WAIT_CEILING, cap_ms // 1000 - WAIT_HEADROOM)
+    return seconds if seconds > 0 else WAIT_DEFAULT
 
 
 def _ended_lines(code: int, slice_dir: Path) -> list[str]:
@@ -11542,10 +11566,11 @@ def cmd_wait(args) -> None:
 
 
 def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
-                   log_name: str, for_seconds: float, script: Path,
+                   log_name: str, for_seconds: float | None, script: Path,
                    relaunch: str, ended) -> None:
     """Either loop's `wait`: block while the driver holds `lock_name` or
-    until `for_seconds` pass, then print the signal and exit with its code —
+    until `for_seconds` pass (None: `wait_default()`), then print the
+    signal and exit with its code —
     `running` and the wait to re-arm (5), `ended(record, slice_dir)`'s lines
     for the exit recorded in `state_name` (0), or `gone` and the relaunch
     with `relaunch`'s flags (6). Liveness is the flock, never the pid.
@@ -11567,6 +11592,8 @@ def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
               "started", file=sys.stderr)
         sys.exit(2)
     lock_path = slice_dir / lock_name
+    if for_seconds is None:
+        for_seconds = wait_default()
     deadline = time.monotonic() + for_seconds
     progress = pilot_progress.Publisher(
         state_path, lambda text: _append_wait_line(slice_dir / log_name, text))
@@ -12073,10 +12100,7 @@ def main() -> None:
                      "(no exit record)")
     wait_p.add_argument("slice_dir")
     wait_p.add_argument("--for", dest="for_seconds", type=float,
-                        default=WAIT_DEFAULT, metavar="SECONDS",
-                        help=f"give up waiting after this long (default "
-                             f"{WAIT_DEFAULT}, inside the Bash tool's ten "
-                             "minutes)")
+                        default=None, metavar="SECONDS", help=WAIT_FOR_HELP)
     wait_p.set_defaults(func=cmd_wait)
 
     stop_p = sub.add_parser(
