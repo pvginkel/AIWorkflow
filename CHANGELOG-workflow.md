@@ -4,6 +4,20 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-04 — A red gate in another repo is an ordinary red (v0.10.31)
+
+AIWF-133 (the operator, 2026-11-04: no `needs:` key in KubeCoder's manifest):
+
+- **No `missing_services` bail on a red gate.** A phase gate that went red in a Target repo whose
+  `.kubecoder/config.yaml` declares a service the pod does not run bailed with no fix round. A
+  missing service leaves no fixed line in the log, so the bail fired on every red in a repo that
+  merely declared one: PilotProjects' gate never uses its `pilot-sync` (PilotApp slice 030). The
+  red now takes fix rounds like any other.
+- **The fix round is told.** Its gate hint names the services the phase's tree declares and the
+  pod does not run, so the writer hands back `blocked` naming one on its first round when it is
+  the cause. kc is asked only when the tree declares a service.
+- The host's own check, at the start and at the plan loop's GO, is unchanged.
+
 ## 2026-11-04 — `slice_cost.py` prices a slice as it was billed (v0.10.30)
 
 AIWF-134:

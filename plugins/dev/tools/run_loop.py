@@ -4171,11 +4171,12 @@ def _ticked(cmds: Sequence[str]) -> str:
 # 036's P14 targeted ElectronicsInventory from the Ansible environment, which
 # runs no postgres or s3storage; setup and tests failed on :5432 and :9000,
 # and the driver dispatched a fix round that could only hand back `blocked`.
-# The fix is the tools' fix — a config.yaml line and `kc env restart` — so a
-# gate gone red in a repo whose services the pod lacks bails for it, never a
-# fix round (`RunLoop._unrun_services`). Before any dispatch only the host's
-# own config is held; another Target repo's services are asked only where a
-# gate goes red there (`services_check` says why).
+# The fix is the tools' fix — a config.yaml line and `kc env restart`. Before
+# any dispatch only the host's own config is held (`services_check` says
+# why). A missing service leaves no fixed line in a gate's log, so a red gate
+# in another repo is an ordinary red, its fix round told which services the
+# repo declares and the pod does not run, to hand back `blocked` when one is
+# the cause (`RunLoop._unrun_services_hint`, AIWF-133).
 # ---------------------------------------------------------------------------
 
 # An item of the environment config's `services:` list: the bare name
@@ -4283,11 +4284,11 @@ def services_check(roots: Sequence[Path],
     over Ansible's terraform-backend-git for a phase editing one sentence of
     Ansible's docs, whose gates never touch it, and PilotProjects'
     pilot-sync, which its gate never uses, put a warning in every start's
-    log. Such a repo's services are not read here: they are asked only
-    where a gate goes red there (`RunLoop._unrun_services`). kc is asked
-    only when the host's config declares a service and the rulings do not
-    waive the host whole (`tools_waived`: no gate it must pass runs its
-    suites)."""
+    log. Such a repo's services are not read here: they are named to the
+    fix round of a gate gone red there (`RunLoop._unrun_services_hint`).
+    kc is asked only when the host's config declares a service and the
+    rulings do not waive the host whole (`tools_waived`: no gate it must
+    pass runs its suites)."""
     host = Path(host_root).resolve()
     if (host not in {Path(root).resolve() for root in roots}
             or not config_services(_read_text(host / ENV_CONFIG_REL))
@@ -5269,7 +5270,8 @@ class RunLoop:
         repo the run needs declares a service this pod does not run —
         `_assert_tools`' reason, for a suite that reaches postgres on
         localhost instead of a sidecar through cexec. Another repo's are
-        asked when its gate goes red (`_unrun_services`)."""
+        named to the fix round of a gate gone red there
+        (`_unrun_services_hint`)."""
         details = self._missing_services()
         if details:
             raise Bailout("missing_services", question=True, details=details)
@@ -6657,12 +6659,11 @@ class RunLoop:
         --project, and the name came from kc's own project list, so that is
         a driver bug, not a red suite. A red whose output is cexec's
         missing-tool line bails `missing_tools` instead (an operator
-        question): no fix round can add a tool container to the pod. So
-        does a red in a repo whose environment config declares a service
-        the pod does not run — `missing_services`, the gate and its log
-        named. A refused connection on localhost:5432 has no fixed line to
-        match, so it is the repo's declaration against `running_services`,
-        asked on a red alone; kc not answering leaves the red as it was.
+        question): no fix round can add a tool container to the pod. A
+        missing service has no such line — a refused connection on
+        localhost:5432 looks like any other red — so a red in a repo that
+        declares a service the pod does not run is an ordinary red, and its
+        fix round is told of the service (`_unrun_services_hint`).
 
         kc prints only each statement's last lines and keeps the whole run
         in the file its closing `full output:` line names, under
@@ -6680,8 +6681,7 @@ class RunLoop:
 
         `kc` False is a command that is not kc's — the spec check, which
         exits 0 clean, 1 on a problem and 2 on a usage error, read as kc's
-        codes are. Its red is never a missing tool or service: it calls
-        neither."""
+        codes are. Its red is never a missing tool: it calls none."""
         log_file.flush()
         start = _file_size(log_path)
         try:
@@ -6710,40 +6710,44 @@ class RunLoop:
                         "missing_tools", phase=phase_id, question=True,
                         details=self._missing_tool_details(
                             tool, target.git_root, argv, log_path))
-                services = self._unrun_services(target.git_root)
-                if services:
-                    raise Bailout(
-                        "missing_services", phase=phase_id, question=True,
-                        details=self._missing_service_details(
-                            services, target.git_root, argv, log_path))
         finally:
             _inline_kc_full_output(log_file, log_path, start)
         return outcome, tail
 
-    def _unrun_services(self, root: Path) -> list[MissingService]:
-        """The services the repo at `root` declares and the pod does not
-        run, for a gate gone red there. kc is asked only when the repo's
-        config declares a service; when it cannot answer, a warning and
-        none — the red stands as an ordinary red."""
-        if not config_services(_read_text(Path(root) / ENV_CONFIG_REL)):
+    def _unrun_services(self, root: Path) -> list[str]:
+        """The services the tree at `root` declares and the pod does not
+        run, sorted, for the fix round of a gate gone red there. kc is asked
+        only when the tree's config declares a service; when it cannot
+        answer, a warning and none — the fix round is told of nothing."""
+        declared = config_services(_read_text(Path(root) / ENV_CONFIG_REL))
+        if not declared:
             return []
         try:
             running = running_services()
         except ValueError as e:
-            self.log(f"warning: service check of a red gate skipped — {e}")
+            self.log(f"warning: service check for a gate fix round skipped "
+                     f"— {e}")
             return []
-        return missing_services([root], self.repo_root, running)
+        return sorted(declared - running)
 
-    def _missing_service_details(self, missing: list[MissingService],
-                                 root: Path, argv: list[str],
-                                 log_path: Path) -> str:
-        """The missing-services message for a gate gone red mid-run in a
-        repo that declares services the pod does not run: the gate, its log,
-        and why that red is not a fix round's."""
-        return (f"`{' '.join(argv)}` in {Path(root).name} went red (output "
-                f"in {log_path}), and the repo declares services this pod "
-                "does not run — no fix round can start them.\n"
-                + missing_services_details(missing, self.repo_root))
+    def _unrun_services_hint(self, target: ResolvedTarget) -> str:
+        """What closes a gate fix round's gate hint where the phase's tree
+        declares services the pod does not run (`_unrun_services`) — empty
+        where it declares none, or kc cannot say. The driver cannot tell a
+        red such a service caused from any other: PilotProjects' gate never
+        uses its pilot-sync, and a red there bailed for it with no fix round
+        (PilotApp slice 030). So the red takes its fix round, and the
+        writer, reading the log, hands back `blocked` naming the service on
+        that first round when it is the cause (AIWF-133)."""
+        names = self._unrun_services(target.work_root)
+        if not names:
+            return ""
+        return (f". {target.work_root / ENV_CONFIG_REL} declares services "
+                f"this pod does not run: {_ticked(names)}. When one is why "
+                "the gate is red — a refused connection on its port, say — "
+                "no change to the code can fix that, only a change to the "
+                "environment, which is the operator's: hand back `blocked` "
+                "naming it, rather than skipping or faking what needs it")
 
     def _missing_tool_details(self, tool: str, root: Path,
                               argv: list[str], log_path: Path) -> str:
@@ -8200,7 +8204,8 @@ class RunLoop:
             r = ps["gate_fix_rounds"]
             self._save_state()
             red_cmds = self._red_cmds(ps, target)
-            hint = self._gate_hint(target, outputs, merge_base)
+            hint = (self._gate_hint(target, outputs, merge_base)
+                    + self._unrun_services_hint(target))
             spawn_executor(lambda vp, _r=r, _log=gate_log, _red=red_cmds,
                            _mb=merge_base, _hint=hint:
                            EXECUTOR_GATE_FIX_PROMPT.format(

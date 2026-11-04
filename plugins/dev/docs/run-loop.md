@@ -779,15 +779,16 @@ sidecar nothing uses, or Ansible's whole gate waived — took an operator ruling
 that named such services at every start after that was noise too: PilotApp slice 030 logged
 PilotProjects' `pilot-sync` at each plan and run loop start, and PilotProjects' gate never needs
 it. The plan loop checks the host at GO, and `--dry-run` lists the host's as a problem. A phase
-gate that goes red in any repo whose declared services the pod does not run bails
-`missing_services` with no fix round, naming the `- <service>` line to add under
-`services:` in the host's `.kubecoder/config.yaml`, or that the host already declares it and
-`kc env restart` applies it. Unlike a tool, a missing service leaves no fixed line in the gate log,
-so the declaration is the test, and for a repo other than the host the red gate is where it is
-asked. Ansible slice 036's P14 targeted ElectronicsInventory from an environment without its
-`postgres` and `s3storage`: setup and tests failed on `localhost:5432` and `:9000`, and after the
-executor handed back `done` saying the gate could not run there, the driver ran the gate again and
-dispatched a fix round that could only return `blocked`.
+gate that goes red in another repo is an ordinary red, whatever services that repo declares:
+unlike a tool, a missing service leaves no fixed line in the gate log, so the driver cannot tell
+a red it caused from any other, and a bail on the declaration alone fired on every red in a repo
+that merely declared one (PilotProjects' `pilot-sync`, PilotApp slice 030). The red takes its fix
+round, and the round's gate hint names the services the phase's tree declares and the pod does
+not run, so that the writer, reading the log, hands back `blocked` naming one when it is the
+cause; where kc cannot say which services run, the hint names none. The price is a fix round
+before the `blocked`: Ansible slice 036's P14 targeted ElectronicsInventory from an environment
+without its `postgres` and `s3storage`, setup and tests failed on `localhost:5432` and `:9000`,
+and the run stopped on the writer's `blocked`.
 
 **The loop sets up its Target repos before the first dispatch.** At startup, fresh or `--resume`,
 right after the tool and service checks, the run loop runs a bare `kc project setup` once from the

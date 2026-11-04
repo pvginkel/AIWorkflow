@@ -14754,8 +14754,8 @@ def test_a_resume_runs_the_service_check_too():
 
 def test_a_sibling_the_run_already_touched_is_not_read_at_start():
     """No pending phase targets the repo any more, but the run's `bases`
-    hold it — the loop-tail sweep would run its suites, and a red there is
-    where its services are asked."""
+    hold it — the loop-tail sweep would run its suites, and its services
+    are asked nowhere but a gate fix round's hint."""
     with tempfile.TemporaryDirectory() as tmp:
         sib = inventory_repo(tmp)
         slice_dir, repo = make_slice(tmp)
@@ -14849,56 +14849,66 @@ def declares_services(*services):
     return effect
 
 
-def test_a_red_gate_in_a_repo_missing_its_services_bails_without_a_fix_round():
+def gate_fix_prompts(r):
+    """The prompts of the code-writer's gate fix rounds, in order."""
+    return [p for role, p in r.prompts
+            if role == "code-writer" and p.startswith("The gate for phase")]
+
+
+def unrun_services_hint(config, *names):
+    """The close of a gate fix round's gate hint that names `names`, the
+    services `config` declares and the pod does not run."""
+    return (f". {config} declares services this pod does not run: "
+            f"{run_loop._ticked(names)}. When one is why the gate is red")
+
+
+def test_a_red_gate_in_a_repo_missing_its_services_gets_a_fix_round_naming_them():
+    """No bail: a missing service leaves no line in the log to tell its red
+    from any other (AIWF-133). The fix round is told, and the first
+    dispatch, before any red, is not."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         r = KcExitLoop(slice_dir,
-                       [(*V["exec_done"], declares_services("postgres"))],
-                       repo_root=repo, gate_rcs=[1])
-        assert run_to_exit(r) == 4
-        assert not r.script and len(r.spawned) == 1, "no fix round"
-        bail = json.loads((slice_dir / "bailout.json").read_text())
-        assert bail["reason"] == "missing_services" and bail["question"]
-        assert bail["phase"] == "1"
-        details = bail["details"]
-        assert (f"`kc project test --project {PROJECT}` in repo went red "
-                "(output in ") in details
-        assert "gate_r1.log), and the repo declares services this pod " \
-            "does not run" in details
+                       [(*V["exec_done"], declares_services("postgres")),
+                        V["exec_done"], V["review_signoff"], *TAIL],
+                       repo_root=repo, gate_rcs=[1, 0])
+        assert run_to_exit(r) == 0
+        assert not r.script
+        assert load_state(slice_dir)["phases"]["1"]["gate_fix_rounds"] == 1
         config = repo / ".kubecoder" / "config.yaml"
-        assert ("- postgres — declared by repo/.kubecoder/config.yaml; "
-                f"declared in {config} but not running in this pod") \
-            in details
-        assert load_state(slice_dir)["phases"]["1"]["gate_fix_rounds"] == 0
+        [fix] = gate_fix_prompts(r)
+        assert unrun_services_hint(config, "postgres") in fix
+        assert "hand back `blocked` naming it, rather than skipping or " \
+            "faking what needs it. Commit your" in fix
+        first = r.prompts[0][1]
+        assert first.startswith("Execute phase P1")
+        assert "declares services this pod does not run" not in first
 
 
-def test_a_red_gate_in_a_sibling_missing_its_services_bails_too():
-    """The startup check does not read a sibling's services; a gate gone red
-    there is where they are asked."""
+def test_a_red_gate_in_a_sibling_missing_its_services_ends_blocked_after_a_fix_round():
+    """Ansible slice 036's P14, again: the sibling's suites need services
+    the pod lacks. The startup check does not read its config; the fix
+    round names both, and the writer's `blocked` ends the run as an error,
+    not an operator question."""
     with tempfile.TemporaryDirectory() as tmp:
-        inventory_repo(tmp)
+        sib = inventory_repo(tmp)
         slice_dir, repo = make_slice(tmp)
         (slice_dir / "plan.md").write_text(
             "# plan\n\n"
             + phase_section("1", "Inventory change", "../Inventory"))
-        r = KcExitLoop(slice_dir, [V["exec_done"]], repo_root=repo,
+        blocked = ("code-writer", {"outcome": "blocked",
+                                   "summary": "postgres is not running"})
+        r = KcExitLoop(slice_dir, [V["exec_done"], blocked], repo_root=repo,
                        gate_rcs=[1])
-        assert run_to_exit(r) == 4
-        assert not r.script and len(r.spawned) == 1, "no fix round"
-        assert "services not held" not in (slice_dir / "log.txt").read_text()
+        assert run_to_exit(r) == 3
+        assert not r.script and len(r.spawned) == 2
         bail = json.loads((slice_dir / "bailout.json").read_text())
-        assert bail["reason"] == "missing_services" and bail["question"]
+        assert bail["reason"] == "blocked" and not bail.get("question")
         assert bail["phase"] == "1"
-        details = bail["details"]
-        assert " in Inventory went red (output in " in details
-        assert "and the repo declares services this pod does not run" \
-            in details
-        config = repo / ".kubecoder" / "config.yaml"
-        assert ("- postgres — declared by Inventory/.kubecoder/config.yaml; "
-                f"add `- postgres` under `services:` in {config}") in details
-        assert "- s3storage — declared by Inventory/.kubecoder/config.yaml" \
-            in details
-        assert load_state(slice_dir)["phases"]["1"]["gate_fix_rounds"] == 0
+        assert load_state(slice_dir)["phases"]["1"]["gate_fix_rounds"] == 1
+        [fix] = gate_fix_prompts(r)
+        assert unrun_services_hint(sib / ".kubecoder" / "config.yaml",
+                                   "postgres", "s3storage") in fix
 
 
 def test_a_red_gate_in_a_repo_whose_services_all_run_gets_its_fix_round():
@@ -14912,8 +14922,10 @@ def test_a_red_gate_in_a_repo_whose_services_all_run_gets_its_fix_round():
             assert run_to_exit(r) == 0
         assert not r.script
         assert load_state(slice_dir)["phases"]["1"]["gate_fix_rounds"] == 1
-    # kc that cannot say which services run leaves the red a red: a
-    # warning, and the fix round
+        [fix] = gate_fix_prompts(r)
+        assert "declares services this pod does not run" not in fix
+    # kc that cannot say which services run: a warning, and a fix round
+    # told of none
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         r = KcExitLoop(slice_dir,
@@ -14928,8 +14940,10 @@ def test_a_red_gate_in_a_repo_whose_services_all_run_gets_its_fix_round():
             assert run_to_exit(r) == 0
         assert not r.script
         assert load_state(slice_dir)["phases"]["1"]["gate_fix_rounds"] == 1
-        assert "warning: service check of a red gate skipped" \
+        assert "warning: service check for a gate fix round skipped" \
             in (slice_dir / "log.txt").read_text()
+        [fix] = gate_fix_prompts(r)
+        assert "declares services this pod does not run" not in fix
 
 
 # -- the run-start setup -------------------------------------------------------

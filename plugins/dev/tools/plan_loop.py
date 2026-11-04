@@ -916,9 +916,9 @@ class PlanLoop:
     def _verify_environment(self, phases: list, text: str) -> None:
         """The GO'd plan's Target repos must not call a tool container this
         pod does not run, nor the host declare a service it does not run
-        (another Target repo's are asked only where a gate goes red there)
-        (`run_loop.tools_check` and `run_loop.services_check`, the run
-        loop's own startup checks) — asked now, while the slice is with the
+        (another Target repo's are named to the fix round of a gate gone
+        red there) (`run_loop.tools_check` and `run_loop.services_check`,
+        the run loop's own startup checks) — asked now, while the slice is with the
         operator, rather than when the run loop starts it. A Target maps to
         its repo as `_held_repo_name` maps it, without kc; a GitHub target
         not cloned yet is skipped (the run loop checks its clone)."""

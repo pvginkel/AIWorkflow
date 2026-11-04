@@ -1689,8 +1689,8 @@ def service_plan(tmp, *rulings):
 def test_go_with_a_sibling_declaring_unrun_services_proceeds_without_asking():
     """Another repo's config declares services for its own workspace, and
     nothing says which its gates use: not read at GO — no warning, kc not
-    asked — and a red gate there is where the run loop asks (AIWF-75,
-    AIWF-131)."""
+    asked — and the run loop names them to the fix round of a red gate
+    there (AIWF-75, AIWF-131, AIWF-133)."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         loop = ScriptedLoop(slice_dir, [service_plan(tmp), R_GO])
