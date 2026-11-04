@@ -49,8 +49,11 @@ rendering, registering, the operator's answers, the plan loop — is the stage's
    it changes what a user sees, an output's shape, a default, a procedure they run, a file
    between repositories — it is an ask, with its live options and your recommendation. Where they
    could not, it is your reading of their words: off the page, in `plan.md` as yours (step 5).
-   There is no third: no pick shown as settled, no sentence a note would overrule. Which matters
-   reach the bar is planning's own:
+   There is no third: no pick shown as settled, no sentence a note would overrule. What a
+   passage of the design record or the operator's own words decide is no ask either: it goes
+   into `plan.md` with its one-line cite (step 5). Where the record speaks to a matter, the one
+   ask left is an option that would overrule a passage, put as a single line to confirm or
+   reject that overruling. Which matters reach the bar is planning's own:
    - A decision is what the numbered requirements, their own "open for the planner" items
      included, genuinely leave undecided. A matter the slice merely touches is your reading:
      several asks about surfaces the slice touches read as scope creep.
@@ -85,7 +88,9 @@ rendering, registering, the operator's answers, the plan loop — is the stage's
    one-liner; `## Requirements / rulings` with every requirement of `slice.md` and of the cards
    absorbed, in the operator's words — no silent substitution — and, as your own facts with their
    evidence, cited by path and quoted line as in `grounding.md`, the grounding that binds the
-   plan: a premise correction with what it changes, a verified fact a requirement rests on. Your
+   plan: a premise correction with what it changes, a verified fact a requirement rests on, what
+   a passage of the record or the operator's own words decide, each with a one-line cite of the
+   passage or the words. Your
    readings go there too, each said to be yours and not the operator's ("The preparer's reading,
    not a ruling: …"), so that nobody downstream takes one for the operator's word. This section is
    the only place the plan-writer reads it. A skill in your listing whose

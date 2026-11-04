@@ -4,6 +4,26 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-04 — What the record decides is not asked, and an ask is ruled from its first sixty words (v0.10.33)
+
+AIWF-136 and AIWF-138 (session review 2 of Pilot in production, changes 1 and 5; the operator:
+"In full"). The read's findings are § 7.2–7.6 of `docs/research/operator-reading-synthesis-2026-10-30.md`.
+
+- **What the record decides is not asked** (`/dev:writing`, the plan-preparer, the
+  plan-reviewer, for which such a fix is a gap). Twelve of the
+  seventeen option choices restated what the design record or the operator's words already
+  decided. What a passage or their words decide goes into `plan.md`'s rulings with a one-line
+  cite; where the record speaks to a choice, the one ask left is an option that would overrule
+  a passage, as a single line to confirm or reject.
+- **A heading is about twelve words, and the ruling is whole in about sixty** (`/dev:writing`,
+  `/dev:document-format`, the plan-reviewer's headline). Headings averaged 18.7 words and
+  close-out titles ran 30 to 47.
+- **An ask is put in what the user sees**, the model left to the planning that models it.
+- **Corrections to the record are one ask**, a list and one proposal: four corrections of one
+  decision came as four blocks, answered in three minutes.
+- **The plan review's document opens on its first ask.** The 62-word paragraph that opened every
+  review is gone, and a document of one ask carries no summary ("waits on 1 rulings").
+
 ## 2026-11-04 — A plan review's gap goes to the writer, not to the operator (v0.10.32)
 
 AIWF-137 (session review 2 of Pilot in production, change 1; the operator: "In full"):

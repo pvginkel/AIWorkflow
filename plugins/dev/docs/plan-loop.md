@@ -35,8 +35,8 @@ stdout and in `plan_state.json`'s `exit`, for the stage to register with Pilot
 ([pilot.md](pilot.md) § The documents). A question with options is a decision with its
 recommendation, one without them a question. A gap is not in the document; a blocking finding
 with options is a decision on them, an operator-decidable one a decision on its options or a
-question, and an advisory note stays in the review.
-`plan_state.json`'s `review_ruled` says whether the fix pass follows a ruling or a review of gaps
+question, and an advisory note stays in the review. The document opens on its first ask,
+with a summary only over more than one. `plan_state.json`'s `review_ruled` says whether the fix pass follows a ruling or a review of gaps
 alone, and its prompt opens accordingly. The document carries `run --step`'s plan task as its `step`, kept in
 `plan_state.json` for the reruns that do not give it. The loop commits none of it: the session
 commits what it registers, as it commits the rulings before the rerun. A document that cannot be

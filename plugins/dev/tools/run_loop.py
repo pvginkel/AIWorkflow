@@ -1039,7 +1039,7 @@ def _append_ask(store: dict, ask: dict) -> None:
 
 
 def render_asks_document(slice_dir: Path, slug: str, title: str,
-                         step: str | None, summary: str,
+                         step: str | None, summary: str | None,
                          context: list[str], entries: list[dict]) -> Path:
     """A loop's asks — `{kind, headline, body, options?, recommend?,
     proposal?, check?}` each — as a new document in the slice's `asks/`,

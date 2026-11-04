@@ -19,10 +19,11 @@ it — what an ask says first, its shape, its recommendation, its price — are 
 Pilot shows an ask it has settled as one line, so a document of several blocks is written section
 by section:
 
-- One ask per heading section, its block last in it.
+- One ask per heading section, its block last in it. A batch of corrections to the record is one
+  ask, under `/dev:writing`.
 - The context the asks share goes before the first ask's heading.
 - No heading inside an ask: its sub-structure is run-in heads (`**Cost.** …`) and lists.
-- The heading names the ask in one line. Once Pilot has answered or deferred the block, the
+- The heading names the ask in one line of about twelve words (`/dev:writing`). Once Pilot has answered or deferred the block, the
   section collapses to that heading, the answer and the answer's note, which is the whole of what
   the operator reads of it.
 

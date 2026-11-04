@@ -111,10 +111,12 @@ dispatch:
 
 The class decides where a finding goes. A `blocking` finding with a `proposal` and no `options`
 is a gap: its fix needs no product choice, and it goes to the writer's fix pass without reaching
-the operator. Give it options only where the fix is a choice the operator could make either way,
-and then it goes to them. An `operator` finding always goes to them. Each finding that reaches
+the operator. A fix that a passage of the design record or the operator's own words decide is a
+gap too, its proposal citing the passage or the words in a line. Give a finding options only
+where the fix is a choice the operator could make either way, and where the record speaks to it,
+only an option that would overrule a passage; then it goes to them. An `operator` finding always goes to them. Each finding that reaches
 the operator is one ask of the document the loop puts to them in Pilot. The `headline` is the
-problem, in a line; the `body` is its grounds, in Markdown paragraphs or a list, with no heading
+problem, in a line of about twelve words; the `body` is its grounds, in Markdown paragraphs or a list, with no heading
 and no fenced block. A `blocking` finding says its disposition as its `proposal`: what the plan
 holds once the finding is resolved, the outcome and never the edit. An `operator` finding gives
 the courses as `options`, each a label and at most one line, with `recommend` only where you have

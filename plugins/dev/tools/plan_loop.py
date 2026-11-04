@@ -1013,14 +1013,9 @@ class PlanLoop:
             "questions", f"QUESTIONS PENDING (plan-writer r{round_})")
 
     def _exit_adjudication(self, entries: list[dict], round_: int) -> None:
+        """The review's document opens on its first ask: no context."""
         self._exit_with_document(
-            "plan-review", "the plan review's findings", entries,
-            [f"The plan-reviewer read slice {self.slice_num}'s plan once and "
-             "found what the plan cannot go on without your ruling. Your "
-             "answers go into plan.md's rulings section in your words. Then "
-             "one writer fix pass resolves every finding you did not "
-             "overrule, and no review follows it. The full review, with its "
-             f"evidence and any advisory notes, is plan_review_r{round_}.md."],
+            "plan-review", "the plan review's findings", entries, [],
             "review", f"REVIEW PENDING RULINGS (plan-reviewer r{round_})")
 
     def _exit_with_document(self, slug: str, what: str, entries: list[dict],
@@ -1036,8 +1031,10 @@ class PlanLoop:
             document = str(render_asks_document(
                 self.slice_dir, slug, f"Slice {self.slice_num}: {what}",
                 self.state.get("step"),
-                f"Slice {self.slice_num}'s plan waits on {len(entries)} "
-                "rulings before the plan loop can go on",
+                # A document of one ask carries no summary (document-format).
+                (f"Slice {self.slice_num}'s plan waits on {len(entries)} "
+                 "rulings before the plan loop can go on"
+                 if len(entries) > 1 else None),
                 context, entries))
         except (asks.AskError, OSError) as e:
             self.log(f"{headline}: the document was not written: {e}")

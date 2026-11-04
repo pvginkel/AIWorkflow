@@ -36,6 +36,13 @@ are:
 What a question about the entry, the wrap-up or a card needs is in the body, on the page with
 the lines, where the reader goes only on a doubt (1.1, 1.2, 1.9, 1.10, 2.4, 5.1).
 
+**A heading is about twelve words, and the ruling is whole in about sixty.** Headings in Pilot's
+documents averaged 18.7 words, close-out titles ran 30 to 47, and some 240 words of premises came
+before the first ask. A heading or a title says the ask in at most about twelve words, in the
+operator's terms, never the model's. The heading and the paragraph under it carry the whole
+ruling in about sixty words: the recommendation, what changes, the price. Everything else comes
+after them (7.2).
+
 **What must not be missed is the first line, said as such.** "An agent trying to get my eyes on
 something that I then don't see … it's not immediately obvious what it feels is important I look
 at." What you think the operator must not miss opens the ask, in words — not a label, not a place
@@ -82,6 +89,25 @@ user sees or what the operator runs. The test is the alternative: where yours wo
 or "not worth it", it is not a decision but a pick of yours — made, said in a sentence of the
 context with its ground where they could care, and corrected by them on reading (2.4, 4.11, 5.3).
 
+**What the record decides is not asked.** Twelve of seventeen option choices in Pilot's
+documents restated what the design record or the operator's own words already decided, one
+quoting the ruling it then asked about, and Pilot took the recommendation in all 45 of its
+rulings. What a passage of the record or the operator's own words decide is written where the
+work reads it — the plan's rulings, the entry's proposal — with a one-line cite of the passage
+or the words, and not asked. Where the record speaks to the choice, the one ask left is an
+option that would overrule a passage: a single line to confirm or reject that overruling, the
+passage quoted (7.5).
+
+**An ask is put in what the user sees.** Two asks put in the model's words — "Claim
+Assignment… assertion 294" — were answered with a control in the UI that neither option had. An
+ask about behaviour says what a person sees and does, and where; the entities, tables, fields
+and assertions are left to the planning that models them (7.3).
+
+**Corrections to the record are one ask.** Four corrections of one decision came as four
+"Agree" blocks, all answered within three minutes. Corrections that each fix the record — a
+stale passage, a decision's wording — with no live choice among them are one ask: the list of
+them, and one proposal to make them all (7.4).
+
 **Every ask carries its recommendation; an alternative only where it is live.** The
 recommendation was taken 77 % of the time, and "pick the simple option", "I want to follow your
 recommendations" are a reader asking for it to be there. An option is written because the reader
@@ -106,7 +132,7 @@ user sees, moves a file between repositories, changes a default they set or a pr
 — it is an ask, with its live options and your recommendation; where they could not, a plain
 reading of their own words, it is not on the page. There is nothing between: no list of picks
 shown as settled. A premise that no longer holds is one sentence, what was believed, what is
-true, what changes (1.9, 4.10, 4.11, 6.3, 7.1).
+true, what changes (1.9, 4.10, 4.11, 6.3, 7.1, 7.2).
 
 **A card request is a line and a card.** Card requests are never read: "especially in the Card
 request ones. I never read those." The ask is one line — what the card would say, and why it is

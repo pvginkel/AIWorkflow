@@ -610,7 +610,9 @@ def test_review_findings_put_one_ask_each_and_leave_the_advisory_in_the_review()
         assert store["title"] == "Slice 099: the plan review's findings"
         assert store["summary"] == ("Slice 099's plan waits on 3 rulings "
                                     "before the plan loop can go on")
-        assert "plan_review_r1.md" in store["context"][0]
+        assert store["context"] == []
+        assert document.read_text().split("---\n", 2)[2].startswith(
+            f"\n## {OPERATOR['headline']}\n")
         assert "step" not in store
         entries = [{k: e.get(k) for k in ("id", "kind", "headline",
                                          "proposal", "recommend")}

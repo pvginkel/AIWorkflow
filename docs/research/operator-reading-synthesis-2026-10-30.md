@@ -122,3 +122,26 @@ read's own words.
    context is used to piggyback decisions?" They ruled for a pick they could rule the other way
    as an ask, a plain reading of their words off the page, and the opening built from typed
    fields: "I'll follow your recommendation" (built as 0.10.17). — the rehearsal, 2026-10-31.
+2. Headings and preambles in Pilot's documents. Over the 65 blocks the stages put in 2026-11-01
+   to 11-04, a heading averaged 18.7 words and 31 of 65 ran to 20 or more; close-out titles ran
+   30 to 47 words. About 240 words of premises came before the first ask (inbox/124: 311), and
+   the same 62-word paragraph of the plan loop's opened every plan review. — session review 2,
+   change 5.
+3. Asks in schema words. Inbox/84 D2 ("Claim Assignment… assertion 294") and inbox/91 put a
+   behaviour in the model's vocabulary; the operator answered with a control in the UI that
+   neither option had. — session review 2, change 5.
+4. Record corrections one block each. Four corrections of D015 came as four separate "Agree"
+   blocks, all answered within three minutes. — session review 2, change 5.
+5. Asks the record already decided. Of the 17 option choices, 12 restated what the design record
+   or the operator's own words already decided; requirements ask 076 D1 quotes the ruling and
+   then asks about it. Pilot's pass took the writer's recommendation in all 45 of its option
+   rulings. — session review 2, change 1.
+6. What Pilot settled on its own. Of the 65 blocks Pilot's pass answered 46, about 30 of them
+   act-and-report entries: fix now, close, card it, promote, verify, a handbook edit the
+   operator had already ruled. All five promotion actions were addressed to the operator, and
+   Pilot did all five. Close-outs 100, 105, 16 and 14 asked the operator nothing and ran 340 to
+   2,861 words. — session review 2, change 1.
+
+Session review 2 is `research/session-reviews/2026-11-04/report.md` in PilotApp's spec repo,
+Pilot in production over slices 027–036; the operator ruled its changes 1 and 5 "in full",
+2026-11-04.
