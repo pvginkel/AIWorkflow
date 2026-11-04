@@ -12599,6 +12599,7 @@ def test_dispatch_trims_the_prefix_per_role():
                          "doc-writer"):
                 assert by_role[role] == [
                     "--disable-slash-commands", "--strict-mcp-config",
+                    "--disable-fleet-admin",
                     "--mcp-config", str(home.config_path)], role
             assert by_role["test-agent"] == ["--disable-slash-commands"]
             assert run_loop.spawn_flags(None) == run_loop.spawn_flags("consult")
@@ -12607,7 +12608,8 @@ def test_dispatch_trims_the_prefix_per_role():
     # No promoted server anywhere: the flags are what they were before the
     # promotion existed, and the test-agent's are untouched either way.
     assert run_loop.spawn_flags("code-writer") == ["--disable-slash-commands",
-                                                   "--strict-mcp-config"]
+                                                   "--strict-mcp-config",
+                                                   "--disable-fleet-admin"]
     assert run_loop.spawn_flags("test-agent") == ["--disable-slash-commands"]
 
 
@@ -12648,6 +12650,7 @@ def test_a_missing_promoted_server_is_a_note_and_the_rest_still_travel():
             logged = []
             flags = run_loop.spawn_flags("code-writer", logged.append)
             assert flags == ["--disable-slash-commands", "--strict-mcp-config",
+                             "--disable-fleet-admin",
                              "--mcp-config", str(home.config_path)]
             assert len(logged) == 2
             assert "gitblit" in logged[0] and "kubecoder-worker" in logged[1]
@@ -12718,7 +12721,7 @@ def test_the_wrap_up_keeps_jenkins_beside_the_promoted_servers():
             path = (home.home / ".claude"
                     / "aiworkflow-promoted-mcp-wrap-up.json")
             assert flags == ["--disable-slash-commands", "--strict-mcp-config",
-                             "--mcp-config", str(path)]
+                             "--disable-fleet-admin", "--mcp-config", str(path)]
             assert logged == []
             servers = json.loads(path.read_text())["mcpServers"]
             assert list(servers) == ["fieldnotes", "gitblit",
@@ -12731,6 +12734,7 @@ def test_the_wrap_up_keeps_jenkins_beside_the_promoted_servers():
             assert "sekrit-token" not in " ".join(flags)
             writer = run_loop.spawn_flags("code-writer")
             assert writer == ["--disable-slash-commands", "--strict-mcp-config",
+                              "--disable-fleet-admin",
                               "--mcp-config", str(home.config_path)]
             assert list(json.loads(home.config_path.read_text())[
                 "mcpServers"]) == ["fieldnotes", "gitblit", "kubecoder-worker"]
@@ -12751,6 +12755,7 @@ def test_the_wrap_up_is_dispatched_with_its_own_config():
             [session] = r.wrap_up_sessions
             assert session["flags"] == [
                 "--disable-slash-commands", "--strict-mcp-config",
+                "--disable-fleet-admin",
                 "--mcp-config",
                 str(home.home / run_loop.promoted_mcp_file("wrap-up"))]
 
@@ -12785,7 +12790,8 @@ def test_the_wrap_ups_flags_are_fixed_for_the_process():
             assert run_loop.spawn_flags("wrap-up", logged.append) == first
             assert path.read_text() == written and logged == []
             assert run_loop.spawn_flags("code-writer") == [
-                "--disable-slash-commands", "--strict-mcp-config"]
+                "--disable-slash-commands", "--strict-mcp-config",
+                "--disable-fleet-admin"]
 
 
 def test_an_unreadable_claude_json_promotes_nothing_and_never_fails():
@@ -12793,7 +12799,8 @@ def test_an_unreadable_claude_json_promotes_nothing_and_never_fails():
     name that is not there all leave the flags as they were before the
     promotion existed — one log line, no raise. The store being unreachable
     must never cost a slice its run."""
-    bare = ["--disable-slash-commands", "--strict-mcp-config"]
+    bare = ["--disable-slash-commands", "--strict-mcp-config",
+            "--disable-fleet-admin"]
     cases = {
         "missing": None,
         "malformed": "{not json at all",
@@ -13347,14 +13354,16 @@ def test_spawn_flags_reach_create_headless_verbatim():
                                 flags=run_loop.spawn_flags("code-writer"))
             i = args.index("-e")
             assert args[i:] == ["-e", "A=1", "--disable-slash-commands",
-                                "--strict-mcp-config", "--mcp-config",
+                                "--strict-mcp-config",
+                                "--disable-fleet-admin", "--mcp-config",
                                 str(home.config_path)]
             assert "--mcp-config" not in _create_args(
                 flags=run_loop.spawn_flags("test-agent"))
     args = _create_args(extra_env={"A": "1"},
                         flags=run_loop.spawn_flags("code-writer"))
     assert args[args.index("-e"):] == ["-e", "A=1", "--disable-slash-commands",
-                                       "--strict-mcp-config"]
+                                       "--strict-mcp-config",
+                                       "--disable-fleet-admin"]
     assert "--strict-mcp-config" not in _create_args(
         flags=run_loop.spawn_flags("test-agent"))
     assert "--disable-slash-commands" not in _create_args()

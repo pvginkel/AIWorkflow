@@ -4,6 +4,14 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-04 — Strict roles give up the fleet tools explicitly (v0.10.40)
+
+KubeCoder D300 decouples `--strict-mcp-config` from the fleet: strict now keeps the `fleetAdmin`
+registration `kc` prepends as an `--mcp-config`, where it used to drop it. Every role spawned
+strict therefore also passes `kc`'s `--disable-fleet-admin` (`STRICT_FLAGS` in `run_loop.py`), so
+a role in a `fleetAdmin` environment still has no fleet tools, and now no adapter credential
+either. The test-agent is unchanged. `agent-dispatch.md` § Spawning says why.
+
 ## 2026-11-04 — A phase start takes a moved origin, and a migration collision is red at the phase (v0.10.39)
 
 AIWF-140 (session review 2 of Pilot in production, change 6; the operator: "In full"):

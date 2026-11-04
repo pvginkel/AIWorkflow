@@ -45,7 +45,11 @@ validation.
   servers out of a role's session: their instructions leave the prefix (their tool schemas were
   never in it — Claude Code defers them since 2.1.212), and with them a reach no role's contract
   ever gave it — a finding about the work goes to the close-out report, never to a tracker; CI is
-  the test-agent's to drive. **The promoted servers are the exception**: `PROMOTED_MCP_SERVERS` in
+  the test-agent's to drive. Strict keeps what arrives as `--mcp-config`, and in a `fleetAdmin`
+  environment `kc` prepends the fleet adapter's registration that way, so every strict role also
+  passes `--disable-fleet-admin`: no role's contract reaches other environments, and the flag drops
+  the adapter's credential with its tools (`STRICT_FLAGS`). **The promoted servers are the
+  exception**: `PROMOTED_MCP_SERVERS` in
   `run_loop.py` names them. `fieldnotes`, because what got in a role's way while it worked goes
   there and not into the report ([close-out.md](close-out.md#what-it-is--and-is-not)), and a role
   that cannot post cannot follow that rule. `gitblit`, the read-only mirror of the operator's

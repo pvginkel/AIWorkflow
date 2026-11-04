@@ -380,6 +380,13 @@ SPAWN_ENV = {
 # but the test-agent, which keeps the operator's MCP servers because it
 # drives CI through Jenkins. Sub-agents inherit the parent's trim.
 SPAWN_FLAGS = ("--disable-slash-commands",)
+
+# What a strict role passes beside `--strict-mcp-config`: kc's
+# `--disable-fleet-admin`, because strict keeps the fleetAdmin registration
+# kc prepends as an `--mcp-config` (KubeCoder D300), and a role's contract
+# gives it no reach over other environments. Where the environment holds no
+# grant the flag changes nothing.
+STRICT_FLAGS = ("--strict-mcp-config", "--disable-fleet-admin")
 MCP_ROLES = frozenset({"test-agent"})
 
 # The operator's MCP servers every dispatched role keeps, named one by one and
@@ -525,7 +532,7 @@ def spawn_flags(role: str | None, log=None) -> list[str]:
     which resumes the same session and must carry the same prefix."""
     flags = list(SPAWN_FLAGS)
     if role not in MCP_ROLES:
-        flags.append("--strict-mcp-config")
+        flags += STRICT_FLAGS
         flags += _promoted_mcp_flags(role, log)
     return flags
 

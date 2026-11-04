@@ -1092,7 +1092,7 @@ def test_dispatch_passes_model_and_effort_explicitly():
         assert json.loads(promoted.read_text()) == {"mcpServers": {
             "fieldnotes": {"type": "http", "url": "https://fn.invalid/mcp"}}}
         trim = ["--disable-slash-commands", "--strict-mcp-config",
-                "--mcp-config", str(promoted)]
+                "--disable-fleet-admin", "--mcp-config", str(promoted)]
         assert calls == [("plan-writer", "opus", "xhigh", trim),
                          ("plan-reviewer", "opus", "xhigh", trim)]
 
