@@ -61,7 +61,8 @@ that gives none keeps it), `prerun_held` (the ids of the actions owed before the
 checks held, or that a person struck, once all of them were met: never evaluated again, so the
 checks gate the start and nothing after it; [run-loop.md](run-loop.md) § Protocol invariants),
 `progress` (the steps the run shows on its Pilot work item, in order, each `{code, label,
-state}`: seeded before the start is reported, edited as each round starts and ends, and read by
+state}`, and a step the driver started its `started` time too, which `wait`'s `running` line
+counts from and Pilot is never sent: seeded before the start is reported, edited as each round starts and ends, and read by
 `wait`, which publishes it, never by the driver, which calls nothing; which round is which step
 is [run-loop.md](run-loop.md) § The steps Pilot shows, the publishing [pilot.md](pilot.md)
 § The progress; absent on a run started before 0.10.29 until its first resume),
@@ -227,8 +228,9 @@ session a model call, so the call is as long as the cap lets it be. The stage's 
 inside its turn, since a turn's end is the work item's ([pilot.md](pilot.md) § A turn's end is
 the run's end). It is a signal, not a report, and answers **0** the run ended (`ended: exit
 <n>`, then for a halt where it stopped, for a bail its `reason:`, the `document:` to register
-where there is one, and the `bailout:` file), **5** still running (`running`, and the `next:`
-wait to re-arm with nothing read) or **6** `gone`, with no `exit` recorded (and the `next:`
+where there is one, and the `bailout:` file), **5** still running (`running`, with the active step
+and the time in it where the state names them, `running: P4 code, 12m`, and the `next:` wait to
+re-arm with nothing read) or **6** `gone`, with no `exit` recorded (and the `next:`
 relaunch). Liveness is the `flock`, never the pid. `run_loop.py stop <slice-dir>`
 sends the driver SIGINT: the 130 path, as Ctrl-C. While it waits, `wait` publishes the run's
 `progress` to Pilot ([pilot.md](pilot.md) § The progress).

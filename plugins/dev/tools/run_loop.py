@@ -5374,9 +5374,12 @@ class RunLoop:
         active, and the one before it done. It stays active until the next
         start, its phase's merge or its stage's end: a bail, an interrupt or
         a halt leaves it as it stood, so a stopped run's active step says
-        where it stopped."""
+        where it stopped. It carries the time it started, which `wait`'s
+        `running` line counts from; a resume restarts that clock."""
         code = pilot_progress.step_code(kind, round_, phase_id)
-        self._progress(lambda steps: pilot_progress.start(steps, code, label))
+        started = _now_iso()
+        self._progress(
+            lambda steps: pilot_progress.start(steps, code, label, started))
 
     def _progress_done(self) -> None:
         self._progress(pilot_progress.finish_active)
@@ -10973,9 +10976,14 @@ class RunLoop:
             # a stale exit under a live run would read as the run's end, and
             # this one may yet be killed before it reattaches. The same write
             # puts this driver's record over the previous one's — the run is
-            # wherever this driver runs now.
+            # wherever this driver runs now. The step the run stopped in is
+            # timed from here on: the time it stood stopped is not `wait`'s
+            # to count.
             self.state.pop("exit", None)
             self.state["driver"] = dict(self._slice_lock.driver)
+            if isinstance(self.state.get("progress"), list):
+                self.state["progress"] = pilot_progress.restart_clock(
+                    self.state["progress"], _now_iso())
             self._save_state()
             self._reattach = self.state.get("in_flight") or None
             self.state["in_flight"] = None
@@ -11557,8 +11565,9 @@ def _ended_lines(code: int, slice_dir: Path) -> list[str]:
 
 def cmd_wait(args) -> None:
     """Block until the run ends or `--for` seconds pass, then say which, and
-    nothing a session must read: `running` with the wait to re-arm, `ended:
-    exit <n>` with what the exit leaves, or `gone` with the relaunch."""
+    nothing a session must read: `running` and the step the run is in, with
+    the wait to re-arm, `ended: exit <n>` with what the exit leaves, or
+    `gone` with the relaunch."""
     wait_on_driver(Path(args.slice_dir), "state.json", "run.lock", "log.txt",
                    args.for_seconds, SCRIPT, "--resume --detach",
                    lambda record, slice_dir: _ended_lines(record.get("code"),
@@ -11571,7 +11580,10 @@ def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
     """Either loop's `wait`: block while the driver holds `lock_name` or
     until `for_seconds` pass (None: `wait_default()`), then print the
     signal and exit with its code —
-    `running` and the wait to re-arm (5), `ended(record, slice_dir)`'s lines
+    `running`, with the step the driver's state file holds active and how
+    long it has run in it (`running: P4 code, 12m`,
+    pilot_progress.active_summary; bare where no step is active), and the
+    wait to re-arm (5), `ended(record, slice_dir)`'s lines
     for the exit recorded in `state_name` (0), or `gone` and the relaunch
     with `relaunch`'s flags (6). Liveness is the flock, never the pid.
 
@@ -11607,10 +11619,13 @@ def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
 
     progress.publish(force=True)
     where = os.path.abspath(slice_dir)
-    record = (_read_json(state_path) or {}).get("exit")
+    state = _read_json(state_path) or {}
+    record = state.get("exit")
     if lock_held(lock_path):
+        stands = pilot_progress.active_summary(state.get("progress"))
         code, lines = WAIT_RUNNING, [
-            "running", f"next: python3 {script} wait {where}"]
+            f"running: {stands}" if stands else "running",
+            f"next: python3 {script} wait {where}"]
     elif record is not None:
         code, lines = 0, ended(record, slice_dir)
     else:

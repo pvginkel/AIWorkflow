@@ -13,6 +13,7 @@ import json
 import sys
 import tempfile
 import urllib.error
+from datetime import datetime
 from email.message import Message
 from pathlib import Path
 
@@ -302,6 +303,65 @@ def test_start_makes_one_step_active_in_the_order_taken():
         "code": "sweep", "label": "Gate sweep", "state": "active"}
     # the edits leave the list they were given as it was
     assert base == seeded()
+
+
+T0, T1 = "2026-11-04T09:00:00+01:00", "2026-11-04T09:30:00+01:00"
+
+
+def test_a_started_step_carries_its_time_and_a_resume_restarts_it():
+    steps = pp.start(seeded(), "P1.code", "P1 · First", T0)
+    assert steps[0] == {"code": "P1.code", "label": "P1 · First",
+                        "state": "active", "started": T0}
+    # a new step, and a step started again, take the time given
+    steps = pp.start(steps, "P1.code-2", "P1 · code 2", T1)
+    assert steps[1]["started"] == T1 and steps[0]["started"] == T0
+    assert pp.start(steps, "P1.code-2", "P1 · code 2", T0)[1]["started"] == T0
+    # no time given, none recorded and none dropped
+    assert "started" not in pp.start(seeded(), "P1.code", "P1 · First")[0]
+    assert pp.start(steps, "P1.code-2", "P1 · code 2")[1]["started"] == T1
+    # the resume: the active step alone, an older one with none included
+    restarted = pp.restart_clock(steps, "later")
+    assert [s.get("started") for s in restarted[:3]] == [T0, "later", None]
+    assert pp.restart_clock(seeded(), "later") == seeded()
+    # Pilot never sees it
+    assert pp.sanitize(steps)[1] == {"code": "P1.code-2",
+                                     "label": "P1 · code 2", "state": "active"}
+
+
+def test_the_active_summary_names_the_phase_the_step_and_its_minutes():
+    now = datetime.fromisoformat("2026-11-04T10:12:30+01:00")
+
+    def summary(code, started=T0, state="active"):
+        step = {"code": code, "label": "x", "state": state}
+        if started is not None:
+            step["started"] = started
+        return pp.active_summary([{"code": "P1.code", "label": "x",
+                                   "state": "done"}, step], now)
+
+    assert [summary("P4.code"), summary("P4.review-2"), summary("P3a.code-3"),
+            summary("sweep-2"), summary("consult"), summary("test"),
+            summary("docs"), summary("wrap-up"), summary("write-2"),
+            summary("review")] == [
+        "P4 code, 1h12m", "P4 review r2, 1h12m", "P3a code r3, 1h12m",
+        "sweep r2, 1h12m", "consult, 1h12m", "test, 1h12m", "docs, 1h12m",
+        "wrap-up, 1h12m", "write r2, 1h12m", "review, 1h12m"]
+    assert [summary("P4.code", started) for started in (
+        "2026-11-04T10:00:00+01:00", "2026-11-04T09:12:00Z",
+        "2026-11-04T10:12:00+01:00", "2026-11-04T10:20:00+01:00",
+        "2026-11-03T09:00:00+01:00")] == [
+        "P4 code, 12m", "P4 code, <1m", "P4 code, <1m", "P4 code, <1m",
+        "P4 code, 25h12m"]
+    # an older loop's step, or a time that does not read: no elapsed
+    for started in (None, "", "yesterday", "2026-11-04T09:00:00", 1730710000):
+        assert summary("P4.code", started) == "P4 code", started
+    # no active step, or no list: nothing to say
+    assert summary("P4.code", state="done") is None
+    for steps in (None, [], {"steps": []}, ["P4.code"], [{"state": "active"}]):
+        assert pp.active_summary(steps, now) is None, steps
+    # the clock's own default is the local time, offset and all
+    assert pp.active_summary(
+        [{"code": "test", "label": "x", "state": "active",
+          "started": datetime.now().astimezone().isoformat()}]) == "test, <1m"
 
 
 def test_finishing_marks_the_active_step_or_a_whole_phase_done():

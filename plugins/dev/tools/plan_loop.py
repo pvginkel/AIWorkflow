@@ -486,11 +486,14 @@ class PlanLoop:
             self._save_state()
 
     def _progress_start(self, kind: str, round_: int, label: str) -> None:
-        """The pass's step active, the one before it done. A questions or
-        review exit leaves it active: the rerun's next pass finishes it."""
+        """The pass's step active, the one before it done, with the time it
+        started for `wait`'s `running` line. A questions or review exit
+        leaves it active: the rerun's next pass finishes it."""
         code = pilot_progress.step_code(kind, round_)
         label += f" {round_}" if round_ >= 2 else ""
-        self._progress(lambda steps: pilot_progress.start(steps, code, label))
+        started = _now_iso()
+        self._progress(
+            lambda steps: pilot_progress.start(steps, code, label, started))
 
     def _seed_progress(self) -> list[dict]:
         """The loop's steps as far as they are known: the writer's pass
@@ -1449,10 +1452,10 @@ def _ended_lines(record: dict, slice_dir: Path) -> list[str]:
 
 def cmd_wait(args) -> None:
     """Block until the loop ends or `--for` seconds pass, then say which:
-    `running` with the wait to re-arm, `ended: exit <n>` with what the exit
-    leaves, or `gone` with the relaunch — run_loop's `wait`, on plan.lock
-    and plan_state.json, with what it could not publish to Pilot in
-    plan_log.txt."""
+    `running` and the pass the loop is in, with the wait to re-arm, `ended:
+    exit <n>` with what the exit leaves, or `gone` with the relaunch —
+    run_loop's `wait`, on plan.lock and plan_state.json, with what it could
+    not publish to Pilot in plan_log.txt."""
     wait_on_driver(Path(args.slice_dir), "plan_state.json", "plan.lock",
                    "plan_log.txt", args.for_seconds, SCRIPT, "--detach",
                    _ended_lines)

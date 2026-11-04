@@ -27,7 +27,7 @@ import threading
 import time
 import types
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -15515,6 +15515,33 @@ def test_wait_answers_5_with_the_wait_to_re_arm_and_nothing_else():
                        f"{os.path.abspath(slice_dir)}"]
 
 
+def test_wait_running_names_the_phase_the_step_and_the_time_in_it():
+    """The `running` line says where the run stands, from the step its
+    state holds active; a step an older loop started, with no time, says
+    what it can, and a state with no active step says `running` alone."""
+    started = (datetime.now().astimezone()
+               - timedelta(minutes=12, seconds=5)).isoformat()
+    active = {"code": "P4.review-2", "label": "P4 · review 2",
+              "state": "active", "started": started}
+    cases = [(active, "running: P4 review r2, 12m"),
+             (dict(active, code="P4.code"), "running: P4 code, 12m"),
+             (dict(active, code="wrap-up"), "running: wrap-up, 12m"),
+             ({k: v for k, v in active.items() if k != "started"},
+              "running: P4 review r2"),
+             (dict(active, state="done"), "running")]
+    for step, line in cases:
+        with tempfile.TemporaryDirectory() as tmp:
+            state = dict(RUNNING_STATE,
+                         progress=steps_of("P3.code", "P3.review") + [step])
+            slice_dir = run_record(tmp, state=state)
+            with pilot(), holding(slice_dir):
+                code, out, _ = wait(slice_dir)
+            assert code == run_loop.WAIT_RUNNING
+            assert out.splitlines() == [
+                line, f"next: python3 {run_loop.SCRIPT} wait "
+                      f"{os.path.abspath(slice_dir)}"], step
+
+
 def test_wait_answers_6_for_a_driver_gone_without_an_exit_record():
     note = "host: pod\npid: 4242\nstarted: 2026-10-01T03:00:00+00:00\n"
     with tempfile.TemporaryDirectory() as tmp:
@@ -15831,6 +15858,35 @@ def test_a_run_seeds_its_steps_and_takes_them_in_order():
             "Gate sweep", "Completion consult"]
 
 
+def test_each_step_carries_the_time_the_driver_started_it():
+    """What `wait`'s `running` line counts from: on disk as each step goes
+    active, so a `wait` returning in a session names it with its time."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First")])
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        said = []
+        real = r._spawn
+
+        def spawn(*args, **kwargs):
+            said.append(run_loop.pilot_progress.active_summary(
+                load_state(slice_dir)["progress"]))
+            return real(*args, **kwargs)
+        r._spawn = spawn
+        before = datetime.now().astimezone()
+        assert run_to_exit(r) == 0
+        after = datetime.now().astimezone()
+        assert said == ["P1 code, <1m", "P1 review, <1m", "consult, <1m",
+                        "test, <1m", "docs, <1m"]
+        progress = load_state(slice_dir)["progress"]
+        times = [datetime.fromisoformat(s["started"]) for s in progress]
+        assert [s["code"] for s in progress] == [
+            "P1.code", "P1.review", "sweep", "consult", "test", "docs",
+            "wrap-up"]
+        assert times == sorted(times) and before <= times[0] \
+            and times[-1] <= after
+
+
 def test_a_red_gate_and_a_review_with_issues_take_rounds_of_their_own():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp, phases=[("1", "First")])
@@ -15946,6 +16002,35 @@ def test_a_resume_keeps_the_list_it_finds():
             ("sweep", "Gate sweep"), ("consult", "Completion consult"),
             ("test", "Test phase"), ("docs", "Doc phase"),
             ("wrap-up", "Wrap-up")]
+
+
+def test_a_resume_times_the_step_it_stopped_in_from_its_own_start():
+    """Days a run stood stopped are no time in its step: the resume
+    restarts the active step's clock before the start is reported — an
+    older loop's step, with no time, gets one."""
+    for started in ("2026-01-01T00:00:00+00:00", None):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp)
+            state = resume_state(PROJECT, stage="gate")
+            step = {"code": "P1.code", "label": "P1 · First",
+                    "state": "active"}
+            if started is not None:
+                step["started"] = started
+            state["progress"] = [
+                step, {"code": "P1.review", "label": "P1 · review",
+                       "state": "pending"}]
+            (slice_dir / "state.json").write_text(json.dumps(state))
+            r = ScriptedLoop(slice_dir, [V["review_signoff"], *TAIL],
+                             resume=True, repo_root=repo)
+            r.fake_git.branches.add("phase/074-P1")
+            seen = []
+            r.on_start = lambda seen=seen, slice_dir=slice_dir: seen.append(
+                load_state(slice_dir)["progress"][0])
+            before = datetime.now().astimezone()
+            assert run_to_exit(r) == 0
+            [first] = seen
+            assert (first["code"], first["state"]) == ("P1.code", "active")
+            assert datetime.fromisoformat(first["started"]) >= before
 
 
 def test_a_resume_of_a_run_with_no_list_seeds_one_from_where_it_stands():

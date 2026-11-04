@@ -4,9 +4,12 @@
 Both loops keep a list of the steps their run takes, `progress` in their
 state file (plan_state.json, state.json): `{"code", "label", "state"}` per
 step, the state `pending`, `active` or `done` and nothing else, in the order
-the steps were taken, the ones not reached yet after them. The drivers edit
-it through the pure helpers here and never send it anywhere: they hold no
-Pilot credential, and a driver that outlives the session that started it
+the steps were taken, the ones not reached yet after them. A step the driver
+started also carries `started`, the time it went active, which `wait`'s
+`running` line counts from (`active_summary`) and Pilot never sees
+(`sanitize` sends the three fields alone). The drivers edit it through
+the pure helpers here and never send it anywhere: they hold no Pilot
+credential, and a driver that outlives the session that started it
 would hold a stale one. The loops' `wait` (run_loop.wait_on_driver) is what
 publishes it — that process is the Pilot session's own, so the token in its
 environment is the live one — through `Publisher`.
@@ -35,6 +38,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
@@ -60,6 +64,7 @@ TOOL = "set_progress"
 OPENER = urllib.request.urlopen
 
 _PHASE_RE = re.compile(r"^P([A-Za-z0-9]+)\.")
+_CODE_RE = re.compile(r"^(?:P([A-Za-z0-9]+)\.)?(.+?)(?:-(\d+))?$")
 
 
 # -- the list ------------------------------------------------------------------
@@ -102,21 +107,31 @@ def _first_pending(steps: list[dict]) -> int:
                 len(steps))
 
 
-def start(steps: list[dict], code: str, label: str) -> list[dict]:
+def start(steps: list[dict], code: str, label: str,
+          started: str | None = None) -> list[dict]:
     """The list with step `code` active and every other active step done —
     both loops run one step at a time. A step not on the list goes in right
     before the first pending one, so the steps taken stay in the order they
-    were taken, ahead of those not reached yet."""
+    were taken, ahead of those not reached yet. With `started`, an ISO time,
+    the step carries it as the time it went active."""
     out = [dict(s) for s in steps]
     for s in out:
         if s.get("state") == ACTIVE and s.get("code") != code:
             s["state"] = DONE
+    stamp = {"started": started} if started is not None else {}
     for s in out:
         if s.get("code") == code:
-            s.update(label=clip_label(label), state=ACTIVE)
+            s.update(label=clip_label(label), state=ACTIVE, **stamp)
             return out
-    out.insert(_first_pending(out), make_step(code, label, ACTIVE))
+    out.insert(_first_pending(out), {**make_step(code, label, ACTIVE), **stamp})
     return out
+
+
+def restart_clock(steps: list[dict], started: str) -> list[dict]:
+    """The list with its active step started at `started` — a resumed run's:
+    the time the run stood stopped is no time spent in the step."""
+    return [dict(s, started=started) if s.get("state") == ACTIVE else dict(s)
+            for s in steps]
 
 
 def finish_active(steps: list[dict]) -> list[dict]:
@@ -163,6 +178,44 @@ def insert_phase(steps: list[dict], phase_id: str, title: str,
     out = [dict(s) for s in steps]
     out[at:at] = phase_steps(phase_id, title, done)
     return out
+
+
+def active_summary(steps, now: datetime | None = None) -> str | None:
+    """Where a loop stands, for `wait`'s `running` line: its active step's
+    phase, kind and round as its code names them — `P4 code`, `P4 review
+    r2`, `sweep r2`, `wrap-up`, `write r2` — and the whole minutes since it
+    started, `, 12m` (`, <1m`, `, 1h05m`). None with no active step; no time
+    for a step that carries none, as one an older loop started, or one that
+    does not read as an ISO time with its offset. Never raises."""
+    try:
+        step = next((s for s in steps if isinstance(s, dict)
+                     and s.get("state") == ACTIVE), None) \
+            if isinstance(steps, list) else None
+        code = step.get("code") if step else None
+        if not isinstance(code, str) or not code:
+            return None
+        match = _CODE_RE.match(code)
+        if match:
+            phase, kind, round_ = match.groups()
+            code = ((f"P{phase} " if phase else "") + kind
+                    + (f" r{round_}" if round_ else ""))
+        elapsed = _elapsed(step.get("started"), now)
+        return f"{code}, {elapsed}" if elapsed else code
+    except Exception:
+        return None
+
+
+def _elapsed(started, now: datetime | None) -> str | None:
+    try:
+        then = datetime.fromisoformat(started)
+        seconds = ((now or datetime.now().astimezone()) - then).total_seconds()
+    except (TypeError, ValueError):
+        return None
+    minutes = int(seconds // 60)
+    if minutes < 1:
+        return "<1m"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h{minutes:02d}m" if hours else f"{minutes}m"
 
 
 def sanitize(steps) -> list[dict]:

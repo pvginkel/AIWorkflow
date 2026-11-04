@@ -640,8 +640,11 @@ reads in the order the run went, and starting it marks the step before it `done`
 phase's steps are all `done`, and so is a run's every step at exit 0. The wrap-up that a run with
 no doc phase and nothing waiting passes over is `done` too: the run reached it.
 
-A stop leaves the list as it stood: a bail, a halt or an interrupt keeps the active step active,
-so a stopped run's tile says where it stopped, and the resume's next step marks it `done`. A step
+A step that starts also carries `started`, the time it went active, for `wait`'s `running` line
+(`running: P4 code, 12m`, `running: P4 review r2, 1h05m`); Pilot is never sent it. A stop leaves
+the list as it stood: a bail, a halt or an interrupt keeps the active step active, so a stopped
+run's tile says where it stopped, and the resume's next step marks it `done`. A resume restarts
+the active step's clock, so the time the run stood stopped is not counted in it. A step
 the run never reaches stays `pending`. What fits no kind is folded into the step it happens in,
 never given a kind of its own: the gate into the code round before it; the review-funding
 consult, the merge and a rebase onto a moved base into the review round; the doc gate and the

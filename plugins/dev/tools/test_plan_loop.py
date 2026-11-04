@@ -18,6 +18,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 _spec = importlib.util.spec_from_file_location(
@@ -2190,6 +2191,34 @@ def test_wait_re_arms_while_the_loop_runs_and_relaunches_one_gone():
             f"next: python3 {plan_loop.SCRIPT} run {where} --detach"]
 
 
+def test_wait_running_names_the_pass_and_the_time_in_it():
+    started = (datetime.now().astimezone()
+               - timedelta(minutes=3, seconds=5)).isoformat()
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("PILOT_TOKEN", "PILOT_MCP_URL")}
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = plan_record(tmp)
+        state = load_state(slice_dir)
+        state["progress"] = [
+            {"code": "write", "label": "Plan · write", "state": "done"},
+            {"code": "write-2", "label": "Plan · write 2", "state": "active",
+             "started": started},
+            {"code": "review", "label": "Plan · review", "state": "pending"}]
+        (slice_dir / "plan_state.json").write_text(json.dumps(state))
+        fd = os.open(slice_dir / "plan.lock", os.O_RDWR | os.O_CREAT, 0o644)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            with patched(os, environ=env):
+                code, out, _ = wait(slice_dir)
+        finally:
+            os.close(fd)
+        assert code == run_loop.WAIT_RUNNING
+        assert out.splitlines() == [
+            "running: write r2, 3m",
+            f"next: python3 {plan_loop.SCRIPT} wait "
+            f"{os.path.abspath(slice_dir)}"]
+
+
 def test_wait_with_no_for_waits_the_run_loops_default():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = plan_record(tmp)
@@ -2269,6 +2298,26 @@ def test_a_plan_run_seeds_its_steps_and_takes_them_in_order():
         assert progress_of(slice_dir) == [
             ("write", "Plan · write", "done"),
             ("review", "Plan · review", "done")]
+
+
+def test_each_pass_carries_the_time_the_loop_started_it():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [W_DONE, R_GO])
+        said = []
+        real = loop._spawn
+
+        def spawn(role, prompt, verdict_path, round_):
+            said.append(run_loop.pilot_progress.active_summary(
+                load_state(slice_dir)["progress"]))
+            return real(role, prompt, verdict_path, round_)
+        loop._spawn = spawn
+        before = datetime.now().astimezone()
+        assert run_to_exit(loop) == 0
+        assert said == ["write, <1m", "review, <1m"]
+        times = [datetime.fromisoformat(s["started"])
+                 for s in load_state(slice_dir)["progress"]]
+        assert len(times) == 2 and before <= times[0] <= times[1]
 
 
 def test_a_questions_exit_leaves_its_pass_active_and_the_rerun_takes_write_2():

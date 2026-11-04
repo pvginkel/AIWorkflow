@@ -4,6 +4,18 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-04 — `wait` says where the run is and for how long (v0.10.35)
+
+AIWF-144 (session review 2 of Pilot in production, change 6; the operator: "In full"):
+
+- **The `running` line names the active step and the time in it**: `running: P4 code, 12m`,
+  `running: P4 review r2, 1h05m`, `running: wrap-up, <1m`, the plan loop's `running: write r2,
+  3m`. Each return used to read only "running", and that is what the operator reads in the
+  session log. A gate shows as the code round it belongs to, as the steps group it.
+- **A step carries `started`**, set when it goes active and restarted on a resume, so the time a
+  run stood stopped is not counted. Pilot is never sent it. A state from an older loop prints
+  the step without a time, and one with no active step prints a bare `running`.
+
 ## 2026-11-04 — `wait` waits as long as the Bash tool's cap lets it (v0.10.34)
 
 AIWF-132 (the operator, 2026-11-01, on slice 030's run: "It's not acceptable"; kept for the turn

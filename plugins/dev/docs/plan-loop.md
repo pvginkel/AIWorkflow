@@ -67,8 +67,8 @@ returns once the loop is past its refusals, or with its refusal's code. `plan_lo
 <slice-dir> [--for S]` is what the stage's session waits on inside its turn, the run loop's `wait`
 on `plan.lock` and `plan_state.json` ([runner-state.md](runner-state.md) § bailout.json and exit
 codes): **0** `ended: exit <n>`, then for an exit 4 its `reason:` and the `document:` to register,
-for a bail its `reason:` and the `bailout:` file, for a halt where it stopped; **5** `running`,
-with the `next:` wait to re-arm; **6** `gone`, with the `next:` relaunch, `run … --detach`.
+for a bail its `reason:` and the `bailout:` file, for a halt where it stopped; **5** `running` and the pass
+the loop is in with its time, `running: write r2, 3m`, with the `next:` wait to re-arm; **6** `gone`, with the `next:` relaunch, `run … --detach`.
 
 **The steps Pilot shows.** `plan_state.json` keeps `progress` as the run loop's `state.json`
 does, by the same rules ([run-loop.md](run-loop.md) § The steps Pilot shows), and `wait`
