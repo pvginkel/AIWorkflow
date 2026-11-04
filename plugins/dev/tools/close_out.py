@@ -1199,6 +1199,106 @@ def leave_entry(slice_dir: Path | str, eid: str, by: str, text: str,
         return _mark_text(entry["wrap_up"])
 
 
+# The history note the run loop leaves on each entry a wrap-up was given when
+# that wrap-up is left out of the landing (AIWF-143): the store goes back to
+# where it stood before the wrap-up, and without the note the entry read
+# "Not reached… nobody has looked at it since its author" while the wrap-up
+# had fixed it on a branch nobody merged.
+DROPPED = "wrap-up-dropped"
+
+# What a wrap-up's mark says it did, in the past tense.
+_MARK_DID = {"left": "looked at it", "card": "asked for a card",
+             "word": "asked for your word on an edit"}
+
+
+def _wrap_up_did(before: dict, after: dict) -> tuple[list[str], list[list[str]], bool]:
+    """What the wrap-up did on an entry, read off the entry as it left it
+    (`after`) against the entry as it stood before it (`before`): (what it
+    did, each in a few words; what it wrote, the strike's reason, its mark's
+    text or its note, each as lines; whether it names a commit)."""
+    did: list[str] = []
+    words: list[list[str]] = []
+    committed = False
+    strike = after.get("strike")
+    if strike and strike != before.get("strike"):
+        reason = strike.get("reason") or ""
+        if reason.startswith("folded into"):
+            did.append("folded it")
+        elif strike.get("commit"):
+            did.append(f"fixed it in `{strike['commit']}`")
+            committed = True
+        else:
+            did.append("struck it")
+        if reason:
+            words.append([reason])
+    mark = after.get("wrap_up")
+    marked = bool(mark) and mark != before.get("wrap_up")
+    if marked:
+        did.append(_MARK_DID.get(mark.get("outcome"), _MARK_DID["left"]))
+        if mark.get("text"):
+            words.append(list(mark["text"]))
+    for note in (after.get("notes") or [])[len(before.get("notes") or []):]:
+        if note.get("relabel"):
+            said = ", ".join(f"{k}: {o or UNLABELLED_MARK} → {n or UNLABELLED_MARK}"
+                             for k, (o, n) in note["relabel"].items())
+            did.append(f"relabelled it ({said})")
+        elif not note.get("history") and note.get("text"):
+            did.append("added a note")
+            words.append(list(note["text"]))
+    if any(after.get(k) != before.get(k)
+           for k in ("headline", "body", "consequence", "evidence", "author")):
+        did.append("amended it")
+    if after.get("restated") and after.get("restated") != before.get("restated"):
+        did.append("restated it")
+    if not marked and after.get("proposal") \
+            and after.get("proposal") != before.get("proposal"):
+        did.append("gave it a proposal")
+    return did, words, committed
+
+
+def wrap_up_dropped(slice_dir: Path | str, ids: list[str], left: dict, reason: str,
+                    branch: str | None = None, date: str | None = None) -> list[str]:
+    """Note on each entry in `ids` — those the wrap-up was given — that it
+    was left out of the landing: what it did there, read off `left`, the
+    store as it left it, against the store now, taken back to where it
+    stood before it; why it was left out (`reason`); and, where it fixed
+    the entry in a commit, that the commit stays on `branch`, unmerged.
+    The run loop's, after it takes the store back. The note is a history
+    note (`DROPPED`), so it is nobody's finding, and the document's section
+    opens with it in place of the lead that says no wrap-up reached the
+    entry (`_ask_lead`). Returns the ids noted; one missing from either
+    store is passed over."""
+    reason = _collapse(reason).rstrip()
+    if reason and not reason.endswith((".", "!", "?")):
+        reason += "."
+    reason = reason or "an unknown failure."
+    after = {e.get("id"): e for e in (left.get("entries") or []) if isinstance(e, dict)}
+    day = _date(date)
+    noted: list[str] = []
+    with _writing(slice_dir) as store:
+        for eid in ids:
+            entry = next((e for e in store["entries"] if e["id"] == eid), None)
+            if entry is None or eid not in after:
+                continue
+            did, words, committed = _wrap_up_did(entry, after[eid])
+            if did:
+                kept = ("What it committed stays on "
+                        f"`{branch}`, unmerged, and the entry" if committed and branch
+                        else "The entry")
+                text = [f"The wrap-up reached this entry and {_join(did)}, and was left "
+                        f"out of the landing: {reason} {kept} is back as it stood "
+                        "before the wrap-up."]
+                for lines in words:
+                    text += ["", f"In its words: {lines[0]}", *lines[1:]]
+            else:
+                text = ["The wrap-up left no mark on this entry before it was left out "
+                        f"of the landing: {reason}"]
+            entry["notes"].append({"by": "the run loop", "date": day, "text": text,
+                                   "history": DROPPED, "reached": bool(did)})
+            noted.append(eid)
+    return noted
+
+
 # -- the continuation: the answers read back, executed, the report closed ------
 
 def _ruled(entry: dict) -> bool:
@@ -2655,8 +2755,24 @@ def _for_planned(entry: dict, key: str) -> bool:
 def _ask_lead(entry: dict, place: str, key: str, words: str) -> str | None:
     """What an entry that comes to the operator for a reason of its own is
     said as, before its body: one the wrap-up did not reach, one nobody
-    routed, one for a later slice."""
+    routed, one for a later slice. An entry a wrap-up left out of the
+    landing was given opens with what the run loop noted on it
+    (`wrap_up_dropped`) wherever it is, and in the wrap-up's place that
+    stands for the lead that says no wrap-up reached it."""
     target = (effective_labels(entry) or {}).get("for")
+    dropped = next((n for n in reversed(entry.get("notes") or [])
+                    if n.get("history") == DROPPED), None)
+    if dropped is not None:
+        said = ("**Reached, not landed.**" if dropped.get("reached")
+                else "**Not landed.**")
+        if place == "For the wrap-up":
+            asked = words.removeprefix("the wrap-up — ")
+            said += f" The table gave this entry to the wrap-up ({asked})."
+        said += " " + _prose(dropped["text"])
+        if place == "For the wrap-up":
+            return said
+        rest = _ask_lead({**entry, "notes": []}, place, key, words)
+        return said + (f"\n\n{rest}" if rest else "")
     if place == "For the wrap-up":
         asked = words.removeprefix("the wrap-up — ")
         return (f"**Not reached.** The table gave this entry to the wrap-up ({asked}), "

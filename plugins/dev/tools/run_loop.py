@@ -182,6 +182,7 @@ from close_out import (  # noqa: E402
     verb_usage,
     worklist,
     worklist_view,
+    wrap_up_dropped,
 )
 from redact_secrets import RedactionError, is_examined, redact  # noqa: E402
 
@@ -10685,8 +10686,15 @@ class RunLoop:
                 continue
             green, where = self._wrap_up_sibling_gate(root, branch, base)
             if not green:
+                # once more on the same tree before the landing goes on one
+                # sample (AIWF-143), as the primary's doc gate is
+                self.log(f"{label} the gate in {root.name} is red with its "
+                         "commits — once more on the same tree before they "
+                         "are left out")
+                green, where = self._wrap_up_sibling_gate(root, branch, base)
+            if not green:
                 raise WrapUpLeftOut(f"the gate in {root.name} is red with its "
-                                    f"commits (output in {where})")
+                                    f"commits on two runs (output in {where})")
         green_at = None
         if str(primary) in carried:
             green_at = self._wrap_up_primary_gate(ds, branch,
@@ -10720,35 +10728,46 @@ class RunLoop:
                               watch: dict) -> dict:
         """The doc gate on the wrap-up branch in the primary repo — the doc
         phase's own sweep, run on its commits. Green: that run, for the gate
-        stage to take as its first (`gate_last`). Red: once more on the doc
-        branch without them, to tell whose red it is — green there, the
-        wrap-up is left out and the doc phase goes on from that green; red
-        there too, the wrap-up is left out all the same and the red is the
-        doc phase's, for the writer's nudge (with no writer nobody is
-        nudged and nothing stops: `_wrap_up_decide`)."""
+        stage to take as its first (`gate_last`). Red: run once more on the
+        same commits before anything is left out (AIWF-143 — slice 031's
+        landing went on one timeout in a suite of 497, and the continuation
+        redid its five fixes), and a green there is the landing's green as a
+        first one would be. Red twice: once more on the doc branch without
+        them, to tell whose red it is — green there, the wrap-up is left out
+        and the doc phase goes on from that green; red there too, the
+        wrap-up is left out all the same and the red is the doc phase's, for
+        the writer's nudge (with no writer nobody is nudged and nothing
+        stops: `_wrap_up_decide`)."""
         primary = self.repo_root
         home = watch["expected"]
         self.log(f"[wrap-up] the doc gate on {branch}, with its commits")
         self.git("checkout", branch, root=primary)
         try:
             green, log_path = self._run_doc_gate(ds)
+            if not green:
+                self.log("[wrap-up] the doc gate is red with its commits — "
+                         "once more on the same tree before they are left out")
+                green, log_path = self._run_doc_gate(ds)
+                if green:
+                    self.log("[wrap-up] the doc gate is green with its "
+                             "commits on its re-run — they land")
             head = self.git("rev-parse", "HEAD", root=primary)
         finally:
             self.git("checkout", home, root=primary)
         if green:
             return {"head": head, "green": True, "log": str(log_path)}
-        self.log(f"[wrap-up] the doc gate is red with its commits — once more "
-                 f"on {home} without them")
+        self.log(f"[wrap-up] the doc gate is red with its commits on two runs "
+                 f"— once more on {home} without them")
         green_without, log_without = self._run_doc_gate(ds)
         without = {"head": self.git("rev-parse", "HEAD", root=primary),
                    "green": green_without, "log": str(log_without)}
         if green_without:
-            raise WrapUpLeftOut("the doc gate is red with its commits and "
-                                f"green without them (output in {log_path})",
-                                without)
-        raise WrapUpLeftOut("the doc gate is red with its commits and without "
-                            "them — that red is the doc phase's (output in "
-                            f"{log_without})", without)
+            raise WrapUpLeftOut("the doc gate is red with its commits on two "
+                                "runs and green without them (output in "
+                                f"{log_path})", without)
+        raise WrapUpLeftOut("the doc gate is red with its commits on two runs "
+                            "and without them — that red is the doc phase's "
+                            f"(output in {log_without})", without)
 
     def _wrap_up_decide(self, ds: dict, wu: dict, outcome: str) -> None:
         """The stage's outcome and the stage after it, saved together, so a
@@ -11128,10 +11147,12 @@ class RunLoop:
         guarded ref where it stood — so no commit of the wrap-up reaches a
         base or the doc branch in any repo, the repos whose gate was green
         included; the wrap-up branches stay, unmerged — the store taken
-        back, one event entered through the driver's own `_report`, and the
-        ladder moved on. Each step is best-effort: the leave-out is what
-        stands between the wrap-up and a stopped run, so it cannot be a stop
-        itself."""
+        back, each entry it was given noted with what it did there and why
+        it was left out (`wrap_up_dropped`, AIWF-143: without the note the
+        store taken back reads as one no wrap-up reached), one event entered
+        through the driver's own `_report`, and the ladder moved on. Each
+        step is best-effort: the leave-out is what stands between the
+        wrap-up and a stopped run, so it cannot be a stop itself."""
         reason = " ".join(str(reason).split()) or "an unknown failure"
         self.log(f"[wrap-up] left out of the landing: {reason}")
         try:
@@ -11140,11 +11161,26 @@ class RunLoop:
             why = e.details if isinstance(e, Bailout) else str(e)
             self.log(f"[wrap-up] the trees could not all be put back ({why})")
         if wu.get("store"):
+            # the store as the wrap-up left it, read before it is taken back
+            try:
+                left = json.loads(store_path(self.slice_dir).read_text())
+            except (OSError, ValueError) as e:
+                left = None
+                self.log(f"[wrap-up] the store as it left it could not be "
+                         f"read ({e}) — its entries are not noted")
             try:
                 self._wrap_up_restore_store(wu["store"])
             except Exception as e:
+                left = None
                 why = e.details if isinstance(e, Bailout) else str(e)
                 self.log(f"[wrap-up] the store could not be taken back ({why})")
+            if left is not None and wu.get("entries"):
+                branch = self._wrap_up_branch() if wu.get("repos") else None
+                try:
+                    wrap_up_dropped(self.slice_dir, wu["entries"], left,
+                                    reason, branch)
+                except Exception as e:
+                    self.log(f"[wrap-up] its entries were not noted ({e})")
         ds.pop("gate_last", None)
         if without is not None:
             ds["gate_last"] = without

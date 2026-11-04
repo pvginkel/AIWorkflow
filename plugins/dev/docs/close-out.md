@@ -325,7 +325,8 @@ assent is the ruling and the continuation makes the edit.
 **`close-out.md` is the document Pilot reads**, in `/dev:document-format`'s grammar, rendered
 through `${CLAUDE_PLUGIN_ROOT}/tools/asks.py` — the format, the quoting and the refusals are
 that module's. It holds one ask per entry the table brings to the operator, per card request,
-and per entry no wrap-up reached or nobody labelled, which comes to the operator said as what
+and per entry no wrap-up reached — or one whose wrap-up was left out of the landing, opening
+on the run loop's note of what it did — or nobody labelled, which comes to the operator said as what
 it is: in that order, each place by grade, kind and id. An entry's ask is its section, the
 current story told once — its headline as the section's heading, its body, an action's
 proposal, its `Consequence:` and its `Provenance:` as prose, each the restatement's where the

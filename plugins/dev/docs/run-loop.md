@@ -573,17 +573,25 @@ whole plan is a feature of the review, not a cost. Then:
 
   **The wrap-up is never a reason to stop a run.** A timeout — whatever the session had
   written by then — a missing or invalid verdict, a `blocked`, changes it left uncommitted, a
-  commit it made outside its branches, a gate that is red with its commits, or any error the
+  commit it made outside its branches, a gate that is red with its commits twice on the same
+  tree, or any error the
   driver itself meets in the stage is a *soft failure*: all of its commits are left out, in
   every code repo, the repos whose gate was green included — the branches stay, unmerged, for
   whoever wants to read them — the store goes back to what it was before the dispatch, the
   failure is entered in the report as an event that names the branches, and the run goes on
   with the doc phase's own gate and landing. What it committed in the spec repo beside the
   store — a fold, prose — stays where it is: that tree has no branch of the wrap-up's to leave
-  behind. What the table gave the wrap-up then comes to the operator said as what it is, an
-  entry no wrap-up reached ([close-out.md](close-out.md) § Lifecycle). A repo it would branch that holds uncommitted work is a soft failure before
-  anything is dispatched. A gate in the primary repo that is red with its commits is run once
-  more without them: red there too, it is the doc phase's red and goes to the doc-writer as
+  behind. Each entry the wrap-up was given gets the run loop's note, read off the store as the
+  wrap-up left it: what it did there — fixed it in a commit, which stays on its branch, struck,
+  folded, marked or relabelled it — why its landing was left out, and that the entry is back as
+  it stood; or, where it left no mark, that it did not. The entry's section opens with that note
+  (**Reached, not landed.** or **Not landed.**) in place of **Not reached.**, which would say
+  nobody looked at it ([close-out.md](close-out.md) § Lifecycle). A repo it would branch that holds uncommitted work is a soft failure before
+  anything is dispatched. A gate that goes red with its commits, in the primary repo or a
+  sibling, is run once more on the same tree before the landing is left out, and green there
+  keeps it: PilotApp slice 031's doc gate went red on one test of 497, a timeout, and one sample
+  dropped five fixes the continuation then redid, about $10 and 55 minutes. Red twice, the
+  primary repo's gate is run once more without the commits: red there too, it is the doc phase's red and goes to the doc-writer as
   before — and in a project that runs no doc phase, which would have completed over that red
   without a wrap-up, the run completes. An account session limit is waited out and the session
   redispatched, as for every role; an interrupt is an interrupt, and the resume starts the

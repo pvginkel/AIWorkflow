@@ -119,7 +119,8 @@ recommend: Exit 3
 | any other without | `question` |
 
 The asks stand in the order of their places — what comes to the operator, the card requests,
-what no wrap-up reached (opening **Not reached.**), what nobody labelled (opening
+what no wrap-up reached (opening **Not reached.**, or, where a wrap-up's landing was left
+out, **Reached, not landed.** or **Not landed.** with the run loop's note), what nobody labelled (opening
 **Unlabelled.**) — and inside a place by grade (`major`, `minor`, ungraded, `nit`, `cosmetic`),
 then the kind in the order of [its table](close-out.md#the-labels), then the id. A section is
 the entry as it now stands, told once: the restatement's headline, body, consequence and

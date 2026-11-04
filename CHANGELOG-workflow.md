@@ -4,6 +4,22 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-04 — A red wrap-up gate runs again before the landing is left out (v0.10.37)
+
+AIWF-143 (session review 2 of Pilot in production, change 6; the operator: "In full"):
+
+- **Red with the wrap-up's commits runs once more on the same tree**, in the primary repo and in
+  a sibling, and green there keeps the landing. PilotApp slice 031's doc gate went red on one
+  test of 497, a timeout; the loop ran the tree without the commits, got green and left the
+  landing out on that one sample. The continuation then redid the five fixes, about $10 and 55
+  minutes, and a second promotion followed.
+- **A left-out landing's entries say what the wrap-up did.** The run loop notes on each entry
+  the wrap-up was given what it did there, read off the store as it left it — fixed in a commit
+  that stays on its branch, struck, folded, marked, relabelled — why the landing was left out,
+  and that the entry is back as it stood. The section opens **Reached, not landed.** (or **Not
+  landed.** where it left no mark), never **Not reached.**: 031's close-out said "nobody has
+  looked at it since its author" of seven entries the wrap-up had fixed.
+
 ## 2026-11-04 — A sweep flake goes to the test-fixer, not to an appended phase (v0.10.36)
 
 AIWF-141 (session review 2 of Pilot in production, change 6; the operator: "In full"):

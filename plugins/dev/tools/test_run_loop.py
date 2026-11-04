@@ -10891,9 +10891,17 @@ def left_out_run(tmp, step, reason, outcome, **kw):
     assert pushes(r) == [(str(repo), "main")]
     # the branches stay, unmerged
     assert g.refs[str(sib)].get(WRAP) in ("sw1", "s0")
-    # the store as the wrap-up found it, the one event beside it
+    # the store as the wrap-up found it, each entry it was given noted that
+    # it was left out (AIWF-143), the one event beside it
     store = json.loads((slice_dir / "close-out.json").read_text())
     [event] = left_out_event(slice_dir)
+    [b1] = [e for e in store["entries"] if e["id"] == "B1"]
+    [note] = [n for n in b1["notes"] if n.get("history") == close_out.DROPPED]
+    assert note["by"] == "the run loop"
+    assert ("and was left out of the landing: " + reason) in note["text"][0]
+    for e in store["entries"]:
+        e["notes"] = [n for n in e["notes"]
+                      if n.get("history") != close_out.DROPPED]
     assert [e for e in store["entries"] if e["id"] != event["id"]] \
         == r.store_at_dispatch["entries"]
     assert event["headline"].startswith(
@@ -10987,26 +10995,95 @@ def test_a_red_sibling_gate_leaves_the_whole_wrap_up_out():
     with tempfile.TemporaryDirectory() as tmp:
         r, *_ = left_out_run(
             tmp, lambda repo, sib: (WRAP_DONE, wrap_up_fixes(repo, sib)),
-            "the gate in Sibling is red with its commits", "done",
-            wrap_gates=[False])
+            "the gate in Sibling is red with its commits on two runs", "done",
+            wrap_gates=[False, False])
         # the primary's doc gate never ran on the wrap-up branch; the doc
         # phase's own gate ran on the doc branch
         assert r.doc_gate_calls == [True]
         rows = [h for h in load_state(r.slice_dir)["history"]
                 if h["role"] == "wrap-up-gate"]
-        assert [h["outcome"] for h in rows] == ["red"]
+        assert [h["outcome"] for h in rows] == ["red", "red"]
+
+
+def test_a_sibling_gate_red_once_and_green_on_its_rerun_lands_the_wrap_up():
+    """One red is one sample (AIWF-143): the same tree is gated once more
+    before anything is left out, and a green there lands the wrap-up."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = sibling_phase_slice(tmp)
+        plant_waiting(slice_dir)
+        r = ScriptedLoop(slice_dir, wrap_script(repo, sib), repo_root=repo,
+                         wrap_ups=[(WRAP_DONE, wrap_up_fixes(repo, sib))],
+                         wrap_gates=[False, True])
+        assert run_to_exit(r) == 0
+        assert r.wrap_gate_calls == [(["kc", "project", "test"], str(sib))] * 2
+        assert r.fake_git.refs[str(sib)]["main"] == "sw1"
+        assert r.fake_git.refs[str(repo)]["main"] == "w1"
+        state = load_state(slice_dir)
+        assert state["wrap_up"]["outcome"] == "landed"
+        assert [h["outcome"] for h in state["history"]
+                if h["role"] == "wrap-up-gate"] == ["red", "green"]
+        assert ("[wrap-up] the gate in Sibling is red with its commits — once "
+                "more on the same tree before they are left out") \
+            in (slice_dir / "log.txt").read_text()
 
 
 def test_a_primary_gate_red_with_its_commits_and_green_without():
     with tempfile.TemporaryDirectory() as tmp:
-        r, *_ = left_out_run(
+        r, slice_dir, *_ = left_out_run(
             tmp, lambda repo, sib: (WRAP_DONE, wrap_up_fixes(repo, sib)),
-            "the doc gate is red with its commits and green without them",
-            "done", doc_gates=[False, True])
-        # the sibling's gate was green, and its commits are left out too;
-        # the doc phase went on from the green without them
+            "the doc gate is red with its commits on two runs and green "
+            "without them", "done", doc_gates=[False, False, True])
+        # red on the wrap-up branch twice, the same tree; the sibling's gate
+        # was green, and its commits are left out too; the doc phase went on
+        # from the green without them
         assert r.wrap_gate_calls
+        assert r.doc_gate_calls == [False, False, True]
+        assert ("[wrap-up] the doc gate is red with its commits — once more "
+                "on the same tree before they are left out") \
+            in (slice_dir / "log.txt").read_text()
+        # the entry the wrap-up fixed says so in the document, never that no
+        # wrap-up reached it
+        doc = (slice_dir / "close-out.md").read_text()
+        assert "Not reached" not in doc
+        assert ("**Reached, not landed.** The wrap-up reached this entry and "
+                "fixed it in `w1`, and was left out of the landing: the doc "
+                "gate is red with its commits on two runs and green without "
+                "them (output in "
+                f"{slice_dir / 'doc_gate_r2.log'}). What it committed stays on "
+                f"`{WRAP}`, unmerged, and the entry is back as it stood before "
+                "the wrap-up.\n\nIn its words: fixed\n\n**Unlabelled.** The "
+                "entry carries no labels") in doc
+
+
+def test_a_primary_gate_red_once_and_green_on_its_rerun_lands_the_wrap_up():
+    """Slice 031 (AIWF-143): one timeout in 497 tests red the doc gate with
+    the wrap-up's commits, the run without them was green, and five fixes
+    were thrown away on one sample. The same tree is gated once more first,
+    and a green there lands the wrap-up — the gate stage takes that run."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = sibling_phase_slice(tmp)
+        plant_waiting(slice_dir)
+        r = ScriptedLoop(slice_dir, wrap_script(repo, sib), repo_root=repo,
+                         wrap_ups=[(WRAP_DONE, wrap_up_fixes(repo, sib))],
+                         doc_gates=[False, True])
+        assert run_to_exit(r) == 0
+        # red, then green on the same branch — no run without its commits,
+        # and the gate stage ran no third
         assert r.doc_gate_calls == [False, True]
+        g = r.fake_git
+        assert [c for root, c in g.calls
+                if str(root) == str(repo) and c == ("checkout", WRAP)] == [
+            ("checkout", WRAP)]
+        assert g.refs[str(repo)]["main"] == "w1"
+        assert g.refs[str(sib)]["main"] == "sw1"
+        state = load_state(slice_dir)
+        assert state["wrap_up"]["outcome"] == "landed"
+        assert not left_out_event(slice_dir)
+        narration = (slice_dir / "log.txt").read_text()
+        assert ("[wrap-up] the doc gate is green with its commits on its "
+                "re-run — they land") in narration
+        assert (f"[doc-phase] gate: the wrap-up stage's run on w1 stands — "
+                f"GREEN ({slice_dir / 'doc_gate_r2.log'})") in narration
 
 
 def test_a_primary_gate_red_with_and_without_goes_to_the_writers_nudge():
@@ -11015,23 +11092,23 @@ def test_a_primary_gate_red_with_and_without_goes_to_the_writers_nudge():
         plant_waiting(slice_dir)
         r = ScriptedLoop(slice_dir, wrap_script(repo, sib), repo_root=repo,
                          wrap_ups=[(WRAP_DONE, wrap_up_fixes(repo, sib))],
-                         doc_gates=[False, False, True])
+                         doc_gates=[False, False, False, True])
         nudges = []
         r._nudge = lambda prompt, cwd, sid, label, role: nudges.append(
             (sid, role, prompt))
         assert run_to_exit(r) == 0
-        # red on the wrap-up branch, red on the doc branch without it: that
-        # red is the doc phase's, nudged to the writer, then green
-        assert r.doc_gate_calls == [False, False, True]
+        # red on the wrap-up branch twice, red on the doc branch without it:
+        # that red is the doc phase's, nudged to the writer, then green
+        assert r.doc_gate_calls == [False, False, False, True]
         assert [(sid, role) for sid, role, _ in nudges] == \
             [("sess-test", "doc-writer")]
-        assert "doc_gate_r2.log" in nudges[0][2]
+        assert "doc_gate_r3.log" in nudges[0][2]
         assert r.fake_git.refs[str(repo)]["main"] == "d0"
         assert r.fake_git.refs[str(sib)]["main"] == "s0"
         wu = load_state(slice_dir)["wrap_up"]
         assert wu["outcome"] == "left_out"
         assert wu["reason"].startswith("the doc gate is red with its commits "
-                                       "and without them")
+                                       "on two runs and without them")
 
 
 def test_a_project_without_a_doc_phase_runs_the_wrap_up_and_lands_it():
@@ -11088,15 +11165,16 @@ def test_without_a_doc_phase_a_left_out_wrap_up_lands_nothing():
                    lambda loop: model_repos(loop, repo, docs=False))]
         r = ScriptedLoop(slice_dir, script, repo_root=repo,
                          wrap_ups=[(WRAP_DONE, wrap_up_fixes(repo))],
-                         doc_gates=[False, False])
+                         doc_gates=[False, False, False])
         assert run_to_exit(r) == 0
         assert not (slice_dir / "bailout.json").exists()
-        assert r.doc_gate_calls == [False, False]
+        assert r.doc_gate_calls == [False, False, False]
         assert r.fake_git.refs[str(repo)]["main"] == "m0"
         assert not pushes(r)
         state = load_state(slice_dir)
         assert state["wrap_up"]["outcome"] == "left_out"
-        assert "red with its commits and without them" in state["wrap_up"]["reason"]
+        assert "red with its commits on two runs and without them" \
+            in state["wrap_up"]["reason"]
         assert state["doc_phase"]["stage"] == "done"
         assert "gate_last" not in state["doc_phase"]
 

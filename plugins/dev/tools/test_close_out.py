@@ -3295,6 +3295,55 @@ def test_render_writes_the_asks_as_the_document_pilot_reads():
         assert store(slice_dir)["step"] == "T7"
 
 
+def test_a_wrap_up_left_out_of_the_landing_leaves_each_entry_saying_what_it_did():
+    """Slice 031 (AIWF-143): the wrap-up fixed five entries, its landing was
+    dropped, the store went back to before it, and each read "Not reached…
+    nobody has looked at it since its author". The run loop notes on each
+    entry the wrap-up was given what it did there and why it was left out,
+    and the document says so in place of that lead."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _every_place(tmp)
+        before = (slice_dir / "close-out.json").read_text()
+        waits = [e["id"] for e, _ in close_out.worklist(slice_dir)]
+        # what the wrap-up did: B6 fixed in a commit, B1 looked at; D1 untouched
+        close_out.strike_entry(slice_dir, "B6", "Fixed in KubeCoder c0ffee1: the line",
+                               by="wrap-up", commit="c0ffee1", date="2026-08-14")
+        close_out.leave_entry(slice_dir, "B1", "wrap-up", "Vetted. The claim holds.",
+                              date="2026-08-14")
+        left = store(slice_dir)
+        # the store taken back
+        (slice_dir / "close-out.json").write_text(before)
+        reason = ("the doc gate is red with its commits on two runs and green without "
+                  "them (output in doc_gate_r2.log)")
+        noted = close_out.wrap_up_dropped(slice_dir, ["B1", "B6", "D1", "E9"], left, reason,
+                                          "phase/007-wrap-up", date="2026-08-15")
+        assert noted == ["B1", "B6", "D1"], "an id in neither store is passed over"
+        close_out.render_report(slice_dir)
+        doc = report(slice_dir)
+        assert "Not reached" not in doc
+        assert ("**Reached, not landed.** The table gave this entry to the wrap-up (fix "
+                "within its bar, or ask for a card). The wrap-up reached this entry and "
+                "fixed it in `c0ffee1`, and was left out of the landing: the doc gate is "
+                "red with its commits on two runs and green without them (output in "
+                "doc_gate_r2.log). What it committed stays on `phase/007-wrap-up`, "
+                "unmerged, and the entry is back as it stood before the wrap-up.\n\n"
+                "In its words: Fixed in KubeCoder c0ffee1: the line\n\nthe body") in doc
+        assert ("**Reached, not landed.** The wrap-up reached this entry and looked at "
+                "it, and was left out of the landing: the doc gate is red with its "
+                "commits on two runs and green without them (output in doc_gate_r2.log)."
+                " The entry is back as it stood before the wrap-up.\n\nIn its words: "
+                "Vetted. The claim holds.\n\nthe body") in doc
+        assert ("**Not landed.** The wrap-up left no mark on this entry before it was "
+                "left out of the landing: the doc gate is red") in doc
+        # the record keeps it as the run loop's note
+        record = (slice_dir / "close-out-record.md").read_text()
+        assert ("**the run loop, 2026-08-15.** The wrap-up reached this entry and fixed "
+                "it in `c0ffee1`") in record
+        # a history note: nobody's finding, so nothing waits that did not before
+        assert [e["id"] for e, _ in close_out.worklist(slice_dir)] == waits
+        assert entry_of(slice_dir, "B6")["notes"][-1]["history"] == close_out.DROPPED
+
+
 def test_render_leaves_a_written_back_document_and_removes_one_left_with_no_ask():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
