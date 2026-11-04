@@ -4597,6 +4597,182 @@ def test_a_dry_run_names_the_spec_check_as_a_spec_repo_phases_gate():
                 in out
 
 
+# -- the migration check (AIWF-140) -------------------------------------------
+#
+# PilotApp slice 036's migrations from P1 and P5 reused the revision ids
+# origin's already had, and no gate said so before the test phase's push. A
+# project names where its migrations live and the command that checks their
+# head in `.aiworkflowrc`; a phase whose diff adds one closes its gate with
+# it.
+
+MIGRATIONS_RC = ('[migrations]\npaths = ["db/versions/*.py"]\n'
+                 'check = "heads-are-one"\n')
+MIGRATION_ARGV = ["sh", "-c", "heads-are-one"]
+
+
+def migration_entry(outcome):
+    return {"project": run_loop.MIGRATION_CHECK_NAME, "cmd": "heads-are-one",
+            "outcome": outcome}
+
+
+def test_a_phase_that_adds_a_migration_closes_its_gate_with_the_migration_check():
+    """Red on its exit 1: a fix round naming it, then green. Run last, from
+    the phase's tree, after the diff was asked for the files the phase adds
+    under the project's globs; the reviewer's green names it and counts it
+    as no project."""
+    app = component_argv(PROJECT)
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc() + MIGRATIONS_RC)
+        r = KcExitLoop(slice_dir, [V["exec_done"], V["exec_done"],
+                                   V["review_signoff"], *TAIL],
+                       repo_root=repo, gate_rcs=[0, 1, 0, 0])
+        r.fake_git.diff_files = "db/versions/0024_two.py\n"
+        assert run_to_exit(r) == 0 and not r.script
+        assert [(argv, cwd) for argv, cwd, _ in r.phase_gate_runs] \
+            == [(app, repo), (MIGRATION_ARGV, repo)] * 2
+        assert [argv for argv, _, _ in r.phase_gate_order[:3]] \
+            == [app, lint_argv(PROJECT), MIGRATION_ARGV]
+        assert ("diff", "--name-only", "--no-renames", "--diff-filter=A",
+                "base123..HEAD", "--", ":(top,glob)db/versions/*.py") \
+            in [args for _, args in r.fake_git.calls]
+        writers = [flat(p) for role, p in r.prompts if role == "code-writer"]
+        assert ("and last, where the phase's diff adds a file under "
+                "`db/versions/*.py`, the project's migration check "
+                f"`heads-are-one` from {repo}, red on any exit but 0") \
+            in writers[0]
+        assert "The gate went red on `heads-are-one`;" in writers[1]
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["gate_projects"] == [gate_entry(PROJECT, "green"),
+                                       migration_entry("green")]
+        assert [h["outcome"] for h in gate_rows(slice_dir)] == ["red", "green"]
+        assert ("\n=== the phase adds db/versions/0024_two.py under "
+                "`migrations.paths`: the migration check `heads-are-one` from "
+                f"{repo} ===\nsh -c heads-are-one: exit 1\n") \
+            in (outputs_of(r) / "gate_r1.log").read_text()
+        assert ("[P1] gate #1 running (kc project test --project app, then kc "
+                "project lint --project app), then the migration check for "
+                "the 1 migration(s) the phase adds: `heads-are-one`\n") \
+            in (slice_dir / "log.txt").read_text()
+        reviewer = reviewer_prompt(r)
+        assert f"`{' '.join(app)}`, `heads-are-one` in {repo}" in reviewer
+        assert "It covers app:" in flat(reviewer)
+        assert "The spec check proves" not in reviewer
+
+
+def test_the_migration_check_runs_only_where_a_migration_is_added_and_never_makes_a_gate_green():
+    app = component_argv(PROJECT)
+    # no migration added, and no `[migrations]` at all: never run, and with
+    # no table the diff is not even asked
+    for config, files in ((rc() + MIGRATIONS_RC, ""),
+                          (rc(), "db/versions/0024_two.py\n")):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp, config=config)
+            r = KcExitLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                       *TAIL], repo_root=repo)
+            r.fake_git.diff_files = files
+            assert run_to_exit(r) == 0 and not r.script
+            assert [argv for argv, _, _ in r.phase_gate_runs] == [app]
+            assert load_state(slice_dir)["phases"]["1"]["gate_projects"] \
+                == [gate_entry(PROJECT, "green")]
+            asked = any("--diff-filter=A" in args
+                        for _, args in r.fake_git.calls)
+            assert asked == (config != rc())
+            writer = next(p for role, p in r.prompts if role == "code-writer")
+            assert ("migration check" in writer) == (config != rc())
+            assert "migrations" not in gate_spec(r) or config != rc()
+    # a Target that ran nothing: the check's green leaves the gate empty
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc() + MIGRATIONS_RC)
+        r = KcExitLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                   *TAIL], repo_root=repo,
+                       gate_rcs=[3, 0, 3, 0])
+        r.fake_git.diff_files = "db/versions/0024_two.py\n"
+        assert run_to_exit(r) == 0 and not r.script
+        assert {h["outcome"] for h in gate_rows(slice_dir)} == {"nothing_ran"}
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["gate_projects"][-1] == migration_entry("green")
+        assert not ps.get("gate_green_commit")
+
+
+def test_a_writer_run_is_the_drivers_gate_only_where_it_ran_the_migration_check():
+    app = component_argv(PROJECT)
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc() + MIGRATIONS_RC)
+        r = KcExitLoop(slice_dir, [
+            wrote_gate(*with_lint(app, 0), (MIGRATION_ARGV, 0)),
+            V["review_signoff"], *TAIL], repo_root=repo)
+        r.fake_git.diff_files = "db/versions/0024_two.py\n"
+        with tree_is(TREE):
+            assert run_to_exit(r) == 0 and not r.script
+        assert r.phase_gate_order == [], "the driver ran nothing itself"
+        assert load_state(slice_dir)["phases"]["1"]["gate_projects"] \
+            == [gate_entry(PROJECT, "green"), migration_entry("green")]
+        assert gate_spec(r)["migrations"] == {"paths": ["db/versions/*.py"],
+                                              "check": "heads-are-one"}
+        assert run_loop.gate_spec_problem(gate_spec(r)) is None
+    # a run without it — a wrapper before the check — is not the gate
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc() + MIGRATIONS_RC)
+        r = KcExitLoop(slice_dir, [wrote_gate(*with_lint(app, 0)),
+                                   V["review_signoff"], *TAIL],
+                       repo_root=repo)
+        r.fake_git.diff_files = "db/versions/0024_two.py\n"
+        with tree_is(TREE):
+            assert run_to_exit(r) == 0 and not r.script
+        assert [argv for argv, _, _ in r.phase_gate_runs] \
+            == [app, MIGRATION_ARGV]
+        assert ("not reused — it ran `kc project test --project app`, `kc "
+                "project lint --project app`, the gate is `kc project test "
+                "--project app`, `kc project lint --project app`, `sh -c "
+                "heads-are-one`; running the gate") \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_the_gate_wrapper_closes_with_the_migration_check_where_the_phase_adds_one():
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        repo, _ = wrapper_repo(tmp)
+        spec = write_spec(tmp, repo, component_argv("frontend"))
+        data = json.loads(spec.read_text())
+        data["migrations"] = {"paths": ["backend/versions/*.py"],
+                              "check": "heads-are-one"}
+        spec.write_text(json.dumps(data))
+        # an edit elsewhere, and a file `*` does not reach one level down
+        (repo / "backend" / "api.py").write_text("changed\n")
+        (repo / "backend" / "versions" / "old").mkdir(parents=True)
+        (repo / "backend" / "versions" / "old" / "0000.py").write_text("")
+        tee = FakeTee()
+        code, out, _ = run_wrapper(spec, tee)
+        assert code == 0
+        assert tee.calls == [(component_argv("frontend"), repo)]
+        assert "migration check" not in out
+        # a migration added, uncommitted: run last, from the phase's tree,
+        # and any exit but 0 is red — kc's "nothing ran" among them
+        (repo / "backend" / "versions" / "0002_two.py").write_text("")
+        tee = FakeTee(rcs=[0, 3])
+        code, out, _ = run_wrapper(spec, tee)
+        assert code == 1
+        assert tee.calls == [(component_argv("frontend"), repo),
+                             (MIGRATION_ARGV, repo)]
+        assert ("\n=== the phase adds backend/versions/0002_two.py under "
+                "`migrations.paths`: the migration check `heads-are-one` from "
+                f"{repo} ===\n") in out
+        assert out.rstrip("\n").endswith("\n=== gate RED: `heads-are-one` ===")
+        record = record_of(spec)
+        assert ([c["argv"] for c in record["commands"]], record["outcome"]) \
+            == ([component_argv("frontend"), MIGRATION_ARGV], "red")
+        code, _, _ = run_wrapper(spec, FakeTee(rcs=[0, 0]))
+        assert code == 0 and record_of(spec)["outcome"] == "green"
+        # its green is never the gate's: a Target that ran nothing stays so
+        code, _, _ = run_wrapper(spec, FakeTee(rcs=[3, 0]))
+        assert code == 3
+        for bad in ({"paths": [], "check": "heads-are-one"},
+                    {"paths": ["backend/versions/*.py"], "check": ""},
+                    {"paths": ["backend/versions/*.py"]}):
+            data["migrations"] = bad
+            assert "`migrations` is off-shape" \
+                in run_loop.gate_spec_problem(data)
+
+
 # -- kc's full output inlined into the gate log (AIWF-85) ---------------------
 #
 # `kc project test` prints a status line and the last few lines per
@@ -9398,15 +9574,16 @@ def pushed(clone, path, text):
     return sh(clone, "rev-parse", "HEAD")
 
 
-def real_code_slice(tmp):
+def real_code_slice(tmp, push=False):
     """A slice whose one phase works on the code repo in place and names
     `docs/runbook.md`, over real git: the specs and the code repo committed
     on main, the code repo with an origin and another clone of it (the
-    third value). A run ends at its completion consult."""
+    third value). A run ends at its completion consult — and, with `push`,
+    the driver's own push after it, the project running no test phase."""
     slice_dir, repo = make_slice(
         tmp, phases=[("1", "Runbook", PROJECT, False,
                       "Rewrite the restart section of `docs/runbook.md`.\n")],
-        config=rc(test=False, doc=False, push=False))
+        config=rc(test=False, doc=False, push=push))
     specs = (Path(tmp) / "specs").resolve()
     shutil.rmtree(specs / ".git")
     (repo / "docs").mkdir()
@@ -9524,6 +9701,164 @@ def test_diverged_bases_are_never_moved_and_every_writer_dispatch_says_so():
         assert others == ["code-reviewer", "consult"]
         assert not any(AHEAD_WORDS in p for role, p in r.prompts
                        if role != "code-writer")
+
+
+# -- origin taken at each phase start (AIWF-140) ------------------------------
+#
+# PilotApp slices 031 and 036 diverged from origin mid-slice, and their test
+# phases rebased for 29 and 18 minutes. Where the run pushes, a fresh
+# phase's diverged base is rebased onto origin (merged with it in a shared
+# repo) before the branch is cut; what git does not finish is aborted and the
+# base left, the test phase's rebase the backstop.
+
+TAKEN_WORDS = "At this phase's start origin/main held"
+
+
+def test_a_diverged_base_is_rebased_onto_origin_before_the_phase_is_cut():
+    """One local commit, two on origin, a project that pushes: the phase is
+    cut from the local commit replayed over origin's tip, and both writer
+    rounds are told; the reviewer and the consult are not. The driver's
+    push at the end is a fast-forward."""
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, other = real_code_slice(tmp, push=True)
+        local_commit(repo, "src/local.py")
+        pushed(other, "docs/runbook.md", "restart: the script\n")
+        tip = pushed(other, "src/other.py", "other\n")
+        seen = {}
+        script = [(*V["exec_done"], cuts_and_commits(seen)), V["exec_done"],
+                  V["review_signoff"], V["consult_complete"]]
+        r = FetchingLoop(slice_dir, script, gates=[False, True],
+                         repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert sh(repo, "rev-parse", f"{seen['cut_from']}~1") == tip
+        assert sh(repo, "log", "-1", "--format=%s", seen["cut_from"]) \
+            == "local: src/local.py"
+        assert sh(repo, "rev-parse", "origin/main") \
+            == sh(repo, "rev-parse", "main")
+        assert ("[P1] main and origin/main had diverged in repo (1 commit(s) "
+                "local, 2 on origin) — main rebased onto origin/main, ") \
+            in (slice_dir / "log.txt").read_text()
+        assert load_state(slice_dir)["phases"]["1"]["origin_taken"] == {
+            "how": "rebased", "base": "main", "own": 1, "behind": 2}
+        line = ("At this phase's start origin/main held 2 commit(s) the "
+                "local main lacked, and main held 1 of its own that origin "
+                "lacked: the driver rebased main onto origin/main, and cut "
+                "this phase's branch from the result. A red in code this "
+                "phase did not touch may come from that.")
+        writers = [p for role, p in r.prompts if role == "code-writer"]
+        assert len(writers) == 2
+        for prompt in writers:
+            assert line in flat(prompt)
+            assert AHEAD_WORDS not in prompt
+        assert not any(TAKEN_WORDS in p for role, p in r.prompts
+                       if role != "code-writer")
+
+
+def test_a_diverged_base_that_does_not_rebase_cleanly_is_left_as_it_stood():
+    """Both sides rewrote the runbook's one line: the rebase is aborted, the
+    base and its tree are as they were, and nothing is recorded taken."""
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, other = real_code_slice(tmp, push=True)
+        (repo / "docs" / "runbook.md").write_text("restart: locally\n")
+        sh(repo, "commit", "-qam", "local: runbook")
+        local = sh(repo, "rev-parse", "HEAD")
+        pushed(other, "docs/runbook.md", "restart: the script\n")
+        sh(repo, "fetch", "-q")
+        r = RealGitLoop(slice_dir, [], repo_root=repo)
+        assert r._sync_base("1", repo, "main") is None
+        assert sh(repo, "rev-parse", "main") == local
+        assert sh(repo, "status", "--porcelain") == ""
+        assert not r._merge_under_way(repo)
+        assert ("[P1] main and origin/main have diverged in repo (1 commit(s) "
+                "local, 1 on origin) — not moved: git's rebase did not "
+                "finish, and the tree stands as it did (CONFLICT (content): "
+                "Merge conflict in docs/runbook.md)") \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_a_diverged_base_is_left_where_the_run_does_not_push_it_or_cannot_move_it():
+    """A plan hold, a dirty tree, a rebase someone left under way: each a
+    log line saying why, and the base untouched."""
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, other = real_code_slice(tmp, push=True)
+        local = local_commit(repo, "src/local.py")
+        pushed(other, "src/other.py", "other\n")
+        sh(repo, "fetch", "-q")
+        r = RealGitLoop(slice_dir, [], repo_root=repo)
+        r.project_dirs = {PROJECT: repo}
+        plan = slice_dir / "plan.md"
+        text = plan.read_text()
+        plan.write_text(text + f"\n## Push holds\n\n- {PROJECT} — prd rolls "
+                               "on this push\n")
+        assert r._sync_base("1", repo, "main") is None
+        plan.write_text(text)
+        (repo / "docs" / "runbook.md").write_text("restart: half done\n")
+        assert r._sync_base("1", repo, "main") is None
+        sh(repo, "checkout", "-q", "--", "docs/runbook.md")
+        (Path(sh(repo, "rev-parse", "--absolute-git-dir"))
+         / "rebase-merge").mkdir()
+        assert r._sync_base("1", repo, "main") is None
+        assert sh(repo, "rev-parse", "main") == local
+        log = (slice_dir / "log.txt").read_text()
+        prefix = ("[P1] main and origin/main have diverged in repo (1 "
+                  "commit(s) local, 1 on origin) — not moved: ")
+        for why in ("the plan holds its push (prd rolls on this push)",
+                    f"the tree in {repo} is dirty",
+                    f"a rebase or merge is under way in {repo}"):
+            assert prefix + why in log, why
+
+
+def test_a_shared_repos_diverged_base_is_merged_with_origin_never_rebased():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, other = real_code_slice(tmp, push=True)
+        local = local_commit(repo, "src/local.py")
+        tip = pushed(other, "src/other.py", "other\n")
+        sh(repo, "fetch", "-q")
+        r = RealGitLoop(slice_dir, [], repo_root=repo)
+        with patched(run_loop, shared_repo_dirs=lambda: {repo.resolve()}):
+            taken = r._sync_base("1", repo, "main")
+        assert taken == {"how": "merged", "base": "main", "own": 1,
+                         "behind": 1}
+        assert sh(repo, "rev-parse", "main^1", "main^2").splitlines() \
+            == [local, tip]
+        assert sh(repo, "log", "-1", "--format=%s", "main") \
+            == "slice 074: merge origin/main at P1's start"
+        assert ("[P1] main and origin/main had diverged in repo (1 commit(s) "
+                "local, 1 on origin) — origin/main merged into main, ") \
+            in (slice_dir / "log.txt").read_text()
+        assert run_loop.RunLoop._origin_taken_line({"origin_taken": taken}) \
+            .split() == ("At this phase's start origin/main held 1 commit(s) "
+                         "the local main lacked, and main held 1 of its own "
+                         "that origin lacked: the driver merged origin/main "
+                         "into main, and cut this phase's branch from the "
+                         "result. A red in code this phase did not touch may "
+                         "come from that.").split()
+
+
+def test_a_fetch_that_fails_at_a_phase_start_is_logged_and_the_phase_goes_on():
+    """The network back by the test phase, whose own fetch still stops the
+    run when it fails."""
+    def network_back(loop):
+        loop.fake_git.fails.discard(("fetch", "origin"))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [(*V["exec_done"], network_back),
+                                     V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        r.fake_git.fails.add(("fetch", "origin"))
+        assert run_to_exit(r) == 0 and not r.script
+        assert ("[P1] origin not fetched in repo, the phase goes on from the "
+                "refs it has — git fetch origin failed") \
+            in (slice_dir / "log.txt").read_text()
 
 
 def shared_slice_behind_origin(tmp):

@@ -21,6 +21,7 @@ schema):
 | `test_phase.strategy` set + exists, when on          |        |      |  x  |
 | `doc_phase.plan` set + exists, when on               |        |      |  x  |
 | `devlock.lease` resolvable, when set                 |        |      |  x  |
+| Each `migrations.paths` glob matches, when set       |        |      |  x  |
 | Declared Target repos cloned (`--slice` only)        |        |  x   |  x  |
 | Clean working tree                                   |        |      |  x  |
 | Synced with origin (ff / rebase; refuse dirty)       |        |  x*  |  x  |
@@ -301,6 +302,34 @@ def check_devlock(cfg: project_config.ProjectConfig) -> None:
              f"Point it at a directory that exists: the lease is relative to "
              f"the spec repo and must sit where every contending repo can see "
              f"it (the project contract: {CONTRACT_DOC}).")
+
+
+def check_migrations(root: Path, cfg: project_config.ProjectConfig) -> None:
+    """Each of `migrations.paths` must match a file the repo tracks: the
+    run loop runs the migration check when a phase's diff adds a file under
+    one, so a typo'd glob is a check that silently never runs (AIWF-140).
+    The command itself is not run here — it is the phase gate's, on a tree
+    that holds a new migration."""
+    if not cfg.migration_paths:
+        return
+    for glob, spec in zip(cfg.migration_paths,
+                          run_loop.migration_pathspecs(cfg.migration_paths),
+                          strict=True):
+        listed = _git(["-C", str(root), "ls-files", "--", spec])
+        if listed.returncode != 0:
+            fail(1, "migrations",
+                 f"`git ls-files` refused `{glob}` from `migrations.paths` in "
+                 f"{cfg.path} as a pathspec.",
+                 f"Correct the glob (the project contract: {CONTRACT_DOC}).",
+                 (listed.stderr or listed.stdout).strip())
+        if not listed.stdout.strip():
+            fail(1, "migrations",
+                 f"`{glob}` in `migrations.paths` in {cfg.path} matches no "
+                 f"file {root} tracks, so no phase would ever run the "
+                 "migration check.",
+                 "Correct the glob — relative to the repo root, `*` within a "
+                 "directory and `**/` across them — or delete `[migrations]` "
+                 f"(the project contract: {CONTRACT_DOC}).")
 
 
 # ---------------------------------------------------------------------------
@@ -1021,7 +1050,7 @@ PROFILES = {
              "spec_tree_guard", "targets_cloned", "synced", "ready_to_plan"],
     "run": ["kc", "kc_status", "manifest", "config", "spec_repo",
             "spec_tree_guard", "design_philosophy", "phase_pointers",
-            "devlock", "targets_cloned", "clean_tree", "synced",
+            "devlock", "migrations", "targets_cloned", "clean_tree", "synced",
             "baseline_build"],
 }
 
@@ -1092,6 +1121,8 @@ def run_profile(args) -> project_config.ProjectConfig | None:
         check_phase_pointers(cfg)
     if "devlock" in checks:
         check_devlock(cfg)
+    if "migrations" in checks:
+        check_migrations(root, cfg)
     if "targets_cloned" in checks:
         check_targets_cloned(root, cfg, args.slice)
     if "clean_tree" in checks:

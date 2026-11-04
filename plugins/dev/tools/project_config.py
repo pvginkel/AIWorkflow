@@ -28,10 +28,21 @@ TOML, parsed with `tomllib` (read-only, stdlib). Nothing writes this file —
     enabled = true
     deploys = true
 
+    [migrations]
+    paths = ["backend/app/migrations/versions/*.py"]
+    check = "<a command that exits 0 while the migrations have one head>"
+
 Paths are absolute or relative to the repo root, except `devlock.lease`, which
 is relative to the **spec repo** — the lease is the one key whose subject is
 that repo, and it is shared by every code repo contending for the one dev
-instance.
+instance — and `migrations.paths`, git glob pathspecs relative to the repo root
+(`*` stays within a directory, `**/` crosses any number of them).
+
+`[migrations]` is the project's migration check, for the phases whose Target is
+this repo: when a phase's diff adds a file under one of `paths`, the run loop's
+phase gate runs `check` with `sh -c` from the phase's tree, and any exit but 0
+is a red gate. The check is the project's — the pipeline names no migration
+tool — and with no table no phase runs one. Both keys, or neither.
 
 Defaults are the pipeline's full behaviour, so a repo that names only its
 pointers runs every phase: `test_phase.enabled`, `doc_phase.enabled` and
@@ -66,6 +77,7 @@ _TABLES = {
     "doc_phase": {"enabled", "plan"},
     "devlock": {"lease"},
     "push": {"enabled", "deploys"},
+    "migrations": {"paths", "check"},
 }
 
 
@@ -92,6 +104,11 @@ class ProjectConfig:
     push_deploys: bool
     # whether the file sets `deploys`, or push_deploys is the default's
     push_deploys_stated: bool
+    # `[migrations]`: the glob pathspecs a phase's added file is a migration
+    # under, relative to the repo root, and the command that checks the
+    # migration head — () and None where the project names no check
+    migration_paths: tuple[str, ...] = ()
+    migration_check: str | None = None
 
 
 def config_path(root: Path) -> Path:
@@ -122,6 +139,24 @@ def _bool(table: dict, key: str, where: str, path: Path, default: bool) -> bool:
         raise ConfigError(
             f"`{where}` in {path} must be true or false (got {value!r}).")
     return value
+
+
+def _globs(table: dict, key: str, where: str, path: Path) -> tuple[str, ...]:
+    """One or more glob pathspecs relative to the repo root — none of them
+    empty, none absolute."""
+    value = table.get(key)
+    if not isinstance(value, list) or not value or not all(
+            isinstance(v, str) and v.strip() for v in value):
+        raise ConfigError(
+            f"`{where}` in {path} must be a list of one or more non-empty "
+            f"strings (got {value!r}).")
+    absolute = [v for v in value if Path(v.strip()).is_absolute()]
+    if absolute:
+        raise ConfigError(
+            f"`{where}` in {path} names "
+            + ", ".join(f"`{v}`" for v in absolute)
+            + " — its globs are relative to the repo root.")
+    return tuple(v.strip() for v in value)
 
 
 def _table(data: dict, name: str, path: Path) -> dict:
@@ -178,6 +213,7 @@ def load(root: Path) -> ProjectConfig:
     doc_tbl = _table(data, "doc_phase", path)
     lock_tbl = _table(data, "devlock", path)
     push_tbl = _table(data, "push", path)
+    migrations_tbl = _table(data, "migrations", path)
 
     test_on = _bool(test_tbl, "enabled", "test_phase.enabled", path, True)
     doc_on = _bool(doc_tbl, "enabled", "doc_phase.enabled", path, True)
@@ -206,6 +242,23 @@ def load(root: Path) -> ProjectConfig:
             f"it, or set `enabled = true` — a run that pushes nothing deploys "
             f"nothing.")
 
+    # Paths with no check never run one, and a check with no paths is never
+    # asked to: either half alone is a check that silently never runs.
+    migration_paths: tuple[str, ...] = ()
+    migration_check = None
+    if "migrations" in data:
+        missing = [k for k in ("paths", "check") if k not in migrations_tbl]
+        if missing:
+            raise ConfigError(
+                f"`[migrations]` in {path} needs both `paths` and `check`, "
+                "and has no " + " and no ".join(f"`{k}`" for k in missing)
+                + ". Name both, or delete the table — with none, no phase "
+                "runs a migration check.")
+        migration_paths = _globs(migrations_tbl, "paths", "migrations.paths",
+                                 path)
+        migration_check = _string(migrations_tbl, "check", "migrations.check",
+                                  path)
+
     # The lease lives in the spec repo — the shared mount every contending repo
     # can see — so a lease named with nowhere to resolve it against is broken,
     # not a devlock that quietly never engages.
@@ -229,4 +282,6 @@ def load(root: Path) -> ProjectConfig:
         push=push_on,
         push_deploys=push_on and deploys,
         push_deploys_stated="deploys" in push_tbl,
+        migration_paths=migration_paths,
+        migration_check=migration_check,
     )

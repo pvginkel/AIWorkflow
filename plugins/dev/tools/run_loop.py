@@ -305,6 +305,15 @@ GATE_SPEC_NAME = "gate_spec.json"
 # every other entry is a project, carries this name.
 SPEC_CHECK_NAME = "spec_check"
 
+# A phase on the invoking repo whose diff adds a file under `.aiworkflowrc`'s
+# `migrations.paths` closes its gate with the project's migration check
+# (AIWF-140 — PilotApp slice 036's migrations from P1 and P5 reused revision
+# ids origin's had, and only a close-out entry of its P5 writer said so before
+# the test phase's push was rejected). Like the spec check its entry in
+# `gate_projects` is no project; like a lint it reds the gate and never makes
+# one green.
+MIGRATION_CHECK_NAME = "migration_check"
+
 # What the spec check is, as a gate hint names it.
 SPEC_CHECK_HINT = ("the plugin's spec check, `{argv}`, which lists every "
                    "whitespace error, conflict marker, ragged Markdown table, "
@@ -2008,6 +2017,21 @@ def spec_check_argv(base: str, work_root: Path) -> list[str]:
             str(work_root)]
 
 
+def migration_pathspecs(globs) -> list[str]:
+    """`.aiworkflowrc`'s `migrations.paths` as the pathspecs git matches
+    them by (AIWF-140): globs from the top of the tree, where `*` stays
+    within a directory and `**/` crosses any number of them. Preflight
+    lists what each matches; the phase gate and the writer's `gate`
+    wrapper ask which of them a phase's diff adds."""
+    return [f":(top,glob){g}" for g in globs]
+
+
+def migration_check_argv(check: str) -> list[str]:
+    """The project's migration check as the phase gate runs it, from the
+    phase's tree: its `migrations.check`, through `sh -c`."""
+    return ["sh", "-c", check]
+
+
 def touched_components(components: dict[str, Path], work_root: Path,
                        changed_names: str,
                        target_name: str) -> tuple[list[str], bool]:
@@ -2135,7 +2159,9 @@ def gate_spec_problem(spec) -> str | None:
     gate opens with the spec check. `lint_argv` and `lint_fallback`, the
     lint beside the Target's test (AIWF-105), and `touched.lint_accepted`,
     the components whose lint an accept ruling keeps from running, are
-    absent from a spec an older driver wrote, whose gate lints nothing."""
+    absent from a spec an older driver wrote, whose gate lints nothing; so
+    is `migrations`, the migration check's `paths` and `check` (AIWF-140),
+    and its gate runs none."""
     problem = _shape_problem(spec, {"phase": str, "round": int,
                                     "work_root": str, "gate_cwd": str,
                                     "base": str, "spec_check": bool})
@@ -2160,6 +2186,13 @@ def gate_spec_problem(spec) -> str | None:
                 isinstance(accepted, list)
                 and all(isinstance(c, str) for c in accepted)):
             return "`touched` is off-shape: lint_accepted"
+    migrations = spec.get("migrations")
+    if migrations is not None:
+        problem = _shape_problem(migrations, {"paths": list, "check": str})
+        if problem or not migrations["check"] or not migrations["paths"] \
+                or not all(isinstance(g, str) and g
+                           for g in migrations["paths"]):
+            return f"`migrations` is off-shape: {problem or 'paths or check'}"
     return None
 
 
@@ -2820,15 +2853,30 @@ def set_aside_line(records: list[dict]) -> str:
 
 # Carried by every code-writer dispatch of a phase whose target's
 # `origin/<base>` holds commits the local base lacks once the driver has
-# fetched it and, on a fresh phase, fast-forwarded what it could
-# (`_sync_base`): the bases diverged, the fast-forward was skipped, or a
-# resume finds origin moved since the cut. The driver merges and rebases
-# nothing for the phase; the writer is told.
+# fetched it and, on a fresh phase, taken what it could (`_sync_base`): the
+# bases diverged and the driver did not take origin (`_take_origin` says
+# why), the fast-forward was skipped, or a resume finds origin moved since
+# the cut. The writer is told.
 ORIGIN_AHEAD_LINE = """
 origin/{base} is {ahead} commit(s) ahead of the local {base} this phase's
 branch was cut from{own}; {touches}. The driver has neither merged nor
 rebased.
 """
+
+# Carried by every code-writer dispatch of a phase whose fresh start took a
+# diverged origin into the base before the branch was cut (`_take_origin`,
+# AIWF-140): the gate now runs the slice's earlier phases over origin's
+# commits, a tree no gate has seen.
+ORIGIN_TAKEN_LINE = """
+At this phase's start origin/{base} held {behind} commit(s) the local {base}
+lacked, and {base} held {own} of its own that origin lacked: the driver
+{how}, and cut this phase's branch from the result. A red in code this phase
+did not touch may come from that.
+"""
+
+# ORIGIN_TAKEN_LINE's `{how}`, by how `_take_origin` took origin.
+ORIGIN_TAKEN_HOW = {"rebased": "rebased {base} onto origin/{base}",
+                    "merged": "merged origin/{base} into {base}"}
 
 # `{red_cmds}` is every gate command that went red, each in backticks: a
 # component Target's gate also runs each component its diff touches (AIWF-91),
@@ -4856,13 +4904,15 @@ class RunLoop:
         that ref reads the day of the clone. One run's executor called a
         sibling-repo commit that had been on `origin/main` for a day "absent
         from origin" and raised a Blocker over it. Refs only: the one local
-        branch a run moves to its origin is a fresh phase's base with no
-        commits of its own (`_sync_base`); a base that has diverged from
-        origin is never moved, save where the doc phase's landing rebases
-        onto it (`_land_doc_branch`, `_rebase_doc_sibling`)."""
+        branch a run moves to its origin is a fresh phase's base — fast-
+        forwarded where it has no commits of its own, rebased onto origin or
+        merged with it where it has diverged and the run pushes it
+        (`_sync_base`, `_take_origin`) — save where the doc phase's landing
+        rebases onto it (`_land_doc_branch`, `_rebase_doc_sibling`)."""
         self.git("fetch", "origin", root=root)
 
-    def _sync_base(self, phase_id: str, root: Path, base: str) -> None:
+    def _sync_base(self, phase_id: str, root: Path,
+                   base: str) -> dict | None:
         """Bring a fresh phase's local base up to `origin/<base>` before its
         branch is cut, when the base is a plain ancestor of it — no commit
         of its own, so none can be lost. Where the base is checked out in
@@ -4871,8 +4921,10 @@ class RunLoop:
         checked out nowhere, `update-ref` against the sha it was read at;
         checked out in another worktree, it is left. A refusal, or a base
         left, is a log line and the branch is cut from the base as it
-        stands — never a bail. A base with commits of its own is never
-        moved: the bases have diverged, and the phase's writer is told
+        stands — never a bail. A base with commits of its own has diverged
+        from origin, and is taken onto it where the run pushes it
+        (`_take_origin`, whose record of the move this returns; None for
+        any other outcome); where it is left, the phase's writer is told
         (`_origin_ahead_line`). Ansible slice 049's P10 was cut from a
         `main` ten commits behind origin, where slice 052 had edited the
         same anchors, and its push needed a hand merge."""
@@ -4881,17 +4933,14 @@ class RunLoop:
                        check=False)
         if not tip or self.git_ok("merge-base", "--is-ancestor", origin, base,
                                   root=root):
-            return
+            return None
         behind = self.git("rev-list", "--count", f"{base}..{origin}",
                           root=root)
         if not self.git_ok("merge-base", "--is-ancestor", base, origin,
                            root=root):
             own = self.git("rev-list", "--count", f"{origin}..{base}",
                            root=root)
-            self.log(f"[P{phase_id}] {base} and origin/{base} have diverged "
-                     f"in {root.name} ({own} commit(s) local, {behind} on "
-                     "origin) — not moved")
-            return
+            return self._take_origin(phase_id, root, base, tip, own, behind)
         holder = next((Path(entry.get("worktree", ""))
                        for entry in self._worktrees(root)
                        if entry.get("branch") == f"refs/heads/{base}"), None)
@@ -4912,9 +4961,126 @@ class RunLoop:
                           lines[0] if lines else f"git exited {rc}")
             self.log(f"[P{phase_id}] {base} left {behind} commit(s) behind "
                      f"origin/{base} in {root.name}: {reason}")
-            return
+            return None
         self.log(f"[P{phase_id}] {base} fast-forwarded {behind} commit(s) to "
                  f"origin/{base} in {root.name}")
+        return None
+
+    def _take_origin(self, phase_id: str, root: Path, base: str, tip: str,
+                     own: str, behind: str) -> dict | None:
+        """Take a moved `origin/<base>` into a fresh phase's diverged base
+        before its branch is cut (AIWF-140), and return the move's record —
+        {how, base, own, behind}, which every code-writer dispatch of the
+        phase carries (ORIGIN_TAKEN_LINE) — or None where the base is left.
+
+        The base's own commits are the slice's earlier phases, unpushed
+        until the test phase, and origin moving under them used to wait for
+        that phase's push to be rejected: PilotApp slice 036 diverged at P3,
+        its migrations from P1 and P5 reused revision ids origin's had, and
+        its test phase rebased for 18 minutes over conflicts in 15 or more
+        files; slice 031 diverged at P5, and its test phase's rebase took
+        29. Taken here instead, each phase is cut from origin as it stands,
+        and the test phase's rebase, the backstop, has less to do.
+
+        A repo of this environment's own is rebased onto origin in place,
+        the base checked out and its tree clean — a rewrite of commits
+        nothing outside the run has read; the landed ranges of the phases
+        merged before keep their shas, which the rewrite leaves readable. A
+        shared repo's base is merged with origin in the shared checkout,
+        never rebased (the settled rule for a shared tree), and git's
+        refusal over another writer's uncommitted file is left as the
+        fast-forward's is, never swept. Left with a log line, never a bail,
+        and the phase cut from the base as it stands: the spec repo, whose
+        commits land at close-out; a project that never pushes, and a repo
+        the plan holds — the slice's commits stay local by ruling there, so
+        there is no push for origin to reject; a base checked out anywhere
+        but `root`, a dirty tree, a rebase or merge already under way there,
+        and the driver's own rebase or merge where git does not finish it,
+        which is aborted: conflicts are the test phase's rebase-agent's to
+        resolve."""
+        def left(why: str) -> None:
+            self.log(f"[P{phase_id}] {base} and origin/{base} have diverged "
+                     f"in {root.name} ({own} commit(s) local, {behind} on "
+                     f"origin) — not moved: {why}")
+
+        if self._is_spec_root(root):
+            left("the spec repo's commits land at close-out")
+            return None
+        if not self.cfg.push:
+            left("the project does not push")
+            return None
+        held = self._held_roots().get(str(root))
+        if held is not None:
+            left(f"the plan holds its push ({held})")
+            return None
+        holder = next((Path(entry.get("worktree", ""))
+                       for entry in self._worktrees(root)
+                       if entry.get("branch") == f"refs/heads/{base}"), None)
+        if holder is None or holder.resolve() != Path(root).resolve():
+            left(f"{base} is checked out "
+                 + (f"in {holder}" if holder is not None else "nowhere"))
+            return None
+        shared = self._works_in_worktree(root)
+        if not shared and self._worktree_dirty(root):
+            left(f"the tree in {root} is dirty")
+            return None
+        # One already under way there is someone else's, and the abort
+        # below must only ever be this one's.
+        if self._merge_under_way(root):
+            left(f"a rebase or merge is under way in {root}")
+            return None
+        was = self.git("rev-parse", f"refs/heads/{base}", root=root)
+        if shared:
+            verb, how = "merge", "merged"
+            rc, out = self._git_attempt(
+                "merge", "-m", f"slice {self.slice_num}: merge origin/{base} "
+                f"at P{phase_id}'s start", tip, root=root)
+        else:
+            verb, how = "rebase", "rebased"
+            rc, out = self._git_attempt("rebase", tip, root=root)
+        if rc:
+            if self._merge_under_way(root):
+                self.git(verb, "--abort", root=root, check=False)
+            lines = [line.strip() for line in out.splitlines()
+                     if line.strip()]
+            conflicts = [line for line in lines if line.startswith("CONFLICT")]
+            reason = ("; ".join(conflicts) if conflicts else next(
+                (line for line in lines
+                 if line.startswith(("error:", "fatal:"))),
+                lines[0] if lines else f"git exited {rc}"))
+            left(f"git's {verb} did not finish, and the tree stands as it "
+                 f"did ({reason})")
+            return None
+        now = self.git("rev-parse", f"refs/heads/{base}", root=root)
+        self.log(f"[P{phase_id}] {base} and origin/{base} had diverged in "
+                 f"{root.name} ({own} commit(s) local, {behind} on origin) — "
+                 + (f"origin/{base} merged into {base}" if shared
+                    else f"{base} rebased onto origin/{base}")
+                 + f", {was[:12]} → {now[:12]}")
+        return {"how": how, "base": base, "own": int(own),
+                "behind": int(behind)}
+
+    def _merge_under_way(self, root: Path) -> bool:
+        """Whether a rebase or a merge stands unfinished in `root`'s tree —
+        git's state for it in the tree's own git dir."""
+        for name in ("rebase-merge", "rebase-apply", "MERGE_HEAD"):
+            path = Path(self.git("rev-parse", "--git-path", name, root=root))
+            if (path if path.is_absolute() else Path(root) / path).exists():
+                return True
+        return False
+
+    @staticmethod
+    def _origin_taken_line(ps: dict) -> str:
+        """ORIGIN_TAKEN_LINE when the phase's fresh start took origin into
+        its base (`_take_origin`), else empty."""
+        taken = ps.get("origin_taken")
+        if not isinstance(taken, dict) \
+                or taken.get("how") not in ORIGIN_TAKEN_HOW:
+            return ""
+        base = taken.get("base")
+        return ORIGIN_TAKEN_LINE.format(
+            base=base, behind=taken.get("behind"), own=taken.get("own"),
+            how=ORIGIN_TAKEN_HOW[taken["how"]].format(base=base))
 
     def _origin_ahead_line(self, phase: Phase, root: Path, base: str) -> str:
         """ORIGIN_AHEAD_LINE when `origin/<base>` holds commits the local base
@@ -6395,7 +6561,16 @@ class RunLoop:
         tree has a manifest; with none, the check is the whole gate. Either
         way `gate_projects` records each command, the check's under
         SPEC_CHECK_NAME, and the gate's outcome is theirs together, as with
-        touched components. The check never answers "nothing ran"."""
+        touched components. The check never answers "nothing ran".
+
+        A phase on the invoking repo whose diff adds a file under
+        `.aiworkflowrc`'s `migrations.paths` closes its gate with the
+        project's migration check (AIWF-140, `_migration_check`), run from
+        the phase's tree — cut from a base that took origin at the phase's
+        start (`_take_origin`), so a revision id a migration shares with
+        origin's is red at the phase that made it. Recorded under
+        MIGRATION_CHECK_NAME; any exit but 0 is red, and like a lint it reds
+        the gate and never makes one green."""
         argv = target.gate_argv
         check = self._spec_check_argv(target, merge_base)
         if argv is None and check is None:
@@ -6412,11 +6587,13 @@ class RunLoop:
         gates = ([(r, t) for r, t in self._current_rulings()
                   if r.kind == "gate"] if touched is not None else [])
         accepts = self._lint_accepts() if argv is not None else []
+        migration = self._migration_check(target, merge_base)
         record_path = outputs / writer_gate_record_name(ps["executor_rounds"])
         replay = tree = None
         if record_path.exists():
             record, found = self._reusable_writer_gate(
-                record_path, target, touched, gates, check, accepts)
+                record_path, target, touched, gates, check, accepts,
+                migration[0] if migration else None)
             if record is None:
                 self.log(f"[P{phase_id}] the writer's gate run "
                          f"({record_path.name}) not reused — {found}; "
@@ -6435,6 +6612,9 @@ class RunLoop:
                                                  reused) if tree else None)
         also = (f", and for the components the phase's diff touches: "
                 f"{', '.join(touched)}" if touched else "")
+        if migration is not None:
+            also += (f", then the migration check for the {len(migration[1])} "
+                     f"migration(s) the phase adds: `{self.cfg.migration_check}`")
         if replay is None:
             running = ", then ".join(
                 " ".join(a) for a in (check, argv, argv and lint_twin(argv))
@@ -6480,14 +6660,19 @@ class RunLoop:
                     projects.append(self._gate_touched_component(
                         phase_id, component, target, gates, accepts,
                         log_file, log_path, runner, runs))
+            if migration is not None:
+                projects.append(self._gate_migration_check(
+                    phase_id, migration, target, log_file, log_path, runner,
+                    runs))
         duration_s = int(time.monotonic() - t0)
         gate_cmd = " ".join(argv or check)
         ps["gate_cmd"] = gate_cmd
         ps["gate_projects"] = projects
         # A lint reds the gate and does nothing else: its green never makes
         # a gate green whose tests ran nothing, and its nothing-ran is a
-        # project with no lint to run.
-        tests = [p["outcome"] for p in projects]
+        # project with no lint to run. The migration check is the same.
+        tests = [p["outcome"] for p in projects
+                 if p["project"] != MIGRATION_CHECK_NAME]
         everything = [o for p in projects for _, o in gate_entry_cmds(p)]
         outcome = ("red" if "red" in everything
                    else "green" if "green" in tests else "nothing_ran")
@@ -6604,7 +6789,8 @@ class RunLoop:
     def _reusable_writer_gate(self, path: Path, target: ResolvedTarget,
                               touched: list[str] | None, gates: list,
                               check: list[str] | None = None,
-                              accepts: list | None = None
+                              accepts: list | None = None,
+                              migration: list[str] | None = None
                               ) -> tuple[dict | None, str]:
         """(the record, the tree it ran on) when the writer's recorded gate
         run at `path` can stand for this gate, else (None, why not) — the
@@ -6613,7 +6799,8 @@ class RunLoop:
         run now — the spec check (`check`, a spec-repo phase's), the
         Target's test and then its lint, each followed by the whole repo's
         after an empty root, then each touched component no gate ruling
-        covers, its test and then its lint (AIWF-105), in that order, no
+        covers, its test and then its lint (AIWF-105), then the migration
+        check (`migration`, AIWF-140), in that order, no
         lint an accept ruling covers (`accepts`) among them — none of them
         red, and on a tree that has not changed since it began: a
         change during the run, or after it, is a tree the run did not see.
@@ -6652,6 +6839,8 @@ class RunLoop:
                 expected.append(component_gate_argv(c))
                 if self._covering(accepts, root, c) is None:
                     expected.append(component_lint_argv(c))
+        if migration:
+            expected.append(list(migration))
         ran = [c["argv"] for c in commands]
         if ran != expected:
             return None, (f"it ran {_ticked([' '.join(a) for a in ran])}, "
@@ -6725,6 +6914,75 @@ class RunLoop:
         if not self._is_spec_root(target.git_root):
             return None
         return spec_check_argv(merge_base, target.work_root)
+
+    def _migration_paths(self, target: ResolvedTarget) -> tuple[str, ...]:
+        """`.aiworkflowrc`'s `migrations.paths` for a phase on `target`
+        (AIWF-140): the file describes the repo it sits in, so they hold for
+        a Target in the invoking repo, and none for any other."""
+        if Path(target.git_root).resolve() != Path(self.repo_root).resolve():
+            return ()
+        return self.cfg.migration_paths
+
+    def _migration_check(self, target: ResolvedTarget, merge_base: str
+                         ) -> tuple[list[str], list[str]] | None:
+        """(the migration check's command, the migrations the phase adds)
+        when the phase's diff — `<merge_base>..HEAD` in its tree, the range
+        its reviewer reads, as the writer's `gate` wrapper reads its own —
+        adds a file under `migrations.paths`, else None (AIWF-140). Added
+        alone, never edited or deleted: a new migration is what makes a new
+        head. `--no-renames`, so a migration the phase renumbered by a
+        rename is added under its new name."""
+        globs = self._migration_paths(target)
+        if not globs or not self.cfg.migration_check:
+            return None
+        added = [name.strip() for name in self.git(
+            "diff", "--name-only", "--no-renames", "--diff-filter=A",
+            f"{merge_base}..HEAD", "--", *migration_pathspecs(globs),
+            root=target.work_root).splitlines() if name.strip()]
+        if not added:
+            return None
+        return migration_check_argv(self.cfg.migration_check), added
+
+    def _gate_migration_check(self, phase_id: str,
+                              migration: tuple[list[str], list[str]],
+                              target: ResolvedTarget, log_file,
+                              log_path: Path, replay: Callable | None,
+                              runs: list) -> dict:
+        """The project's migration check (`_migration_check`), run last into
+        the gate's log from the phase's tree, its (outcome, tail) appended to
+        `runs`; its `gate_projects` entry. The command is the project's, not
+        kc's: 0 is green and any other exit red, never "nothing ran" nor a
+        usage error — but a red whose output is cexec's missing-tool line
+        bails `missing_tools`, as a kc command's does, since no fix round can
+        add a tool container. `replay` is `_gate_cmd_outcome`'s."""
+        argv, added = migration
+        cmd = self.cfg.migration_check
+        log_file.write(f"\n=== the phase adds {', '.join(added)} under "
+                       f"`migrations.paths`: the migration check `{cmd}` "
+                       f"from {target.work_root} ===\n")
+        log_file.flush()
+        start = _file_size(log_path)
+        try:
+            returncode = (replay(argv, log_file) if replay is not None else
+                          self._gate_exec(argv, target.work_root, log_file))
+        except subprocess.TimeoutExpired:
+            raise Bailout(
+                "timeout", phase=phase_id,
+                details=f"the migration check `{cmd}` exceeded "
+                        f"{GATE_TIMEOUT}s (output in {log_path})",
+            ) from None
+        log_file.flush()
+        outcome = "green" if returncode == 0 else "red"
+        if outcome == "red":
+            tool = unavailable_tool(log_path, start)
+            if tool is not None:
+                raise Bailout(
+                    "missing_tools", phase=phase_id, question=True,
+                    details=self._missing_tool_details(
+                        tool, target.git_root, argv, log_path))
+        runs.append((outcome, _last_line(log_path)))
+        return {"project": MIGRATION_CHECK_NAME, "cmd": cmd,
+                "outcome": outcome}
 
     def _has_gate(self, target: ResolvedTarget) -> bool:
         """Whether a phase on `target` has a deterministic gate: a command
@@ -7080,13 +7338,15 @@ class RunLoop:
         gate_log = ps.get("gate_green_log")
         if green_at and gate_log and green_at == head:
             green = [p for p in projects if p["outcome"] == "green"]
-            # the spec check is no project, and only a component Target's
-            # gate takes in the projects its diff touches
+            # neither the spec check nor the migration check is a project,
+            # and only a component Target's gate takes in the projects its
+            # diff touches
             covered = [p["project"] for p in green
-                       if p["project"] != SPEC_CHECK_NAME]
+                       if p["project"] not in (SPEC_CHECK_NAME,
+                                               MIGRATION_CHECK_NAME)]
             covers = (GATE_COVERS_SENTENCE.format(covered=", ".join(covered))
                       if covered and self._gates_touched(target) else "")
-            if len(covered) < len(green):
+            if any(p["project"] == SPEC_CHECK_NAME for p in green):
                 covers = GATE_SPEC_CHECK_SENTENCE + covers
             lints = {p["project"]: p["lint"]["outcome"] for p in projects
                      if p.get("lint")}
@@ -7485,7 +7745,10 @@ class RunLoop:
         wrapper's to make, as its test is, except for those in
         `touched.lint_accepted`. A lint an accept ruling covers is in none
         of them: the wrapper runs it no more than the driver does
-        (`_lint_accepted`).
+        (`_lint_accepted`). A phase on the invoking repo of a project that
+        names a migration check carries it as `migrations`, its `paths` and
+        its `check` (AIWF-140): the wrapper runs it last when the phase's
+        diff adds a file under one of them.
 
         The spec names the phase's base branch (`base`), never a merge base:
         the wrapper resolves `git merge-base <base> HEAD` itself when its run
@@ -7515,6 +7778,13 @@ class RunLoop:
                  and self._target_lint_ruling(accepts, target) is None)
         whole_lints = (lints and root and self._covering(
             accepts, target.git_root, None) is None)
+        # the migration check (AIWF-140), named only where it may run: the
+        # wrapper asks the diff whether the phase adds a migration, as the
+        # driver's gate does
+        globs = self._migration_paths(target)
+        migrations = ({"migrations": {"paths": list(globs),
+                                      "check": self.cfg.migration_check}}
+                      if globs and self.cfg.migration_check else {})
         _write_json_atomic(outputs / GATE_SPEC_NAME, {
             "phase": phase_id, "round": round_,
             "work_root": str(target.work_root),
@@ -7525,7 +7795,7 @@ class RunLoop:
             "fallback": list(REPO_GATE_ARGV) if root else None,
             "lint_argv": lint_twin(argv) if lints else None,
             "lint_fallback": list(REPO_LINT_ARGV) if whole_lints else None,
-            "touched": touched})
+            "touched": touched, **migrations})
 
     def _gate_hint(self, target: ResolvedTarget, outputs: Path,
                    merge_base: str) -> str:
@@ -7540,20 +7810,27 @@ class RunLoop:
         resolves its own at its run, so a writer that moves the base runs
         the check against the new one), and is that check alone where the
         phase's tree has no manifest (AIWF-68); a sibling repo with none has
-        no gate the driver runs."""
+        no gate the driver runs. A phase on the invoking repo of a project
+        that names a migration check is told the gate closes with it where
+        the phase adds a migration (AIWF-140)."""
         work = target.work_root
         wrapper = f"`python3 {SCRIPT} gate {outputs / GATE_SPEC_NAME}`"
         check = self._spec_check_argv(target, merge_base)
         spec = (SPEC_CHECK_HINT.format(argv=" ".join(check))
                 if check is not None else "")
         first = f"{spec}, then " if spec else ""
+        globs = self._migration_paths(target)
+        last = (f"; and last, where the phase's diff adds a file under "
+                f"{_ticked(globs)}, the project's migration check "
+                f"`{self.cfg.migration_check}` from {work}, red on any exit "
+                "but 0" if globs and self.cfg.migration_check else "")
         if self._is_root(target):
             where = "" if work == self.repo_root else f" from {work}"
             return (f" — through {wrapper}, which runs the driver's own gate: "
                     f"{first}`kc project test --project root`{where}, and bare "
                     "`kc project test`, every component once, when that runs "
                     "nothing (exit 3), and the same two steps for `kc project "
-                    f"lint`. {GATE_REUSE_HINT}. {NOTHING_RAN_HINT}")
+                    f"lint`{last}. {GATE_REUSE_HINT}. {NOTHING_RAN_HINT}")
         if target.kind == "project":
             # The driver gates every component the diff touches beside the
             # Target's own (AIWF-91), each linted beside its test (AIWF-105),
@@ -7563,10 +7840,11 @@ class RunLoop:
                     f"{first}`kc project test --project {target.name}` and "
                     f"`kc project lint --project {target.name}`{where}, and "
                     "both for every other component the phase's diff "
-                    f"touches. {GATE_REUSE_HINT}. {NOTHING_RAN_HINT}")
+                    f"touches{last}. {GATE_REUSE_HINT}. {NOTHING_RAN_HINT}")
         if target.gate_argv:
             return (f" — through {wrapper}, which runs the driver's own gate: "
-                    f"{first}`kc project test` from {work}. {GATE_REUSE_HINT}")
+                    f"{first}`kc project test` from {work}{last}. "
+                    f"{GATE_REUSE_HINT}")
         if spec:
             return (f" — through {wrapper}, which runs the driver's own gate: "
                     f"{spec}; and `kc project test` from {work} after it, "
@@ -7830,7 +8108,14 @@ class RunLoop:
 
         self.log(f"[P{phase_id}] start (target={target.name}, "
                  f"branch={branch}, root={root})")
-        self._fetch_origin(root)
+        try:
+            self._fetch_origin(root)
+        except Bailout as e:
+            # No network is no reason to stop a phase: it goes on from the
+            # refs the last fetch left, which only take less of origin.
+            self.log(f"[P{phase_id}] origin not fetched in {root.name}, the "
+                     "phase goes on from the refs it has — "
+                     + " ".join(e.details.split())[:300])
         self._merge_bases.pop(phase_id, None)
 
         # Branch setup (fresh or resume) — over a branch reconciled against
@@ -7839,8 +8124,9 @@ class RunLoop:
         if self._reconcile_branch(phase_id, ps, root, base, branch, existing):
             return
         fresh = ps["status"] == "pending" or not existing
+        taken = None
         if fresh:
-            self._sync_base(phase_id, root, base)
+            taken = self._sync_base(phase_id, root, base)
         origin_line = self._origin_ahead_line(phase, root, base)
         if self._works_in_worktree(root):
             # A shared checkout never leaves its base: the phase works in a
@@ -7865,6 +8151,12 @@ class RunLoop:
         if fresh:
             ps.update(status="in_progress", stage="executor", branch=branch,
                       target=phase.target)
+            # origin taken into the base at this start rides every writer
+            # round of the phase, a resume's too
+            if taken:
+                ps["origin_taken"] = taken
+            else:
+                ps.pop("origin_taken", None)
             # What the phase's review set held before the phase did anything:
             # the reviewer is pointed at the pairs, and the lines naming more
             # than one commit, the phase adds or changes.
@@ -7877,6 +8169,7 @@ class RunLoop:
                 ps["review_set_ambiguous_start"] = [
                     [clone, list(shas)] for clone, shas in ambiguous]
         self._save_state()
+        origin_line = self._origin_taken_line(ps) + origin_line
         work = target.work_root
         where = self._executor_where(target)
 
@@ -12590,12 +12883,15 @@ def run_writer_gate(spec_path: Path) -> int:
     whole repo's when an empty root's ran nothing, then each component the
     phase's diff touches that no gate ruling waives, its test and then its
     lint (AIWF-105), but no lint the spec leaves out because an accept
-    ruling covers it — its output passed through as it runs, and the run
+    ruling covers it, then the project's migration check when the phase's
+    diff adds a file under its `paths` (AIWF-140) — its output passed
+    through as it runs, and the run
     recorded beside the spec for the driver to reuse
     (`RunLoop._reusable_writer_gate`). The exit code is the gate's:
     0 green, 1 red, 3 nothing ran; 2 is no run at all. A lint reds the gate
     and does nothing else, as in the driver's: a spec an older driver wrote
-    names no lint, and its gate lints nothing.
+    names no lint, and its gate lints nothing. So does the migration
+    check, whose every exit but 0 is red.
 
     The merge base, where the gate reads a range (touched components, the
     spec check), is resolved here when the run begins — `git merge-base
@@ -12607,7 +12903,8 @@ def run_writer_gate(spec_path: Path) -> int:
     stands. A spec-repo phase's spec check runs against that merge base
     (`spec_check_argv`), as the driver's gate runs it against the one it
     re-takes, so a run against a base that moved after it is another
-    command, which the driver does not reuse. The touched components are
+    command, which the driver does not reuse. The touched components, and
+    the migrations the phase adds, are
     the diff from it to the tree as it is when the run begins — committed
     or not, as the gate sees it, where `<merge_base>..HEAD` would miss what
     the writer has yet to commit. The tree is hashed (`content_tree`)
@@ -12627,12 +12924,14 @@ def run_writer_gate(spec_path: Path) -> int:
         return 2
     work_root, gate_cwd = Path(spec["work_root"]), Path(spec["gate_cwd"])
     touched = spec.get("touched")
+    migrations = spec.get("migrations")
     started = _now_iso()
     try:
         start = content_tree(work_root)
         # only a gate that reads a range needs one — a whole repo's does not
         merge_base = (_git_in(work_root, "merge-base", spec["base"], "HEAD")
-                      if touched is not None or spec["spec_check"] else "")
+                      if touched is not None or spec["spec_check"]
+                      or migrations is not None else "")
         components: list[str] = []
         uncovered = False
         if touched is not None:
@@ -12641,6 +12940,12 @@ def run_writer_gate(spec_path: Path) -> int:
             components, uncovered = touched_components(
                 load_project_dirs(gate_cwd), work_root, changed,
                 touched["target"])
+        # the migrations the phase adds (AIWF-140), over the same range
+        added = ([name.strip() for name in _git_in(
+            work_root, "diff", "--name-only", "--no-renames",
+            "--diff-filter=A", merge_base, start, "--",
+            *migration_pathspecs(migrations["paths"])).splitlines()
+            if name.strip()] if migrations is not None else [])
     except ValueError as e:
         print(f"gate: {e}", file=sys.stderr)
         return 2
@@ -12705,6 +13010,19 @@ def run_writer_gate(spec_path: Path) -> int:
     if uncovered:
         print("\n=== the phase's diff touches files outside every component "
               "and kc lists no root — no gate covers them ===", flush=True)
+    if added:
+        check_cmd = migrations["check"]
+        print(f"\n=== the phase adds {', '.join(added)} under "
+              f"`migrations.paths`: the migration check `{check_cmd}` from "
+              f"{work_root} ===", flush=True)
+        migration_argv = migration_check_argv(check_cmd)
+        returncode, output = _tee_exec(migration_argv, work_root)
+        commands.append({"argv": migration_argv, "rc": returncode,
+                         "output": output})
+        # the project's command, not kc's: any exit but 0 is red — and, like
+        # a lint, it reds the gate and never makes one green
+        outcomes.append((check_cmd, "green" if returncode == 0 else "red",
+                         True))
     try:
         end = content_tree(work_root)
     except ValueError as e:

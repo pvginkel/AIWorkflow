@@ -80,6 +80,43 @@ def test_an_unnamed_lease_is_a_devlock_that_never_engages():
         assert load(tmp, 'spec_repo = "../specs"\n').devlock_lease is None
 
 
+def test_no_migrations_table_is_no_migration_check():
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = load(tmp, 'spec_repo = "../specs"\n')
+        assert cfg.migration_paths == () and cfg.migration_check is None
+
+
+def test_a_migrations_table_reads_back_its_globs_and_its_command():
+    """The globs stay pathspecs relative to the repo root — git matches
+    them, so nothing resolves them here — and the command stays a string
+    for `sh -c`."""
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = load(tmp, 'spec_repo = "../specs"\n[migrations]\n'
+                        'paths = ["backend/versions/*.py", " db/**/*.sql "]\n'
+                        'check = "test $(alembic heads | wc -l) -eq 1"\n')
+        assert cfg.migration_paths == ("backend/versions/*.py", "db/**/*.sql")
+        assert cfg.migration_check == "test $(alembic heads | wc -l) -eq 1"
+
+
+def test_a_migrations_table_needs_both_keys_and_globs_relative_to_the_repo():
+    """Either half alone is a check that silently never runs."""
+    with tempfile.TemporaryDirectory() as tmp:
+        refuses(tmp, '[migrations]\npaths = ["v/*.py"]\n',
+                "needs both `paths` and `check`", "no `check`")
+        refuses(tmp, '[migrations]\ncheck = "true"\n', "no `paths`")
+        refuses(tmp, '[migrations]\n', "no `paths` and no `check`")
+        refuses(tmp, '[migrations]\npaths = "v/*.py"\ncheck = "true"\n',
+                "`migrations.paths`", "list of one or more")
+        refuses(tmp, '[migrations]\npaths = []\ncheck = "true"\n',
+                "list of one or more")
+        refuses(tmp, '[migrations]\npaths = ["/abs/*.py"]\ncheck = "true"\n',
+                "`/abs/*.py`", "relative to the repo root")
+        refuses(tmp, '[migrations]\npaths = ["v/*.py"]\ncheck = ""\n',
+                "`migrations.check`", "non-empty string")
+        refuses(tmp, '[migrations]\npaths = ["v/*.py"]\ncheck = "true"\n'
+                     'heads = 1\n', "unknown key", "`heads`")
+
+
 def test_switches_read_back_as_written():
     with tempfile.TemporaryDirectory() as tmp:
         cfg = load(tmp, 'spec_repo = "../specs"\n'

@@ -293,6 +293,43 @@ def test_a_lease_with_nowhere_to_live_bails():
     assert code == 1 and "devlock.lease" in message
 
 
+def test_no_migrations_table_is_checked_for_nothing():
+    preflight.check_migrations(Path("/nonexistent"), a_config())
+
+
+def test_each_migration_glob_must_match_a_tracked_file():
+    """A typo'd glob is a migration check no phase ever runs. Matched as
+    git pathspecs from the repo root: `*` stays within a directory, so
+    `versions/*.py` does not reach a file one level down."""
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "backend" / "versions" / "old").mkdir(parents=True)
+        (root / "backend" / "versions" / "0001_init.py").write_text("")
+        (root / "backend" / "versions" / "old" / "0000.sql").write_text("")
+        (root / "untracked.py").write_text("")
+        for args in (["init", "-q"], ["add", "backend"]):
+            subprocess.run(["git", "-C", str(root), *args], check=True)
+        preflight.check_migrations(root, a_config(
+            migration_paths=("backend/versions/*.py", "backend/**/*.sql"),
+            migration_check="true"))
+        for glob in ("backend/versions/*.sql", "*.py", "untracked.py"):
+            code, message = refused(
+                preflight.check_migrations, root,
+                a_config(migration_paths=("backend/versions/*.py", glob),
+                         migration_check="true"))
+            assert code == 1, glob
+            assert f"`{glob}` in `migrations.paths`" in message, message
+            assert "matches no file" in message
+
+
+def test_run_checks_the_migration_globs_and_plan_and_triage_do_not():
+    assert "migrations" in preflight.PROFILES["run"]
+    assert "migrations" not in preflight.PROFILES["plan"]
+    assert "migrations" not in preflight.PROFILES["triage"]
+
+
 # -- synced with origin ------------------------------------------------------
 
 APP = Path("/work/App")
