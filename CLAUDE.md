@@ -67,8 +67,11 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   `triage_readout.py runs|rulings|sessions|cost <spec-repo>...` reads the `/dev:triage` runs
   a spec repo's history holds — the status documents as presented and as ruled, every ruling
   classified from committed data, the operator's side of each session, the price — (the
-  2026-09-29 triage read, `docs/research/triage-read-2026-09-29.md`). Run 1's
-  corpus is frozen under `docs/research/archive/run-1/`.
+  2026-09-29 triage read, `docs/research/triage-read-2026-09-29.md`);
+  `quota_readout.py scan|weeks|hits|compare` prices every transcript under `~/.claude/projects`
+  with `slice_cost`, sums it per subscription-quota week and holds it against the weekly limit
+  hits and free resets (the 2026-11-05 quota read, `docs/research/quota-read-2026-11-05.md`).
+  Run 1's corpus is frozen under `docs/research/archive/run-1/`.
 - **Reading a run:** a slice's record is its folder in the project's spec repo
   (`slices/completed/NNN_slug/`): `log.txt` is the driver's narration, `state.json` is per
   `runner-state.md`, `phases/P*/` holds each round's review and result files, beside `plan.md`,
