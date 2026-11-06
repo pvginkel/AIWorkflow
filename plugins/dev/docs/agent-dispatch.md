@@ -174,9 +174,13 @@ PilotApp code-writer that backgrounded a 4-minute gate could not tell which was 
 built a waiter by hand (2026-10-23). So the first prompt `run_kc_session` sends a fresh session,
 in either loop, opens with one line (`HEADLESS_WAIT_LINE`). It says the role is its own headless
 session, so a command it backgrounds re-invokes it. It runs a gate in the foreground under
-`timeout(1)` when the gate fits the Bash tool's 10-minute cap, backgrounds only what can outrun
-that, and waits on it by ending the turn, never by polling or a waiter of its own. Foreground is
-the default because it has no race, unlike the wait below.
+`timeout(1)`, sized for the gate within the Bash tool's cap on one call, which the tool's own
+description gives: an hour on KubeCoder (`BASH_MAX_TIMEOUT_MS`), since a project's suite may wait
+its turn behind another environment's run, as PilotApp's Playwright suite does. It backgrounds
+only what can outrun the cap, and waits on it by ending the turn, never by polling or a waiter of
+its own. Foreground is the default because it has no race, unlike the wait below. A `kc project
+test` that its timeout killed prints nothing, so the line points the role at kc's log under
+`/tmp/kc/project`, and a run that only waited, with no test run, is run again rather than fixed.
 
 The wait has one race, the harness's, not the role's. A completion that lands while the session
 is mid-turn is queued for its next turn, but the engine counts it delivered; a session that then

@@ -2380,15 +2380,23 @@ def _kc_send(name: str, prompt: str, cwd: Path, timeout: int,
 # wait rules — a session ends its turn on backgrounded work, a sub-agent
 # waits in the foreground — and a role the driver "dispatches" matches both:
 # a PilotApp code-writer that backgrounded a 4-minute gate (2026-10-23) could
-# not tell which was its own, and hand-built a waiter. A resumed session
-# already carries the line in its history, so a nudge or a reattach is sent
-# as given.
+# not tell which was its own, and hand-built a waiter. The cap is the one
+# the Bash tool's own description gives, BASH_MAX_TIMEOUT_MS where the host
+# sets it — an hour on KubeCoder, where the line said ten minutes until
+# 0.10.44 and a UI suite waiting its turn behind another environment's run
+# could outrun that. A resumed session already carries the line in its
+# history, so a nudge or a reattach is sent as given.
 HEADLESS_WAIT_LINE = """\
 You run as a headless session of your own, not as a sub-agent: a command
 you background re-invokes you when it exits. Run a gate in the foreground
-under `timeout(1)` when it fits the Bash tool's 10-minute cap. Background
-only what can outrun it, and then wait by ending your turn, with a reply and
-no tool call. Never poll it, and never build a waiter.\
+under `timeout(1)`, sized for it within the Bash tool's cap on one call,
+which its description gives: an hour on KubeCoder, where a suite may wait
+its turn behind another environment's run. Background only what can outrun
+the cap, and then wait by ending your turn, with a reply and no tool call.
+Never poll it, and never build a waiter. A `kc project test` its timeout
+killed printed nothing: the newest log under /tmp/kc/project says how far
+it got, and a run that ran no test, only waited, is run again, never
+fixed.\
 """
 
 

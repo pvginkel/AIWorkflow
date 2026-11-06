@@ -4,6 +4,21 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-06 — A role sizes a gate within the Bash tool's hour, not ten minutes (v0.10.44)
+
+The line that opens every role's first prompt (`HEADLESS_WAIT_LINE`) told the role to run a gate
+in the foreground when it fit the Bash tool's 10-minute cap. KubeCoder's cap on one call is an
+hour (`BASH_MAX_TIMEOUT_MS`), and PilotApp's Playwright suite now waits its turn behind another
+environment's run, so a UI gate can outrun ten minutes. Now:
+
+- **A gate runs in the foreground under `timeout(1)`, sized within the cap the Bash tool's own
+  description gives**, an hour on KubeCoder. Background stays for what outruns that.
+- **A `kc project test` its timeout killed printed nothing**: the line points the role at kc's
+  log under `/tmp/kc/project`, and a run that only waited, with no test run, is run again, never
+  fixed.
+- `plan_loop.py`'s docstring no longer says its `wait` runs under ten minutes; `wait_default`
+  already read the cap.
+
 ## 2026-11-06 — A requirement goes without a criterion on the preparer's Grounding or the doc plan's line (v0.10.43)
 
 AIWF-147: the plan-writer keeps plan.md's header verbatim and makes `verification.json` 1:1 with

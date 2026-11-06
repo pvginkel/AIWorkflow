@@ -58,7 +58,7 @@ verdict; -v/--verbose echoes the full log there too.
 
 `run --detach` takes the loop out of the launching shell, as the run loop's
 does, and `wait` is what the stage's session waits on inside its turn: a
-foreground call under the Bash tool's ten minutes that answers with a
+foreground call under the Bash tool's cap that answers with a
 signal, never a report (docs/pilot.md § A turn's end is the run's end).
 
 Pilot's halt file (run_loop.HALT_FILE) is looked for before every pass:
