@@ -63,6 +63,10 @@ rendering, registering, the operator's answers, the plan loop — is the stage's
      rides as a requirement whose ruling reads **culled, not reworded**.
    - Infeasibility is an ask, never designed around, and every scope boundary the slice touches
      is ruled in or out before the loop runs.
+   - Doc work a requirement names whose surface the project's slice-doc-plan doc
+     (`.aiworkflowrc`'s `[doc_phase] plan`) gives the doc phase goes there on that line, which
+     `plan.md` cites: no ask. Where the doc plan does not name the surface, whether the doc phase
+     or a phase of the plan writes it is an ask.
    - A slice whose shape is wrong is a decision: split it, kick an item back to the backlog, or
      pull in an obviously adjacent backlog slice. One that arrives for a finding against the
      workflow itself is a decision to cancel it, since `/dev:triage`'s routing owns that class.

@@ -1256,6 +1256,28 @@ def test_slice_digest_carries_rulings_and_every_done_record():
     assert "settled" not in run_loop.build_slice_digest("")
 
 
+def test_digests_carry_the_requirements_without_a_criterion():
+    """Both digests — the doc phase's whole-slice one and a writer's phase
+    one — carry the `## Without a criterion` section verbatim beside the
+    requirements and what the slice leaves out; `## Task shape` stays out."""
+    plan = "\n".join([
+        "# Slice 9 — The one-liner", "",
+        "## Requirements / rulings", "", "- R1. Yes.", "- R2. Also.", "",
+        "## Task shape", "", "localized — because.", "",
+        "## Without a criterion", "",
+        '- R2, the manual page for `knob` — the doc phase\'s: docs/plan.md, '
+        '"Every knob gets its page."', "",
+        phase_section("1", "Now", body="Do this.\n"),
+        "## Not in scope", "", "- Nope.", ""])
+    bullet = ('- R2, the manual page for `knob` — the doc phase\'s: '
+              'docs/plan.md, "Every knob gets its page."')
+    for digest in (run_loop.build_slice_digest(plan),
+                   run_loop.build_phase_digest(plan, "1", "", [], [])):
+        assert "## Without a criterion" in digest and bullet in digest
+        assert "- R1. Yes." in digest and "- Nope." in digest
+        assert "localized — because." not in digest
+
+
 DONE_RECORD_TWO_PART = (
     "Plan text for P1.\n\n"
     "**Done (P1).** Landed the seam in `x.py`,\n"

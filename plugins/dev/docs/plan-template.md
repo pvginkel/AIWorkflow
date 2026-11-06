@@ -54,6 +54,14 @@ pre-settled — slice.md's design section fixes the mechanism; planning is trans
        - accept <target> <lint|build|test> — <why>
        - prd <target> — <why> -->
 
+## Without a criterion
+
+<!-- Optional; omit the heading unless a requirement goes without a criterion on a
+     record other than a ruling. One bullet per requirement, or part of one, quoting
+     its record:
+       - R<n> — the preparer's Grounding: "<the line>"
+       - R<n>, <the doc work> — the doc phase's: <doc plan path>, "<the line>" -->
+
 ### P1 — <title>
 
 Target: <component>
@@ -105,6 +113,12 @@ The mechanical rules the parser holds every author to:
   doesn't resolve is a structure error, as with holds: a ruling missed silently is a gate the
   driver runs anyway. The prose ruling still goes in Requirements / rulings, in the operator's
   words; this is only its machine-readable half.
+- **`## Without a criterion` quotes the record that lets a requirement go without one**, where
+  that record is not a ruling (§ verification.json has the two): one bullet per requirement, or
+  part of one, the record's line quoted whole. The plan-writer writes it and the plan review holds
+  each quote against its source. The digests carry it to every executor and to the doc phase,
+  beside the requirements/rulings ([run-loop.md](run-loop.md) § The per-phase round); the parser
+  ignores it. The section sits before the phases and is absent from most plans.
 - **`Target:` is the first line of every phase body** — a `kc project list` component name, a
   sibling repo path (`../SiblingRepo`), or `github:<owner>/<repo>` for a repo the environment
   does not check out: the driver clones it into `/work/scratch/<repo>` and from there it is a
@@ -191,13 +205,13 @@ The mechanical rules the parser holds every author to:
   the project says otherwise: **where the project's slice-doc-plan doc (`.aiworkflowrc`'s
   `[doc_phase] plan`) gives a kind of doc work to the doc phase** — a decision ruled in the slice
   recorded as a row of the project's decision log, say — that kind is the doc phase's, as the doc
-  plan says, and no phase writes it. The ruling that sends it there cites the doc plan's line, and
-  the plan review does not flag it. The doc plan wins for the kinds it names and no others. When
-  later phases cite a record's new id (a decision that supersedes another, cited by a
-  supersession marker or a code comment), a phase targeting the spec repo, placed before every
-  phase that cites the id, writes that record and allocates the id at append time. The later
-  phases take the id from that phase's done-record, never from a number the plan names in
-  advance.
+  plan says, and no phase writes it. It goes there on the doc plan's line, quoted under
+  `## Without a criterion`, with no ruling, and the plan review does not flag it. The doc plan
+  wins for the kinds it names and no others. When later phases cite a record's new id (a
+  decision that supersedes another, cited by a supersession marker or a code comment), a phase
+  targeting the spec repo, placed before every phase that cites the id, writes that record and
+  allocates the id at append time. The later phases take the id from that phase's done-record,
+  never from a number the plan names in advance.
 - **The plan carries no auto-doc content.** The doc phase writes from the shipped diff and the
   requirements/rulings — the rulings, in the operator's words, are the only steering it gets.
   A doc-deliverable section, drafted prose, or a doc-content attachment for it is a defect the
@@ -226,7 +240,10 @@ The mechanical rules the parser holds every author to:
 
 - **Outcome-level, complete against slice.md's numbered requirements 1:1**, in the operator's
   wording. Add criteria freely; never drop or re-word a requirement without a ruling recorded
-  in plan.md's rulings section.
+  in plan.md's rulings section. A premise that the plan-preparer's Grounding in the header
+  settled as not holding is that record too: the requirement it leaves no work earns no
+  criterion, and `## Without a criterion` quotes the Grounding line. A reading of the
+  preparer's, said to be its own and not a ruling, is no record.
 - **Evidence citations**, a path and the line quoted, never its number
   ([spec-tree.md](spec-tree.md) § Citing a line), where a criterion rests on a code fact the
   author verified this pass — the surviving anti-hallucination discipline. A planning-time
@@ -238,7 +255,7 @@ The mechanical rules the parser holds every author to:
   change assigned to the loop's doc phase, which carries no slice task — is a planning defect
   the plan review flags, not a verdict the test phase can write. Doc work the project's doc plan
   gives the doc phase (above) earns no criterion at all: the test phase runs before the doc
-  phase, and the ruling that sends the work there is its record.
+  phase, and the doc plan's line, quoted under `## Without a criterion`, is its record.
 - **`owed_after` marks a criterion the run cannot settle** because it waits on an action no role
   in the run may take: a push the plan holds (the hold's target exactly as `## Push holds`
   writes it, e.g. `../HelmCharts`), or, as free text, another operator action. Leave it out

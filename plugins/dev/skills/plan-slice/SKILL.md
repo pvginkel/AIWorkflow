@@ -110,7 +110,10 @@ A sub-agent reads back the documents Pilot's message names and carries them out 
 and pilot.md § The continuation, each with `asks.py absorb <document>`. Every ruling lands in
 `plan.md`'s `## Requirements / rulings` in the operator's words, a ruling that corrects an earlier
 one replacing it in place, and is committed by name before anything is launched: the next writer
-reads the plan, not the document. Two readings beside pilot.md's:
+reads the plan, not the document. A reading of the preparer's in that section that depends on the
+ruling ("if D1 rules …") is rewritten in the same commit to the branch that was ruled, still
+marked the preparer's: every role after reads the header verbatim, and a branch the ruling closed
+rides into every round. Two readings beside pilot.md's:
 
 - **A hedged answer is not a ruling.** One that rules conditionally ("if X, then fine") has its
   condition checked; where it holds, the ruling stands as given, and where it does not, the ask

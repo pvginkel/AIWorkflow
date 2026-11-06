@@ -50,8 +50,8 @@ outcomes, not implementations.
   decision to close, a design fact to record, a page to correct) is a phase with its own
   `Target:`, like any other work — unless the project's slice-doc-plan doc (`.aiworkflowrc`'s
   `[doc_phase] plan`) gives that kind of doc work to the doc phase. Then it is the doc phase's,
-  as that doc says: a ruling sends it there, citing the doc plan's line, and it earns no
-  criterion (`plan-template.md`).
+  as that doc says: it goes there on the doc plan's line, which you quote under
+  `## Without a criterion`, with no ruling, and it earns no criterion (`plan-template.md`).
 
 **`attachments/`** — API/UI/algorithm/protocol designs, only where the executor genuinely cannot
 derive them (a rename ask needs nothing; a wire protocol does). Written **at the altitude a smart
@@ -62,7 +62,10 @@ plan.md.
 
 **`verification.json`** — the slice's acceptance criteria, outcome-level, **complete against
 slice.md's numbered requirements 1:1** in the operator's wording (add criteria freely; never drop
-or re-word a requirement without a ruling recorded in plan.md's rulings section). Where a
+or re-word a requirement without a ruling recorded in plan.md's rulings section). A premise that
+the preparer's Grounding in the header settled as not holding is that record too: the requirement
+it leaves no work goes without a criterion, and you quote the Grounding line under
+`## Without a criterion` (`plan-template.md`). A reading of the preparer's is no record. Where a
 criterion rests on a code fact, cite the evidence you verified this pass — in the criterion's
 `description`, a path and the line quoted, never its number; `evidence` stays `[]` for the test
 phase.

@@ -23,9 +23,13 @@ plan cites.
    substituted requirement without a ruling in plan.md's rulings section is the worst defect this
    review exists to catch. Every criterion must be earnable by a phase: one whose work the plan
    hands to the loop's doc phase (auto docs, no slice task) can never be checked off — flag it.
-   Doc work the project's slice-doc-plan doc gives the doc phase is the exception: a ruling that
-   sends such work there, citing the doc plan's line, is no finding, and the work earns no
-   criterion — check that the doc plan does give the doc phase that kind of work.
+   Two records other than a ruling let a requirement, or part of one, go without a criterion,
+   each quoted under plan.md's `## Without a criterion`: a premise the preparer's Grounding in
+   the header settled as not holding, and the line of the project's slice-doc-plan doc that gives
+   that kind of doc work to the doc phase, which takes it with no ruling. Neither is a finding —
+   check that the quote is the source's own line and says what the bullet takes it for: that the
+   Grounding settles that premise, that the doc plan names that surface. A reading the preparer
+   says is its own is no record.
    Doc-truth universals (a criterion asserting prose claims hold everywhere) are banned — flag
    any.
 2. **Task shape.** The `## Task shape` declaration names `pre-settled`, `localized`, or
@@ -46,7 +50,7 @@ plan cites.
    producers-first; a phase whose outcome cannot be judged on its own diff is a finding, as is a
    planned end-to-end testing phase or auto-doc pass (the loop owns those). A phase whose
    outcome *is* a doc change is a phase like any other, not a finding; nor is doc work the
-   project's doc plan gives the doc phase, sent there by a ruling (item 1). A phase's gate runs
+   project's doc plan gives the doc phase, sent there on its line (item 1). A phase's gate runs
    every component its committed files touch, generated and cached files included
    (`${CLAUDE_PLUGIN_ROOT}/docs/run-loop.md` § The per-phase round): an ordering note or a phase
    that expects a suite the phase touches to stay red until a later phase is a blocking finding.

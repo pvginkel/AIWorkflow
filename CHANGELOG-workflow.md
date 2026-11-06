@@ -4,6 +4,27 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-06 — A requirement goes without a criterion on the preparer's Grounding or the doc plan's line (v0.10.43)
+
+AIWF-147: the plan-writer keeps plan.md's header verbatim and makes `verification.json` 1:1 with
+the requirements, and the only record that let a requirement go without a criterion was a
+ruling. The preparer's header writes neither rulings nor anything a writer could take for one.
+That left three cases unresolved: a premise the preparer found false, a reading written against
+an ask still pending, and a requirement's doc half that the project's slice-doc-plan gives the
+doc phase. Now:
+
+- **A premise the preparer's Grounding settled as not holding is a record.** The requirement it
+  leaves no work goes without a criterion, and the writer quotes the Grounding line under a new
+  optional `## Without a criterion` section of plan.md. A reading the preparer says is its own
+  stays no record.
+- **Doc work the slice-doc-plan names for the doc phase goes there on that line**, quoted under
+  the same section, with no ruling. The preparer asks only where the doc plan does not name the
+  surface.
+- **A ruling carried into plan.md rewrites the preparer's readings that depend on it** to the
+  branch that was ruled, in the same commit (`/dev:plan-slice` § The continuation).
+- The plan reviewer holds each quote against its source. The executor's and the doc phase's
+  digests carry the new section beside the requirements/rulings and not-in-scope.
+
 ## 2026-11-06 — A planning ruling that sends a card to another slice writes it into that slice's slice.md (v0.10.42)
 
 AIWF-146: when a `/dev:plan-slice` ruling sent a card to another slice, only the tracker recorded

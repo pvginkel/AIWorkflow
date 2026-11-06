@@ -1659,8 +1659,10 @@ DONE_RECORD_RE = re.compile(r"^\s*\*\*Done\b")
 LATER_PHASES_RE = re.compile(r"^\s*\**Later phases\**:?\**\s*$", re.I)
 # The plan's prose sections the digest carries verbatim, by `##` heading
 # prefix (case-insensitive): the requirements/rulings (authoritative on
-# intent) and what the slice leaves out.
-DIGEST_SECTIONS = ("requirements", "not in scope")
+# intent), the requirements that go without a criterion with the record that
+# lets each (the doc-writer's warrant for doc work routed to it), and what the
+# slice leaves out.
+DIGEST_SECTIONS = ("requirements", "without a criterion", "not in scope")
 # `git diff --stat` rows kept per repo before the digest elides the middle.
 DIGEST_STAT_LINES = 40
 
