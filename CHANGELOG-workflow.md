@@ -4,6 +4,21 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-06 — Triage quotes a card as a blockquote and checks every one whole (v0.10.41)
+
+AIWF-145: `/dev:triage` wrapped each card in a fence, in its dump and in `slice.md`. A card body
+holding a fence or a heading of its own ends that fence early — a close-out card request carries
+`### B<n> — …` — and PilotAppSpecs slice 023's `slice.md` lost most of P-47 and all of P-49
+without a word. `slice.md` is the planner's and the plan reviewer's only copy of a card. Now:
+
+- **A card is a heading and one blockquote**, in the dump and in `slice.md` alike:
+  `### <ID> — <title>`, then the card's marks, description and comments with `> ` on every line.
+  Nothing in a quoted body can end it. This run's research comments go under their own heading.
+- **`slice_cards.py <dump> <slice-dir>...`** runs beside `close_slice.py --check` before triage
+  commits its slices. It holds every card a `slice.md` quotes in full against the committed
+  dump's copy, the reference since the tool has no tracker, and names each card cut short,
+  changed or broken out of its blockquote. Its suite runs on slice 023's own cards.
+
 ## 2026-11-04 — Strict roles give up the fleet tools explicitly (v0.10.40)
 
 KubeCoder D300 decouples `--strict-mcp-config` from the fleet: strict now keeps the `fleetAdmin`

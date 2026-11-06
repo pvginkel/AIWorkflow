@@ -95,7 +95,8 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   loops), `checks.py` (an action's checks: the vocabulary the store holds a check to, and its
   evaluation, which the run loop runs on the actions owed before a run), `github_target.py`
   (the `github:` Target's scratch clone), `preflight.py`,
-  `close_slice.py`, `redact_secrets.py` (the `kind: Secret` stubbing of
+  `close_slice.py`, `slice_cards.py` (triage's check that every card a `slice.md` quotes in
+  full matches the dump), `redact_secrets.py` (the `kind: Secret` stubbing of
   every diff the driver hands an agent), `spec_check.py` (the spec repo's phase gate),
   `slice_cost.py` (with
   `turn_profile.py`, the transcript replay behind its turn table), `allocate-next-slice.sh`.

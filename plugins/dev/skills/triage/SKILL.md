@@ -68,6 +68,10 @@ the dump, so no card passes through this session's context on its way to disk. E
 
 - whole and verbatim — id, title, marks, reporter, description, comments, in the source's order;
   the title is part of the ask, and dead routing hides in a title as readily as in a body;
+- each card under its own `### <ID> — <title>` heading, the rest of it — marks, reporter,
+  description, comments — as one blockquote beneath, `> ` on every line and `>` alone on a blank
+  one, never a fence: a card's body carries fences and headings of its own (a close-out card
+  request holds `### B<n> — …`), and a fence around it ends at the body's first one;
 - the tracker's fetch caveats from the host convention: a narrowed query silently drops the field
   that tells an operator's ask from a session-authored card;
 - broken markup in a source (a literal `&gt;`, a stray entity) is reproduced as found: it renders
@@ -282,7 +286,10 @@ completed (`${CLAUDE_PLUGIN_ROOT}/docs/preflight.md`). The body holds:
   1:1, so an ask that isn't on it is lost.
 - The relevant source material, quoted in (not just linked) — triage's dated research comments on
   the cards included, attributed as such. A source's diagnosis, cause, or line reference stays
-  attributed — "the card claims…" — you have no way to verify it and don't try.
+  attributed — "the card claims…" — you have no way to verify it and don't try. A card quoted in
+  full is the dump's copy as the dump holds it: its `### <ID> — <title>` heading and the one
+  blockquote beneath, with nothing else under that heading — this run's research comments, which
+  the dump predates, go under a heading of their own.
 - **Operator-provided API/spec definitions, carried over as given** — signature-level fidelity:
   named operations, parameters and defaults, return shapes, enums. Don't restate a definition as
   high-level intent; the definition itself is the record. If the conversation evolved it, carry
@@ -302,7 +309,12 @@ above the heading that ends it. The line names no card: a README outlives its ca
 and `slice.md` holds the ids. The file's end is `## Completed`, whose bullets have the same
 shape, and an entry landed there is one the close-out refuses. Verify before you commit:
 `python3 ${CLAUDE_PLUGIN_ROOT}/tools/close_slice.py --check <slice-dir>...` runs the close-out's
-preconditions over each new folder and moves nothing. Then commit the slice folders and the
+preconditions over each new folder and moves nothing, and
+`python3 ${CLAUDE_PLUGIN_ROOT}/tools/slice_cards.py <dump> <slice-dir>...` holds every card a
+`slice.md` quotes in full against the committed dump's copy, naming each one cut short, changed
+or broken out of its blockquote. `slice.md` is the planner's and the plan reviewer's only copy
+of a card, and neither can check it against the tracker. Mend the copy from the dump, never the
+dump from the copy. Then commit the slice folders and the
 README to the specs repo, staging files by name (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`).
 
 ### 8. Close out
