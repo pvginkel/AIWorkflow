@@ -118,6 +118,19 @@ reads the plan, not the document. Two readings beside pilot.md's:
 - **A note that asks back is answered**, under `/dev:writing` § A question back, in a new
   document that puts the ask again.
 
+**A ruling that sends a card to another slice** also writes the card into that slice's
+`slice.md`, whatever the document asked, and in the same commit that lands the ruling in
+`plan.md`. The roles of a run have no tracker access, so a move the tracker alone records reaches
+none of them. Append, at the end of that `slice.md`, a heading of its own,
+`## <ID>, from slice <NNN>'s planning`, with one line under it naming the ruling: this slice's
+`plan.md` line and the ruling's date. Then append the card as the tracker holds it, quoted as
+`/dev:triage` quotes one: its `### <ID> — <title>` heading, then its marks, description and
+comments as one blockquote, `> ` on every line and `>` alone on a blank one. The slice that
+takes the card is one `close_out.py fold` would fold into: another slice still to run, a
+`<number>_*` folder in `slices/` or `slices/backlog/`, and still unplanned. A planned or running
+slice never reads `slice.md` again, and a slice not filed yet has none. Either way the ruling is
+not carried out as ruled, and it comes back as an ask, as below.
+
 By what the document asked:
 
 - **The requirements.** Besides the rulings:

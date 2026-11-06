@@ -4,6 +4,19 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-06 — A planning ruling that sends a card to another slice writes it into that slice's slice.md (v0.10.42)
+
+AIWF-146: when a `/dev:plan-slice` ruling sent a card to another slice, only the tracker recorded
+the move, and the roles of a run cannot reach the tracker (they are spawned with
+`--strict-mcp-config`). The consult at the end of one slice's loop could not tell whether a card
+its planning had sent on had reached the later slice, and it filed a close-out entry to carry
+it. Now the continuation's sub-agent appends the card to the receiving slice's `slice.md`, in the
+commit that lands the ruling in `plan.md`. The card sits under a heading of its own, whose one
+line names the ruling slice's `plan.md` line, and is quoted as triage quotes a card (0.10.41): a
+`### <ID> — <title>` heading and one blockquote. The receiving slice is one `close_out.py fold`
+would take, still to run and unplanned. A planned slice, or one not filed yet, comes back as an
+ask. Roles keep no tracker access, and the promotion's tracker comment stays as it was.
+
 ## 2026-11-06 — Triage quotes a card as a blockquote and checks every one whole (v0.10.41)
 
 AIWF-145: `/dev:triage` wrapped each card in a fence, in its dump and in `slice.md`. A card body
