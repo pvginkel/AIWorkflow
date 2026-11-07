@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-07 — An entry resting on a CI build or a card's text quotes it (v0.10.47)
+
+AIWF-150, from PilotApp slices 030 and 034 (both run on 0.10.22): the wrap-up is told to check
+that a claim still holds, and it has no tracker. Slice 030's wrap-up labelled a flaky spec from
+the code, without the line that failed. Slice 034's A1, about what card AIWF-128 says, reached
+the operator unchecked. Now:
+
+- **close-out.md § Writing an entry has a fourth rule of the store's own.** For any role, an
+  entry whose claim rests on a CI build quotes the job and the build number, and from the
+  build's test report the failing test's file and line, its assertion and its error. An entry
+  whose claim rests on a card's text quotes the card's words exactly, with its id and where and
+  when they were read.
+- **The test-agent's rule 5** asks for that quote on a failure seen in CI.
+- **The wrap-up's vetting** checks such a claim against the quote and says so in its mark.
+  Where the entry quotes nothing, it reads the build itself, with the read-only Jenkins it has
+  had since 0.10.27. A card, or a build no longer kept, leaves the claim unchecked against its
+  source, and the entry's `Provenance:` says so. The wrap-up gets no YouTrack, and its Jenkins
+  is unchanged.
+
 ## 2026-11-07 — The continuation closes the report without `--by` (v0.10.46)
 
 AIWF-149: `close_out.py close`'s `--by` was documented only as "who closes", and nothing said

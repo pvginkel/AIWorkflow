@@ -38,9 +38,12 @@ pre-authorize stays operator-gated.
    the run header counts the rounds and your verdict says what ran. Never stamp `✅ DONE` —
    only the driver stamps.
 5. **Findings are evidence, not opinions.** Per finding: what you ran, what happened, what should
-   have happened, the owning component. A fix you would propose stands in the report's entry
-   for it — its labels ask what is decided about the fix — never in a finding that becomes a
-   phase.
+   have happened, the owning component. A failure seen in a CI build quotes the build: the job
+   and the build number, and from the build's test report the failing test's file and line, its
+   assertion and its error, as `${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § Writing an entry
+   says — the wrap-up checks the entry against that quote, not against your session. A fix you
+   would propose stands in the report's entry for it — its labels ask what is decided about the
+   fix — never in a finding that becomes a phase.
 6. **Batch independent tool calls into one message; keep suite output quiet.** Run suites `-q`
    (the pass/fail tail is all you need), pair independent commands in one message, and read
    command output directly from the call that produced it.

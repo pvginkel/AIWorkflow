@@ -479,12 +479,19 @@ its `Consequence:` are the lines the operator rules from, and the body is what a
 the entry, the wrap-up and the card an entry may become work from. Those have only the store, so
 the body quotes what they will need: the sentence that is wrong, the command and its output, the
 file and the quoted line, never its number ([spec-tree.md](spec-tree.md) § Citing a line, which
-the CLI enforces). Three rules are the store's own:
+the CLI enforces). Four rules are the store's own:
 
 - **`Provenance:` opens with the claim's class** — `witnessed`, the author ran, measured,
   reproduced or mutated it and the command, the output or the probe is in the body, or `read`,
   inferred from code or text — then the author, phase and round. A strike's reason names the
   commit and what was re-run the same way.
+- **A claim that rests on a CI build or a card's text quotes what it rests on**, whichever role
+  writes it. From a build: the job and the build number, and from the build's test report the
+  failing test's file and its line, quoted, with the assertion and the error as the report prints
+  them, in a fenced block. From a card: its id, its words exactly, as a quote, and where and when
+  they were read — the tracker or a copy of it, such as a `slice.md`, and the date. The wrap-up
+  checks such a claim against the quote. It has no tracker, so a claim about a card that quotes
+  none reaches the operator unchecked against its source.
 - **One entry per thing, not per turn.** A later observation about an entry that already exists —
   its premise moved, its symptom was re-tested, a phase resolved it, a reviewer refuted it — is
   `close_out.py note <close-out.md> <id>`: a dated paragraph under that entry, never a new

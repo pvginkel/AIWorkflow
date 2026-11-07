@@ -106,6 +106,14 @@ they would otherwise have to:
   holds: an entry fixed since is said as that, with the commit; it stays theirs to close. Mark
   it with what you ran (`note --left`). That is the whole of the check: whether the claim holds
   today, never whether it was right.
+- **A claim that rests on a build or a card's text** is checked against the quote its body
+  carries (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § Writing an entry): the quoted line and
+  error against the code as it stands, the entry's claim against the card's words as quoted.
+  Your mark says so — that you checked against the author's quote, of which build or card, read
+  when. Where the entry quotes nothing, read the build itself, as *CI you read, never drive*
+  above says; you have no tracker, so a card, or a build no longer kept, leaves the claim
+  unchecked against its source, and its `Provenance:` says so (`restate`), so that the operator
+  does not take it for checked.
 - **A proposal where its author gave none** (`propose`), from the entry and what you found.
 - **Its vehicle.** A proposal is carried out when the document is read, after the run. One that
   names a phase of this run reaches nobody, and so does one that folds into, or leaves the work
