@@ -3628,7 +3628,8 @@ def build_parser() -> tuple[argparse.ArgumentParser,
 
     p = verb("close", "close the report once its answers are carried out: every live "
                       "entry struck, but one whose ruling nobody carried out")
-    p.add_argument("--by", help="who closes")
+    p.add_argument("--by", help="who closes — the continuation omits it, so the record "
+                                "names no signer")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
     for p in sub.choices.values():

@@ -526,7 +526,8 @@ there is one), which closes the entry, and closes the report.
 - **What cannot be carried out as ruled** — a `fix now` no rule allows, a fold into a running
   slice — is a new document with the alternatives as a decision, never a quiet substitute.
 - **Neither `close-out.json` nor `verification.json` is edited by hand.** At the end,
-  `close_out.py close` closes every entry still live, but one whose ruling nobody carried out;
+  `close_out.py close`, without `--by`, so the close record names no signer, closes every
+  entry still live, but one whose ruling nobody carried out;
   `render` writes the record under the answered asks; the session commits the store and the
   record by name.
 

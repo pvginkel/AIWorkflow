@@ -4,6 +4,15 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-07 — The continuation closes the report without `--by` (v0.10.46)
+
+AIWF-149: `close_out.py close`'s `--by` was documented only as "who closes", and nothing said
+what the continuation passes. A session passed the operator's name, so the record said the
+operator had closed the slice, and since nothing undoes a close it had to throw the close away
+and redo it. The `--by` help and close-out.md § The continuation now say the continuation omits
+`--by`, so the close record names no signer. The no-ask close-out step follows that section too.
+`--by` stays in the CLI.
+
 ## 2026-11-07 — An absorbed card whose ask the plan does not carry flips to Won't Do (v0.10.45)
 
 AIWF-148: `/dev:plan-slice`'s promotion step 3 (0.10.22) kept a card triage had already closed
