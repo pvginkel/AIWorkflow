@@ -150,8 +150,10 @@ for a repo is the branch it finds there the first time it touches it, a `phase/�
 at the record.
 
 **The plan doc is writable by every agent in the loop — deliberately; this is load-bearing.**
-Executors append their done-record and edit later phases their work changes; consult and test
-sessions append phases; the operator edits at will. The driver's mechanical bookkeeping is what
+Executors append their done-record and edit later phases their work changes, and append the
+phase a flaky test older than the slice needs when their gate met it and their own phase cannot
+carry the fix ([code-writer.md](../agents/code-writer.md), rule 1); consult and test sessions
+append phases; the operator edits at will. The driver's mechanical bookkeeping is what
 keeps the shared doc parseable:
 
 - **Only the driver stamps `✅ DONE <date>`** on a phase heading — mechanically, after review
@@ -160,8 +162,10 @@ keeps the shared doc parseable:
   `Target:` is **nudged back to the session that produced it** ("fix the plan doc" — the same
   resume mechanism as the verdict nudge), never treated as fatal while a session can fix it;
   broken with nobody to nudge, it is an operator question.
-- New phases appearing mid-run (consult, test findings, operator edits) are picked up on the
-  next iteration — the plan is re-parsed before every phase.
+- New phases appearing mid-run (consult, test findings, an executor's flaky-test phase,
+  operator edits) are picked up on the next iteration — the plan is re-parsed before every
+  phase. Only a consult's or the test phase's append spends a generation (the generation bar,
+  § After the last phase).
 
 ## The per-phase round
 

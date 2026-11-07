@@ -21,8 +21,9 @@ v0.4.0 after four pilot slices ran it end to end.
 [`plan-template.md`](../../plugins/dev/docs/plan-template.md).
 
 **Every agent may edit the plan; only the driver stamps `✅ DONE`.** Executors append
-done-records and edit later phases their work changes; consults and the test agent append phases;
-the operator edits at will. The stamp is mechanical, after review passed and the merge landed.
+done-records and edit later phases their work changes, and append a phase for a flaky older test
+their gate met that their own phase cannot fix; consults and the test agent append phases; the
+operator edits at will. The stamp is mechanical, after review passed and the merge landed.
 *Origin:* the shared, writable plan is what lets work grow without an orchestrator; the
 driver-only stamp is what keeps a self-declared "done" from ever counting. Both are design
 decisions of v0.4.0, not incident responses (**ruled**).

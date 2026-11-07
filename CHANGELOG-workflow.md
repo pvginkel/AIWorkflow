@@ -4,6 +4,30 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-07 — A flaky red from an older test in the writer's gate is the slice's to fix (v0.10.48)
+
+AIWF-153, from a Fieldnotes report of 2026-11-03 on PilotApp's `create-project.spec.ts`, whose
+cause could be read in `backend.log`. A code-writer whose gate met a flaky red from a test older
+than the slice entered it in the close-out report and re-ran the gate until it went green. The
+loop-tail sweep then made the slice own the test anyway, later and at more cost: a phase before
+0.10.36, and since then a test-fixer round and a second sweep. The ruling (the operator,
+2026-11-05) was that the writer fixes such a red, or hands it back for a phase at once, and
+never only parks it. Now:
+
+- **code-writer.md rule 1 names it as the second exception to "your phase only"**, after what
+  must not be pushed. A fix that is small and spec-side (the test, its fixtures, its helpers) is
+  made in the phase and named in the done-record.
+- **Otherwise the writer appends a phase for it, right after its own**, with an id the plan does
+  not use, its `Target:`, and the failing test, the run that showed it and what was seen of its
+  cause. The done-record's `Later phases:` names it. An entry in the close-out report and a
+  re-run to green are never enough on their own.
+- **run-loop.md § The plan is the queue lists the executor's flaky-test phase among the appends**,
+  and says such a phase spends no generation: only a consult's or the test phase's own append
+  does. The driver already picked up any new phase at its next parse, so the code is unchanged.
+
+Left alone: AIWF-155, a red that begins at a phase being that phase's bug, and the sweep's
+`flake` route of 0.10.36.
+
 ## 2026-11-07 — An entry resting on a CI build or a card's text quotes it (v0.10.47)
 
 AIWF-150, from PilotApp slices 030 and 034 (both run on 0.10.22): the wrap-up is told to check
