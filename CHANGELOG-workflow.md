@@ -4,6 +4,14 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-07 — An absorbed card whose ask the plan does not carry flips to Won't Do (v0.10.45)
+
+AIWF-148: `/dev:plan-slice`'s promotion step 3 (0.10.22) kept a card triage had already closed
+as absorbed in its state when the plan ruled its ask out, with a comment and nothing else. The
+host's youtrack-usage convention flips such a card to `Won't Do`, because `Absorbed` says the
+slice delivers it. Step 3 now says what the convention says: the card flips to `Won't Do` with a
+comment quoting why and stays the slice's subtask. A card still open is handled as before.
+
 ## 2026-11-06 — A role sizes a gate within the Bash tool's hour, not ten minutes (v0.10.44)
 
 The line that opens every role's first prompt (`HEADLESS_WAIT_LINE`) told the role to run a gate

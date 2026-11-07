@@ -191,9 +191,10 @@ At exit 0, in this order:
    planned, its highlights matching the plan's scope where planning moved it. Each card
    `grounding.md` names as routed to the slice and still open is closed as the convention closes
    an absorbed task where the plan carries its ask, and is left open with a comment quoting the
-   ruling where it does not. A card triage already closed as absorbed keeps its state either
-   way: where the plan does not carry its ask, it takes a comment quoting why — the ruling, or
-   the premise the grounding found false — and nothing else.
+   ruling where it does not. A card triage already closed as absorbed stays the slice's subtask
+   either way: where the plan does not carry its ask, it flips to `Won't Do` with a comment
+   quoting why — the ruling, or the premise the grounding found false — as the convention flips
+   an absorbed task whose requirement planning rules out.
 4. End the turn, its last message the plan's path and its phases, counted.
 
 ## The clarification
