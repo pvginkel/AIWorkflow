@@ -4,6 +4,40 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-07 — A red that begins at a phase is that phase's bug until a measurement says otherwise (v0.10.49)
+
+AIWF-155, from PilotApp slice 038. P7 put a deadlock in the database pool that showed as
+ten-second timeouts in the frontend suite: red in 7 of 14 full runs after P7, in none of 5
+before. Three roles read it as load. P7's code-writer saw 2 of 5 gate runs red and the test
+green on its own, re-ran to green and entered it in the close-out report. Completion consult 2
+answered "flake … under load". The test-fixer raised the template-owned `waitTestEvent` timeout
+from 10 to 30 seconds, which hid it. Consult 3 counted the reds per phase, instrumented the pool
+and found it, and P10 fixed it and reverted the timeout. The detour cost about three hours of a
+9.5-hour run. Now:
+
+- **code-writer.md rule 7: a red in the writer's gate is its phase's bug until a measurement
+  shows otherwise**, whatever its rate and even in a test older than the slice. A run that went
+  green afterwards, or the test passing on its own, is not that measurement. The measurement is
+  the failing tests run as many times on the commit the phase branch started from as on the
+  writer's tree, with the red rates compared, or a cause the failed run's own output shows. A
+  red put down to load or to a flake names that evidence in the done-record. Rule 1's flaky-red
+  exception of 0.10.48 now holds only for a red the measurement places before the phase. The
+  phase it appends carries the measurement.
+- **The completion consult's `flake` route carries the same presumption.** A re-run that
+  passed, a pass on its own, or a done-record or close-out entry that met the failure earlier no
+  longer counts as evidence of a flake. An entry a phase of the slice wrote shows where the red
+  began. The measurement is the red rate before and after the phase, counted in the slice
+  folder's gate logs or run on both trees, or a cause the kept files show. A `flake` names it in
+  the summary, and so does a red put down to load.
+- **test-fixer.md rule 4 holds the presumption** and escalates a red it cannot place. **A new
+  rule 5 forbids raising a timeout the tests share, or one a template owns, to make a red
+  pass.**
+- **run-loop.md § After the last phase states the presumption** for the `flake` route, with
+  slice 038 as the incident.
+
+Left alone: the route the sweep takes for a flake the test-fixer hands back unsettled. It
+becomes a card request in the report, and the push goes on.
+
 ## 2026-11-07 — A flaky red from an older test in the writer's gate is the slice's to fix (v0.10.48)
 
 AIWF-153, from a Fieldnotes report of 2026-11-03 on PilotApp's `create-project.spec.ts`, whose

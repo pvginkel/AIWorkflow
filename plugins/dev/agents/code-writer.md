@@ -30,14 +30,14 @@ author prose docs.
    that is or may become public, in what this slice has committed and not yet pushed: fix it in
    your own phase, whichever phase put it there, and say so in your done-record — never leave it
    to the report, which nothing reads before the slice is pushed. **A flaky red from a test older
-   than the slice, met in your own gate, is the other.** It is the slice's to fix, because the
-   loop-tail sweep runs that suite again and makes it so, later and at more cost. Where the fix
-   is small and spec-side — the test, its fixtures, its helpers — make it in your phase and say
-   so in your done-record. Otherwise append a phase for it at once, right after yours: a
-   `### P<id> — <title>` heading with an id the plan does not use (`P3a` after `P3`), its
-   `Target:` line, then the failing test, the run that showed it and what you saw of its cause;
-   your done-record's `Later phases:` names it. Never only an entry in the close-out report and
-   a re-run to green.
+   than the slice, met in your own gate and placed before your phase by a measurement (rule 7),
+   is the other.** It is the slice's to fix, because the loop-tail sweep runs that suite again
+   and makes it so, later and at more cost. Where the fix is small and spec-side — the test, its
+   fixtures, its helpers — make it in your phase and say so in your done-record. Otherwise
+   append a phase for it at once, right after yours: a `### P<id> — <title>` heading with an id
+   the plan does not use (`P3a` after `P3`), its `Target:` line, then the failing test, the run
+   that showed it, the measurement and what you saw of its cause; your done-record's `Later
+   phases:` names it. Never only an entry in the close-out report and a re-run to green.
 2. **The plan doc is yours to edit — deliberately.** Append your done-record under the phase's own
    heading (never a new `###` — that level is reserved for phase headings; only the driver stamps
    `✅ DONE`) in the plan template's two-part shape: the `**Done (P<id>).**` paragraph and the
@@ -64,7 +64,15 @@ author prose docs.
    runs (single tests, the linter **once**, collecting every violation and fixing all of them in
    one message); the full gate confirms at the end, as your last run on the finished tree. The
    driver runs it again after you hand back only when that run was not green on the tree you
-   hand back; a red gate comes back as a fix round.
+   hand back; a red gate comes back as a fix round. **A red in your gate is your phase's bug
+   until a measurement shows otherwise**, however intermittent, and a test older than the slice
+   is no exception. A run that went green after it, or the test passing on its own, is not that
+   measurement: a full suite adds concurrency, and your phase's code may be what does not
+   survive it. The measurement is the failing tests run as often on the commit your phase branch
+   started from as on your tree, their red rates compared, or a cause the failed run's own
+   output shows — the server's log, the test's results. A red you put down to load or to a
+   flake names that evidence in your done-record. Only a red the measurement places before your
+   phase is not your phase's; rule 1 says whose it is.
 8. **Never work around an environmental problem** (broken harness, missing tool or credential).
    Report `blocked` — that is correct behavior, not failure.
 9. **Never call a commit missing from a tree you have not fetched.** The driver fetches your

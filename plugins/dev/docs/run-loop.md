@@ -448,7 +448,20 @@ whole plan is a feature of the review, not a cost. Then:
   **A `flake` is a `complete` whose red rows are flaky.** It is offered only where every red row
   is a `test` row, and the consult's summary, which names the failing tests and the race, is the
   brief: PilotApp slice 027's consult found "a test race, not a product bug" and appended a phase
-  for it, two writer and review rounds and a second sweep, $8.98 and 72 minutes. The driver
+  for it, two writer and review rounds and a second sweep, $8.98 and 72 minutes. **A red that
+  begins at a phase of the slice is that phase's bug until a measurement shows otherwise**:
+  the failing tests' red rate before that phase against after it, or a cause the failed run's
+  own files show. A re-run that passed, a pass on its own, or an entry or done-record that met
+  the failure before is none, and one a phase of the slice wrote dates where the red began; a
+  `flake`, or a red put down to load, names its evidence in the consult's summary. PilotApp
+  slice 038's P7 put a deadlock in the database pool that showed as ten-second timeouts, red in
+  7 of 14 full runs after it and in none of 5 before. Its writer re-ran to green and entered it
+  in the report, a consult answered "flake … under load", and the test-fixer raised a
+  template-owned timeout from 10 to 30 seconds, which hid it, until a third consult counted the
+  reds per phase and instrumented the pool: about three hours of a 9.5-hour run. The code-writer
+  and the test-fixer hold the same presumption, and the test-fixer raises no timeout the tests
+  share or a template owns ([code-writer.md](../agents/code-writer.md) rule 7,
+  [test-fixer.md](../agents/test-fixer.md)). The driver
   dispatches the test-fixer on each such suite, in the repo and on the branch the sweep ran on,
   inside the consult's step; it commits there, and the re-sweep above runs on its commit. One
   round per suite per run. A suite it does not settle — a `clean` that committed nothing,

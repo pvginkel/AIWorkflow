@@ -3438,11 +3438,21 @@ order or shared state, not the product — owes no phase. Where every RED row
 is one, answer `flake`: the driver hands each to the test-fixer to make those
 tests deterministic, sweeps again, and goes on as after `complete`. A flake
 the fixer cannot settle becomes a card request in the close-out report,
-never a phase. The evidence is yours to weigh — a re-run that passed or failed
-on other tests, a close-out entry or a done-record that met the same failure
-before, the failure's own trace — and your summary is the fixer's brief: name
-the failing tests and the race. A red the product causes is no flake, however
-intermittent: it owes a phase.\
+never a phase. A red the product causes is no flake, however intermittent:
+it owes a phase.
+
+A red that begins at a phase of this slice — tests that passed before it
+and fail after it, at any rate — is that phase's bug until a measurement
+shows otherwise. A re-run that passed, a pass on its own, a done-record or a
+close-out entry that met the failure before: none of them is that
+measurement, and a record or an entry a phase of this slice wrote dates
+where the red began. The measurement is the failing tests' red rate before
+the phase against after it — their reds counted in the slice folder's gate
+logs phase by phase, or the tests run as often on the tree before the phase
+as on this one — or a cause the failed run's own files show, those kept
+under the row. A `flake`, and a red you put down to load, names that
+evidence in your summary, which is also the fixer's brief: name the failing
+tests and the race.\
 """
 
 SWEEP_STANCE_TEST_GREEN = """\

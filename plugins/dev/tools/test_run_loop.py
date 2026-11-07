@@ -8660,6 +8660,8 @@ def test_flake_is_offered_only_where_every_red_row_is_a_test_row():
             assert ("- `flake` — " in consult) is offered, reds
             assert ("answer `flake`: the driver hands each to the test-fixer"
                     in flat) is offered, reds
+            assert ("is that phase's bug until a measurement shows otherwise"
+                    in flat) is offered, reds
             if reds:
                 # the old stance's flaky clause is gone: a phase is owed by a
                 # red the product causes, not by a flake
