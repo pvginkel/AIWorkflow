@@ -269,8 +269,12 @@ N=$(${CLAUDE_PLUGIN_ROOT}/tools/allocate-next-slice.sh <spec-repo>)   # flock-gu
 mkdir <spec-repo>/slices/backlog/${N}_<snake_case_slug>
 ```
 
-Follow-up work to an existing slice also takes a fresh number from the same helper — letter-suffixed
-slice ids (`087b`) are not supported; `close_slice.py` rejects them.
+Where the project's own planning document in the spec repo already gives the row a number, the
+slice keeps it: ask for it with `allocate-next-slice.sh <spec-repo> --number NNN`, under the same
+lock, and never with a hand `mkdir`, which the counter does not see. The helper exits 1 when a
+`NNN_*` folder already holds the number; that is a question for the operator, not a reason to take
+the next one. Follow-up work to an existing slice also takes a fresh number from the same helper —
+letter-suffixed slice ids (`087b`) are not supported; `close_slice.py` rejects them.
 
 **`slice.md`** is the record. The planner works from it alone, in a fresh session that never saw
 this conversation. It opens with a front matter block between two `---` lines: `issue: <id>`,

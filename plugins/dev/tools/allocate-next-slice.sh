@@ -2,12 +2,15 @@
 #
 # Allocate the next slice number for a spec repo — concurrency-safe.
 #
-# Usage:  allocate-next-slice.sh <spec-repo>
+# Usage:  allocate-next-slice.sh <spec-repo> [--number NNN]
 #
 # Prints a zero-padded 3-digit slice number (e.g. 043) to stdout and nothing else,
 # so callers can capture it directly:
 #
 #     N=$(${CLAUDE_PLUGIN_ROOT}/tools/allocate-next-slice.sh <spec-repo>)
+#
+# NNN is 1-999, read as decimal (034 is 34). Exit 2 = usage (bad argument, no
+# slices/), exit 1 = the --number asked for is taken; stdout is empty on both.
 #
 # The workflow ships this rather than each spec repo carrying a copy: the numbering
 # space it guards is the project's (<spec-repo>/slices/), but the algorithm is the
@@ -27,14 +30,47 @@
 # harmless gap; that is the accepted cost of collision-safety.
 #
 # EVERY slice takes a fresh whole number from this helper — follow-ups and
-# split-outs included. Letter-suffixed ids (087b) are not supported anywhere in
-# the pipeline; close_slice.py rejects such folders outright.
+# split-outs included — except one whose number the project's own planning
+# document in the spec repo already gives the row: that slice asks for the
+# number with --number NNN, under the same lock. The helper refuses it when an
+# NNN_* folder already exists anywhere under slices/, and otherwise persists the
+# counter past it — max(counter, NNN+1) — so a parallel plain allocation cannot
+# hand it out before the caller's mkdir.
+#
+# Letter-suffixed ids (087b) are not supported anywhere in the pipeline;
+# close_slice.py rejects such folders outright.
 set -euo pipefail
 
-spec_repo="${1:-}"
-if [[ -z "$spec_repo" ]]; then
-  echo "usage: allocate-next-slice.sh <spec-repo>" >&2
+usage() {
+  [[ -z "${1:-}" ]] || echo "allocate-next-slice.sh: $1" >&2
+  echo "usage: allocate-next-slice.sh <spec-repo> [--number NNN]" >&2
   exit 2
+}
+
+spec_repo="" positionals=0 want="" asked=0
+while (( $# )); do
+  case "$1" in
+    --number)
+      (( $# >= 2 )) || usage "--number needs a value"
+      (( asked == 0 )) || usage "--number given twice"
+      want="$2" asked=1
+      shift 2
+      ;;
+    -*)
+      usage "unknown argument: $1"
+      ;;
+    *)
+      (( positionals == 0 )) || usage "unexpected argument: $1"
+      spec_repo="$1" positionals=1
+      shift
+      ;;
+  esac
+done
+[[ -n "$spec_repo" ]] || usage
+if (( asked )); then
+  [[ "$want" =~ ^[0-9]{1,3}$ ]] && (( 10#$want >= 1 )) \
+    || usage "--number takes 1-999, not '$want'"
+  want=$(printf '%03d' "$(( 10#$want ))")
 fi
 if [[ ! -d "$spec_repo/slices" ]]; then
   echo "no slices/ under $spec_repo — is that the spec repo?" >&2
@@ -59,6 +95,20 @@ hi=$(( 10#${hi:-0} + 1 ))
 while find "$slices_dir" -maxdepth 2 -type d -name "$(printf '%03d' "$n")_*" | grep -q .; do
   n=$((n + 1))
 done
+
+# --number: grant the asked-for number unless a folder holds it, and persist the
+# counter past it so a parallel plain allocation cannot hand it out too.
+if (( asked )); then
+  taken=$(find "$slices_dir" -maxdepth 2 -type d -name "${want}_*" -print -quit)
+  if [[ -n "$taken" ]]; then
+    echo "slice $want is taken: slices/${taken#"$slices_dir"/}" >&2
+    exit 1
+  fi
+  (( n > 10#$want )) || n=$(( 10#$want + 1 ))
+  printf '%03d\n' "$n" > "$slices_dir/.next-slice"
+  printf '%s\n' "$want"
+  exit 0
+fi
 
 printf '%03d\n' "$((n + 1))" > "$slices_dir/.next-slice"   # persist the reservation
 printf '%03d\n' "$n"

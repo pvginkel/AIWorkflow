@@ -96,7 +96,8 @@ Slices live in the spec repo under `slices/` (backlog → active → `completed/
 specific layout — `/dev:onboard` scaffolds a new spec repo and brings an old one's tree into shape,
 so run it rather than building the tree by hand. Slice numbers come from the plugin's own flock-guarded allocator
 (`${CLAUDE_PLUGIN_ROOT}/tools/allocate-next-slice.sh <spec-repo>`), which `/dev:triage` calls; the
-spec repo carries no copy. Where a slice must follow others, triage writes their numbers under
+spec repo carries no copy. A spec repo whose own planning document numbers its rows before they are
+filed keeps those numbers: triage asks the allocator for one with `--number NNN`. Where a slice must follow others, triage writes their numbers under
 `needs:` in its `slice.md` front matter, and preflight refuses to plan it until each has completed.
 Commit spec-repo artifacts early and often, staging **by name** (it is a shared working tree).
 

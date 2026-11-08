@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-08 — The slice allocator mints a number the spec repo's plan already gave (v0.10.51)
+
+AIWF-152, from PilotApp. PilotAppSpecs' implementation plan numbers its rows before they are
+filed. `allocate-next-slice.sh` only ever handed out the next number past the highest on disk.
+At the UI sweep's triage (2026-11-02) that next number was 034, which another unfiled row
+already carried, and 031 and 032 were free but out of its reach. The session made three folders
+with a hand `mkdir`, past the counter, and the helper's next became 038. Now:
+
+- **`allocate-next-slice.sh <spec-repo> --number NNN` grants a number asked for, under the same
+  flock.** It refuses with exit 1 when an `NNN_*` folder exists anywhere under `slices/`. On a
+  grant it persists `.next-slice` as max(counter, NNN+1), so a parallel plain allocation cannot
+  hand the number out before the caller's `mkdir`. A bad value exits 2. The plain path is
+  unchanged.
+- **`/dev:triage` step 7 passes `--number`** where the project's own planning document in the
+  spec repo already gives the row a number, never a hand `mkdir`. ADOPTING.md § 2d says so.
+- **`test_allocate_next_slice.py`**, the allocator's first suite.
+
 ## 2026-11-08 — A fix wanted from a later phase goes into that phase's plan text (v0.10.50)
 
 AIWF-151, from PilotApp slice 033. P3's code reviewer entered B2 with the proposal "Fix now in
