@@ -25,7 +25,8 @@ validation.
   the sibling's path; the *driver's* git and gate operations root at the `Target:` repo — at its
   worktree, for a shared target ([run-loop.md](run-loop.md) § The plan is the queue).
 - **`-e FORCE_PROMPT_CACHING_5M=1`** on every `create-headless`: ephemeral sessions must not pay
-  the 1-hour cache-write premium. **`-e CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`** and
+  the 1-hour cache-write premium; a long wait is chunked under the five minutes instead (§ Nested
+  delegation, the chunked wait). **`-e CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`** and
   **`-e CLAUDE_CODE_DISABLE_BUNDLED_SKILLS=1`** beside it: a dispatched role never reads or writes
   the operator's auto-memory and never invokes a bundled skill, so neither listing rides in its
   prefix (≈ 3 k tokens of every turn). Project knowledge reaches a role through the project's
@@ -167,20 +168,36 @@ context at cache-read price. Slice 197's doc-writer wrote "ending the turn until
 (`docs/research/doc-phase-read-2026-09-04.md` § 5, finding 19). A role that has dispatched and
 has nothing else to do replies in prose and stops.
 
-**Every role is told it is not a sub-agent.** The managed CLAUDE.md gives two rules: a session
-waits on backgrounded work by ending its turn, and a sub-agent waits in the foreground, because
-its ended turn is its report. A role the driver dispatches matches both descriptions, and a
-PilotApp code-writer that backgrounded a 4-minute gate could not tell which was its own and
-built a waiter by hand (2026-10-23). So the first prompt `run_kc_session` sends a fresh session,
-in either loop, opens with one line (`HEADLESS_WAIT_LINE`). It says the role is its own headless
-session, so a command it backgrounds re-invokes it. It runs a gate in the foreground under
-`timeout(1)`, sized for the gate within the Bash tool's cap on one call, which the tool's own
-description gives: an hour on KubeCoder (`BASH_MAX_TIMEOUT_MS`), since a project's suite may wait
-its turn behind another environment's run, as PilotApp's Playwright suite does. It backgrounds
-only what can outrun the cap, and waits on it by ending the turn, never by polling or a waiter of
-its own. Foreground is the default because it has no race, unlike the wait below. A `kc project
-test` that its timeout killed prints nothing, so the line points the role at kc's log under
-`/tmp/kc/project`, and a run that only waited, with no test run, is run again rather than fixed.
+**Every role is told it is not a sub-agent, and how to wait on a long command.** The managed
+CLAUDE.md gives two rules: a session waits on backgrounded work by ending its turn, and a
+sub-agent waits in the foreground, because its ended turn is its report. A role the driver
+dispatches matches both descriptions, and a PilotApp code-writer that backgrounded a 4-minute
+gate could not tell which was its own and built a waiter by hand (2026-10-23). So the first
+prompt `run_kc_session` sends a fresh session, in either loop, opens with one line
+(`HEADLESS_WAIT_LINE`). It says the role is its own headless session, and that a command which
+may run past four minutes, however the role's instructions write it (a suite, a gate, a wait on
+a CI build), runs detached and is waited on in chunks. The role starts it with `long_run.py
+start --timeout <seconds> -- <command>` and runs the `next:` line that prints, a wait that
+returns within four minutes, again at once while it says `running`. `ended` brings the
+command's output and exit. A phase gate has its own pair, `run_loop.py gate --detach` and `gate
+--wait` ([run-loop.md](run-loop.md) § The per-phase round). That line is the waiter, so the
+role never ends its turn on such a command, sleeps, tails a log or builds a waiter of its own.
+A shorter command runs in the foreground under `timeout(1)`. A `kc project test` that its
+timeout killed prints nothing, so the line points the role at kc's log under `/tmp/kc/project`,
+and a run that only waited, with no test run, is run again rather than fixed.
+
+**The chunks keep the 5-minute cache warm.** A call more than five minutes after the one before
+it re-writes the session's whole context at the cache-write rate, where it would have read it
+at a tenth of the input rate. Each return of a chunk is a cheap call, a cache read and a short
+result: about 5 cents at a gate's median context of 218,000 tokens, against $1.06 a miss. In
+PilotApp's week of 2026-11-01 to 11-08 the dispatched sessions missed 208 times, $173 of
+$1,680. 108 of the misses were code-writers waiting on their phase gate, 5 to 10 minutes there,
+in the foreground or backgrounded alike, and 51 were the roles' own test runs. A gate under
+300 s never missed; from 300 s on, 108 of 118 did. The chunk is four minutes and not four and a
+half: the five minutes run between API calls, and the model's latency eats the margin
+(PilotAppSpecs `research/cache-misses/findings.md`). A session waiting on a sub-agent is not
+reached: no script stands between them. A 1-hour cache for the waiting roles would save about
+$65 a week where the chunks save about $150, and for every role it costs about $80 a week more.
 
 The wait has one race, the harness's, not the role's. A completion that lands while the session
 is mid-turn is queued for its next turn, but the engine counts it delivered; a session that then

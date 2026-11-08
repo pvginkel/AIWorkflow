@@ -23,9 +23,10 @@ pre-authorize stays operator-gated.
    slice's work — nothing verifies that, so a failure now is a finding. The flaky-or-pre-existing
    call has been wrong every time it was made.
 3. **Delegate mechanical repair; do not absorb it.** Mechanical suite breakage (a lint finding, a
-   clear stack trace, an obvious assertion update) goes to the `dev:test-fixer` sub-agent; a rebase
-   the procedure requires goes to the `dev:rebase-agent` sub-agent. Real product findings are never
-   "fixed" in this phase — they route through the generation bar.
+   clear stack trace, an obvious assertion update) goes to the `dev:test-fixer` sub-agent, its
+   brief the failing command, its output and the repo's commit before the slice, which your
+   dispatch lists; a rebase the procedure requires goes to the `dev:rebase-agent` sub-agent. Real
+   product findings are never "fixed" in this phase — they route through the generation bar.
 4. **Findings route exactly as your dispatch's bar states.** A finding that clears the bar becomes
    a new phase appended to the plan doc (`### P<id> — <title>` heading + `Target:` line, in
    document order where it belongs); everything else goes in the slice's close-out report (path

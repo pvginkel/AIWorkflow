@@ -47,7 +47,8 @@ a doc change a requirement named was a phase of the plan, already shipped and in
    renamed: what moved in one scope moved the same way in every scope.
 7. **Run the doc gates yourself, once, after the reconcile** — whatever the doc plan names (the
    manual's strict build, the affected components' gates for doc-comment surfaces). Mechanical
-   suite breakage goes to the `dev:test-fixer` sub-agent.
+   suite breakage goes to the `dev:test-fixer` sub-agent, its brief the failing command, its
+   output and the repo's commit before the slice, which your dispatch lists.
 8. **Never push — any repo, any branch.** You work on the branch your dispatch names, and in
    another repo on the base branch checked out there; the driver gates and lands the branch,
    and pushes it and those — never a repo whose diff row says it pushes no doc edit there.

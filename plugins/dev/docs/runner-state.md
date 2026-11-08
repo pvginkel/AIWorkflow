@@ -186,7 +186,10 @@ each touched component's lint beside its test, none where an `accept` ruling cov
 which `touched.lint_accepted` names instead; and `migrations`, the check's command and the
 files that owe it (`owed`), where the phase owes the migration check — and `writer_gate_r<N>.json` the wrapper's record of its last run in code-writer round
 `N`: the commands with their exit codes and output, and the tree's content hash when the run
-began and ended ([run-loop.md](run-loop.md) § The per-phase round). A review round whose range
+began and ended ([run-loop.md](run-loop.md) § The per-phase round). `gate_run/` beside them is
+the job of the writer's last `gate --detach`, ignoring itself (`.gitignore`, `*`): its
+`run.lock`, held while the gate runs, `job.json`, `output.log` and the `exit.json` it ends
+with, which `gate --wait` reads. A review round whose range
 changes Secret data leaves `review_r<N>.diff` beside its review, the range redacted the same
 way. What a dead round left uncommitted, set aside by the resume before it resets the tree, is under
 `phases/P<id>/set-aside/` (`r<N>.patch` and `r<N>-untracked/`, unredacted, so that folder ignores

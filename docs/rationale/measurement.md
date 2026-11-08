@@ -131,7 +131,11 @@ Definitions as the code has them, so a number in a readout can be traced to a li
   [doc-phase-plan.md § 1](../research/doc-phase-plan.md)).
 - **Prefix breaks do not matter.** 82 breaks across 61 of 809 sessions, $32.19 extra, 1.3 % of
   cost (0.7 % of headless spend when the operator's own sessions are excluded) — so the 5-minute
-  TTL and the idle gaps were not a lever (§ 3; interventions-2.md § 0).
+  TTL and the idle gaps were not a lever (§ 3; interventions-2.md § 0). That stopped holding
+  once the suites outgrew five minutes: PilotApp's week of 2026-11-01 to 11-08 had 208 misses
+  after a wait, $173 of $1,680 of the 5-minute sessions, 108 of them code-writers waiting on
+  their phase gate. The answer was the chunked wait, not the 1-hour TTL (0.10.53;
+  PilotAppSpecs `research/cache-misses/findings.md`).
 - **Every code-writer rebuilt the same picture.** Orientation before the first edit: median 14
   turns (p75 20), 38.4 % of the session's cost, context at the first edit 79,655 tokens; the two
   most common orientation calls were `sed -n <range>` (602) and `grep` (589) over 141 editing

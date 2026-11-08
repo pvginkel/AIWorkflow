@@ -17,6 +17,7 @@ import itertools
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import stat
@@ -2302,8 +2303,17 @@ def test_a_component_gate_that_ran_nothing_never_falls_back():
 
 
 def wrapper_cmd(outputs):
-    """The `gate` wrapper over a phase's spec, as a gate hint names it."""
-    return f"`python3 {run_loop.SCRIPT} gate {Path(outputs) / 'gate_spec.json'}`"
+    """The `gate` wrapper over a phase's spec, as a gate hint names it: run
+    detached, and waited on with `waits`' line."""
+    return (f"`python3 {run_loop.SCRIPT} gate --detach "
+            f"{Path(outputs) / 'gate_spec.json'}`")
+
+
+def waits(outputs):
+    """The gate hint's wait on that detached gate (GATE_WAIT_HINT)."""
+    return run_loop.GATE_WAIT_HINT.format(
+        wait=f"`python3 {run_loop.SCRIPT} gate --wait "
+             f"{Path(outputs) / 'gate_spec.json'}`")
 
 
 def test_every_component_gate_hint_says_what_exit_3_means():
@@ -2319,7 +2329,7 @@ def test_every_component_gate_hint_says_what_exit_3_means():
             f" — through {wrapper_cmd(outputs)}, which runs the driver's own "
             f"gate: `kc project test --project {PROJECT}` and `kc project lint "
             f"--project {PROJECT}`, and both for every other component the "
-            "phase's diff touches. "
+            f"phase's diff touches. {waits(outputs)}. "
             f"{run_loop.GATE_REUSE_HINT}. {run_loop.NOTHING_RAN_HINT}")
         assert root == (
             f" — through {wrapper_cmd(outputs)}, which runs the driver's own "
@@ -2328,7 +2338,7 @@ def test_every_component_gate_hint_says_what_exit_3_means():
             "and the same two steps for `kc project lint`; then both, "
             "`--project <c>`, for every other component the phase's diff "
             "touches, but not a verb that went bare, which ran every "
-            "component already. "
+            f"component already. {waits(outputs)}. "
             f"{run_loop.GATE_REUSE_HINT}. {run_loop.NOTHING_RAN_HINT}")
         assert "Exit 3 is kc's \"nothing ran\"" in run_loop.NOTHING_RAN_HINT
 
@@ -3538,6 +3548,7 @@ def test_every_code_writer_prompt_names_the_gate_wrapper():
                 "which runs the driver's own gate: `kc project test --project "
                 f"{PROJECT}` and `kc project lint --project {PROJECT}`, and "
                 "both for every other component the phase's diff touches. "
+                f"{waits(outputs_of(r))}. "
                 f"{run_loop.GATE_REUSE_HINT}. {run_loop.NOTHING_RAN_HINT}.")
         for writer in writers:
             assert hint in writer
@@ -4824,7 +4835,8 @@ def test_a_spec_repo_phases_dispatch_names_the_spec_check_as_its_gate():
                 f"through {wrapper_cmd(outputs)}, which runs the driver's own "
                 f"gate: {spec_check_hint(work)}; and `kc project test` from "
                 f"{work} after it, once this phase adds "
-                f"`.kubecoder/project.yaml`. {run_loop.GATE_REUSE_HINT}.") \
+                f"`.kubecoder/project.yaml`. {waits(outputs)}. "
+                f"{run_loop.GATE_REUSE_HINT}.") \
             in writer
         assert "own conventions" not in writer
     # a sibling repo with no manifest keeps its own conventions
@@ -6808,7 +6820,7 @@ def test_a_sibling_repos_component_resolves_in_that_repo():
             f" — through {wrapper_cmd(outputs)}, which runs the driver's own "
             "gate: `kc project test --project aac-tools` and `kc project lint "
             f"--project aac-tools` from {sib}, and both for every other "
-            "component the phase's diff touches. "
+            f"component the phase's diff touches. {waits(outputs)}. "
             f"{run_loop.GATE_REUSE_HINT}. {run_loop.NOTHING_RAN_HINT}")
         # a checkout without a manifest has no components to ask for, and
         # the spec repo beside it has none either
@@ -7019,6 +7031,7 @@ def test_a_shared_repos_phase_is_dispatched_gated_and_checked_in_its_worktree():
         assert (f" — through {wrapper_cmd(slice_dir / 'phases' / 'P1')}, "
                 f"which runs the driver's own gate: {spec_check_hint(work)}, "
                 f"then `kc project test` from {work}. "
+                f"{waits(slice_dir / 'phases' / 'P1')}. "
                 f"{run_loop.GATE_REUSE_HINT}.") in writer
         assert r.gate_cwds and set(r.gate_cwds) == {work}
         adds = [c for root, c in r.fake_git.calls
@@ -8936,6 +8949,9 @@ def test_a_flake_the_test_fixer_settles_is_swept_again_and_appends_no_phase():
         assert str(slice_dir / "sweeps" / "r1" / f"repo_{PROJECT}_test.log") \
             in fixer
         assert str(slice_dir / "test_fixer_result_r1.json") in fixer
+        assert ("and as often on `base123`, where main stood before this "
+                "slice's first phase merged there, in a worktree of your "
+                "own") in fixer.replace("\n", " ")
         state = load_state(slice_dir)
         assert state["generation"] == 0
         assert state["sweep_runs"] == 2
@@ -10865,7 +10881,10 @@ def test_doc_phase_prompt_states_diff_files_digest_verbs_and_doc():
         assert prompt.count("close_out.py append <close-out.md> --kind {") == 1
         assert "--consequence: what an operator or user experiences" in prompt
         line = close_out.dispatch_line(slice_dir / "close-out.md")
-        assert f"- {line}\n- Work on branch" in prompt
+        # where the repo stood before the slice, for a test-fixer's measure
+        starts = run_loop.STARTS_LINE.format(
+            rows=run_loop.STARTS_ROW.format(root=repo, sha="base123"))
+        assert f"- {line}\n{starts}- Work on branch" in prompt
         assert "The other verbs" not in prompt
         assert prompt.count("close_out.py note <close-out.md> <id> --by BY") == 1
         assert prompt.count("close_out.py strike <close-out.md> <id>") == 1
@@ -13702,6 +13721,15 @@ def test_a_fresh_session_opens_with_the_headless_wait_line():
     expected = f"{run_loop.HEADLESS_WAIT_LINE}\n\nthe role's prompt"
     assert _sent_prompt(agent="code-writer") == expected
     assert _sent_prompt() == expected
+
+
+def test_the_headless_wait_line_names_the_runner_by_its_absolute_path():
+    runner = run_loop.LONG_RUN
+    assert runner.is_absolute() and runner.is_file()
+    assert runner == Path(run_loop.__file__).resolve().parent / "long_run.py"
+    assert (f"`python3 {runner} start --timeout <seconds> -- <command>`"
+            in run_loop.HEADLESS_WAIT_LINE)
+    assert "{" not in run_loop.HEADLESS_WAIT_LINE
 
 
 def test_a_resumed_session_is_sent_its_prompt_as_given():
@@ -17513,6 +17541,214 @@ def test_a_detached_run_refuses_and_runs_through_the_real_handshake():
         pid, code, text = run_loop.detach(body2, again.log_path)
         assert (pid, code) == (None, 2) and "Pass --resume" in text
         assert exit_record(slice_dir)["code"] == 0
+
+
+# -- the gate detached, and waited on in chunks ------------------------------
+#
+# Every role runs on the five-minute prompt cache, and PilotApp's phase gates
+# take 5 to 10 minutes: a writer that waited on one in a single call paid to
+# write its whole context again at the next. `gate --detach` starts the
+# wrapper through long_run.py, beside the spec; `gate --wait` waits on it in
+# calls of at most four minutes. The detached wrapper is the real
+# `run_loop.py gate` in a process of its own, so these run real commands.
+
+def gate_cli(spec, **flags):
+    return call(run_loop.cmd_gate, spec=str(spec), **flags)
+
+
+def gate_wait_line(spec):
+    return f"next: python3 {run_loop.SCRIPT} gate --wait {spec}"
+
+
+def test_a_detached_gate_is_waited_on_to_its_end_and_says_what_its_exit_means():
+    with tempfile.TemporaryDirectory() as tmp, plain_git(), \
+            patched(run_loop.long_run, POLL=0.02):
+        repo, _ = wrapper_repo(tmp)
+        not_a_repo = Path(tmp) / "plain"
+        not_a_repo.mkdir()
+        for root, rc, said, outcome in ((repo, 1, "red", "red"),
+                                        (repo, 0, "green", "green"),
+                                        (repo, 3, "nothing ran", "nothing_ran"),
+                                        (not_a_repo, 0, "no run", None)):
+            spec = write_spec(tmp, root, ["sh", "-c", f"echo gate-ran; exit {rc}"])
+            code, out, err = gate_cli(spec, detach=True)
+            assert code == 0, err
+            started = shlex.join([sys.executable, str(run_loop.SCRIPT), "gate",
+                                  str(spec)])
+            assert out.splitlines() == [
+                f"started: {started} in {os.getcwd()}, at most 3600s",
+                gate_wait_line(spec)]
+            code, out, err = gate_cli(spec, wait=True, for_seconds=60)
+            assert code == 0, err
+            lines = out.splitlines()
+            expected = 2 if outcome is None else rc
+            assert lines[0].startswith(
+                f"ended: exit {expected} ({said}) after "), lines
+            job = spec.parent / run_loop.GATE_RUN_DIR
+            assert lines[1] == f"output: {job / 'output.log'}"
+            assert lines[2] == ""
+            if outcome is None:
+                # the wrapper's own refusal, in the output it left
+                assert lines[3].startswith("gate: "), lines
+                assert not (spec.parent / "writer_gate_r1.json").exists()
+                continue
+            assert lines[3] == "=== `sh -c echo gate-ran; exit " \
+                               f"{rc}` from {repo} ===", lines
+            assert "gate-ran" in lines
+            # the run is the wrapper's: recorded beside the spec as ever
+            assert record_of(spec)["outcome"] == outcome
+            (spec.parent / "writer_gate_r1.json").unlink()
+        assert (job / ".gitignore").read_text() == "*\n"
+
+
+def test_a_gate_is_not_detached_twice_nor_waited_on_where_none_started():
+    with tempfile.TemporaryDirectory() as tmp, plain_git(), \
+            patched(run_loop.long_run, POLL=0.02):
+        repo, _ = wrapper_repo(tmp)
+        spec = write_spec(tmp, repo, ["sh", "-c", "sleep 30"])
+        code, out, err = gate_cli(spec, wait=True, for_seconds=0)
+        assert (code, out) == (2, "")
+        assert err == (f"gate: no gate was started over {spec} — start it "
+                       f"with `python3 {run_loop.SCRIPT} gate --detach "
+                       f"{spec}`\n")
+        code, out, err = gate_cli(spec, detach=True, timeout=1)
+        assert code == 0, err
+        assert out.splitlines()[0].endswith(", at most 1s")
+        code, out, err = gate_cli(spec, detach=True)
+        assert (code, out) == (2, "")
+        assert err.splitlines() == [
+            "long_run: a job is already running in "
+            f"{spec.parent / run_loop.GATE_RUN_DIR} — wait on it:",
+            gate_wait_line(spec)]
+        code, out, _ = gate_cli(spec, wait=True, for_seconds=0)
+        assert code == run_loop.long_run.WAIT_RUNNING
+        running, again = out.splitlines()
+        assert running.startswith("running: ") \
+            and running.endswith(" of at most 1s")
+        assert again == gate_wait_line(spec)
+        # the timeout kills the wrapper and the suite it runs
+        code, out, _ = gate_cli(spec, wait=True, for_seconds=30)
+        assert code == 0
+        assert out.splitlines()[0] == "ended: exit 124, timed out after 1s"
+
+
+def test_gate_refuses_a_bad_spec_and_flags_that_do_not_combine():
+    with tempfile.TemporaryDirectory() as tmp:
+        bad = Path(tmp) / "phases" / "P1" / "gate_spec.json"
+        bad.parent.mkdir(parents=True)
+        bad.write_text("{}")
+        code, out, err = gate_cli(bad, detach=True)
+        assert (code, out) == (2, "")
+        assert err.startswith(f"gate: {bad} is not a gate spec: ")
+        assert not (bad.parent / run_loop.GATE_RUN_DIR).exists()
+        for flags, why in (({"detach": True, "wait": True}, "do not combine"),
+                           ({"timeout": 5}, "--timeout goes with --detach"),
+                           ({"for_seconds": 5}, "--for goes with --wait"),
+                           ({"detach": True, "for_seconds": 5},
+                            "--for goes with --wait")):
+            code, out, err = gate_cli(bad, **flags)
+            assert (code, out) == (2, ""), flags
+            assert why in err, (flags, err)
+        # the parser itself refuses the pair
+        argv = ["run_loop.py", "gate", "--detach", "--wait", str(bad)]
+        with patched(sys, argv=argv), \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            try:
+                run_loop.main()
+            except SystemExit as e:
+                assert e.code == 2
+            else:
+                raise AssertionError("main did not exit")
+        assert "not allowed with argument" in err.getvalue()
+        assert run_loop.GATE_EXIT_MEANINGS == {
+            0: "green", 1: "red", 3: "nothing ran", 2: "no run"}
+
+
+# -- where each repo stood before the slice: a test-fixer's measure ----------
+#
+# Slice 039's completion consult ruled a product regression "a flake or a
+# test race", and on that brief the test-fixer edited after 13 seconds. A
+# fixer measures the red first, on the base branch as it stands and on the
+# commit before the slice, which the driver names from its landings.
+
+def test_the_slice_starts_are_each_repos_first_landing():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        other = Path(tmp) / "Other"
+        other.mkdir()
+        link = Path(tmp) / "repo-link"
+        link.symlink_to(repo)
+        a, b, c, d = ("a" * 40, "b" * 40, "c" * 40, "d" * 40)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r.state = {"phases": {
+            "1": {"status": "merged", **landed_in(repo, a, b)},
+            "2": {"status": "merged", **landed_in(other, c, d)},
+            # the same repo by another path, landed later: not its start
+            "3": {"status": "merged", **landed_in(link, b, c)},
+            "4": {"status": "merged"},
+            "5": {"status": "pending", **landed_in(Path(tmp) / "Third", d, d)},
+        }}
+        assert r._slice_starts() == {str(repo): a, str(other): c}
+        assert r._slice_start(link) == a
+        assert r._slice_start(Path(tmp) / "Third") is None
+        assert r._starts_line() == run_loop.STARTS_LINE.format(
+            rows=f"  - {repo}: `{a}`\n  - {other}: `{c}`")
+        r.state = {"phases": {"4": {"status": "merged"}}}
+        assert r._slice_starts() == {} and r._starts_line() == ""
+
+
+def test_the_flake_fixer_measures_against_the_commit_before_the_slice():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        prompts = []
+
+        def spawn(role, prompt, *args, **kwargs):
+            prompts.append(prompt.replace("\n", " "))
+            return {"outcome": "issues", "summary": "not mine"}, None
+
+        r._spawn = spawn
+        r._ensure_committed = lambda *args, **kwargs: None
+        row = {"repo": str(repo), "component": PROJECT, "log": "sweep.log"}
+        sha = "a" * 40
+        for phases in ({"1": {"status": "merged",
+                              **landed_in(repo, sha, "b" * 40)}},
+                       {"1": {"status": "merged"}}):
+            r.state = {"phases": phases, "bases": {str(repo): "main"}}
+            r._test_fixer_round(row, len(prompts) + 1, "a race")
+        known, unknown = prompts
+        before = run_loop.FLAKE_BEFORE_KNOWN.format(sha=sha, base_branch="main")
+        assert f"and as often on {before}, in a worktree of your own" in known
+        before = run_loop.FLAKE_BEFORE_UNKNOWN.format(base_branch="main")
+        assert f"and as often on {before}, in a worktree of your own" \
+            in unknown
+        assert "{before}" not in known + unknown
+
+
+def test_the_test_and_doc_phases_name_where_each_repo_stood_before_the_slice():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0
+        starts = run_loop.STARTS_LINE.format(
+            rows=run_loop.STARTS_ROW.format(root=repo, sha="base123"))
+        line = close_out.dispatch_line(slice_dir / "close-out.md")
+        test_prompt = next(p for role, p in r.prompts if role == "test-agent")
+        assert f"- {line}\n{starts}" in test_prompt
+        doc_prompt = next(p for role, p in r.prompts if role == "doc-writer")
+        assert f"- {line}\n{starts}- Work on branch" in doc_prompt
+    # no landing on record: no line, and nothing in its place
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        doc_phase_resume(slice_dir, repo, {"1": {}})
+        r = ScriptedLoop(slice_dir, [V["doc_done"]], resume=True,
+                         repo_root=repo)
+        assert run_to_exit(r) == 0
+        prompt = next(p for role, p in r.prompts if role == "doc-writer")
+        assert "Before this slice" not in prompt
+        line = close_out.dispatch_line(slice_dir / "close-out.md")
+        assert f"- {line}\n- Work on branch" in prompt
 
 
 # -- Pilot's halt: the halt file, the safe points, exit 7 --------------------

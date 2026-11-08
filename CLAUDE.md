@@ -98,6 +98,8 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   `close_slice.py`, `slice_cards.py` (triage's check that every card a `slice.md` quotes in
   full matches the dump), `redact_secrets.py` (the `kind: Secret` stubbing of
   every diff the driver hands an agent), `spec_check.py` (the spec repo's phase gate),
+  `long_run.py` (a long command run detached and waited on in chunks under the prompt cache's
+  five minutes; `run_loop.py gate --detach` rides it),
   `slice_cost.py` (with
   `turn_profile.py`, the transcript replay behind its turn table), `allocate-next-slice.sh`.
   Suites load their subject via `importlib.util.spec_from_file_location` (`tools/` is not a

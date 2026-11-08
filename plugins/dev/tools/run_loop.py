@@ -106,12 +106,22 @@ Usage:
     run_loop.py stop <slice-dir>
     run_loop.py status <slice-dir>
     run_loop.py gate <phase-outputs>/gate_spec.json
+    run_loop.py gate --detach <phase-outputs>/gate_spec.json [--timeout SECONDS]
+    run_loop.py gate --wait <phase-outputs>/gate_spec.json [--for SECONDS]
 
 `gate` is the code-writer's, not the operator's: it runs the phase gate the
 driver would run, from the spec the driver wrote at the dispatch, and records
 the run beside it; a green the driver can prove was on the tree it is handed
 is its gate, not run again. It exits 0 green · 1 red · 3 nothing ran · 2 no
-run (an unreadable spec, a tree git cannot hash).
+run (an unreadable spec, a tree git cannot hash). `gate --detach` starts that
+same run detached (long_run.py, its job dir gate_run/ beside the spec, killed
+at --timeout, default 3600) and exits 0 once it started, printing the
+`gate --wait` line to run next · 2 refused: no spec to run, or a gate still
+running there. `gate --wait` waits on it for at most --for seconds (default
+240, under a session's five-minute prompt cache) and exits with its own code,
+not the gate's: 0 the gate ended (its exit, what that means and its whole
+output in the output) · 5 still running · 6 gone, no exit record · 2 no gate
+started there.
 
 Exit codes of run: 0 slice complete · 3 bailed on an error (bailout.json
 written) · 4 bailed with an operator question (bailout.json written) ·
@@ -157,6 +167,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import asks  # noqa: E402
 import checks  # noqa: E402
 import github_target  # noqa: E402
+import long_run  # noqa: E402
 import pilot_progress  # noqa: E402
 import project_config  # noqa: E402
 from close_out import (  # noqa: E402
@@ -290,12 +301,26 @@ GATE_REUSE_HINT = ("When its last run is green on the tree you hand back — "
                    "nothing, any edit does — the driver takes that run as "
                    "its gate and runs none of it again")
 
+# Follows the gate in every gate hint that names the wrapper: it runs
+# detached, and the writer waits on it in chunks (HEADLESS_WAIT_LINE).
+# `{wait}` is `gate --wait` over the phase's spec, in backticks.
+GATE_WAIT_HINT = ("It starts the gate detached and returns; wait on it with "
+                  "{wait}, which returns within four minutes, and while it "
+                  "says `running` run it again at once, reading nothing in "
+                  "between")
+
 # The writer runs the phase gate through the driver's own wrapper (`run_loop.py
 # gate <spec>`, `run_writer_gate`): the spec, written into the phase's outputs
 # dir at every code-writer dispatch, says what the gate is; each run records
 # what it ran and on what tree beside it, one record per round, so only the
 # latest round's can stand in for the driver's gate (`_reusable_writer_gate`).
 GATE_SPEC_NAME = "gate_spec.json"
+
+# `gate --detach` runs that same wrapper through long_run.py, its job dir
+# this one beside the spec — so `gate --wait <spec>` finds it from the spec
+# alone — and `gate --wait`'s ended line says what the wrapper's exit means.
+GATE_RUN_DIR = "gate_run"
+GATE_EXIT_MEANINGS = {0: "green", 1: "red", 3: "nothing ran", 2: "no run"}
 
 # A spec-repo phase's gate opens with the plugin's spec check (AIWF-68 —
 # AnsibleSpecs has no manifest, script or CI, so every phase there wrote a
@@ -2389,14 +2414,31 @@ def _kc_send(name: str, prompt: str, cwd: Path, timeout: int,
 # 0.10.44 and a UI suite waiting its turn behind another environment's run
 # could outrun that. A resumed session already carries the line in its
 # history, so a nudge or a reattach is sent as given.
-HEADLESS_WAIT_LINE = """\
-You run as a headless session of your own, not as a sub-agent: a command
-you background re-invokes you when it exits. Run a gate in the foreground
-under `timeout(1)`, sized for it within the Bash tool's cap on one call,
-which its description gives: an hour on KubeCoder, where a suite may wait
-its turn behind another environment's run. Background only what can outrun
-the cap, and then wait by ending your turn, with a reply and no tool call.
-Never poll it, and never build a waiter. A `kc project test` its timeout
+#
+# Every role runs on the 5-minute cache (SPAWN_ENV), and a wait past it
+# re-writes the session's whole context at its next call: in PilotApp's week
+# of 2026-11-01 to 11-08, 208 misses and $173, $115 of it code-writers
+# waiting on their phase gate, which takes 5 to 10 minutes there, foreground
+# or backgrounded alike (PilotAppSpecs research/cache-misses/findings.md).
+# So a long command runs detached (long_run.py, or the gate's own `gate
+# --detach`) and is waited on in chunks under the cache's lifetime, each
+# return a cache read: the run-slice skill's `wait --for`, for a command.
+LONG_RUN = long_run.LONG_RUN
+HEADLESS_WAIT_LINE = f"""\
+You run as a headless session of your own, not as a sub-agent. Your prompt
+cache lives five minutes between calls, and the call after a longer wait
+pays to write your whole context again. So a command that may run past
+four minutes, however your instructions write it — a test suite, a wait on
+a CI build or its deploy — is started detached and waited on in chunks:
+`python3 {LONG_RUN} start --timeout <seconds> -- <command>`, the timeout
+sized for it, with `sh -c '…'` around a pipeline or a `cd`. It prints a
+`next:` line, a wait that returns within four minutes. While that says
+`running`, run the same line again at once, reading nothing in between;
+`ended` brings the command's output and its exit. A phase gate your
+dispatch names has its own pair of lines, used the same way. That line is
+the waiter: never background such a command and end your turn on it,
+never sleep, tail its log or build a waiter of your own. A shorter command
+runs in the foreground under `timeout(1)`. A `kc project test` its timeout
 killed printed nothing: the newest log under /tmp/kc/project says how far
 it got, and a run that ran no test, only waited, is run again, never
 fixed.\
@@ -3532,11 +3574,17 @@ lint/build/test state as unverified.\
 """
 
 # The test-fixer's dispatch on a sweep row the completion consult answered
-# `flake` on (AIWF-141): the driver's own, one round per suite per run.
+# `flake` on (AIWF-141): the driver's own, one round per suite per run. The
+# consult's reasoning is no measurement: slice 039's consult ruled a product
+# regression "a flake or a test race", and on that brief the fixer edited
+# after 13 seconds, raised one spec's waits from 10 to 30 seconds and left
+# the commit on the base branch when it handed back `issues`. `{before}` is
+# FLAKE_BEFORE_KNOWN or FLAKE_BEFORE_UNKNOWN.
 FLAKE_FIX_PROMPT = """\
 The loop-tail gate sweep of slice {slice_name} is red on one test suite, and
 the completion consult judged the red a flake or a test race in the tests,
-not a fault of the product. Its reasoning, which is your brief:
+not a fault of the product. Its reasoning follows. It is a diagnosis, not a
+measurement, and a consult's has been wrong before:
 
 {diagnosis}
 
@@ -3544,22 +3592,34 @@ The failing command is `{command}`, run in {root} on {base_branch}. What its
 runs left, copied before anything else ran:
 {evidence}
 
-Make those tests deterministic: fix the race, the order dependence or the
-shared state in the tests, their fixtures or their helpers, so that they pass
-every time, without weakening what they assert. Repeat the failing tests
-until the fix holds, then run `{command}` once. A fix the product's code
-would need is not mechanical: hand it back with `issues`.
+Measure before you edit: the failing tests on {base_branch} as it stands,
+and as often on {before}, in a worktree of your own. Then make those tests
+deterministic, if the measurement leaves that yours: fix the race, the order
+dependence or the shared state in the tests, their fixtures or their
+helpers, without weakening what they assert. Repeat the failing tests until
+the fix holds, then run `{command}` once. A fix the product's code would
+need is not mechanical: hand it back with `issues`.
 
 Commit on {base_branch} in {root}, the branch the sweep ran on, staged by
-name; never branch, never push. The driver sweeps again on your commit. A
-flake you hand back unsettled goes into the slice's close-out report as a
-card request, and the run goes on without it.
+name, and only once the fix holds; never branch, never push. The driver
+sweeps again on your commit. A flake you hand back unsettled leaves nothing
+committed; it goes into the slice's close-out report as a card request, and
+the run goes on without it.
 
 Write your verdict to {verdict_path} as JSON:
   {{"outcome": "clean" | "issues" | "blocked",
-    "summary": "<what you fixed and committed, or why not>"}}
+    "summary": "<what you measured, and what you fixed and committed, or why not>"}}
 `clean` only with your fix committed.
 """
+
+# FLAKE_FIX_PROMPT's `{before}`: the commit the base branch stood at before
+# the slice's first phase landed in the row's repo (`_slice_starts`), or,
+# with no landing on record there, how to find it.
+FLAKE_BEFORE_KNOWN = ("`{sha}`, where {base_branch} stood before this "
+                      "slice's first phase merged there")
+FLAKE_BEFORE_UNKNOWN = ("the commit {base_branch} stood at before this "
+                        "slice's first phase merged there, which no landing "
+                        "on record names: find it in `git log`")
 
 TEST_PHASE_PROMPT = """\
 The phases of slice {slice_name} are all merged on {base_branch}. Run the
@@ -3574,7 +3634,7 @@ Deterministic facts from the driver:
 - The slice folder is {slice_dir}; the plan is {plan_path}. Check off
   {verification_path} as you verify (verdict + evidence per item).
 - {close_out_line}
-{hold_block}{rulings_block}
+{starts_line}{hold_block}{rulings_block}
 {sweep_block}
 
 Findings route through a generation bar, stated for this pass:
@@ -3616,7 +3676,7 @@ Deterministic facts from the driver:
   the steering.
 - The slice folder is {slice_dir}.
 - {close_out_line}
-- Work on branch {branch}, which is checked out in {root} — the one repo
+{starts_line}- Work on branch {branch}, which is checked out in {root} — the one repo
   that branch exists in. A doc edit in another code repo this slice touched
   (a diff row above names it, and does not say the driver pushes no doc
   edit there) is committed on the base branch checked out there,
@@ -3639,6 +3699,18 @@ behind it. Fix what broke on branch {branch}
 without weakening any gate — mechanical suite breakage may go to the
 `dev:test-fixer` sub-agent — commit, and do not push. Do not start other work.
 """
+
+# The test and doc phases' `{starts_line}`: each repo's commit before the
+# slice (`_slice_starts`), which a test-fixer the phase's session dispatches
+# measures a red against (test-fixer.md rule 4); empty where no phase
+# landed with a range on record. `{rows}` is STARTS_ROW per repo.
+STARTS_LINE = """\
+- Before this slice, the repos it landed in stood at:
+{rows}
+  A `dev:test-fixer` you dispatch on a red is given its repo's commit: it
+  measures the red against that commit before it edits anything.
+"""
+STARTS_ROW = "  - {root}: `{sha}`"
 
 HOLD_BLOCK = """\
 - The plan holds these repos — pushing them is NOT part of this phase, and
@@ -7986,7 +8058,10 @@ class RunLoop:
         that names a migration check is told the gate closes with it where
         the phase adds a migration (AIWF-140)."""
         work = target.work_root
-        wrapper = f"`python3 {SCRIPT} gate {outputs / GATE_SPEC_NAME}`"
+        spec_path = outputs / GATE_SPEC_NAME
+        wrapper = f"`python3 {SCRIPT} gate --detach {spec_path}`"
+        waits = GATE_WAIT_HINT.format(
+            wait=f"`python3 {SCRIPT} gate --wait {spec_path}`")
         check = self._spec_check_argv(target, merge_base)
         spec = (SPEC_CHECK_HINT.format(argv=" ".join(check))
                 if check is not None else "")
@@ -8005,7 +8080,7 @@ class RunLoop:
                     "lint`; then both, `--project <c>`, for every other "
                     "component the phase's diff touches, but not a verb that "
                     "went bare, which ran every component already"
-                    f"{last}. {GATE_REUSE_HINT}. {NOTHING_RAN_HINT}")
+                    f"{last}. {waits}. {GATE_REUSE_HINT}. {NOTHING_RAN_HINT}")
         if target.kind == "project":
             # The driver gates every component the diff touches beside the
             # Target's own (AIWF-91), each linted beside its test (AIWF-105),
@@ -8015,16 +8090,17 @@ class RunLoop:
                     f"{first}`kc project test --project {target.name}` and "
                     f"`kc project lint --project {target.name}`{where}, and "
                     "both for every other component the phase's diff "
-                    f"touches{last}. {GATE_REUSE_HINT}. {NOTHING_RAN_HINT}")
+                    f"touches{last}. {waits}. {GATE_REUSE_HINT}. "
+                    f"{NOTHING_RAN_HINT}")
         if target.gate_argv:
             return (f" — through {wrapper}, which runs the driver's own gate: "
-                    f"{first}`kc project test` from {work}{last}. "
+                    f"{first}`kc project test` from {work}{last}. {waits}. "
                     f"{GATE_REUSE_HINT}")
         if spec:
             return (f" — through {wrapper}, which runs the driver's own gate: "
                     f"{spec}; and `kc project test` from {work} after it, "
                     "once this phase adds `.kubecoder/project.yaml`. "
-                    f"{GATE_REUSE_HINT}")
+                    f"{waits}. {GATE_REUSE_HINT}")
         return (f" ({work} has no kc manifest — gate per that repo's own "
                 "conventions; if this phase adds `.kubecoder/project.yaml`, "
                 f"the driver's gate is `kc project test` from {work})")
@@ -8060,6 +8136,39 @@ class RunLoop:
             else:
                 unranged.append(pid)
         return ranged, unranged
+
+    def _slice_starts(self) -> dict[str, str]:
+        """Where each repo a merged phase landed in stood before the slice:
+        {its root, as the first landing there recorded it: that landing's
+        base} — the first landed range per repo in merge order, roots
+        compared resolved, so the commit its base branch stood at before
+        the slice's first phase merged there. A test-fixer measures a red
+        against it (FLAKE_BEFORE_KNOWN, STARTS_LINE). A repo whose phases
+        all merged with no range on record has no row."""
+        starts: dict[str, str] = {}
+        seen: set[Path] = set()
+        for _, landed in self._landed()[0]:
+            root = Path(landed["root"]).resolve()
+            if root not in seen:
+                seen.add(root)
+                starts[landed["root"]] = landed["base"]
+        return starts
+
+    def _slice_start(self, root: Path) -> str | None:
+        """`_slice_starts`' commit for `root`, compared resolved."""
+        here = Path(root).resolve()
+        return next((sha for where, sha in self._slice_starts().items()
+                     if Path(where).resolve() == here), None)
+
+    def _starts_line(self) -> str:
+        """The test and doc phases' STARTS_LINE, or "" with no landing on
+        record."""
+        starts = self._slice_starts()
+        if not starts:
+            return ""
+        return STARTS_LINE.format(rows="\n".join(
+            STARTS_ROW.format(root=root, sha=sha)
+            for root, sha in starts.items()))
 
     def _work_is_in(self, ref: str, sha: str, root: Path) -> bool:
         return self.git_ok("merge-base", "--is-ancestor", sha, ref, root=root)
@@ -10106,13 +10215,16 @@ class RunLoop:
         verdict_path = self.slice_dir / f"test_fixer_result_r{r}.json"
         base = (self.state.get("bases") or {}).get(row["repo"]) \
             or self._current_branch(root)
+        start = self._slice_start(root)
+        before = (FLAKE_BEFORE_KNOWN.format(sha=start, base_branch=base)
+                  if start else FLAKE_BEFORE_UNKNOWN.format(base_branch=base))
         verdict, session = self._spawn(
             "test-fixer",
             FLAKE_FIX_PROMPT.format(
                 slice_name=self.slice_name,
                 diagnosis=diagnosis.strip() or "(the consult gave none)",
                 command=f"kc project test --project {row['component']}",
-                root=root, base_branch=base,
+                root=root, base_branch=base, before=before,
                 evidence="\n".join(self._flake_evidence(row)),
                 verdict_path=verdict_path),
             root, verdict_path, None, r, agent="test-fixer",
@@ -10220,6 +10332,7 @@ class RunLoop:
                 verification_path=self.verification_path,
                 close_out_line=dispatch_line(self.report_path),
                 prd_line=prd_line,
+                starts_line=self._starts_line(),
                 hold_block=self._hold_block(),
                 rulings_block=self._rulings_block(),
                 sweep_block=self._sweep_block(self.state["gate_sweep"],
@@ -10603,6 +10716,7 @@ class RunLoop:
                     diff_rows="\n".join(diff_rows) or "  (no merged phase on record)",
                     slice_dir=self.slice_dir, plan_path=self.plan_path,
                     close_out_line=dispatch_line(self.report_path),
+                    starts_line=self._starts_line(),
                     branch=branch, root=root, base_branch=base,
                     verdict_path=verdict_path)
                 + build_slice_digest(plan_text),
@@ -13050,6 +13164,19 @@ def _tee_exec(argv: list[str], cwd: Path) -> tuple[int, str]:
     return returncode, kept.decode(errors="replace")
 
 
+def read_gate_spec(spec_path: Path) -> tuple[dict | None, str | None]:
+    """The gate spec at `spec_path`, or None and the `gate:` line that says
+    why there is none to run."""
+    try:
+        spec = json.loads(Path(spec_path).read_text())
+    except (OSError, ValueError) as e:
+        return None, f"gate: cannot read the gate spec {spec_path}: {e}"
+    problem = gate_spec_problem(spec)
+    if problem:
+        return None, f"gate: {spec_path} is not a gate spec: {problem}"
+    return spec, None
+
+
 def run_writer_gate(spec_path: Path) -> int:
     """The `gate` subcommand: the phase gate as the driver runs it
     (`RunLoop._run_gate`), from the spec the driver wrote for this
@@ -13087,16 +13214,9 @@ def run_writer_gate(spec_path: Path) -> int:
     before the first command and after the last, so the record says
     whether it changed while the run went on. A later run in the same round
     replaces the record: the driver takes the last one or none."""
-    try:
-        spec = json.loads(Path(spec_path).read_text())
-    except (OSError, ValueError) as e:
-        print(f"gate: cannot read the gate spec {spec_path}: {e}",
-              file=sys.stderr)
-        return 2
-    problem = gate_spec_problem(spec)
-    if problem:
-        print(f"gate: {spec_path} is not a gate spec: {problem}",
-              file=sys.stderr)
+    spec, problem = read_gate_spec(spec_path)
+    if spec is None:
+        print(problem, file=sys.stderr)
         return 2
     work_root, gate_cwd = Path(spec["work_root"]), Path(spec["gate_cwd"])
     touched = spec.get("touched")
@@ -13246,8 +13366,79 @@ def run_writer_gate(spec_path: Path) -> int:
     return {"green": 0, "red": 1}.get(outcome, KC_NOTHING_RAN)
 
 
+def _gate_wait_line(spec_path: Path) -> str:
+    return f"next: python3 {SCRIPT} gate --wait {spec_path}"
+
+
+def detach_writer_gate(spec_path: Path,
+                       timeout: float = long_run.DEFAULT_TIMEOUT) -> int:
+    """`gate --detach`: the wrapper's own run (`run_writer_gate`) started
+    through long_run.py, in the job dir GATE_RUN_DIR beside the spec,
+    killed at `timeout` seconds — so the writer waits on it in chunks under
+    its prompt cache's lifetime (HEADLESS_WAIT_LINE) instead of in one call
+    the length of the gate. Prints `started:` and the `gate --wait` line to
+    run next and returns 0; 2 is a refusal — no spec to run, or a gate
+    still running there — with the reason on stderr."""
+    spec_path = Path(os.path.abspath(spec_path))
+    spec, problem = read_gate_spec(spec_path)
+    if spec is None:
+        print(problem, file=sys.stderr)
+        return 2
+    code, text = long_run.start_job(
+        [sys.executable, str(SCRIPT), "gate", str(spec_path)],
+        spec_path.parent / GATE_RUN_DIR, None, timeout,
+        next_line=_gate_wait_line(spec_path))
+    print(text, file=sys.stdout if code == 0 else sys.stderr, flush=True)
+    return code
+
+
+def wait_writer_gate(spec_path: Path,
+                     for_seconds: float = long_run.CHUNK) -> int:
+    """`gate --wait`: long_run.py's wait on the gate `gate --detach` started
+    over this spec, at most `for_seconds`, its `next:` line naming
+    `gate --wait` again, its ended line what the gate's exit means
+    (GATE_EXIT_MEANINGS) — and wait's own exit code, not the gate's: 0 the
+    gate ended · 5 still running · 6 gone with no exit record · 2 no gate
+    started there."""
+    spec_path = Path(os.path.abspath(spec_path))
+    job_dir = spec_path.parent / GATE_RUN_DIR
+    if not (job_dir / long_run.JOB).is_file():
+        print(f"gate: no gate was started over {spec_path} — start it with "
+              f"`python3 {SCRIPT} gate --detach {spec_path}`",
+              file=sys.stderr)
+        return 2
+    code, text = long_run.wait_job(job_dir, for_seconds,
+                                   next_line=_gate_wait_line(spec_path),
+                                   meaning=GATE_EXIT_MEANINGS.get)
+    print(text, end="" if text.endswith("\n") else "\n",
+          file=sys.stderr if code == 2 else sys.stdout, flush=True)
+    return code
+
+
 def cmd_gate(args) -> None:
-    sys.exit(run_writer_gate(Path(args.spec)))
+    """`gate`: the wrapper in the foreground; with `--detach` it is started
+    detached, with `--wait` waited on. An args object with only `spec`, as
+    a caller of the foreground run passes, is the foreground run."""
+    spec = Path(args.spec)
+    detach_, wait_ = getattr(args, "detach", False), getattr(args, "wait", False)
+    timeout = getattr(args, "timeout", None)
+    for_seconds = getattr(args, "for_seconds", None)
+    if detach_ and wait_:
+        print("gate: --detach and --wait do not combine", file=sys.stderr)
+        sys.exit(2)
+    if timeout is not None and not detach_:
+        print("gate: --timeout goes with --detach", file=sys.stderr)
+        sys.exit(2)
+    if for_seconds is not None and not wait_:
+        print("gate: --for goes with --wait", file=sys.stderr)
+        sys.exit(2)
+    if detach_:
+        sys.exit(detach_writer_gate(
+            spec, long_run.DEFAULT_TIMEOUT if timeout is None else timeout))
+    if wait_:
+        sys.exit(wait_writer_gate(
+            spec, long_run.CHUNK if for_seconds is None else for_seconds))
+    sys.exit(run_writer_gate(spec))
 
 
 def main() -> None:
@@ -13293,9 +13484,28 @@ def main() -> None:
     gate_p = sub.add_parser(
         "gate", help="run a phase's test gate as the driver does and record "
                      "the run for the driver; exit 0 green, 1 red, 3 nothing "
-                     "ran, 2 no run")
+                     "ran, 2 no run — or, with --detach, start it detached "
+                     "(exit 0 started, 2 refused), and with --wait wait on "
+                     "it (exit 0 ended, 5 still running, 6 gone, 2 none "
+                     "started)")
     gate_p.add_argument("spec", help="the phase's gate_spec.json, as its "
                                      "code-writer dispatch names it")
+    mode = gate_p.add_mutually_exclusive_group()
+    mode.add_argument("--detach", action="store_true",
+                      help="start the gate detached, in gate_run/ beside the "
+                           "spec, and print the `gate --wait` line to run "
+                           "next")
+    mode.add_argument("--wait", action="store_true",
+                      help="wait on the gate --detach started, at most --for "
+                           "seconds; its output once it ended")
+    gate_p.add_argument("--timeout", type=float, default=None,
+                        metavar="SECONDS",
+                        help="with --detach: kill the gate after this long "
+                             f"(default {long_run.DEFAULT_TIMEOUT})")
+    gate_p.add_argument("--for", dest="for_seconds", type=float,
+                        default=None, metavar="SECONDS",
+                        help="with --wait: give up waiting after this long "
+                             f"(default {long_run.CHUNK})")
     gate_p.set_defaults(func=cmd_gate)
 
     args = parser.parse_args()

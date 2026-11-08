@@ -62,7 +62,10 @@ author prose docs.
    a value was chosen, or why the diff is correct.
 7. **Run the gate yourself before handing back** — your dispatch names it. Iterate on targeted
    runs (single tests, the linter **once**, collecting every violation and fixing all of them in
-   one message); the full gate confirms at the end, as your last run on the finished tree. The
+   one message); the full gate confirms at the end, as your last run on the finished tree. It
+   runs detached: start it with the `gate --detach` line, then run the `gate --wait` line, and
+   again at once while it says `running`. A gate is 3 to 12 minutes, and one wait past five
+   expires your prompt cache, so that the call after it writes your whole context again. The
    driver runs it again after you hand back only when that run was not green on the tree you
    hand back; a red gate comes back as a fix round. **A red in your gate is your phase's bug
    until a measurement shows otherwise**, however intermittent, and a test older than the slice

@@ -320,6 +320,17 @@ whole plan is a feature of the review, not a cost. Then:
   driver gates (133 of their 170 minutes) re-ran a green the writer had seen on an unchanged
   tree.
 
+  **The writer starts its gate detached and waits on it in chunks.** The dispatch names `gate
+  --detach <spec>`, which runs the wrapper in a process of its own (`long_run.py`, its job in
+  `phases/P<id>/gate_run/`) and returns, and `gate --wait <spec>`, which returns within four
+  minutes: `running`, or `ended` with the gate's output and its exit (0 green, 1 red, 3 nothing
+  ran, 2 no run). The writer runs the wait again at once until it ends. A gate in one wait past
+  five minutes expired the writer's prompt cache, so the call after it wrote the whole context
+  again: 108 misses and $115 in PilotApp's week of 2026-11-01 to 11-08, where a frontend gate
+  takes 7.5 minutes at the median, against about $7 of chunk returns
+  ([agent-dispatch.md](agent-dispatch.md) § Nested delegation, the chunked wait). The record and
+  its reuse are the same either way: `gate --detach` runs the wrapper itself.
+
   **A green the driver ran is not run again on the same tree.** Every gate the driver runs — a
   phase gate, the sweep, the doc gate, a wrap-up gate in a sibling — records each `kc project`
   command that went green or ran nothing with the content hash of the tree it ran on, in
@@ -465,11 +476,17 @@ whole plan is a feature of the review, not a cost. Then:
   in the report, a consult answered "flake … under load", and the test-fixer raised a
   template-owned timeout from 10 to 30 seconds, which hid it, until a third consult counted the
   reds per phase and instrumented the pool: about three hours of a 9.5-hour run. The code-writer
-  and the test-fixer hold the same presumption, and the test-fixer raises no timeout the tests
-  share or a template owns ([code-writer.md](../agents/code-writer.md) rule 7,
-  [test-fixer.md](../agents/test-fixer.md)). The driver
-  dispatches the test-fixer on each such suite, in the repo and on the branch the sweep ran on,
-  inside the consult's step; it commits there, and the re-sweep above runs on its commit. One
+  and the test-fixer hold the same presumption, and the test-fixer raises no timeout at all
+  ([code-writer.md](../agents/code-writer.md) rule 7, [test-fixer.md](../agents/test-fixer.md)).
+  The driver dispatches the test-fixer on each such suite, in the repo and on the branch the
+  sweep ran on, inside the consult's step. The consult's summary is its brief and no
+  measurement: the dispatch names the commit the branch stood at before the slice's first phase
+  merged in that repo, and the fixer runs the failing tests on both trees before it edits,
+  the old one in a worktree of its own. PilotApp slice 039's consult ruled a product regression
+  "a flake or a test race"; the fixer edited after 13 seconds of reading, raised one spec's
+  waits from 10 to 30 seconds, failed again, named the product side and handed back `issues`,
+  and its commit stayed on main. It commits only a fix that holds, and a hand-back that is not
+  `clean` leaves nothing committed. The re-sweep above runs on its commit. One
   round per suite per run. A suite it does not settle — a `clean` that committed nothing,
   `issues`, `blocked`, or a suite it already had — becomes a defect entry in the close-out report
   with a `card:` proposal, so it comes to the operator as a card request, and its row reads `RED,
@@ -490,7 +507,11 @@ whole plan is a feature of the review, not a cost. Then:
   environments with nothing promoted between them — except for a target a `prd` ruling names
   (below).
   Blocking findings come back as appended phases; sub-bar findings go in the close-out report;
-  `verification.json` is checked off.
+  `verification.json` is checked off. The dispatch lists each repo's commit before the slice,
+  the base of the first phase that landed there; the test-agent hands its repo's to a
+  test-fixer it dispatches on a red, which measures the red against it before it edits
+  ([test-fixer.md](../agents/test-fixer.md) rule 4). The doc phase's dispatch lists them the
+  same way.
 - **The phase is optional** (`test_phase.enabled = false`), as is the doc phase below and the
   devlock — see [project-contract.md](project-contract.md). A project with nothing deployed to
   verify runs neither, and the loop ends when the completion consult answers `complete`. What the

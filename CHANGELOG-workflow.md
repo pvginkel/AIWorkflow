@@ -4,6 +4,47 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-08 — Long waits in chunks under the cache's five minutes, and a test-fixer that measures first (v0.10.53)
+
+Phase 1 of the operator's ruling of 2026-11-08 on PilotAppSpecs
+`research/cache-misses/findings.md`. Every dispatched role runs on the 5-minute prompt cache,
+and a call more than five minutes after the one before it writes the session's whole context
+again. In PilotApp's week of 2026-11-01 to 11-08 that happened 208 times, $173 of the $1,680
+the 5-minute sessions cost. 108 of the misses, $115, were code-writers waiting on their phase
+gate, which takes 5 to 10 minutes there, and 51 were the roles' own test runs. Now:
+
+- **`long_run.py`, a small detached runner.** `start --timeout <s> -- <command>` runs the
+  command in a process of its own and returns at once with a `next:` line. `wait <dir>` returns
+  within four minutes, `running` or `ended` with the command's output and exit. Each return is
+  a cache read, about 5 cents at a gate's context against $1.06 a miss.
+- **`run_loop.py gate --detach <spec>` and `gate --wait <spec>`** do the same for the writer's
+  gate, its job in `phases/P<id>/gate_run/`. Every gate hint names the pair, and code-writer
+  rule 7 says to run the wait again at once until it ends. The record and the driver's reuse of
+  a green are unchanged.
+- **The headless wait line makes room for it.** A command that may run past four minutes, a
+  suite or a CI build's wait included, however the role's instructions write it, runs through
+  the runner and is waited on in chunks. It is never backgrounded with the turn ended on it, so
+  "Never poll it, and never build a waiter" gives way to the runner's own line. A session
+  waiting on a sub-agent is unchanged: no script reaches it.
+- **The test-fixer is tightened on every path that dispatches it**: the test and doc phases,
+  and the sweep's flake path. It measures before any edit: the failing tests five times or more
+  on its tree and on the commit before the slice, the latter in a worktree of its own, never by
+  swapping base files into the shared tree. A brief's or a consult's reasoning is no
+  measurement. It raises no timeout at all, one assertion's wait included. It adds no skip,
+  retry or worker-count change. It changes an existing test's expectation only on a plan line
+  it cites, restoring the test's premise before its assertion. It commits only once the fix
+  holds, and a hand-back that is not `clean` leaves nothing committed. Slice 039's fixer, on a
+  consult's "flake or a test race" that was a product regression, edited after 13 seconds,
+  raised a spec's waits from 10 to 30 seconds and left the commit on main.
+- **The commit before the slice reaches the fixer.** The flake-fix dispatch names it, the base
+  of the slice's first landing in that repo, and the test and doc phases' dispatches list it
+  per repo for the fixers their sessions dispatch.
+- agent-dispatch.md, run-loop.md, runner-state.md and docs/rationale/measurement.md say so.
+
+Not in it, as ruled: a 1-hour cache, which saves about $65 a week for the waiting roles against
+the chunks' $150, and costs $80 more for every role; and phase 2, the gate out of the writer,
+which waits for this trial.
+
 ## 2026-11-08 — A `Target: root` phase gates every other component its diff touches (v0.10.52)
 
 AIWF-154, from KubeCoder. A root phase there (2026-11-03) changed Go code under `worker/` and
