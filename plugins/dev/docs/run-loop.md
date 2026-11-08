@@ -25,7 +25,7 @@ Phases are `### P<id> — <title>` headings, id free-form `[A-Za-z0-9]+` — `P3
 one-line **`Target:`** naming where it lands — a `kc project list` component, or a sibling repo
 path (`../SiblingRepo`) — from which the driver roots its git operations (branch, merge,
 dirty-checks in that repo) and picks the gate, each test beside its lint (§ The per-phase
-round): `kc project test --project <name>` for a component, run from the root of the repo that lists it, and the same for every other component
+round): `kc project test --project <name>` for a component, `root` included, run from the root of the repo that lists it, and the same for every other component
 the phase's diff touches (§ The per-phase round); `kc project test` from the sibling's own
 root when it carries a manifest, looked for at gate time in the phase's own tree, so the phase
 that adds the manifest is gated by it; no
@@ -262,8 +262,8 @@ whole plan is a feature of the review, not a cost. Then:
   gate, no green is recorded, and the reviewer is told the target defines no tests, so the
   state is unverified. A `gate` ruling in the plan waives the gate outright (§ After the last
   phase, operator rulings).
-- **The gate covers what the diff touches** — a component Target's gate also runs every other
-  kc project the phase's diff touches, after the Target's own: `kc project test --project <c>`
+- **The gate covers what the diff touches** — a component Target's gate, `root`'s included,
+  also runs every other kc project the phase's diff touches, after the Target's own: `kc project test --project <c>`
   each, into the same `gate_r<N>.log`, every one run so that every red is known. The diff is the
   one the reviewer reads, `git diff --name-only <merge-base>..HEAD` from the same merge-base, so
   what the gate covers and what the review reads are one set. A file belongs to the component
@@ -273,9 +273,15 @@ whole plan is a feature of the review, not a cost. Then:
   that ran nothing (exit 3, a `root` with no `test:` among them) is not red, nor is one a `gate`
   ruling covers, which is not run. The reviewer's gate paragraph names the projects the green
   covers and each touched one it does not, and why. A waived Target runs nothing at all, as
-  before, and a whole-repo Target's gate is already the repo's. A frontend phase in PilotApp
-  (2026-10-19) also added a backend endpoint and its tests; the reviewer was told GREEN about
-  the frontend suite alone and ran the backend's itself only because it noticed (AIWF-91).
+  before, and a whole-repo Target's gate — a sibling repo path, a GitHub clone — is bare `kc
+  project test`, the repo's already. So is root's second step: a verb root ran bare, because
+  `--project root` ran nothing, is not run again for a touched component, which `gate_projects`
+  records as `covered` — neither red nor green, and named among what the green covers where the
+  bare test went green. A frontend phase in PilotApp (2026-10-19) also added a backend endpoint
+  and its tests; the reviewer was told GREEN about the frontend suite alone and ran the
+  backend's itself only because it noticed (AIWF-91). A root phase in KubeCoder (2026-11-03)
+  changed Go code under `worker/` and gated green on root's own suite, though its plan said the
+  worker would be gated (AIWF-154).
 - **The gate lints what it tests** — beside each `kc project test` the gate runs, it runs the
   same project's `kc project lint`, into the same log: `--project <c>` for the Target and every
   touched component; root's two steps, `--project root` and then bare where that ran nothing,

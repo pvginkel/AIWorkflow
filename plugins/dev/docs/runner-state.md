@@ -102,9 +102,11 @@ reviewer is told the target defines no tests only when it is the commit under re
 `gate_cmd` (the command whose outcome stands — bare `kc project test` when a root phase's
 `--project root` ran nothing; on a spec-repo phase the repo's own command, or the spec check's
 where it has no manifest), `gate_projects` (the last gate run, one entry per kc project it ran
-or waived — the Target first, then every other component the phase's diff touches — each with
-its `project`, `cmd` and `outcome`, `green` | `red` | `nothing_ran` | `waived`, and its `lint`
-beside it, `cmd` and `outcome` — `green` | `red` | `nothing_ran` | `waived` | `accepted`; on a
+or waived — the Target first, then every other component the phase's diff touches, a root
+phase's from 0.10.52 on — each with its `project`, `cmd` and `outcome`, `green` | `red` |
+`nothing_ran` | `waived` | `covered` (a touched component's verb that root's bare second step
+already ran, not run again), and its `lint` beside it, `cmd` and `outcome` — `green` | `red` |
+`nothing_ran` | `waived` | `covered` | `accepted`; on a
 spec-repo phase the spec check's entry first, `project` `spec_check`, with no `lint`, then the
 repo's own `kc project test` where it has a manifest; where the phase owes the migration
 check, its entry last, `project` `migration_check`, with no `lint`; the reviewer's gate line names the green ones as covered and the rest as not, a fix

@@ -1999,8 +1999,11 @@ def gate_cmd_key(argv: Sequence[str]) -> tuple[str | None, str] | None:
 
 
 # A `gate_projects` entry's outcome; its `lint`'s (AIWF-105) is one of these
-# or `accepted`, not run because an accept ruling covers it.
-GATE_ENTRY_OUTCOMES = ("green", "red", "nothing_ran", "waived")
+# or `accepted`, not run because an accept ruling covers it. `covered` is a
+# touched component's verb the bare command `Target: root`'s step fell back to
+# already ran, every component once — not run again (AIWF-154): neither green
+# nor red, no part of the gate's outcome, and never named uncovered.
+GATE_ENTRY_OUTCOMES = ("green", "red", "nothing_ran", "waived", "covered")
 GATE_LINT_OUTCOMES = (*GATE_ENTRY_OUTCOMES, "accepted")
 
 
@@ -3135,8 +3138,9 @@ nothing toward its outcome.\
 # cover (GATE_COVERS_SENTENCE) — a component Target's gate also runs every
 # component its diff touches (AIWF-91: PilotApp's `Target: frontend` phase
 # committed backend code and tests, and its reviewer was told GREEN about
-# frontend's suite alone) — and is empty for a whole-repo Target or a phase
-# begun on an older plugin. The green commands include each project's lint
+# frontend's suite alone), `root` included (AIWF-154) — and is empty for a
+# whole-repo Target (a repo path, a GitHub clone) or a phase begun on an older
+# plugin. The green commands include each project's lint
 # that ran clean beside its test (AIWF-105); the paragraph says the lint is
 # clean only where one did (GATE_LINT_WORDS), and names a lint an accept
 # ruling kept from running (GATE_LINT_ACCEPTED_SENTENCE, `{accepted}`).
@@ -6595,28 +6599,34 @@ class RunLoop:
         nothing on is, so the reviewer's line can say why the state is
         unverified. The history row says `nothing_ran`, never green.
 
-        `Target: root` is the repo as a whole, and its gate is two steps:
-        root's own `test:` first, the bare `kc project test` — every
-        component once — only when that ran nothing. Root's own statement is
-        what the manifest's author made the whole-repo gate (KubeCoder's is
-        the uv workspace's one pytest run; bare there would also run every
-        component's disjoint suite for a Python-only phase); where root
-        declares none (FieldnotesApp, on purpose: its CI runner runs both
-        component suites itself), the whole repo is the gate instead of an
-        unverified pass. Either way no suite runs twice. The second run
-        appends to the same log, and `gate_cmd` records the command whose
-        outcome stands, for the reviewer's line and the fix round's.
+        `Target: root`'s own gate is two steps: root's own `test:` first,
+        the bare `kc project test` — every component once — only when that
+        ran nothing. Root's own statement is what the manifest's author made
+        root's gate (KubeCoder's is the uv workspace's one pytest run; bare
+        there would also run every component's disjoint suite for a
+        Python-only phase); where root declares none (FieldnotesApp, on
+        purpose: its CI runner runs both component suites itself), the
+        whole repo is the gate instead of an unverified pass. Either way no
+        suite runs twice. The second run appends to the same log, and
+        `gate_cmd` records the command whose outcome stands, for the
+        reviewer's line and the fix round's.
 
-        Any other component Target gates every component its diff touches
-        as well (AIWF-91 — PilotApp's `Target: frontend` phase committed
-        backend code and tests, and its reviewer was told GREEN about
-        frontend's suite alone): each `kc project test --project <c>` after
-        the Target's own, into the same log, every one run so every red is
-        known; one a gate ruling covers is waived, not run. `gate_projects`
-        records each project's command and outcome, the Target first, and
-        the gate's outcome is theirs together: red on any red, else green on
-        any green, else nothing ran. A whole-repo Target records its one
-        entry.
+        Every component Target, `root` included, gates every component its
+        diff touches as well (AIWF-91 — PilotApp's `Target: frontend` phase
+        committed backend code and tests, and its reviewer was told GREEN
+        about frontend's suite alone; AIWF-154 — a root phase made a Go
+        change under KubeCoder's worker/ and gated green without the
+        worker's suite): each `kc project test --project <c>` after the
+        Target's own, into the same log, every one run so every red is
+        known; one a gate ruling covers is waived, not run. Where root's
+        step on a verb fell back to the bare command and that ran, it ran
+        every component's already, so a touched component's own of that
+        verb is not run again and is recorded `covered` — each verb apart,
+        and not where an accept ruling kept the bare lint from running.
+        `gate_projects` records each project's command and outcome, the
+        Target first, and the gate's outcome is theirs together: red on any
+        red, else green on any green, else nothing ran. A whole-repo Target
+        — a repo path, a GitHub clone — records its one entry.
 
         Every project the gate tests is linted beside it (AIWF-105 — PilotApp
         slices 008 P10 and 020 P9: the gate ran frontend's Playwright suite
@@ -6768,10 +6778,15 @@ class RunLoop:
                                  "cmd": " ".join(argv), "outcome": outcome,
                                  "lint": {"cmd": " ".join(lint),
                                           "outcome": lint_outcome}})
+                # the verbs root's step fell back to the bare command on, and
+                # it ran: every component's, a touched one's too (AIWF-154)
+                bare = ((argv == REPO_GATE_ARGV,
+                         lint == REPO_LINT_ARGV and lint_outcome != "accepted")
+                        if self._is_root(target) else (False, False))
                 for component in touched or ():
                     projects.append(self._gate_touched_component(
                         phase_id, component, target, gates, accepts,
-                        log_file, log_path, runner, runs))
+                        log_file, log_path, runner, runs, bare))
             if migration is not None:
                 projects.append(self._gate_migration_check(
                     phase_id, migration, target, log_file, log_path, runner,
@@ -6911,8 +6926,9 @@ class RunLoop:
         run now — the spec check (`check`, a spec-repo phase's), the
         Target's test and then its lint, each followed by the whole repo's
         after an empty root, then each touched component no gate ruling
-        covers, its test and then its lint (AIWF-105), then the migration
-        check (`migration`, AIWF-140), in that order, no
+        covers, its test and then its lint (AIWF-105) — but not a verb whose
+        whole repo's ran after an empty root, which ran it (AIWF-154) — then
+        the migration check (`migration`, AIWF-140), in that order, no
         lint an accept ruling covers (`accepts`) among them — none of them
         red, and on a tree that has not changed since it began: a
         change during the run, or after it, is a tree the run did not see.
@@ -6934,22 +6950,25 @@ class RunLoop:
         expected = [list(check)] if check else []
         argv, accepts = target.gate_argv, accepts or []
         root = target.git_root
+        bare = [False, False]   # whether the test's, the lint's, went bare
         if argv is not None:
             steps = [(argv, REPO_GATE_ARGV, False)]
             if self._target_lint_ruling(accepts, target) is None:
                 steps.append((lint_twin(argv), REPO_LINT_ARGV,
                               self._covering(accepts, root, None) is not None))
-            for own, whole, whole_accepted in steps:
+            for verb, (own, whole, whole_accepted) in enumerate(steps):
                 at = len(expected)
                 expected.append(list(own))
                 if self._is_root(target) and not whole_accepted \
                         and len(commands) > at \
                         and commands[at]["rc"] == KC_NOTHING_RAN:
                     expected.append(list(whole))
+                    bare[verb] = True
         for c in touched or ():
             if self._covering(gates, root, c) is None:
-                expected.append(component_gate_argv(c))
-                if self._covering(accepts, root, c) is None:
+                if not bare[0]:
+                    expected.append(component_gate_argv(c))
+                if not bare[1] and self._covering(accepts, root, c) is None:
                     expected.append(component_lint_argv(c))
         if migration:
             expected.append(list(migration))
@@ -7111,11 +7130,14 @@ class RunLoop:
     @staticmethod
     def _gates_touched(target: ResolvedTarget) -> bool:
         """Whether this Target's gate also runs the components its diff
-        touches (AIWF-91): a component that is not `root` — in the invoking
-        repo or a sibling's, worked in place or in a shared repo's worktree.
-        A whole repo (`root`, a repo path, a GitHub clone) already gates the
-        repo, all of it."""
-        return target.kind == "project" and target.name != ROOT_COMPONENT
+        touches (AIWF-91): every component, `root` included — in the
+        invoking repo or a sibling's, worked in place or in a shared repo's
+        worktree. Root's own gate is the manifest's statement for root, not
+        the repo whole (AIWF-154 — a root phase made a Go change under
+        KubeCoder's worker/ and gated green without the worker's suite);
+        only a repo path or a GitHub clone gates the repo whole. Where the
+        manifest lists root alone, `touched_components` yields nothing."""
+        return target.kind == "project"
 
     def _touched_components(self, phase_id: str, target: ResolvedTarget,
                             merge_base: str) -> list[str]:
@@ -7143,15 +7165,20 @@ class RunLoop:
     def _gate_touched_component(self, phase_id: str, component: str,
                                 target: ResolvedTarget, gates: list,
                                 accepts: list, log_file, log_path: Path,
-                                replay: Callable | None, runs: list) -> dict:
+                                replay: Callable | None, runs: list,
+                                bare: tuple[bool, bool] = (False, False)
+                                ) -> dict:
         """One component the phase's diff touches, gated as the Target is —
         `kc project test --project <c>`, then the lint beside it (AIWF-105),
         from the Target's tree, into the same log, each under a header, each
         run's (outcome, tail) appended to `runs` — or, where a gate ruling
         covers it, both waived unrun as `_phase_gate` waives a Target; a
         lint an accept ruling covers alone is not run (`_lint_accepted`).
-        Its `gate_projects` entry either way. `replay` is
-        `_gate_cmd_outcome`'s."""
+        A verb `bare` marks — the test's, the lint's — is one `Target:
+        root`'s step fell back to the bare command on, which ran every
+        component's: not run again, said under its header, and recorded
+        `covered` (AIWF-154). Its `gate_projects` entry either way. `replay`
+        is `_gate_cmd_outcome`'s."""
         argv, lint = component_gate_argv(component), component_lint_argv(component)
         cmd, lint_cmd = " ".join(argv), " ".join(lint)
         ruling = self._covering(gates, target.git_root, component)
@@ -7169,19 +7196,33 @@ class RunLoop:
             return {"project": component, "cmd": cmd, "outcome": "waived",
                     "lint": {"cmd": lint_cmd, "outcome": "waived"}}
         where = f"the phase's diff touches {component}: "
-        outcomes = []
-        for verb_argv, linting in ((argv, False), (lint, True)):
+        outcomes, covered = [], []
+        for verb_argv, linting, went_bare in ((argv, False, bare[0]),
+                                              (lint, True, bare[1])):
             ruling = (self._covering(accepts, target.git_root, component)
                       if linting else None)
             if ruling is not None:
                 self._lint_accepted(phase_id, lint, ruling, log_file, where)
                 outcomes.append("accepted")
                 continue
+            if went_bare:
+                whole = " ".join(REPO_LINT_ARGV if linting else REPO_GATE_ARGV)
+                covered.append(f"`{' '.join(verb_argv)}`")
+                log_file.write(f"\n=== {where}`{' '.join(verb_argv)}` not run "
+                               f"— the bare `{whole}` above ran every "
+                               "component ===\n")
+                log_file.flush()
+                outcomes.append("covered")
+                continue
             log_file.write(f"\n=== {where}`{' '.join(verb_argv)}` ===\n")
             log_file.flush()
             runs.append(self._gate_cmd_outcome(phase_id, verb_argv, target,
                                                log_file, log_path, replay))
             outcomes.append(runs[-1][0])
+        if covered:
+            self.log(f"[P{phase_id}] {' and '.join(covered)} not run (the "
+                     f"phase's diff touches {component}) — root's gate fell "
+                     "back to the bare command, which ran every component")
         return {"project": component, "cmd": cmd, "outcome": outcomes[0],
                 "lint": {"cmd": lint_cmd, "outcome": outcomes[1]}}
 
@@ -7304,7 +7345,8 @@ class RunLoop:
     @staticmethod
     def _is_root(target: ResolvedTarget) -> bool:
         """`Target: root` — the component the plan's authors mean as the
-        repo as a whole, gated in two steps (`_run_gate`)."""
+        repo as a whole, its own gate taken in two steps, the components its
+        diff touches beside it (`_run_gate`, AIWF-154)."""
         return target.kind == "project" and target.name == ROOT_COMPONENT
 
     def _gate_exec(self, argv: list[str], cwd: Path, log_file) -> int:
@@ -7439,8 +7481,11 @@ class RunLoop:
 
         A component Target's gate covers the components its diff touches
         too (AIWF-91): the green names every green command and the projects
-        they cover, and closes on those the gate does not cover — ran
-        nothing, or waived — by name; the nothing-ran reason names every
+        they cover — a touched one `covered` among them where the Target's
+        own entry is green, the bare `kc project test` root's gate fell back
+        to having run its suite green (AIWF-154) — and closes on those the
+        gate does not cover — ran nothing, or waived — by name; the
+        nothing-ran reason names every
         command that ran nothing. No `gate_projects` on record (a phase
         begun on an older plugin) is the Target's command alone, as before.
         A spec-repo phase's green names its spec check among the commands,
@@ -7455,12 +7500,17 @@ class RunLoop:
         gate_log = ps.get("gate_green_log")
         if green_at and gate_log and green_at == head:
             green = [p for p in projects if p["outcome"] == "green"]
+            # a touched component's test the bare `kc project test` ran is
+            # covered by the Target's own entry's outcome (AIWF-154)
+            own_green = any(p["project"] == target.name for p in green)
             # neither the spec check nor the migration check is a project,
             # and only a component Target's gate takes in the projects its
             # diff touches
-            covered = [p["project"] for p in green
-                       if p["project"] not in (SPEC_CHECK_NAME,
-                                               MIGRATION_CHECK_NAME)]
+            covered = [p["project"] for p in projects
+                       if (p["outcome"] == "green"
+                           or (p["outcome"] == "covered" and own_green))
+                       and p["project"] not in (SPEC_CHECK_NAME,
+                                                MIGRATION_CHECK_NAME)]
             covers = (GATE_COVERS_SENTENCE.format(covered=", ".join(covered))
                       if covered and self._gates_touched(target) else "")
             if any(p["project"] == SPEC_CHECK_NAME for p in green):
@@ -7849,8 +7899,9 @@ class RunLoop:
                          target: ResolvedTarget, base: str) -> None:
         """The phase's gate as the `gate` wrapper runs it for code-writer
         round `round_` (`run_writer_gate`): where, which command, the whole
-        repo after an empty root, and — for a component Target — what it
-        needs to find the components the diff touches: the Target, and those
+        repo after an empty root, and — for a component Target, `root`
+        included (AIWF-154) — what it needs to find the components the diff
+        touches: the Target, and those
         a gate ruling covers, which the driver's gate waives unrun.
         Rewritten at every dispatch, so it is the gate as it stands then;
         the driver checks a run against its gate as it stands at gate time
@@ -7951,7 +8002,10 @@ class RunLoop:
                     f"{first}`kc project test --project root`{where}, and bare "
                     "`kc project test`, every component once, when that runs "
                     "nothing (exit 3), and the same two steps for `kc project "
-                    f"lint`{last}. {GATE_REUSE_HINT}. {NOTHING_RAN_HINT}")
+                    "lint`; then both, `--project <c>`, for every other "
+                    "component the phase's diff touches, but not a verb that "
+                    "went bare, which ran every component already"
+                    f"{last}. {GATE_REUSE_HINT}. {NOTHING_RAN_HINT}")
         if target.kind == "project":
             # The driver gates every component the diff touches beside the
             # Target's own (AIWF-91), each linted beside its test (AIWF-105),
@@ -13004,11 +13058,11 @@ def run_writer_gate(spec_path: Path) -> int:
     whole repo's when an empty root's ran nothing, then each component the
     phase's diff touches that no gate ruling waives, its test and then its
     lint (AIWF-105), but no lint the spec leaves out because an accept
-    ruling covers it, then the project's migration check when the phase's
-    diff adds a file under its `paths` or the spec says it is `owed`
-    (AIWF-140) — its output passed
-    through as it runs, and the run
-    recorded beside the spec for the driver to reuse
+    ruling covers it, and no verb whose whole repo's ran after an empty
+    root's, which ran it (AIWF-154), then the project's migration check
+    when the phase's diff adds a file under its `paths` or the spec says it
+    is `owed` (AIWF-140) — its output passed through as it runs, and the
+    run recorded beside the spec for the driver to reuse
     (`RunLoop._reusable_writer_gate`). The exit code is the gate's:
     0 green, 1 red, 3 nothing ran; 2 is no run at all. A lint reds the gate
     and does nothing else, as in the driver's: a spec an older driver wrote
@@ -13086,27 +13140,34 @@ def run_writer_gate(spec_path: Path) -> int:
         return kc_outcome(returncode)
 
     def target_verb(argv: list[str], fallback: list[str] | None, lint: bool,
-                    lead: str) -> None:
+                    lead: str) -> str | None:
+        """The Target's verb in its steps; the bare command it fell back to
+        and ran, every component's (AIWF-154), else None."""
         own, outcome = argv, run(argv, f"{lead}=== `{' '.join(argv)}` from "
                                        f"{gate_cwd} ===")
-        if fallback and outcome == "nothing_ran":
+        went_bare = bool(fallback) and outcome == "nothing_ran"
+        if went_bare:
             own = fallback
             gate = "the gate lints" if lint else "the gate is"
             outcome = run(own, f"\n=== `{' '.join(argv)}` ran nothing (exit "
                                f"3) — {gate} the whole repo: "
                                f"`{' '.join(own)}` ===")
         outcomes.append((" ".join(own), outcome, lint))
+        return " ".join(own) if went_bare else None
 
     check = (spec_check_argv(merge_base, work_root) if spec["spec_check"]
              else None)
     argv, lint = spec.get("argv"), spec.get("lint_argv")
+    # by a lint?: the bare command the Target's verb fell back to and ran
+    bare: dict[bool, str | None] = {False: None, True: None}
     if check:
         outcomes.append((" ".join(check), run(
             check, f"=== the spec check: `{' '.join(check)}` ==="), False))
     if argv:
-        target_verb(argv, spec.get("fallback"), False, "\n" if check else "")
+        bare[False] = target_verb(argv, spec.get("fallback"), False,
+                                  "\n" if check else "")
     if argv and lint:
-        target_verb(lint, spec.get("lint_fallback"), True, "\n")
+        bare[True] = target_verb(lint, spec.get("lint_fallback"), True, "\n")
     # a spec from before the gate linted names no `lint_accepted`
     lint_accepted = (touched or {}).get("lint_accepted")
     for component in components:
@@ -13125,6 +13186,11 @@ def run_writer_gate(spec_path: Path) -> int:
                 print(f"\n=== the phase's diff touches {component}: `{cmd}` "
                       "not run: plan.md's `## Driver rulings` accepts its red "
                       "===", flush=True)
+                continue
+            if bare[linted]:
+                print(f"\n=== the phase's diff touches {component}: `{cmd}` "
+                      f"not run — the bare `{bare[linted]}` above ran every "
+                      "component ===", flush=True)
                 continue
             outcomes.append((cmd, run(verb_argv, "\n=== the phase's diff "
                                       f"touches {component}: `{cmd}` ==="),

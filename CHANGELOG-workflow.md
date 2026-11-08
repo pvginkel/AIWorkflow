@@ -4,6 +4,26 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-08 — A `Target: root` phase gates every other component its diff touches (v0.10.52)
+
+AIWF-154, from KubeCoder. A root phase there (2026-11-03) changed Go code under `worker/` and
+gated green on `kc project test --project root` alone, though its plan said the worker would be
+gated. `_gates_touched` left root out because root was taken to gate the whole repo, and where
+the manifest declares other components it does not. Now:
+
+- **A root phase gates the components its diff touches**, as any other component Target does
+  (AIWF-91): each one's `kc project test --project <c>` and its lint after root's own, in the
+  driver's gate and in the writer's `gate` wrapper alike. `gate_spec.json` names root's touched
+  set. Only a sibling repo path or a GitHub clone gates a repo whole.
+- **A verb root ran bare is not run twice.** Where `--project root` ran nothing and the gate fell
+  back to bare `kc project test` or `kc project lint`, that verb has run every component already.
+  A touched component's step for it is not run, and `gate_projects` records it as `covered`, a
+  new outcome that is neither red nor green. The reviewer's covers line names the component
+  where the bare test went green. The test and the lint are decided apart, and a bare lint an
+  accept ruling kept from running covers nothing. The writer's run stays reusable because the
+  wrapper skips the same steps.
+- run-loop.md § The per-phase round and runner-state.md say so.
+
 ## 2026-11-08 — The slice allocator mints a number the spec repo's plan already gave (v0.10.51)
 
 AIWF-152, from PilotApp. PilotAppSpecs' implementation plan numbers its rows before they are
