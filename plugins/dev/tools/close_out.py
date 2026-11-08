@@ -84,8 +84,12 @@ fenced block (`asks.citation_problems`; the rule is `docs/spec-tree.md`
 refuse a proposal longer than `asks.PROPOSAL_MAX` once its lines are
 joined (`asks.proposal_problems`); `propose --card`, and `restate` on a card
 request, refuse a section — the card it files — over `CARD_WORDS_MAX` words.
-The functions the loops call check neither of the first two, since a
-driver's text quotes tool output.
+`append`, `amend` and `propose` refuse a proposal that names a phase of the
+running slice — one with a state.json — that has not run yet (`pending`
+there, or not yet in it, and not stamped `✅ DONE` in plan.md), unless the
+entry is `for` another slice: a fix wanted from that phase goes into its
+section of plan.md. The functions the loops call check neither the first two
+nor this, since a driver's text quotes tool output.
 
 The route is computed at every render, never stored: `route()` reads an
 entry's kind and labels, the repositories the slice touched, and the stage
@@ -3710,6 +3714,77 @@ def _stdin_or(value: str) -> str:
     return sys.stdin.read() if value == "-" else value
 
 
+# A phase id named as a whole token: `P4`, `P4's`, `(P4)` name P4; `P40`,
+# `P4a` and `PilotApp` do not.
+_PHASE_TOKEN_RE = re.compile(r"(?<!\w)P([A-Za-z0-9]+)(?!\w)")
+
+
+def _unrun_phases(slice_dir: Path | str) -> set[str] | None:
+    """The phase ids of plan.md, spelled as the plan spells them, that the
+    running slice has not run yet: no `✅ DONE` stamp on the heading, and
+    `pending` in state.json — or not in it yet, since the run loop creates a
+    phase's state when it reaches it. None without a readable state.json:
+    the plan loop, before any run."""
+    folder = Path(slice_dir)
+    try:
+        state = json.loads((folder / "state.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(state, dict):
+        return None
+    phases = state.get("phases")
+    if not isinstance(phases, dict):
+        phases = {}
+    try:
+        plan = (folder / "plan.md").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return set()
+    stamped: dict[str, bool] = {}
+    for line in plan.split("\n"):
+        m = PHASE_RE.match(line)
+        if m:
+            done = bool(re.search(r"✅\s*DONE\b", m.group(2)))
+            stamped[m.group(1)] = stamped.get(m.group(1), False) or done
+    unrun = set()
+    for pid, done in stamped.items():
+        ps = phases.get(pid)
+        status = (ps.get("status") if isinstance(ps, dict) else None) or "pending"
+        if not done and status == "pending":
+            unrun.add(pid)
+    return unrun
+
+
+def unrun_phase_problems(slice_dir: Path | str, text: str | None, what: str,
+                         for_label: str | None) -> list[str]:
+    """Where a proposal names a phase of the running slice that has not run
+    yet (`_unrun_phases`), one line per phase: nothing carries a proposal
+    into a phase, so the fix wanted from it goes into its section of
+    plan.md. An entry `for` another slice is not checked. The CLI's check
+    only — the loops' text is not checked."""
+    target = str(for_label or "").strip()
+    if target and target.lower() != FOR_CLEAR:
+        return []
+    unrun = _unrun_phases(slice_dir)
+    if not unrun:
+        return []
+    named = dict.fromkeys(m.group(1) for m in _PHASE_TOKEN_RE.finditer(text or ""))
+    return [f"{what} names {p}, a phase of this run that has not run yet, and a "
+            f"proposal never reaches a phase: write the fix you want from {p} into "
+            f"{p}'s section of plan.md, in place, where its writer reads it, and give "
+            f"the entry a proposal that leaves {p} out"
+            for p in (f"P{pid}" for pid in named if pid in unrun)]
+
+
+def _stored_for(slice_dir: Path, eid: str) -> tuple[bool, str | None]:
+    """Whether the store holds entry `eid`, and its `for`. A missing store
+    or entry is left to the command, which reports it."""
+    try:
+        entry = _find(_read_store(slice_dir), eid)
+    except ReportError:
+        return False, None
+    return True, (effective_labels(entry) or {}).get("for")
+
+
 def _append_cli(slice_dir: Path, args) -> str:
     if args.kind:
         kind = args.kind
@@ -3726,6 +3801,8 @@ def _append_cli(slice_dir: Path, args) -> str:
     errors += author_problems(candidate)
     errors += _citations(args, body)
     errors += asks.proposal_problems(_collapse(args.proposal), "--proposal")
+    errors += unrun_phase_problems(slice_dir, args.proposal, "--proposal",
+                                   labels.get("for"))
     if errors:
         raise ReportError("\n".join(errors))
     labels = normalise_for(labels, slice_dir)
@@ -3759,6 +3836,11 @@ def _amend_cli(slice_dir: Path, args) -> str:
     errors = _citations(args, body)
     if args.proposal is not None:
         errors += asks.proposal_problems(_collapse(args.proposal), "--proposal")
+        given = _labels_from(args).get("for")
+        found, target = ((True, given) if given is not None
+                         else _stored_for(slice_dir, args.id))
+        if found:
+            errors += unrun_phase_problems(slice_dir, args.proposal, "--proposal", target)
     if errors:
         raise ReportError("\n".join(errors))
     return amend_entry(slice_dir, args.id, by=args.by, headline=args.headline,
@@ -3783,6 +3865,9 @@ def _restate_cli(slice_dir: Path, args) -> str:
 def _propose_cli(slice_dir: Path, args) -> str:
     text = _refuse_citations("the proposal", _stdin_or(args.text))
     errors = asks.proposal_problems(_collapse(text), "the proposal")
+    found, target = _stored_for(slice_dir, args.id)
+    if found:
+        errors += unrun_phase_problems(slice_dir, text, "the proposal", target)
     if errors:
         raise ReportError("\n".join(errors))
     return propose_entry(slice_dir, args.id, args.by, text, date=args.date, mark=args.mark)

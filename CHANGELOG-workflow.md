@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-08 — A fix wanted from a later phase goes into that phase's plan text (v0.10.50)
+
+AIWF-151, from PilotApp slice 033. P3's code reviewer entered B2 with the proposal "Fix now in
+P4, which edits the lift anyway". Nothing carries a proposal into a phase. P4 edited the same
+function and never took the fix, and the completion consult found it still open. Now:
+
+- **code-reviewer.md rule 9: a fix the reviewer wants from a later phase of the run is a fact
+  later phases must see.** It goes into that phase's section of the plan, in place, where its
+  writer reads it.
+- **`close_out.py` refuses a proposal that names a phase of the running slice that has not run
+  yet**, on `append`, `amend --proposal` and `propose`. A running slice is one with a
+  `state.json`. A phase that has not run is `pending` there, or not yet in it, and has no
+  `✅ DONE` stamp in `plan.md`. The phase under review is spared, and so is an entry `for`
+  another slice. The error points at the plan edit. close-out.md lists it with the tool's other
+  refusals.
+
+Left alone: the plan loop's appends, made before any run, and phase names in an entry's
+headline or body. Only the proposal is checked.
+
 ## 2026-11-07 — A red that begins at a phase is that phase's bug until a measurement says otherwise (v0.10.49)
 
 AIWF-155, from PilotApp slice 038. P7 put a deadlock in the database pool that showed as

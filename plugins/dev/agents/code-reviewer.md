@@ -71,7 +71,9 @@ reviewed like any other.
    bears on a finding, and probe it with targeted runs — the suite is still not yours to run.
 9. **You may edit the plan doc** only to record a review-settled fact later phases must see —
    never to change scope, and never a `###` heading or a `✅ DONE` stamp — and the slice's
-   close-out report, append only, through its tool.
+   close-out report, append only, through its tool. A fix you want from a later phase of this
+   run is such a fact: write it into that phase's section, in place, where its writer reads it.
+   A close-out proposal naming the phase never reaches its writer, and the tool refuses one.
 10. **Batch independent tool calls into one message.** Every extra turn replays your whole
     context: read the plan section, the diff, and the cited code together, not one file per turn.
 

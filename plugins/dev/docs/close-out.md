@@ -233,6 +233,9 @@ answers (`--option`).
 - a check outside the vocabulary, one naming a commit or an environment, `manual` beside another
   check; an action owed before the run without one;
 - an entry without the labels its kind carries;
+- a proposal naming a phase of the running slice that has not run yet, unless the entry is `for`
+  another slice: a fix wanted from that phase goes into its section of `plan.md`, where its
+  writer reads it;
 - an impact other than `none` over a `Consequence:` that opens with "none", and the reverse;
 - a `for` that names the slice being run, or one whose folder has left `slices/` and
   `slices/backlog/` — it has run, or was cancelled; on a relabel, only a `for` the call gives;

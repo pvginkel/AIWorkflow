@@ -1929,6 +1929,138 @@ def test_a_proposal_is_one_line_of_at_most_the_bound():
         assert entry_of(slice_dir, "B1")["proposal"] == long
 
 
+# -- a proposal never reaches a phase still to run ---------------------------------
+
+RUNNING_PLAN = ("# Plan\n\n## Requirements\n\n"
+                "### P2 — lift the cache ✅ DONE\n\nTarget: app\n\n"
+                "### P3 — the controller\n\nTarget: app\n\n"
+                "### P4 — the lift\n\nTarget: app\n\n"
+                "### P5 — the docs\n\nTarget: app\n")
+TO_P4 = "fix now in P4, which edits the lift anyway"
+
+
+def running(slice_dir, phases=None, state=True):
+    """A slice mid-run: P2 merged and stamped, P3 under review, P4 and P5
+    still to come — absent from state.json unless `phases` says otherwise.
+    Without `state`, the plan loop's folder: plan.md and no state.json."""
+    (slice_dir / "plan.md").write_text(RUNNING_PLAN)
+    if state:
+        (slice_dir / "state.json").write_text(json.dumps({
+            "slice": slice_dir.name,
+            "phases": phases or {"2": {"status": "merged"},
+                                 "3": {"status": "in_progress"}}}))
+    close_out.init_report(slice_dir)
+
+
+def unrun(what, p):
+    return (f"{what} names {p}, a phase of this run that has not run yet, and a proposal "
+            f"never reaches a phase: write the fix you want from {p} into {p}'s section "
+            f"of plan.md, in place, where its writer reads it, and give the entry a "
+            f"proposal that leaves {p} out")
+
+
+def test_append_refuses_a_proposal_naming_a_phase_of_the_run_still_to_run():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        running(slice_dir)
+        # P4 not yet in state.json: the run loop creates it when it gets there
+        err = _refused(slice_dir, with_flags(DEFECT, proposal=TO_P4), unrun("--proposal", "P4"))
+        assert "P5" not in err and "P3" not in err
+        # one line per phase named, reported with the other refusals
+        err = _refused(slice_dir, with_flags(DEFECT, proposal="fix in P5 or in P4",
+                                             trigger=None),
+                       "--trigger", unrun("--proposal", "P5"), unrun("--proposal", "P4"))
+        assert err.count("Error:") == 1
+        assert err.index("names P5") < err.index("names P4")
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        running(slice_dir, phases={"2": {"status": "merged"}, "3": {"status": "in_progress"},
+                                   "4": {"status": "pending"}})
+        _refused(slice_dir, with_flags(DEFECT, proposal=TO_P4), unrun("--proposal", "P4"))
+
+
+def test_a_proposal_may_name_a_phase_run_or_running_an_entry_for_another_slice_or_a_plan():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        running(slice_dir)
+        for proposal in ("fix now in P3, the phase under review",
+                         "reopen P2's lift: it is merged"):
+            code, _, err = run_cli("append", slice_dir, *with_flags(DEFECT, proposal=proposal))
+            assert code == 0, err
+        # a phase stamped done is not refused whatever state.json says
+        (slice_dir / "state.json").write_text(json.dumps({"phases": {}}))
+        code, _, err = run_cli("append", slice_dir,
+                               *with_flags(DEFECT, proposal="reopen P2's lift"))
+        assert code == 0, err
+        # an entry for another slice reaches that slice, not this run's P4
+        code, out, err = run_cli("append", slice_dir,
+                                 *with_flags(DEFECT, proposal=TO_P4, **{"for": "12"}))
+        assert code == 0, err
+        assert entry_of(slice_dir, out.strip())["proposal"] == TO_P4
+        # the functions the loops call are not checked
+        close_out.append_entry(slice_dir, "Bugs", "h", "b", consequence="c", proposal=TO_P4)
+    for state in (False, "{not json"):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir = make_slice(tmp)
+            running(slice_dir, state=False)
+            if state:
+                (slice_dir / "state.json").write_text(state)
+            # no state.json is the plan loop, before any run; an unreadable one
+            # is not checked
+            code, _, err = run_cli("append", slice_dir, *with_flags(DEFECT, proposal=TO_P4))
+            assert code == 0, err
+
+
+def test_only_the_proposal_names_a_phase_and_only_as_a_whole_token():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        running(slice_dir)
+        code, _, err = run_cli("append", slice_dir, *with_flags(
+            DEFECT, headline="P4 rewrites the lift", body="P4 reads it twice",
+            consequence="P4 ships it wrong", proposal="Fix now: one edit."))
+        assert code == 0, err
+        for proposal in ("fold it into P40's rework", "P4a takes it",
+                         "PilotApp reads it", "XP4 and P4_x are no phase"):
+            code, _, err = run_cli("append", slice_dir, *with_flags(DEFECT, proposal=proposal))
+            assert code == 0, (proposal, err)
+        for proposal in ("in P4's lift", "in P4, now", "now (P4)", "in P4."):
+            _refused(slice_dir, with_flags(DEFECT, proposal=proposal),
+                     unrun("--proposal", "P4"))
+
+
+def test_amend_and_propose_refuse_a_proposal_naming_a_phase_still_to_run():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        running(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)                                      # B1
+        run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "12"}))         # B2
+        _amend_refused(slice_dir, "B1", ["--proposal", TO_P4], unrun("--proposal", "P4"))
+        # the entry's own for, or the one the amend gives, is in effect
+        assert _amend(slice_dir, "B2", "--proposal", TO_P4)[0] == 0
+        _amend_refused(slice_dir, "B2", ["--proposal", "fix in P5", "--for", "none"],
+                       unrun("--proposal", "P5"))
+        code, _, err = _amend(slice_dir, "B1", "--proposal", "fix in P5", "--for", "31")
+        assert code == 0, err
+        # an amend that gives no proposal is not checked, whatever the entry holds
+        close_out.propose_entry(slice_dir, "B2", "the run loop", "fix in P4")
+        assert _amend(slice_dir, "B2", "--for", "none")[0] == 0
+        assert _amend(slice_dir, "B2", "--headline", "P4 rewrites the lift")[0] == 0
+        # an entry that is not there is reported as such
+        code, _, err = _amend(slice_dir, "B9", "--proposal", TO_P4)
+        assert code == 2 and "no entry B9" in err and "names P4" not in err, err
+        # propose: the stored entry's for is the one in effect
+        before = _files(slice_dir)
+        code, out, err = run_cli("propose", slice_dir, "B2", "--by", WU, "--text", "-",
+                                 stdin="fix it\nin P4")
+        assert code == 2 and not out and unrun("the proposal", "P4") in err, err
+        assert _files(slice_dir) == before
+        code, _, err = run_cli("propose", slice_dir, "B1", "--by", WU, "--text", TO_P4)
+        assert code == 0, err
+        assert entry_of(slice_dir, "B1")["proposal"] == TO_P4
+        code, _, err = run_cli("propose", slice_dir, "B9", "--by", WU, "--text", TO_P4)
+        assert code == 2 and "no entry B9" in err and "names P4" not in err, err
+
+
 def test_worklist_names_what_waits_and_what_is_asked():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
