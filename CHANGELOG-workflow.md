@@ -4,6 +4,73 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-10 — The transcript replay counts what a turn did, and every output token (v0.10.54, AIWF-156)
+
+AIWF-156 asked for three gates the turn classes missed: pnpm and Playwright runs, a gate
+redirected to a log, and `run_loop.py gate`. The operator asked for a wider pass. A turn-by-turn
+read of eight recent PilotApp sessions found 174 of 576 turns misclassed. A replay of the cost
+dashboard's 8,369 transcripts sized each cause (`docs/research/tools/turn_class_readout.py`).
+`other` held $2,984 of $20,159, 15 %. It now holds $719, 3.5 %. Of the 174 turns, 153 are now
+right; the other 21 are either the operator's rulings or project scripts no table names.
+`TURN_CLASSES` is unchanged.
+
+- **A Bash step is classed by the program it runs.** The parser peels off `timeout`,
+  `cexec <tool>` and `sh -c '…'`, and follows assignments and `$(…)` substitutions into the
+  steps that use them, so `T=…/close_out.py; python3 $T append` is a record write. A program
+  that only reads is a read, whatever its quoted arguments say: `grep "go test"` is no gate,
+  `which track_build.py` no wait, `git merge-base` no commit. Only the remaining steps are
+  tested for a gate, a wait or a git mutation, on their text with quoted strings blanked.
+- **Heredocs no longer hide the rest of the command.** The placeholder that stood in for a
+  heredoc body matched the heredoc pattern again, so everything after the first heredoc was
+  dropped as unterminated. That cut 70 of the 80 heredoc calls in the sample, and with them the
+  gates, `close_out.py append` and `asks.py append` steps behind them.
+- **Gates:** pnpm, npx and npm test/lint/build, `playwright test`, eslint, vitest and knip,
+  `run_loop.py gate` (with `--detach` and `--wait`), `spec_check.py`, a direct `test_*.py`,
+  `go vet`, shellcheck, `bash -n`, helm lint and `terraform validate`.
+- **The workflow's own scripts go by their verb:**
+  - `close_out.py` and `asks.py`: a read verb is a read, every other verb a record.
+  - `run_loop.py`/`plan_loop.py`/`long_run.py`: `wait` is a wait, `status` a read and
+    `run --detach` a dispatch.
+  - `preflight.py` and `slice_cost.py` are reads.
+- **More tables:**
+  - Reads: awk, sort, cut, the hashes, more git reads (grep, ls-tree, merge-base, fetch…), and
+    read-only probes (kubectl get/logs, a curl GET, `gh … view`, helm get, `bao kv get`).
+  - Reads too: an inline python or node script that reads and writes nothing.
+  - `git checkout|restore <paths>` is an edit.
+- **Tools other than Bash, all `other` before ($842):**
+  - Skill and ToolSearch are reads.
+  - Monitor and TaskOutput are waits.
+  - SendMessage and the fleet's session starts are dispatches.
+  - An MCP tool goes by the verb in its name: get and search are reads, create, post and
+    register are records.
+- **Records:** a review round (`code_review_r1.md`), `verification.json`, an ask and
+  `close-out.json` are records, not edits. A turn that writes a record and a code edit is an
+  `edit`, as the docstring always said; it was a `record`.
+- **Not every redirect is an edit.** One into `/tmp`, `/dev` or a `mktemp` file is no edit, and a
+  `>` inside a quoted string is no redirect. A false edit also ended orientation early.
+- **Fewer false fumbles and retries.** A retry has to repeat the same file, not just the same
+  program, and a `--help` is a fumble only after a failed call of the same program. These are
+  answers, not failures:
+  - grep's exit 1 with no diagnostic;
+  - a probe's `No such file`;
+  - a loop wait's exit code;
+  - `Traceback` on a grep `path:NN:` line;
+  - the operator refusing a call.
+- **A tool-less turn** is `think`, except two (operator, 2026-11-10). A session's last one, its
+  hand-back, is a `record`. One that waits on work it left in the background is a `wait`.
+- **The role's view, by flag** (operator, 2026-11-10). `analyse()` takes `reads_are_work` (no
+  orientation: every read is the work) and `plan_is_edit` (plan.md is an edit; a done-record
+  still a record). turn_profile still knows no roles. `slice_cost.turn_flags()` sets the first
+  for the reviewers and the second for the plan authors. A cache rebuild after a long call stays
+  billed to the turn that paid it (operator, 2026-11-10): it is its own measure, the break.
+- **Every output token.** A sub-agent transcript logs one message in several records, and its
+  `output_tokens` grows from record to record. `replay()` and `slice_cost.scan_transcript` kept
+  the first record's count. Both now take the most any record reports: 23M output tokens, $407
+  (2 %) of the corpus, uncounted until now.
+- **Operator prompts** no longer count task notifications, skill bodies, local commands,
+  interrupts or compaction summaries, which were 6.2k of about 17k. `<synthetic>` messages are no
+  longer turns.
+
 ## 2026-11-08 — Long waits in chunks under the cache's five minutes, and a test-fixer that measures first (v0.10.53)
 
 Phase 1 of the operator's ruling of 2026-11-08 on PilotAppSpecs

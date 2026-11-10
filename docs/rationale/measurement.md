@@ -82,12 +82,18 @@ Definitions as the code has them, so a number in a readout can be traced to a li
 - **Turn classes.** Every turn in exactly one of thirteen classes, first match in this order when a
   turn mixes calls: `dispatch · edit · gate · commit · record · retry · fumble · wait ·
   git-inspect · orient-read · work-read · think · other`. `edit`/`record` are one op split by
-  what it wrote; `orient-read`/`work-read` are one op split at the first edit. Bash is classified
-  by what it runs (`git diff` is `git-inspect`, `kc project test` is `gate`, `sed -n` is a read),
-  and the read ops chained inside one command are counted separately — the batching `tools/turn`
-  cannot see. Failure is read from a result's text (`usage:`, `command not found`, `No such
-  file`) as well as `is_error`, because the loop's commands end in `2>&1` and fail with exit 0.
-  `retry` and `fumble` are lower bounds: the order means a retried edit is an `edit`.
+  what it wrote; `orient-read`/`work-read` are one op split at the first edit, unless the caller
+  says a role's reads are its work (the reviewers) or its plan.md is (the plan authors). Bash is
+  classified step by step by the program each step runs once its wrappers are peeled off
+  (`git diff` is `git-inspect`, `kc project test` and `pnpm playwright test` are `gate`,
+  `sed -n` is a read, `close_out.py append` a record), and the read ops chained inside one
+  command are counted separately — the batching `tools/turn` cannot see. Failure is read from a
+  result's text (`usage:`, a diagnostic line) as well as `is_error`, because the loop's commands
+  end in `2>&1` and fail with exit 0; a grep that matched nothing or a probe's `No such file` is
+  an answer, not a failure. `retry` and `fumble` are lower bounds: the order means a retried
+  edit is an `edit`. A tool-less turn is `think`, but a session's last one is its hand-back
+  (`record`), and one that waits on its background work a `wait`. The 2026-11-10 pass behind
+  these rules, with its corpus readout, is v0.10.54 (AIWF-156).
 - **Batchable, avoidable.** Consecutive read-only turns are `batchable`; `batchable_strict` also
   requires the later read not to depend on the earlier result. `avoidable = retry + fumble +
   batchable_strict`, priced at the slice's own cost per turn — "a floor, not a target"

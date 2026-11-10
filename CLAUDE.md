@@ -71,6 +71,10 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   `quota_readout.py scan|weeks|hits|compare` prices every transcript under `~/.claude/projects`
   with `slice_cost`, sums it per subscription-quota week and holds it against the weekly limit
   hits and free resets (the 2026-11-05 quota read, `docs/research/quota-read-2026-11-05.md`).
+  `turn_class_readout.py scan|report` replays a corpus of transcripts (a paths file or the
+  cost dashboard's `conversations.json`) through `turn_profile` and shows where its classes
+  go: what is `other` and why, which edits were only a redirect, what a fumble's failure
+  text was (the AIWF-156 pass, 0.10.54).
   Run 1's corpus is frozen under `docs/research/archive/run-1/`.
 - **Reading a run:** a slice's record is its folder in the project's spec repo
   (`slices/completed/NNN_slug/`): `log.txt` is the driver's narration, `state.json` is per

@@ -28,8 +28,10 @@ second time by turn_profile.py, which puts each turn in one class (what it
 did) and counts the read ops chained inside one Bash command, and the block
 aggregates that per role — sessions, turns, tools and reads per turn,
 orientation turns, context, the retry/fumble and batchable turns, prefix
-breaks. The bill is charged per turn, so this is the readout a change to the
-loop is measured on, run by run.
+breaks. turn_profile knows no roles; this script tells it, per session, what
+the role makes of its turns (turn_flags: a reviewer's reads are its work, a
+plan author's plan.md is its work). The bill is charged per turn, so this is
+the readout a change to the loop is measured on, run by run.
 
 The report carries a `derived` block — the close-out ratios read across
 slices as trend lines: planner share (the plan loop's own sessions),
@@ -228,11 +230,15 @@ class Conv:
 
 
 def scan_transcript(path: Path, conv: Conv) -> None:
-    """Accumulate usage from one stream-json transcript, one record per
-    message id (the file logs each assistant message multiple times). A
-    record is one `\\n`-terminated line: splitlines() would also cut a line
-    at a U+2028 or U+2029 inside a JSON string, and drop its message."""
-    seen: set[str] = set()
+    """Accumulate usage from one stream-json transcript, one message per
+    message id (the file logs each assistant message multiple times). Its
+    input and cache tokens are its first record's; its output tokens the most
+    any of its records reports, since a streamed message's count grows from
+    record to record — turn_profile.replay counts a message the same way, so
+    the two agree on a conversation's cost. A record is one `\\n`-terminated
+    line: splitlines() would also cut a line at a U+2028 or U+2029 inside a
+    JSON string, and drop its message."""
+    seen: dict[str, tuple[str, int, int]] = {}   # id -> (model, prompt, output priced)
     try:
         lines = path.read_text(errors="replace").split("\n")
     except OSError:
@@ -259,19 +265,26 @@ def scan_transcript(path: Path, conv: Conv) -> None:
             continue
         mid = msg.get("id")
         if mid and mid in seen:
+            model, prompt, priced = seen[mid]
+            more = (usage.get("output_tokens", 0) or 0) - priced
+            if more > 0:
+                conv.tok_by_model[model]["output"] += more
+                conv.cost_usd += cost_for(model, {"output": more}, prompt_tokens=prompt)
+                seen[mid] = (model, prompt, priced + more)
             continue
-        if mid:
-            seen.add(mid)
         conv.turns += 1
         model = msg.get("model", "unknown")
         msg_tok = {k: usage.get(uk, 0) or 0 for k, uk in USAGE_KEYS.items()}
         bucket = conv.tok_by_model[model]
         for k, v in msg_tok.items():
             bucket[k] += v
+        prompt = msg_tok["input"] + msg_tok["cache_read"] + msg_tok["cache_write"]
+        if mid:
+            seen[mid] = (model, prompt, msg_tok["output"])
         five_min, hour = cache_write_split(msg_tok["cache_write"], usage.get("cache_creation"))
         conv.cost_usd += cost_for(
             model, {**msg_tok, "cache_write": five_min, "cache_write_1h": hour},
-            prompt_tokens=msg_tok["input"] + msg_tok["cache_read"] + msg_tok["cache_write"])
+            prompt_tokens=prompt)
 
 
 def _subagent_convs(parent: Conv) -> list[Conv]:
@@ -415,6 +428,20 @@ def derive(convs: list[Conv], total_cost: float) -> dict:
     }
 
 
+# What a role's turns are, told to turn_profile by flag (it knows no roles):
+# a reviewer's reads are its work, not an orientation before it; a plan
+# author's plan.md is its work, not a record. A sub-agent of either type counts.
+READS_ARE_WORK_ROLES = {"code-reviewer", "plan-reviewer"}
+PLAN_IS_EDIT_ROLES = {"plan-writer", "plan-preparer", "orchestrator:plan"}
+
+
+def turn_flags(role: str) -> dict[str, bool]:
+    """The turn_profile.analyse flags for a session of `role`."""
+    r = role.removeprefix("subagent:").removeprefix("dev:")
+    return {"reads_are_work": r in READS_ARE_WORK_ROLES,
+            "plan_is_edit": r in PLAN_IS_EDIT_ROLES}
+
+
 def turn_stats(convs: list[Conv]) -> dict:
     """The turn profile of the whole slice, per role.
 
@@ -437,7 +464,7 @@ def turn_stats(convs: list[Conv]) -> dict:
             rep = turn_profile.replay(c.transcript)
         except OSError:
             continue
-        analysis = turn_profile.analyse(rep, cost_for)
+        analysis = turn_profile.analyse(rep, cost_for, **turn_flags(c.role))
         if analysis:
             per_role[c.role].append(analysis["metrics"])
 

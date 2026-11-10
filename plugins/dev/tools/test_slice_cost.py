@@ -175,6 +175,32 @@ def test_duplicate_message_ids_counted_once(tmp_path):
     assert c.tokens_by_class()["output"] == 15
 
 
+def test_a_streamed_message_is_priced_at_its_last_records_output(tmp_path):
+    """A sub-agent transcript logs one message in several records whose
+    output_tokens grow (21, then 384): the message's output is the most any
+    record reports, its input and cache tokens its first record's — the
+    count turn_profile.replay keeps too, so the two agree on the cost."""
+    t = tmp_path / "proj" / "sess1.jsonl"
+    _write_transcript(t, [
+        _message("m1", input_tokens=100, cache_read_input_tokens=50_000, output_tokens=21),
+        _message("m1", input_tokens=100, cache_read_input_tokens=50_000, output_tokens=384),
+        _message("m1", input_tokens=100, cache_read_input_tokens=50_000, output_tokens=200),
+        _message("m2", input_tokens=50, output_tokens=5),
+    ])
+    slice_dir = _slice(tmp_path, state={
+        "orchestrator": None, "history": [_history_entry("sess1", t)]})
+    (c,) = collect(slice_dir)[0]
+    assert c.turns == 2
+    assert c.tokens_by_class() == {"input": 150, "output": 389, "cache_write": 0,
+                                   "cache_read": 50_000}
+    assert c.cost() == pytest.approx(
+        cost_for(OPUS, {"input": 100, "cache_read": 50_000, "output": 384},
+                 prompt_tokens=50_100)
+        + cost_for(OPUS, {"input": 50, "output": 5}, prompt_tokens=50))
+    replayed = slice_cost.turn_profile.analyse(slice_cost.turn_profile.replay(t), cost_for)
+    assert replayed["metrics"]["cost"] == pytest.approx(c.cost(), abs=1e-4)
+
+
 def test_a_line_separator_inside_a_record_does_not_drop_its_message(tmp_path):
     """Claude Code writes U+2028/U+2029 raw inside a JSON string; a record
     ends at `\\n` only, so the message on that line is still priced."""
@@ -649,6 +675,35 @@ def test_turns_block_profiles_each_role(tmp_path):
     assert tp["avoidable_turns"] == 1
     assert tp["avoidable_cost_usd"] == pytest.approx(
         tp["cost_per_turn_usd"], abs=0.01)
+
+
+def test_a_role_tells_the_turn_profile_what_its_turns_are(tmp_path):
+    """A reviewer's reads are its work, so it has no orientation; a plan
+    author's plan.md is its work, so writing it ends orientation."""
+    assert slice_cost.turn_flags("code-reviewer") == {"reads_are_work": True,
+                                                      "plan_is_edit": False}
+    assert slice_cost.turn_flags("subagent:dev:plan-reviewer")["reads_are_work"]
+    for role in ("plan-writer", "orchestrator:plan", "subagent:dev:plan-preparer"):
+        assert slice_cost.turn_flags(role) == {"reads_are_work": False,
+                                               "plan_is_edit": True}, role
+    assert slice_cost.turn_flags("code-writer") == {"reads_are_work": False,
+                                                    "plan_is_edit": False}
+    calls = [*_tool_message("m1", [("Bash", "cat slice.md")], input_tokens=1_000),
+             *_tool_message("m2", [("Bash", "cat run_loop.py")], input_tokens=1_000),
+             *_tool_message("m3", [("Edit", "/s/plan.md")], input_tokens=1_000)]
+    transcripts = {}
+    for name in ("rev", "pw", "cw"):
+        transcripts[name] = tmp_path / "proj" / f"{name}.jsonl"
+        _write_transcript(transcripts[name], calls)
+    slice_dir = _slice(tmp_path, state={"orchestrator": None, "history": [
+        _history_entry("rev", transcripts["rev"], role="code-reviewer"),
+        _history_entry("cw", transcripts["cw"], role="code-writer")]},
+        plan_state={"orchestrator": None, "history": [
+            _history_entry("pw", transcripts["pw"], role="plan-writer", phase=None)]})
+    by_role = build_report(slice_dir, *collect(slice_dir))["turns"]["by_role"]
+    assert by_role["code-reviewer"]["orient_turns"] == 0
+    assert by_role["plan-writer"]["orient_turns"] == 2       # plan.md is its first edit
+    assert by_role["code-writer"]["orient_turns"] == 3       # plan.md is a record to it
 
 
 def test_turns_block_prices_a_turn_at_the_slice_rate(tmp_path, capsys):
