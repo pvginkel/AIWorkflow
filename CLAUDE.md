@@ -191,7 +191,13 @@ instead of reopening it.
   plan-reviewer, code-writer, code-reviewer): the 0.7.0–0.7.2 step-down was withdrawn as "dead
   weight" (`docs/research/status.md` § A3, reverted in 0.7.3). Every Opus role runs one uniform
   effort, `xhigh`: 0.9.71's move to `high` was withdrawn the same day in 0.9.72 ("every time I
-  try this, I get bitten", 2026-10-03, `docs/research/model-effort-read-2026-10-03.md`). A lower
+  try this, I get bitten", 2026-10-03, `docs/research/model-effort-read-2026-10-03.md`). Why
+  `xhigh` (2026-11-11): the work is what the level is for — phases that run thirty minutes and
+  more on millions of tokens, cut from large batches of vague asks, where the writer has to work
+  out what right is and the checking a lower effort trims (a search, a self-mutation, a claim
+  verified) is what keeps rework from the operator. The code-writer at `high` would save ≈ 6 % of
+  the weekly quota, which one follow-up fix slice undoes: "if the gain is just 6 %, it's not of
+  interest for me". A lower
   effort for the test-agent was rejected too (2026-09-09). Sub-agents and sub-sub-agents stay
   tunable (`docs/research/turns-plan.md` § T7) — except Explore: **no Sonnet or Haiku pin for Explore and
   no plugin-owned Explore agent**; the ≈ 2–3 % saving does not weigh against the quality risk
