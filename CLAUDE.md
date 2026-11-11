@@ -181,7 +181,9 @@ never parse the manifest directly — only `kc` reads it.
 - **The installed copy is what actually runs.** The loops execute
   `~/.claude/plugins/marketplaces/aiworkflow/` — a GitHub clone — so an edit here reaches future
   runs only after push + marketplace update. `--plugin-dir` reaches your own session only, never
-  the kc-spawned headless agents.
+  the kc-spawned headless agents. Every environment shares this pod's home, so one marketplace
+  update here makes a version live everywhere: there is no per-environment install, and no
+  "installed here, not elsewhere". The same goes for `~/.claude/settings.json`.
 
 ## Settled rulings — don't re-propose
 
