@@ -95,7 +95,8 @@ Definitions as the code has them, so a number in a readout can be traced to a li
   (`record`), and one that waits on its background work a `wait`. The 2026-11-10 pass behind
   these rules, with its corpus readout, is v0.10.54 (AIWF-156).
 - **Batchable, avoidable.** Consecutive read-only turns are `batchable`; `batchable_strict` also
-  requires the later read not to depend on the earlier result. `avoidable = retry + fumble +
+  requires the later read not to depend on the earlier result: it opens no file that result
+  named, and none the earlier turn read or searched (v0.10.56). `avoidable = retry + fumble +
   batchable_strict`, priced at the slice's own cost per turn — "a floor, not a target"
   ([context-profile-2026-08-23.md § 13](../research/context-profile-2026-08-23.md)).
 - **The derived ratios.** Planner share = the plan loop's own sessions (interactive orchestrator,

@@ -4,6 +4,24 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-11 — A read of the file the last turn read or searched is not strictly batchable (v0.10.56)
+
+`batchable_strict` counted a read as independent when every file it opened had already been in
+context before the previous turn's result. That check is about paths, so a follow-up read of a
+known file passed it, even when the previous result had shown where to look. The operator found
+the case in a PilotApp writer: a `grep -n` on `test_relay_service.py` showed a test at line
+2489, and the next turn's `sed -n 2470,2520p` of the same file was counted as strictly
+batchable.
+
+- **A read turn is no longer independent when it opens a file the turn before it read or
+  searched.** That covers Read, `cat` and `sed -n`, a Bash `grep` naming the file, and a Grep
+  or Glob call whose path is the file. An absolute path and a relative one with the same
+  basename count as one file. The one-turn lag on paths a result named stays as it was.
+- **Over the last 400 transcripts, strictly batchable turns drop from 344 to 133.** Loose
+  `batchable` stays at 3,070. `slice_cost`'s `avoidable` (retry + fumble + strict batchable)
+  falls with it. Earlier readouts of `batchable(strict)`, such as the 8.1 % in
+  `docs/rationale/measurement.md`, overstated it.
+
 ## 2026-11-11 — The code-writer runs Fable 5.2 at `high` (v0.10.55)
 
 The operator ruled it on 2026-11-11, in place of the larger build in PilotAppSpecs'

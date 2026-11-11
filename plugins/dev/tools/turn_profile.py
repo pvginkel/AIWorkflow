@@ -1007,6 +1007,32 @@ def _read_targets(t: dict) -> tuple[list[str], bool]:
     return paths, (resolved and bool(paths))
 
 
+def _touched_files(t: dict) -> list[str]:
+    """The files a read turn read or searched: its read targets, the source-ish
+    paths its Bash commands name (a `grep -n pat file` too, which
+    `bash_read_paths` leaves out), and the path after a Grep or Glob key's last
+    ` in ` when it names a file (`.` and a directory without an extension do
+    not)."""
+    paths, _ = _read_targets(t)
+    for rec in t["tools"]:
+        if rec["name"] == "Bash":
+            paths += [str(Path(m.group(0)))
+                      for m in BASH_PATH_RE.finditer(rec.get("cmd") or "")]
+        elif rec["name"] in ("Grep", "Glob"):
+            p = rec["key"].rpartition(" in ")[2]
+            if Path(p).suffix:
+                paths.append(str(Path(p)))
+    return paths
+
+
+def _same_file(a: str, b: str) -> bool:
+    """Whether two normalised paths name one file: equal, or the same basename
+    with one side relative — transcripts mix `/work/X/tests/a.py` and
+    `tests/a.py` as the cwd varies."""
+    pa, pb = Path(a), Path(b)
+    return a == b or (pa.name == pb.name and not (pa.is_absolute() and pb.is_absolute()))
+
+
 def _diagnosed(text: str, probe: bool = False, help_: bool = False) -> bool:
     """A failure marker on a line shaped like a diagnostic — `usage:`, a
     traceback, `error: …`, or `command not found` and the like after a
@@ -1214,7 +1240,10 @@ def classify_turns(turns: list[dict], first_edit_turn: int | None, *,
             rec["fumble_key"] = _fumble_key(bad) if bad else ""
         if cls in ("orient-read", "work-read", "git-inspect"):
             paths, resolved = _read_targets(t)
-            rec["independent"] = bool(resolved and all(p in known for p in paths))
+            prev = _touched_files(turns[i - 1]) if i else []
+            rec["independent"] = bool(
+                resolved and all(p in known for p in paths)
+                and not any(_same_file(p, q) for p in paths for q in prev))
         out.append(rec)
 
         # context lags by one turn: what turn i's result revealed is only
@@ -1229,7 +1258,9 @@ def classify_turns(turns: list[dict], first_edit_turn: int | None, *,
         pending.append(t.get("res_paths") or set())
 
     # batchable runs: consecutive read-only turns. Perfect batching would fold
-    # each run into its first turn.
+    # each run into its first turn. A strict one is also independent: every
+    # file it opens was in context, and none is one the turn before it read or
+    # searched, whose result may have shown it where to look.
     read_only = {"orient-read", "work-read", "git-inspect"}
     run: list[dict] = []
     for rec in out + [{"cls": "-"}]:

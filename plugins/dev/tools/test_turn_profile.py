@@ -730,6 +730,35 @@ def test_strict_batching_keeps_only_the_reads_that_did_not_need_the_last_one():
     assert [r.get("batchable_strict", False) for r in out] == [False, False, True, False]
 
 
+def test_a_read_of_the_file_the_last_turn_searched_is_not_strictly_batchable():
+    """Turn 2 reads lines turn 1's grep found. The file was known since turn 0,
+    but turn 2 needed turn 1's result to know where to look."""
+    out = tp.classify_turns(
+        [_t(0, _call("Read", key="tests/a.py")),
+         _t(1, _call("Bash", cmd='grep -n "x" tests/a.py')),
+         _t(2, _call("Bash", cmd="sed -n 2470,2520p tests/a.py")),
+         _t(3, _call("Edit", key="tests/a.py"))], 3)
+    assert out[2]["batchable"] is True and out[2]["batchable_strict"] is False
+
+
+def test_a_read_of_the_file_the_last_grep_tool_searched_is_not_strictly_batchable():
+    out = tp.classify_turns(
+        [_t(0, _call("Read", key="tests/a.py")),
+         _t(1, _call("Grep", key="x in tests/a.py")),
+         _t(2, _call("Read", key="tests/a.py")),
+         _t(3, _call("Edit", key="tests/a.py"))], 3)
+    assert out[2]["batchable"] is True and out[2]["batchable_strict"] is False
+
+
+def test_a_relative_path_matches_the_last_turns_absolute_one_by_basename():
+    out = tp.classify_turns(
+        [_t(0, _call("Read", key="tests/a.py")),
+         _t(1, _call("Read", key="/work/X/tests/a.py")),
+         _t(2, _call("Bash", cmd="sed -n 1,20p tests/a.py")),
+         _t(3, _call("Edit", key="tests/a.py"))], 3)
+    assert out[2]["batchable"] is True and out[2]["batchable_strict"] is False
+
+
 def test_a_search_is_never_strictly_batchable():
     """A grep's target is a pattern, not a path already in context."""
     out = tp.classify_turns(
