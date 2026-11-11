@@ -123,6 +123,15 @@ def test_fable_5_1_is_priced():
                     {"input": 1_000_000, "output": 1_000_000}) == pytest.approx(60.0)
 
 
+def test_fable_5_2_is_priced():
+    """The code-writer runs on it: $8/$40, cache read at $0.20/MTok. A Fable
+    id with no entry of its own is priced as 5.2, the family's newest."""
+    assert cost_for("claude-fable-5-2",
+                    {"input": 1_000_000, "output": 1_000_000}) == pytest.approx(48.0)
+    assert cost_for("claude-fable-5-2", {"cache_read": 1_000_000}) == pytest.approx(0.20)
+    assert resolve_model("claude-fable-5-3") == "claude-fable-5-2"
+
+
 def test_haiku_5_5_is_priced():
     """Explore sub-agents run on it — a missing entry left 1.68M tokens of
     them unpriced."""

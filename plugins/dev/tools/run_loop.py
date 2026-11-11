@@ -204,10 +204,14 @@ from redact_secrets import RedactionError, is_examined, redact  # noqa: E402
 # session, which is the intended mechanism. The always-Sonnet agents
 # (test-agent, test-fixer, rebase-agent) additionally pin `model:` in their
 # own definitions, so they stay Sonnet even when dispatched as sub-agents.
+# The code-writer runs Fable 5.2 at `high`, by its full id (the `fable` alias
+# is 5.1 on Claude Code 2.1.319), for the operator's run over Fable's three
+# limit resets (2026-11-11); at the first weekly turn after the third reset
+# it goes back to ("opus", "xhigh").
 # ---------------------------------------------------------------------------
 
 MODELS: dict[str, tuple[str, str | None]] = {
-    "code-writer": ("opus", "xhigh"),
+    "code-writer": ("claude-fable-5-2", "high"),
     "code-reviewer": ("opus", "xhigh"),
     "doc-writer": ("opus", "xhigh"),
     "wrap-up": ("opus", "xhigh"),

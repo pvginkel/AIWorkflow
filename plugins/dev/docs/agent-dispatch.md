@@ -92,6 +92,10 @@ Sub-agents
 inherit from the dispatching session — the intended mechanism; ambient inheritance is the
 *absence* of the explicit flags.
 
+**For now, the code-writer runs Fable 5.2 at `high`** (`claude-fable-5-2`), its sub-agents with
+it. This is the operator's run over Fable's three limit resets (2026-11-11). It goes back to Opus
+at `xhigh` at the first weekly turn after the third reset. Every other role stays as above.
+
 The only exceptions are the **always-Sonnet agents**, which additionally pin `model: sonnet` in
 their own definitions so they stay Sonnet even as sub-agents: **test-agent** (the test phase),
 **test-fixer** (mechanical suite repair; the run loop also dispatches it itself, `--model

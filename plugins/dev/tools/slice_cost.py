@@ -74,7 +74,8 @@ import turn_profile  # noqa: E402
 # not spawned under it and do write 1-hour cache. The cache-read
 # multiplier is per model: CACHE_READ_MULT unless the entry carries its own
 # `cache_read` — the Fable/Mythos 5.1 tier reads cache at 0.025× base
-# ($0.25/MTok), Opus 5.5 at 0.05× ($0.20/MTok; its $4/$20 rates from the
+# ($0.25/MTok), Fable 5.2 at 0.025× of its $8/$40 ($0.20/MTok; the pricing
+# page, 2026-11-11), Opus 5.5 at 0.05× ($0.20/MTok; its $4/$20 rates from the
 # claude-api skill, 2026-09-22). Sonnet 5.5's $2/$10 are from the same skill,
 # 2026-09-30; it reads cache at 0.05× too ($0.10/MTok, the pricing page above,
 # checked 2026-11-04). Haiku 5.5's
@@ -84,6 +85,7 @@ import turn_profile  # noqa: E402
 # when its prompt (input + cache read + cache write) is over `above` tokens,
 # and its cache rates follow that tier's input rate.
 PRICES: dict[str, dict] = {
+    "claude-fable-5-2":          {"input": 8.0,  "output": 40.0, "cache_read": 0.025},
     "claude-fable-5-1":          {"input": 10.0, "output": 50.0, "cache_read": 0.025},
     "claude-mythos-5-1":         {"input": 10.0, "output": 50.0, "cache_read": 0.025},
     "claude-fable-5":            {"input": 10.0, "output": 50.0},
@@ -103,7 +105,7 @@ PRICES: dict[str, dict] = {
 # The newest id of each family: what an id of that family missing from PRICES
 # is priced as — move it when a model ships.
 FAMILY_DEFAULTS = {
-    "fable": "claude-fable-5-1",
+    "fable": "claude-fable-5-2",
     "mythos": "claude-mythos-5-1",
     "opus": "claude-opus-5-5",
     "sonnet": "claude-sonnet-5-5",

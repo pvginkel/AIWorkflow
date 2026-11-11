@@ -4,6 +4,27 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-11 — The code-writer runs Fable 5.2 at `high` (v0.10.55)
+
+The operator ruled it on 2026-11-11, in place of the larger build in PilotAppSpecs'
+`design/proposals/fable-work-and-the-limit-resets.md`. The aim is comparison material: about
+270 writer phases on Fable 5.2, each reviewed by the unchanged Opus `xhigh` reviewer, to hold
+against the Opus baseline. It lifts "No Fable for any role" for this role alone, until the
+three limit resets are spent.
+
+- **The code-writer runs `claude-fable-5-2` at `high`.** That is its `MODELS` entry in
+  `run_loop.py`, by the model's full id, because Claude Code 2.1.319's `fable` alias means 5.1.
+  The writer's sub-agents inherit it. The test-fixer stays on Sonnet, and every other role stays
+  on Opus at `xhigh`.
+- **Fable 5.2 is priced:** $8/$40, with cache reads at $0.20/MTok. `FAMILY_DEFAULTS` moves
+  `fable` to 5.2. Until now `slice_cost.py` priced 5.2 as 5.1, about 25 % too high.
+- **Nothing changes for Fable's cap.** As read from the code, a writer refused at the cap ends
+  with no verdict. The loop rules that a protocol failure, so the run exits 3. The run-slice
+  session then registers a decision document, and "retry" after a reset resumes the run. Nobody
+  has seen this happen yet: the first cap is the test. If the work does not pause there, the fix
+  is to recognise Fable's notice where the loop already recognises the session-limit notice.
+- **Reverted at the first weekly turn after the third reset**, back to `("opus", "xhigh")`.
+
 ## 2026-11-10 — The transcript replay counts what a turn did, and every output token (v0.10.54, AIWF-156)
 
 AIWF-156 asked for three gates the turn classes missed: pnpm and Playwright runs, a gate

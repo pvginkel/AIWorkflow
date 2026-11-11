@@ -131,7 +131,8 @@ Four ideas span the files and explain most design choices:
    Detecting a green suite needs no model, only fixing red does.
 3. **Every agent is a headless `kc session`,** spawned through `run_loop.run_kc_session` (the plan
    loop calls it too). Opus at `xhigh` everywhere via explicit flags, except the always-Sonnet
-   agents (`test-agent`, `test-fixer`, `rebase-agent`) which pin `model:` in their own definitions.
+   agents (`test-agent`, `test-fixer`, `rebase-agent`) which pin `model:` in their own definitions,
+   and, until the third Fable limit reset is spent, the code-writer on Fable 5.2 at `high`.
 4. **The loops bail, they don't chat:** exit 3 = error, exit 4 = operator question, exit 7 =
    halted at Pilot's halt file. An exit 4 leaves a document the stage registers with Pilot
    (`plugins/dev/docs/pilot.md`). `state.json`, `bailout.json` and the exit code are the entire
@@ -205,7 +206,11 @@ instead of reopening it.
 - **No Fable for any role** while Fable has its own quota: "once that goes away, I will start to
   consider it" (2026-09-09, the same read's S8). The refinement-writer, the one Fable role, moved
   to Opus at `xhigh` in 0.9.141 (2026-10-26, AIWF-112), and went with the refinement page in
-  0.10.9.
+  0.10.9. **One exception, ruled 2026-11-11:** the code-writer runs Fable 5.2 at `high` (0.10.55)
+  over Fable's three limit resets, for the comparison material ("all of this is mostly my
+  personal research"), and goes back to Opus at `xhigh` at the first weekly turn after the third
+  reset. The larger build — a switch, Pilot's gold-bar line, the planning roles on Fable — was
+  dropped for its price (`PilotAppSpecs/design/proposals/fable-work-and-the-limit-resets.md`).
 - **No context compression, auto-compact windows, turn or token caps, or history summarisation**
   for writers and reviewers (`docs/research/turns-plan.md` § Deliberately not in this plan). The
   turns plan itself is exhausted (`docs/research/readout-2026-09-01.md` § 7).
