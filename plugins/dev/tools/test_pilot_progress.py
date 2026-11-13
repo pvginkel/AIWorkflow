@@ -1,5 +1,6 @@
 """Tests for pilot_progress — a loop's steps, the helpers that edit the list,
-the one `set_progress` call that sends it, and the publisher `wait` uses.
+the one `set_progress` call that sends it, the publisher `wait` uses, and the
+one-off publish of a list given (`publish_steps`).
 
 HTTP is faked at the opener seam: no test reaches a network. Stdlib only;
 runs standalone and under pytest.
@@ -251,11 +252,12 @@ def test_a_code_names_its_phase_kind_and_round():
     assert [code("code", 1, "3"), code("code", 2, "3"), code("review", 1, "3a"),
             code("review", 2, "3a"), code("sweep"), code("sweep", 2),
             code("consult"), code("test"), code("test", 2), code("docs"),
-            code("wrap-up"), code("write"), code("write", 2),
+            code("wrap-up"), code("ground"), code("write"), code("write", 2),
             code("review")] == [
         "P3.code", "P3.code-2", "P3a.review", "P3a.review-2", "sweep",
-        "sweep-2", "consult", "test", "test-2", "docs", "wrap-up", "write",
-        "write-2", "review"]
+        "sweep-2", "consult", "test", "test-2", "docs", "wrap-up", "ground",
+        "write", "write-2", "review"]
+    assert pp.PLAN_KINDS == ("ground", "write", "review")
     try:
         code("merge")
     except ValueError:
@@ -532,6 +534,93 @@ def test_nothing_the_publisher_meets_escapes_it():
             urllib.error.URLError("two\nlines")))
         pub.publish(force=True)
         assert "\n" not in lines[0]
+
+
+# -- a list given, with no state file ----------------------------------------
+
+GROUNDING = [{"code": "ground", "label": "Plan · ground", "state": "active"},
+             {"code": "write", "label": "Plan · write", "state": "pending"},
+             {"code": "review", "label": "Plan · review", "state": "pending"}]
+
+
+def test_publish_steps_sends_the_list_given_as_pilot_takes_it():
+    lines = []
+    opener = FakeOpener(lambda: ok_stream(GROUNDING))
+    answer = pp.publish_steps(GROUNDING, lines.append, environ=ENV,
+                              opener=opener)
+    assert (answer.kind, answer.steps) == (pp.OK, {"steps": GROUNDING})
+    assert opener.sent() == [GROUNDING] and lines == []
+    [(request, _)] = opener.requests
+    assert request.full_url == URL
+    assert request.get_header("Authorization") == f"Bearer {TOKEN}"
+    # held to Pilot's limits: a start time and an over-long label are not sent
+    given = [dict(GROUNDING[0], started=T0, label="g" * 121), *GROUNDING[1:]]
+    pp.publish_steps(given, lines.append, environ=ENV, opener=opener)
+    assert opener.sent()[1] == pp.sanitize(given) != given
+    assert "started" not in opener.sent()[1][0]
+    # the list it was given is left as it was
+    assert given[0]["started"] == T0
+
+
+def test_publish_steps_logs_why_it_could_not_publish_and_never_raises():
+    refusal = {"jsonrpc": "2.0", "id": 1,
+               "error": {"message": f"token {TOKEN}\nexpired"}}
+    cases = [
+        (ENV, FakeOpener(urllib.error.URLError("refused")), pp.NO_ANSWER,
+         f"Pilot progress not published: no answer from {URL}: "
+         "URLError: refused"),
+        (ENV, FakeOpener(FakeResponse(sse([f"data: {json.dumps(refusal)}"]))),
+         pp.REFUSED,
+         "Pilot progress not published: Pilot refused it: token <token> "
+         "expired"),
+        (ENV, FakeOpener(urllib.error.URLError("x" * 400)), pp.NO_ANSWER,
+         None),
+    ]
+    for env, opener, kind, line in cases:
+        lines = []
+        answer = pp.publish_steps(GROUNDING, lines.append, environ=env,
+                                  opener=opener)
+        assert answer.kind == kind and len(opener.requests) == 1
+        [logged] = lines
+        assert TOKEN not in logged and "\n" not in logged
+        if line is not None:
+            assert logged == line
+        else:
+            assert len(logged) == len(pp.NOT_PUBLISHED) + 2 + pp.REASON_MAX
+    opener = FakeOpener(ok_stream(GROUNDING))
+    for env in ({}, {"PILOT_TOKEN": TOKEN}, {"PILOT_MCP_URL": URL}):
+        lines = []
+        assert pp.publish_steps(GROUNDING, lines.append, environ=env,
+                                opener=opener) is None
+        assert lines == ["Pilot progress not published: no "
+                         "PILOT_TOKEN/PILOT_MCP_URL in this session's "
+                         "environment"], env
+    assert opener.requests == []
+
+    def broken_log(line):
+        raise OSError("log gone")
+
+    class Weird(Exception):
+        pass
+
+    answer = pp.publish_steps(GROUNDING, broken_log, environ=ENV,
+                              opener=FakeOpener(Weird("boom")))
+    assert answer.kind == pp.NO_ANSWER and "Weird: boom" in answer.reason
+    assert pp.publish_steps(GROUNDING, broken_log, environ={}) is None
+    # even a list that is not one, or an environment that cannot be read
+    assert pp.publish_steps(GROUNDING, broken_log, environ=object()) is None
+    assert pp.publish_steps(None, broken_log, environ={}) is None
+
+
+def test_publish_steps_reads_the_process_environment_by_default():
+    saved, saved_opener = pp.os.environ, pp.OPENER
+    opener = FakeOpener(ok_stream(GROUNDING))
+    pp.os.environ, pp.OPENER = dict(ENV), opener
+    try:
+        answer = pp.publish_steps(GROUNDING, lambda line: None)
+    finally:
+        pp.os.environ, pp.OPENER = saved, saved_opener
+    assert answer.kind == pp.OK and opener.sent() == [GROUNDING]
 
 
 if __name__ == "__main__":

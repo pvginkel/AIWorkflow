@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A loop's steps, as Pilot shows them — the list and its one publisher.
+"""A loop's steps, as Pilot shows them — the list and its two publishers.
 
 Both loops keep a list of the steps their run takes, `progress` in their
 state file (plan_state.json, state.json): `{"code", "label", "state"}` per
@@ -12,21 +12,25 @@ the pure helpers here and never send it anywhere: they hold no Pilot
 credential, and a driver that outlives the session that started it
 would hold a stale one. The loops' `wait` (run_loop.wait_on_driver) is what
 publishes it — that process is the Pilot session's own, so the token in its
-environment is the live one — through `Publisher`.
+environment is the live one — through `Publisher`. The other publisher is
+plan_loop.py `progress`, the plan-slice session's publish of its grounding
+steps before the plan loop exists: a process of the Pilot session too, so
+its token is live as well, sending a list it is given, with no state file,
+through `publish_steps`.
 
 A step's code is `[P<phase>.]<kind>[-<round>]`: round 1 has no suffix, the
 phase id is the plan's (`P3.code`, `P3a.review-2`, `sweep`, `write-2`). The
 kinds are a fixed set, because a later estimate keys on them: the run loop's
 `code`, `review`, `sweep`, `consult`, `test`, `docs` and `wrap-up`, the plan
-loop's `write` and `review`.
+loop's `ground` (the grounding ahead of its passes), `write` and `review`.
 
-The publisher sends the whole list with one JSON-RPC `tools/call` of Pilot's
+A publisher sends the whole list with one JSON-RPC `tools/call` of Pilot's
 MCP tool `set_progress`, with no `initialize` first (the server keeps no
 session) and no MCP client: `urllib.request`, bounded at about TIMEOUT
 seconds, so a slow Pilot never pushes `wait` past its budget. It is
 best-effort and silent — what it could not do goes to the slice's log once
-per kind per `wait`, nothing is printed, and nothing it raises reaches the
-caller. Stdlib only.
+per kind per `wait` or `publish_steps` call, nothing is printed, and nothing
+it raises reaches the caller. Stdlib only.
 """
 
 from __future__ import annotations
@@ -48,7 +52,7 @@ DONE = "done"
 STATES = (PENDING, ACTIVE, DONE)
 
 RUN_KINDS = ("code", "review", "sweep", "consult", "test", "docs", "wrap-up")
-PLAN_KINDS = ("write", "review")
+PLAN_KINDS = ("ground", "write", "review")
 KINDS = frozenset(RUN_KINDS + PLAN_KINDS)
 
 # Pilot refuses the whole call over any one of these, so they are kept on
@@ -358,55 +362,30 @@ def _scrub(reason: str, token: str) -> str:
     return reason.replace(token, "<token>") if token else reason
 
 
-# -- the publisher -------------------------------------------------------------
+# -- the publishers ------------------------------------------------------------
 
 UNCONFIGURED = "unconfigured"
 NOT_PUBLISHED = "Pilot progress not published"
 REASON_MAX = 300
 
 
-class Publisher:
-    """One `wait`'s publishing of the state file's list: built from the
-    waiting process's own environment (`PILOT_TOKEN`, `PILOT_MCP_URL`) and
-    told where the state file is and how to put a line in the slice's log.
+class _Sender:
+    """A send of a list with its logging: the credentials from the
+    sending process's own environment (`PILOT_TOKEN`, `PILOT_MCP_URL`), and
+    each kind of failure — no credentials, no answer, a refusal — put in the
+    slice's log through `log_line` once per sender."""
 
-    `publish` sends the list when it differs from the last one it tried to
-    send, or always when forced — a failed send is not retried on an
-    unchanged list; the next change, or `wait`'s forced last publish, tries
-    again. A state file with no list (a driver started on an older plugin)
-    sends and logs nothing. Each kind of failure — no credentials, no
-    answer, a refusal — is logged once per publisher, so once per `wait`."""
-
-    def __init__(self, state_path: Path, log_line: Callable[[str], None],
-                 environ=None, opener: Callable | None = None):
+    def __init__(self, log_line: Callable[[str], None], environ=None,
+                 opener: Callable | None = None):
         env = os.environ if environ is None else environ
-        self.state_path = Path(state_path)
         self.log_line = log_line
         self.token = env.get("PILOT_TOKEN") or ""
         self.url = env.get("PILOT_MCP_URL") or ""
         self.opener = opener
-        self._last: list[dict] | None = None
         self._logged: set[str] = set()
 
-    def publish(self, force: bool = False) -> Answer | None:
-        """The answer to the send this made, or None when it sent nothing."""
-        try:
-            return self._publish(force)
-        except Exception:
-            return None
-
-    def _publish(self, force: bool) -> Answer | None:
-        try:
-            state = json.loads(self.state_path.read_text())
-        except (OSError, ValueError):
-            return None
-        progress = state.get("progress") if isinstance(state, dict) else None
-        if not isinstance(progress, list):
-            return None
-        steps = sanitize(progress)
-        if not force and steps == self._last:
-            return None
-        self._last = steps
+    def _send(self, steps: list[dict]) -> Answer | None:
+        """The answer to the send, or None with no credentials to send it."""
         if not self.token or not self.url:
             self._note(UNCONFIGURED, "no PILOT_TOKEN/PILOT_MCP_URL in this "
                                      "session's environment")
@@ -429,3 +408,63 @@ class Publisher:
             self.log_line(f"{NOT_PUBLISHED}: {why}")
         except Exception:
             pass
+
+
+class Publisher(_Sender):
+    """One `wait`'s publishing of the state file's list: built from the
+    waiting process's own environment (`PILOT_TOKEN`, `PILOT_MCP_URL`) and
+    told where the state file is and how to put a line in the slice's log.
+
+    `publish` sends the list when it differs from the last one it tried to
+    send, or always when forced — a failed send is not retried on an
+    unchanged list; the next change, or `wait`'s forced last publish, tries
+    again. A state file with no list (a driver started on an older plugin)
+    sends and logs nothing. Each kind of failure — no credentials, no
+    answer, a refusal — is logged once per publisher, so once per `wait`."""
+
+    def __init__(self, state_path: Path, log_line: Callable[[str], None],
+                 environ=None, opener: Callable | None = None):
+        super().__init__(log_line, environ, opener)
+        self.state_path = Path(state_path)
+        self._last: list[dict] | None = None
+
+    def publish(self, force: bool = False) -> Answer | None:
+        """The answer to the send this made, or None when it sent nothing."""
+        try:
+            return self._publish(force)
+        except Exception:
+            return None
+
+    def _publish(self, force: bool) -> Answer | None:
+        steps = self._read()
+        if steps is None:
+            return None
+        if not force and steps == self._last:
+            return None
+        self._last = steps
+        return self._send(steps)
+
+    def _read(self) -> list[dict] | None:
+        """The state file's list as Pilot takes it, or None with no list."""
+        try:
+            state = json.loads(self.state_path.read_text())
+        except (OSError, ValueError):
+            return None
+        progress = state.get("progress") if isinstance(state, dict) else None
+        if not isinstance(progress, list):
+            return None
+        return sanitize(progress)
+
+
+def publish_steps(steps: list[dict], log_line: Callable[[str], None],
+                  environ=None, opener: Callable | None = None) -> Answer | None:
+    """One send of `steps`, a list given rather than a state file's — the
+    plan-slice session's grounding steps, before the plan loop exists
+    (plan_loop.py `progress`) — with the publisher's ways: the credentials
+    from this process's environment, the list held to Pilot's limits, each
+    kind of failure logged once through `log_line`. The answer, or None when
+    nothing was sent; never raises."""
+    try:
+        return _Sender(log_line, environ, opener)._send(sanitize(steps))
+    except Exception:
+        return None

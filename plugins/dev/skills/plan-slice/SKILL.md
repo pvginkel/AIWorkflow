@@ -51,13 +51,14 @@ tool takes, `<task>` the brief's plan task, and a tool is
    with no slice folder to hold a document — no slice of that name, or no spec repo — ends the
    turn with its last message saying what failed and what fixes it. A pass's notes go into the
    turn's last message.
-3. **Prepare**: dispatch `dev:plan-preparer` with `<slice>`, `<task>` and the ticket. It leaves
-   `grounding.md` and `plan.md`'s seeded header in the folder and hands back the path of
-   `asks/1-requirements.json`, or `nothing to ask`.
-4. **Put the requirements**: `asks.py render <store>`, register `asks/1-requirements.md`, attach
-   `grounding.md` and `slice.md` to it, commit `plan.md`, `grounding.md` and `asks/` by name, and
-   end the turn. With nothing to ask, commit `plan.md` and `grounding.md` and go to
-   [the loop](#the-loop).
+3. **Prepare**: `plan_loop.py progress <slice> --ground active`, the work item's steps before
+   the loop exists (pilot.md § The progress), then dispatch `dev:plan-preparer` with `<slice>`,
+   `<task>` and the ticket. It leaves `grounding.md` and `plan.md`'s seeded header in the folder
+   and hands back the path of `asks/1-requirements.json`, or `nothing to ask`.
+4. **Put the requirements**: `plan_loop.py progress <slice> --ground done`, `asks.py render
+   <store>`, register `asks/1-requirements.md`, attach `grounding.md` and `slice.md` to it,
+   commit `plan.md`, `grounding.md` and `asks/` by name, and end the turn. With nothing to ask,
+   commit `plan.md` and `grounding.md` and go to [the loop](#the-loop).
 
 ## The loop
 

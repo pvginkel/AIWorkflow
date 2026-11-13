@@ -60,6 +60,10 @@ verdict; -v/--verbose echoes the full log there too.
 does, and `wait` is what the stage's session waits on inside its turn: a
 foreground call under the Bash tool's cap that answers with a
 signal, never a report (docs/pilot.md § A turn's end is the run's end).
+`wait` publishes the loop's steps to Pilot; `progress` is the stage
+session's own publish of them before the loop exists — the grounding active
+while the plan-preparer works, then done — so Pilot's tile shows the
+planning's steps from its start. It touches no state file and no lock.
 
 Pilot's halt file (run_loop.HALT_FILE) is looked for before every pass:
 present, the loop exits 7 with plan_state.json current, and the rerun once
@@ -69,6 +73,7 @@ interrupts a running loop as Ctrl-C does.
 Usage:
     plan_loop.py run <slice-dir> [--step ID] [--detach] [--verbose]
     plan_loop.py wait <slice-dir> [--for SECONDS]
+    plan_loop.py progress <slice-dir> --ground active|done
     plan_loop.py stop <slice-dir>
     plan_loop.py status <slice-dir>
 
@@ -77,8 +82,9 @@ Exit codes: 0 plan complete · 4 operator input needed · 3 bailed
 130 interrupted · 1 unexpected error. `run --detach` exits 0 once the loop
 started, else with its refusal's code. Of wait: 0 the loop ended (its code
 in the output) · 5 still running at --for · 6 gone, no exit record · 2
-nothing to wait on. Of stop: 0 stopped · 1 no loop running, or still
-running after the wait · 2 the loop is on another host.
+nothing to wait on. Of progress: 0, whatever Pilot answered · 2 no such
+slice dir. Of stop: 0 stopped · 1 no loop running, or still running after
+the wait · 2 the loop is on another host.
 """
 
 import argparse
@@ -120,6 +126,7 @@ from run_loop import (  # noqa: E402
     WAIT_FOR_HELP,
     Halted,
     SliceLock,
+    _append_wait_line,
     _exit_status,
     _git_toplevel,
     _now_hms,
@@ -162,6 +169,13 @@ VERDICTS = {
     "plan-writer": {"done", "questions", "blocked"},
     "plan-reviewer": {"go", "issues", "questions"},
 }
+
+# The label of each of the planning's steps on Pilot's tile, by kind: the
+# grounding, which the stage's session publishes before the loop exists
+# (`progress`) and the loop seeds done, then the loop's own passes, a round
+# from the second on with its number after it.
+STEP_LABELS = {"ground": "Plan · ground", "write": "Plan · write",
+               "review": "Plan · review"}
 
 # The passes Pilot's halt stops the loop before, by the state's `phase`.
 HALT_PASSES = {
@@ -496,19 +510,22 @@ class PlanLoop:
             lambda steps: pilot_progress.start(steps, code, label, started))
 
     def _seed_progress(self) -> list[dict]:
-        """The loop's steps as far as they are known: the writer's pass
-        unless the loop enters at review with no pass behind it (a reset
-        re-plan), then the review. A state from an older plugin has its
-        first passes done where its counts say they ran."""
+        """The loop's steps as far as they are known: the grounding first,
+        always and done — the stage's session grounded the slice before it
+        launched the loop (`progress`) — then the writer's pass unless the
+        loop enters at review with no pass behind it (a reset re-plan), then
+        the review. A state from an older plugin has its first passes done
+        where its counts say they ran."""
         state = self.state
-        steps = []
+        steps = [pilot_progress.make_step("ground", STEP_LABELS["ground"],
+                                          pilot_progress.DONE)]
         if not (state["phase"] == "reviewing" and not state["writer_rounds"]):
             steps.append(pilot_progress.make_step(
-                "write", "Plan · write",
+                "write", STEP_LABELS["write"],
                 pilot_progress.DONE if state["writer_rounds"] >= 1
                 else pilot_progress.PENDING))
         steps.append(pilot_progress.make_step(
-            "review", "Plan · review",
+            "review", STEP_LABELS["review"],
             pilot_progress.DONE if state["review_rounds"] >= 1
             else pilot_progress.PENDING))
         return steps
@@ -806,7 +823,7 @@ class PlanLoop:
 
     def _writer_pass(self, initial: bool) -> None:
         w, verdict_path, questions_path = self._writer_paths()
-        self._progress_start("write", w, "Plan · write")
+        self._progress_start("write", w, STEP_LABELS["write"])
         if initial:
             prompt = WRITER_INITIAL_PROMPT.format(
                 slice_name=self.slice_name, slice_dir=self.slice_dir,
@@ -854,7 +871,7 @@ class PlanLoop:
         self.state["review_rounds"] += 1
         r = self.state["review_rounds"]
         self._save_state()
-        self._progress_start("review", r, "Plan · review")
+        self._progress_start("review", r, STEP_LABELS["review"])
         review_path = self.slice_dir / f"plan_review_r{r}.md"
         findings_path = self.slice_dir / f"plan_review_r{r}.json"
         verdict_path = self.slice_dir / f"plan_review_result_r{r}.json"
@@ -1461,6 +1478,29 @@ def cmd_wait(args) -> None:
                    _ended_lines)
 
 
+def cmd_progress(args) -> None:
+    """The plan-slice session's publish of the grounding steps, before the
+    loop exists: the grounding in the state `--ground` gives, the writer's
+    pass and the review pending, sent to Pilot from this process's own
+    environment (pilot_progress.publish_steps). It reads and writes no
+    plan_state.json and takes no lock; what could not be published goes to
+    plan_log.txt, nothing to stdout, and it exits 0 whatever Pilot
+    answered."""
+    slice_dir = Path(args.slice_dir)
+    if not slice_dir.is_dir():
+        print(f"Error: slice directory not found: {slice_dir}", file=sys.stderr)
+        sys.exit(2)
+    steps = [
+        pilot_progress.make_step("ground", STEP_LABELS["ground"], args.ground),
+        pilot_progress.make_step("write", STEP_LABELS["write"]),
+        pilot_progress.make_step("review", STEP_LABELS["review"]),
+    ]
+    log_path = slice_dir / "plan_log.txt"
+    pilot_progress.publish_steps(
+        steps, lambda text: _append_wait_line(log_path, text, "progress"))
+    sys.exit(0)
+
+
 def cmd_stop(args) -> None:
     """SIGINT the slice's plan loop — its KeyboardInterrupt path: the
     report rendered, plan_state.json current, exit 130; the rerun takes the
@@ -1517,6 +1557,17 @@ def main() -> None:
     wait_p.add_argument("--for", dest="for_seconds", type=float,
                         default=None, metavar="SECONDS", help=WAIT_FOR_HELP)
     wait_p.set_defaults(func=cmd_wait)
+
+    progress_p = sub.add_parser(
+        "progress", help="the plan-slice session's publish of the grounding "
+                         "steps to Pilot, before the loop exists; exits 0 "
+                         "whatever Pilot answered")
+    progress_p.add_argument("slice_dir")
+    progress_p.add_argument("--ground", required=True,
+                            choices=(pilot_progress.ACTIVE, pilot_progress.DONE),
+                            help="the grounding's state: active while the "
+                                 "plan-preparer works, done once it returned")
+    progress_p.set_defaults(func=cmd_progress)
 
     stop_p = sub.add_parser("stop", help="interrupt the slice's plan loop "
                                          "(SIGINT, as Ctrl-C) and wait for it")

@@ -72,9 +72,11 @@ the loop is in with its time, `running: write r2, 3m`, with the `next:` wait to 
 
 **The steps Pilot shows.** `plan_state.json` keeps `progress` as the run loop's `state.json`
 does, by the same rules ([run-loop.md](run-loop.md) § The steps Pilot shows), and `wait`
-publishes it ([pilot.md](pilot.md) § The progress). The first run seeds `write`, "Plan · write",
-and `review`, "Plan · review", both `pending`; a reset re-plan, which enters at review, seeds
-`review` alone. Each writer pass is a step, `write`, then `write-2` and on, "Plan · write 2", and
+publishes it ([pilot.md](pilot.md) § The progress). The first run seeds `ground`, "Plan ·
+ground", `done`, for the grounding the stage's session ran before the loop and published with
+`plan_loop.py progress <slice> --ground active|done`, then `write`, "Plan · write", and `review`,
+"Plan · review", both `pending`; a reset re-plan, which enters at review, seeds `ground` and
+`review`. Each writer pass is a step, `write`, then `write-2` and on, "Plan · write 2", and
 so is each review. A questions or review exit leaves its step active, and the rerun's pass is a
 step of its own after it. Exit 0 marks the active step done. A rerun keeps the list it finds.
 

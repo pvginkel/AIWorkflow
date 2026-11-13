@@ -18,6 +18,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.error
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -2292,10 +2293,12 @@ def test_a_plan_run_seeds_its_steps_and_takes_them_in_order():
             return real(role, prompt, verdict_path, round_)
         loop._spawn = spawn
         assert run_to_exit(loop) == 0
-        assert seeded == [[("write", "Plan · write", "pending"),
+        assert seeded == [[("ground", "Plan · ground", "done"),
+                           ("write", "Plan · write", "pending"),
                            ("review", "Plan · review", "pending")]]
         assert active == [["write"], ["review"]]
         assert progress_of(slice_dir) == [
+            ("ground", "Plan · ground", "done"),
             ("write", "Plan · write", "done"),
             ("review", "Plan · review", "done")]
 
@@ -2315,8 +2318,10 @@ def test_each_pass_carries_the_time_the_loop_started_it():
         before = datetime.now().astimezone()
         assert run_to_exit(loop) == 0
         assert said == ["write, <1m", "review, <1m"]
-        times = [datetime.fromisoformat(s["started"])
-                 for s in load_state(slice_dir)["progress"]]
+        steps = load_state(slice_dir)["progress"]
+        # the grounding ran before the loop: it carries no time of the loop's
+        assert "started" not in steps[0]
+        times = [datetime.fromisoformat(s["started"]) for s in steps[1:]]
         assert len(times) == 2 and before <= times[0] <= times[1]
 
 
@@ -2325,17 +2330,19 @@ def test_a_questions_exit_leaves_its_pass_active_and_the_rerun_takes_write_2():
         slice_dir = make_slice(tmp)
         assert run_to_exit(ScriptedLoop(slice_dir, [W_Q])) == 4
         assert progress_of(slice_dir) == [
+            ("ground", "Plan · ground", "done"),
             ("write", "Plan · write", "active"),
             ("review", "Plan · review", "pending")]
         assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE, R_ISSUES])) == 4
         assert progress_of(slice_dir) == [
+            ("ground", "Plan · ground", "done"),
             ("write", "Plan · write", "done"),
             ("write-2", "Plan · write 2", "done"),
             ("review", "Plan · review", "active")]
         assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE])) == 0
         assert [(c, s) for c, _, s in progress_of(slice_dir)] == [
-            ("write", "done"), ("write-2", "done"), ("review", "done"),
-            ("write-3", "done")]
+            ("ground", "done"), ("write", "done"), ("write-2", "done"),
+            ("review", "done"), ("write-3", "done")]
 
 
 def test_a_reset_re_plan_has_no_write_step():
@@ -2343,6 +2350,7 @@ def test_a_reset_re_plan_has_no_write_step():
         slice_dir = make_slice(tmp, phases=True)
         assert run_to_exit(ScriptedLoop(slice_dir, [R_GO])) == 0
         assert progress_of(slice_dir) == [
+            ("ground", "Plan · ground", "done"),
             ("review", "Plan · review", "done")]
 
 
@@ -2357,10 +2365,12 @@ def test_a_state_from_an_older_plugin_seeds_the_passes_it_ran_done():
         seeded = []
         loop.on_start = lambda: seeded.append(progress_of(slice_dir))
         assert run_to_exit(loop) == 0
-        assert seeded == [[("write", "Plan · write", "done"),
+        assert seeded == [[("ground", "Plan · ground", "done"),
+                           ("write", "Plan · write", "done"),
                            ("review", "Plan · review", "done")]]
         assert [(c, s) for c, _, s in progress_of(slice_dir)] == [
-            ("write", "done"), ("review", "done"), ("write-2", "done")]
+            ("ground", "done"), ("write", "done"), ("review", "done"),
+            ("write-2", "done")]
 
 
 class FakePilot:
@@ -2405,6 +2415,140 @@ def test_wait_publishes_the_plan_loops_steps_and_logs_to_plan_log():
             r"\[\d\d:\d\d:\d\d\] \[wait\] Pilot progress not published: no "
             r"PILOT_TOKEN/PILOT_MCP_URL in this session's environment", line)
         assert not (slice_dir / "log.txt").exists()
+
+
+# -- `progress`: the grounding's steps, before the loop exists ---------------
+
+PILOT_URL = "http://pilot.invalid/mcp"
+
+
+def progress(slice_dir, ground):
+    return call(plan_loop.cmd_progress, slice_dir=str(slice_dir), ground=ground)
+
+
+def no_pilot_env(**extra):
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("PILOT_TOKEN", "PILOT_MCP_URL")}
+    return dict(env, **extra)
+
+
+def grounding(state):
+    return [{"code": "ground", "label": "Plan · ground", "state": state},
+            {"code": "write", "label": "Plan · write", "state": "pending"},
+            {"code": "review", "label": "Plan · review", "state": "pending"}]
+
+
+def plan_log_lines(slice_dir):
+    return (slice_dir / "plan_log.txt").read_text().splitlines()
+
+
+def test_progress_publishes_the_grounding_steps_and_nothing_else():
+    """The plan-slice session's publish before the loop exists: the three
+    steps, the grounding in the state given — and no state file, no lock,
+    no log line and no output."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        before = sorted(p.name for p in slice_dir.iterdir())
+        fake = FakePilot()
+        with patched(os, environ=no_pilot_env(PILOT_TOKEN="t",
+                                              PILOT_MCP_URL=PILOT_URL)), \
+                patched(plan_loop.pilot_progress, OPENER=fake):
+            assert progress(slice_dir, "active") == (0, "", "")
+            assert progress(slice_dir, "done") == (0, "", "")
+        assert fake.sent == [grounding("active"), grounding("done")]
+        assert sorted(p.name for p in slice_dir.iterdir()) == before
+        assert not (slice_dir / "plan_state.json").exists()
+
+
+def test_progress_leaves_a_running_loops_state_and_lock_alone():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = plan_record(tmp)
+        state = (slice_dir / "plan_state.json").read_bytes()
+        fake = FakePilot()
+        fd = os.open(slice_dir / "plan.lock", os.O_RDWR | os.O_CREAT, 0o644)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            with patched(os, environ=no_pilot_env(PILOT_TOKEN="t",
+                                                  PILOT_MCP_URL=PILOT_URL)), \
+                    patched(plan_loop.pilot_progress, OPENER=fake):
+                assert progress(slice_dir, "done") == (0, "", "")
+        finally:
+            os.close(fd)
+        assert fake.sent == [grounding("done")]
+        assert (slice_dir / "plan_state.json").read_bytes() == state
+
+
+def test_progress_with_no_credentials_logs_once_and_exits_0():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        fake = FakePilot()
+        with patched(os, environ=no_pilot_env()), \
+                patched(plan_loop.pilot_progress, OPENER=fake):
+            assert progress(slice_dir, "active") == (0, "", "")
+        assert fake.sent == []
+        [line] = plan_log_lines(slice_dir)
+        assert re.fullmatch(
+            r"\[\d\d:\d\d:\d\d\] \[progress\] Pilot progress not published: "
+            r"no PILOT_TOKEN/PILOT_MCP_URL in this session's environment", line)
+        assert not (slice_dir / "plan_state.json").exists()
+
+
+def test_progress_logs_a_refusal_or_no_answer_and_exits_0():
+    def refusing(request, timeout=None):
+        body = json.dumps({"jsonrpc": "2.0", "id": 1, "error": {
+            "message": "unknown work item for token t0k"}})
+        response = io.BytesIO(f"data: {body}\n\n".encode())
+        response.headers = {"Content-Type": "text/event-stream"}
+        return response
+
+    def unreachable(request, timeout=None):
+        raise urllib.error.URLError("Connection refused")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        env = no_pilot_env(PILOT_TOKEN="t0k", PILOT_MCP_URL=PILOT_URL)
+        for opener in (refusing, unreachable):
+            with patched(os, environ=env), \
+                    patched(plan_loop.pilot_progress, OPENER=opener):
+                assert progress(slice_dir, "done") == (0, "", "")
+        lines = [line.split("] ", 1)[1] for line in plan_log_lines(slice_dir)]
+        assert lines == [
+            "[progress] Pilot progress not published: Pilot refused it: "
+            "unknown work item for token <token>",
+            "[progress] Pilot progress not published: no answer from "
+            f"{PILOT_URL}: URLError: Connection refused"]
+
+
+def test_progress_on_a_missing_slice_dir_exits_2():
+    with tempfile.TemporaryDirectory() as tmp:
+        missing = Path(tmp) / "099_nope"
+        code, out, err = progress(missing, "active")
+        assert (code, out) == (2, "") and "not found" in err
+        assert not missing.exists()
+
+
+def test_progress_is_a_subcommand_with_a_required_ground():
+    def main(*argv):
+        out, err = io.StringIO(), io.StringIO()
+        with patched(sys, argv=["plan_loop.py", *argv]), \
+                patched(os, environ=no_pilot_env()), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                plan_loop.main()
+            except SystemExit as e:
+                return e.code, out.getvalue(), err.getvalue()
+        raise AssertionError("main did not exit")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        assert main("progress", str(slice_dir), "--ground", "active") == (
+            0, "", "")
+        assert len(plan_log_lines(slice_dir)) == 1
+        for argv in ((str(slice_dir),), (str(slice_dir), "--ground", "pending"),
+                     (str(slice_dir), "--ground")):
+            code, out, _ = main("progress", *argv)
+            assert (code, out) == (2, ""), argv
+        assert len(plan_log_lines(slice_dir)) == 1
 
 
 if __name__ == "__main__":

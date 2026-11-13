@@ -4,6 +4,24 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-13 — A plan-slice work item shows ground, write and review from its start (v0.10.57)
+
+AIWF-158 (moved from PilotApp's triage, 2026-11-12): a plan-slice work item's tile stayed empty
+for the whole grounding, often its longest stretch. Only `wait` publishes a loop's steps, and the
+preparer runs in the stage's session before the plan loop exists, so there was no list to send and
+no `wait` to send it.
+
+- **`plan_loop.py progress <slice> --ground active|done`** sends the work item a fixed list,
+  `ground` "Plan · ground" in the state given, then `write` and `review` `pending`. The session
+  runs it with `active` before it dispatches the preparer, and with `done` before it ends a turn
+  on the requirements. Like `wait`, it is the session's own process, so its token is the live
+  one. It keeps no state, takes no lock, prints nothing and exits 0. What it could not send goes
+  to `plan_log.txt`, as a `wait`'s misses do.
+- **The loop's list starts with `ground` `done`.** A fresh run, a reset re-plan and an older
+  plugin's state all seed it first, so the loop's first `wait` carries the three steps on.
+  `ground` joins the plan's kinds in `pilot_progress.py`. A continuation's tile still starts
+  empty until its loop's first `wait`, which the card left as it is.
+
 ## 2026-11-11 — A read of the file the last turn read or searched is not strictly batchable (v0.10.56)
 
 `batchable_strict` counted a read as independent when every file it opened had already been in

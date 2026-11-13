@@ -51,10 +51,20 @@ work item's, and its `register_document` is refused.
 
 A work item's tile shows the steps its run goes through on a donut, and a stage's steps are its
 loop's: the plan and run loops keep the list in their state file ([run-loop.md](run-loop.md)
-§ The steps Pilot shows) and publish it from their `wait`, never from the skill or the driver.
-`wait` is a process of the waiting session, so its `PILOT_TOKEN` is the live one, where the
-detached loop outlives the session that launched it and a continuation is a work item of its own:
-that work item's list starts empty, and its first `wait` publishes the whole list.
+§ The steps Pilot shows) and publish it from their `wait`, never from the driver, and the skill
+never calls `set_progress` itself. `wait` is a process of the waiting session, so its
+`PILOT_TOKEN` is the live one, where the detached loop outlives the session that launched it and
+a continuation is a work item of its own: that work item's list starts empty, and its first
+`wait` publishes the whole list.
+
+Planning's grounding is the one stretch with no loop to wait on: the preparer runs in the stage's
+own session, before `plan_state.json` exists. So the plan-slice session runs `plan_loop.py
+progress <slice> --ground active` before it dispatches the preparer, and `--ground done` before
+it ends a turn on the requirements. Each sends a fixed list, `ground` "Plan · ground" in the state
+given, then `write` "Plan · write" and `review` "Plan · review" `pending`, and keeps no state. It
+is a process of the session as `wait` is, and sends as `wait` does, by the rules below, its misses
+in `plan_log.txt`. The loop's own list starts with `ground` `done`, so its first `wait` carries
+the three steps on.
 
 `wait` sends the whole list through `pilot-work`'s `set_progress` at its first probe, at each
 ten-second probe where the list differs from what this `wait` last sent, and once more as it
@@ -68,7 +78,8 @@ cap its Bash call runs under.
 Publishing is best-effort and silent. No `PILOT_TOKEN` or `PILOT_MCP_URL` (a session started
 outside Pilot, or one alive across the deploy that brought the variable), no answer, and a refusal
 each go to the slice's log, `log.txt` or `plan_log.txt`, once per kind per `wait`. `wait`'s
-output and exit code never change, and nothing in the stage reads the answer. A state file with no
+output and exit code never change, `progress` prints nothing and exits 0, and nothing in the
+stage reads the answer. A state file with no
 list, from a loop started on a plugin before 0.10.29, publishes nothing.
 
 ## The brief

@@ -12879,12 +12879,13 @@ def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
     sys.exit(code)
 
 
-def _append_wait_line(log_path: Path, text: str) -> None:
-    """One `[wait]` line in the slice's log, in the loops' line format. The
-    driver may be appending to the same file: one write of the whole line
-    on an O_APPEND descriptor, so the two never interleave inside a line.
-    A log that cannot be written loses the line, nothing more."""
-    line = f"[{_now_hms()}] [wait] {text}\n".encode()
+def _append_wait_line(log_path: Path, text: str, tag: str = "wait") -> None:
+    """One `[wait]` line in the slice's log — `[<tag>]` for another of the
+    session's processes, plan_loop's `progress` — in the loops' line format.
+    The driver may be appending to the same file: one write of the whole
+    line on an O_APPEND descriptor, so the two never interleave inside a
+    line. A log that cannot be written loses the line, nothing more."""
+    line = f"[{_now_hms()}] [{tag}] {text}\n".encode()
     try:
         fd = os.open(log_path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
         try:
