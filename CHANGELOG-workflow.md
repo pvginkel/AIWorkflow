@@ -4,6 +4,21 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-13 — The code-writer is back on Opus at `xhigh`; its Fable run is toggled (v0.10.60)
+
+The operator paused the code-writer's Fable run on 2026-11-13. A limit reset gives back up to
+half the week's quota, but only by clearing the Fable usage. After a reset, the normal quota has
+to be run out before Fable is used again. So the run is switched off and on at the operator's
+word for the coming weeks, and stays off until they ask.
+
+- **The code-writer runs `("opus", "xhigh")` again.** That is its `MODELS` entry in
+  `run_loop.py`. The next writer dispatched after this release runs Opus.
+- **The docs no longer state which model runs.** `agent-dispatch.md` § Models and `CLAUDE.md`
+  say the code-writer can run Fable 5.2 at `high`, and that its `MODELS` entry says which runs.
+  A later toggle then changes only that entry, its test's assertion and the changelog.
+- **Fable 5.2 stays priced in `slice_cost.py`,** so the phases already run on it keep their
+  cost.
+
 ## 2026-11-13 — The wrap-up keeps a fix over a recorded flake's red, and may gate its stack of fixes once (v0.10.59)
 
 AIWF-160, ruled by the operator: "wrap-up.md says a red on a test the close-out already records

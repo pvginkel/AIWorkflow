@@ -12853,7 +12853,7 @@ def test_dispatch_passes_model_and_effort_explicitly():
             assert run_to_exit(r) == 0
         by_role = {role: (model, effort)
                    for role, _, model, effort in r.sessions}
-        assert by_role["code-writer"] == ("claude-fable-5-2", "high")
+        assert by_role["code-writer"] == ("opus", "xhigh")
         assert by_role["code-reviewer"] == ("opus", "xhigh")
         assert by_role["consult"] == ("opus", "xhigh")
         assert by_role["doc-writer"] == ("opus", "xhigh")
