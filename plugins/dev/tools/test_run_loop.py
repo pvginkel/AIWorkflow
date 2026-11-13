@@ -10426,8 +10426,8 @@ def test_a_repo_with_no_origin_branch_at_all_counts_as_unpushed():
 
 
 def test_push_check_skips_the_spec_repo():
-    """The spec repo's commits are the slice's own record — they land at
-    close-out and nothing deploys from them."""
+    """The spec repo's commits are the slice's own record — the run pushes
+    them itself (`_push_spec`) and nothing deploys from them."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         r = ScriptedLoop(slice_dir,
@@ -18010,6 +18010,584 @@ def test_wait_answers_0_with_the_halt_and_where_it_stopped():
         code, out, _ = wait(slice_dir)
         assert code == 0
         assert out.splitlines() == ["ended: exit 7", "halted: before P3"]
+
+
+
+# -- the spec repo's push (AIWF-159) -------------------------------------------
+#
+# Both loops push the spec repo after each commit of theirs and after each
+# session they dispatched returns, and a push they could not make is the state
+# file's `spec_unpushed`. The push is git's, so `push_spec` runs over real
+# repos — a bare origin in the test's tmp dir and a clone of it — and the
+# spy below sees every argv it runs.
+
+def spec_with_origin(tmp, spec=None):
+    """A bare origin, and the spec repo (`spec`, made if absent) holding what
+    is there in one commit, its main tracking origin/main: (spec, origin)."""
+    tmp = Path(tmp)
+    origin = tmp / "origin.git"
+    sh(tmp, "init", "-q", "--bare", "-b", "main", str(origin))
+    spec = Path(spec) if spec is not None else tmp / "spec"
+    spec.mkdir(parents=True, exist_ok=True)
+    (spec / "README.md").write_text("spec\n")
+    sh(spec, "init", "-q", "-b", "main")
+    sh(spec, "add", "-A")
+    sh(spec, "commit", "-qm", "init")
+    sh(spec, "remote", "add", "origin", str(origin))
+    sh(spec, "push", "-q", "-u", "origin", "main")
+    return spec, origin
+
+
+def spec_note(spec, name="note.md"):
+    """A commit of the spec repo's own, as a loop's or a session's; its sha."""
+    (Path(spec) / name).write_text(f"{name}\n")
+    sh(spec, "add", "--", name)
+    sh(spec, "commit", "-qm", f"add {name}")
+    return sh(spec, "rev-parse", "HEAD")
+
+
+def origin_main(origin):
+    return sh(origin, "rev-parse", "refs/heads/main")
+
+
+def diverge(tmp, origin):
+    """Another session's commit pushed to origin's main, which the spec repo
+    has not fetched."""
+    other = Path(tmp) / "other"
+    sh(tmp, "clone", "-q", str(origin), str(other))
+    (other / "theirs.md").write_text("theirs\n")
+    sh(other, "add", "-A")
+    sh(other, "commit", "-qm", "theirs")
+    sh(other, "push", "-q", "origin", "main")
+
+
+@contextlib.contextmanager
+def spied_git(push=None):
+    """Every subprocess argv run in the block, with its env and timeout;
+    a `git push` answered by `push(argv, **kw)` when one is given."""
+    calls = []
+    real = subprocess.run
+
+    def spy(argv, *args, **kw):
+        calls.append((list(argv), kw.get("env"), kw.get("timeout")))
+        if push is not None and list(argv[:2]) == ["git", "push"]:
+            return push(argv, **kw)
+        return real(argv, *args, **kw)
+
+    with patched(run_loop.subprocess, run=spy):
+        yield calls
+
+
+def pushes_in(calls):
+    return [argv for argv, _, _ in calls if argv[:2] == ["git", "push"]]
+
+
+def forced(argv):
+    return any(a in ("-f", "--force") or a.startswith(("--force", "+"))
+               or ":+" in a for a in argv[2:])
+
+
+SPEC_KEYS = {"tip", "ahead", "environment", "since", "error"}
+
+
+def test_push_spec_pushes_the_branch_plainly_and_answers_none():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        spec, origin = spec_with_origin(tmp)
+        tip = spec_note(spec)
+        with spied_git() as calls:
+            assert run_loop.push_spec(spec, refused=None,
+                                      previous=None) is None
+        assert origin_main(origin) == tip
+        assert pushes_in(calls) == [
+            ["git", "push", "origin", "refs/heads/main:refs/heads/main"]]
+        env, timeout = next((e, t) for argv, e, t in calls
+                            if argv[:2] == ["git", "push"])
+        assert env["GIT_TERMINAL_PROMPT"] == "0"
+        assert timeout == run_loop.SPEC_PUSH_TIMEOUT == 120
+
+
+def test_a_refused_push_is_recorded_keeps_its_since_and_clears_once_one_lands():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git(), \
+            environment_id("env-a"):
+        spec, origin = spec_with_origin(tmp)
+        diverge(tmp, origin)
+        theirs = origin_main(origin)
+        tip = spec_note(spec)
+        with spied_git() as calls:
+            first = run_loop.push_spec(spec, refused=None, previous=None)
+        assert set(first) == SPEC_KEYS
+        assert (first["tip"], first["ahead"], first["environment"]) == (
+            tip, 1, "env-a")
+        assert first["error"] == ("git push refused: ! [rejected] main -> "
+                                  "main (fetch first)"), first["error"]
+        assert origin_main(origin) == theirs
+        assert len(pushes_in(calls)) == 1
+        assert not any(forced(argv) for argv in pushes_in(calls))
+        # refused again: the first failure's `since` stands
+        tip = spec_note(spec, "second.md")
+        earlier = {**first, "since": "2026-11-01T03:00:00+01:00"}
+        second = run_loop.push_spec(spec, refused=None, previous=earlier)
+        assert second["since"] == "2026-11-01T03:00:00+01:00"
+        assert (second["tip"], second["ahead"]) == (tip, 2)
+        assert second["error"] == first["error"]
+        # origin's commit taken in by hand: the next push lands
+        sh(spec, "pull", "-q", "--rebase", "origin", "main")
+        assert run_loop.push_spec(spec, refused=None,
+                                  previous=second) is None
+        assert origin_main(origin) == sh(spec, "rev-parse", "HEAD")
+
+
+def test_a_branch_with_no_upstream_is_recorded_and_never_pushed():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git(), \
+            environment_id(None):
+        spec = Path(tmp) / "spec"
+        spec.mkdir()
+        sh(spec, "init", "-q", "-b", "main")
+        tip = spec_note(spec)
+        with spied_git() as calls:
+            record = run_loop.push_spec(spec, refused=None, previous=None)
+        assert record == {"tip": tip, "ahead": None, "environment": None,
+                          "since": record["since"],
+                          "error": "no upstream for main"}
+        assert datetime.fromisoformat(record["since"]).tzinfo is not None
+        assert not pushes_in(calls)
+
+
+def test_nothing_ahead_is_no_record_and_no_push_permitted_or_not():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        spec, _ = spec_with_origin(tmp)
+        stale = {"tip": "0" * 40, "ahead": 1, "environment": None,
+                 "since": "2026-11-01T03:00:00+01:00", "error": "x"}
+        with spied_git() as calls:
+            assert run_loop.push_spec(spec, refused=None,
+                                      previous=None) is None
+            assert run_loop.push_spec(
+                spec, refused=run_loop.SPEC_PUSH_UNGRANTED,
+                previous=stale) is None
+        assert not pushes_in(calls)
+
+
+def test_a_refused_permission_is_the_record_and_nothing_is_pushed():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git(), \
+            environment_id("env-a"):
+        spec, origin = spec_with_origin(tmp)
+        before = origin_main(origin)
+        tip = spec_note(spec)
+        with spied_git() as calls:
+            record = run_loop.push_spec(
+                spec, refused=run_loop.SPEC_PUSH_UNGRANTED, previous=None)
+        assert record == {"tip": tip, "ahead": 1, "environment": "env-a",
+                          "since": record["since"],
+                          "error": run_loop.SPEC_PUSH_UNGRANTED}
+        assert not pushes_in(calls) and origin_main(origin) == before
+
+
+def test_a_push_that_hangs_is_recorded_as_timed_out():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        spec, _ = spec_with_origin(tmp)
+        spec_note(spec)
+
+        def hang(argv, **kw):
+            raise subprocess.TimeoutExpired(argv, kw["timeout"])
+
+        with spied_git(push=hang) as calls:
+            record = run_loop.push_spec(spec, refused=None, previous=None)
+        assert record["error"] == "git push timed out after 120s"
+        assert record["ahead"] == 1
+        assert not any(forced(argv) for argv in pushes_in(calls))
+
+
+def test_push_spec_never_raises_and_leaves_a_repo_it_cannot_read_as_it_was():
+    with tempfile.TemporaryDirectory() as tmp:
+        nowhere = Path(tmp) / "missing"
+        assert run_loop.push_spec(nowhere, refused=None, previous=None) is None
+        kept = {"tip": "abc", "ahead": 1, "environment": None,
+                "since": "2026-11-01T03:00:00+01:00", "error": "x"}
+        assert run_loop.push_spec(nowhere, refused=None,
+                                  previous=kept) is kept
+        # git itself failing past HEAD is a record, never an exception
+        if shutil.which("git") is None:
+            return
+        with plain_git():
+            spec = Path(tmp) / "spec"
+            spec.mkdir()
+            sh(spec, "init", "-q", "-b", "main")
+            spec_note(spec)
+            real = subprocess.run
+
+            def broken(argv, *args, **kw):
+                if list(argv[:2]) == ["git", "config"]:
+                    raise OSError("no git here")
+                return real(argv, *args, **kw)
+
+            with patched(run_loop.subprocess, run=broken):
+                record = run_loop.push_spec(spec, refused=None,
+                                            previous=None)
+        assert record["error"] == ("the push could not be made: OSError: "
+                                   "no git here")
+
+
+
+def on_a_hand_branch(spec):
+    """The spec tree left on a hand checkout: `hand`, tracking origin's main
+    as a careless `--set-upstream-to` would, with a commit of its own; that
+    commit's sha."""
+    sh(spec, "checkout", "-q", "-b", "hand")
+    sh(spec, "branch", "-q", "--set-upstream-to=origin/main", "hand")
+    return spec_note(spec, "hand.md")
+
+
+def in_origin(origin, sha):
+    return subprocess.run(["git", "cat-file", "-e", f"{sha}^{{commit}}"],
+                          cwd=origin, capture_output=True).returncode == 0
+
+
+def test_push_spec_pushes_the_named_base_never_the_branch_checked_out():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        spec, origin = spec_with_origin(tmp)
+        base_tip = spec_note(spec)
+        hand_tip = on_a_hand_branch(spec)
+        with spied_git() as calls:
+            assert run_loop.push_spec(spec, refused=None, previous=None,
+                                      branch="main") is None
+        assert pushes_in(calls) == [
+            ["git", "push", "origin", "refs/heads/main:refs/heads/main"]]
+        assert origin_main(origin) == base_tip
+        assert not in_origin(origin, hand_tip)
+        assert sh(spec, "rev-parse", "--abbrev-ref", "HEAD") == "hand"
+        # nothing ahead on the base now: no push, whatever `hand` holds
+        with spied_git() as calls:
+            assert run_loop.push_spec(spec, refused=None, previous=None,
+                                      branch="main") is None
+        assert not pushes_in(calls)
+        # a base the repo does not have is a record, and nothing is pushed
+        with spied_git() as calls:
+            record = run_loop.push_spec(spec, refused=None, previous=None,
+                                        branch="gone")
+        assert (record["tip"], record["ahead"], record["error"]) == (
+            None, None, "no branch gone in the spec repo")
+        assert not pushes_in(calls)
+        assert not in_origin(origin, hand_tip)
+
+
+def test_the_run_loop_pushes_the_spec_repos_recorded_base_off_it_too():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, repo, specs, origin = spec_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r.spec_push = True
+        r.state = {"bases": {str(r.spec_root): "main"}}
+        diverge(tmp, origin)
+        spec_note(specs)
+        hand_tip = on_a_hand_branch(specs)
+        r._push_spec()   # refused on main: recorded
+        assert r.state["spec_unpushed"]["error"].startswith(
+            "git push refused: ")
+        sh(specs, "checkout", "-q", "main")
+        sh(specs, "pull", "-q", "--rebase", "origin", "main")
+        base_tip = sh(specs, "rev-parse", "main")
+        sh(specs, "checkout", "-q", "hand")
+        r._push_spec()
+        assert origin_main(origin) == base_tip
+        assert not in_origin(origin, hand_tip)
+        assert "spec_unpushed" not in load_state(slice_dir)
+        assert spec_push_lines(slice_dir)[-1] == (
+            f"[spec-push] pushed {base_tip[:12]} — spec_unpushed cleared")
+
+
+def test_the_spec_push_refusal_reads_push_enabled_afresh_then_the_grant():
+    with tempfile.TemporaryDirectory() as tmp:
+        _, repo = make_slice(tmp)
+        assert run_loop.spec_push_refusal(repo, True) is None
+        assert run_loop.spec_push_refusal(repo, False) == (
+            "push not granted: the loop was launched without --spec-push")
+        (repo / ".aiworkflowrc").write_text(rc(push=False))
+        assert run_loop.spec_push_refusal(repo, True) == (
+            f"push is disabled: push.enabled = false in {repo}/.aiworkflowrc")
+        (repo / ".aiworkflowrc").unlink()
+        reason = run_loop.spec_push_refusal(repo, True)
+        assert reason == f"push.enabled could not be read: No .aiworkflowrc at {repo}. " \
+            "Every repo the pipeline drives describes itself in one, at the " \
+            "repo root:", reason
+
+
+def spec_slice(tmp, config=None):
+    """make_slice's tree over real git: the specs a clone of a bare origin,
+    everything committed and pushed; (slice_dir, repo, specs, origin)."""
+    slice_dir, repo = make_slice(tmp, config=config)
+    specs = (Path(tmp) / "specs").resolve()
+    shutil.rmtree(specs / ".git")
+    _, origin = spec_with_origin(tmp, spec=specs)
+    return slice_dir, repo, specs, origin
+
+
+def spec_push_lines(slice_dir):
+    return [line.split("] ", 1)[1] for line in
+            (slice_dir / "log.txt").read_text().splitlines()
+            if "[spec-push]" in line]
+
+
+def test_the_run_loop_records_a_push_it_could_not_make_and_clears_it():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git(), \
+            environment_id("env-a"):
+        slice_dir, repo, specs, origin = spec_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r.spec_push = True
+        # a push that lands with nothing recorded before it is no news
+        tip = spec_note(specs)
+        r._push_spec()
+        assert origin_main(origin) == tip
+        assert "spec_unpushed" not in r.state
+        assert not (slice_dir / "log.txt").exists() \
+            or not spec_push_lines(slice_dir)
+        # refused: recorded, on disk, and logged once
+        diverge(tmp, origin)
+        tip = spec_note(specs, "second.md")
+        r._push_spec()
+        record = r.state["spec_unpushed"]
+        assert set(record) == SPEC_KEYS and record["tip"] == tip
+        assert load_state(slice_dir)["spec_unpushed"] == record
+        refused = ("git push refused: ! [rejected] main -> main (fetch "
+                   "first)")
+        assert spec_push_lines(slice_dir) == [
+            f"[spec-push] not pushed: {refused} — tip {tip[:12]}, 1 ahead, "
+            "environment env-a"]
+        # refused again for the same reason: the record moves on, its
+        # `since` stands, and the log says nothing new
+        since = record["since"]
+        tip = spec_note(specs, "third.md")
+        r._push_spec()
+        record = load_state(slice_dir)["spec_unpushed"]
+        assert (record["tip"], record["ahead"], record["since"]) == (
+            tip, 2, since)
+        assert len(spec_push_lines(slice_dir)) == 1
+        # origin taken in by hand: the next push lands and clears it
+        sh(specs, "pull", "-q", "--rebase", "origin", "main")
+        head = sh(specs, "rev-parse", "HEAD")
+        r._push_spec()
+        assert origin_main(origin) == head
+        assert "spec_unpushed" not in load_state(slice_dir)
+        assert spec_push_lines(slice_dir)[-1] == (
+            f"[spec-push] pushed {head[:12]} — spec_unpushed cleared")
+
+
+def test_without_the_grant_or_with_push_off_the_run_loop_pushes_nothing():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git(), \
+            environment_id(None):
+        slice_dir, repo, specs, origin = spec_slice(tmp)
+        before = origin_main(origin)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        assert r.spec_push is False   # the default: no grant
+        tip = spec_note(specs)
+        r._push_spec()
+        assert r.state["spec_unpushed"]["error"] == (
+            "push not granted: the loop was launched without --spec-push")
+        # push.enabled read afresh: switched off mid-run, it is the reason
+        (repo / ".aiworkflowrc").write_text(rc(push=False))
+        r.spec_push = True
+        r._push_spec()
+        disabled = (f"push is disabled: push.enabled = false in "
+                    f"{repo}/.aiworkflowrc")
+        assert r.state["spec_unpushed"]["error"] == disabled
+        assert origin_main(origin) == before
+        assert spec_push_lines(slice_dir) == [
+            "[spec-push] not pushed: push not granted: the loop was launched "
+            f"without --spec-push — tip {tip[:12]}, 1 ahead, environment "
+            "(unset)",
+            f"[spec-push] not pushed: {disabled} — tip {tip[:12]}, 1 ahead, "
+            "environment (unset)"]
+        # a dry run's loop pushes nothing at all
+        r.dry_run = True
+
+        def boom(*a, **kw):
+            raise AssertionError("a dry run pushed")
+
+        with patched(run_loop, push_spec=boom):
+            r._push_spec()
+
+
+def spec_commit_messages(loop):
+    return [c[c.index("-m") + 1] for c in loop.fake_git.specs_ops()
+            if len(c) > 2 and c[2] == "commit"]
+
+
+def test_the_run_loop_pushes_after_its_own_spec_commits():
+    """After the report's creation, the stamp, and every report commit —
+    each push sees the commit it follows as the spec repo's last."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        r.spec_push = True
+        after = []
+        r._push_spec = lambda: after.append(
+            (spec_commit_messages(r) or [None])[-1])
+        assert run_to_exit(r) == 0
+        assert "slice 074: close-out report" in after
+        assert "slice 074: stamp P1 done" in after
+        assert set(spec_commit_messages(r)) <= set(after)
+        # the grant is the launch's alone: never in state.json
+        assert "spec_push" not in load_state(slice_dir)
+
+
+def test_the_run_loop_pushes_after_every_session_and_one_that_bails():
+    roles = ["code-writer", "code-reviewer", "consult", "test-agent",
+             "doc-writer"]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = SpawningLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        events = []
+        r._push_spec = lambda: events.append("push")
+        ruled = r._rule_on_round
+
+        def rule(role, *args, **kw):
+            answer = ruled(role, *args, **kw)
+            events.append(role)
+            return answer
+
+        r._rule_on_round = rule
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert [e for e in events if e != "push"] == roles
+        # each round's ruling is followed at once by the push
+        for i, event in enumerate(events):
+            if event != "push":
+                assert events[i + 1] == "push", events
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = SpawningLoop(slice_dir, [("code-writer", TIMED_OUT)],
+                         repo_root=repo)
+        seen = []
+        r._push_spec = lambda: seen.append(
+            (len(r.sessions), len(r.state.get("bailouts") or [])))
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 3
+        assert load_state(slice_dir)["bailouts"][-1]["reason"] == "timeout"
+        # pushed as the round bailed: its session ran, its stop not yet
+        # recorded
+        assert (1, 0) in seen, seen
+
+
+def test_a_nudge_and_the_wrap_up_dispatch_push_the_spec_repo_after():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        order = []
+        r._push_spec = lambda: order.append("push")
+
+        def session(**kw):
+            order.append("session")
+            result = run_loop.SessionResult()
+            result.result_text = "committed"
+            return 0, result
+
+        with patched(run_loop, run_kc_session=session):
+            assert r._nudge("commit it", repo, "sess-1", "[t]",
+                            "code-writer") is False
+        assert order == ["session", "push"]
+        order.clear()
+        r._dispatch_wrap_up_session = lambda *a: order.append("wrap-up")
+        r._dispatch_wrap_up("prompt", slice_dir / "wrap_up_result.json", {})
+        assert order == ["wrap-up", "push"]
+
+
+def test_the_push_after_a_round_runs_on_a_return_a_bail_and_a_halt_not_on_an_interrupt():
+    for exc, pushed in ((None, 1), (Bailout("blocked"), 1),
+                        (run_loop.Halted("before P2"), 1),
+                        (KeyboardInterrupt(), 0)):
+        calls = []
+        try:
+            with run_loop.pushing_after(lambda calls=calls: calls.append(1)):
+                if exc is not None:
+                    raise exc
+        except BaseException as e:   # noqa: BLE001
+            assert e is exc
+        assert len(calls) == pushed, exc
+
+
+def test_status_prints_what_the_spec_repo_has_unpushed():
+    record = {"tip": "0123456789abcdef0123", "ahead": 2,
+              "environment": "env-a", "since": "2026-11-13T03:00:00+01:00",
+              "error": "git push refused: ! [rejected] main -> main (fetch "
+                       "first)"}
+    state = {"slice": "075_waited", "run_phase": "phases",
+             "spec_unpushed": record}
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp, state=state)
+        assert status_lines(slice_dir)[2] == (
+            "  spec repo unpushed since 2026-11-13T03:00:00+01:00: "
+            "0123456789ab, 2 ahead, environment env-a — git push refused: "
+            "! [rejected] main -> main (fetch first)")
+        record.update(ahead=None, environment=None)
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        assert status_lines(slice_dir)[2] == (
+            "  spec repo unpushed since 2026-11-13T03:00:00+01:00: "
+            "0123456789ab, ? ahead, environment (unset) — git push refused: "
+            "! [rejected] main -> main (fetch first)")
+        del state["spec_unpushed"]
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        assert not [line for line in status_lines(slice_dir)
+                    if "unpushed" in line]
+
+
+def test_the_spec_push_grant_rides_the_detached_driver():
+    """`run --spec-push --detach`: the detached driver is a fork of the
+    launching process, so the loop it runs is the one the flag built."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _ = make_slice(tmp)
+        seen, parsed = [], []
+
+        def detach(body, log_path):
+            body(lambda: None)   # the grandchild's body, run here
+            return 4242, 0, ""
+
+        with patched(run_loop, detach=detach), \
+                patched(RunLoop, run=lambda loop: seen.append(loop.spec_push)), \
+                contextlib.redirect_stdout(io.StringIO()):
+            for flag in (True, False):
+                run_loop.cmd_run(type("Args", (), {
+                    "slice_dir": str(slice_dir), "resume": flag,
+                    "verbose": False, "dry_run": False, "detach": True,
+                    "step": None, "spec_push": flag})())
+        assert seen == [True, False]
+        argv = ["run_loop.py", "run", str(slice_dir), "--resume", "--detach",
+                "--spec-push"]
+        with patched(run_loop, cmd_run=lambda args: parsed.append(args)), \
+                patched(sys, argv=argv):
+            run_loop.main()
+        assert parsed[0].spec_push is True and parsed[0].detach is True
+
+
+def test_the_spec_repo_s_diverged_base_is_left_for_the_run_to_push():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        assert r._take_origin("1", r.spec_root, "main", "tip", "1",
+                              "2") is None
+        assert ("not moved: the run never rebases or merges the spec repo — "
+                "it pushes it after each commit, and a push it could not "
+                "make is state.json's spec_unpushed") in \
+            (slice_dir / "log.txt").read_text()
 
 
 if __name__ == "__main__":

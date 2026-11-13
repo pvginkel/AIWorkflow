@@ -22,7 +22,11 @@ it), `orchestrator` (the launching session's id and transcript
 path, or `null` for a hand-run), `driver` (the driver that holds `run.lock`, as its note names it:
 `environment` — `KUBECODER_ENVIRONMENT_ID`, `null` outside KubeCoder — `host`, `pid`, `started`;
 a `--resume` writes its own over it, and `status` prints it beside the lock's liveness and
-heartbeat), `run_phase` (`phases` | `consult` | `test` | `docs` | `done` —
+heartbeat), `spec_unpushed` (present only while the spec repo's branch holds commits its upstream
+lacks and the driver could not push them, or was not permitted to: `tip`, `ahead` — `null` with
+no upstream — `environment`, `since` and `error`; written and cleared at each push, and printed by
+`status`, [run-loop.md](run-loop.md) § Protocol invariants),
+`run_phase` (`phases` | `consult` | `test` | `docs` | `done` —
 the stage the run is in; a bail leaves it at the stage it stopped in, which is what `--resume`
 re-enters, and records the stop in `bailouts` and `bailout.json`), `bases` (base branch per
 target repo — the branch the run found there, never a

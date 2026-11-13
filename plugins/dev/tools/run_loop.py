@@ -100,8 +100,15 @@ heartbeat rewritten every minute while it holds the lock; state.json's
 `driver` records the same, and `status` prints it beside the lock's
 liveness — a pod's `ps` cannot see a driver in another environment.
 
+The driver pushes the spec repo after each commit of its own there and after
+each session it dispatched returns, where `push.enabled` is on and the launch
+carries `--spec-push` (the brief's grant, this launch's alone); a push it
+could not make, or was not permitted to, is state.json's `spec_unpushed`
+until one lands, and `status` prints it.
+
 Usage:
-    run_loop.py run <slice-dir> [--resume] [--detach] [--step ID] [--verbose] [--dry-run]
+    run_loop.py run <slice-dir> [--resume] [--detach] [--step ID] [--spec-push]
+                    [--verbose] [--dry-run]
     run_loop.py wait <slice-dir> [--for SECONDS]
     run_loop.py stop <slice-dir>
     run_loop.py status <slice-dir>
@@ -2819,6 +2826,200 @@ def driver_line(record: dict | None, lock_path: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
+# The spec repo's push (AIWF-159). Both loops push the tree that holds the
+# slice folder after each commit of theirs and after each session they
+# dispatch returns; a push they could not make is their state file's
+# `spec_unpushed`, kept, with the `since` of its first failure, until one
+# lands.
+# ---------------------------------------------------------------------------
+
+SPEC_PUSH_TIMEOUT = 120
+SPEC_PUSH_UNGRANTED = ("push not granted: the loop was launched without "
+                       "--spec-push")
+SPEC_PUSH_HELP = ("the brief's grants pre-approve a push of the spec repo: "
+                  "push it after each commit; without it the push is skipped "
+                  "and recorded as spec_unpushed")
+
+
+def spec_push_refusal(repo_root: Path, granted: bool) -> str | None:
+    """Why the loop may not push the spec repo now, or None where it may:
+    `push.enabled`, read from the code repo's `.aiworkflowrc` afresh at
+    every call — a config that no longer loads is a reason, never a bail —
+    then the launch's `--spec-push` grant. One line, as the state file and
+    `status` carry it."""
+    try:
+        enabled = project_config.load(repo_root).push
+    except project_config.ConfigError as e:
+        first = next((line.strip() for line in str(e).splitlines()
+                      if line.strip()), type(e).__name__)
+        return f"push.enabled could not be read: {first}"
+    if not enabled:
+        return ("push is disabled: push.enabled = false in "
+                f"{repo_root}/.aiworkflowrc")
+    if not granted:
+        return SPEC_PUSH_UNGRANTED
+    return None
+
+
+def _push_refusal_line(output: str) -> str:
+    """The line of a refused `git push` that says why: the first that opens
+    with `!`, `error:` or `fatal:`, else the last one, its runs of blanks
+    closed up."""
+    lines = [" ".join(line.split()) for line in output.splitlines()
+             if line.strip()]
+    return next((line for line in lines
+                 if line.startswith(("!", "error:", "fatal:"))),
+                lines[-1] if lines else "")
+
+
+def push_spec(spec_root: Path, *, refused: str | None,
+              previous: dict | None, branch: str | None = None) -> dict | None:
+    """Push the spec repo's `branch` — the base the loop recorded for it;
+    None, the branch checked out — to its upstream, and return None where
+    nothing on it is unpushed afterwards — it was pushed, or there was
+    nothing to push — else the record of why it is: {tip, ahead,
+    environment, since, error}, `since` carried from `previous`. A named
+    branch is read and pushed by its ref whatever HEAD stands on, so a tree
+    left on a hand-checked-out branch never has that branch pushed; a named
+    branch the repo does not have is a record, `no branch <branch> in the
+    spec repo`, since the base the loop commits to is gone.
+
+    Nothing ahead of the upstream's remote-tracking ref is None with no
+    push and no record, `refused` or not. Then `refused` (the loop's
+    `spec_push_refusal`) is the record's error with no push; so is a branch
+    with no upstream. Else a plain `git push <remote>
+    refs/heads/<branch>:<merge>` — never forced, no `+` refspec, no prompt,
+    SPEC_PUSH_TIMEOUT — whose refusal or timeout is the error. Never raises:
+    any other failure is a record too, and a repo that cannot be read
+    answers `previous` as it stands, since nothing is known to have
+    changed."""
+    kept = previous if isinstance(previous, dict) else None
+
+    def git(*args: str, timeout: float | None = None,
+            env: dict | None = None) -> tuple[int, str, str]:
+        result = subprocess.run(["git", *args], cwd=str(spec_root),
+                                capture_output=True, text=True,
+                                timeout=timeout, env=env)
+        return result.returncode, result.stdout.strip(), result.stderr.strip()
+
+    try:
+        code, _, _ = git("rev-parse", "--git-dir")
+        if code == 0 and branch is None:
+            code, tip, _ = git("rev-parse", "--verify", "--quiet", "HEAD")
+        elif code == 0:
+            _, tip, _ = git("rev-parse", "--verify", "--quiet",
+                            f"refs/heads/{branch}")
+    except Exception:   # no such directory, no git
+        return kept
+    if code != 0:       # not a repo, or nothing committed on HEAD yet
+        return kept
+    ahead: int | None = None
+
+    def record(error: str) -> dict:
+        return {"tip": tip or None, "ahead": ahead,
+                "environment": os.environ.get("KUBECODER_ENVIRONMENT_ID")
+                or None,
+                "since": (kept.get("since") if kept else None) or _now_iso(),
+                "error": error}
+
+    try:
+        if branch is not None and not tip:
+            return record(f"no branch {branch} in the spec repo")
+        if branch is None:
+            _, branch, _ = git("rev-parse", "--abbrev-ref", "HEAD")
+            branch = branch or "HEAD"
+        remote = merge = ""
+        if branch != "HEAD":
+            _, remote, _ = git("config", "--get", f"branch.{branch}.remote")
+            _, merge, _ = git("config", "--get", f"branch.{branch}.merge")
+        upstream = bool(remote and merge)
+        if upstream:
+            code, count, _ = git("rev-list", "--count",
+                                 f"{branch}@{{u}}..{tip}")
+            if code == 0 and count.isdigit():
+                ahead = int(count)
+        if ahead == 0:
+            return None
+        if refused is not None:
+            return record(refused)
+        if not upstream:
+            return record(f"no upstream for {branch}")
+        try:
+            code, out, err = git(
+                "push", remote, f"refs/heads/{branch}:{merge}",
+                timeout=SPEC_PUSH_TIMEOUT,
+                env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+        except subprocess.TimeoutExpired:
+            return record(f"git push timed out after {SPEC_PUSH_TIMEOUT}s")
+        if code == 0:
+            return None
+        return record("git push refused: "
+                      + (_push_refusal_line(f"{err}\n{out}")
+                         or f"git exited {code}"))
+    except Exception as e:
+        return record(f"the push could not be made: {type(e).__name__}: {e}")
+
+
+def _spec_unpushed_facts(record: dict) -> tuple[str, str, str]:
+    ahead = record.get("ahead")
+    return (str(record.get("tip") or "?")[:12],
+            "?" if ahead is None else str(ahead),
+            record.get("environment") or "(unset)")
+
+
+def spec_unpushed_line(record: dict) -> str:
+    """A loop's `status` line for its state file's `spec_unpushed`."""
+    tip, ahead, env = _spec_unpushed_facts(record)
+    return (f"spec repo unpushed since {record.get('since') or '?'}: {tip}, "
+            f"{ahead} ahead, environment {env} — {record.get('error')}")
+
+
+def settle_spec_push(state: dict, record: dict | None, spec_root: Path,
+                     branch: str | None = None) -> tuple[bool, str | None]:
+    """`push_spec`'s answer into a loop's state: `spec_unpushed` set to the
+    record, or dropped on None. Returns whether the state changed, and the
+    log line owed — only on a change of story: a record that is new or
+    says another error than the one before, or one cleared, naming the sha
+    `branch` (None: HEAD) stands at. A push that lands with no record before
+    it is no news."""
+    had = "spec_unpushed" in state
+    previous = state.get("spec_unpushed")
+    if record is None:
+        if not had:
+            return False, None
+        state.pop("spec_unpushed", None)
+        try:
+            head = _git_in(spec_root, "rev-parse", "--verify",
+                           f"refs/heads/{branch}" if branch else "HEAD")[:12]
+        except ValueError:
+            head = "?"
+        return True, f"[spec-push] pushed {head} — spec_unpushed cleared"
+    state["spec_unpushed"] = record
+    changed = record != previous
+    if isinstance(previous, dict) and previous.get("error") == record["error"]:
+        return changed, None
+    tip, ahead, env = _spec_unpushed_facts(record)
+    return changed, (f"[spec-push] not pushed: {record['error']} — tip {tip}, "
+                     f"{ahead} ahead, environment {env}")
+
+
+@contextlib.contextmanager
+def pushing_after(push):
+    """Run `push()` once the block ends, whether it returned or raised — a
+    bail or a halt included, so a round that stops still pushes what its
+    session committed — but not on an interrupt: `stop` waits on the
+    driver, and the resume's first push takes what this one would have."""
+    try:
+        yield
+    except KeyboardInterrupt:
+        raise
+    except BaseException:
+        push()
+        raise
+    push()
+
+
+# ---------------------------------------------------------------------------
 # Dispatch prompts. Role contracts live in the agent definitions; prompts
 # carry only instance data. Consults run bare, so their prompt is the
 # protocol.
@@ -4604,8 +4805,13 @@ def services_check(roots: Sequence[Path],
 
 class RunLoop:
     def __init__(self, slice_dir: Path, resume: bool, verbose: bool = False,
-                 step: str | None = None):
+                 step: str | None = None, spec_push: bool = False):
         self.slice_dir = slice_dir.resolve()
+        # `--spec-push`: the brief's grant of the spec repo's push. This
+        # launch's alone, never state — a resume without it has no grant.
+        self.spec_push = spec_push
+        # A dry run's loop pushes nothing, whatever else it calls.
+        self.dry_run = False
         # Whether the log has said once that the version guard let a
         # --plugin-dir run's checkout pass (assert_plugin_current).
         self._checkout_logged = False
@@ -4697,6 +4903,39 @@ class RunLoop:
                         "check, the driver's own push or the doc landing; "
                         "fix it, then resume",
             ) from None
+
+    def _push_spec(self) -> None:
+        """Push the spec repo (`push_spec`) — after each commit of the
+        driver's there and after each session it dispatched returns — and
+        keep state.json's `spec_unpushed` as the answer leaves it, logged
+        when its story changes. Permitted only where `push.enabled`, read
+        afresh as `_push_on` reads it but never a bail, is on and the
+        launch carries `--spec-push`; refused, nothing is pushed and the
+        refusal is the record's error. What is pushed is the spec repo's
+        base as the run recorded it, never the branch the tree stands on (a
+        hand checkout's, where a dispatch bailed on it). Never raises, and a
+        dry run pushes nothing."""
+        if self.dry_run:
+            return
+        try:
+            refused = spec_push_refusal(self.repo_root, self.spec_push)
+            root = self.spec_root
+            bases = self.state.get("bases")
+            base = (bases.get(str(root)) if isinstance(bases, dict)
+                    else None) or None
+            previous = self.state.get("spec_unpushed")
+            record = push_spec(root, refused=refused,
+                               previous=previous if isinstance(previous, dict)
+                               else None, branch=base)
+            changed, line = settle_spec_push(self.state, record, root, base)
+            if changed:
+                self._save_state()
+            if line:
+                self.log(line)
+        except Exception as e:
+            why = (e.details if isinstance(e, Bailout)
+                   else f"{type(e).__name__}: {e}")
+            self.log(f"[spec-push] not attempted: {why}")
 
     @property
     def devlock(self) -> DevLock:
@@ -5124,21 +5363,23 @@ class RunLoop:
         never rebased (the settled rule for a shared tree), and git's
         refusal over another writer's uncommitted file is left as the
         fast-forward's is, never swept. Left with a log line, never a bail,
-        and the phase cut from the base as it stands: the spec repo, whose
-        commits land at close-out; a project that never pushes, and a repo
-        the plan holds — the slice's commits stay local by ruling there, so
-        there is no push for origin to reject; a base checked out anywhere
-        but `root`, a dirty tree, a rebase or merge already under way there,
-        and the driver's own rebase or merge where git does not finish it,
-        which is aborted: conflicts are the test phase's rebase-agent's to
-        resolve."""
+        and the phase cut from the base as it stands: the spec repo, which
+        the run pushes after each commit and never rebases or merges; a
+        project that never pushes, and a repo the plan holds — the slice's
+        commits stay local by ruling there, so there is no push for origin
+        to reject; a base checked out anywhere but `root`, a dirty tree, a
+        rebase or merge already under way there, and the driver's own
+        rebase or merge where git does not finish it, which is aborted:
+        conflicts are the test phase's rebase-agent's to resolve."""
         def left(why: str) -> None:
             self.log(f"[P{phase_id}] {base} and origin/{base} have diverged "
                      f"in {root.name} ({own} commit(s) local, {behind} on "
                      f"origin) — not moved: {why}")
 
         if self._is_spec_root(root):
-            left("the spec repo's commits land at close-out")
+            left("the run never rebases or merges the spec repo — it pushes "
+                 "it after each commit, and a push it could not make is "
+                 "state.json's spec_unpushed")
             return None
         if not self.cfg.push:
             left("the project does not push")
@@ -5304,9 +5545,9 @@ class RunLoop:
         recorded at. `state["bases"]` is the run's own record of what the
         slice touched — better input than a re-parse of the plan's `Target:`
         lines. The spec repo is left out: its commits are the slice's own
-        record, they land at close-out, and nothing deploys from them. It is
-        in `bases` on every run, phase target or not — the branch check
-        records it there."""
+        record, the run pushes them itself (`_push_spec`), and nothing
+        deploys from them. It is in `bases` on every run, phase target or
+        not — the branch check records it there."""
         return [(Path(key), base)
                 for key, base in sorted(self.state["bases"].items())
                 if not self._is_spec_root(Path(key))]
@@ -6101,6 +6342,7 @@ class RunLoop:
         self.specs_git("commit", "-m",
                        f"slice {self.slice_num}: stamp P{phase_id} done")
         self.log(f"[P{phase_id}] stamped ✅ DONE")
+        self._push_spec()
 
     # -- session spawning ----------------------------------------------------
 
@@ -6158,7 +6400,11 @@ class RunLoop:
         want: their session's work was done, it just has to hear the ask.
         The verdict nudge's caller reads the swallowed signal itself instead:
         a session cut mid-wait is resumed with `LOST_WAIT_PROMPT` rather than
-        asked the same question twice."""
+        asked the same question twice.
+
+        The nudge over, the spec repo is pushed (`_push_spec`): a resumed
+        session commits there as a fresh one does — the store, the plan,
+        verification.json."""
         self.log(f"{label} nudging the session (resume)")
 
         def send():
@@ -6177,15 +6423,16 @@ class RunLoop:
                 return None
             return result
 
-        result = send()
-        if result is None or not swallowed_nudge(result):
-            return False
-        if not retry:
+        with pushing_after(self._push_spec):
+            result = send()
+            if result is None or not swallowed_nudge(result):
+                return False
+            if not retry:
+                return True
+            self.log(f"{label} nudge swallowed by the harness's stopped-task "
+                     "recovery — sending it once more")
+            send()
             return True
-        self.log(f"{label} nudge swallowed by the harness's stopped-task "
-                 "recovery — sending it once more")
-        send()
-        return True
 
     def _ensure_committed(self, phase_id: str | None, role: str,
                           session_id: str | None, root: Path,
@@ -6261,22 +6508,27 @@ class RunLoop:
 
         Every dispatch enters the stops a resume has not reported yet
         (`_report_bailouts`) before anything else: this is the first moment
-        the report exists and the stop is known to be over."""
-        self._report_bailouts()
-        shown = display or role
-        label = f"[P{phase_id}] [{shown}]" if phase_id else f"[{shown}]"
-        salvaged = self._salvage_reattach(role, phase_id, verdict_path, label)
-        if salvaged is not None:
-            verdict, session_id = salvaged
-            returncode, duration_s, nudged, recoveries = 0, 0, False, 0
-        else:
-            (returncode, verdict, session_id, duration_s, nudged,
-             recoveries) = self._dispatch_rounds(
-                role, prompt, cwd, verdict_path, phase_id, round_, agent,
-                shown, label)
-        return self._rule_on_round(
-            role, verdict, verdict_path, cwd, phase_id, round_, label,
-            returncode, session_id, duration_s, nudged, recoveries)
+        the report exists and the stop is known to be over.
+
+        The round over, ruled or bailing, the spec repo is pushed
+        (`_push_spec`): what the session committed there goes out with it."""
+        with pushing_after(self._push_spec):
+            self._report_bailouts()
+            shown = display or role
+            label = f"[P{phase_id}] [{shown}]" if phase_id else f"[{shown}]"
+            salvaged = self._salvage_reattach(role, phase_id, verdict_path,
+                                              label)
+            if salvaged is not None:
+                verdict, session_id = salvaged
+                returncode, duration_s, nudged, recoveries = 0, 0, False, 0
+            else:
+                (returncode, verdict, session_id, duration_s, nudged,
+                 recoveries) = self._dispatch_rounds(
+                    role, prompt, cwd, verdict_path, phase_id, round_, agent,
+                    shown, label)
+            return self._rule_on_round(
+                role, verdict, verdict_path, cwd, phase_id, round_, label,
+                returncode, session_id, duration_s, nudged, recoveries)
 
     def _dispatch_rounds(self, role: str, prompt: str, cwd: Path,
                          verdict_path: Path, phase_id: str | None,
@@ -11737,7 +11989,15 @@ class RunLoop:
         lost-wait recovery, the commit nudge, every bail, the salvage of a
         verdict a timed-out session had written, and the reattach — a resume
         into the stage starts it over. Returns None for a verdict the
-        landing may go on from, else the soft failure's reason."""
+        landing may go on from, else the soft failure's reason. The session
+        over, whatever its outcome, the spec repo is pushed (`_push_spec`):
+        the wrap-up commits the store there on its base."""
+        with pushing_after(self._push_spec):
+            return self._dispatch_wrap_up_session(prompt, verdict_path, wu)
+
+    def _dispatch_wrap_up_session(self, prompt: str, verdict_path: Path,
+                                  wu: dict) -> str | None:
+        """`_dispatch_wrap_up`'s session and its ruling."""
         role, label, cwd = "wrap-up", "[wrap-up]", self.repo_root
         model, effort = MODELS[role]
 
@@ -11987,6 +12247,7 @@ class RunLoop:
             names = [Path(p).name for p in paths if Path(p).name in took]
             self.log(f"{label} committed {', '.join(names) or 'the close-out report'}: "
                      f"{message}")
+            self._push_spec()
         return self.specs_git("rev-parse", "HEAD")
 
     def _wrap_up_restore_store(self, sha: str) -> None:
@@ -12380,6 +12641,7 @@ class RunLoop:
             self.specs_git("commit", "-m",
                            f"slice {self.slice_num}: close-out report")
             self.log(f"created {store.name}")
+            self._push_spec()
 
     def _report_bailouts(self) -> None:
         """Every stop of this run becomes an event entry, written by the
@@ -12716,7 +12978,8 @@ def cmd_run(args) -> None:
               "dispatches nothing and is over in seconds.", file=sys.stderr)
         sys.exit(2)
     loop = RunLoop(slice_dir, resume=args.resume, verbose=args.verbose,
-                   step=getattr(args, "step", None))
+                   step=getattr(args, "step", None),
+                   spec_push=bool(getattr(args, "spec_push", False)))
     if args.dry_run:
         cmd_dry_run(loop)
         return
@@ -13013,8 +13276,10 @@ def _dry_run_code_repo(loop: RunLoop) -> None:
 
 
 def cmd_dry_run(loop: RunLoop) -> None:
-    """Parse the plan and resolve every target — no sessions, no branches.
-    Exit 0 when the plan is drivable, 2 with the problems otherwise."""
+    """Parse the plan and resolve every target — no sessions, no branches,
+    no push. Exit 0 when the plan is drivable, 2 with the problems
+    otherwise."""
+    loop.dry_run = True
     if not loop.plan_path.is_file():
         print(f"Error: {loop.plan_path} does not exist.", file=sys.stderr)
         sys.exit(2)
@@ -13136,6 +13401,8 @@ def cmd_status(args) -> None:
           f"generation={state.get('generation', 0)}  "
           f"bail-outs={len(state.get('bailouts', []))}")
     print(f"  {driver_line(state.get('driver'), slice_dir / 'run.lock')}")
+    if isinstance(state.get("spec_unpushed"), dict):
+        print(f"  {spec_unpushed_line(state['spec_unpushed'])}")
     for pid in state.get("known_phases", []):
         ps = state.get("phases", {}).get(pid)
         if not ps:
@@ -13466,6 +13733,8 @@ def main() -> None:
                        help="the plan task the run serves, from Pilot's brief: "
                             "every document the run renders carries it as "
                             "`step`; kept for the resumes that do not give it")
+    run_p.add_argument("--spec-push", action="store_true",
+                       help=SPEC_PUSH_HELP)
     run_p.set_defaults(func=cmd_run)
 
     wait_p = sub.add_parser(

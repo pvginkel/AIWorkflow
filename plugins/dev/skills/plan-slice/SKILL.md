@@ -36,8 +36,11 @@ tool takes, `<task>` the brief's plan task, and a tool is
   rendered, registered and backed as pilot.md § The documents says. Commit every store, document
   and file of the folder you changed by name before the turn ends
   (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`).
-- **The spec repo is pushed at the stage's end**, after its last commit, where the brief's grants
-  pre-approve it (pilot.md § The brief): a refused push is named in the last message.
+- **The spec repo is pushed with each commit** where the brief's grants pre-approve it (pilot.md
+  § The brief): every launch of the loop, the first and every rerun, carries `--spec-push`, and
+  the loop pushes after each commit. Without that grant, leave the flag off. Your push at the
+  stage's end, after its last commit, is the backstop for your own commits: a refused push is
+  named in the last message.
 
 ## The start
 
@@ -62,10 +65,10 @@ tool takes, `<task>` the brief's plan task, and a tool is
 
 ## The loop
 
-**Launch, detached**: `plan_loop.py run <slice> --detach --step <task>`. It returns once the loop
-holds the slice, its last line the `next:` wait. A rerun is the same command; the loop takes it
-up where it paused and always dispatches the writer's fix pass after a review. Refused (exit 2)
-because another plan loop holds `plan.lock`, the loop is live: wait on it,
+**Launch, detached**: `plan_loop.py run <slice> --detach --step <task> --spec-push`. It returns
+once the loop holds the slice, its last line the `next:` wait. A rerun is the same command; the
+loop takes it up where it paused and always dispatches the writer's fix pass after a review.
+Refused (exit 2) because another plan loop holds `plan.lock`, the loop is live: wait on it,
 `plan_loop.py wait <slice>`. Refused because the slice's run loop holds `run.lock`, re-planning
 would rewrite the queue it executes: that is an `action` document as in the start's step 2.
 
@@ -74,7 +77,8 @@ maximum, which its description states; `wait` returns a minute inside that cap, 
 minutes where the host sets none. Its exit code is a signal, and the lines it prints are all there is to read:
 
 - **5, running** — run the new `next:` line again at once. Read nothing in between.
-- **6, gone** — the loop died with no exit recorded: run the `next:` relaunch, then wait again.
+- **6, gone** — the loop died with no exit recorded: run the `next:` relaunch, with
+  `--spec-push` added where the brief grants it, then wait again.
 - **0, ended** — act on `ended: exit <n>`:
 
 | The loop's exit | The turn |

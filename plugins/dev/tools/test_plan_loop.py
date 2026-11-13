@@ -15,6 +15,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -2549,6 +2550,269 @@ def test_progress_is_a_subcommand_with_a_required_ground():
             code, out, _ = main("progress", *argv)
             assert (code, out) == (2, ""), argv
         assert len(plan_log_lines(slice_dir)) == 1
+
+
+
+# -- the spec repo's push (AIWF-159) -------------------------------------------
+#
+# The loop pushes the spec repo after each commit of its own and after each
+# session it dispatched returns (run_loop.push_spec, whose own tests are the
+# run loop's); a push it could not make, or was not permitted to, is
+# plan_state.json's `spec_unpushed`.
+
+@contextlib.contextmanager
+def plain_git():
+    """Real git, isolated from the machine's config, with an identity."""
+    env = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "t@example.invalid",
+           "GIT_COMMITTER_NAME": "Test",
+           "GIT_COMMITTER_EMAIL": "t@example.invalid"}
+    saved = {k: os.environ.get(k) for k in env}
+    os.environ.update(env)
+    try:
+        yield
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def sh(cwd, *args):
+    return subprocess.run(["git", *args], cwd=cwd, check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+def spec_repo_with_origin(tmp):
+    """The spec repo holding the slice folder, committed, its main tracking a
+    bare origin's; (slice_dir, specs, origin)."""
+    tmp = Path(tmp)
+    specs = tmp / "specs"
+    slice_dir = make_slice(specs)
+    origin = tmp / "origin.git"
+    sh(tmp, "init", "-q", "--bare", "-b", "main", str(origin))
+    sh(specs, "init", "-q", "-b", "main")
+    sh(specs, "add", "-A")
+    sh(specs, "commit", "-qm", "init")
+    sh(specs, "remote", "add", "origin", str(origin))
+    sh(specs, "push", "-q", "-u", "origin", "main")
+    return slice_dir, specs, origin
+
+
+def code_repo(tmp, push=True):
+    """The code repo's `.aiworkflowrc`, push on or off; the repo."""
+    repo = Path(tmp) / "repo"
+    repo.mkdir(exist_ok=True)
+    (repo / ".aiworkflowrc").write_text(
+        'design_philosophy = "philosophy.md"\n'
+        + ("" if push else "\n[push]\nenabled = false\n"))
+    return repo
+
+
+def spec_note(specs, name):
+    (specs / name).write_text(f"{name}\n")
+    sh(specs, "add", "--", name)
+    sh(specs, "commit", "-qm", f"add {name}")
+    return sh(specs, "rev-parse", "HEAD")
+
+
+def test_the_plan_loop_pushes_the_spec_repo_and_records_what_it_could_not():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git(), \
+            environment_id("env-a"):
+        slice_dir, specs, origin = spec_repo_with_origin(tmp)
+        repo = code_repo(tmp)
+        loop = PlanLoop(slice_dir, spec_push=True)
+        loop.repo_root = repo
+        tip = spec_note(specs, "a.md")
+        loop._push_spec()
+        assert sh(origin, "rev-parse", "main") == tip
+        assert "spec_unpushed" not in loop.state
+        # without the grant: recorded, nothing pushed
+        loop.spec_push = False
+        pushed, tip = tip, spec_note(specs, "b.md")
+        loop._push_spec()
+        ungranted = ("push not granted: the loop was launched without "
+                     "--spec-push")
+        first = load_state(slice_dir)["spec_unpushed"]
+        assert first == {"tip": tip, "ahead": 1, "environment": "env-a",
+                         "since": first["since"], "error": ungranted}
+        assert sh(origin, "rev-parse", "main") == pushed
+        # push.enabled read afresh: switched off, it is the reason
+        code_repo(tmp, push=False)
+        loop.spec_push = True
+        loop._push_spec()
+        disabled = (f"push is disabled: push.enabled = false in "
+                    f"{repo}/.aiworkflowrc")
+        record = load_state(slice_dir)["spec_unpushed"]
+        assert record["error"] == disabled
+        assert record["since"] == first["since"]
+        assert sh(origin, "rev-parse", "main") == pushed
+        # both allow it: pushed, and the record cleared
+        code_repo(tmp)
+        loop._push_spec()
+        assert sh(origin, "rev-parse", "main") == tip
+        state = load_state(slice_dir)
+        assert "spec_unpushed" not in state and "spec_push" not in state
+        lines = [line.split("] ", 1)[1] for line in
+                 (slice_dir / "plan_log.txt").read_text().splitlines()
+                 if "[spec-push]" in line]
+        assert lines == [
+            f"[spec-push] not pushed: {ungranted} — tip {tip[:12]}, 1 ahead, "
+            "environment env-a",
+            f"[spec-push] not pushed: {disabled} — tip {tip[:12]}, 1 ahead, "
+            "environment env-a",
+            f"[spec-push] pushed {tip[:12]} — spec_unpushed cleared"]
+
+
+
+def test_the_plan_loop_pushes_its_recorded_base_never_the_branch_checked_out():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        slice_dir, specs, origin = spec_repo_with_origin(tmp)
+        loop = PlanLoop(slice_dir, spec_push=True)
+        loop.repo_root = code_repo(tmp)
+        loop.state = {"base": "main"}
+        base_tip = spec_note(specs, "a.md")
+        sh(specs, "checkout", "-q", "-b", "hand")
+        sh(specs, "branch", "-q", "--set-upstream-to=origin/main", "hand")
+        hand_tip = spec_note(specs, "hand.md")
+        loop._push_spec()
+        assert sh(origin, "rev-parse", "main") == base_tip
+        assert subprocess.run(
+            ["git", "cat-file", "-e", f"{hand_tip}^{{commit}}"], cwd=origin,
+            capture_output=True).returncode != 0
+        assert "spec_unpushed" not in loop.state
+
+
+def spawning_loop(slice_dir, sessions, events):
+    """A PlanLoop with its real `_spawn` and `_nudge`, git and kc faked:
+    each session (a nudge's resume included) writes what `sessions` gives
+    its agent — a verdict, or None for nothing — and `events` records the
+    sessions and the pushes in order."""
+    loop = PlanLoop(slice_dir)
+    loop._assert_agents = lambda: None
+    loop.git = lambda *args: ("" if args[0] == "status" else "/specs"
+                              if args == ("rev-parse", "--show-toplevel")
+                              else "main" if args[:2] == ("rev-parse",
+                                                          "--abbrev-ref")
+                              else "sha123")
+    loop._push_spec = lambda: events.append(
+        ("push", (slice_dir / "plan_bailout.json").exists()))
+
+    def session(prompt, cwd, timeout, agent=None, model=None, effort=None,
+                resume_session=None, extra_env=None, flags=None,
+                progress=None, on_session=None):
+        who = agent or "resume"
+        events.append(("session", who))
+        result = run_loop.SessionResult()
+        result.session_id = "sess-1"
+        result.result_text = "ok"
+        verdict = sessions.get(who)
+        if who == "plan-writer" and verdict is not None:
+            write_phases(loop)
+            (slice_dir / "plan_writer_result_r1.json").write_text(
+                json.dumps(verdict))
+        elif who == "plan-reviewer":
+            (slice_dir / "plan_review_result_r1.json").write_text(
+                json.dumps(verdict))
+        return 0, result
+
+    return loop, session
+
+
+def test_the_plan_loop_pushes_after_every_session_and_one_that_bails():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        events = []
+        loop, session = spawning_loop(slice_dir, {
+            "plan-writer": {"outcome": "done", "summary": "ok"},
+            "plan-reviewer": {"outcome": "go", "summary": "ok"}}, events)
+        with patched(plan_loop, run_kc_session=session):
+            assert run_to_exit(loop) == 0
+        # the report's commit, then each session followed by the push
+        assert events == [("push", False),
+                          ("session", "plan-writer"), ("push", False),
+                          ("session", "plan-reviewer"), ("push", False)]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        events = []
+        loop, session = spawning_loop(slice_dir, {"plan-writer": None},
+                                      events)
+        with patched(plan_loop, run_kc_session=session), \
+                contextlib.redirect_stderr(io.StringIO()):
+            assert run_to_exit(loop) == 3
+        # no verdict, nor after its nudge: the nudge pushes, and so does the
+        # bailing round, before its stop is written
+        assert events == [("push", False),
+                          ("session", "plan-writer"),
+                          ("session", "resume"), ("push", False),
+                          ("push", False)]
+        assert (slice_dir / "plan_bailout.json").exists()
+
+
+def test_the_plan_loop_pushes_after_its_own_commits():
+    items = [criterion("V02", "The dev cluster runs the new chart.",
+                       owed_after="../HelmCharts")]
+    writer = ("plan-writer", {"outcome": "done", "summary": "written"},
+              plans(HOLD_SECTION, items))
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [writer, R_GO])
+        after = []
+        loop._push_spec = lambda: after.append((commits(loop) or [None])[-1])
+        assert run_to_exit(loop) == 0
+        assert after == [("commit", "-m", "slice 099: close-out report"),
+                         SEED_COMMIT]
+
+
+def test_status_prints_what_the_spec_repo_has_unpushed():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        state = {"slice": slice_dir.name, "phase": "writing",
+                 "review_rounds": 0, "writer_rounds": 1, "history": [],
+                 "spec_unpushed": {
+                     "tip": "fedcba9876543210fedc", "ahead": None,
+                     "environment": None,
+                     "since": "2026-11-13T03:00:00+01:00",
+                     "error": "no upstream for main"}}
+        (slice_dir / "plan_state.json").write_text(json.dumps(state))
+        assert status_lines(slice_dir)[2] == (
+            "  spec repo unpushed since 2026-11-13T03:00:00+01:00: "
+            "fedcba987654, ? ahead, environment (unset) — no upstream for "
+            "main")
+        del state["spec_unpushed"]
+        (slice_dir / "plan_state.json").write_text(json.dumps(state))
+        assert not [line for line in status_lines(slice_dir)
+                    if "unpushed" in line]
+
+
+def test_the_spec_push_grant_rides_the_detached_plan_loop():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        seen, parsed = [], []
+
+        def detach(body, log_path):
+            body(lambda: None)   # the grandchild's body, run here
+            return 4242, 0, ""
+
+        with patched(run_loop, detach=detach), \
+                patched(PlanLoop, run=lambda loop: seen.append(loop.spec_push)), \
+                contextlib.redirect_stdout(io.StringIO()):
+            for flag in (True, False):
+                plan_loop.cmd_run(type("Args", (), {
+                    "slice_dir": str(slice_dir), "verbose": False,
+                    "step": None, "detach": True, "spec_push": flag})())
+        assert seen == [True, False]
+        argv = ["plan_loop.py", "run", str(slice_dir), "--spec-push",
+                "--detach"]
+        with patched(plan_loop, cmd_run=lambda args: parsed.append(args)), \
+                patched(sys, argv=argv):
+            plan_loop.main()
+        assert parsed[0].spec_push is True and parsed[0].detach is True
 
 
 if __name__ == "__main__":

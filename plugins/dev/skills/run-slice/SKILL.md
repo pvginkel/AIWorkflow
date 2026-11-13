@@ -38,8 +38,11 @@ takes, `<task>` the brief's plan task, and a tool is
   `render`), its words under `/dev:writing`, `--step <task>`, registered and backed as pilot.md
   § The documents says. Commit every store and document by name before the turn ends
   (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`).
-- **The spec repo is pushed at the stage's end**, after its last commit, where the brief's grants
-  pre-approve it (pilot.md § The brief): a refused push is named in the last message.
+- **The spec repo is pushed with each commit** where the brief's grants pre-approve it (pilot.md
+  § The brief): every launch of the loop below, the start's and every resume, carries
+  `--spec-push`, and the loop pushes after each commit. Without that grant, leave the flag off.
+  Your push at the stage's end, after its last commit, is the backstop for your own commits: a
+  refused push is named in the last message.
 
 ## The start
 
@@ -69,11 +72,11 @@ takes, `<task>` the brief's plan task, and a tool is
    `asks/`, and end the turn. It is asked once a run: a start that finds it answered goes on as
    the continuation says, and with every such repo held there is nothing to ask.
 4. **Move the slice card** from planned to in progress, unless an earlier run moved it.
-5. **Launch, detached**: `run_loop.py run <slice> --detach --step <task>`, with `--resume`
-   where `<slice>/state.json` exists. It returns once the run holds the slice, its last line the
-   `next:` wait. Refused (exit 2) because another driver holds the slice, the run is live: wait
-   on it, `run_loop.py wait <slice>`. Any other refusal — no plan, an agent definition missing —
-   is an `action` document as in step 2.
+5. **Launch, detached**: `run_loop.py run <slice> --detach --step <task> --spec-push`, with
+   `--resume` where `<slice>/state.json` exists. It returns once the run holds the slice, its
+   last line the `next:` wait. Refused (exit 2) because another driver holds the slice, the run
+   is live: wait on it, `run_loop.py wait <slice>`. Any other refusal — no plan, an agent
+   definition missing — is an `action` document as in step 2.
 6. **Wait**, as below.
 
 ## The wait, and the run's end
@@ -85,7 +88,7 @@ where the host sets none. Its exit code is a signal, and the lines it prints are
 - **5, running** — run the new `next:` line again at once. Read nothing in between: no log, no
   state, no word to anyone.
 - **6, gone** — the driver died with no exit recorded (a host restart, a kill): run the `next:`
-  relaunch, then wait again.
+  relaunch, with `--spec-push` added where the brief grants it, then wait again.
 - **0, ended** — act on `ended: exit <n>`:
 
 | The run's exit | The turn |
@@ -110,7 +113,8 @@ plan wins and the operator decides. Then the root cause:
 
 - **Mechanical or environmental, and the workflow's** — a stale checkout, a dead service, a wrong
   path in a `Target:`, the spec repo checked out off its base: the sub-agent fixes it and says
-  so, and the session resumes (`run_loop.py run <slice> --resume --detach`) and waits.
+  so, and the session resumes (`run_loop.py run <slice> --resume --detach --spec-push`) and
+  waits.
 - **Anything else** — the sub-agent writes a `decision` store: the diagnosis, and of retry (the
   resume, once what the diagnosis names is done), change the plan and stop here the options that
   are live, with its recommendation. The session renders and registers it, attaches
@@ -149,9 +153,9 @@ ask is read back with `asks.py absorb <document>`, and its ruling lands by what 
   close-out of a run that has not ended.
 - **An ask the run waits on, deferred** — the run stays stopped, as stop here leaves it.
 
-Then the session resumes the run (`run_loop.py run <slice> --resume --detach`) and waits. What the
-sub-agent could not carry out as ruled comes back as a store of asks, which the session renders,
-registers and ends the turn on instead.
+Then the session resumes the run (`run_loop.py run <slice> --resume --detach --spec-push`) and
+waits. What the sub-agent could not carry out as ruled comes back as a store of asks, which the
+session renders, registers and ends the turn on instead.
 
 ## The close-out
 

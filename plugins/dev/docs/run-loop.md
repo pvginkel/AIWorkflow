@@ -230,7 +230,8 @@ whole plan is a feature of the review, not a cost. Then:
   merged with it in the shared checkout, never rebased. PilotApp slice 036 diverged at P3 and its
   test phase rebased for 18 minutes over conflicts in 15 or more files; slice 031 diverged at P5
   and its test phase's rebase took 29. Left with a log line, never a bail, the phase cut from the
-  base as it stands: the spec repo, whose commits land at close-out; a project that does not
+  base as it stands: the spec repo, which the run pushes after each commit and never rebases or
+  merges (§ Protocol invariants); a project that does not
   push and a repo the plan holds, which no push will be rejected for; a base checked out
   anywhere but there, a dirty tree, a rebase or merge already under way; and a rebase or merge
   git does not finish, which is aborted — conflicts stay the test phase's rebase-agent's, the
@@ -794,6 +795,30 @@ not over. The stop passes the wrap-up's leave-out as an interrupt does, and a re
 stage starts it over. Present at the start, the file refuses the start with exit 7 and nothing
 recorded, so the start after it is the same command. The plan loop looks for it before each pass
 ([plan-loop.md](plan-loop.md)).
+
+**The spec repo is pushed after every commit.** The driver pushes the spec repo's base after each
+commit it makes there — a phase's stamp, the close-out report's creation, every commit of the
+report's store — and after each session it dispatched returns, a round that bails included, so
+what that session committed there goes too; an interrupt pushes nothing, and the resume's first
+push takes what it left. It is a plain `git push` of the base to its upstream, whatever the tree
+has checked out, never forced, with no prompt and a two-minute timeout, and none is made while
+the base holds nothing its upstream lacks. Another environment reads a spec repo through GitHub, or
+gitblit's daily mirror of it, and what waited for the stage's end was out of its reach: AIWF-34
+cited a close-out a day ahead of GitHub, and the Notifications card N-1 a NotificationsSpecs
+commit no clone could find (AIWF-159). The run never takes origin into the spec repo — no rebase,
+no merge — and a push that fails never stops it.
+
+**A run that cannot push says where its tip is.** A refused push, a branch with no upstream, or a
+push not permitted is `state.json`'s `spec_unpushed`: the unpushed `tip`, the commits it is `ahead`
+of the upstream, the `environment` holding it, `since` when, and the `error`. The log has it when
+it first appears or its reason changes, the next commit tries again, the push that lands clears it
+and says so, and `status` prints it. **The push is not permitted** where `.aiworkflowrc` sets
+`push.enabled = false`, read afresh at each push, or where the loop was launched without
+`--spec-push`, the flag the stage's session passes on the brief's grant to push the spec repo
+([pilot.md](pilot.md) § The brief) — per launch, so a resume without it has no grant. Either way
+the push is skipped, and the run counts as one that cannot push: its `error` says push is disabled
+or not granted, not what git answered. The stage's push at its end stays the backstop for the
+session's own commits.
 
 **The loop runs only under the plugin version its agents load.** A loop keeps the version it was
 launched from, while every session it spawns loads the installed plugin

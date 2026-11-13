@@ -100,11 +100,15 @@ leaves `step` out.
 The grants bind the session as they bind any work item, and the handbook's standing preferences
 are applied in every ask.
 
-**The spec repo is pushed at the stage's end**, where the grants pre-approve a push of the spec
-repository, as both of Pilot's texts do: once the stage is over — planned, done, or stopped
-where it stood — and after its last commit, a plain `git push` of the spec repo's branch, never
-forced. A refused push is named in the turn's last message and left as it is. Without that
-grant, nothing is pushed.
+**The spec repo is pushed with each commit**, where the grants pre-approve a push of the spec
+repository, as both of Pilot's texts do. The session passes `--spec-push` to every launch of its
+loop, the start's and every resume, and the loop pushes the spec repo after each commit of its own
+and after each session it dispatched returns ([run-loop.md](run-loop.md) § Protocol invariants).
+The session's own push is the backstop, for its own commits: once the stage is over — planned,
+done, or stopped where it stood — and after its last commit, a plain `git push` of the spec repo's
+branch, never forced. A refused push is named in the turn's last message and left as it is.
+Without that grant the loop is launched without the flag, and nothing is pushed: the loop records
+that it could not push, as it records a refused push.
 
 ## The documents
 

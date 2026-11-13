@@ -100,6 +100,18 @@ every commit of its own the loop asserts the tree is still on it and bails `bloc
 no run moves the shared tree ([run-loop.md](run-loop.md) § The plan is the queue), so that is a
 hand checkout. A plan that already parses with phases (a reset re-plan) enters at review.
 
+**The spec repo is pushed after every commit**, as the run loop pushes it
+([run-loop.md](run-loop.md) § Protocol invariants): after each of the loop's own commits — the
+close-out report's creation, the seeded actions — and after each session it dispatched returns,
+a plain push, never forced. It is not permitted where `.aiworkflowrc` sets `push.enabled = false`
+or where the loop was launched without `--spec-push`, the flag the stage's session passes on the
+brief's grant to push the spec repo, given at every launch: the push is skipped, and the run
+counts as one that cannot push. A push refused, without an upstream or skipped is
+`plan_state.json`'s `spec_unpushed` — the unpushed `tip`, `ahead`, `environment`, `since` and
+the `error`, which for a skipped push says push is disabled or not granted — logged to
+`plan_log.txt`, tried again at the next commit, cleared by the push that lands, and printed by
+`status`.
+
 The loop is the first thing to run on a slice, so it creates the slice's **close-out report**
 (its store `close-out.json`) and commits it before its first dispatch, and every dispatch names
 the report and `close_out.py`, the only way to write to it; what the planning agents write there

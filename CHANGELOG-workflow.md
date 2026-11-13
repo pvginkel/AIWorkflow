@@ -4,6 +4,36 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-13 — The loops push the spec repo with each commit (v0.10.58)
+
+AIWF-159, ruled 2026-11-12: "No git tool. AIWF card: the loops push the spec repo with each
+commit, and a run that cannot push records its environment and unpushed tip in the slice's
+status." Four reports had needed commits only another environment held, among them a close-out
+a day ahead of GitHub (AIWF-34) and a NotificationsSpecs commit no clone could find. The spec
+repo was pushed once, by the stage's session at its end.
+
+- **Both loops push the spec repo after every commit.** The run loop pushes after a phase's
+  stamp, the close-out report's creation and every commit of the report's store. The plan loop
+  pushes after its own commits. Both also push after each session they dispatched returns,
+  including a round that bails. Each is a plain push of the spec repo's base to its upstream,
+  whatever the tree has checked out: never forced, no prompt, a two-minute timeout. A base with
+  nothing to push is left alone.
+- **A run that cannot push records it.** A refused push, a branch with no upstream, or a push
+  that is not permitted becomes `spec_unpushed` in `state.json` or `plan_state.json`: `tip`,
+  `ahead`, `environment`, `since` and `error`. The log names it when it first appears or its
+  reason changes. The next commit tries again, the push that lands clears it, and both loops'
+  `status` print it. A failed push never stops a run.
+- **A push is permitted only where it already was.** `push.enabled = false`, or a loop launched
+  without the new `--spec-push` flag, skips the push. Such a run counts as one that cannot push,
+  and its `error` says push is disabled or not granted. `/dev:run-slice` and `/dev:plan-slice`
+  pass the flag at every launch where the brief's grants pre-approve a push of the spec repo.
+  The flag is per launch: a resume without it has no grant. The stage's push at its end stays,
+  as the backstop for the session's own commits.
+- **The diverged-base log line says why the spec repo is left.** It used to say "the spec repo's
+  commits land at close-out", which is no longer true. It now says the run never rebases or
+  merges the spec repo, pushes it after each commit, and records a push it could not make as
+  `spec_unpushed`. Code repos are not part of this change.
+
 ## 2026-11-13 — A plan-slice work item shows ground, write and review from its start (v0.10.57)
 
 AIWF-158 (moved from PilotApp's triage, 2026-11-12): a plan-slice work item's tile stayed empty

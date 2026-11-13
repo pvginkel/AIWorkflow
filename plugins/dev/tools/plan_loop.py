@@ -52,6 +52,11 @@ per `## Push holds` repo, listing the criteria verification.json marks
 each entered once, however often the loop reruns. It renders nothing: the
 report is the run's to render, and registering it the run's continuation.
 
+The loop pushes the spec repo after each commit of its own and after each
+session it dispatched returns, where `push.enabled` is on and the launch
+carries `--spec-push` (run_loop.push_spec); a push it could not make, or was
+not permitted to, is plan_state.json's `spec_unpushed` until one lands.
+
 All loop and session output goes to <slice>/plan_log.txt; stdout carries the
 log-file line plus one terse timestamped line per pass start and the final
 verdict; -v/--verbose echoes the full log there too.
@@ -71,7 +76,7 @@ it is gone takes the next pass; present at the start, nothing runs. `stop`
 interrupts a running loop as Ctrl-C does.
 
 Usage:
-    plan_loop.py run <slice-dir> [--step ID] [--detach] [--verbose]
+    plan_loop.py run <slice-dir> [--step ID] [--spec-push] [--detach] [--verbose]
     plan_loop.py wait <slice-dir> [--for SECONDS]
     plan_loop.py progress <slice-dir> --ground active|done
     plan_loop.py stop <slice-dir>
@@ -123,6 +128,7 @@ from run_loop import (  # noqa: E402
     EXIT_HALTED,
     PHILOSOPHY_LINE,
     SPAWN_ENV,
+    SPEC_PUSH_HELP,
     WAIT_FOR_HELP,
     Halted,
     SliceLock,
@@ -149,6 +155,7 @@ from run_loop import (  # noqa: E402
     skill_line,
     skills_named,
     spawn_flags,
+    spec_unpushed_line,
     stop_driver,
     wait_on_driver,
 )
@@ -416,8 +423,12 @@ start new work.
 
 class PlanLoop:
     def __init__(self, slice_dir: Path, verbose: bool = False,
-                 step: str | None = None):
+                 step: str | None = None, spec_push: bool = False):
         self.slice_dir = slice_dir.resolve()
+        # `--spec-push`: the brief's grant of the spec repo's push. This
+        # launch's alone, never plan_state.json — a rerun without it has no
+        # grant.
+        self.spec_push = spec_push
         self.slice_name = self.slice_dir.name
         self.slice_num = self.slice_name.split("_")[0]
         self.plan_path = self.slice_dir / "plan.md"
@@ -591,6 +602,36 @@ class PlanLoop:
     def _current_branch(self) -> str:
         return self.git("rev-parse", "--abbrev-ref", "HEAD")
 
+    def _push_spec(self) -> None:
+        """Push the spec repo (run_loop.push_spec) — after each commit of the
+        loop's there and after each session it dispatched returns — and keep
+        plan_state.json's `spec_unpushed` as the answer leaves it, logged
+        when its story changes. Permitted only where `push.enabled`, read
+        afresh from the code repo's `.aiworkflowrc`, is on and the launch
+        carries `--spec-push`; refused, nothing is pushed and the refusal is
+        the record's error. What is pushed is plan_state.json's `base`,
+        never the branch the tree stands on. Never raises."""
+        try:
+            refused = run_loop.spec_push_refusal(self.repo_root,
+                                                 self.spec_push)
+            root = Path(self._spec_root())
+            base = self.state.get("base") or None
+            previous = self.state.get("spec_unpushed")
+            record = run_loop.push_spec(
+                root, refused=refused,
+                previous=previous if isinstance(previous, dict) else None,
+                branch=base)
+            changed, line = run_loop.settle_spec_push(self.state, record,
+                                                      root, base)
+            if changed:
+                self._save_state()
+            if line:
+                self.log(line)
+        except Exception as e:
+            why = (e.details if isinstance(e, Bailout)
+                   else f"{type(e).__name__}: {e}")
+            self.log(f"[spec-push] not attempted: {why}")
+
     def _base_branch(self) -> str:
         """The branch the spec repo was on when this loop first ran, recorded
         in plan_state.json. A `phase/` branch is never it: that one is a run
@@ -651,17 +692,21 @@ class PlanLoop:
 
     def _nudge(self, prompt: str, session_id: str, label: str,
                role: str) -> None:
+        """One resume of the session; the nudge over, the spec repo is
+        pushed (`_push_spec`) — what the nudged session committed there, a
+        hand-back fixed, goes out with it."""
         self.log(f"{label} nudging the session (resume)")
-        try:
-            self._assert_current()
-            run_kc_session(
-                prompt=prompt, cwd=str(self.repo_root),
-                timeout=NUDGE_TIMEOUT, resume_session=session_id,
-                extra_env=SPAWN_ENV, flags=spawn_flags(role, self.log),
-                progress=lambda line: self._emit(f"    {label} {line}"),
-            )
-        except subprocess.TimeoutExpired:
-            self.log(f"{label} nudge timed out")
+        with run_loop.pushing_after(self._push_spec):
+            try:
+                self._assert_current()
+                run_kc_session(
+                    prompt=prompt, cwd=str(self.repo_root),
+                    timeout=NUDGE_TIMEOUT, resume_session=session_id,
+                    extra_env=SPAWN_ENV, flags=spawn_flags(role, self.log),
+                    progress=lambda line: self._emit(f"    {label} {line}"),
+                )
+            except subprocess.TimeoutExpired:
+                self.log(f"{label} nudge timed out")
 
     def _philosophy_line(self) -> str:
         """The project's change-discipline pointer, carried by every
@@ -742,7 +787,15 @@ class PlanLoop:
         failure, invalid verdict (after one nudge), or dirty slice folder
         (after one nudge) is a bail-out — the loop has no fallback driver.
         The spec tree is asserted on its base first: an agent dispatched onto
-        someone else's branch commits the plan there."""
+        someone else's branch commits the plan there. The session over, ruled
+        or bailing, the spec repo is pushed (`_push_spec`): what it committed
+        there goes out with it."""
+        with run_loop.pushing_after(self._push_spec):
+            return self._spawn_session(role, prompt, verdict_path, round_)
+
+    def _spawn_session(self, role: str, prompt: str, verdict_path: Path,
+                       round_: int) -> dict:
+        """`_spawn`'s session and its ruling."""
         label = f"[{role} r{round_}]"
         model, effort = MODELS[role]
 
@@ -1151,6 +1204,7 @@ class PlanLoop:
             self.git("commit", "-m",
                      f"slice {self.slice_num}: close-out report")
             self.log(f"created {store.name}")
+            self._push_spec()
 
     # -- the exit-0 seed: the actions the plan already owes ---------------------
 
@@ -1289,6 +1343,7 @@ class PlanLoop:
             self.git("commit", "-m",
                      f"slice {self.slice_num}: seed close-out "
                      "outstanding actions")
+            self._push_spec()
 
     def _take_plan_lock(self) -> None:
         """One plan loop on a slice, and none beside a live run of it —
@@ -1440,7 +1495,8 @@ def cmd_run(args) -> None:
         print(f"Error: slice directory not found: {slice_dir}", file=sys.stderr)
         sys.exit(2)
     loop = PlanLoop(slice_dir, verbose=args.verbose,
-                    step=getattr(args, "step", None))
+                    step=getattr(args, "step", None),
+                    spec_push=bool(getattr(args, "spec_push", False)))
     print(f"plan loop log: {loop.log_path}", flush=True)
     if getattr(args, "detach", False):
         run_loop.run_detached(loop, slice_dir, script=SCRIPT)
@@ -1518,6 +1574,8 @@ def cmd_status(args) -> None:
           f"reviews={state['review_rounds']}  "
           f"writer_passes={state['writer_rounds']}")
     print(f"  {driver_line(state.get('driver'), slice_dir / 'plan.lock')}")
+    if isinstance(state.get("spec_unpushed"), dict):
+        print(f"  {spec_unpushed_line(state['spec_unpushed'])}")
     if state.get("pending_questions"):
         print(f"  questions pending: {state['pending_questions']}")
     elif state.get("pending_review") and state["phase"] != "done":
@@ -1541,6 +1599,8 @@ def main() -> None:
                             "brief: every document the loop renders carries "
                             "it as `step`; kept for the reruns that do not "
                             "give it")
+    run_p.add_argument("--spec-push", action="store_true",
+                       help=SPEC_PUSH_HELP)
     run_p.add_argument("--detach", action="store_true",
                        help="run the loop in its own session, outliving this "
                             "shell; exits once it started and prints the "
