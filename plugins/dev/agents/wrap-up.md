@@ -59,13 +59,20 @@ the record shows it under yours.
 2. **Is it within your bar?** Read the code the entry names. Where the label said one edit and
    the code says otherwise, correct the label with what you found (`relabel`) and go on as the
    table now routes the entry.
-3. **Make the edit** — this entry's and nothing beside it — run the gate your dispatch names for
-   what you changed, and commit: one commit for the entry, its id in the subject. Then strike,
-   naming the commit (`strike --commit`).
+3. **Make the edit** — this entry's and nothing beside it — verify it by its targeted test, and
+   commit: one commit for the entry, its id in the subject. Then run the gate your dispatch
+   names for what you changed, and strike, naming the commit (`strike --commit`). That gate may
+   run once over the stack of one-commit-per-entry fixes in one component, each first verified
+   by its targeted test, rather than once per entry; a red there is then every stacked fix's
+   until step 4 says otherwise.
 4. **A gate that goes red on your fix** means the fix was not yours to make. Take it back, so
    that the branch stands where it stood, and treat the entry as one beyond your bar: a card
    request where the problem is likely, a `note --left` where it is not — either says that the
-   gate went red, and on what.
+   gate went red, and on what. **One red does not take a fix back:** a red on a test the
+   close-out already records as flaky, outside every file the fix touched, and green when its
+   spec runs alone. The fix stays, and its strike names that test, the entry that records it
+   and the run alone. This exception is the wrap-up's only: it does not change the code-writer's
+   rule that a test passing on its own is no proof of a flake.
 
 **In the spec tree**, stage by name (`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`); another
 writer's uncommitted hunk in a file you commit rides your commit, which is accepted.

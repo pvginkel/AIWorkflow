@@ -452,7 +452,7 @@ theirs, and no card is filed without their word.
 | a closed entry that someone other than the wrap-up noted after the table closed it | its labels checked against the note, and corrected where the note shows them wrong (`relabel`), else that it left it, and why (`note --left`) |
 | a risk that comes to the operator | a proposal, where its author gave none or the code says otherwise (`propose`); what the code shows — how it is reached, what a fix takes — in its section (`restate`); what it checked as its mark (`note --left`); the entry stays theirs |
 | an entry that comes to the operator, and what it found changes its story — a claim fixed since, a reach wider than its author saw | the entry restated as it now stands (`restate`), and what it ran as its mark (`note --left`) |
-| a gate that goes red on its fix | the fix taken back, and a card request or a note that says so |
+| a gate that goes red on its fix | the fix taken back, and a card request or a note that says so — except a red on a test the report already records as flaky, outside every file the fix touched and green when its spec runs alone: the fix stays, and its strike names that test |
 | anything else it looked at and does not change | that it left it, and why (`note --left`) |
 
 **The wrap-up changes facts, never routes.** What it finds in the code it writes as a fix, a

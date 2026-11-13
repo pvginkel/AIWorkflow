@@ -4,6 +4,28 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-13 — The wrap-up keeps a fix over a recorded flake's red, and may gate its stack of fixes once (v0.10.59)
+
+AIWF-160, ruled by the operator: "wrap-up.md says a red on a test the close-out already records
+as flaky, outside every file the fix touched and green when that spec runs alone, does not take
+the fix back, and the strike names it; and the component gate may run once over the stack of
+one-commit-per-entry fixes, each first verified by its targeted test." The evidence is PilotApp
+slice 036's wrap-up (2026-11-05). Its 7-minute Playwright gate went red twice on
+`stop-resume.spec.ts`, a flake that entries B6 and T6 record. No fix touched that spec, and it
+passed 27/27 alone. A gate per entry would have cost about 45 minutes for six entries.
+
+- **A recorded flake's red does not take a fix back.** All three conditions must hold: the
+  close-out already records the test as flaky, the test is outside every file the fix touched,
+  and it is green when its spec runs alone. The fix then stays, and its strike names the test,
+  the entry that records it and the run alone (`agents/wrap-up.md` § A fix, step 4, and the row
+  in `docs/close-out.md` § The wrap-up). The exception is the wrap-up's only. The code-writer's
+  rule that a test passing on its own is no proof of a flake is unchanged.
+- **One component gate over the stack of fixes.** Each entry's edit is verified by its targeted
+  test and committed on its own. The gate the dispatch names may then run once over the stack
+  of one-commit-per-entry fixes in a component, instead of once per entry (step 3). The driver's
+  own gate after the wrap-up is unchanged: a red there on two runs, with the commits, still
+  leaves all of them out.
+
 ## 2026-11-13 — The loops push the spec repo with each commit (v0.10.58)
 
 AIWF-159, ruled 2026-11-12: "No git tool. AIWF card: the loops push the spec repo with each
