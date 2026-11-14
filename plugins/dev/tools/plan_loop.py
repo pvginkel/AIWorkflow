@@ -222,6 +222,11 @@ SLICE_FOLDER_RE = re.compile(r"^\d{3,}_")
 # prose review.
 FINDING_CLASSES = ("blocking", "operator")
 
+# What marks a plan line as citing a scratch clone (AIWF-162): those clones
+# are this environment's, and the run may start in another. A plan cites
+# another repository as `github:<owner>/<Repo>`.
+SCRATCH_MARKS = ("/work/scratch", "../scratch/")
+
 
 def is_gap(finding: dict) -> bool:
     """Whether a review finding is a gap: a `blocking` one that says its
@@ -236,6 +241,40 @@ def _target_key(target: str) -> str:
     """A hold target or an `owed_after` as the seed compares them — the
     backticks and trailing slash a hand-written one may carry set aside."""
     return target.strip().strip("`").strip().rstrip("/")
+
+
+def scratch_citations(text: str) -> list[tuple[int, str]]:
+    """(1-based line number, the line stripped) of every plan line holding
+    a SCRATCH_MARKS mark, a done phase's section aside: its done-record
+    cites the run's own work files there. The section runs from the
+    phase's heading to the next heading at `###` or above, as
+    run_loop.phase_scope bounds it — parse_plan's body runs on through a
+    `##` after the last phase, which is the plan's again. A plan that does
+    not parse is scanned for the phases it yields, whole if none."""
+    skip: set[int] = set()
+    phases, _ = parse_plan(text)
+    for phase in phases:
+        if not phase.done:
+            continue
+        end = phase.line_no + 1
+        for line in phase.body:
+            if run_loop.SECTION_HEADING_RE.match(line):
+                break
+            end += 1
+        skip.update(range(phase.line_no, end))
+    return [(n + 1, line.strip()) for n, line in enumerate(text.splitlines())
+            if n not in skip and any(mark in line for mark in SCRATCH_MARKS)]
+
+
+def _cited_lines(hits: list[tuple[int, str]]) -> str:
+    return "\n".join(f"- line {n}: {line}" for n, line in hits)
+
+
+def scratch_details(lead: str, hits: list[tuple[int, str]]) -> str:
+    """A `plan_doc` bail's details for a plan citing a scratch clone."""
+    return (f"{lead} — another repository is cited as "
+            "`github:<owner>/<Repo>`, never by a `/work/scratch` or "
+            "`../scratch/` path:\n" + _cited_lines(hits))
 
 
 class Bailout(Exception):
@@ -414,6 +453,19 @@ COMMIT_NUDGE_PROMPT = """\
 Your session ended leaving uncommitted changes in the slice folder. Commit
 them now (stage by name — the spec repo is a shared working tree). Do not
 start new work.
+"""
+
+# A completed plan citing a scratch clone (scratch_citations): its lines,
+# for the one nudge before the bail.
+SCRATCH_NUDGE_PROMPT = """\
+plan.md cites a scratch clone on these lines:
+{lines}
+A plan never cites `/work/scratch` or a `../scratch/` path: those clones are
+this environment's, and the run may start in another. Cite another
+repository as `github:<owner>/<Repo>` — in a `Target:`, a push hold, a
+driver ruling and prose alike — and a file in it as that plus its path in
+the repo. Do not start new work: edit only those references in plan.md,
+commit the slice folder (stage by name), and end.
 """
 
 
@@ -919,6 +971,42 @@ class PlanLoop:
         self.state.update(pending_questions=None,
                           phase="reviewing" if initial else "done")
         self._save_state()
+        self._check_scratch(w)
+
+    def _read_scratch(self) -> list[tuple[int, str]]:
+        """plan.md's scratch citations; an unreadable plan is the GO
+        check's to report."""
+        try:
+            return scratch_citations(self.plan_path.read_text())
+        except OSError:
+            return []
+
+    def _check_scratch(self, round_: int) -> None:
+        """A completed plan citing a scratch clone goes back to the writer's
+        session once, then bails `plan_doc`. Run after the pass's state is
+        saved: a rerun once plan.md is fixed by hand takes the next pass."""
+        hits = self._read_scratch()
+        if not hits:
+            return
+        label = f"[plan-writer r{round_}]"
+        nudged = False
+        if self._session:
+            self.log(f"{label} plan.md cites a scratch path: {len(hits)} "
+                     "line(s)")
+            self._nudge(SCRATCH_NUDGE_PROMPT.format(lines=_cited_lines(hits)),
+                        self._session, label, "plan-writer")
+            nudged = True
+            dirty = self._slice_dirty_paths()
+            if dirty:
+                raise Bailout(
+                    "protocol_failure",
+                    details="plan-writer left the slice folder uncommitted "
+                            "after its scratch nudge: " + ", ".join(dirty))
+            hits = self._read_scratch()
+        if hits:
+            raise Bailout("plan_doc", details=scratch_details(
+                "plan.md cites a scratch clone"
+                + (" after a nudge" if nudged else ""), hits))
 
     def _review_round(self) -> None:
         self.state["review_rounds"] += 1
@@ -1008,7 +1096,8 @@ class PlanLoop:
                         "refused without the review on file")
 
     def _verify_plan_parses(self) -> None:
-        """The GO'd plan must be the queue run_loop.py can drive."""
+        """The GO'd plan must be the queue run_loop.py can drive, citing no
+        scratch clone (scratch_citations)."""
         try:
             text = self.plan_path.read_text()
         except OSError as e:
@@ -1024,6 +1113,10 @@ class PlanLoop:
             raise Bailout("plan_doc",
                           details="the GO'd plan contains no "
                                   "`### P<id> — <title>` phases")
+        hits = scratch_citations(text)
+        if hits:
+            raise Bailout("plan_doc", details=scratch_details(
+                "the GO'd plan cites a scratch clone", hits))
         self._verify_environment(phases, text)
 
     def _verify_environment(self, phases: list, text: str) -> None:

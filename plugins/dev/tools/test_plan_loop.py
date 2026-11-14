@@ -1854,6 +1854,213 @@ def test_go_proceeds_past_a_service_repo_the_rulings_waive_whole():
                 run_loop.load_project_dirs = saved
 
 
+# -- a plan cites no scratch clone (AIWF-162) -----------------------------------
+#
+# A scratch clone is this environment's, and the run may start in another: a
+# plan cites another repository as `github:<owner>/<Repo>`.
+
+def test_scratch_citations_finds_both_marks_by_line():
+    plan = "\n".join([
+        "# Slice 099 — plan",
+        "",
+        "Clone at /work/scratch/Widget.",
+        "",
+        "### P1 — First",
+        "",
+        "Target: ../scratch/Widget",
+        "  - reads ../scratch/Widget/setup.py",
+        "Not a mark: ../scratchpad.",
+        ""])
+    assert plan_loop.scratch_citations(plan) == [
+        (3, "Clone at /work/scratch/Widget."),
+        (7, "Target: ../scratch/Widget"),
+        (8, "- reads ../scratch/Widget/setup.py")]
+    assert plan_loop.scratch_citations(PLAN_HEADER + PHASE_BLOCK) == []
+
+
+def test_scratch_citations_skip_a_done_phase_alone():
+    """A done phase's done-record cites the run's own work files; its
+    section ends at the next heading at `###` or above, so a `## Push holds`
+    after a done last phase is scanned, as the header and a phase not done
+    are."""
+    plan = "\n".join([
+        "# Slice 099 — plan",                                          # 1
+        "",
+        "Built in /work/scratch/067-p1.",                              # 3
+        "",
+        "### P1 — First ✅ DONE",                                       # 5
+        "",
+        "Target: app",
+        "",
+        "**Done 2026-11-14.** Mutated with /work/scratch/067-p1/mutate.py.",
+        "",
+        "#### Notes",
+        "",
+        "Ran /work/scratch/067-p1/run.sh.",                            # 13
+        "",
+        "### P2 — Second",                                             # 15
+        "",
+        "Target: github:acme/Widget",
+        "",
+        "Reads /work/scratch/Widget/setup.py.",                        # 19
+        "",
+        "### P3 — Third ✅ DONE",                                       # 21
+        "",
+        "**Done.** Left /work/scratch/067-p3/out.txt.",                # 23
+        "",
+        "## Push holds",
+        "",
+        "- ../scratch/NewsfilterDeploy — the operator pushes it.",     # 27
+        ""])
+    assert plan_loop.scratch_citations(plan) == [
+        (3, "Built in /work/scratch/067-p1."),
+        (19, "Reads /work/scratch/Widget/setup.py."),
+        (27, "- ../scratch/NewsfilterDeploy — the operator pushes it.")]
+
+
+def test_scratch_citations_scan_a_plan_that_does_not_parse():
+    # no phase at all: the whole text
+    assert plan_loop.scratch_citations(
+        "### Notes\n\nSee /work/scratch/X.\n") == [(3, "See /work/scratch/X.")]
+    # a phase with no Target: still a phase, still skipped when done
+    assert plan_loop.scratch_citations(
+        "### P1 — One ✅ DONE\n\nIn /work/scratch/a.\n\n### P2 — Two\n\n"
+        "In /work/scratch/b.\n") == [(7, "In /work/scratch/b.")]
+
+
+SCRATCH_LINE = "Outcome: the thing works, as /work/scratch/Widget/api.md says."
+
+
+def writes_scratch(loop):
+    """A done writer pass whose plan cites a scratch clone in a phase's
+    prose."""
+    write_phases(loop)
+    loop.plan_path.write_text(PLAN_HEADER + PHASE_BLOCK.replace(
+        "Outcome: the thing works.", SCRATCH_LINE))
+
+
+def scratch_line_no(slice_dir):
+    return ((slice_dir / "plan.md").read_text().splitlines()
+            .index(SCRATCH_LINE) + 1)
+
+
+def test_a_plan_citing_a_scratch_clone_is_nudged_once_then_goes_on():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(
+            slice_dir,
+            [("plan-writer", {"outcome": "done", "summary": "w"},
+              writes_scratch), R_GO])
+        line_no = []
+
+        def fix(loop):
+            line_no.append(scratch_line_no(slice_dir))
+            write_phases(loop)
+
+        loop.nudge_effect = fix
+        assert run_to_exit(loop) == 0
+        assert [role for role, _ in loop.nudges] == ["plan-writer"]
+        nudge = loop.nudges[0][1]
+        assert nudge.startswith(
+            "plan.md cites a scratch clone on these lines:\n"
+            f"- line {line_no[0]}: {SCRATCH_LINE}\n")
+        assert "`github:<owner>/<Repo>`" in nudge
+        assert [s[0] for s in loop.spawned] == ["plan-writer", "plan-reviewer"]
+        assert ("[plan-writer r1] plan.md cites a scratch path: 1 line(s)\n"
+                in (slice_dir / "plan_log.txt").read_text())
+
+
+def test_a_scratch_citation_surviving_its_nudge_bails_and_the_rerun_goes_on():
+    """The fix pass's check bails `plan_doc` with the line; its state was
+    saved first, so the rerun after a hand fix takes the next step, here
+    the GO, with no pass again."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [
+            W_DONE, R_GAPS,
+            ("plan-writer", {"outcome": "done", "summary": "w"},
+             writes_scratch)])
+        assert run_to_exit(loop) == 3
+        assert len(loop.nudges) == 1
+        bail = json.loads((slice_dir / "plan_bailout.json").read_text())
+        assert bail["reason"] == "plan_doc"
+        assert bail["details"].startswith(
+            "plan.md cites a scratch clone after a nudge — another repository "
+            "is cited as `github:<owner>/<Repo>`")
+        assert bail["details"].endswith(
+            f"\n- line {scratch_line_no(slice_dir)}: {SCRATCH_LINE}")
+        assert load_state(slice_dir)["phase"] == "done"
+        write_phases(loop)
+        again = ScriptedLoop(slice_dir, [])
+        assert run_to_exit(again) == 0
+        assert not again.spawned
+
+
+def test_a_scratch_citation_with_no_session_to_nudge_bails():
+    def no_session(loop):
+        writes_scratch(loop)
+        loop._session = None
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [
+            ("plan-writer", {"outcome": "done", "summary": "w"}, no_session)])
+        assert run_to_exit(loop) == 3
+        assert loop.nudges == []
+        bail = json.loads((slice_dir / "plan_bailout.json").read_text())
+        assert bail["reason"] == "plan_doc"
+        assert bail["details"].startswith(
+            "plan.md cites a scratch clone — another repository")
+        assert load_state(slice_dir)["phase"] == "reviewing"
+
+
+def test_a_scratch_nudge_leaving_the_slice_folder_dirty_bails():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = DirtyGitLoop(slice_dir, [
+            ("plan-writer", {"outcome": "done", "summary": "w"},
+             writes_scratch)])
+
+        def leave_dirty(loop):
+            write_phases(loop)
+            loop.porcelain = " M specs/099/plan.md\0"
+
+        loop.nudge_effect = leave_dirty
+        assert run_to_exit(loop) == 3
+        bail = json.loads((slice_dir / "plan_bailout.json").read_text())
+        assert bail["reason"] == "protocol_failure"
+        assert bail["details"] == (
+            "plan-writer left the slice folder uncommitted after its scratch "
+            "nudge: specs/099/plan.md")
+
+
+def test_go_with_a_plan_citing_a_scratch_clone_bails():
+    """A plan entering at review (a reset re-plan) has no writer pass to
+    nudge: GO bails on a phase not done citing a scratch clone, and passes
+    a done phase's done-record citing one."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp, phases=True)
+        (slice_dir / "plan.md").write_text(PLAN_HEADER + PHASE_BLOCK.replace(
+            "Target: app", "Target: ../scratch/Widget"))
+        loop = ScriptedLoop(slice_dir, [R_GO])
+        assert run_to_exit(loop) == 3
+        assert loop.nudges == []
+        bail = json.loads((slice_dir / "plan_bailout.json").read_text())
+        assert bail["reason"] == "plan_doc"
+        line_no = (PLAN_HEADER + PHASE_BLOCK).splitlines().index(
+            "Target: app") + 1
+        assert bail["details"] == plan_loop.scratch_details(
+            "the GO'd plan cites a scratch clone",
+            [(line_no, "Target: ../scratch/Widget")])
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp, phases=True)
+        (slice_dir / "plan.md").write_text(
+            PLAN_HEADER + "\n## Phases\n\n### P1 — First phase ✅ DONE\n\n"
+            "Target: app\n\n**Done.** Mutated in /work/scratch/099-p1/m.py.\n"
+            "\n### P2 — Second phase\n\nTarget: app\n")
+        assert run_to_exit(ScriptedLoop(slice_dir, [R_GO])) == 0
+
+
 # -- the other slices' push holds, the reviewer's alone ------------------------
 #
 # A scratch clone is one per repo, shared by every slice that targets it: the

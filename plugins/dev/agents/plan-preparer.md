@@ -94,7 +94,10 @@ rendering, registering, the operator's answers, the plan loop — is the stage's
    evidence, cited by path and quoted line as in `grounding.md`, the grounding that binds the
    plan: a premise correction with what it changes, a verified fact a requirement rests on, what
    a passage of the record or the operator's own words decide, each with a one-line cite of the
-   passage or the words. Your
+   passage or the words. A file of a repository this environment does not check out under
+   `/work` is cited as `github:<owner>/<Repo>` and its path in the repo, never by the path of a
+   clone in `/work/scratch`: the run may start in an environment without that clone, and the plan
+   loop refuses a plan that cites one. Your
    readings go there too, each said to be yours and not the operator's ("The preparer's reading,
    not a ruling: …"), so that nobody downstream takes one for the operator's word. This section is
    the only place the plan-writer reads it. A skill in your listing whose

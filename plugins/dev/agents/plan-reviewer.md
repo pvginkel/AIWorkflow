@@ -69,9 +69,8 @@ plan cites.
    settled, or a code claim the plan rests on that is wrong, is a finding.
 9. **Another slice's held push.** Your dispatch lists the push holds of the other slices in
    flight, when there are any. A scratch clone is one per repo, shared by every slice that
-   targets it — `github:<owner>/<Repo>`, `../scratch/<Repo>` and `/work/scratch/<Repo>` name the
-   same one — and another slice's held commits sit in it unpushed until the operator pushes
-   them. A phase that targets such a clone, or a hold of this plan's on it, with no ordering
+   targets it as `github:<owner>/<Repo>`, and another slice's held commits sit in it unpushed
+   until the operator pushes them. A phase that targets such a clone, or a hold of this plan's on it, with no ordering
    constraint putting this slice after that push, is an operator-decidable finding: the run
    would build on those commits, or be refused for them.
 10. **A step shared with a sibling slice.** An ordering constraint that names another slice for a

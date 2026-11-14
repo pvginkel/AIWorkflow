@@ -38,7 +38,10 @@ outcomes, not implementations.
 - **Cross-repo work is its own phase** targeting the sibling repo. `github:<owner>/<repo>` is
   only for a repo the environment does not check out under `/work`; the phase says so in a line
   of its own, since the driver clones the repo for this slice alone. A repo you cloned to research
-  it is still such a repo — the driver adopts a clean clone at `/work/scratch/<repo>`.
+  it is still such a repo — the driver adopts a clean clone at `/work/scratch/<repo>`. Cite such
+  a repo as `github:<owner>/<Repo>` everywhere in the plan, and a file in it as that and its path
+  in the repo, never by the path of a clone: the run may start in an environment without that
+  clone, and the loop refuses a plan that cites `/work/scratch` or `../scratch/`.
 - **As long as the phases need, no longer.** The operator reads the plan cold: no filler sections,
   no restated requirements, no summary of what the phases already say.
 - **No testing phase, no auto-doc phase, no auto-doc content — but a doc task is a phase.**

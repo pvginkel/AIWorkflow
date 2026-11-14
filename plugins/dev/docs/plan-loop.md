@@ -42,10 +42,11 @@ alone, and its prompt opens accordingly. The document carries `run --step`'s pla
 commits what it registers, as it commits the rulings before the rerun. A document that cannot be
 written is logged, and the exit stands without it.
 
-Exits: **0** plan complete (a reviewer verdict is on file and the plan parses as a phase
-queue) · **4** operator input needed (the writer's questions or the review's findings, as the
+Exits: **0** plan complete (a reviewer verdict is on file, and the plan parses as a phase
+queue and cites no scratch clone) · **4** operator input needed (the writer's questions or the review's findings, as the
 document above; answer it, rerun — the loop resumes where it paused) · **3** bailed (`plan_bailout.json`:
-`blocked`, `timeout`, `protocol_failure`, `missing_tools` — a plan Target's manifest calls a
+`blocked`, `timeout`, `protocol_failure`, `plan_doc` — the plan does not parse as a phase queue
+or cites a scratch clone (below), `missing_tools` — a plan Target's manifest calls a
 `cexec` tool this environment does not run, `missing_services` — the host's own
 `.kubecoder/config.yaml` declares a service this environment does not run (another Target repo's
 are not read), both checked at GO as
@@ -99,6 +100,17 @@ loop found the spec repo on at its first run, never a `phase/…` branch; before
 every commit of its own the loop asserts the tree is still on it and bails `blocked` otherwise —
 no run moves the shared tree ([run-loop.md](run-loop.md) § The plan is the queue), so that is a
 hand checkout. A plan that already parses with phases (a reset re-plan) enters at review.
+
+**A plan cites no scratch clone.** After every writer pass that completes the plan, and again at
+GO, the loop scans `plan.md` for `/work/scratch` and `../scratch/`. It skips the done phases,
+whose done-records record the run's own scratch work. A scratch clone belongs to the environment
+that planned the slice, and the run may start in another environment that does not have it. In
+AIWF-162, two AnsibleSpecs slices' digests cited `/work/scratch/Notifications`, and the
+environment that ran one of them had no such clone. Another repository is cited as
+`github:<owner>/<Repo>` instead ([plan-template.md](plan-template.md)). A hit after a writer
+pass goes back once to that writer's session, with the lines. A hit that survives the nudge,
+and any hit at GO, bails `plan_doc` with the lines. The operator edits them in `plan.md` and
+reruns, and the loop resumes after the pass that wrote them.
 
 **The spec repo is pushed after every commit**, as the run loop pushes it
 ([run-loop.md](run-loop.md) § Protocol invariants): after each of the loop's own commits — the

@@ -94,8 +94,8 @@ The mechanical rules the parser holds every author to:
   run loop's parser ignores it, as it does every `##` section but the next one.
 - **`## Push holds` names the repos this run must not push** — one `- <target> — <why>`
   bullet each (em dash), target in the same vocabulary as `Target:` — a scratch clone no phase
-  targets, such as a ledger phase's, works as `github:<owner>/<repo>` and as its path
-  `../scratch/<Repo>` alike, and the driver never syncs a held clone. The plan loop enters one
+  targets, such as a ledger phase's, is named `github:<owner>/<repo>`, and the driver never
+  syncs a held clone. The plan loop enters one
   action per held repo in the close-out report at its exit 0; the driver skips
   held repos in its push check, names them in the test phase's dispatch, and notes that entry
   (or writes it, for a hold added after planning). The doc landing merges locally and does not
@@ -174,6 +174,14 @@ The mechanical rules the parser holds every author to:
   skill listing; the driver hands the phase's writer and reviewer, and the plan loop the
   planners, the installed file for a name the plan carries
   ([agent-dispatch.md](agent-dispatch.md) § Spawning). A paraphrase of its rules drifts from it.
+- **Another repository is cited as `github:<owner>/<Repo>`, never by a scratch path.** A
+  `/work/scratch/…` or `../scratch/…` path names a clone in the environment that planned the
+  slice, and the run may start in another environment that has no such clone. So a repo the
+  environment does not check out under `/work` is `github:<owner>/<Repo>` everywhere in the plan:
+  in a `Target:`, a push hold, a driver ruling and the prose. A file in it is cited as that and
+  the file's path in the repo. The plan loop refuses a plan that cites either path outside its
+  done phases ([plan-loop.md](plan-loop.md)). A done-record is not held to the rule, because it
+  records the run's own scratch work.
 - **`✅ DONE <date>` on the heading is the driver's stamp.** Only the driver writes it, after
   review passes and the merge lands. No agent ever stamps, and a done phase is skipped on every
   re-parse.

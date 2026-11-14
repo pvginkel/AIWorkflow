@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-14 — A plan that cites a scratch clone is refused, and another repo is cited as `github:<owner>/<Repo>` (v0.10.63)
+
+AIWF-162, ruled 2026-11-12: "I think it's a bug if a plan has a reference to a /work/scratch
+folder. My preference is that we check for this." The digests of AnsibleSpecs slices 066 and 067
+cited `/work/scratch/Notifications` and `/work/scratch/NotificationsSpecs`. The run's environment
+had neither: 066 was planned in one environment and ran in another.
+
+- **The plan loop scans `plan.md` for `/work/scratch` and `../scratch/`** after every writer
+  pass that completes the plan, and again at GO (plan-loop.md § A plan cites no scratch clone).
+  The bodies of done phases are skipped, because their done-records record the run's own scratch
+  work. A hit after a writer pass goes back once to the writer's session, with the lines. A hit
+  that survives the nudge, and any hit at GO, bails `plan_doc` with the lines.
+- **Another repository is cited as `github:<owner>/<Repo>`**, and a file in it as that and its
+  path in the repo (plan-template.md). The plan-writer and the plan-preparer are told so. The
+  `../scratch/<Repo>` and `/work/scratch/<Repo>` aliases for a push hold or a scratch clone are
+  gone from plan-template.md and the plan-reviewer.
+- **Not in scope, as ruled:** the run loop still clones only the repos that plans name as
+  Targets. Plan edits that code-writers make during a run are not scanned.
+
 ## 2026-11-14 — The close-out continuation records a commit only once it is on the upstream (v0.10.62)
 
 AIWF-161, ruled on PilotAppSpecs slice 036's close-out (2026-11-05). Its continuation recorded
