@@ -1507,6 +1507,25 @@ def test_a_plugin_version_mismatch_bails_before_the_first_dispatch():
             assert run_to_exit(loop) == 0, "the relaunch picks the run up"
 
 
+def test_the_first_pass_carries_no_why_a_stop_before_it_left():
+    """A bail before the loop's first pass leaves its line waiting; the
+    first pass opens no repeat round, so its step takes it off and carries
+    none."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        with installed(tmp, "0.0.1") as inst:
+            assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE, R_GO])) == 3
+            assert load_state(slice_dir)["why_next"] == \
+                "Resumed after the loop stopped: plugin version"
+            inst.set(OURS)
+            assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE, R_GO])) == 0
+        state = load_state(slice_dir)
+        assert [s["code"] for s in state["progress"]] == ["ground", "write",
+                                                          "review"]
+        assert [s.get("why") for s in state["progress"]] == [None] * 3
+        assert "why_next" not in state
+
+
 def test_a_plugin_dir_run_passes_the_version_guard_and_says_so_once():
     """From a checkout (`--plugin-dir`), agents of the installed version are
     the run's premise: the plan loop goes on, with one line in its log."""

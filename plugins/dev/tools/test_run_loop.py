@@ -17850,6 +17850,41 @@ def test_a_sweep_nothing_ruled_on_says_what_moved_since_the_last():
             "A gate ruling gate sweep 2 waived was withdrawn"
 
 
+def test_a_resume_over_a_moved_tree_opens_its_sweep_with_what_moved():
+    """No ruling says why the sweep runs again: its step carries the loop's
+    own words for it (`_resweep_why`)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [V["exec_done"], V["review_signoff"], V["consult_complete"],
+                  ("test-agent", {"outcome": "blocked", "summary": "stuck"})]
+        assert run_to_exit(ScriptedLoop(slice_dir, script,
+                                        repo_root=repo)) == 3
+        r = ScriptedLoop(slice_dir, [V["test_clean"], V["doc_done"]],
+                         resume=True, repo_root=repo)
+        r.fake_git.head = "def456"
+        assert run_to_exit(r) == 0
+        assert whys(load_state(slice_dir))["sweep-2"] == \
+            "The tree moved in repo since gate sweep 1"
+
+
+def test_a_first_rounds_step_carries_no_why_left_waiting_for_it():
+    """A stop before a track's first round leaves its line waiting; the
+    round-1 step takes it off and carries none, nor the caller's own."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First")])
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r.state["progress"] = []
+        r._why_next("P1", "Resumed after the run stopped: blocked")
+        r._why_next("check", "Resumed after the run stopped: consult bail")
+        r._progress_start("code", 1, "P1 · First", "1", track="P1")
+        r._progress_start("sweep", 1, "Gate sweep", track="check",
+                          why="The tree moved in repo since gate sweep 1")
+        assert [s["code"] for s in r.state["progress"]] == ["P1.code",
+                                                            "sweep"]
+        assert whys(r.state) == {}
+        assert not r.state["why_next"]
+
+
 def test_the_round_a_resume_starts_follows_the_stop():
     with tempfile.TemporaryDirectory() as tmp:
         # an operator question: the writer's next round takes up the answer
