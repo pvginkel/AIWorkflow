@@ -51,7 +51,8 @@ run: its `repo`, `component` — none for the whole repo's — `verb`, `outcome`
 running the command, [run-loop.md](run-loop.md) § The per-phase round),
 `consult_seq`, `consult_complete` (the completion consult's `complete`: the `consult` number,
 the `phases` it judged, as `known_phases`, and the `sweep` run it was handed; after a `flake`,
-also `flakes`, the red rows it judged flaky and its summary, the test-fixer's brief; a resume finds it
+also `flakes`, the red rows it judged flaky and its summary, the test-fixer's brief; and its `why`
+where it gave one, for the sweep its commit makes the run take again; a resume finds it
 and dispatches no consult while `phases` matches. Dropped when a phase is pending again or the
 re-sweep after the consult's commit is red; absent on a run older than 0.9.143, which dispatches
 the consult as before), `flakes` (one record per suite a `flake` gave the test-fixer: its
@@ -73,11 +74,16 @@ that gives none keeps it), `prerun_held` (the ids of the actions owed before the
 checks held, or that a person struck, once all of them were met: never evaluated again, so the
 checks gate the start and nothing after it; [run-loop.md](run-loop.md) § Protocol invariants),
 `progress` (the steps the run shows on its Pilot work item, in order, each `{code, label,
-state}`, and a step the driver started its `started` time too, which `wait`'s `running` line
-counts from and Pilot is never sent: seeded before the start is reported, edited as each round starts and ends, and read by
+state}`, a step that opens a round past the first its `why` too, and a step the driver started
+its `started` time, which `wait`'s `running` line counts from and Pilot is never sent: seeded
+before the start is reported, edited as each round starts and ends, and read by
 `wait`, which publishes it, never by the driver, which calls nothing; which round is which step
-is [run-loop.md](run-loop.md) § The steps Pilot shows, the publishing [pilot.md](pilot.md)
-§ The progress; absent on a run started before 0.10.29 until its first resume),
+and where each why comes from is [run-loop.md](run-loop.md) § The steps Pilot shows, the
+publishing [pilot.md](pilot.md) § The progress; absent on a run started before 0.10.29 until its
+first resume), `why_next` (the why waiting for the next round of each track, by its key — `P<id>`
+for a phase, `check` for the completion check, `test` for the test phase — set where a round ends
+unsettled or the run stops, and taken off by the step that opens that track's next round; a merged
+phase's goes with it; [run-loop.md](run-loop.md) § The steps Pilot shows),
 `appended_phases`
 (the ids the plan gained after the run started — a consult's, the test phase's, or the
 operator's, as opposed to the phases it began with), `holds_reported` (the repos held by the

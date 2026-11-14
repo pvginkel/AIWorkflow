@@ -13374,6 +13374,13 @@ def test_a_reattached_gate_fix_round_keeps_its_numbers():
             "verdict_path": str(slice_dir / "phases" / "P1"
                                 / "executor_result_r2.json"),
             "session": "sess-crashed", "started_at": "t"}
+        # the round's step as it started, and a why waiting for a later one
+        state["progress"] = [
+            {"code": "P1.code", "label": "P1 · First", "state": "done"},
+            {"code": "P1.code-2", "label": "P1 · code 2", "state": "active",
+             "why": "The gate went red: kc project test --project app"},
+            {"code": "P1.review", "label": "P1 · review", "state": "pending"}]
+        state["why_next"] = {"P1": "Not this round's"}
         (slice_dir / "state.json").write_text(json.dumps(state))
         r = ScriptedLoop(slice_dir,
                          [V["exec_done"], V["review_signoff"], *TAIL],
@@ -13382,8 +13389,13 @@ def test_a_reattached_gate_fix_round_keeps_its_numbers():
         assert run_to_exit(r) == 0
         role, _, round_, _, resumed = r.spawned[0]
         assert (role, round_, resumed) == ("code-writer", 2, "sess-crashed")
-        ps = load_state(slice_dir)["phases"]["1"]
+        state = load_state(slice_dir)
+        ps = state["phases"]["1"]
         assert (ps["executor_rounds"], ps["gate_fix_rounds"]) == (2, 1)
+        # started again, the round keeps its why and takes none
+        assert whys(state) == {
+            "P1.code-2": "The gate went red: kc project test --project app"}
+        assert not state["why_next"]
 
 
 def test_resume_at_docs_skips_consult_and_test():
@@ -17683,6 +17695,236 @@ def test_a_red_gate_and_a_review_with_issues_take_rounds_of_their_own():
             ("P1.review", "P1 · review"), ("P1.code-3", "P1 · code 3"),
             ("P1.review-2", "P1 · review 2")]
         assert all(s["state"] == "done" for s in state["progress"])
+        # each repeat round opens with what the one before left unsettled,
+        # in the loop's words where no agent ruled: the red gate, and a
+        # review with no findings listed
+        assert whys(state) == {
+            "P1.code-2": "The gate went red: kc project test --project app",
+            "P1.code-3": "The reviewer found blocking issues"}
+        assert "why_next" not in state or not state["why_next"]
+
+
+def whys(state):
+    """The steps that carry a why, and the why each carries."""
+    return {s["code"]: s["why"] for s in state["progress"] if "why" in s}
+
+
+def test_a_fix_rounds_why_is_the_findings_or_the_ruling_that_funded_it():
+    findings = [dict(REVIEW_FINDINGS[0], summary="wrong branch on empty "
+                     "input."),
+                REVIEW_FINDINGS[1],
+                dict(REVIEW_FINDINGS[0], id="F3",
+                     summary="the migration drops the index")]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First")])
+        issues = ("code-reviewer", {"outcome": "issues", "summary": "gaps",
+                                    "findings": findings})
+        script = [V["exec_done"],
+                  issues, V["exec_done"],               # round 1: automatic
+                  issues, ("consult", {"outcome": "fix_round",
+                                       "summary": "real",
+                                       "why": "The empty input still takes "
+                                              "the wrong branch"}),
+                  V["exec_done"],
+                  issues, ("consult", {"outcome": "fix_round",
+                                       "summary": "real", "why": " \n"}),
+                  V["exec_done"], V["review_signoff"], *TAIL]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert not r.script
+        state = load_state(slice_dir)
+        assert whys(state) == {
+            # the blocking findings' own summaries, the advisory one left out
+            "P1.code-2": "wrong branch on empty input; the migration drops "
+                         "the index",
+            # the consult's line, and where it gave none, the findings it
+            # funded
+            "P1.code-3": "The empty input still takes the wrong branch",
+            "P1.code-4": "wrong branch on empty input; the migration drops "
+                         "the index"}
+        consult = next(p for role, p in r.prompts if role == "consult")
+        assert '"why": "<one line>"' in consult
+        assert "Leave it out where your ruling starts no round." in consult
+
+
+def test_a_why_is_one_line_cut_at_pilots_limit_before_it_is_kept():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First")])
+        long = "a finding " * 20
+        script = [V["exec_done"],
+                  ("code-reviewer", {"outcome": "issues", "summary": "gaps",
+                                     "findings": [dict(REVIEW_FINDINGS[0],
+                                                       summary=long)]}),
+                  V["exec_done"], V["review_signoff"], *TAIL]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        why = whys(load_state(slice_dir))["P1.code-2"]
+        assert len(why) == 120 and why.endswith("…")
+        assert why == " ".join(long.split())[:119] + "…"
+
+
+def test_the_checks_and_the_test_phase_open_their_repeat_rounds_with_why():
+    """The completion check's round past the first opens at its sweep, or,
+    where the sweep's record still describes the tree, at its consult; the
+    test phase's at its next round. The consult's or the test agent's line,
+    else the loop's words naming what they appended."""
+    for given in (True, False):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp, phases=[("1", "First")])
+            appended = {"outcome": "appended", "summary": "gap"}
+            findings = {"outcome": "findings", "summary": "one blocking"}
+            if given:
+                appended["why"] = "V12's check is not built"
+                findings["why"] = "The push check fails on the held repo"
+            script = [V["exec_done"], V["review_signoff"],
+                      ("consult", appended, append_phase("2", "The gap")),
+                      V["exec_done"], V["review_signoff"],
+                      V["consult_complete"],
+                      ("test-agent", findings, append_phase("3", "The fix")),
+                      V["exec_done"], V["review_signoff"],
+                      V["consult_complete"], V["test_clean"], V["doc_done"]]
+            r = ScriptedLoop(slice_dir, script, repo_root=repo)
+            assert run_to_exit(r) == 0
+            assert not r.script
+            state = load_state(slice_dir)
+            assert [c for c, _ in progress_of(state)] == [
+                "P1.code", "P1.review", "sweep", "consult", "P2.code",
+                "P2.review", "consult-2", "test", "P3.code", "P3.review",
+                "consult-3", "test-2", "docs", "wrap-up"]
+            test_why = ("The push check fails on the held repo" if given
+                        else "The test phase appended P3")
+            assert whys(state) == {
+                "consult-2": ("V12's check is not built" if given
+                              else "The completion consult appended P2"),
+                "consult-3": test_why, "test-2": test_why}
+            assert not state.get("why_next")
+
+
+def test_a_sweep_run_again_opens_its_round_and_its_consult_follows_it():
+    for given in (True, False):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp, phases=[("1", "First")])
+            complete = {"outcome": "complete", "summary": "done"}
+            appended = {"outcome": "appended", "summary": "gap"}
+            if given:
+                complete["why"] = "The lint fix the consult made is unswept"
+                appended["why"] = "V12's check is not built"
+
+            def append_and_move(loop):
+                append_phase("2", "The gap")(loop)
+                loop.fake_git.head = "def456"
+            script = [V["exec_done"], V["review_signoff"],
+                      ("consult", appended, append_and_move),
+                      V["exec_done"], V["review_signoff"],
+                      ("consult", complete,
+                       lambda lp: setattr(lp.fake_git, "head", "fed789")),
+                      V["test_clean"], V["doc_done"]]
+            r = ScriptedLoop(slice_dir, script, repo_root=repo)
+            assert run_to_exit(r) == 0
+            assert not r.script
+            state = load_state(slice_dir)
+            assert [c for c, _ in progress_of(state)] == [
+                "P1.code", "P1.review", "sweep", "consult", "P2.code",
+                "P2.review", "sweep-2", "consult-2", "sweep-3", "test",
+                "docs", "wrap-up"]
+            assert whys(state) == {
+                "sweep-2": ("V12's check is not built" if given
+                            else "The completion consult appended P2"),
+                "sweep-3": ("The lint fix the consult made is unswept"
+                            if given else
+                            "The completion consult committed in repo, so "
+                            "the sweep runs again")}
+
+
+def test_a_sweep_nothing_ruled_on_says_what_moved_since_the_last():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [])
+        heads = {str(repo): "def456"}
+        assert r._resweep_why(heads) is None
+        r.state["gate_sweep"] = {"run": 2, "commits": {str(repo): "abc123"}}
+        assert r._resweep_why(heads) == \
+            "The tree moved in repo since gate sweep 2"
+        r.state["gate_sweep"]["commits"] = dict(heads)
+        assert r._resweep_why(heads) == \
+            "A gate ruling gate sweep 2 waived was withdrawn"
+
+
+def test_the_round_a_resume_starts_follows_the_stop():
+    with tempfile.TemporaryDirectory() as tmp:
+        # an operator question: the writer's next round takes up the answer
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First")])
+        r = ScriptedLoop(slice_dir, [("code-writer", {
+            "outcome": "question", "summary": "which registry?"})],
+            repo_root=repo)
+        assert run_to_exit(r) == 4
+        assert load_state(slice_dir)["why_next"] == {
+            "P1": run_loop.QUESTION_WHY}
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], resume=True, repo_root=repo)
+        assert run_to_exit(r) == 0
+        state = load_state(slice_dir)
+        assert whys(state) == {"P1.code-2": "Follows the operator's answer to "
+                                            "the question the run stopped on"}
+        assert not state["why_next"]
+    with tempfile.TemporaryDirectory() as tmp:
+        # a writer stopped inside its round: the review after it follows
+        # that round, and the why left waiting goes with the merged phase
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First")])
+        r = ScriptedLoop(slice_dir, [
+            V["exec_done"], ("code-reviewer", {
+                "outcome": "issues", "summary": "gaps",
+                "findings": REVIEW_FINDINGS}),
+            ("code-writer", {"outcome": "blocked", "summary": "no creds"})],
+            repo_root=repo)
+        assert run_to_exit(r) == 3
+        assert load_state(slice_dir)["why_next"] == {
+            "P1": "Resumed after the run stopped: blocked"}
+        r = ScriptedLoop(slice_dir, [V["review_signoff"], *TAIL],
+                         resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        assert run_to_exit(r) == 0
+        state = load_state(slice_dir)
+        assert [c for c, _ in progress_of(state)][:4] == [
+            "P1.code", "P1.review", "P1.code-2", "P1.review-2"]
+        assert whys(state) == {"P1.code-2": "wrong branch on empty input"}
+        assert not state["why_next"]
+    with tempfile.TemporaryDirectory() as tmp:
+        # a consult's stop after a review: the review the resume starts
+        # opens a round of its own
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First")])
+        r = ScriptedLoop(slice_dir, [
+            V["exec_done"], V["review_issues"], V["exec_done"],
+            V["review_issues"], ("consult", {"outcome": "bail",
+                                             "summary": "stop"})],
+            repo_root=repo)
+        assert run_to_exit(r) == 3
+        r = ScriptedLoop(slice_dir, [V["review_signoff"], *TAIL],
+                         resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        assert run_to_exit(r) == 0
+        assert whys(load_state(slice_dir)) == {
+            "P1.code-2": "The reviewer found blocking issues",
+            "P1.review-3": "Resumed after the run stopped: consult bail"}
+
+
+def test_the_whys_of_a_review_and_a_stop_in_the_loops_words():
+    assert run_loop.review_why({"outcome": "issues"}) == \
+        "The reviewer found blocking issues"
+    assert run_loop.review_why({"outcome": "critical", "findings": [
+        dict(REVIEW_FINDINGS[1])]}) == "The reviewer found critical problems"
+    assert run_loop.review_why({"outcome": "issues", "findings": [
+        "not a finding", dict(REVIEW_FINDINGS[0], summary=" "),
+        *REVIEW_FINDINGS]}) == "wrong branch on empty input"
+    Bailout = run_loop.Bailout
+    assert run_loop.resume_why(Bailout("operator_question", question=True,
+                                       details="which?")) == \
+        run_loop.QUESTION_WHY
+    assert run_loop.resume_why(Bailout(
+        "timeout", details="code-writer exceeded 5400s")) == \
+        "The round before ran out of time: code-writer exceeded 5400s"
+    assert run_loop.resume_why(Bailout("service_oom_killed", details="x")) \
+        == "Resumed after the run stopped: service oom killed"
 
 
 def test_a_stopped_runs_active_step_says_where_it_stopped():
@@ -17704,6 +17946,8 @@ def test_a_stopped_runs_active_step_says_where_it_stopped():
         assert seen[0] == ("_spawn", ["consult-2"])
         assert [c for c, _ in progress_of(load_state(slice_dir))][3:5] == [
             "consult", "consult-2"]
+        assert whys(load_state(slice_dir)) == {
+            "consult-2": "Resumed after the run stopped: consult bail"}
 
 
 def test_the_completion_consults_counted_are_those_answered():

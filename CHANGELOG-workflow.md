@@ -4,6 +4,35 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-14 — A repeat round's step says why the round before did not settle it (v0.10.64)
+
+PilotApp slice 043, the debrief, its phase P7. The operator, of the Progress list in Pilot: "I
+see a slice get slow, or maybe too many consult runs, but I have no idea why." The slice's Pilot
+half shows a step's `why` under its label, a size down and muted; this release has both loops give
+one.
+
+- **The step that opens a round past the first carries a `why`**, one line of at most 120
+  characters saying what the round before left unsettled (run-loop.md § The steps Pilot shows).
+  It goes on a phase's code round, the completion check's sweep or, where the sweep is reused,
+  its consult, the test phase's next round, and the plan loop's next pass. A review after its
+  code round and a consult after its sweep carry none, and nor does a round dispatched again
+  under its number.
+- **The words are the role's where one ruled, and the loop's where none did.** A review's
+  blocking findings give their own summaries; the review-funding and completion consults and the
+  test agent give a `why` line in their verdicts, which they are now asked for; a red gate, a
+  consult's commit that makes the sweep run again, and a stop the resume follows are worded by
+  the loop. The plan loop gives the review's findings' headlines, or says the pass follows the
+  operator's answers or a stop.
+- **The why waits in the state file**, `why_next` in `state.json` and `plan_state.json`, from the
+  moment a round ends unsettled until the step that opens the next one takes it, so a stop, a
+  halt or a resume in between loses none. The step keeps it in `progress`.
+- **A why goes only to a Pilot that takes it** (pilot.md § The progress). Production's Pilot
+  refuses the whole list over a field it does not know, so a step with a why would freeze its
+  progress. Where a step has a why to send, the publisher first asks the Pilot's own `tools/list`,
+  once per `wait`, and sends whys only where `set_progress`'s steps list the field. The same
+  answer says whether the Pilot lists `register_debrief`, which the debrief's hand-off will use.
+  A list with no why is sent as it always was, with no `tools/list` before it.
+
 ## 2026-11-14 — A plan that cites a scratch clone is refused, and another repo is cited as `github:<owner>/<Repo>` (v0.10.63)
 
 AIWF-162, ruled 2026-11-12: "I think it's a bug if a plan has a reference to a /work/scratch

@@ -4,10 +4,12 @@
 Both loops keep a list of the steps their run takes, `progress` in their
 state file (plan_state.json, state.json): `{"code", "label", "state"}` per
 step, the state `pending`, `active` or `done` and nothing else, in the order
-the steps were taken, the ones not reached yet after them. A step the driver
-started also carries `started`, the time it went active, which `wait`'s
-`running` line counts from (`active_summary`) and Pilot never sees
-(`sanitize` sends the three fields alone). The drivers edit it through
+the steps were taken, the ones not reached yet after them. A step that opens
+a round past the first also carries `why`, one short line saying what the
+round before left unsettled. A step the driver started also carries
+`started`, the time it went active, which `wait`'s `running` line counts
+from (`active_summary`) and Pilot never sees (`sanitize` leaves it out). The
+drivers edit it through
 the pure helpers here and never send it anywhere: they hold no Pilot
 credential, and a driver that outlives the session that started it
 would hold a stale one. The loops' `wait` (run_loop.wait_on_driver) is what
@@ -27,10 +29,14 @@ loop's `ground` (the grounding ahead of its passes), `write` and `review`.
 A publisher sends the whole list with one JSON-RPC `tools/call` of Pilot's
 MCP tool `set_progress`, with no `initialize` first (the server keeps no
 session) and no MCP client: `urllib.request`, bounded at about TIMEOUT
-seconds, so a slow Pilot never pushes `wait` past its budget. It is
-best-effort and silent — what it could not do goes to the slice's log once
-per kind per `wait` or `publish_steps` call, nothing is printed, and nothing
-it raises reaches the caller. Stdlib only.
+seconds, so a slow Pilot never pushes `wait` past its budget. A step's `why`
+goes only to a Pilot that takes it: one that refuses a step's unknown field
+refuses the whole list over it. What the Pilot takes is read from the Pilot
+itself, its own `tools/list` (`discover`), never from a version or a
+setting, and asked only where a step has a why to send. It is best-effort
+and silent — what it could not do goes to the slice's log once per kind per
+`wait` or `publish_steps` call, nothing is printed, and nothing it raises
+reaches the caller. Stdlib only.
 """
 
 from __future__ import annotations
@@ -59,10 +65,12 @@ KINDS = frozenset(RUN_KINDS + PLAN_KINDS)
 # this side (`sanitize`).
 CODE_MAX = 64
 LABEL_MAX = 120
+WHY_MAX = 120
 STEPS_MAX = 100
 
 TIMEOUT = 3          # seconds, the whole call: connect, send, answer
 TOOL = "set_progress"
+DEBRIEF_TOOL = "register_debrief"
 # The HTTP seam: `send` takes an opener of its own, and falls back to this
 # one, looked up at the call so a suite can put a fake here.
 OPENER = urllib.request.urlopen
@@ -92,8 +100,25 @@ def clip_label(label: str) -> str:
     return label if len(label) <= LABEL_MAX else label[:LABEL_MAX - 1] + "…"
 
 
-def make_step(code: str, label: str, state: str = PENDING) -> dict:
-    return {"code": code, "label": clip_label(label), "state": state}
+def clip_why(why) -> str | None:
+    """A step's why as Pilot takes it: one line, each run of whitespace one
+    space, cut at WHY_MAX with an ellipsis; None for a why that is no text
+    or leaves nothing."""
+    if not isinstance(why, str):
+        return None
+    line = " ".join(why.split())
+    if not line:
+        return None
+    return line if len(line) <= WHY_MAX else line[:WHY_MAX - 1] + "…"
+
+
+def make_step(code: str, label: str, state: str = PENDING,
+              why: str | None = None) -> dict:
+    step = {"code": code, "label": clip_label(label), "state": state}
+    line = clip_why(why)
+    if line is not None:
+        step["why"] = line
+    return step
 
 
 def phase_steps(phase_id: str, title: str, done: bool = False) -> list[dict]:
@@ -111,18 +136,38 @@ def _first_pending(steps: list[dict]) -> int:
                 len(steps))
 
 
+def taken(steps: list[dict], code: str) -> bool:
+    """Whether step `code` was started already: on the list and no longer
+    pending — a round dispatched again under its number, not a new one."""
+    return any(s.get("code") == code and s.get("state") != PENDING
+               for s in steps)
+
+
+def follows(steps: list[dict], kind: str, phase: str | None = None) -> bool:
+    """Whether the step started last — the last on the list not pending,
+    as `start` keeps it — is one of `kind` (of phase `phase`)."""
+    last = next((s for s in reversed(steps) if s.get("state") != PENDING),
+                None)
+    match = _CODE_RE.match((last or {}).get("code") or "")
+    return bool(match) and match.group(1) == phase and match.group(2) == kind
+
+
 def start(steps: list[dict], code: str, label: str,
-          started: str | None = None) -> list[dict]:
+          started: str | None = None, why: str | None = None) -> list[dict]:
     """The list with step `code` active and every other active step done —
     both loops run one step at a time. A step not on the list goes in right
     before the first pending one, so the steps taken stay in the order they
     were taken, ahead of those not reached yet. With `started`, an ISO time,
-    the step carries it as the time it went active."""
+    the step carries it as the time it went active; with `why`, that line,
+    and without one it keeps the why it has."""
     out = [dict(s) for s in steps]
     for s in out:
         if s.get("state") == ACTIVE and s.get("code") != code:
             s["state"] = DONE
     stamp = {"started": started} if started is not None else {}
+    line = clip_why(why)
+    if line is not None:
+        stamp["why"] = line
     for s in out:
         if s.get("code") == code:
             s.update(label=clip_label(label), state=ACTIVE, **stamp)
@@ -222,12 +267,14 @@ def _elapsed(started, now: datetime | None) -> str | None:
     return f"{hours}h{minutes:02d}m" if hours else f"{minutes}m"
 
 
-def sanitize(steps) -> list[dict]:
+def sanitize(steps, why: bool = False) -> list[dict]:
     """The list as Pilot takes it: a step whose code is empty or longer
     than CODE_MAX dropped, a repeated code kept at its first, an empty label
     replaced by the code, a label cut at LABEL_MAX, a state outside STATES
     left out, and of more than STEPS_MAX steps the last ones — the list is
-    in the order the steps were taken, so the oldest done steps go first."""
+    in the order the steps were taken, so the oldest done steps go first.
+    With `why`, a step keeps its why as `clip_why` leaves it; without, no
+    step carries one."""
     out: list[dict] = []
     seen: set[str] = set()
     for s in steps if isinstance(steps, list) else []:
@@ -244,8 +291,16 @@ def sanitize(steps) -> list[dict]:
         step = {"code": code, "label": clip_label(label)}
         if s.get("state") in STATES:
             step["state"] = s["state"]
+        line = clip_why(s.get("why")) if why else None
+        if line is not None:
+            step["why"] = line
         out.append(step)
     return out[-STEPS_MAX:]
+
+
+def has_why(steps: list[dict]) -> bool:
+    return any(isinstance(s, dict) and clip_why(s.get("why")) is not None
+               for s in steps)
 
 
 # -- the client ----------------------------------------------------------------
@@ -255,24 +310,38 @@ REFUSED = "refused"
 NO_ANSWER = "no_answer"
 
 
+class Takes(NamedTuple):
+    """What a Pilot takes beyond a step's code, label and state, as its own
+    `tools/list` shows it: a step's `why` where `set_progress`'s steps have
+    that field, and the debrief where it lists DEBRIEF_TOOL."""
+    why: bool = False
+    debrief: bool = False
+
+
+NOTHING = Takes()
+
+
 class Answer(NamedTuple):
-    """What a `set_progress` call came to: `ok` with the list as Pilot now
-    holds it, `refused` with Pilot's reason, or `no_answer` with why none
-    came."""
+    """What a call came to: `ok` — with, of a `set_progress`, the list as
+    Pilot now holds it, of a `tools/list` (`discover`), what it takes —
+    `refused` with Pilot's reason, or `no_answer` with why none came."""
     kind: str
     steps: list | None = None
     reason: str = ""
+    takes: Takes | None = None
 
 
-def send(steps: list[dict], url: str, token: str,
-         opener: Callable | None = None, timeout: float = TIMEOUT) -> Answer:
-    """One `tools/call` of `set_progress` with the whole list, held to
-    Pilot's limits (`sanitize`) and answered within about `timeout`
-    seconds. Never raises; no reason holds the token."""
-    body = json.dumps({
-        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-        "params": {"name": TOOL, "arguments": {"steps": sanitize(steps)}},
-    }).encode()
+class _NoAnswer(Exception):
+    pass
+
+
+def _post(method: str, params: dict, url: str, token: str,
+          opener: Callable | None, timeout: float):
+    """The JSON-RPC message answering one `method` call, None where the
+    answer held none, read within about `timeout` seconds; `_NoAnswer` with
+    the reason where no answer came."""
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method,
+                       "params": params}).encode()
     request = urllib.request.Request(url, data=body, method="POST", headers={
         "Authorization": f"Bearer {token}",
         "Accept": "application/json, text/event-stream",
@@ -283,17 +352,71 @@ def send(steps: list[dict], url: str, token: str,
         with (opener or OPENER)(request, timeout=timeout) as response:
             kind = (response.headers.get("Content-Type") or "").split(";")[0]
             if kind.strip().lower() == "application/json":
-                message = _json(response.read())
-            else:
-                message = _event_stream_response(response, deadline)
+                return _json(response.read())
+            return _event_stream_response(response, deadline)
     except urllib.error.HTTPError as e:
-        return Answer(NO_ANSWER, reason=_scrub(f"HTTP {e.code} {e.reason}",
-                                               token))
+        raise _NoAnswer(_scrub(f"HTTP {e.code} {e.reason}", token)) from None
     except Exception as e:
         reason = getattr(e, "reason", None) or e
-        return Answer(NO_ANSWER, reason=_scrub(
-            f"{type(e).__name__}: {reason}", token))
+        raise _NoAnswer(_scrub(f"{type(e).__name__}: {reason}",
+                               token)) from None
+
+
+def send(steps: list[dict], url: str, token: str,
+         opener: Callable | None = None, timeout: float = TIMEOUT,
+         why: bool = False) -> Answer:
+    """One `tools/call` of `set_progress` with the whole list, held to
+    Pilot's limits (`sanitize`), each step's why with it only with `why`,
+    and answered within about `timeout` seconds. Never raises; no reason
+    holds the token."""
+    try:
+        message = _post("tools/call", {
+            "name": TOOL, "arguments": {"steps": sanitize(steps, why)}},
+            url, token, opener, timeout)
+    except _NoAnswer as e:
+        return Answer(NO_ANSWER, reason=str(e))
     return _answer(message, token)
+
+
+def discover(url: str, token: str, opener: Callable | None = None,
+             timeout: float = TIMEOUT) -> Answer:
+    """One `tools/list` of the Pilot at `url`, answered within about
+    `timeout` seconds: `ok` with what it takes (`Takes`), else `refused` or
+    `no_answer` with the reason. Never raises; no reason holds the token."""
+    try:
+        message = _post("tools/list", {}, url, token, opener, timeout)
+    except _NoAnswer as e:
+        return Answer(NO_ANSWER, reason=str(e))
+    if not isinstance(message, dict):
+        return Answer(NO_ANSWER, reason="the answer held no JSON-RPC response")
+    error = message.get("error")
+    if error is not None:
+        reason = error.get("message") if isinstance(error, dict) else None
+        return Answer(REFUSED, reason=_scrub(str(reason or error), token))
+    result = message.get("result")
+    tools = result.get("tools") if isinstance(result, dict) else None
+    if not isinstance(tools, list):
+        return Answer(NO_ANSWER, reason="the answer listed no tools")
+    named = {t.get("name"): t for t in tools if isinstance(t, dict)}
+    return Answer(OK, takes=Takes(why=_steps_take_why(named.get(TOOL)),
+                                  debrief=DEBRIEF_TOOL in named))
+
+
+def _steps_take_why(tool) -> bool:
+    """Whether `set_progress`'s input schema gives a step a `why`: a field
+    of its `steps`' items, inline or through a `$ref` into its `$defs`."""
+    try:
+        schema = tool["inputSchema"]
+        items = schema["properties"]["steps"]["items"]
+        ref = items.get("$ref")
+        if isinstance(ref, str):
+            prefix = "#/$defs/"
+            if not ref.startswith(prefix):
+                return False
+            items = schema["$defs"][ref[len(prefix):]]
+        return "why" in items["properties"]
+    except (KeyError, TypeError, AttributeError):
+        return False
 
 
 def _json(raw: bytes | str):
@@ -365,15 +488,19 @@ def _scrub(reason: str, token: str) -> str:
 # -- the publishers ------------------------------------------------------------
 
 UNCONFIGURED = "unconfigured"
+UNLISTED = "unlisted"
 NOT_PUBLISHED = "Pilot progress not published"
+NOT_LISTED = ("Pilot's tools not listed, so it was sent only what every Pilot "
+              "takes")
 REASON_MAX = 300
 
 
 class _Sender:
     """A send of a list with its logging: the credentials from the
     sending process's own environment (`PILOT_TOKEN`, `PILOT_MCP_URL`), and
-    each kind of failure — no credentials, no answer, a refusal — put in the
-    slice's log through `log_line` once per sender."""
+    each kind of failure — no credentials, no answer, a refusal, a
+    `tools/list` that did not answer — put in the slice's log through
+    `log_line` once per sender."""
 
     def __init__(self, log_line: Callable[[str], None], environ=None,
                  opener: Callable | None = None):
@@ -383,21 +510,45 @@ class _Sender:
         self.url = env.get("PILOT_MCP_URL") or ""
         self.opener = opener
         self._logged: set[str] = set()
+        self._takes: Takes | None = None
+
+    def takes(self) -> Takes:
+        """What this sender's Pilot takes (`discover`), asked once per
+        sender once it answered, a refusal included; NOTHING with no
+        credentials, and NOTHING where it gave no answer, asked again at the
+        next call."""
+        if self._takes is not None:
+            return self._takes
+        if not self.token or not self.url:
+            return NOTHING
+        answer = discover(self.url, self.token, self.opener)
+        if answer.kind == OK:
+            self._takes = answer.takes
+            return self._takes
+        self._note(UNLISTED, f"no answer from {self.url}: {answer.reason}"
+                   if answer.kind == NO_ANSWER
+                   else f"Pilot refused it: {answer.reason}", NOT_LISTED)
+        if answer.kind == REFUSED:
+            self._takes = NOTHING
+        return NOTHING
 
     def _send(self, steps: list[dict]) -> Answer | None:
-        """The answer to the send, or None with no credentials to send it."""
+        """The answer to the send, or None with no credentials to send it.
+        The steps' whys go with them where this Pilot takes them, which is
+        asked only where a step has one."""
         if not self.token or not self.url:
             self._note(UNCONFIGURED, "no PILOT_TOKEN/PILOT_MCP_URL in this "
                                      "session's environment")
             return None
-        answer = send(steps, self.url, self.token, self.opener)
+        why = has_why(steps) and self.takes().why
+        answer = send(steps, self.url, self.token, self.opener, why=why)
         if answer.kind == NO_ANSWER:
             self._note(NO_ANSWER, f"no answer from {self.url}: {answer.reason}")
         elif answer.kind == REFUSED:
             self._note(REFUSED, f"Pilot refused it: {answer.reason}")
         return answer
 
-    def _note(self, kind: str, why: str) -> None:
+    def _note(self, kind: str, why: str, lead: str = NOT_PUBLISHED) -> None:
         if kind in self._logged:
             return
         self._logged.add(kind)
@@ -405,7 +556,7 @@ class _Sender:
         if len(why) > REASON_MAX:
             why = why[:REASON_MAX - 1] + "…"
         try:
-            self.log_line(f"{NOT_PUBLISHED}: {why}")
+            self.log_line(f"{lead}: {why}")
         except Exception:
             pass
 
@@ -420,7 +571,8 @@ class Publisher(_Sender):
     unchanged list; the next change, or `wait`'s forced last publish, tries
     again. A state file with no list (a driver started on an older plugin)
     sends and logs nothing. Each kind of failure — no credentials, no
-    answer, a refusal — is logged once per publisher, so once per `wait`."""
+    answer, a refusal — is logged once per publisher, so once per `wait`,
+    and so is the miss of what the Pilot takes, asked once per publisher."""
 
     def __init__(self, state_path: Path, log_line: Callable[[str], None],
                  environ=None, opener: Callable | None = None):
@@ -445,7 +597,8 @@ class Publisher(_Sender):
         return self._send(steps)
 
     def _read(self) -> list[dict] | None:
-        """The state file's list as Pilot takes it, or None with no list."""
+        """The state file's list as a Pilot that takes the whys takes it, or
+        None with no list."""
         try:
             state = json.loads(self.state_path.read_text())
         except (OSError, ValueError):
@@ -453,7 +606,7 @@ class Publisher(_Sender):
         progress = state.get("progress") if isinstance(state, dict) else None
         if not isinstance(progress, list):
             return None
-        return sanitize(progress)
+        return sanitize(progress, why=True)
 
 
 def publish_steps(steps: list[dict], log_line: Callable[[str], None],
@@ -461,10 +614,11 @@ def publish_steps(steps: list[dict], log_line: Callable[[str], None],
     """One send of `steps`, a list given rather than a state file's — the
     plan-slice session's grounding steps, before the plan loop exists
     (plan_loop.py `progress`) — with the publisher's ways: the credentials
-    from this process's environment, the list held to Pilot's limits, each
-    kind of failure logged once through `log_line`. The answer, or None when
-    nothing was sent; never raises."""
+    from this process's environment, the list held to Pilot's limits, the
+    whys where Pilot takes them, each kind of failure logged once through
+    `log_line`. The answer, or None when nothing was sent; never raises."""
     try:
-        return _Sender(log_line, environ, opener)._send(sanitize(steps))
+        return _Sender(log_line, environ, opener)._send(
+            sanitize(steps, why=True))
     except Exception:
         return None

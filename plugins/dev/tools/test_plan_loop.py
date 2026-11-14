@@ -2553,6 +2553,44 @@ def test_a_questions_exit_leaves_its_pass_active_and_the_rerun_takes_write_2():
             ("review", "done"), ("write-3", "done")]
 
 
+def test_a_pass_past_the_first_opens_with_why_the_one_before_left_it():
+    def whys(slice_dir):
+        return {s["code"]: s.get("why")
+                for s in load_state(slice_dir)["progress"]}
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        assert run_to_exit(ScriptedLoop(slice_dir, [W_Q])) == 4
+        assert load_state(slice_dir)["why_next"] == plan_loop.QUESTIONS_WHY
+        assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE, R_ISSUES])) == 4
+        assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE])) == 0
+        # the operator's answers, in the loop's words; the review's findings,
+        # in the reviewer's: their headlines, every one that came to the pass
+        assert whys(slice_dir) == {
+            "ground": None, "write": None,
+            "write-2": "Follows the operator's answers to the writer's "
+                       "questions",
+            "review": None,
+            "write-3": "Slice 031 and this plan build the login page "
+                       "differently; Requirement 1 has no criterion"}
+        assert "why_next" not in load_state(slice_dir)
+    with tempfile.TemporaryDirectory() as tmp:
+        # a review of gaps alone goes on to the fix pass in the same run
+        slice_dir = make_slice(tmp)
+        assert run_to_exit(ScriptedLoop(slice_dir,
+                                        [W_DONE, R_GAPS, W_DONE])) == 0
+        assert whys(slice_dir)["write-2"] == "Requirement 1 has no criterion"
+    with tempfile.TemporaryDirectory() as tmp:
+        # the pass after a stop says so
+        slice_dir = make_slice(tmp)
+        blocked = ("plan-writer", {"outcome": "blocked", "summary": "no repo"})
+        assert run_to_exit(ScriptedLoop(slice_dir, [blocked])) == 3
+        assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE, R_GO])) == 0
+        assert whys(slice_dir) == {
+            "ground": None, "write": None,
+            "write-2": "Resumed after the loop stopped: blocked",
+            "review": None}
+
+
 def test_a_reset_re_plan_has_no_write_step():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp, phases=True)

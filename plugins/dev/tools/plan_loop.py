@@ -184,6 +184,11 @@ VERDICTS = {
 STEP_LABELS = {"ground": "Plan · ground", "write": "Plan · write",
                "review": "Plan · review"}
 
+# The why of the writer's pass after the operator answered its questions,
+# the loop's own words; a pass after a review takes the review's findings'
+# headlines, and one after a stop the stop's reason (`_why_next`).
+QUESTIONS_WHY = "Follows the operator's answers to the writer's questions"
+
 # The passes Pilot's halt stops the loop before, by the state's `phase`.
 HALT_PASSES = {
     "writing": "plan-writer pass",
@@ -565,12 +570,28 @@ class PlanLoop:
     def _progress_start(self, kind: str, round_: int, label: str) -> None:
         """The pass's step active, the one before it done, with the time it
         started for `wait`'s `running` line. A questions or review exit
-        leaves it active: the rerun's next pass finishes it."""
+        leaves it active: the rerun's next pass finishes it. A pass's step
+        takes the why waiting in plan_state.json's `why_next` (`_why_next`)
+        and carries it from round 2 on: each pass opens a round of its own."""
         code = pilot_progress.step_code(kind, round_)
         label += f" {round_}" if round_ >= 2 else ""
         started = _now_iso()
+        why = self.state.pop("why_next", None)
+        if round_ < 2:
+            why = None
         self._progress(
-            lambda steps: pilot_progress.start(steps, code, label, started))
+            lambda steps: pilot_progress.start(steps, code, label, started,
+                                               why))
+        self._save_state()
+
+    def _why_next(self, why: str) -> None:
+        """`why` as the line the next pass opens with — what ended this one
+        unsettled — kept in plan_state.json's `why_next` until that pass's
+        step starts (`_progress_start`); the last one set stands."""
+        line = pilot_progress.clip_why(why)
+        if line is not None:
+            self.state["why_next"] = line
+            self._save_state()
 
     def _seed_progress(self) -> list[dict]:
         """The loop's steps as far as they are known: the grounding first,
@@ -963,6 +984,7 @@ class PlanLoop:
             self.state.update(pending_questions=str(questions_path),
                               phase="questions")
             self._save_state()
+            self._why_next(QUESTIONS_WHY)
             self._exit_questions(entries, w, initial)
         if verdict["outcome"] == "blocked":
             raise Bailout("blocked", details=verdict.get("summary", ""))
@@ -1036,6 +1058,8 @@ class PlanLoop:
         # fix pass closes it with the rulings. A review of gaps alone goes on
         # to that pass with no exit. There is no fix-verify loop.
         entries = self._handback("plan-reviewer", findings_path, r)
+        self._why_next("; ".join(e["headline"].strip().rstrip(".")
+                                 for e in entries))
         rulings = [e for e in entries if not is_gap(e)]
         gaps = len(entries) - len(rulings)
         if gaps:
@@ -1214,6 +1238,9 @@ class PlanLoop:
 
     def _bail(self, bail: Bailout) -> None:
         self._exit_facts = {"reason": bail.reason}
+        # The pass the rerun starts follows this stop.
+        self._why_next("Resumed after the loop stopped: "
+                       + bail.reason.replace("_", " "))
         payload = {"reason": bail.reason, "details": bail.details,
                    "ts": _now_iso()}
         with open(self.slice_dir / "plan_bailout.json", "w") as f:

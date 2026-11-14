@@ -79,7 +79,12 @@ ground", `done`, for the grounding the stage's session ran before the loop and p
 "Plan · review", both `pending`; a reset re-plan, which enters at review, seeds `ground` and
 `review`. Each writer pass is a step, `write`, then `write-2` and on, "Plan · write 2", and
 so is each review. A questions or review exit leaves its step active, and the rerun's pass is a
-step of its own after it. Exit 0 marks the active step done. A rerun keeps the list it finds.
+step of its own after it. Exit 0 marks the active step done. A rerun keeps the list it finds. A
+pass past the first carries its why, as a run's repeat round does ([run-loop.md](run-loop.md)
+§ The steps Pilot shows): after the writer's questions, "Follows the operator's answers to the
+writer's questions"; after a review, the headlines of its findings that came to the fix pass,
+joined by `;`; after a stop, "Resumed after the loop stopped: " and its reason. `plan_state.json`
+keeps it in `why_next` until the pass's step takes it off.
 
 **One plan loop per slice.** The loop holds a `flock` on `<slice>/plan.lock` for the whole run —
 the run loop's lock, its note and heartbeat ([runner-state.md](runner-state.md) § Resume and crash

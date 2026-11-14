@@ -71,9 +71,18 @@ ten-second probe where the list differs from what this `wait` last sent, and onc
 returns: one JSON-RPC `tools/call` POSTed to `$PILOT_MCP_URL` with no MCP client. The call is
 PilotApp's `docs/mcp.md` § A tool called with no MCP client, the tool its § `set_progress(steps)`
 and `set_progress_step(code, state)`. The list is held to the tool's limits before it goes, so a
-code past 64 characters or repeated is left out, a label past 120 is cut, and past 100 steps the
-oldest go. A call waits three seconds at most, so a slow Pilot never pushes a `wait` past the
-cap its Bash call runs under.
+code past 64 characters or repeated is left out, a label or a why past 120 is cut, and past 100
+steps the oldest go. A call waits three seconds at most, so a slow Pilot never pushes a `wait` past
+the cap its Bash call runs under.
+
+A step's `why` goes only to a Pilot that takes it, since a Pilot that does not refuses the whole
+list over a field it does not know. The sender learns that from the Pilot itself, never from a
+version or a setting: where a step has a why to send, it first asks the Pilot's `tools/list`, once
+per `wait`, and sends the whys only where `set_progress`'s steps list a `why` field. Against a
+Pilot without one the list goes as it always did. The same answer says whether the Pilot lists
+`register_debrief`. A `tools/list` that gets no answer leaves the whys out of that send and is
+asked again at the next; one refused is taken as a Pilot that takes neither; each goes to the
+slice's log once per `wait`.
 
 Publishing is best-effort and silent. No `PILOT_TOKEN` or `PILOT_MCP_URL` (a session started
 outside Pilot, or one alive across the deploy that brought the variable), no answer, and a refusal

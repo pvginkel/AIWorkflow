@@ -73,9 +73,13 @@ class FakeOpener:
         return answer
 
     def sent(self):
-        """The step lists the calls carried."""
+        """The step lists the `set_progress` calls carried."""
         return [json.loads(r.data)["params"]["arguments"]["steps"]
-                for r, _ in self.requests]
+                for r, _ in self.requests
+                if json.loads(r.data)["method"] == "tools/call"]
+
+    def methods(self):
+        return [json.loads(r.data)["method"] for r, _ in self.requests]
 
 
 def result(steps):
@@ -97,6 +101,46 @@ def ok_stream(steps):
 
 STEPS = [{"code": "P1.code", "label": "P1 · First", "state": "done"},
          {"code": "P1.review", "label": "P1 · review", "state": "active"}]
+# The same run a round later: its repeat round's step with its why.
+WHY = "The reviewer found the beat's spec passing with the beat removed"
+WHY_STEPS = [STEPS[0], dict(STEPS[1], state="done"),
+             {"code": "P1.code-2", "label": "P1 · code 2", "state": "active",
+              "why": WHY}]
+
+
+def pilot_tools(why=True, debrief=True):
+    """A Pilot's `tools/list`, as its MCP server lists the `pilot-work`
+    tools: `set_progress`'s steps with a `why` where `why`, and
+    `register_debrief` where `debrief` — production's today has neither."""
+    step = {"properties": {
+        "code": {"maxLength": 64, "minLength": 1, "type": "string"},
+        "label": {"maxLength": 120, "minLength": 1, "type": "string"},
+        "state": {"anyOf": [{"enum": ["pending", "active", "done"]},
+                            {"type": "null"}], "default": None}},
+        "required": ["code", "label"], "title": "Step", "type": "object"}
+    if why:
+        step["properties"]["why"] = {
+            "anyOf": [{"maxLength": 120, "minLength": 1, "type": "string"},
+                      {"type": "null"}], "default": None}
+    tools = [
+        {"name": "register_document", "inputSchema": {"type": "object"}},
+        {"name": "set_progress", "inputSchema": {
+            "$defs": {"Step": step},
+            "properties": {"steps": {"items": {"$ref": "#/$defs/Step"},
+                                     "maxItems": 100, "type": "array"}},
+            "required": ["steps"], "type": "object"}},
+        {"name": "set_progress_step", "inputSchema": {"type": "object"}}]
+    if debrief:
+        tools.append({"name": "register_debrief",
+                      "inputSchema": {"type": "object"}})
+    return tools
+
+
+def listed(tools=None, **takes):
+    message = {"jsonrpc": "2.0", "id": 1,
+               "result": {"tools": pilot_tools(**takes) if tools is None
+                          else tools}}
+    return FakeResponse(sse(["event: message", f"data: {json.dumps(message)}"]))
 
 
 # -- the client ---------------------------------------------------------------
@@ -245,6 +289,101 @@ def test_the_list_is_held_to_pilots_limits_before_it_is_sent():
     assert opener.sent() == [pp.sanitize(steps)]
 
 
+def test_a_why_is_sent_only_when_asked_and_held_to_pilots_limits():
+    steps = [
+        {"code": "a", "label": "A", "state": "done", "why": " one\n line "},
+        {"code": "b", "label": "B", "state": "done", "why": "  "},
+        {"code": "c", "label": "C", "state": "active", "why": "x" * 130},
+        {"code": "d", "label": "D", "why": 5},
+        {"code": "e", "label": "E", "state": "pending"},
+    ]
+    bare = [{"code": "a", "label": "A", "state": "done"},
+            {"code": "b", "label": "B", "state": "done"},
+            {"code": "c", "label": "C", "state": "active"},
+            {"code": "d", "label": "D"},
+            {"code": "e", "label": "E", "state": "pending"}]
+    assert pp.sanitize(steps) == bare
+    with_whys = pp.sanitize(steps, why=True)
+    assert [s.get("why") for s in with_whys] == [
+        "one line", None, "x" * 119 + "…", None, None]
+    assert [{k: v for k, v in s.items() if k != "why"} for s in with_whys] \
+        == bare
+    assert pp.has_why(steps) and not pp.has_why(bare)
+    assert not pp.has_why([steps[1], steps[3], "not a step"])
+    opener = FakeOpener(lambda: ok_stream([]))
+    pp.send(steps, URL, TOKEN, opener)
+    pp.send(steps, URL, TOKEN, opener, why=True)
+    assert opener.sent() == [bare, with_whys]
+
+
+# -- what a Pilot takes -------------------------------------------------------
+
+def test_discover_reads_what_a_pilot_takes_from_its_own_tools_list():
+    opener = FakeOpener(listed())
+    answer = pp.discover(URL, TOKEN, opener)
+    assert answer == pp.Answer(pp.OK, takes=pp.Takes(why=True, debrief=True))
+    [(request, timeout)] = opener.requests
+    assert json.loads(request.data) == {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+    assert request.full_url == URL and request.get_method() == "POST"
+    assert request.get_header("Authorization") == f"Bearer {TOKEN}"
+    assert request.get_header("Accept") == "application/json, text/event-stream"
+    assert timeout == pp.TIMEOUT
+    # production's today takes neither, and each is read apart
+    for takes in ({"why": False, "debrief": False}, {"why": False},
+                  {"debrief": False}):
+        assert pp.discover(URL, TOKEN, FakeOpener(listed(**takes))).takes \
+            == pp.Takes(**{"why": True, "debrief": True, **takes}), takes
+    assert pp.NOTHING == pp.Takes(why=False, debrief=False)
+    # a schema with the step inline, and a JSON answer
+    inline = [{"name": "set_progress", "inputSchema": {"properties": {
+        "steps": {"items": {"properties": {"code": {}, "why": {}}}}}}}]
+    assert pp.discover(URL, TOKEN, FakeOpener(listed(inline))).takes == \
+        pp.Takes(why=True)
+    body = json.dumps({"jsonrpc": "2.0", "id": 1,
+                       "result": {"tools": pilot_tools()}})
+    assert pp.discover(URL, TOKEN, FakeOpener(FakeResponse(
+        body, content_type="application/json"))).takes == \
+        pp.Takes(why=True, debrief=True)
+
+
+def test_a_schema_that_does_not_give_a_step_a_why_takes_none():
+    step = {"properties": {"code": {}, "why": {}}}
+    for schema in (
+            {},
+            {"properties": {"steps": {"items": {"$ref": "#/definitions/Step"}}},
+             "definitions": {"Step": step}},
+            {"properties": {"steps": {"items": {"$ref": "#/$defs/Missing"}}},
+             "$defs": {"Step": step}},
+            {"properties": []},
+            "not a schema"):
+        tools = [{"name": "set_progress", "inputSchema": schema}]
+        assert pp.discover(URL, TOKEN, FakeOpener(listed(tools))).takes == \
+            pp.NOTHING, schema
+    for tools in ([{"name": "set_progress"}], ["set_progress"], []):
+        assert pp.discover(URL, TOKEN, FakeOpener(listed(tools))).takes == \
+            pp.NOTHING, tools
+
+
+def test_discover_says_why_where_no_list_came():
+    refusal = {"jsonrpc": "2.0", "id": 1,
+               "error": {"code": -32601, "message": f"no list for {TOKEN}"}}
+    assert pp.discover(URL, TOKEN, FakeOpener(FakeResponse(sse([
+        f"data: {json.dumps(refusal)}"])))) == pp.Answer(
+        pp.REFUSED, reason="no list for <token>")
+    no_tools = {"jsonrpc": "2.0", "id": 1, "result": {}}
+    for answer, reason in (
+            (urllib.error.URLError("down"), "URLError: down"),
+            (http_error(502, "Bad Gateway"), "HTTP 502 Bad Gateway"),
+            (RuntimeError(TOKEN), "RuntimeError: <token>"),
+            (FakeResponse(sse(["data: not json"])),
+             "the answer held no JSON-RPC response"),
+            (FakeResponse(sse([f"data: {json.dumps(no_tools)}"])),
+             "the answer listed no tools")):
+        assert pp.discover(URL, TOKEN, FakeOpener(answer)) == pp.Answer(
+            pp.NO_ANSWER, reason=reason), answer
+
+
 # -- the list -----------------------------------------------------------------
 
 def test_a_code_names_its_phase_kind_and_round():
@@ -328,6 +467,54 @@ def test_a_started_step_carries_its_time_and_a_resume_restarts_it():
     # Pilot never sees it
     assert pp.sanitize(steps)[1] == {"code": "P1.code-2",
                                      "label": "P1 · code 2", "state": "active"}
+
+
+def test_a_why_is_one_line_held_to_pilots_limit():
+    assert pp.clip_why("  The gate\n went   red\t") == "The gate went red"
+    assert pp.clip_why("w" * 120) == "w" * 120
+    assert pp.clip_why("w" * 121) == "w" * 119 + "…"
+    assert pp.WHY_MAX == 120
+    for nothing in ("", " \n\t", None, 7, ["a"]):
+        assert pp.clip_why(nothing) is None, nothing
+
+
+def test_a_step_carries_its_why_and_a_restart_without_one_keeps_it():
+    assert pp.make_step("P1.code-2", "P1 · code 2", why=" The gate\nwent red ") \
+        == {"code": "P1.code-2", "label": "P1 · code 2", "state": "pending",
+            "why": "The gate went red"}
+    assert pp.make_step("P1.code", "P1 · First", why=" ") == \
+        pp.make_step("P1.code", "P1 · First")
+    steps = pp.start(seeded(), "P1.code", "P1 · First")
+    steps = pp.start(steps, "P1.code-2", "P1 · code 2", T0, why=WHY)
+    assert steps[1] == {"code": "P1.code-2", "label": "P1 · code 2",
+                        "state": "active", "started": T0, "why": WHY}
+    # started again: without a why it keeps its own, with one it takes it
+    assert pp.start(steps, "P1.code-2", "P1 · code 2", T1)[1]["why"] == WHY
+    assert pp.start(steps, "P1.code-2", "P1 · code 2",
+                    why="Another")[1]["why"] == "Another"
+    # past the limit, cut as Pilot would refuse it whole
+    assert pp.start(seeded(), "sweep-2", "Gate sweep 2", why="x" * 200)[0][
+        "why"] == "x" * 119 + "…"
+    # what finishes a step leaves its why
+    for edit in (pp.finish_active, lambda s: pp.finish_phase(s, "1")):
+        assert edit(steps)[1]["why"] == WHY
+
+
+def test_a_step_is_taken_once_started_and_follows_the_step_started_last():
+    steps = pp.start(seeded(), "P1.code", "P1 · First")
+    assert pp.taken(steps, "P1.code")
+    # seeded but not reached, and not on the list at all
+    assert not pp.taken(steps, "P1.review")
+    assert not pp.taken(steps, "P1.code-2")
+    assert pp.follows(steps, "code", "1")
+    assert not pp.follows(steps, "code", "2")
+    assert not pp.follows(steps, "review", "1")
+    assert not pp.follows(steps, "code")
+    # done, it is still the step started last
+    assert pp.follows(pp.finish_active(steps), "code", "1")
+    steps = pp.start(pp.finish_phase(steps, "1"), "sweep-2", "Gate sweep 2")
+    assert pp.follows(steps, "sweep") and not pp.follows(steps, "sweep", "1")
+    assert not pp.follows(seeded(), "code", "1") and not pp.follows([], "code")
 
 
 def test_the_active_summary_names_the_phase_the_step_and_its_minutes():
@@ -469,6 +656,87 @@ def test_a_state_with_no_list_sends_and_logs_nothing():
         assert opener.requests == []
 
 
+def test_a_list_with_no_why_is_sent_with_no_question_of_what_pilot_takes():
+    with tempfile.TemporaryDirectory() as tmp:
+        opener = FakeOpener(lambda: ok_stream(STEPS))
+        pub, lines = publisher(state_file(tmp), opener)
+        assert pub.publish(force=True).kind == pp.OK
+        assert opener.methods() == ["tools/call"] and lines == []
+
+
+def test_a_why_goes_only_to_a_pilot_that_takes_it_asked_once_per_publisher():
+    later = WHY_STEPS + [{"code": "P1.review-2", "label": "P1 · review 2",
+                          "state": "active"}]
+    for takes in (True, False):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = state_file(tmp, WHY_STEPS)
+            opener = FakeOpener(listed(why=takes),
+                                lambda: ok_stream(WHY_STEPS))
+            pub, lines = publisher(path, opener)
+            assert pub.publish(force=True).kind == pp.OK
+            state_file(tmp, later)
+            assert pub.publish().kind == pp.OK
+            assert opener.methods() == ["tools/list", "tools/call",
+                                        "tools/call"]
+            assert opener.sent() == [pp.sanitize(WHY_STEPS, why=takes),
+                                     pp.sanitize(later, why=takes)]
+            assert ("why" in opener.sent()[0][2]) is takes
+            assert lines == []
+            # the next `wait`'s publisher asks again
+            pub2, _ = publisher(path, opener)
+            pub2.publish(force=True)
+            assert opener.methods()[3:] == ["tools/list", "tools/call"]
+
+
+def test_a_pilot_that_lists_no_tools_gets_the_steps_without_their_whys():
+    later = WHY_STEPS + [{"code": "test", "label": "Test phase",
+                          "state": "pending"}]
+    with tempfile.TemporaryDirectory() as tmp:
+        # no answer: logged once, and asked again at the next send
+        path = state_file(tmp, WHY_STEPS)
+        opener = FakeOpener(urllib.error.URLError("down"), ok_stream(STEPS),
+                            listed(), lambda: ok_stream(STEPS))
+        pub, lines = publisher(path, opener)
+        assert pub.publish(force=True).kind == pp.OK
+        state_file(tmp, later)
+        assert pub.publish().kind == pp.OK
+        assert opener.methods() == ["tools/list", "tools/call",
+                                    "tools/list", "tools/call"]
+        assert opener.sent() == [pp.sanitize(WHY_STEPS),
+                                 pp.sanitize(later, why=True)]
+        assert lines == [f"{pp.NOT_LISTED}: no answer from {URL}: "
+                         "URLError: down"]
+        assert lines[0].startswith("Pilot's tools not listed, so it was sent "
+                                   "only what every Pilot takes: ")
+        # a refusal is an answer: kept for the publisher, logged once
+        path = state_file(tmp, WHY_STEPS)
+        refusal = {"jsonrpc": "2.0", "id": 1,
+                   "error": {"message": "Method not found"}}
+        opener = FakeOpener(FakeResponse(sse([f"data: {json.dumps(refusal)}"])),
+                            lambda: ok_stream(STEPS))
+        pub, lines = publisher(path, opener)
+        pub.publish(force=True)
+        pub.publish(force=True)
+        assert opener.methods() == ["tools/list", "tools/call", "tools/call"]
+        assert opener.sent() == [pp.sanitize(WHY_STEPS)] * 2
+        assert lines == [f"{pp.NOT_LISTED}: Pilot refused it: Method not found"]
+
+
+def test_what_a_pilot_takes_is_asked_once_and_never_without_credentials():
+    with tempfile.TemporaryDirectory() as tmp:
+        opener = FakeOpener(listed(debrief=False))
+        pub, lines = publisher(state_file(tmp), opener)
+        assert pub.takes() == pp.Takes(why=True)
+        assert pub.takes() == pp.Takes(why=True)
+        assert opener.methods() == ["tools/list"] and lines == []
+        pub, lines = publisher(state_file(tmp, WHY_STEPS), opener, env={})
+        assert pub.takes() == pp.NOTHING
+        assert pub.publish(force=True) is None
+        assert len(opener.requests) == 1
+        assert lines == ["Pilot progress not published: no PILOT_TOKEN/"
+                         "PILOT_MCP_URL in this session's environment"]
+
+
 def test_no_credentials_is_logged_once_and_nothing_is_sent():
     with tempfile.TemporaryDirectory() as tmp:
         path = state_file(tmp)
@@ -560,6 +828,12 @@ def test_publish_steps_sends_the_list_given_as_pilot_takes_it():
     assert "started" not in opener.sent()[1][0]
     # the list it was given is left as it was
     assert given[0]["started"] == T0
+    # a why, to a Pilot that takes it
+    opener = FakeOpener(listed(), lambda: ok_stream(WHY_STEPS))
+    pp.publish_steps(WHY_STEPS, lines.append, environ=ENV, opener=opener)
+    assert opener.methods() == ["tools/list", "tools/call"]
+    assert opener.sent() == [pp.sanitize(WHY_STEPS, why=True)]
+    assert opener.sent()[0][2]["why"] == WHY and lines == []
 
 
 def test_publish_steps_logs_why_it_could_not_publish_and_never_raises():

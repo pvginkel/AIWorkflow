@@ -55,12 +55,13 @@ Commit what you wrote (specs-repo files staged **by name**,
 `${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`), then write the verdict file named in your dispatch:
 
 ```json
-{"outcome": "clean | findings | blocked", "summary": "1-3 sentences: what ran, what was verified"}
+{"outcome": "clean | findings | blocked", "summary": "1-3 sentences: what ran, what was verified", "why": "findings only: one line"}
 ```
 
 - `clean` — the procedure completed; no finding cleared the bar (sub-bar findings are in the
   close-out report).
 - `findings` — one or more blocking findings were appended to the plan as phases; the loop
-  re-enters.
+  re-enters. `why` is the line the next round opens with on Pilot's progress list: what your
+  findings leave the run to settle, in at most 120 characters.
 - `blocked` — the procedure cannot run (broken environment, missing access); do not work around
   it.

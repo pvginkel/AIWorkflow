@@ -4043,7 +4043,12 @@ Choose exactly one action:
 {actions}
 
 Write {verdict_path} as JSON:
-  {{"outcome": "<action>", "summary": "<your reasoning, 1-5 sentences>"}}
+  {{"outcome": "<action>", "summary": "<your reasoning, 1-5 sentences>",
+    "why": "<one line>"}}
+`why` is the line the round your ruling starts opens with on Pilot's
+progress list — a fix round, the phases you appended, a sweep run again after
+your commit: what of the situation that round must still settle, in at most
+120 characters. Leave it out where your ruling starts no round.
 Optionally write a longer write-up next to it as {consult_md_name}.
 """
 
@@ -4677,6 +4682,43 @@ def _ticked(cmds: Sequence[str]) -> str:
     """Gate commands as a dispatch names them: each in backticks, joined
     ", "."""
     return ", ".join(f"`{cmd}`" for cmd in cmds)
+
+
+# A repeat round's why (pilot_progress): what ended the round before
+# unsettled, on the step that opens the round. The words are the role's
+# where one ruled — a reviewer's findings, a consult's or the test agent's
+# line — and the loop's own where none did.
+QUESTION_WHY = "Follows the operator's answer to the question the run stopped on"
+
+# The track a stop with no phase leaves its why for, by the stage it stopped
+# in: the completion check (its sweeps and consults) or the test phase.
+BAIL_TRACKS = {"consult": "check", "test": "test"}
+
+
+def review_why(verdict: dict) -> str:
+    """The why of the fix round a review funds: its blocking findings' own
+    one-line summaries in the review's order, else the loop's words for the
+    review's outcome."""
+    lines = [str(f.get("summary") or "").strip().rstrip(".")
+             for f in verdict.get("findings") or []
+             if isinstance(f, dict) and f.get("impact") == "blocking"]
+    lines = [line for line in lines if line]
+    if lines:
+        return "; ".join(lines)
+    return ("The reviewer found critical problems"
+            if verdict.get("outcome") == "critical"
+            else "The reviewer found blocking issues")
+
+
+def resume_why(bail: "Bailout") -> str:
+    """The why of the round a resume starts after a stop: the operator's
+    answer it follows, the time the round before ran out of, or the stop's
+    reason."""
+    if bail.question:
+        return QUESTION_WHY
+    if bail.reason == "timeout":
+        return f"The round before ran out of time: {bail.details}"
+    return f"Resumed after the run stopped: {bail.reason.replace('_', ' ')}"
 
 
 # ---------------------------------------------------------------------------
@@ -6254,17 +6296,63 @@ class RunLoop:
             self._save_state()
 
     def _progress_start(self, kind: str, round_: int, label: str,
-                        phase_id: str | None = None) -> None:
+                        phase_id: str | None = None, track: str | None = None,
+                        why: str | None = None,
+                        after: str | None = None) -> None:
         """The step of `kind` and round `round_` (of phase `phase_id`)
         active, and the one before it done. It stays active until the next
         start, its phase's merge or its stage's end: a bail, an interrupt or
         a halt leaves it as it stood, so a stopped run's active step says
         where it stopped. It carries the time it started, which `wait`'s
-        `running` line counts from; a resume restarts that clock."""
+        `running` line counts from; a resume restarts that clock.
+
+        A step that opens a round — started for the first time, and not
+        right after a step of kind `after` of its phase, inside whose round
+        it runs — takes the why waiting for its `track` (`_why_next`), else
+        `why`, the caller's own words, and carries it from round 2 on. A step
+        inside a round leaves the why waiting for the round after it. A step
+        started again — a round dispatched again under its number — takes
+        none and keeps the why it has."""
         code = pilot_progress.step_code(kind, round_, phase_id)
         started = _now_iso()
+        steps = self.state.get("progress")
+        steps = steps if isinstance(steps, list) else []
+        if pilot_progress.taken(steps, code) or (
+                after is not None
+                and pilot_progress.follows(steps, after, phase_id)):
+            why = None
+        elif track is not None:
+            why = self._take_why(track) or why
+        if round_ < 2:
+            why = None
         self._progress(
-            lambda steps: pilot_progress.start(steps, code, label, started))
+            lambda steps: pilot_progress.start(steps, code, label, started,
+                                               why))
+
+    def _why_next(self, track: str, why: str) -> None:
+        """`why` as the line the next round of `track` opens with — a
+        phase's (`P<id>`), the completion check's (`check`) or the test
+        phase's (`test`) — kept in state.json's `why_next` until a step of
+        that track first starts (`_progress_start`). Set where a round ends
+        unsettled and the loop goes on to another, or stops before it; the
+        last one set stands."""
+        line = pilot_progress.clip_why(why)
+        if line is None:
+            return
+        self.state.setdefault("why_next", {})[track] = line
+        self._save_state()
+
+    def _take_why(self, track: str) -> str | None:
+        """The why waiting for `track`, taken off the state; None where
+        none waits."""
+        why = (self.state.get("why_next") or {}).pop(track, None)
+        if why is not None:
+            self._save_state()
+        return why
+
+    def _unfinished_ids(self) -> str:
+        """The plan's unfinished phases, as a why names them: `P9, P10`."""
+        return ", ".join(f"P{p.id}" for p in self._load_plan() if not p.done)
 
     def _progress_done(self) -> None:
         self._progress(pilot_progress.finish_active)
@@ -8125,12 +8213,16 @@ class RunLoop:
 
     def _red_cmds(self, ps: dict, target: ResolvedTarget) -> str:
         """The gate commands that went red, each in backticks, for the fix
-        round's prompt — a lint among them (AIWF-105) — the Target's command
-        when no project is on record (`_gate_projects`)."""
+        round's prompt (`_red_cmd_list`)."""
+        return _ticked(self._red_cmd_list(ps, target))
+
+    def _red_cmd_list(self, ps: dict, target: ResolvedTarget) -> list[str]:
+        """The gate commands that went red — a lint among them (AIWF-105) —
+        the Target's command when no project is on record
+        (`_gate_projects`)."""
         red = [cmd for p in self._gate_projects(ps)
                for cmd, o in gate_entry_cmds(p) if o == "red"]
-        return _ticked(red or [ps.get("gate_cmd")
-                               or " ".join(target.gate_argv or [])])
+        return red or [ps.get("gate_cmd") or " ".join(target.gate_argv or [])]
 
     def _review_set_now(self, phase: Phase) -> tuple[
             list[tuple[str, str]], list[tuple[str, tuple[str, ...]]]] | None:
@@ -8964,7 +9056,7 @@ class RunLoop:
             self._progress_start(
                 "code", r, f"P{phase_id} · "
                 + (self._plain_title(phase) if r == 1 else f"code {r}"),
-                phase_id)
+                phase_id, track=f"P{phase_id}")
             if pending is None:
                 (outputs / GATE_OOM_NAME).unlink(missing_ok=True)
             if self._has_gate(target):
@@ -9087,6 +9179,7 @@ class RunLoop:
             self._save_state()
             self._progress(
                 lambda steps: pilot_progress.finish_phase(steps, phase_id))
+            self._take_why(f"P{phase_id}")
             self.log(f"[P{phase_id}] merged into {base}")
             self.announce(f"P{phase_id} merged")
             self._stamp_done(phase_id)
@@ -9564,6 +9657,8 @@ class RunLoop:
                 )
             if self._reattach_round("code-writer", phase.id) is None:
                 ps["gate_fix_rounds"] += 1
+                self._why_next(f"P{phase.id}", "The gate went red: " + ", ".join(
+                    self._red_cmd_list(ps, target)))
             r = ps["gate_fix_rounds"]
             self._save_state()
             red_cmds = self._red_cmds(ps, target)
@@ -9658,7 +9753,7 @@ class RunLoop:
             self._progress_start(
                 "review", r,
                 f"P{phase_id} · review" + (f" {r}" if r >= 2 else ""),
-                phase_id)
+                phase_id, track=f"P{phase_id}", after="code")
             verdict, _ = self._spawn(
                 "code-reviewer", prompt, self.repo_root, verdict_path,
                 phase_id, r, agent="code-reviewer",
@@ -9680,12 +9775,15 @@ class RunLoop:
             # automatic; from round 2 on — and for any `critical` — a fresh
             # consult judges the findings against the rising bar BEFORE an
             # executor round is spent.
+            why = review_why(verdict)
             if r >= 2 or verdict["outcome"] == "critical":
                 fix_range = f"{prev_head}..{head}" if delta else None
                 choice = self._review_funding_consult(
                     outputs, phase_id, r, verdict, fix_range, root)
-                if choice == "merge":
+                if choice["outcome"] == "merge":
                     return
+                why = pilot_progress.clip_why(choice.get("why")) or why
+            self._why_next(f"P{phase_id}", why)
             hint = self._gate_hint(target, outputs, merge_base)
             fix_verdict = spawn_executor(
                 lambda vp, _r=r, _mb=merge_base, _hint=hint:
@@ -9823,11 +9921,11 @@ class RunLoop:
 
     def _review_funding_consult(self, outputs: Path, phase_id: str, r: int,
                                 verdict: dict, fix_range: str | None,
-                                root: Path) -> str:
+                                root: Path) -> dict:
         """Judge whether review round r's findings fund another executor
         round or the phase merges with them recorded in the close-out
-        report. Returns 'fix_round' or 'merge' ('bail' raises inside
-        _consult)."""
+        report. Returns the consult's verdict, its outcome 'fix_round' or
+        'merge' ('bail' raises inside _consult)."""
         review_path = outputs / f"code_review_r{r}.md"
         merge_note = ("merge now; the unresolved findings stay in the review "
                       "file and the merge is recorded in the close-out "
@@ -9879,7 +9977,7 @@ class RunLoop:
                             "in the run acts on them.",
                 provenance=f"witnessed — consult {self.state.get('consult_seq')} "
                            f"({site}, P{phase_id} r{r})")
-        return choice["outcome"]
+        return choice
 
     # -- the loop-tail gate sweep ---------------------------------------------
     # Slice 152 reached the completion consult with the manual known-red
@@ -9914,6 +10012,22 @@ class RunLoop:
             return sweep
         return self._run_gate_sweep(targets, heads)
 
+    def _resweep_why(self, heads: dict) -> str | None:
+        """The loop's own words for a sweep run again that no ruling says
+        why of — a resume into the test phase over a moved tree: the repos
+        that moved since the recorded sweep, or the waiver withdrawn since
+        it. None with no sweep on record."""
+        prev = self.state.get("gate_sweep")
+        if not prev:
+            return None
+        commits = prev.get("commits") or {}
+        moved = [Path(repo).name for repo, sha in heads.items()
+                 if commits.get(repo) != sha]
+        if moved:
+            return (f"The tree moved in {', '.join(moved)} since gate sweep "
+                    f"{prev.get('run')}")
+        return f"A gate ruling gate sweep {prev.get('run')} waived was withdrawn"
+
     def _sweep_heads(self, targets: list[Path]) -> dict[str, str]:
         """Each sweep target's HEAD, keyed as a sweep record's `commits`
         keys it."""
@@ -9934,7 +10048,8 @@ class RunLoop:
         n = self.state["sweep_runs"] = self.state.get("sweep_runs", 0) + 1
         self._save_state()
         self._progress_start("sweep", n,
-                             "Gate sweep" + (f" {n}" if n >= 2 else ""))
+                             "Gate sweep" + (f" {n}" if n >= 2 else ""),
+                             track="check", why=self._resweep_why(heads))
         out_dir = self.slice_dir / "sweeps" / f"r{n}"
         out_dir.mkdir(parents=True, exist_ok=True)
         self.announce(f"gate sweep r{n} (lint+build+test, "
@@ -10469,7 +10584,8 @@ class RunLoop:
             n = self._completion_consults() + 1
             self._progress_start(
                 "consult", n,
-                "Completion consult" + (f" {n}" if n >= 2 else ""))
+                "Completion consult" + (f" {n}" if n >= 2 else ""),
+                track="check", after="sweep")
             actions = {
                 "complete": "the plan describes no outstanding work",
                 "appended": "you appended phases for outstanding work "
@@ -10502,6 +10618,10 @@ class RunLoop:
             if choice["outcome"] == "appended":
                 self._after_session_plan_check()
                 if self._has_unfinished_phase():
+                    self._why_next("check", pilot_progress.clip_why(
+                        choice.get("why")) or ("The completion consult "
+                                               "appended "
+                                               + self._unfinished_ids()))
                     self._spend_generation("the completion consult")
                     return True
                 self.log("consult answered `appended` but no unfinished "
@@ -10510,6 +10630,9 @@ class RunLoop:
                 "consult": self.state.get("consult_seq"),
                 "phases": list(self.state.get("known_phases") or []),
                 "sweep": sweep.get("run")}
+            why = pilot_progress.clip_why(choice.get("why"))
+            if why is not None:
+                self.state["consult_complete"]["why"] = why
             if choice["outcome"] == "flake":
                 self.state["consult_complete"]["flakes"] = {
                     "rows": flaky, "diagnosis": choice.get("summary", "")}
@@ -10586,6 +10709,11 @@ class RunLoop:
                       "left commits")
                      + f" in {', '.join(moved)} — re-sweeping before "
                      f"{after}")
+            self._why_next("check", done.get("why") or (
+                (f"The completion consult committed in {', '.join(moved)}"
+                 if answer == "complete" else
+                 f"The test-fixer committed in {', '.join(moved)} after the "
+                 "consult's flake ruling") + ", so the sweep runs again"))
         sweep = self._ensure_gate_sweep()
         if sweep.get("run") == done.get("sweep"):
             return False
@@ -10835,7 +10963,8 @@ class RunLoop:
             self._report_ruling(ruling, "test-phase dispatch")
         # Its push check's nudges are the round's step too.
         self._progress_start("test", r,
-                             "Test phase" + (f" {r}" if r >= 2 else ""))
+                             "Test phase" + (f" {r}" if r >= 2 else ""),
+                             track="test")
         verdict, session = self._spawn(
             "test-agent",
             TEST_PHASE_PROMPT.format(
@@ -10875,6 +11004,12 @@ class RunLoop:
             self._assert_pushed(session)
             self._progress_done()
             return False
+        # The checks again and the next test round both follow these
+        # findings.
+        why = pilot_progress.clip_why(verdict.get("why")) or (
+            "The test phase appended " + self._unfinished_ids())
+        self._why_next("check", why)
+        self._why_next("test", why)
         self._spend_generation("the test phase")
         self._progress_done()
         return True
@@ -13057,6 +13192,11 @@ class RunLoop:
              "details": _clip(bail.details, BAIL_DETAILS_CAP),
              "document": document})
         self._save_state()
+        # The round the resume starts follows this stop.
+        track = (f"P{bail.phase}" if bail.phase
+                 else BAIL_TRACKS.get(self.state.get("run_phase")))
+        if track is not None:
+            self._why_next(track, resume_why(bail))
         payload = {
             "reason": bail.reason,
             "phase": bail.phase,

@@ -753,6 +753,30 @@ consult, the merge and a rebase onto a moved base into the review round; the doc
 landing into the wrap-up. The run's start (preflight, the tool and service checks, the setup) and
 the driver's push where there is no test phase are in no step.
 
+**A repeat round's why.** The step that opens a round past the first carries `why`, one line of
+at most 120 characters saying what the round before left unsettled, cut with an ellipsis past
+that. A round opens at its first step: a phase's at its `code` step, the completion check's at
+its `sweep` or, where the sweep's record still describes the tree, at its `consult`, the test
+phase's at `test`. A step that follows another inside its round — the review after its code
+round, the consult after its sweep — carries none, nor does a round dispatched again under its
+number. The run keeps the why in `state.json`'s `why_next` from the moment the round before ends
+unsettled, so that a stop, a halt or a resume in between loses none, and the step takes it off
+as it starts ([runner-state.md](runner-state.md) § state.json). Whose words the why is:
+
+| What ended the round before | The why |
+|---|---|
+| A review's blocking findings, its round 1 fix automatic | the findings' own one-line summaries, in the review's order, joined by `;`; with none listed, "The reviewer found blocking issues" (or "critical problems") |
+| The review-funding consult's `fix_round` | the consult's `why`; without one, the findings' as above |
+| A red phase gate | "The gate went red: " and the commands that went red |
+| The completion consult's `appended` | the consult's `why`; without one, "The completion consult appended P9, P10" |
+| The completion consult's `complete` or `flake` with a commit, so the sweep runs again | the consult's `why`; without one, which of the consult and the test-fixer committed, and where |
+| The test phase's `findings` | the test agent's `why`, on both the completion check's next round and the next test round; without one, "The test phase appended P9" |
+| A sweep run again with nothing above | the repos that moved since the recorded sweep, or the gate ruling withdrawn |
+| A stop the resume follows | an operator question: "Follows the operator's answer to the question the run stopped on"; a timeout: "The round before ran out of time: " and what ran out; any other: "Resumed after the run stopped: " and its reason |
+
+The consult's verdict and the test agent's carry `why` for this; the reviewer's findings carry
+their summaries already. The doc phase and the wrap-up have one step each, and so no why.
+
 ## Protocol invariants
 
 Every spawned agent ends by writing the verdict JSON named in its dispatch and leaves the
