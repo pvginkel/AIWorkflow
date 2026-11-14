@@ -190,7 +190,11 @@ each touched component's lint beside its test, none where an `accept` ruling cov
 which `touched.lint_accepted` names instead; and `migrations`, the check's command and the
 files that owe it (`owed`), where the phase owes the migration check — and `writer_gate_r<N>.json` the wrapper's record of its last run in code-writer round
 `N`: the commands with their exit codes and output, and the tree's content hash when the run
-began and ended ([run-loop.md](run-loop.md) § The per-phase round). `gate_run/` beside them is
+began and ended ([run-loop.md](run-loop.md) § The per-phase round). `gate_oom.json`, where it
+is there, is the wrapper's note of a red run while a service was OOM-killed: the phase and round,
+the services killed (`name`, `memoryLimit`, `finishedAt`) and each such run's red commands and
+times. The round's later runs add to it, and a fresh round removes it before dispatch
+([run-loop.md](run-loop.md) § Protocol invariants). `gate_run/` beside them is
 the job of the writer's last `gate --detach`, ignoring itself (`.gitignore`, `*`): its
 `run.lock`, held while the gate runs, `job.json`, `output.log` and the `exit.json` it ends
 with, which `gate --wait` reads. A review round whose range
@@ -221,6 +225,7 @@ could not be written, which the log says.
 | `prerun_action` | ✓ | at startup, fresh or `--resume`, before the run's actions owed before it were all met: one whose check fails, struck or not, or one without a check the driver can run that nobody struck ([run-loop.md](run-loop.md) § Protocol invariants) |
 | `missing_tools` | ✓ | a Target repo's manifest calls a `cexec <tool>` this environment does not run — at startup, fresh or `--resume`, or at a phase gate that meets it mid-run; the details name the tools and the `- use:` lines ([run-loop.md](run-loop.md) § Protocol invariants) |
 | `missing_services` | ✓ | the host's own `.kubecoder/config.yaml` declares a service this environment does not run, at startup, fresh or `--resume` (another Target repo's are never read: a red gate there takes its fix round, whose hint names them); the details name the services and the `services:` lines ([run-loop.md](run-loop.md) § Protocol invariants) |
+| `service_oom_killed` | ✓ | a phase-gate command went red — the driver's run of it, or the code-writer's through the `gate` wrapper, which leaves `gate_oom.json` beside the spec for the driver to bail on once the round's session is back — while `kc env describe` says a service the pod runs was `OOMKilled` after the command or run began; no fix round is spent, and the details name the service, its memory limit and the `resources:` line ([run-loop.md](run-loop.md) § Protocol invariants) |
 | `target_not_cloned` | – | a pending phase's `Target:` is a repo path the environment's `.kubecoder/config.yaml` declares and the pod has not cloned — the plan is fine, so no session is nudged; the details name each such phase and the fix: `kc env restart`, or a clone plus `kc project setup` ([run-loop.md](run-loop.md) § The plan is the queue) |
 | `blocked` | – | an agent reported `blocked`, or a protocol failure after the nudge |
 | `gate_red` | – | the gate stayed red through the executor fix cap, or at merge |

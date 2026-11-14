@@ -165,7 +165,7 @@ import threading
 import time
 import traceback
 from collections.abc import Callable, Sequence
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -179,6 +179,7 @@ import pilot_progress  # noqa: E402
 import project_config  # noqa: E402
 from close_out import (  # noqa: E402
     ReportError,
+    _join,
     _prose,
     add_note,
     append_entry,
@@ -327,6 +328,17 @@ GATE_WAIT_HINT = ("It starts the gate detached and returns; wait on it with "
 # what it ran and on what tree beside it, one record per round, so only the
 # latest round's can stand in for the driver's gate (`_reusable_writer_gate`).
 GATE_SPEC_NAME = "gate_spec.json"
+
+# What the wrapper writes beside the spec when a run of it went red while a
+# service the pod runs was OOM-killed (AIWF-139, `record_gate_oom`): the
+# services killed, and each such run's red commands and times. Apart from the
+# round's record, because a later run in the same round replaces that record:
+# a writer that ran the gate again after a kill — and saw it green, the
+# service back up — would leave the driver no trace of the kill. So a later
+# run of the round adds its kills to the file and never drops the earlier
+# ones. The driver removes it before every fresh code-writer round and bails
+# on it once the round's session is back (`RunLoop._writer_oom_check`).
+GATE_OOM_NAME = "gate_oom.json"
 
 # `gate --detach` runs that same wrapper through long_run.py, its job dir
 # this one beside the spec — so `gate --wait <spec>` finds it from the spec
@@ -1011,6 +1023,10 @@ QUESTION_DOCS = {
         "missing-services", "services its environment declares",
         "The run resumes in the environment once it runs them; it checks "
         "again before it dispatches anything."),
+    "service_oom_killed": (
+        "service-oom-killed", "a service killed for memory",
+        "The run resumes in the environment once the service has the "
+        "memory, and the gate it killed runs again."),
 }
 _QUESTION_DEFAULT = (
     "run-question", "a question from the run",
@@ -1051,6 +1067,8 @@ def question_asks(bail: Bailout) -> list[dict]:
                  "body": body,
                  "check": "the pod runs every service the host's environment "
                           "config declares (`kc env describe`)"}]
+    if bail.reason == "service_oom_killed":
+        return [oom_killed_ask([], bail.details)]
     return [{"kind": "question", "headline": f"The run's question{where}",
              "body": body}]
 
@@ -1141,6 +1159,7 @@ _REASON_WORDS = {
     "plan_doc": "a plan problem only you can fix",
     "missing_tools": "tool containers this environment does not run",
     "missing_services": "services this environment does not run",
+    "service_oom_killed": "a service killed for memory while the gate ran",
 }
 
 
@@ -4801,6 +4820,165 @@ def services_check(roots: Sequence[Path],
 
 
 # ---------------------------------------------------------------------------
+# A service killed for memory (AIWF-139). A service container the pod runs
+# that is OOM-killed mid-suite drops every connection the suite holds, and the
+# red it leaves reads in the gate's log like any regression: PilotApp slice
+# 036's postgres was OOM-killed at its 512Mi limit during 4 of P2's 5 gate
+# runs, and the writer spent 46–96 minutes a round treating the dropped
+# connection as a code regression; P4's gate died 4 times of 5 and bailed
+# after 77 minutes — seven kills, about $25 and 3 hours. No change to the code
+# can fix it, only the service's memory limit, which is the operator's. So a
+# red gate while one was killed bails at once with the cause named
+# (`service_oom_killed`, an operator question) and funds no fix round: the
+# driver's own gate (`RunLoop._oom_check`), and the writer's run of it, which
+# leaves GATE_OOM_NAME for the driver (`record_gate_oom`).
+# ---------------------------------------------------------------------------
+
+def oom_killed_services(since: datetime) -> list[dict]:
+    """The services `kc env describe`'s `services` say were OOM-killed at or
+    after `since`: `{name, memoryLimit, finishedAt}` each, kc's own values,
+    `memoryLimit` None where kc names none. A service's `lastTermination`
+    outlives the restart that follows the kill, so only a kill whose
+    `finishedAt` is not before `since` counts: an older one, an earlier
+    gate's, is no cause of this one's red. `since` is taken at the second,
+    kc's precision, so a kill in the second the command began counts. An
+    entry with no name, no termination, another reason or no time
+    `datetime.fromisoformat` reads is skipped; a time without an offset is
+    read as UTC, which kc gives it in. ValueError with the cause when kc
+    does not answer (`_env_list`): the caller warns and reads it as no kill,
+    since a check never holds a loop up on its own bookkeeping."""
+    floor = since.astimezone(UTC).replace(microsecond=0)
+    kills: list[dict] = []
+    for service in _env_list("services"):
+        if not isinstance(service, dict):
+            continue
+        name, term = service.get("name"), service.get("lastTermination")
+        if not (isinstance(name, str) and name and isinstance(term, dict)
+                and term.get("reason") == "OOMKilled"):
+            continue
+        finished = term.get("finishedAt")
+        try:
+            at = datetime.fromisoformat(finished)
+        except (TypeError, ValueError):
+            continue
+        if (at if at.tzinfo else at.replace(tzinfo=UTC)) < floor:
+            continue
+        limit = service.get("memoryLimit")
+        kills.append({"name": name,
+                      "memoryLimit": limit if isinstance(limit, str)
+                      and limit else None,
+                      "finishedAt": finished})
+    return kills
+
+
+def _kill_names(kills: Sequence[dict]) -> list[str]:
+    """The services `kills` name, each once, in order."""
+    return list(dict.fromkeys(k["name"] for k in kills))
+
+
+def oom_killed_details(kills: Sequence[dict], ran: str, log_path: Path,
+                       host_root: Path) -> str:
+    """The `service_oom_killed` bail's details: each kill, during what —
+    `ran`, a command in backticks or the code-writer's own gate run — with
+    where its output is, then what fixes it, on the host's environment
+    config (`host_root`'s: the pod's config is the invoking repo's), and
+    why the fix is the operator's."""
+    config = Path(host_root) / ENV_CONFIG_REL
+    names = _kill_names(kills)
+    one = len(names) == 1
+    lines = [f"the gate went red while {'a service' if one else 'services'} "
+             f"this environment runs {'was' if one else 'were'} killed for "
+             f"memory, during {ran} (output in {log_path}):"]
+    for k in kills:
+        limit = (f"at its {k['memoryLimit']} memory limit"
+                 if k.get("memoryLimit") else
+                 "at a memory limit kc does not name")
+        at = f", at {k['finishedAt']}" if k.get("finishedAt") else ""
+        lines.append(f"- {k['name']} — OOMKilled {limit}{at}")
+    who = names[0] if one else "<name>"
+    limit = next((k["memoryLimit"] for k in reversed(kills)
+                  if k.get("memoryLimit")), None) if one else None
+    more = f"<more than {limit}>" if limit else "<more>"
+    whose, runs = ("its", "runs") if one else ("each one's", "run")
+    lines.append(
+        "A service killed mid-run drops every connection the suite holds, "
+        "which reads in the log like a regression, but no change to the "
+        "code can fix it, so the run spends no fix round on it. Give "
+        f"{_join(names)} more memory: `resources: {{limits: {{memory: "
+        f"{more}}}}}` on {whose} `- use: {who}` entry under `services:` in "
+        f"{config} (a bare `- {who}` entry becomes `- use: {who}` with that "
+        "block; `limits.memory` is required), then `kc env restart`. The "
+        "restart ends every session in the environment, so this is the "
+        f"operator's; relaunch with --resume once {_join(names)} {runs} "
+        "with the memory, and the gate runs again.")
+    return "\n".join(lines)
+
+
+def oom_killed_ask(names: Sequence[str], details: str) -> dict:
+    """The `action` ask of a `service_oom_killed` bail: give the services
+    `names` more memory — the services killed for memory, where the bail
+    names none."""
+    who = _join(list(names)) if names else "the services killed for memory"
+    return {"kind": "action", "headline": f"Give {who} more memory",
+            "body": _prose((details or "").splitlines()) or "(no details)",
+            "check": "each service named runs under a memory limit above "
+                     "the one it was killed at (`kc env describe`)"}
+
+
+def oom_killed_bailout(phase_id: str | None, kills: Sequence[dict], ran: str,
+                       log_path: Path, host_root: Path) -> Bailout:
+    """The `service_oom_killed` stop — an operator question, its details
+    `oom_killed_details`, its ask naming the services."""
+    details = oom_killed_details(kills, ran, log_path, host_root)
+    return Bailout("service_oom_killed", phase=phase_id, question=True,
+                   details=details,
+                   asks=[oom_killed_ask(_kill_names(kills), details)])
+
+
+def _valid_kills(items) -> list[dict]:
+    """The kills of a GATE_OOM_NAME file's `services` list: each a mapping
+    with a name, the rest of it as it was written."""
+    return [k for k in (items if isinstance(items, list) else ())
+            if isinstance(k, dict) and isinstance(k.get("name"), str)
+            and k["name"]]
+
+
+def record_gate_oom(spec_path: Path, spec: dict, kills: list[dict],
+                    red: list[str], started: str, finished: str) -> Path:
+    """GATE_OOM_NAME beside the spec, for the driver: the services `kills`
+    names, and this run — its red commands, its times — added to what an
+    earlier run of the same round wrote there, a kill it already holds not
+    twice. A file another phase or round left is not added to but replaced:
+    the driver removes the file before a fresh round, so one still there is
+    an older driver's. Its path."""
+    path = Path(spec_path).parent / GATE_OOM_NAME
+    earlier = _read_json(path)
+    if not (isinstance(earlier, dict) and earlier.get("phase") == spec["phase"]
+            and earlier.get("round") == spec["round"]):
+        earlier = {}
+    services = _valid_kills(earlier.get("services"))
+    services += [k for k in kills if k not in services]
+    runs = [r for r in earlier.get("runs") or () if isinstance(r, dict)]
+    runs.append({"started": started, "finished": finished, "red": red,
+                 "services": kills})
+    _write_json_atomic(path, {"phase": spec["phase"], "round": spec["round"],
+                              "services": services, "runs": runs})
+    return path
+
+
+def gate_oom_line(kills: Sequence[dict]) -> str:
+    """The wrapper's closing line for a red run while a service was killed
+    for memory, in place of the plain RED line: the cause, and that the
+    writer stops on it."""
+    said = _join([f"{k['name']} OOMKilled"
+                  + (f" at its {k['memoryLimit']} memory limit"
+                     if k.get("memoryLimit") else "") for k in kills])
+    return (f"=== gate RED: {said} while the gate ran — the environment's, "
+            "not the code's: change no code for it; hand back `blocked` "
+            "naming it, and the driver puts it to the operator ===")
+
+
+# ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
 
@@ -7419,7 +7597,10 @@ class RunLoop:
         kc's: 0 is green and any other exit red, never "nothing ran" nor a
         usage error — but a red whose output is cexec's missing-tool line
         bails `missing_tools`, as a kc command's does, since no fix round can
-        add a tool container. `replay` is `_gate_cmd_outcome`'s."""
+        add a tool container, and a red while a service the pod runs was
+        OOM-killed bails `service_oom_killed` (`_oom_check`, AIWF-139): a
+        migration check that upgrades a database runs on it. `replay` is
+        `_gate_cmd_outcome`'s."""
         argv, added, owed = migration
         cmd = self.cfg.migration_check
         log_file.write(f"\n=== {migration_check_why(added, owed)}: the "
@@ -7427,6 +7608,7 @@ class RunLoop:
                        "===\n")
         log_file.flush()
         start = _file_size(log_path)
+        began = datetime.now(UTC)
         try:
             returncode = (replay(argv, log_file) if replay is not None else
                           self._gate_exec(argv, target.work_root, log_file))
@@ -7445,6 +7627,7 @@ class RunLoop:
                     "missing_tools", phase=phase_id, question=True,
                     details=self._missing_tool_details(
                         tool, target.git_root, argv, log_path))
+            self._oom_check(phase_id, began, f"`{cmd}`", log_path)
         runs.append((outcome, _last_line(log_path)))
         return {"project": MIGRATION_CHECK_NAME, "cmd": cmd,
                 "outcome": outcome}
@@ -7570,7 +7753,12 @@ class RunLoop:
         missing service has no such line — a refused connection on
         localhost:5432 looks like any other red — so a red in a repo that
         declares a service the pod does not run is an ordinary red, and its
-        fix round is told of the service (`_unrun_services_hint`).
+        fix round is told of the service (`_unrun_services_hint`). A service
+        the pod does run, OOM-killed while the command ran, leaves no line
+        either, but kc keeps its kill: such a red bails `service_oom_killed`
+        (`_oom_check`, AIWF-139), an operator question that funds no fix
+        round — `_gate_until_green` asks for its round only once this gate
+        has come back red.
 
         kc prints only each statement's last lines and keeps the whole run
         in the file its closing `full output:` line names, under
@@ -7584,13 +7772,19 @@ class RunLoop:
         `replay(argv, log_file) → rc`, when given, stands in for running
         the command: the writer's recorded run of it, its output written
         into the log as the run would have (`_run_gate`), and everything
-        after classifies it as it would a run.
+        after classifies it as it would a run. A replay is never red — the
+        writer's run is reused only where none of it was, and an earlier
+        green's stand-in answers green or nothing ran — so a red here is a
+        command just run, and only a red asks kc for a kill since `began`,
+        taken just before it ran.
 
         `kc` False is a command that is not kc's — the spec check, which
         exits 0 clean, 1 on a problem and 2 on a usage error, read as kc's
-        codes are. Its red is never a missing tool: it calls none."""
+        codes are. Its red is never a missing tool, nor a service's kill: it
+        calls no tool and uses no service."""
         log_file.flush()
         start = _file_size(log_path)
+        began = datetime.now(UTC)
         try:
             returncode = (replay(argv, log_file) if replay is not None else
                           self._gate_exec(argv, target.gate_cwd, log_file))
@@ -7617,9 +7811,32 @@ class RunLoop:
                         "missing_tools", phase=phase_id, question=True,
                         details=self._missing_tool_details(
                             tool, target.git_root, argv, log_path))
+                self._oom_check(phase_id, began, f"`{' '.join(argv)}`",
+                                log_path)
         finally:
             _inline_kc_full_output(log_file, log_path, start)
         return outcome, tail
+
+    def _oom_check(self, phase_id: str, since: datetime, ran: str,
+                   log_path: Path) -> None:
+        """Bail `service_oom_killed` where a service the pod runs was
+        OOM-killed since `since`, the start of `ran`, a red command of the
+        phase gate whose output is in `log_path` (AIWF-139): no change to
+        the code can fix that, so no fix round is spent on it. kc not
+        answering is a warning and no kill — the red takes its fix round, as
+        before this check."""
+        try:
+            kills = oom_killed_services(since)
+        except ValueError as e:
+            self.log(f"warning: [P{phase_id}] the red gate not checked for a "
+                     f"service killed for memory — {e}")
+            return
+        if kills:
+            self.log(f"[P{phase_id}] {_join(_kill_names(kills))} OOMKilled "
+                     f"while {ran} ran — the environment's, not the code's: "
+                     "no fix round")
+            raise oom_killed_bailout(phase_id, kills, ran, log_path,
+                                     self.repo_root)
 
     def _unrun_services(self, root: Path) -> list[str]:
         """The services the tree at `root` declares and the pod does not
@@ -8729,7 +8946,15 @@ class RunLoop:
             spec the round's `gate` wrapper reads is written first, carrying
             the round's number — the driver reuses a run of that round
             alone — and the base branch the wrapper resolves the merge base
-            against at its own run (AIWF-104)."""
+            against at its own run (AIWF-104).
+
+            A run of the wrapper gone red while a service was OOM-killed
+            leaves GATE_OOM_NAME, and the round bails on it once its session
+            is back, whatever the writer handed back (`_writer_oom_check`,
+            AIWF-139). A fresh round removes the file first: one still there
+            is an earlier round's, whose bail is spent — so the resume after
+            it does not stop on it again. A reattached round keeps it: it
+            may be that very session's evidence."""
             pending = self._reattach_round("code-writer", phase_id)
             if pending is None:
                 ps["executor_rounds"] += 1
@@ -8740,6 +8965,8 @@ class RunLoop:
                 "code", r, f"P{phase_id} · "
                 + (self._plain_title(phase) if r == 1 else f"code {r}"),
                 phase_id)
+            if pending is None:
+                (outputs / GATE_OOM_NAME).unlink(missing_ok=True)
             if self._has_gate(target):
                 self._write_gate_spec(phase_id, r, outputs, target, base)
             prompt = (build_prompt(executor_verdict_path(r)) + "\n"
@@ -8759,6 +8986,7 @@ class RunLoop:
                 verdict, executor_verdict_path(r))
             self._assert_record_still_on(phase_id, ps, root, branch)
             self._save_state()
+            self._writer_oom_check(phase_id, outputs, r)
             self._handle_executor_terminals(verdict, phase_id)
             return verdict
 
@@ -9251,6 +9479,34 @@ class RunLoop:
                  f"{branch}; rebased {old_head[:12]} → {new_head[:12]}, "
                  "diff unchanged")
         return merge_base
+
+    def _writer_oom_check(self, phase_id: str, outputs: Path,
+                          round_: int) -> None:
+        """Bail `service_oom_killed` where the code-writer's own gate run
+        in round `round_` went red while a service was OOM-killed — the
+        wrapper's GATE_OOM_NAME in the phase's outputs names at least one
+        (AIWF-139). Whatever the writer handed back: told by the wrapper to
+        change no code for it and hand back `blocked`, it may still have run
+        the gate again and handed back `done` on a green the restarted
+        service let through, or asked. A file that does not parse, or names
+        no service, is no kill."""
+        path = outputs / GATE_OOM_NAME
+        data = _read_json(path)
+        kills = _valid_kills(data.get("services")) if isinstance(
+            data, dict) else []
+        if not kills:
+            return
+        red = list(dict.fromkeys(
+            cmd for run in data.get("runs") or () if isinstance(run, dict)
+            for cmd in run.get("red") or () if isinstance(cmd, str)))
+        ran = ("the code-writer's own gate run in round "
+               f"{round_}" + (f", red on {_ticked(red)}" if red else ""))
+        self.log(f"[P{phase_id}] the code-writer's gate went red with "
+                 f"{_join(_kill_names(kills))} OOMKilled ({path}) — the "
+                 "environment's, not the code's")
+        raise oom_killed_bailout(phase_id, kills, ran,
+                                 outputs / writer_gate_record_name(round_),
+                                 self.repo_root)
 
     def _handle_executor_terminals(self, verdict: dict,
                                    phase_id: str) -> None:
@@ -13486,7 +13742,18 @@ def run_writer_gate(spec_path: Path) -> int:
     the writer has yet to commit. The tree is hashed (`content_tree`)
     before the first command and after the last, so the record says
     whether it changed while the run went on. A later run in the same round
-    replaces the record: the driver takes the last one or none."""
+    replaces the record: the driver takes the last one or none.
+
+    A red run asks kc whether a service the pod runs was OOM-killed since
+    the run began (`oom_killed_services`, AIWF-139) — unless the spec check
+    alone went red, which uses no service. Where one was, the red is the
+    environment's, and no change to the code can fix it: the run leaves
+    GATE_OOM_NAME beside the spec for the driver (`record_gate_oom`), and
+    its closing line names the cause and tells the writer to stop
+    (`gate_oom_line`) where the plain RED line would send it hunting a
+    regression — PilotApp slice 036's writer spent 46–96 minutes a round
+    on a dropped connection. The exit stays 1: the gate is red. kc not
+    answering is a `gate:` warning on stderr and no kill."""
     spec, problem = read_gate_spec(spec_path)
     if spec is None:
         print(problem, file=sys.stderr)
@@ -13495,6 +13762,7 @@ def run_writer_gate(spec_path: Path) -> int:
     touched = spec.get("touched")
     migrations = spec.get("migrations")
     started = _now_iso()
+    began = datetime.now(UTC)
     try:
         start = content_tree(work_root)
         # only a gate that reads a range needs one — a whole repo's does not
@@ -13614,12 +13882,23 @@ def run_writer_gate(spec_path: Path) -> int:
     outcome = ("red" if any(o == "red" for _, o, _ in outcomes)
                else "green" if "green" in tests else "nothing_ran")
     record = Path(spec_path).parent / writer_gate_record_name(spec["round"])
+    finished = _now_iso()
     _write_json_atomic(record, {
         "phase": spec["phase"], "round": spec["round"],
         "work_root": spec["work_root"], "gate_cwd": spec["gate_cwd"],
         "start_tree": start, "end_tree": end,
-        "started": started, "finished": _now_iso(),
+        "started": started, "finished": finished,
         "commands": commands, "outcome": outcome})
+    red = [c for c, o, _ in outcomes if o == "red"]
+    kills: list[dict] = []
+    if outcome == "red" and any(c != " ".join(check or ()) for c in red):
+        try:
+            kills = oom_killed_services(began)
+        except ValueError as e:
+            print(f"gate: not checked for a service killed for memory — {e}",
+                  file=sys.stderr)
+        if kills:
+            record_gate_oom(spec_path, spec, kills, red, started, finished)
     print(flush=True)
     if outcome == "green" and start == end:
         print(f"=== gate GREEN on tree {start[:12]}, recorded in {record}. "
@@ -13631,9 +13910,10 @@ def run_writer_gate(spec_path: Path) -> int:
               f"({start[:12]} → {end[:12]}): the driver will run the gate "
               "again. Run this once more on the finished tree to spare it "
               "that. ===")
+    elif kills:
+        print(gate_oom_line(kills))
     elif outcome == "red":
-        print("=== gate RED: "
-              + _ticked([c for c, o, _ in outcomes if o == "red"]) + " ===")
+        print("=== gate RED: " + _ticked(red) + " ===")
     else:
         print("=== gate: nothing ran (exit 3) — not red, nothing to fix ===")
     return {"green": 0, "red": 1}.get(outcome, KC_NOTHING_RAN)

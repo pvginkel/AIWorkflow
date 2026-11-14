@@ -258,7 +258,9 @@ whole plan is a feature of the review, not a cost. Then:
   A build breakage is caught deterministically by the loop-tail sweep and the doc gate. Green is
   recorded commit+log and stated in the reviewer's dispatch so the review never re-runs the
   suite; the claim covers a lint only where one ran. A red gate spawns a **fresh executor fix round** (cap 3,
-  then `gate_red` bails); there is no separate fixer in the phase loop. A gate kc says **ran
+  then `gate_red` bails); there is no separate fixer in the phase loop. A red while a service
+  the pod runs was OOM-killed takes no round: it bails `service_oom_killed` (§ Protocol
+  invariants). A gate kc says **ran
   nothing** (exit 3: the target defines no tests) is neither: the phase proceeds as with no
   gate, no green is recorded, and the reviewer is told the target defines no tests, so the
   state is unverified. A `gate` ruling in the plan waives the gate outright (§ After the last
@@ -916,6 +918,31 @@ cause; where kc cannot say which services run, the hint names none. The price is
 before the `blocked`: Ansible slice 036's P14 targeted ElectronicsInventory from an environment
 without its `postgres` and `s3storage`, setup and tests failed on `localhost:5432` and `:9000`,
 and the run stopped on the writer's `blocked`.
+
+**A service killed for memory stops the gate, not the code.** A service the pod runs, killed
+for memory mid-suite, drops every connection the suite holds, and the red it leaves reads like a
+regression. Unlike a service the pod lacks, it leaves a trace: `kc env describe` gives each
+service's last termination (`reason`, `exitCode`, `finishedAt`) and its memory limit. So when a
+phase-gate command goes red — a kc command or the migration check, never the spec check, which
+uses no service — the driver asks kc whether a service was `OOMKilled` at or after that command
+began. If one was, the run bails `service_oom_killed` (exit 4) before a fix round is banked. The
+details name the service, the limit it was killed at, when, and the command. They also give the
+fix, which is the operator's because of the restart: `resources: {limits: {memory: …}}` on the
+service's `- use: <name>` entry under `services:` in the host's `.kubecoder/config.yaml`, then
+`kc env restart`. The writer's wrapper does the same check over its whole run. On a kill it writes
+`gate_oom.json` beside the spec and closes on a RED line that names the cause and tells the writer
+to change no code and hand back `blocked`; its exit stays 1. A later run in the same round adds to
+the file and never drops a kill from it: a writer that ran again and saw green on the restarted
+service must not hide the kill. Once the round's session is back, whatever it handed back, the
+driver bails `service_oom_killed` on the file. A fresh round removes the file before dispatch, so
+the resume after the bail does not stop on it again. A kill older than the command or the run
+counts for nothing: `lastTermination` outlives the restart that follows it. A red is checked
+whatever its log says, because a dropped connection reads differently in each driver and
+language, and the call is one kc read. Where kc does not answer, a warning is logged and the red
+takes its fix round as before. The sweep, the doc gate and the wrap-up's gate are not checked.
+PilotApp slice 036's postgres was killed at its 512Mi limit during 4 of P2's 5 gate runs. The
+writer spent 46 to 96 minutes treating the dropped connection as a regression, and P4's gate died
+4 times in 5 before it bailed after 77 minutes. Seven kills cost about $25 and 3 hours (AIWF-139).
 
 **The loop sets up its Target repos before the first dispatch.** At startup, fresh or `--resume`,
 right after the tool and service checks, the run loop runs a bare `kc project setup` once from the

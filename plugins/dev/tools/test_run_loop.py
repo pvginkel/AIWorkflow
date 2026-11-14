@@ -64,6 +64,11 @@ run_loop.running_tools = lambda: set(RUNNING)
 RUNNING_SERVICES: set[str] = set()
 REAL_RUNNING_SERVICES = run_loop.running_services
 run_loop.running_services = lambda: set(RUNNING_SERVICES)
+# A red gate asks the same describe whether a service was OOM-killed while it
+# ran (AIWF-139); the suite's pod has killed none, and the tests of the check
+# script their kills (`describing`).
+REAL_OOM_KILLED_SERVICES = run_loop.oom_killed_services
+run_loop.oom_killed_services = lambda since: []
 # Which repos kc marks shared comes from the same describe; the suite's
 # environment shares none, and the tests of a shared repo's phase say which
 # of theirs is.
@@ -16162,6 +16167,560 @@ def test_a_red_gate_in_a_repo_whose_services_all_run_gets_its_fix_round():
             in (slice_dir / "log.txt").read_text()
         [fix] = gate_fix_prompts(r)
         assert "declares services this pod does not run" not in fix
+
+
+# -- a service killed for memory: the red the environment caused (AIWF-139) --
+#
+# PilotApp slice 036's postgres was OOM-killed at its 512Mi limit during 4 of
+# P2's 5 gate runs, and the writer spent 46–96 minutes a round treating the
+# dropped connection as a code regression; P4's gate died 4 times of 5. kc's
+# describe now gives each service's last termination, and a red gate while one
+# was OOM-killed bails `service_oom_killed` instead of funding a fix round.
+
+def kc_time(at):
+    """A time as kc gives `finishedAt`: RFC3339 UTC, to the second."""
+    return at.astimezone(run_loop.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def oom_entry(at, name="postgres", limit="1Gi", reason="OOMKilled"):
+    """One entry of `kc env describe`'s `services`, its last termination at
+    `at` (kc's time), or none when `at` is None."""
+    return {"name": name, "state": "ready", "memoryLimit": limit,
+            "lastTermination": None if at is None else {
+                "reason": reason, "exitCode": 137, "finishedAt": at},
+            "ports": []}
+
+
+@contextlib.contextmanager
+def describing(services, asked=None):
+    """The real `oom_killed_services`, over a describe whose `services` are
+    `services` — a list, or a callable giving one at each ask, or an
+    exception to raise; every ask's key appended to `asked`."""
+    def env_list(key):
+        if asked is not None:
+            asked.append(key)
+        answer = services() if callable(services) else services
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    with patched(run_loop, oom_killed_services=REAL_OOM_KILLED_SERVICES,
+                 _env_list=env_list):
+        yield
+
+
+KC_DOWN = ValueError("`kc env describe --output=json` failed (rc=1): no pod")
+
+
+def test_oom_killed_services_reads_only_the_kills_since_the_gate_began():
+    since = datetime(2026, 11, 4, 10, 12, 33, 700000, tzinfo=run_loop.UTC)
+    services = [
+        oom_entry("2026-11-04T10:12:40Z"),
+        # kc's second: a kill in the second the gate began counts
+        oom_entry("2026-11-04T10:12:33Z", name="s3storage", limit=None),
+        oom_entry("2026-11-04T11:12:41+01:00", name="offset"),
+        oom_entry("2026-11-04T10:12:42", name="naive"),
+        # an older kill, the restart after it long done: never this gate's
+        oom_entry("2026-11-04T10:12:32Z", name="earlier"),
+        oom_entry("2026-11-04T10:12:20", name="naive-earlier"),
+        oom_entry(None, name="never-killed"),
+        oom_entry("2026-11-04T10:13:00Z", name="crashed", reason="Error"),
+        oom_entry("yesterday", name="garbled"),
+        oom_entry(1730715153, name="a-number"),
+        {"name": "bare"},
+        {"name": "no-time", "lastTermination": {"reason": "OOMKilled"}},
+        {"lastTermination": {"reason": "OOMKilled",
+                             "finishedAt": "2026-11-04T10:13:00Z"}},
+        {"name": "", "lastTermination": {"reason": "OOMKilled",
+                                         "finishedAt": "2026-11-04T10:13:00Z"}},
+        {**oom_entry("2026-11-04T10:13:00Z", name="odd-limit"),
+         "memoryLimit": 512},
+        "not a service",
+    ]
+    asked = []
+    with describing(services, asked):
+        kills = run_loop.oom_killed_services(since)
+    assert asked == ["services"]
+    assert kills == [
+        {"name": "postgres", "memoryLimit": "1Gi",
+         "finishedAt": "2026-11-04T10:12:40Z"},
+        {"name": "s3storage", "memoryLimit": None,
+         "finishedAt": "2026-11-04T10:12:33Z"},
+        {"name": "offset", "memoryLimit": "1Gi",
+         "finishedAt": "2026-11-04T11:12:41+01:00"},
+        {"name": "naive", "memoryLimit": "1Gi",
+         "finishedAt": "2026-11-04T10:12:42"},
+        {"name": "odd-limit", "memoryLimit": None,
+         "finishedAt": "2026-11-04T10:13:00Z"}]
+    # kc not answering is the caller's to read as no kill
+    broken = subprocess.CompletedProcess([], 1, stdout="", stderr="no pod")
+    with patched(run_loop, oom_killed_services=REAL_OOM_KILLED_SERVICES), \
+            patched(run_loop.subprocess, run=lambda *a, **kw: broken):
+        try:
+            run_loop.oom_killed_services(since)
+        except ValueError as e:
+            assert "`kc env describe --output=json` failed (rc=1)" in str(e)
+        else:
+            raise AssertionError("kc failing must be a ValueError")
+
+
+OOM_KILL = {"name": "postgres", "memoryLimit": "1Gi",
+            "finishedAt": "2026-11-04T10:12:33Z"}
+
+
+def test_the_oom_bail_names_the_kill_the_command_and_the_fix():
+    host = Path("/work/App")
+    log = Path("/work/AppSpecs/slices/036_x/phases/P2/gate_r1.log")
+    bail = run_loop.oom_killed_bailout(
+        "2", [OOM_KILL], "`kc project test --project backend`", log, host)
+    assert (bail.reason, bail.phase, bail.question) \
+        == ("service_oom_killed", "2", True)
+    assert bail.details == (
+        "the gate went red while a service this environment runs was killed "
+        "for memory, during `kc project test --project backend` (output in "
+        "/work/AppSpecs/slices/036_x/phases/P2/gate_r1.log):\n"
+        "- postgres — OOMKilled at its 1Gi memory limit, at "
+        "2026-11-04T10:12:33Z\n"
+        "A service killed mid-run drops every connection the suite holds, "
+        "which reads in the log like a regression, but no change to the code "
+        "can fix it, so the run spends no fix round on it. Give postgres more "
+        "memory: `resources: {limits: {memory: <more than 1Gi>}}` on its `- "
+        "use: postgres` entry under `services:` in "
+        "/work/App/.kubecoder/config.yaml (a bare `- postgres` entry becomes "
+        "`- use: postgres` with that block; `limits.memory` is required), "
+        "then `kc env restart`. The restart ends every session in the "
+        "environment, so this is the operator's; relaunch with --resume once "
+        "postgres runs with the memory, and the gate runs again.")
+    ask, = bail.asks
+    assert (ask["kind"], ask["headline"]) \
+        == ("action", "Give postgres more memory")
+    assert ask["body"] == bail.details
+    assert ask["check"] == ("each service named runs under a memory limit "
+                            "above the one it was killed at (`kc env "
+                            "describe`)")
+    # two services, one with no limit kc names
+    two = run_loop.oom_killed_bailout(
+        "2", [OOM_KILL, {"name": "s3storage", "memoryLimit": None,
+                         "finishedAt": "2026-11-04T10:12:40Z"}],
+        "`kc project test`", log, host)
+    assert two.details.startswith(
+        "the gate went red while services this environment runs were killed "
+        "for memory")
+    assert ("- s3storage — OOMKilled at a memory limit kc does not name, at "
+            "2026-11-04T10:12:40Z\n") in two.details
+    assert ("Give postgres and s3storage more memory: `resources: {limits: "
+            "{memory: <more>}}` on each one's `- use: <name>` entry") \
+        in two.details
+    assert "once postgres and s3storage run with the memory" in two.details
+    assert two.asks[0]["headline"] == "Give postgres and s3storage more memory"
+
+
+def test_the_oom_question_document_renders():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = Path(tmp) / "slices" / "036_x"
+        slice_dir.mkdir(parents=True)
+        bail = run_loop.oom_killed_bailout(
+            "2", [OOM_KILL], "`kc project test --project backend`",
+            slice_dir / "phases" / "P2" / "gate_r1.log", Path(tmp))
+        doc = run_loop.render_question_document(slice_dir, bail, None).read_text()
+        assert (slice_dir / "asks" / "1-service-oom-killed.md").exists()
+        assert "Slice 036: a service killed for memory" in doc
+        assert ("The run of slice 036 stopped in P2 on a service killed for "
+                "memory while the gate ran. The run resumes in the "
+                "environment once the service has the memory, and the gate "
+                "it killed runs again.") in doc
+        assert "## Give postgres more memory\n" in doc
+        assert ("```action id=A1\ncheck: each service named runs under a "
+                "memory limit above the one it was killed at") in doc
+        # raised with no ask of its own, the reason puts one
+        bare = run_loop.Bailout("service_oom_killed", phase="2",
+                                question=True, details="postgres OOMKilled")
+        doc = run_loop.render_question_document(slice_dir, bare, None).read_text()
+        assert "## Give the services killed for memory more memory\n" in doc
+
+
+class OomKillLoop(KcExitLoop):
+    """KcExitLoop whose pod's services are `services`, the describe's answer
+    (`describing(lambda: loop.services)`) — and, where `kill_reds`, postgres
+    is OOM-killed while each red phase-gate command runs, its kill stamped at
+    the moment it ran, as kc would give it."""
+
+    def __init__(self, slice_dir, script, kill_reds=True, services=(), **kw):
+        super().__init__(slice_dir, script, **kw)
+        self.kill_reds = kill_reds
+        self.services = list(services)
+
+    def _gate_exec(self, argv, cwd, log_file):
+        rc_ = super()._gate_exec(argv, cwd, log_file)
+        if rc_ == 1 and self.kill_reds and not self._sweeping:
+            self.services = [oom_entry(kc_time(datetime.now(run_loop.UTC)))]
+            log_file.write("psycopg.OperationalError: server closed the "
+                           "connection unexpectedly\n")
+        return rc_
+
+
+def test_a_red_phase_gate_while_a_service_was_oom_killed_bails_without_a_fix_round():
+    """No fix round is banked or dispatched; the resume at stage `gate`
+    runs the gate again before anything else, and a kill from before it —
+    `lastTermination` outlives the restart — never trips it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = OomKillLoop(slice_dir, [V["exec_done"]], repo_root=repo,
+                        gate_rcs=[1])
+        asked = []
+        with describing(lambda: r.services, asked):
+            assert run_to_exit(r) == 4
+        assert asked == ["services"]
+        assert not r.script and len(r.spawned) == 1, "no fix round"
+        assert [argv for argv, _, _ in r.phase_gate_order] \
+            == [component_argv(PROJECT)], "it stops at the red"
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert (bail["reason"], bail["question"], bail["phase"]) \
+            == ("service_oom_killed", True, "1")
+        details = bail["details"]
+        log = outputs_of(r) / "gate_r1.log"
+        assert (f"during `kc project test --project app` (output in {log})"
+                in details)
+        assert "- postgres — OOMKilled at its 1Gi memory limit, at " in details
+        assert f"in {repo / '.kubecoder' / 'config.yaml'} (a bare" in details
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert (ps["stage"], ps["gate_fix_rounds"], ps["executor_rounds"]) \
+            == ("gate", 0, 1)
+        assert "## Give postgres more memory\n" \
+            in Path(bail["document"]).read_text()
+        assert ("[P1] postgres OOMKilled while `kc project test --project "
+                "app` ran — the environment's, not the code's: no fix round"
+                ) in (slice_dir / "log.txt").read_text()
+        assert "server closed the connection unexpectedly" in log.read_text()
+
+        killed = (datetime.now(run_loop.UTC) - timedelta(minutes=5))
+        r2 = OomKillLoop(slice_dir, [V["review_signoff"], *TAIL],
+                         resume=True, repo_root=repo, gate_rcs=[0],
+                         services=[oom_entry(kc_time(killed))])
+        r2.fake_git.branches.add("phase/074-P1")
+        asked = []
+        with describing(lambda: r2.services, asked):
+            assert run_to_exit(r2) == 0
+        assert not r2.script and asked == []
+        assert [role for role, *_ in r2.spawned][0] == "code-reviewer"
+        assert r2.phase_gate_order[0][0] == component_argv(PROJECT)
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert (ps["gate_fix_rounds"], ps["executor_rounds"]) == (0, 1)
+
+
+def test_a_red_phase_gate_with_only_an_older_oom_kill_takes_its_fix_round():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        killed = datetime.now(run_loop.UTC) - timedelta(hours=1)
+        r = OomKillLoop(slice_dir, [V["exec_done"], V["exec_done"],
+                                    V["review_signoff"], *TAIL],
+                        repo_root=repo, gate_rcs=[1, 0], kill_reds=False,
+                        services=[oom_entry(kc_time(killed))])
+        asked = []
+        with describing(lambda: r.services, asked):
+            assert run_to_exit(r) == 0
+        assert not r.script and asked == ["services"]
+        assert load_state(slice_dir)["phases"]["1"]["gate_fix_rounds"] == 1
+        assert not (slice_dir / "bailout.json").exists()
+
+
+def test_a_green_phase_gate_never_asks_kc_for_an_oom_kill():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = OomKillLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                    *TAIL], repo_root=repo,
+                        services=[oom_entry(kc_time(datetime.now(run_loop.UTC)
+                                                    + timedelta(hours=1)))])
+        asked = []
+        with describing(lambda: r.services, asked):
+            assert run_to_exit(r) == 0
+        assert asked == []
+
+
+def test_kc_not_answering_the_oom_check_leaves_the_red_its_fix_round():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = OomKillLoop(slice_dir, [V["exec_done"], V["exec_done"],
+                                    V["review_signoff"], *TAIL],
+                        repo_root=repo, gate_rcs=[1, 0])
+        asked = []
+        with describing(KC_DOWN, asked):
+            assert run_to_exit(r) == 0
+        assert not r.script and asked == ["services"]
+        assert load_state(slice_dir)["phases"]["1"]["gate_fix_rounds"] == 1
+        assert ("warning: [P1] the red gate not checked for a service killed "
+                "for memory — `kc env describe --output=json` failed (rc=1): "
+                "no pod") in (slice_dir / "log.txt").read_text()
+
+
+def test_a_red_spec_check_never_asks_kc_for_an_oom_kill():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        specs_phase(slice_dir, tmp)
+        r = OomKillLoop(slice_dir, [V["exec_done"], V["exec_done"],
+                                    V["review_signoff"], *TAIL],
+                        repo_root=repo, gate_rcs=[1, 0])
+        asked = []
+        with describing(lambda: r.services, asked):
+            assert run_to_exit(r) == 0
+        assert not r.script and asked == []
+        assert [h["outcome"] for h in gate_rows(slice_dir)] == ["red", "green"]
+
+
+def test_a_red_migration_check_while_a_service_was_oom_killed_bails():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, config=rc() + MIGRATIONS_RC)
+        r = OomKillLoop(slice_dir, [V["exec_done"]], repo_root=repo,
+                        gate_rcs=[0, 1])
+        r.fake_git.diff_files = "db/versions/0024_two.py\n"
+        asked = []
+        with describing(lambda: r.services, asked):
+            assert run_to_exit(r) == 4
+        assert asked == ["services"] and len(r.spawned) == 1
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "service_oom_killed"
+        assert "during `heads-are-one` (output in" in bail["details"]
+        assert load_state(slice_dir)["phases"]["1"]["gate_fix_rounds"] == 0
+
+
+def test_the_drivers_gate_command_asks_for_an_oom_kill_only_on_a_kc_red():
+    """`_gate_cmd_outcome` itself: a kc command's red asks for a kill since
+    just before it ran; the spec check's (`kc=False`) and any green never
+    ask."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        target = types.SimpleNamespace(gate_cwd=repo, git_root=repo)
+        log_path = Path(tmp) / "gate.log"
+        asked = []
+
+        def kills(since):
+            asked.append(since)
+            return [OOM_KILL]
+
+        with patched(run_loop, oom_killed_services=kills), \
+                open(log_path, "w") as log_file:
+            for rc_, kc in ((1, False), (0, True), (3, True)):
+                outcome, _ = r._gate_cmd_outcome(
+                    "1", ["kc", "project", "test"], target, log_file,
+                    log_path, replay=lambda argv, f, _rc=rc_: _rc, kc=kc)
+                assert outcome == run_loop.kc_outcome(rc_)
+            assert asked == []
+            before = datetime.now(run_loop.UTC)
+            try:
+                r._gate_cmd_outcome("1", ["kc", "project", "test"], target,
+                                    log_file, log_path,
+                                    replay=lambda argv, f: 1)
+            except Bailout as e:
+                assert e.reason == "service_oom_killed" and e.question
+            else:
+                raise AssertionError("a kc red with a kill must bail")
+        since, = asked
+        assert since.tzinfo is not None
+        assert before <= since <= datetime.now(run_loop.UTC)
+
+
+# The writer's run of the gate: the wrapper over real git, `_tee_exec` and the
+# describe faked.
+
+def run_wrapper_killing(spec, tee, kills, asked=None):
+    """`run_wrapper` with `oom_killed_services` answering `kills` (or
+    raising it, an exception), each ask's `since` appended to `asked`."""
+    def answer(since):
+        if asked is not None:
+            asked.append(since)
+        if isinstance(kills, Exception):
+            raise kills
+        return list(kills)
+
+    with patched(run_loop, oom_killed_services=answer):
+        return run_wrapper(spec, tee)
+
+
+OOM_LINE = ("=== gate RED: postgres OOMKilled at its 1Gi memory limit while "
+            "the gate ran — the environment's, not the code's: change no code "
+            "for it; hand back `blocked` naming it, and the driver puts it to "
+            "the operator ===")
+
+
+def test_the_gate_wrapper_records_an_oom_kill_while_it_ran_red_and_tells_the_writer_to_stop():
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        repo, _ = wrapper_repo(tmp)
+        spec = write_spec(tmp, repo, component_argv("frontend"),
+                          touched={"target": "frontend", "waived": []})
+        oom = spec.parent / run_loop.GATE_OOM_NAME
+        asked = []
+        before = datetime.now(run_loop.UTC)
+        code, out, _ = run_wrapper_killing(spec, FakeTee([1]), [OOM_KILL],
+                                           asked)
+        assert code == 1
+        assert out.rstrip("\n").endswith("\n" + OOM_LINE)
+        assert "=== gate RED: `kc project test" not in out
+        since, = asked
+        assert before <= since <= datetime.now(run_loop.UTC)
+        record = record_of(spec)
+        assert record["outcome"] == "red"
+        data = json.loads(oom.read_text())
+        assert (data["phase"], data["round"], data["services"]) \
+            == ("1", 1, [OOM_KILL])
+        run, = data["runs"]
+        assert run == {"started": record["started"],
+                       "finished": record["finished"],
+                       "red": ["kc project test --project frontend"],
+                       "services": [OOM_KILL]}
+        # the round's later runs: a red with another kill adds it, a red
+        # with none and a green leave the file as it is — the record they
+        # replace is not where the kill is kept
+        s3 = {"name": "s3storage", "memoryLimit": "256Mi",
+              "finishedAt": "2026-11-04T10:20:00Z"}
+        code, out, _ = run_wrapper_killing(spec, FakeTee([1]), [s3])
+        assert code == 1 and "=== gate RED: s3storage OOMKilled at its 256Mi" \
+            " memory limit while the gate ran" in out
+        for rcs in ([1], [0]):
+            asked = []
+            code, out, _ = run_wrapper_killing(spec, FakeTee(rcs), [], asked)
+            assert code == rcs[0] and len(asked) == rcs[0]
+        assert "=== gate GREEN" in out
+        data = json.loads(oom.read_text())
+        assert data["services"] == [OOM_KILL, s3]
+        assert [r_["services"] for r_ in data["runs"]] == [[OOM_KILL], [s3]]
+        # another round's file is not added to
+        spec = write_spec(tmp, repo, component_argv("frontend"),
+                          touched={"target": "frontend", "waived": []},
+                          round_=2)
+        run_wrapper_killing(spec, FakeTee([1]), [s3])
+        data = json.loads(oom.read_text())
+        assert (data["round"], data["services"], len(data["runs"])) \
+            == (2, [s3], 1)
+
+
+def test_the_gate_wrapper_without_an_oom_kill_says_red_as_ever():
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        repo, base = wrapper_repo(tmp)
+        spec = write_spec(tmp, repo, component_argv("frontend"),
+                          touched={"target": "frontend", "waived": []})
+        oom = spec.parent / run_loop.GATE_OOM_NAME
+        asked = []
+        code, out, err = run_wrapper_killing(spec, FakeTee([1]), [], asked)
+        assert code == 1 and len(asked) == 1 and not oom.exists()
+        assert out.rstrip("\n").endswith(
+            "\n=== gate RED: `kc project test --project frontend` ===")
+        # kc not answering: a warning, and the plain red
+        code, out, err = run_wrapper_killing(spec, FakeTee([1]), KC_DOWN)
+        assert code == 1 and not oom.exists()
+        assert ("gate: not checked for a service killed for memory — `kc env "
+                "describe --output=json` failed (rc=1): no pod") in err
+        assert out.rstrip("\n").endswith(
+            "\n=== gate RED: `kc project test --project frontend` ===")
+        # green, and the spec check's red alone: kc never asked
+        asked = []
+        code, _, _ = run_wrapper_killing(spec, FakeTee([0]), [OOM_KILL], asked)
+        assert code == 0
+        spec = write_spec(tmp, repo, None, spec_check=True)
+        code, _, _ = run_wrapper_killing(spec, FakeTee([1]), [OOM_KILL], asked)
+        assert code == 1 and asked == [] and not oom.exists()
+
+
+def writes_gate_oom(loop, services=(OOM_KILL,), round_=1):
+    """A code-writer step's effect: its gate run went red while the
+    services were killed, and the wrapper left its file for the driver."""
+    path = outputs_of(loop) / run_loop.GATE_OOM_NAME
+    path.write_text(json.dumps({
+        "phase": "1", "round": round_, "services": list(services),
+        "runs": [{"started": "s", "finished": "f",
+                  "red": ["kc project test --project app"],
+                  "services": list(services)}]}))
+
+
+def test_a_writer_round_whose_gate_run_met_an_oom_kill_bails_whatever_it_handed_back():
+    for verdict in ({"outcome": "done", "summary": "built"},
+                    {"outcome": "blocked", "summary": "postgres OOMKilled"},
+                    {"outcome": "question", "summary": "more memory?"}):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp)
+            r = ScriptedLoop(slice_dir, [("code-writer", verdict,
+                                          writes_gate_oom)], repo_root=repo)
+            assert run_to_exit(r) == 4, verdict
+            assert not r.gate_calls, "the driver's gate never ran"
+            bail = json.loads((slice_dir / "bailout.json").read_text())
+            assert (bail["reason"], bail["question"], bail["phase"]) \
+                == ("service_oom_killed", True, "1")
+            record = outputs_of(r) / "writer_gate_r1.json"
+            assert ("during the code-writer's own gate run in round 1, red on "
+                    f"`kc project test --project app` (output in {record})"
+                    ) in bail["details"]
+            assert "- postgres — OOMKilled at its 1Gi memory limit, at " \
+                "2026-11-04T10:12:33Z" in bail["details"]
+            ps = load_state(slice_dir)["phases"]["1"]
+            assert (ps["stage"], ps["executor_rounds"]) == ("executor", 1)
+            assert "operator_question" not in ps
+
+
+def test_a_fresh_writer_round_drops_the_oom_kill_an_earlier_one_bailed_on():
+    """The resume after the bail dispatches a fresh round, which removes
+    the file first — so it does not stop on it again; a round that writes
+    no file and a file naming no service are no kill."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [(*V["exec_done"], writes_gate_oom)],
+                         repo_root=repo)
+        assert run_to_exit(r) == 4
+        oom = outputs_of(r) / run_loop.GATE_OOM_NAME
+        assert oom.exists()
+        seen = []
+
+        def looks(loop):
+            seen.append(oom.exists())
+
+        r2 = ScriptedLoop(slice_dir, [(*V["exec_done"], looks),
+                                      V["review_signoff"], *TAIL],
+                          resume=True, repo_root=repo)
+        r2.fake_git.branches.add("phase/074-P1")
+        assert run_to_exit(r2) == 0 and not r2.script
+        assert seen == [False]
+        assert load_state(slice_dir)["phases"]["1"]["executor_rounds"] == 2
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [
+            (*V["exec_done"], lambda loop: writes_gate_oom(loop, services=())),
+            V["review_signoff"], *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0 and not r.script
+
+
+def test_a_resumed_writer_round_keeps_its_own_oom_kill():
+    """A round a crash interrupted is the same round, salvaged from its
+    verdict or reattached to its session: the file may be that session's
+    evidence, and the round bails on it once it is back."""
+    for salvaged in (True, False):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp)
+            outputs = slice_dir / "phases" / "P1"
+            outputs.mkdir(parents=True)
+            verdict_path = outputs / "executor_result_r1.json"
+            if salvaged:
+                verdict_path.write_text(json.dumps(
+                    {"outcome": "blocked", "summary": "postgres OOMKilled"}))
+            (outputs / run_loop.GATE_OOM_NAME).write_text(json.dumps({
+                "phase": "1", "round": 1, "services": [OOM_KILL],
+                "runs": []}))
+            state = resume_state(PROJECT, stage="executor")
+            state["in_flight"] = {
+                "phase": "1", "role": "code-writer", "round": 1,
+                "verdict_path": str(verdict_path), "session": "sess-hung",
+                "started_at": "t"}
+            (slice_dir / "state.json").write_text(json.dumps(state))
+            r = ScriptedLoop(slice_dir, [] if salvaged else [V["exec_done"]],
+                             resume=True, repo_root=repo)
+            r.fake_git.branches.add("phase/074-P1")
+            assert run_to_exit(r) == 4
+            if salvaged:
+                assert not r.spawned
+            else:
+                assert r.spawned[0][4] == "sess-hung", "reattached"
+            bail = json.loads((slice_dir / "bailout.json").read_text())
+            assert bail["reason"] == "service_oom_killed"
+            assert load_state(slice_dir)["phases"]["1"]["executor_rounds"] \
+                == 1
 
 
 # -- the run-start setup -------------------------------------------------------

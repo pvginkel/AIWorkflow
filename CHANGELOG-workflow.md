@@ -4,6 +4,29 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-14 — A gate red while a service was OOM-killed bails with the cause named (v0.10.61)
+
+AIWF-139, from session review 2, change 6, which the operator ruled on 2026-11-04: "In full."
+In PilotApp slice 036, postgres was OOM-killed at its 512Mi limit during 4 of P2's 5 gate runs.
+P2's writer spent 46 to 96 minutes treating the dropped connection as a code regression. P4's
+gate died in 4 of its 5 runs, and the phase bailed after 77 minutes. Seven kills cost about $25
+and 3 hours. KC-213 made this checkable: `kc env describe` now gives each service's last
+termination and memory limit.
+
+- **The driver's phase gate bails `service_oom_killed` (exit 4) on a red while a service was
+  killed.** After a red kc command or migration check, the driver asks kc whether a service
+  the pod runs was `OOMKilled` since that command began. If one was, no fix round is banked. The
+  document's action names the service, the limit it died at and the `resources:` line in the
+  host's `.kubecoder/config.yaml` that raises it, then `kc env restart`. Every red is checked,
+  whatever its log says. A kill older than the command counts for nothing, and when kc does not
+  answer the red takes its fix round, as before.
+- **The writer's `gate` wrapper makes the same check over its run.** On a kill it writes
+  `gate_oom.json` beside the spec, and its RED line names the cause and tells the writer to
+  change no code. Once the round's session is back, the driver bails on that file whatever the
+  writer handed back. A fresh round removes the file first, so a resume does not stop on it
+  again.
+- **The sweep, the doc gate and the wrap-up's gate are not checked,** as ruled.
+
 ## 2026-11-13 — The code-writer is back on Opus at `xhigh`; its Fable run is toggled (v0.10.60)
 
 The operator paused the code-writer's Fable run on 2026-11-13. A limit reset gives back up to
