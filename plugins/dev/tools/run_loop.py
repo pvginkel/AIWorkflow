@@ -6758,9 +6758,10 @@ class RunLoop:
         a round with no valid verdict a protocol failure and calls it
         `blocked`; when the commit nudge then leaves a verdict on disk that
         is valid for the role, that verdict is the round's — here, in the
-        history row `_spawn` already wrote, and in what the caller acts on.
-        A nudge that leaves no valid verdict changes nothing: `blocked`
-        stands. This is the only place the ruling is revised."""
+        history row `_spawn` already wrote, its debrief in the round's
+        entry, and in what the caller acts on. A nudge that leaves no valid
+        verdict changes nothing: `blocked` stands. This is the only place
+        the ruling is revised."""
         if not (verdict_path and verdict
                 and verdict.get("_protocol_failure")):
             return verdict
@@ -6778,6 +6779,7 @@ class RunLoop:
             row.update({k: fresh[k] for k in ("findings", "refuted")
                         if isinstance(fresh.get(k), list) and fresh[k]})
             self._save_state()
+            debrief.revise_words(self.debrief_path, fresh)
         return fresh
 
     def _spawn(self, role: str, prompt: str, cwd: Path, verdict_path: Path,

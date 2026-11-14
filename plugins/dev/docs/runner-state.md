@@ -222,7 +222,8 @@ own sub-agents give none.
 
 The driver keeps each dispatch's debrief in `debrief.json` beside `state.json`, as an entry of its
 own, in the order it dispatched them: `{"entries": [...]}`, an entry appended after the round's
-history row and never rewritten, and never a field of the row. A gate sweep that ran has an entry
+history row, and never a field of the row; a verdict the commit nudge salvages gives the round's
+entry its debrief, as it gives the row its outcome. A gate sweep that ran has an entry
 too, its result in place of words; no other gate row has one. A dispatch that handed back no
 debrief, timed out or left no valid verdict has an entry with neither words nor a result; a
 round a session limit cut off is dispatched again, and its entry is the one. `tools/debrief.py`

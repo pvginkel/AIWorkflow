@@ -7,8 +7,9 @@ it as its verdict's `debrief`. The loop keeps each one in a file of its own
 beside its state file, RUN_FILE beside the run's `state.json` and PLAN_FILE
 beside the plan's `plan_state.json`, as an entry of its own, in the order
 it dispatched them: never a field of the history row, never one text with
-prefixes. The file is `{"entries": [...]}`; the loops append to it and never
-rewrite an entry.
+prefixes. The file is `{"entries": [...]}`; the loops append to it, and
+rewrite an entry only where the run's commit nudge salvages its round's
+verdict (`revise_words`).
 
 An entry is
 
@@ -141,15 +142,36 @@ def make_entry(entries: list[dict], steps, code: str, role: str,
     return entry
 
 
+def _load(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text())
+    except FileNotFoundError:
+        return {}
+
+
 def append(path: Path, entry: dict) -> None:
     """`entry` after the file's entries, written atomically; the rest of
     the file kept as it is."""
     path = Path(path)
-    try:
-        data = json.loads(path.read_text())
-    except FileNotFoundError:
-        data = {}
+    data = _load(path)
     data["entries"] = [*(data.get("entries") or []), entry]
+    _save(path, data)
+
+
+def revise_words(path: Path, verdict) -> None:
+    """The file's last entry given the words of `verdict`, a verdict the
+    round wrote on its commit nudge, after its entry was appended; a
+    verdict with none leaves the entry as it is."""
+    path = Path(path)
+    words = words_of(verdict)
+    data = _load(path)
+    if words is None or not data.get("entries"):
+        return
+    data["entries"][-1]["words"] = words
+    _save(path, data)
+
+
+def _save(path: Path, data: dict) -> None:
     tmp = path.with_name(path.name + ".tmp")
     with open(tmp, "w") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)

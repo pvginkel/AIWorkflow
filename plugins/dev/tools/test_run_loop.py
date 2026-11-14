@@ -19533,6 +19533,38 @@ def test_a_dispatch_with_no_debrief_or_no_verdict_is_an_entry_with_neither():
              None)]
 
 
+def test_a_verdict_salvaged_on_the_commit_nudge_gives_the_rounds_words():
+    """The commit nudge's verdict is the round's (`_salvage_nudged_verdict`):
+    the round's entry takes its debrief, as its history row takes its
+    outcome."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First phase")])
+        script = [
+            ("code-writer", "did the work, forgot the verdict", dirties()),
+            ("code-writer", "the verdict nudge produced nothing"),
+            ("code-writer", {"outcome": "done", "summary": "committed it",
+                             "debrief": "Forgot the verdict, then wrote it."},
+             commits),
+            V["review_signoff"], V["consult_complete"], V["test_clean"],
+            ("doc-writer", "wrote the pages, forgot the verdict", dirties()),
+            ("doc-writer", "the verdict nudge produced nothing"),
+            ("doc-writer", {"outcome": "done", "summary": "docs committed",
+                            "debrief": "Late, but there."}, commits),
+        ]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert not r.script
+        rows = debrief_rows(slice_dir)
+        assert ("P1 · First phase", 1, "Code writer",
+                "Forgot the verdict, then wrote it.", None, None) in rows
+        assert ("Doc phase", 1, "Doc writer", "Late, but there.", None,
+                None) in rows
+        assert len(rows) == len(run_loop.debrief.read(
+            slice_dir / run_loop.debrief.RUN_FILE)), "one entry a dispatch"
+        assert [row[2] for row in rows].count("Code writer") == 1
+
+
 def test_the_wrap_ups_timeout_and_invalid_verdict_are_entries_with_neither():
     for payload in (TIMED_OUT, {"outcome": "finished", "summary": "?",
                                 "debrief": "Odd one."}):

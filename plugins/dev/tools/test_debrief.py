@@ -150,6 +150,27 @@ def test_record_appends_each_dispatch_in_order_and_keeps_the_rest():
         assert not (Path(tmp) / (debrief.RUN_FILE + ".tmp")).exists()
 
 
+
+def test_a_salvaged_verdict_gives_the_last_entry_its_words_and_nothing_else():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / debrief.RUN_FILE
+        debrief.record(path, RUN, "code-reviewer", 1, 30, "3",
+                       verdict={"outcome": "signoff", "debrief": "Clean."})
+        debrief.record(path, RUN, "code-writer", 2, 60, "3", verdict=None)
+        data = json.loads(path.read_text())
+        data["debrief"] = "The stage session's own."
+        path.write_text(json.dumps(data))
+        debrief.revise_words(path, {"outcome": "done"})
+        assert json.loads(path.read_text()) == data
+        debrief.revise_words(path, {"outcome": "done",
+                                    "debrief": "Late, but there.\n"})
+        revised = json.loads(path.read_text())
+        assert revised["debrief"] == "The stage session's own."
+        assert [e.get("words") for e in revised["entries"]] == [
+            "Clean.", "Late, but there."]
+        assert revised["entries"][1] == dict(data["entries"][1],
+                                             words="Late, but there.")
+
 if __name__ == "__main__":
     _tests = [v for k, v in sorted(globals().items())
               if k.startswith("test_") and callable(v)]
