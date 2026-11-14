@@ -119,11 +119,14 @@ land first*, has the vocabulary); the run loop does not start until its checks h
 
 ## Hand-back
 
+Before you hand back, add a debrief: a few lines, in your own words, on how you feel this went
+for you.
+
 Commit everything to the spec repo (stage by name, `${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`),
-then write the verdict file named in your dispatch:
+then write the verdict file named in your dispatch, with your debrief as its `debrief`:
 
 ```json
-{"outcome": "done | questions | blocked", "summary": "1-3 sentences"}
+{"outcome": "done | questions | blocked", "summary": "1-3 sentences", "debrief": "your debrief"}
 ```
 
 - `done` — the pass is complete and committed.

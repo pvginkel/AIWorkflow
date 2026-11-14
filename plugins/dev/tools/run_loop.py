@@ -173,6 +173,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import asks  # noqa: E402
 import checks  # noqa: E402
+import debrief  # noqa: E402
 import github_target  # noqa: E402
 import long_run  # noqa: E402
 import pilot_progress  # noqa: E402
@@ -3831,9 +3832,14 @@ sweeps again on your commit. A flake you hand back unsettled leaves nothing
 committed; it goes into the slice's close-out report as a card request, and
 the run goes on without it.
 
-Write your verdict to {verdict_path} as JSON:
+Before you hand back, add a debrief: a few lines, in your own words, on how
+you feel this went for you.
+
+Write your verdict to {verdict_path} as JSON, with your debrief as its
+`debrief`:
   {{"outcome": "clean" | "issues" | "blocked",
-    "summary": "<what you measured, and what you fixed and committed, or why not>"}}
+    "summary": "<what you measured, and what you fixed and committed, or why not>",
+    "debrief": "<your debrief>"}}
 `clean` only with your fix committed.
 """
 
@@ -4042,9 +4048,12 @@ Investigate as needed — read the material below, the plan, git log/diff.
 Choose exactly one action:
 {actions}
 
-Write {verdict_path} as JSON:
+Before you hand back, add a debrief: a few lines, in your own words, on how
+you feel this went for you.
+
+Write {verdict_path} as JSON, with your debrief as its `debrief`:
   {{"outcome": "<action>", "summary": "<your reasoning, 1-5 sentences>",
-    "why": "<one line>"}}
+    "why": "<one line>", "debrief": "<your debrief>"}}
 `why` is the line the round your ruling starts opens with on Pilot's
 progress list — a fix round, the phases you appended, a sweep run again after
 your commit: what of the situation that round must still settle, in at most
@@ -5042,6 +5051,7 @@ class RunLoop:
         self.verification_path = self.slice_dir / "verification.json"
         self.report_path = report_path(self.slice_dir)
         self.state_path = self.slice_dir / "state.json"
+        self.debrief_path = self.slice_dir / debrief.RUN_FILE
         self.log_path = self.slice_dir / "log.txt"
         self.resume = resume
         self.verbose = verbose
@@ -5218,6 +5228,15 @@ class RunLoop:
             **(extra or {}),
         })
         self._save_state()
+
+    def _debrief(self, role: str, phase: str | None, round_: int,
+                 duration_s: int, verdict=None,
+                 passed: bool | None = None) -> None:
+        """The dispatch's entry in the run's debrief file (debrief.py), under
+        the step in `progress` it ran under."""
+        debrief.record(self.debrief_path, self.state.get("progress"), role,
+                       round_, duration_s, phase, verdict=verdict,
+                       passed=passed)
 
     def _emit(self, line: str) -> None:
         """All driver/session output lands in <slice>/log.txt; stdout echoes
@@ -6881,6 +6900,8 @@ class RunLoop:
                 # is only lost when the verdict is missing or unparseable.
                 verdict = _read_json(verdict_path)
                 if not _valid(verdict):
+                    self._debrief(role, phase_id, round_,
+                                  TIMEOUTS[role] + carried_s, verdict)
                     raise Bailout(
                         "timeout", phase=phase_id,
                         details=f"{role} exceeded {TIMEOUTS[role]}s",
@@ -6958,7 +6979,11 @@ class RunLoop:
         harness lost after the turn) counts for exactly the reason the
         timeout salvage counts: the file was unlinked at dispatch, so a valid
         one on disk is this round's, and writing it is the last step of every
-        role's protocol."""
+        role's protocol.
+
+        Its entry in the debrief file follows the row, its words those of the
+        verdict as it was read, whatever its outcome."""
+        given = verdict
         if not _verdict_valid(role, verdict):
             detail = _protocol_failure_detail(
                 role, returncode, verdict, verdict_path.name,
@@ -6980,6 +7005,7 @@ class RunLoop:
                      verdict.get("summary", ""), session_id, duration_s,
                      transcript=_transcript_path(cwd, session_id),
                      extra=telemetry)
+        self._debrief(role, phase_id, round_, duration_s, given)
         if verdict.get("cards"):
             # A pre-0.5.0 register still on an installed clone: not a
             # protocol failure — the findings belong in close-out.md.
@@ -10116,6 +10142,8 @@ class RunLoop:
             summary += f" ({len(reused)} reused from an earlier run)"
         self._record(None, "sweep", n, outcome, summary, None, duration_s,
                      extra={"reused": reused} if reused else None)
+        self._debrief("sweep", None, n, duration_s,
+                      passed={"green": True, "red": False}.get(outcome))
         self._progress_done()
         self.announce(f"gate sweep r{n} → "
                       + ("RED (" + ", ".join(reds) + ")" if reds
@@ -12434,6 +12462,7 @@ class RunLoop:
                 self._record(None, role, 1, "timeout", why, sid,
                              TIMEOUTS[role],
                              transcript=_transcript_path(cwd, sid))
+                self._debrief(role, None, 1, TIMEOUTS[role])
                 self.log(f"{label} → timeout: {why}")
                 return why
             except Exception:
@@ -12466,6 +12495,7 @@ class RunLoop:
             summary = f"{why}; the session ended rc={returncode}"
             self._record(None, role, 1, "invalid", summary, session_id,
                          duration_s, transcript=transcript)
+            self._debrief(role, None, 1, duration_s, verdict)
             self.log(f"{label} → invalid: {summary}")
             return why
         if returncode != 0:
@@ -12477,6 +12507,7 @@ class RunLoop:
                  if isinstance(verdict.get(key), list)}
         self._record(None, role, 1, outcome, summary, session_id, duration_s,
                      transcript=transcript, extra=lists)
+        self._debrief(role, None, 1, duration_s, verdict)
         self.log(f"{label} → {outcome}: {summary[:160]}")
         if outcome == "blocked":
             return "it answered blocked" + (f": {_clip(summary, 200)}"

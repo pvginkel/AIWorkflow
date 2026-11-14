@@ -127,10 +127,13 @@ grounds — a step two slices specify differently names no winner — or no opti
 open question. Advisory notes stay in the review file. The loop checks the file and sends it back
 to you once with its faults.
 
-Then write the verdict file named in your dispatch:
+Before you hand back, add a debrief: a few lines, in your own words, on how you feel this went
+for you.
+
+Then write the verdict file named in your dispatch, with your debrief as its `debrief`:
 
 ```json
-{"outcome": "go | issues | questions", "summary": "one sentence"}
+{"outcome": "go | issues | questions", "summary": "one sentence", "debrief": "your debrief"}
 ```
 
 - `questions` — one or more findings only the operator can resolve.

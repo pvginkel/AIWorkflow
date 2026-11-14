@@ -88,9 +88,14 @@ never a hand edit) — the review file stays the full record, and they are never
 what you enter — the facts `${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels asks for
 (`close_out.py labels` prints them), `unknown` where you cannot tell; where an entry goes is the
 tool's to decide, never yours. An entry is written under
-`${CLAUDE_PLUGIN_ROOT}/skills/writing/SKILL.md`. Then write the verdict file named in your
-dispatch — `findings` mirrors the review file, one entry per finding (the run record persists
-these fields, and the fix round addresses findings by id):
+`${CLAUDE_PLUGIN_ROOT}/skills/writing/SKILL.md`.
+
+Before you hand back, add a debrief: a few lines, in your own words, on how you feel this went
+for you.
+
+Then write the verdict file named in your dispatch, with your debrief as its `debrief` —
+`findings` mirrors the review file, one entry per finding (the run record persists these fields,
+and the fix round addresses findings by id):
 
 ```json
 {"outcome": "signoff | issues | critical", "summary": "1-3 sentences",
@@ -99,7 +104,8 @@ these fields, and the fix round addresses findings by id):
                "impact": "blocking|advisory",
                "category": "functional|comment-prose|style|other",
                "anchor": "failing-test|repro-trace|analyzer|contradiction|coverage-gap|none",
-               "summary": "<one line>"}]}
+               "summary": "<one line>"}],
+ "debrief": "your debrief"}
 ```
 
 - `signoff` — nothing tagged blocking: the phase may merge; advisory findings of any severity

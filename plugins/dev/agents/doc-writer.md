@@ -69,12 +69,16 @@ a doc change a requirement named was a phase of the plan, already shipped and in
 
 ## Hand-back
 
+Before you hand back, add a debrief: a few lines, in your own words, on how you feel this went
+for you.
+
 Commit on your dispatch's branch after the gates — a late find is a further commit on the
 branch, never a second landing (specs-repo files, if any, staged **by name**,
-`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`) — then write the verdict file named in your dispatch:
+`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`) — then write the verdict file named in your dispatch,
+with your debrief as its `debrief`:
 
 ```json
-{"outcome": "done | question | blocked", "summary": "1-3 sentences: surfaces updated, gates run, claims left unverified (each named, or none)", "options": [{"label": "question only, optional", "line": "what it means or costs"}], "recommend": "the label you would pick"}
+{"outcome": "done | question | blocked", "summary": "1-3 sentences: surfaces updated, gates run, claims left unverified (each named, or none)", "options": [{"label": "question only, optional", "line": "what it means or costs"}], "recommend": "the label you would pick", "debrief": "your debrief"}
 ```
 
 - `done` — every affected surface updated, gates green, committed.

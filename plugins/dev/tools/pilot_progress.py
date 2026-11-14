@@ -96,6 +96,21 @@ def phase_of(code: str) -> str | None:
     return match.group(1) if match else None
 
 
+def split_code(code: str) -> tuple[str | None, str, int]:
+    """A step's code, not empty, as its phase id (None for a step of no
+    phase), its kind and its round: `P3a.review-2` → ("3a", "review", 2),
+    `sweep` → (None, "sweep", 1)."""
+    phase, kind, round_ = _CODE_RE.match(code).groups()
+    return phase, kind, int(round_) if round_ else 1
+
+
+def active_step(steps) -> dict | None:
+    """The list's active step, or None where none is."""
+    return next((s for s in steps if isinstance(s, dict)
+                 and s.get("state") == ACTIVE), None) \
+        if isinstance(steps, list) else None
+
+
 def clip_label(label: str) -> str:
     return label if len(label) <= LABEL_MAX else label[:LABEL_MAX - 1] + "…"
 

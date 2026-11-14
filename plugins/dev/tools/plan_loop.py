@@ -110,6 +110,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # --show-toplevel` in the process cwd — not from `__file__`, which locates the
 # plugin these tools ship in, never the repo being planned.
 import asks  # noqa: E402
+import debrief  # noqa: E402
 import github_target  # noqa: E402
 import pilot_progress  # noqa: E402
 import project_config  # noqa: E402
@@ -204,6 +205,7 @@ LOOP_OWNED_FILES = frozenset({
     "plan_state.json",    # loop-owned state; survives so a rerun can resume
     "plan_bailout.json",  # bail record, rewritten each run
     "plan.lock",          # the loop's lock; its note names the live holder
+    debrief.PLAN_FILE,    # every pass's debrief, committed with the folder
 })
 # The report the loop renders from its store at every exit, and commits only
 # where it commits the store: left modified by an exit that commits nothing,
@@ -491,6 +493,7 @@ class PlanLoop:
         self.plan_path = self.slice_dir / "plan.md"
         self.report_path = report_path(self.slice_dir)
         self.state_path = self.slice_dir / "plan_state.json"
+        self.debrief_path = self.slice_dir / debrief.PLAN_FILE
         self.log_path = self.slice_dir / "plan_log.txt"
         self.verbose = verbose
         # Whether the log has said once that the version guard let a
@@ -554,6 +557,13 @@ class PlanLoop:
             "duration_s": duration_s,
         })
         self._save_state()
+
+    def _debrief(self, role: str, round_: int, duration_s: int,
+                 verdict=None) -> None:
+        """The pass's entry in the plan's debrief file (debrief.py), under
+        the step in `progress` it ran under."""
+        debrief.record(self.debrief_path, self.state.get("progress"), role,
+                       round_, duration_s, verdict=verdict)
 
     def _progress(self, edit) -> None:
         """`edit` applied to plan_state.json's `progress` — the steps the
@@ -891,6 +901,7 @@ class PlanLoop:
                 on_session=_note_session,
             )
         except subprocess.TimeoutExpired:
+            self._debrief(role, round_, TIMEOUTS[role])
             raise Bailout("timeout",
                           details=f"{role} exceeded {TIMEOUTS[role]}s") from None
         duration_s = int(time.monotonic() - t0)
@@ -912,6 +923,8 @@ class PlanLoop:
             verdict = _read_json(verdict_path)
             if _valid(verdict):
                 returncode = 0
+        # The pass's entry, whatever comes of its verdict below.
+        self._debrief(role, round_, duration_s, verdict)
         if returncode != 0 or not _valid(verdict):
             raise Bailout(
                 "protocol_failure",

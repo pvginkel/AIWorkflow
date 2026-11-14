@@ -170,7 +170,8 @@ At exit 0, in this order:
 3. `close_out.py render <slice> --step <task>` — the report once more, the cost in its record,
    its title the plan's one-liner, which says the slice as it was planned. With no ticket in the
    brief, a `--context`: the cards the answers ask for are filed without a parent.
-4. Commit the folder by name — `state.json`, `log.txt`, `close-out.json`, `close-out.md`,
+4. Commit the folder by name — `state.json`, `debrief.json`, `log.txt`, `close-out.json`,
+   `close-out.md`,
    `close-out-record.md`, `asks/` — dropping only a stale `bailout.json`.
 5. Move the slice card to delivered.
 6. Register `close-out.md`, attach `close-out-record.md`, `plan.md` and `verification.json` to

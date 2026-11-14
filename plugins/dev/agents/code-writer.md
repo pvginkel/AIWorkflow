@@ -94,10 +94,13 @@ author prose docs.
 
 ## Hand-back
 
-Write the verdict file named in your dispatch:
+Before you hand back, add a debrief: a few lines, in your own words, on how you feel this went
+for you.
+
+Write the verdict file named in your dispatch, with your debrief as its `debrief`:
 
 ```json
-{"outcome": "done | question | blocked", "summary": "1-3 sentences", "refuted": [{"id": "F2", "evidence": "review-fix rounds only: a blocking finding you witnessed as unable to fail — one line, what you ran or wrote"}], "options": [{"label": "question only, optional", "line": "what it means or costs"}], "recommend": "the label you would pick"}
+{"outcome": "done | question | blocked", "summary": "1-3 sentences", "refuted": [{"id": "F2", "evidence": "review-fix rounds only: a blocking finding you witnessed as unable to fail — one line, what you ran or wrote"}], "options": [{"label": "question only, optional", "line": "what it means or costs"}], "recommend": "the label you would pick", "debrief": "your debrief"}
 ```
 
 - `done` — implemented, gated, committed, done-record appended.

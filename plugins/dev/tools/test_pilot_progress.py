@@ -405,6 +405,11 @@ def test_a_code_names_its_phase_kind_and_round():
         raise AssertionError("a kind outside the set was given a code")
     assert pp.phase_of("P3a.review-2") == "3a"
     assert pp.phase_of("review-2") is None
+    assert [pp.split_code(c) for c in (
+        "P3a.review-2", "P3.code", "sweep", "consult-12", "wrap-up",
+        "write-2")] == [
+        ("3a", "review", 2), ("3", "code", 1), (None, "sweep", 1),
+        (None, "consult", 12), (None, "wrap-up", 1), (None, "write", 2)]
     assert pp.clip_label("a" * 121) == "a" * 119 + "…"
     assert pp.clip_label("a" * 120) == "a" * 120
 
@@ -551,6 +556,16 @@ def test_the_active_summary_names_the_phase_the_step_and_its_minutes():
     assert pp.active_summary(
         [{"code": "test", "label": "x", "state": "active",
           "started": datetime.now().astimezone().isoformat()}]) == "test, <1m"
+
+
+def test_the_active_step_is_the_one_started_last_or_none():
+    steps = pp.start(seeded(), "P1.code", "P1 · First")
+    assert pp.active_step(steps)["code"] == "P1.code"
+    assert pp.active_step(pp.start(steps, "P1.review", "P1 · review"))[
+        "code"] == "P1.review"
+    for none in (seeded(), pp.finish_active(steps), [], None, "x",
+                 [None, "x"]):
+        assert pp.active_step(none) is None, none
 
 
 def test_finishing_marks_the_active_step_or_a_whole_phase_done():

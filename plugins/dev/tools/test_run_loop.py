@@ -19393,6 +19393,208 @@ def test_the_spec_repo_s_diverged_base_is_left_for_the_run_to_push():
             (slice_dir / "log.txt").read_text()
 
 
+
+# -- the debrief ----------------------------------------------------------------
+#
+# Every role the run dispatches is asked for a debrief at its hand-back, in
+# the operator's words, and the driver keeps each dispatch's as an entry of
+# its own in debrief.json, in the order dispatched, beside a gate sweep's
+# result (debrief.py).
+
+DEBRIEF_ASK = ("Before you hand back, add a debrief: a few lines, in your own "
+               "words, on how you feel this went for you.")
+
+
+def debrief_rows(slice_dir):
+    """The run's debrief entries, as (section, round, role, words, passed,
+    why)."""
+    data = json.loads((slice_dir / run_loop.debrief.RUN_FILE).read_text())
+    return [(e["section"], e["round"], e["role"], e.get("words"),
+             e.get("passed"), e.get("why")) for e in data["entries"]]
+
+
+def test_every_role_the_run_dispatches_is_asked_for_its_debrief():
+    agents = run_loop.AGENTS_DIR
+    for role in ("code-writer", "code-reviewer", "test-agent", "doc-writer",
+                 "wrap-up"):
+        text = flat((agents / f"{role}.md").read_text())
+        assert text.count(DEBRIEF_ASK) == 1, role
+        assert '"debrief": "your debrief"' in text, role
+    # the test-fixer is also a sub-agent of the test and doc phases, whose
+    # own sub-agents give none: the sweep's dispatch asks it, never its file
+    assert "debrief" not in (agents / "test-fixer.md").read_text()
+    for prompt in (run_loop.CONSULT_PROMPT, run_loop.FLAKE_FIX_PROMPT):
+        assert flat(prompt).count(DEBRIEF_ASK) == 1
+        assert '"debrief": "<your debrief>"' in prompt
+
+
+def test_each_dispatch_is_an_entry_of_its_own_in_the_order_dispatched():
+    findings = [REVIEW_FINDINGS[0]]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First phase")])
+        plant_waiting(slice_dir)
+        script = [
+            ("code-writer", {"outcome": "done", "summary": "built",
+                             "debrief": "  Went well.\n\nMostly.\n"}),
+            ("code-reviewer", {"outcome": "issues", "summary": "gaps",
+                               "findings": findings,
+                               "debrief": "One gap."}),
+            ("code-writer", {"outcome": "done", "summary": "fixed",
+                             "debrief": "Fair catch."}),
+            ("code-reviewer", {"outcome": "issues", "summary": "again",
+                               "findings": findings}),
+            ("consult", {"outcome": "fix_round", "summary": "fund it",
+                         "why": "The empty input still takes the wrong "
+                                "branch",
+                         "debrief": "Worth one more round."}),
+            ("code-writer", {"outcome": "done", "summary": "fixed again",
+                             "debrief": "Done now."}),
+            ("code-reviewer", {"outcome": "signoff", "summary": "ok",
+                               "debrief": "Clean."}),
+            ("consult", {"outcome": "complete", "summary": "done",
+                         "debrief": "It felt done."}),
+            ("test-agent", {"outcome": "clean", "summary": "ok",
+                            "debrief": "All green."}),
+            ("doc-writer", {"outcome": "done", "summary": "docs",
+                            "debrief": "Small docs."}),
+        ]
+        r = SpawningLoop(slice_dir, script, repo_root=repo, wrap_ups=[(
+            {"outcome": "done", "summary": "left it", "left": ["B1"],
+             "debrief": "Quiet one."},)])
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert not r.script and r.wrap_up_sessions
+        phase = "P1 · First phase"
+        assert debrief_rows(slice_dir) == [
+            (phase, 1, "Code writer", "Went well.\n\nMostly.", None, None),
+            (phase, 1, "Code reviewer", "One gap.", None, None),
+            (phase, 2, "Code writer", "Fair catch.", None,
+             "wrong branch on empty input"),
+            (phase, 2, "Code reviewer", None, None, None),
+            (phase, 2, "Review consult", "Worth one more round.", None, None),
+            (phase, 3, "Code writer", "Done now.", None,
+             "The empty input still takes the wrong branch"),
+            (phase, 3, "Code reviewer", "Clean.", None, None),
+            ("Completion check", 1, "Gate sweep", None, True, None),
+            ("Completion check", 1, "Completion consult", "It felt done.",
+             None, None),
+            ("Test phase", 1, "Test agent", "All green.", None, None),
+            ("Doc phase", 1, "Doc writer", "Small docs.", None, None),
+            ("Wrap-up", 1, "Wrap-up", "Quiet one.", None, None)]
+        entries = run_loop.debrief.read(slice_dir / run_loop.debrief.RUN_FILE)
+        assert all(isinstance(e["duration"], int) for e in entries)
+        assert [e["step"] for e in entries][:7] == [
+            "P1.code", "P1.review", "P1.code-2", "P1.review-2",
+            "P1.review-2", "P1.code-3", "P1.review-3"]
+        # never a field of the history row
+        state = load_state(slice_dir)
+        assert not any("debrief" in row for row in state["history"])
+        # the consult and the wrap-up were dispatched with the ask
+        consult = next(p for role, p in r.session_prompts if role == "consult")
+        assert DEBRIEF_ASK in flat(consult)
+
+
+def test_a_dispatch_with_no_debrief_or_no_verdict_is_an_entry_with_neither():
+    with tempfile.TemporaryDirectory() as tmp:
+        # timed out: its time is the role's timeout
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First phase")])
+        r = SpawningLoop(slice_dir, [("code-writer", TIMED_OUT)],
+                         repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 3
+        [entry] = run_loop.debrief.read(slice_dir / run_loop.debrief.RUN_FILE)
+        assert entry == {"section": "P1 · First phase", "round": 1,
+                         "role": "Code writer",
+                         "duration": run_loop.TIMEOUTS["code-writer"],
+                         "step": "P1.code"}
+    with tempfile.TemporaryDirectory() as tmp:
+        # no verdict after its nudge
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First phase")])
+        r = SpawningLoop(slice_dir, [("code-writer", "forgot the verdict")],
+                         repo_root=repo)
+        r._nudge = lambda prompt, cwd, sid, label, role, **kw: None
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 3
+        [entry] = run_loop.debrief.read(slice_dir / run_loop.debrief.RUN_FILE)
+        assert (entry["role"], "words" in entry, "passed" in entry) == (
+            "Code writer", False, False)
+    with tempfile.TemporaryDirectory() as tmp:
+        # a session limit is the same round dispatched again: one entry
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First phase")])
+        r = SpawningLoop(slice_dir, [
+            ("code-writer", SESSION_LIMIT_TEXT),
+            ("code-writer", {"outcome": "blocked", "summary": "no creds",
+                             "debrief": "Stuck on access."})],
+            repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 3
+        assert debrief_rows(slice_dir) == [
+            ("P1 · First phase", 1, "Code writer", "Stuck on access.", None,
+             None)]
+
+
+def test_the_wrap_ups_timeout_and_invalid_verdict_are_entries_with_neither():
+    for payload in (TIMED_OUT, {"outcome": "finished", "summary": "?",
+                                "debrief": "Odd one."}):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp)
+            plant_waiting(slice_dir)
+            r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                         *TAIL], repo_root=repo,
+                             wrap_ups=[(payload,)])
+            assert run_to_exit(r) == 0
+            [entry] = [e for e in run_loop.debrief.read(
+                slice_dir / run_loop.debrief.RUN_FILE)
+                if e["role"] == "Wrap-up"]
+            assert entry["section"] == "Wrap-up" and "passed" not in entry
+            if payload is TIMED_OUT:
+                assert "words" not in entry
+                assert entry["duration"] == run_loop.TIMEOUTS["wrap-up"]
+            else:
+                assert entry["words"] == "Odd one."
+
+
+def test_a_sweeps_entry_is_its_result_and_a_test_fixer_is_the_checks():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [V["exec_done"], V["review_signoff"], FLAKE,
+                  ("test-fixer", {"outcome": "clean", "summary": "awaited it",
+                                  "debrief": "Felt like a patch."},
+                   fixes_the_flake),
+                  V["test_clean"], V["doc_done"]]
+        r = SpawningLoop(slice_dir, script, repo_root=repo,
+                         sweep_reds={(PROJECT, "test")})
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        check = [row for row in debrief_rows(slice_dir)
+                 if row[0] == "Completion check"]
+        why = next(s["why"] for s in load_state(slice_dir)["progress"]
+                   if s["code"] == "sweep-2")
+        assert check == [
+            ("Completion check", 1, "Gate sweep", None, False, None),
+            ("Completion check", 1, "Completion consult", None, None, None),
+            ("Completion check", 1, "Test fixer", "Felt like a patch.", None,
+             None),
+            ("Completion check", 2, "Gate sweep", None, True, why)]
+        fixer = next(p for role, p in r.session_prompts
+                     if role == "test-fixer")
+        assert DEBRIEF_ASK in flat(fixer)
+    with tempfile.TemporaryDirectory() as tmp:
+        # a sweep in which nothing ran has neither words nor a result
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [], repo_root=repo)
+        r._run_sweep_cmd = lambda root, component, verb, out_dir, \
+            component_dir=None: {"repo": str(root), "component": component,
+                                 "verb": verb, "outcome": "nothing_ran",
+                                 "green": False, "log": None,
+                                 "duration_s": 0}
+        run_sweep(r, repo)
+        [entry] = run_loop.debrief.read(slice_dir / run_loop.debrief.RUN_FILE)
+        assert (entry["section"], entry["role"], "passed" in entry,
+                "words" in entry) == ("Completion check", "Gate sweep",
+                                      False, False)
+
+
 if __name__ == "__main__":
     _tests = [v for k, v in sorted(globals().items())
               if k.startswith("test_") and callable(v)]

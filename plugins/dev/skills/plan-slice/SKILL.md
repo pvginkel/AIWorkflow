@@ -189,7 +189,8 @@ At exit 0, in this order:
 1. `run_loop.py run <slice> --dry-run` — the plan parses, every `Target:` resolves, the gates
    print. A failure is [diagnosed](#an-error) as a bail is.
 2. `git mv <spec-repo>/slices/backlog/<NNN_slug> <spec-repo>/slices/<NNN_slug>`, and commit the
-   move with the loop's `plan_state.json` and `plan_log.txt`, staged by name; drop a stale
+   move with the loop's `plan_state.json`, `plan_debrief.json` and `plan_log.txt`, staged by
+   name; drop a stale
    `plan_bailout.json` and the emptied `plan.lock`. The folder is clean after. No document of the
    slice is open at exit 0, so the move is safe (pilot.md § The documents).
 3. A sub-agent brings the tracker in line with the plan. The slice card goes from triaged to

@@ -779,8 +779,8 @@ their summaries already. The doc phase and the wrap-up have one step each, and s
 
 ## Protocol invariants
 
-Every spawned agent ends by writing the verdict JSON named in its dispatch and leaves the
-worktree committed. A miss gets one resume-nudge each — the verdict nudge for a missing verdict,
+Every spawned agent ends by writing the verdict JSON named in its dispatch, its debrief in it
+([runner-state.md](runner-state.md) § debrief.json), and leaves the worktree committed. A miss gets one resume-nudge each — the verdict nudge for a missing verdict,
 the commit nudge for a dirty tree — and a verdict on disk after either counts: a session that
 ended without one routinely writes it while committing on the commit nudge (slice 198 P6
 committed its code, its done-record and a valid verdict there; the driver's earlier `blocked`

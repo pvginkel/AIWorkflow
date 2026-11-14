@@ -51,11 +51,15 @@ pre-authorize stays operator-gated.
 
 ## Hand-back
 
+Before you hand back, add a debrief: a few lines, in your own words, on how you feel this went
+for you.
+
 Commit what you wrote (specs-repo files staged **by name**,
-`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`), then write the verdict file named in your dispatch:
+`${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`), then write the verdict file named in your dispatch,
+with your debrief as its `debrief`:
 
 ```json
-{"outcome": "clean | findings | blocked", "summary": "1-3 sentences: what ran, what was verified", "why": "findings only: one line"}
+{"outcome": "clean | findings | blocked", "summary": "1-3 sentences: what ran, what was verified", "why": "findings only: one line", "debrief": "your debrief"}
 ```
 
 - `clean` — the procedure completed; no finding cleared the bar (sub-bar findings are in the

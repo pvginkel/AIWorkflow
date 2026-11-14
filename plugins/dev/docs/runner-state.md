@@ -210,6 +210,38 @@ way. What a dead round left uncommitted, set aside by the resume before it reset
 itself the same way; [run-loop.md](run-loop.md) § The per-phase round). Executor inputs come from
 `plan.md`, never from copies.
 
+## debrief.json
+
+Every role the run dispatches is asked at its hand-back, in the operator's words, "Before you
+hand back, add a debrief: a few lines, in your own words, on how you feel this went for you.",
+and gives it as its verdict's `debrief`; nothing else primes it or labels it. The ask is in the
+hand-back of the code-writer, the code-reviewer, the test agent, the doc writer and the
+wrap-up, in `CONSULT_PROMPT`, and in a sweep's test-fixer's dispatch, `FLAKE_FIX_PROMPT`, never
+in `test-fixer.md`: the test and doc phases dispatch the test-fixer as a sub-agent, and a role's
+own sub-agents give none.
+
+The driver keeps each dispatch's debrief in `debrief.json` beside `state.json`, as an entry of its
+own, in the order it dispatched them: `{"entries": [...]}`, an entry appended after the round's
+history row and never rewritten, and never a field of the row. A gate sweep that ran has an entry
+too, its result in place of words; no other gate row has one. A dispatch that handed back no
+debrief, timed out or left no valid verdict has an entry with neither words nor a result; a
+round a session limit cut off is dispatched again, and its entry is the one. `tools/debrief.py`
+writes the file; the plan loop keeps `plan_debrief.json` by the same rules
+([plan-loop.md](plan-loop.md) § The debrief). An entry:
+
+| Field | What it holds |
+|---|---|
+| `section` | where the full debrief Pilot shows puts it: a phase's entries, its code and review rounds and a consult at its review, under its first step's label, `P3 · <title>`; the sweeps, the completion consults and a sweep's test-fixer under `Completion check`; then `Test phase`, `Doc phase` and `Wrap-up` |
+| `round` | the round of the step it ran under, as Progress numbers it |
+| `role` | `Code writer`, `Code reviewer`, `Review consult`, `Gate sweep`, `Completion consult`, `Test fixer`, `Test agent`, `Doc writer` or `Wrap-up` |
+| `duration` | the dispatch's whole seconds, as its history row has them; a timeout's, the role's timeout |
+| `words` | the debrief as the role gave it, its ending whitespace left off |
+| `passed` | a sweep's result: `true` green, `false` red, left out where nothing in it ran |
+| `why` | on the first entry of a step that carries one: the why its round opened with ([run-loop.md](run-loop.md) § The steps Pilot shows) |
+| `step` | the code of the step in `progress` the dispatch ran under, the active one, which `section` and `round` are read off; the plugin's own |
+
+`/dev:run-slice` commits the file with the folder at the close-out.
+
 ## bailout.json and exit codes
 
 ```json

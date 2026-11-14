@@ -4,6 +4,36 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-14 — Every role the loops dispatch gives a debrief, each round's an entry of its own (v0.10.65)
+
+PilotApp slice 043, the debrief, its phase P8. The operator: "When I wa running the workflow
+manually I would ask how the agent felt it went. It would write a summary I found very
+valuable." And of the rounds: "every round gets its own. Not collected into a single field with
+prefixes."
+
+- **Every role is asked at its hand-back**, in the operator's words: "Before you hand back, add
+  a debrief: a few lines, in your own words, on how you feel this went for you." It is the
+  verdict's `debrief`. The run's code-writer, code-reviewer, consult, test agent, doc writer,
+  wrap-up and a sweep's test-fixer are asked, and so are the plan's writer and reviewer. The
+  test-fixer is asked in the sweep's dispatch, not in its agent file: the test and doc phases
+  dispatch it as a sub-agent, and a role's own sub-agents give none.
+- **Each dispatch's debrief is an entry of its own**, in the order dispatched: in `debrief.json`
+  beside `state.json`, and in `plan_debrief.json` beside `plan_state.json`
+  (runner-state.md § debrief.json). It is never a field of the history row. Each entry carries
+  the section and the round the full debrief in Pilot groups it by, read off the step in
+  Progress it ran under. A phase's entries go under its first step's label, its code, review and
+  review consult together. The completion check holds its sweeps, its consults and a sweep's
+  test-fixer. The test phase, the doc phase, the wrap-up and the plan have a section each. The
+  entry that opens a round past the first carries its step's why.
+- **A gate sweep has an entry** with its result, pass or fail, or neither where nothing ran. No
+  other gate row has one. A dispatch that timed out, or left no debrief or no valid verdict, has
+  an entry with neither words nor a result.
+- **Both files are committed with the slice's folder.** Plan-slice's promotion and run-slice's
+  close-out name them, and the plan loop's cleanliness checks treat `plan_debrief.json` as its
+  own file.
+- The stage session's own debrief, the plan preparer's and the hand-off to Pilot are not in this
+  release.
+
 ## 2026-11-14 — A repeat round's step says why the round before did not settle it (v0.10.64)
 
 PilotApp slice 043, the debrief, its phase P7. The operator, of the Progress list in Pilot: "I

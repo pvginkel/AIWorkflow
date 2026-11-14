@@ -823,7 +823,8 @@ def test_loop_owned_files_pass_preflight():
         slice_dir = make_slice(tmp)
         porcelain = ("?? specs/099/plan_log.txt\0"
                      "?? specs/099/plan_state.json\0"
-                     "?? specs/099/plan_bailout.json\0")
+                     "?? specs/099/plan_bailout.json\0"
+                     "?? specs/099/plan_debrief.json\0")
         loop = DirtyGitLoop(slice_dir, [W_DONE, R_GO], porcelain=porcelain)
         assert run_to_exit(loop) == 0
 
@@ -3058,6 +3059,112 @@ def test_the_spec_push_grant_rides_the_detached_plan_loop():
                 patched(sys, argv=argv):
             plan_loop.main()
         assert parsed[0].spec_push is True and parsed[0].detach is True
+
+
+
+# -- the debrief ----------------------------------------------------------------
+#
+# The plan-writer and the plan-reviewer are asked for a debrief at their
+# hand-back, and the loop keeps each pass's as an entry of its own in
+# plan_debrief.json, beside plan_state.json (debrief.py).
+
+DEBRIEF_ASK = ("Before you hand back, add a debrief: a few lines, in your own "
+               "words, on how you feel this went for you.")
+NO_ANSWER = object()   # a session that never returns
+
+
+class SessionLoop(ScriptedLoop):
+    """ScriptedLoop with the real _spawn: each step's session is faked at
+    `run_kc_session`, writing its verdict — none for None — or never
+    returning (NO_ANSWER)."""
+
+    def _spawn(self, role, prompt, verdict_path, round_):
+        self._pending = (role, Path(verdict_path))
+        self.prompts.append((role, prompt))
+        return PlanLoop._spawn(self, role, prompt, verdict_path, round_)
+
+    def session(self, prompt, cwd, timeout, agent=None, **kw):
+        role, verdict_path = self._pending
+        step = self.script.pop(0)
+        assert step[0] == role, (step[0], role)
+        result = type("R", (), {"session_id": "sess-test", "result_text": "",
+                                "is_error": False})()
+        if step[1] is NO_ANSWER:
+            raise subprocess.TimeoutExpired("kc", timeout)
+        if step[1] is not None:
+            verdict_path.write_text(json.dumps(step[1]))
+        if len(step) > 2:
+            step[2](self)
+        return 0, result
+
+
+def run_sessions(loop):
+    original = plan_loop.run_kc_session
+    plan_loop.run_kc_session = loop.session
+    try:
+        return run_to_exit(loop)
+    finally:
+        plan_loop.run_kc_session = original
+
+
+def plan_debrief(slice_dir):
+    data = json.loads((slice_dir / "plan_debrief.json").read_text())
+    return [(e["section"], e["round"], e["role"], e.get("words"),
+             e.get("why")) for e in data["entries"]]
+
+
+def debriefs(step, words):
+    return (step[0], dict(step[1], debrief=words), *step[2:])
+
+
+def test_the_planners_are_asked_for_their_debrief():
+    agents = run_loop.AGENTS_DIR
+    for role in ("plan-writer", "plan-reviewer"):
+        text = " ".join((agents / f"{role}.md").read_text().split())
+        assert text.count(DEBRIEF_ASK) == 1, role
+        assert '"debrief": "your debrief"' in text, role
+
+
+def test_each_pass_is_an_entry_of_its_own_beside_the_state_file():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = SessionLoop(slice_dir, [
+            debriefs(W_DONE, "Nine phases came out naturally.\n"),
+            debriefs(R_ISSUES, "Sound, one gap.")])
+        assert run_sessions(loop) == 4
+        assert run_sessions(SessionLoop(slice_dir, [
+            debriefs(W_DONE, "Quick and fair.")])) == 0
+        assert plan_debrief(slice_dir) == [
+            ("The plan", 1, "Plan writer", "Nine phases came out naturally.",
+             None),
+            ("The plan", 1, "Plan reviewer", "Sound, one gap.", None),
+            ("The plan", 2, "Plan writer", "Quick and fair.",
+             "Slice 031 and this plan build the login page differently; "
+             "Requirement 1 has no criterion")]
+        entries = json.loads(
+            (slice_dir / "plan_debrief.json").read_text())["entries"]
+        assert [e["step"] for e in entries] == ["write", "review", "write-2"]
+        assert not any("debrief" in row
+                       for row in load_state(slice_dir)["history"])
+
+
+def test_a_pass_that_handed_back_no_debrief_or_no_verdict_has_neither():
+    for payload, want in ((NO_ANSWER, plan_loop.TIMEOUTS["plan-writer"]),
+                          (None, None),
+                          ({"outcome": "done", "summary": "written"}, None)):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir = make_slice(tmp)
+            step = ("plan-writer", payload)
+            script = ([(*step, write_phases), R_GO]
+                      if isinstance(payload, dict) else [step])
+            code = run_sessions(SessionLoop(slice_dir, script))
+            assert code == (0 if isinstance(payload, dict) else 3)
+            entry = json.loads((slice_dir / "plan_debrief.json").read_text())[
+                "entries"][0]
+            assert (entry["section"], entry["role"], "words" in entry) == (
+                "The plan", "Plan writer", False)
+            if want is not None:
+                assert entry["duration"] == want
 
 
 if __name__ == "__main__":

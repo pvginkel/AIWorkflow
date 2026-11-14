@@ -185,14 +185,21 @@ the code they name together.
 Commit the store when you are done (`close-out.json`, staged by name). Your final message is
 your report, short: what you fixed, with the commits; what you ask a card for; what you ask
 the operator's word on; what you relabelled and where it went; what you vetted and changed;
-what you left. If your dispatch names a verdict file, write this there as JSON:
+what you left.
+
+Before you hand back, add a debrief: a few lines, in your own words, on how you feel this went
+for you.
+
+If your dispatch names a verdict file, write this there as JSON, with your debrief as its
+`debrief`:
 
 ```json
 {"outcome": "done | blocked",
  "summary": "1-3 sentences",
  "fixed": ["P1", "B3"], "folded": ["I2"], "cards": ["B4"], "words": ["P2"],
  "left": ["T2", "B9"],
- "relabelled": ["B7"]}
+ "relabelled": ["B7"],
+ "debrief": "your debrief"}
 ```
 
 - `done` — every entry of the work list carries its mark.
