@@ -1388,15 +1388,73 @@ def absorb_report(slice_dir: Path | str, date: str | None = None) -> list[str]:
         return _absorb(store, blocks, day)
 
 
+# How long each git command of `rule --commit`'s check may take before the
+# commit is refused.
+GIT_CHECK_TIMEOUT = 30
+
+
+def _git_check(repo: Path | str, *args: str) -> subprocess.CompletedProcess:
+    """One git command of `rule --commit`'s check, run in `repo`; one that
+    cannot run or does not answer in time is a ReportError."""
+    cmd = ["git", "-C", str(repo), *args]
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=GIT_CHECK_TIMEOUT,
+                              env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+    except subprocess.TimeoutExpired:
+        raise ReportError(f"`{shlex.join(cmd)}` did not answer within "
+                          f"{GIT_CHECK_TIMEOUT}s — no commit was recorded") from None
+    except OSError as e:
+        raise ReportError(f"`{shlex.join(cmd)}` cannot run: {e} — no commit was "
+                          "recorded") from None
+
+
+def _commit_on_upstream(repo: Path | str, commit: str) -> None:
+    """Refuse `commit` unless it is a commit of `repo` that the upstream of
+    the branch checked out there holds. The upstream is read from its
+    remote-tracking ref, which a push updates, so nothing is fetched. A hash
+    taken before its push is rewritten by the `git pull --rebase` that
+    precedes the push, and names a commit that never reaches the remote."""
+    found = _git_check(repo, "rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}")
+    if found.returncode != 0 or not found.stdout.strip():
+        why = _collapse(found.stderr)
+        raise ReportError(f"{commit} is no commit in {repo}" + (f": {why}" if why else ""))
+    sha = found.stdout.strip()
+    upstream = _git_check(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    if upstream.returncode != 0 or not upstream.stdout.strip():
+        head = _git_check(repo, "rev-parse", "--abbrev-ref", "HEAD")
+        branch = (head.stdout.strip() if head.returncode == 0 else "") or "HEAD"
+        why = _collapse(upstream.stderr)
+        raise ReportError(f"{commit} is not on an upstream: {branch} in {repo} has none"
+                          + (f" — git: {why}" if why else ""))
+    up = upstream.stdout.strip()
+    held = _git_check(repo, "merge-base", "--is-ancestor", sha, "@{u}")
+    if held.returncode == 1:
+        raise ReportError(f"{commit} is not on {up} in {repo}: push it first — git pull "
+                          "--rebase, then git push — and record the hash it has there")
+    if held.returncode != 0:
+        raise ReportError(f"{commit} cannot be checked against {up} in {repo}: "
+                          + (_collapse(held.stderr) or f"git exited {held.returncode}"))
+
+
 def rule_entry(slice_dir: Path | str, eid: str, did: str,
-               commit: str | None = None, date: str | None = None) -> str:
+               commit: str | None = None, date: str | None = None,
+               repo: Path | str | None = None) -> str:
     """Record what the continuation did on an entry's ruling — "carded as
     P-12", "folded into slice 031", "closed" — which strikes the entry. The
     ruling is the answer lines `absorb` read back; an entry without one has
-    nothing to act on. Returns the ruling as the record shows it."""
+    nothing to act on. Returns the ruling as the record shows it.
+
+    A commit is recorded only once the upstream of the branch checked out in
+    `repo` — the repository holding the slice folder when it is None — holds
+    it: a hash taken before the push names a commit the push's `git pull
+    --rebase` rewrites, which never reaches the remote. Any other commit is
+    refused, whether or not the repo's push is held, and nothing is written;
+    without a commit, no git runs."""
     did = _collapse(did)
     if not did:
         raise ReportError("--did is empty")
+    commit = _collapse(commit) or None
     day = _date(date)
     with _writing(slice_dir) as store:
         entry = _find(store, eid)
@@ -1405,11 +1463,14 @@ def rule_entry(slice_dir: Path | str, eid: str, did: str,
                               "the answers of close-out.md back first")
         if entry["ruling"].get("did"):
             raise ReportError(f"{entry['id']} is done already: {entry['ruling']['did']}")
+        struck = entry.get("strike")
+        if commit and not (struck and struck.get("commit")):
+            _commit_on_upstream(slice_dir if repo is None else repo, commit)
         entry["ruling"]["did"] = did
-        if not entry.get("strike"):
+        if not struck:
             _strike(entry, did, _striker(entry), commit, day)
-        elif commit and not entry["strike"].get("commit"):
-            entry["strike"]["commit"] = _collapse(commit)
+        elif commit and not struck.get("commit"):
+            struck["commit"] = commit
         return f"{entry['id']}: {_ruling_text(entry)}"
 
 
@@ -3610,7 +3671,10 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p.add_argument("--did", required=True,
                    help="what was done: carded as <card>, fixed in <commit>, folded "
                         "into <slice>, closed")
-    p.add_argument("--commit", help="the commit of what was done")
+    p.add_argument("--commit", help="the commit of what was done, on the upstream of the "
+                                    "branch checked out in --repo — refused otherwise")
+    p.add_argument("--repo", help="the repository the commit is in; the one holding the "
+                                  "slice folder when omitted")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
     p = verb("settle", "settle a criterion owed after an operator's action — writes its "
@@ -3929,7 +3993,7 @@ def main(argv=None) -> int:
             print("\n".join(absorb_report(slice_dir, date=args.date)))
         elif command == "rule":
             print(rule_entry(slice_dir, args.id, args.did, commit=args.commit,
-                             date=args.date))
+                             date=args.date, repo=args.repo))
         elif command == "settle":
             print("\n".join(settle_criterion(slice_dir, args.vid, args.verdict,
                                              [_stdin_or(e) for e in args.evidence],

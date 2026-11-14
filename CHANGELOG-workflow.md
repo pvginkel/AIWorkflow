@@ -4,6 +4,26 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-14 — The close-out continuation records a commit only once it is on the upstream (v0.10.62)
+
+AIWF-161, ruled on PilotAppSpecs slice 036's close-out (2026-11-05). Its continuation recorded
+the correction's commit as 24231c0, and then its push was refused. The `git pull --rebase`
+before the second push rewrote the commit to 72c2226. The only repair was a `close_out.py note`
+on each of the three entries, a re-render and another push.
+
+- **The continuation pushes a commit before it records it** (close-out.md § The continuation).
+  It runs `git pull --rebase`, then `git push`, and `--did` and `--commit` name the hash the
+  commit has on the upstream.
+- **`close_out.py rule --commit` refuses a hash that is not on the upstream.** It resolves the
+  hash in the repo `--repo` names, which defaults to the repo holding the slice folder. The hash
+  must be an ancestor of `@{u}`, the upstream of the branch checked out there. A hash git does not
+  know is refused, and so is a branch with no upstream. The refusal says the hash is not on the
+  upstream and names the push. `rule` without `--commit` runs no git. `strike --commit` is
+  unchanged.
+- **Known limit, as ruled:** a commit whose push is held, or that sits in a project with
+  `push.enabled = false`, cannot be recorded with `--commit`. There is no exemption and no route
+  to a new document for it: the refusal stays loud.
+
 ## 2026-11-14 — A gate red while a service was OOM-killed bails with the cause named (v0.10.61)
 
 AIWF-139, from session review 2, change 6, which the operator ruled on 2026-11-04: "In full."

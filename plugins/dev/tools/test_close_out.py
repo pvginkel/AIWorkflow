@@ -3150,7 +3150,8 @@ def test_verb_usage_puts_the_positionals_right_after_the_verb():
                          "[--by BY] [--commit COMMIT] [--date DATE]")
     assert strike[1] == "    <id>: the entry's id, like B3"
     assert close_out.verb_usage("rule").splitlines()[0] == (
-        "close_out.py rule <close-out.md> <id> --did DID [--commit COMMIT] [--date DATE]")
+        "close_out.py rule <close-out.md> <id> --did DID [--commit COMMIT] [--repo REPO] "
+        "[--date DATE]")
     assert close_out.verb_usage("note").splitlines()[0].startswith(
         "close_out.py note <close-out.md> <id> --by BY --text TEXT")
     # The CLI's own usage — what an argument error prints — has the same shape.
@@ -3566,11 +3567,14 @@ def test_absorb_reads_the_answers_back_into_rulings_the_continuation_carries_out
                                "chosen by Pilot; the operator did not decide this — carded "
                                "as P-130")
         assert entry_of(slice_dir, "B1")["strike"]["by"] == "Pilot's ruling"
-        close_out.rule_entry(slice_dir, "D1", "kept the design open", commit="def5678")
+        # a commit recorded is one the spec repo's upstream holds
+        _tracking(slice_dir.parent.parent, _bare(tmp))
+        pushed = _commit(slice_dir.parent.parent, "the-fix.txt", push=True)
+        close_out.rule_entry(slice_dir, "D1", "kept the design open", commit=pushed)
         close_out.rule_entry(slice_dir, "B2", "carded as KC-12")
         assert entry_of(slice_dir, "D1")["strike"] == {
             "reason": "kept the design open", "by": "the operator's ruling",
-            "date": close_out._today(), "commit": "def5678"}
+            "date": close_out._today(), "commit": pushed}
         for eid, did, needle in (("B6", "x", "B6 holds no ruling to act on"),
                                  ("B1", "y", "B1 is done already"),
                                  ("B1", " ", "--did is empty")):
@@ -3589,6 +3593,175 @@ def test_absorb_reads_the_answers_back_into_rulings_the_continuation_carries_out
                 "2026-10-30T12:00:00Z — kept the design open") in ruled
         assert "**Ruling:** answer: deferred · to: T9 · chosen by Pilot" in ruled
         assert "## Asked" not in record
+
+
+# -- rule --commit: a commit the upstream holds ------------------------------------
+
+def _bare(tmp, name="remote.git"):
+    """A bare repository under `tmp`, its branch main: the remote."""
+    remote = Path(tmp) / name
+    git(tmp, "init", "-q", "--bare", "-b", "main", str(remote))
+    return remote
+
+
+def _commit(cwd, name, push=False):
+    """Commit a new file `name` in `cwd`, pushed when asked; returns its hash."""
+    (Path(cwd) / name).write_text(f"{name}\n")
+    git(cwd, "add", "--", name)
+    git(cwd, "commit", "-q", "--no-verify", "-m", name)
+    if push:
+        git(cwd, "push", "-q")
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=cwd, check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+def _tracking(path, remote=None):
+    """`path` made a repository on main, a first commit in it — pushed, and
+    main tracking `remote`'s, when a remote is given. Only the files
+    `_commit` names are committed, so a slice folder inside stays untracked
+    and never stands in a rebase's way."""
+    path.mkdir(parents=True, exist_ok=True)
+    git(path, "init", "-q", "-b", "main")
+    _commit(path, "seed.txt")
+    if remote is not None:
+        git(path, "remote", "add", "origin", str(remote))
+        git(path, "push", "-q", "-u", "origin", "main")
+    return path
+
+
+def _ruled_slice(tmp, n):
+    """A slice whose actions A1..An are each answered `later` by the
+    operator and read back: rulings the continuation records what it did
+    on."""
+    slice_dir = make_slice(tmp)
+    close_out.init_report(slice_dir)
+    for i in range(1, n + 1):
+        code, _, err = run_cli("append", slice_dir,
+                               *with_flags(ACTION, headline=f"controller: action {i}"))
+        assert code == 0, err
+    close_out.render_report(slice_dir)
+    _answered(slice_dir, **{f"A{i}": "answer: later\nby: op\n" for i in range(1, n + 1)})
+    assert close_out.absorb_report(slice_dir) == [
+        f"A{i}  answered by op: later" for i in range(1, n + 1)]
+    return slice_dir
+
+
+def _rule(slice_dir, eid, commit, repo=None):
+    return run_cli("rule", slice_dir, eid, "--did", f"fixed in {commit}", "--commit", commit,
+                   *(("--repo", repo) if repo is not None else ()))
+
+
+def _rule_refused(slice_dir, eid, commit, *needles, repo=None):
+    before = _files(slice_dir)
+    code, out, err = _rule(slice_dir, eid, commit, repo=repo)
+    assert code == 2 and not out, (code, out, err)
+    for needle in needles:
+        assert needle in err, (needle, err)
+    assert _files(slice_dir) == before
+    return err
+
+
+def test_rule_refuses_a_commit_not_pushed_and_records_it_once_it_is():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _ruled_slice(tmp, 2)
+        spec = _tracking(slice_dir.parent.parent, _bare(tmp))
+        fix = _commit(spec, "fix.txt")
+        err = _rule_refused(slice_dir, "A1", fix, f"{fix} is not on origin/main in",
+                            "push it first", "git pull --rebase, then git push",
+                            "record the hash it has there")
+        assert str(slice_dir) in err, err
+        # an entry struck already gets its commit on the same terms
+        close_out.strike_entry(slice_dir, "A2", "fixed", by="wrap-up")
+        _rule_refused(slice_dir, "A2", fix, "is not on origin/main")
+        git(spec, "push", "-q")
+        code, out, err = _rule(slice_dir, "A1", fix)
+        assert code == 0, err
+        assert out.strip().endswith(f"fixed in {fix}"), out
+        assert entry_of(slice_dir, "A1")["strike"]["commit"] == fix
+        # the hash is kept as given, not expanded
+        code, _, err = _rule(slice_dir, "A2", fix[:10])
+        assert code == 0, err
+        assert entry_of(slice_dir, "A2")["strike"] == {
+            "reason": "fixed", "by": "wrap-up", "date": close_out._today(),
+            "commit": fix[:10]}
+
+
+def test_rule_refuses_the_hash_a_rebase_rewrote_and_records_the_one_it_made():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _ruled_slice(tmp, 1)
+        remote = _bare(tmp)
+        spec = _tracking(slice_dir.parent.parent, remote)
+        before_rebase = _commit(spec, "fix.txt")
+        other = Path(tmp) / "other"
+        git(tmp, "clone", "-q", str(remote), str(other))
+        _commit(other, "theirs.txt", push=True)
+        git(spec, "pull", "-q", "--rebase")
+        git(spec, "push", "-q")
+        rebased = subprocess.run(["git", "rev-parse", "HEAD"], cwd=spec, check=True,
+                                 capture_output=True, text=True).stdout.strip()
+        assert rebased != before_rebase
+        _rule_refused(slice_dir, "A1", before_rebase, f"{before_rebase} is not on origin/main",
+                      "git pull --rebase")
+        code, _, err = _rule(slice_dir, "A1", rebased)
+        assert code == 0, err
+        assert entry_of(slice_dir, "A1")["strike"]["commit"] == rebased
+
+
+def test_rule_refuses_a_branch_without_an_upstream_and_a_hash_that_is_no_commit():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _ruled_slice(tmp, 1)
+        spec = _tracking(slice_dir.parent.parent)
+        head = _commit(spec, "fix.txt")
+        _rule_refused(slice_dir, "A1", head,
+                      f"{head} is not on an upstream: main in {slice_dir} has none")
+        git(spec, "checkout", "-q", "--detach")
+        _rule_refused(slice_dir, "A1", head, "is not on an upstream: HEAD in")
+        unknown = "0123456789abcdef0123456789abcdef01234567"
+        _rule_refused(slice_dir, "A1", unknown, f"{unknown} is no commit in {slice_dir}")
+        try:     # what git would read as an option is no commit either
+            close_out.rule_entry(slice_dir, "A1", "fixed", commit="--all")
+            raise AssertionError("an option for a commit must raise")
+        except ReportError as e:
+            assert "--all is no commit in" in str(e), e
+        assert entry_of(slice_dir, "A1")["strike"] is None
+        # the store's own refusals come first, and still hold
+        _rule_refused(slice_dir, "A9", unknown, "no entry A9 in the report")
+
+
+def test_rule_repo_names_the_repository_the_commit_is_in():
+    """The code-repo case: the slice folder sits in the spec repo, the fix
+    landed in another one."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _ruled_slice(tmp, 3)
+        spec = _tracking(slice_dir.parent.parent, _bare(tmp, "specs.git"))
+        code_repo = _tracking(Path(tmp) / "code", _bare(tmp, "code.git"))
+        in_code = _commit(code_repo, "fix.txt", push=True)
+        in_spec = _commit(spec, "doc.txt", push=True)
+        _rule_refused(slice_dir, "A1", in_code, f"{in_code} is no commit in {slice_dir}")
+        code, _, err = _rule(slice_dir, "A1", in_code, repo=code_repo)
+        assert code == 0, err
+        assert entry_of(slice_dir, "A1")["strike"]["commit"] == in_code
+        _rule_refused(slice_dir, "A2", in_spec, f"{in_spec} is no commit in {code_repo}",
+                      repo=code_repo)
+        close_out.rule_entry(slice_dir, "A3", "fixed", commit=in_spec)
+        assert entry_of(slice_dir, "A3")["strike"]["commit"] == in_spec
+
+
+def test_rule_without_a_commit_runs_no_git_and_needs_no_repo():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _ruled_slice(tmp, 3)
+        outside = subprocess.run(["git", "rev-parse", "--git-dir"], cwd=slice_dir,
+                                 capture_output=True, text=True)
+        assert outside.returncode != 0, "the slice folder must sit outside any repo"
+        code, _, err = run_cli("rule", slice_dir, "A1", "--did", "closed")
+        assert code == 0, err
+        assert entry_of(slice_dir, "A1")["strike"]["commit"] is None
+        code, _, err = run_cli("rule", slice_dir, "A2", "--did", "closed", "--commit", " ")
+        assert code == 0, err
+        assert entry_of(slice_dir, "A2")["strike"]["commit"] is None
+        # a commit asked for there is refused: there is no repo to find it in
+        _rule_refused(slice_dir, "A3", "abc1234", "abc1234 is no commit in",
+                      "not a git repository")
 
 
 def test_closing_the_report_keeps_why_the_table_closed_an_entry():

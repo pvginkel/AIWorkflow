@@ -529,6 +529,11 @@ there is one), which closes the entry, and closes the report.
 - **`fold into <slice>`** — `close_out.py fold <id> --into <slice>` appends the entry verbatim as
   an ask to that slice's `slice.md` and stages it; commit it, then record it. It refuses a slice
   planned or running, whose run never reads `slice.md` again.
+- **A commit is pushed before it is recorded.** A ruling carried out in a commit is pushed
+  first — `git pull --rebase`, then `git push` — and `--did` and `--commit` name the hash it has
+  on the upstream: a rebase rewrites a hash recorded before it. `rule --commit` refuses a hash
+  that is not on the upstream of the branch checked out in `--repo`, the repo that holds the
+  slice folder when omitted.
 - **`close`** — nothing to do but record it; the operator's reason is part of their words.
 - **An owed-after action, done** — `close_out.py settle <Vnn> --verdict pass|fail --evidence
   "<their words, or what you observed>"` per criterion, which writes it into
