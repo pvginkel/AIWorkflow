@@ -170,7 +170,9 @@ At exit 0, in this order:
    `debrief.py give <slice> --stage run`, which keeps it in `debrief.json` beside theirs and
    hands the whole to Pilot where Pilot takes it, a line in `log.txt` saying what came of it.
    Your debrief is the file's, never the turn's last message. Only the turn the run completes
-   in gives one: a turn that ends on a document, an error or a halt gives none.
+   in gives one, this one, whether or not it ends on the report's document (step 7): a turn that
+   hands back before the run completes, on a question, an error's diagnosis, a halt or a stop,
+   gives none.
 3. `close_slice.py <slice>` — the README entry to Completed, the folder `git mv`ed to
    `slices/completed/`, `run.lock` deleted, all staged by name. Below, `<slice>` is the folder at
    its new path. No document of the slice is open at exit 0, so the move is safe (pilot.md § The

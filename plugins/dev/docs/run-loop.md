@@ -755,13 +755,14 @@ the driver's push where there is no test phase are in no step.
 
 **A repeat round's why.** The step that opens a round past the first carries `why`, one line of
 at most 120 characters saying what the round before left unsettled, cut with an ellipsis past
-that. A round opens at its first step: a phase's at its `code` step, the completion check's at
-its `sweep` or, where the sweep's record still describes the tree, at its `consult`, the test
-phase's at `test`. A step that follows another inside its round — the review after its code
+that. A round opens at its first step: a phase's at its `code` step, or at its `review` where a
+resume after a stop starts the round there, the completion check's at its `sweep` or, where the
+sweep's record still describes the tree, at its `consult`, the test phase's at `test`. A step that follows another inside its round — the review after its code
 round, the consult after its sweep — carries none, nor does a round dispatched again under its
 number. The run keeps the why in `state.json`'s `why_next` from the moment the round before ends
-unsettled, so that a stop, a halt or a resume in between loses none, and the step takes it off
-as it starts ([runner-state.md](runner-state.md) § state.json). Whose words the why is:
+unsettled until the step takes it off as it starts ([runner-state.md](runner-state.md) §
+state.json), so that a halt or a resume in between loses none; a stop in between puts its own line
+in its place (the table's last row), the last line set standing. Whose words the why is:
 
 | What ended the round before | The why |
 |---|---|

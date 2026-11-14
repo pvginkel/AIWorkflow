@@ -96,9 +96,11 @@ list, from a loop started on a plugin before 0.10.29, publishes nothing.
 A stage's work item carries a debrief once its loop completes. Every role the loop dispatched
 gives its own at its hand-back, kept as an entry each in the loop's debrief file
 ([runner-state.md](runner-state.md) § debrief.json), and the stage session gives the whole run's
-in the turn its loop completes in: run-slice's close-out, plan-slice's promotion. A turn that ends
-on a document, an error or a halt gives none, so a run has one debrief, the turn it completes in
-carrying the whole of it, its hand-backs included.
+in the turn its loop completes in: run-slice's close-out, whether or not it ends on its report's
+document, and plan-slice's promotion. A turn that hands back before the loop completes — on the
+plan's requirements, a question to the operator, an error's diagnosis, a halt or a stop — gives
+none, so a run has one debrief, the turn it completes in carrying the whole of it, its hand-backs
+included.
 
 The session runs `debrief.py input <slice> --stage run|plan`. It prints the loop's ask of the
 session, in the operator's words, then every entry in order and the loop's figures: a run's

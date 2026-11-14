@@ -224,9 +224,10 @@ The driver keeps each dispatch's debrief in `debrief.json` beside `state.json`, 
 own, in the order it dispatched them: `{"entries": [...]}`, an entry appended after the round's
 history row, and never a field of the row; a verdict the commit nudge salvages gives the round's
 entry its debrief, as it gives the row its outcome. A gate sweep that ran has an entry
-too, its result in place of words; no other gate row has one. A dispatch that handed back no
-debrief, timed out or left no valid verdict has an entry with neither words nor a result; a
-round a session limit cut off is dispatched again, and its entry is the one. `tools/debrief.py`
+too, its result in place of words; no other gate row has one. A dispatch that timed out, wrote no
+verdict or gave no debrief in it has an entry with neither words nor a result, and a verdict the
+driver cannot take keeps its debrief as the entry's words, as a valid one does; a round a session
+limit cut off is dispatched again, and its entry is the one. `tools/debrief.py`
 writes the file; the plan loop keeps `plan_debrief.json` by the same rules
 ([plan-loop.md](plan-loop.md) § The debrief). An entry:
 
@@ -236,7 +237,7 @@ writes the file; the plan loop keeps `plan_debrief.json` by the same rules
 | `round` | the round of the step it ran under, as Progress numbers it |
 | `role` | `Code writer`, `Code reviewer`, `Review consult`, `Gate sweep`, `Completion consult`, `Test fixer`, `Test agent`, `Doc writer` or `Wrap-up` |
 | `duration` | the dispatch's whole seconds, as its history row has them; a timeout's, the role's timeout |
-| `words` | the debrief as the role gave it, its ending whitespace left off |
+| `words` | the debrief as the role gave it, the whitespace around it left off |
 | `passed` | a sweep's result: `true` green, `false` red, left out where nothing in it ran |
 | `why` | on the first entry of a step that carries one: the why its round opened with ([run-loop.md](run-loop.md) § The steps Pilot shows) |
 | `step` | the code of the step in `progress` the dispatch ran under, the active one, which `section` and `round` are read off; the plugin's own |

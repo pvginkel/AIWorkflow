@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-15 — The debrief's docs say what the loops do (v0.10.67)
+
+PilotApp slice 043, the debrief, its doc phase. Docs and the stage skills' wording only; no code
+changes.
+
+- **The turn that gives the debrief** is named by what it is: the one the loop completes in,
+  run-slice's close-out whether or not it ends on the report's document. A turn that hands back
+  before that, on the plan's requirements, a question, an error's diagnosis, a halt or a stop,
+  gives none (run-slice, plan-slice, `pilot.md`), where the words "a turn that ends on a
+  document" also took in the close-out's own.
+- **An invalid verdict's entry keeps its debrief** as its words, as the loops write it; only a
+  dispatch that timed out, wrote no verdict or gave no debrief has an entry with neither
+  (`runner-state.md`, `plan-loop.md`).
+- **A stop replaces the why waiting for the next round** with its own line, as the run loop does;
+  a halt or a resume keeps it (`run-loop.md`). A round can open at a phase's review, where a resume
+  after a stop starts it there.
+
 ## 2026-11-14 — The stage session gives the loop's debrief, and Pilot is handed the whole (v0.10.66)
 
 PilotApp slice 043, the debrief, its phase P9. The operator: "Something like 'report on how you

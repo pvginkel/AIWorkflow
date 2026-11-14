@@ -199,8 +199,9 @@ At exit 0, in this order:
    through a sub-agent. Then give your own as it asks, on the stdin of `debrief.py give <slice>
    --stage plan`, which keeps it in the folder's debrief file beside theirs and hands the whole
    to Pilot where Pilot takes it, a line in `plan_log.txt` saying what came of it. Your debrief
-   is the file's, never the turn's last message. Only the turn the loop completes in gives one:
-   a turn that ends on the requirements, a document, an error or a halt gives none.
+   is the file's, never the turn's last message. Only the turn the loop completes in gives one,
+   this one: a turn that hands back before the loop completes, on the requirements, a question, an
+   error's diagnosis, a halt or a stop, gives none.
 3. `git mv <spec-repo>/slices/backlog/<NNN_slug> <spec-repo>/slices/<NNN_slug>`, and commit the
    move with the loop's `plan_state.json`, `plan_debrief.json` and `plan_log.txt`, staged by
    name; drop a stale

@@ -91,7 +91,8 @@ as the run's roles are, and the loop keeps each pass's in `plan_debrief.json` be
 `plan_state.json` by the run loop's rules ([runner-state.md](runner-state.md) § debrief.json):
 an entry of its own in the order dispatched, `The plan` its section and the pass's step its
 round, `Plan writer` or `Plan reviewer` its role, the why on the pass that opens with one, and
-an entry with neither words nor a result for a pass that timed out or left no valid verdict. The
+an entry with neither words nor a result for a pass that timed out or gave no debrief, an invalid
+verdict keeping its debrief as a valid one does. The
 plan preparer's entry stands first, `The grounding` its section and `Plan preparer` its role,
 under the step `ground`, timed by the plan-slice session around its dispatch: its start and its
 words wait under the file's `ground` until its end makes them the entry. At the promotion the
