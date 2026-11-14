@@ -8,9 +8,12 @@ Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_debrief.py` or via pytest.
 """
 
 import importlib.util
+import io
 import json
 import sys
 import tempfile
+from datetime import datetime, timedelta, timezone
+from email.message import Message
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -170,6 +173,368 @@ def test_a_salvaged_verdict_gives_the_last_entry_its_words_and_nothing_else():
             "Clean.", "Late, but there."]
         assert revised["entries"][1] == dict(data["entries"][1],
                                              words="Late, but there.")
+
+
+# -- the plan preparer ----------------------------------------------------------
+
+T0 = datetime(2026, 11, 14, 9, 0, tzinfo=timezone(timedelta(hours=1)))
+
+
+def test_the_preparers_start_words_and_end_make_its_entry_first_in_the_file():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / debrief.PLAN_FILE
+        debrief.ground_start(path, T0 - timedelta(hours=1))
+        debrief.ground_start(path, T0)          # a dispatch again: its own
+        debrief.ground_words(path, "Well grounded.\n\n")
+        assert debrief.read(path) == []          # it waits under `ground`
+        entry = debrief.ground_end(path, T0 + timedelta(minutes=17, seconds=5))
+        assert entry == {"section": "The grounding", "round": 1,
+                         "role": "Plan preparer", "duration": 1025,
+                         "words": "Well grounded.", "step": "ground"}
+        data = json.loads(path.read_text())
+        assert data == {"entries": [entry]}
+        # the loop's passes come after it, in a later work item
+        debrief.record(path, [step("write", "Plan · write", "active")],
+                       "plan-writer", 1, 60, verdict={"debrief": "Fine."})
+        assert [e["role"] for e in debrief.read(path)] == [
+            "Plan preparer", "Plan writer"]
+
+
+def test_a_preparer_that_gave_no_words_has_an_entry_without_them():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / debrief.PLAN_FILE
+        debrief.ground_start(path, T0)
+        entry = debrief.ground_end(path, T0 + timedelta(seconds=30))
+        assert "words" not in entry and entry["duration"] == 30
+        try:
+            debrief.ground_end(path, T0)
+        except ValueError as e:
+            assert "no start of the plan preparer noted" in str(e)
+        else:
+            raise AssertionError("an end with no start noted")
+        assert len(debrief.read(path)) == 1
+
+
+# -- the stage session's debrief -----------------------------------------------
+
+STAGE_ASK = ("The loop has ended. Below are the debriefs of every agent it "
+             "dispatched, in order, and the loop's own figures: phases, "
+             "rounds, consults, durations, cost. Read them against the run as "
+             "you watched it, then give, in your own words, how you feel the "
+             "loop went. What to dwell on is yours, and so is saying that "
+             "nothing is worth saying.")
+
+
+def row(role, phase=None, round_=1, outcome="done", duration_s=60):
+    return {"role": role, "phase": phase, "round": round_, "outcome": outcome,
+            "duration_s": duration_s}
+
+
+RUN_STATE = {
+    "created_at": "2026-11-14T09:00:00+01:00",
+    "updated_at": "2026-11-14T13:30:00+01:00",
+    "known_phases": ["1", "1a"], "appended_phases": ["1a"],
+    "phases": {"1": {"executor_rounds": 2, "review_rounds": 2},
+               "1a": {"executor_rounds": 1, "review_rounds": 1}},
+    "progress": [step("P1.code", "P1 · First"), step("P1a.code", "P1a · Fix")],
+    "consult_seq": 2, "test_rounds": 1, "sweep_runs": 2,
+    "history": [
+        row("code-writer", "1", duration_s=1200), row("gate", "1", duration_s=0),
+        row("code-reviewer", "1", outcome="issues", duration_s=300),
+        row("consult", "1", duration_s=120),
+        row("code-writer", "1", 2, duration_s=600),
+        row("code-reviewer", "1", 2, outcome="signoff", duration_s=240),
+        row("sweep", outcome="red", duration_s=600),
+        row("consult", duration_s=180), row("test-fixer", duration_s=900),
+        row("sweep", outcome="green", duration_s=600),
+        row("code-writer", "1a", duration_s=300),
+        row("code-reviewer", "1a", outcome="signoff", duration_s=60),
+        row("test-agent", duration_s=1500), row("doc-writer", duration_s=2400),
+        row("doc-gate", outcome="green", duration_s=630),
+        row("wrap-up", duration_s=900)],
+    "bailouts": [{"reason": "question"}],
+    "cost": {"cost_usd": 104.29, "planner_cost_usd": 10.63, "warnings": []},
+}
+
+
+def test_the_stage_session_is_asked_in_the_operators_words():
+    assert debrief.STAGE_PROMPT == STAGE_ASK
+
+
+def test_the_runs_figures_are_its_phases_rounds_consults_durations_and_cost():
+    assert debrief.run_figures(RUN_STATE) == [
+        "Phases: 2, 1 appended during the run: P1a",
+        "P1 · First: 2 code rounds, 2 review rounds, 41m",
+        "P1a · Fix: 1 code round, 1 review round, 6m",
+        "Consults: 2, 1 at a review and 1 at the completion check",
+        "Completion check: 2 gate sweeps (red, green), 1 test-fixer round, 38m",
+        "Test phase: 1 round, 25m",
+        "Doc phase: 40m, its gate 10m",
+        "Wrap-up: 15m, its gates 0s",
+        "The run: 2h55m in its agents and gates, 4h30m from its start to its "
+        "end",
+        "Stops: 1 stop for the operator or a fix, 0 halts at Pilot's halt file",
+        "Cost: $104.29 for the slice, the planning's $10.63 of it"]
+    unpriced = debrief.run_figures({k: v for k, v in RUN_STATE.items()
+                                    if k != "cost"})
+    assert unpriced[-1] == ("Cost: not priced, as slice_cost.py --write-state "
+                            "has not run")
+
+
+def test_the_plans_figures_are_its_rounds_durations_and_the_folders_cost():
+    state = {"created_at": "2026-11-14T09:00:00+01:00",
+             "updated_at": "2026-11-14T09:25:00+01:00",
+             "writer_rounds": 2, "review_rounds": 1,
+             "history": [row("plan-writer", duration_s=700),
+                         row("plan-reviewer", outcome="issues",
+                             duration_s=600),
+                         row("plan-writer", round_=2, duration_s=140)]}
+    entries = [{"step": "ground", "duration": 1020}]
+    assert debrief.plan_figures(state, entries, (21.333, ["a warning"])) == [
+        "Plan preparer: 17m", "Plan writer: 2 passes, 14m",
+        "Plan reviewer: 1 round, 10m",
+        "The loop: 25m from its start to its end",
+        "Cost: $21.33 for the folder, with 1 pricing warning"]
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "plan_state.json").write_text(json.dumps(state))
+        assert debrief.plan_cost(Path(tmp)) == (0, [])
+        assert debrief.plan_cost(Path(tmp) / "nothing") is None
+
+
+def entries_file(tmp, name=debrief.RUN_FILE, **extra):
+    path = Path(tmp) / name
+    path.write_text(json.dumps({"entries": [
+        {"section": "P1 · First", "round": 1, "role": "Code writer",
+         "duration": 1200, "words": "Smooth.\n\nOne snag.", "step": "P1.code"},
+        {"section": "P1 · First", "round": 2, "role": "Code writer",
+         "duration": 600, "why": "The reviewer found a gap",
+         "step": "P1.code-2"},
+        {"section": "Completion check", "round": 1, "role": "Gate sweep",
+         "duration": 600, "passed": False, "step": "sweep"},
+        {"section": "Completion check", "round": 2, "role": "Gate sweep",
+         "duration": 30, "step": "sweep-2"}], **extra}))
+    return path
+
+
+def test_the_input_is_the_ask_every_debrief_in_order_and_the_figures():
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "state.json").write_text(json.dumps(RUN_STATE))
+        entries_file(tmp)
+        text = debrief.render_input(Path(tmp), "run")
+        head, _, figures = text.partition("\nThe loop's figures:\n")
+        assert head.split("\n") == [
+            STAGE_ASK, "", "The debriefs, in order:", "",
+            "1. P1 · First · round 1 · Code writer · 20m",
+            "   Smooth.", "", "   One snag.",
+            "2. P1 · First · round 2 · Code writer · 10m · no debrief",
+            "   Why: The reviewer found a gap",
+            "3. Completion check · round 1 · Gate sweep · 10m · failed",
+            "4. Completion check · round 2 · Gate sweep · 30s · nothing ran",
+            ""]
+        assert figures.splitlines() == [
+            f"- {line}" for line in debrief.run_figures(RUN_STATE)]
+
+
+def test_the_file_goes_to_pilot_held_to_its_limits_and_without_its_steps():
+    long = "x" * 5000
+    data = {"debrief": "  " + "y" * 17000 + "\n", "entries": [
+        {"section": "s" * 130, "round": 2, "role": "r" * 70,
+         "duration": 540, "words": long, "why": "w " * 100, "step": "P1.code-2"},
+        {"section": "Completion check", "round": 1, "role": "Gate sweep",
+         "duration": 600, "passed": True, "step": "sweep"},
+        {"section": "Completion check", "round": 2, "role": "Gate sweep",
+         "duration": 30, "step": "sweep-2"},
+        *({"section": "Wrap-up", "round": 1, "role": "Wrap-up",
+           "duration": i, "step": "wrap-up"} for i in range(600))]}
+    words, entries = debrief.for_pilot(data)
+    assert len(words) == 16_000 and words.endswith("…") and words[0] == "y"
+    assert len(entries) == 500 and entries[-1]["duration"] == 496
+    first = entries[0]
+    assert set(first) == {"section", "round", "role", "duration", "words",
+                          "why"}
+    assert (len(first["section"]), len(first["role"]), len(first["words"]),
+            len(first["why"])) == (120, 64, 4000, 120)
+    assert entries[1] == {"section": "Completion check", "round": 1,
+                          "role": "Gate sweep", "duration": 600,
+                          "passed": True}
+    assert "passed" not in entries[2] and "words" not in entries[2]
+    assert all(type(e["round"]) is int and type(e["duration"]) is int
+               for e in entries)
+    assert debrief.for_pilot({"entries": []}) == (None, [])
+    assert debrief.for_pilot({"debrief": " \n"})[0] is None
+
+
+class _Response:
+    def __init__(self, message):
+        self.headers = Message()
+        self.headers["Content-Type"] = "application/json"
+        self._body = json.dumps(message).encode()
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class JsonOpener:
+    """Pilot answering each call with the next of `messages`, as JSON."""
+
+    def __init__(self, *messages):
+        self.messages = list(messages)
+        self.bodies = []
+
+    def __call__(self, request, timeout=None):
+        self.bodies.append(json.loads(request.data))
+        return _Response(self.messages.pop(0))
+
+
+LISTED = {"jsonrpc": "2.0", "id": 1, "result": {"tools": [
+    {"name": "set_progress", "inputSchema": {}},
+    {"name": "register_debrief", "inputSchema": {}}]}}
+
+
+def run_cli(argv, stdin="", opener=None, env=None):
+    pp = debrief.pilot_progress
+    saved = (sys.stdin, sys.stdout, sys.stderr, pp.os.environ, pp.OPENER)
+    sys.stdin, sys.stdout, sys.stderr = (io.StringIO(stdin), io.StringIO(),
+                                         io.StringIO())
+    pp.os.environ = dict(env if env is not None else {
+        "PILOT_TOKEN": "tok", "PILOT_MCP_URL": "http://pilot.invalid/mcp"})
+    pp.OPENER = opener
+    try:
+        try:
+            code = debrief.main(argv)
+        except SystemExit as e:
+            code = e.code
+        return code, sys.stdout.getvalue(), sys.stderr.getvalue()
+    finally:
+        sys.stdin, sys.stdout, sys.stderr, pp.os.environ, pp.OPENER = saved
+
+
+def test_give_keeps_the_stage_sessions_words_and_hands_the_whole_to_pilot():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = entries_file(tmp)
+        kept = json.loads(path.read_text())["entries"]
+        opener = JsonOpener(LISTED, {"jsonrpc": "2.0", "id": 1, "result": {
+            "content": [], "structuredContent": {"entries": 4}}})
+        code, out, _ = run_cli(["give", tmp, "--stage", "run"],
+                               "It went well, if slowly.\n", opener)
+        assert (code, out) == (0, "Debrief handed to Pilot: 4 entries stored\n")
+        data = json.loads(path.read_text())
+        assert data == {"entries": kept, "debrief": "It went well, if slowly."}
+        call = opener.bodies[1]["params"]
+        assert call["name"] == "register_debrief"
+        assert call["arguments"] == {
+            "debrief": "It went well, if slowly.",
+            "entries": debrief.for_pilot(data)[1]}
+        assert [e["round"] for e in call["arguments"]["entries"]] == [1, 2, 1, 2]
+        log = (Path(tmp) / "log.txt").read_text()
+        assert log.endswith("] [debrief] Debrief handed to Pilot: 4 entries "
+                            "stored\n")
+
+
+def test_a_pilot_that_does_not_take_it_leaves_the_debrief_in_the_folder():
+    with tempfile.TemporaryDirectory() as tmp:
+        entries_file(tmp, debrief.PLAN_FILE)
+        opener = JsonOpener({"jsonrpc": "2.0", "id": 1, "result": {"tools": [
+            {"name": "set_progress", "inputSchema": {}}]}})
+        code, out, _ = run_cli(["give", tmp, "--stage", "plan"], "Fine.",
+                               opener)
+        line = ("Debrief not handed to Pilot, kept in the slice's folder: this "
+                "Pilot lists no register_debrief")
+        assert (code, out) == (0, line + "\n")
+        assert [b["method"] for b in opener.bodies] == ["tools/list"]
+        assert json.loads((Path(tmp) / debrief.PLAN_FILE).read_text())[
+            "debrief"] == "Fine."
+        assert (Path(tmp) / "plan_log.txt").read_text().endswith(line + "\n")
+        # outside Pilot: no credentials, nothing sent, the log says so
+        code, out, _ = run_cli(["hand-off", tmp, "--stage", "plan"],
+                               opener=JsonOpener(), env={})
+        assert code == 0 and "no PILOT_TOKEN/PILOT_MCP_URL" in out
+
+
+def test_the_commands_refuse_what_they_cannot_do():
+    with tempfile.TemporaryDirectory() as tmp:
+        entries_file(tmp)
+        for argv, stdin, says in (
+                (["give", tmp, "--stage", "run"], " \n", "no words on stdin"),
+                (["hand-off", tmp, "--stage", "run"], "",
+                 "no debrief of the stage session's"),
+                (["input", tmp, "--stage", "run"], "", "no state.json"),
+                (["ground", tmp, "--end"], "", "no start of the plan preparer"),
+                (["ground", tmp, "--words"], "", "no words on stdin"),
+                (["input", str(Path(tmp) / "gone"), "--stage", "plan"], "",
+                 "slice directory not found")):
+            code, out, err = run_cli(argv, stdin, JsonOpener())
+            assert code == 2 and says in err, (argv, err)
+        assert "debrief" not in json.loads(
+            (Path(tmp) / debrief.RUN_FILE).read_text())
+
+
+def test_the_preparers_commands_make_its_entry():
+    with tempfile.TemporaryDirectory() as tmp:
+        for argv, stdin in ((["ground", tmp, "--start"], ""),
+                            (["ground", tmp, "--words"], "Solid slice.\n"),
+                            (["ground", tmp, "--end"], "")):
+            assert run_cli(argv, stdin)[:2] == (0, "")
+        (entry,) = debrief.read(Path(tmp) / debrief.PLAN_FILE)
+        assert (entry["section"], entry["role"], entry["words"]) == (
+            "The grounding", "Plan preparer", "Solid slice.")
+
+
+# -- the stages' use of it -----------------------------------------------------
+
+PLUGIN = Path(__file__).resolve().parents[1]
+ROLE_ASK = ("Before you hand back, add a debrief: a few lines, in your own "
+            "words, on how you feel this went for you.")
+
+
+def flat(text):
+    return " ".join(text.split())
+
+
+def section(text, heading):
+    return text.split(f"\n{heading}\n", 1)[1].split("\n## ", 1)[0]
+
+
+def in_order(text, *parts):
+    at = 0
+    for part in parts:
+        at = text.find(part, at)
+        if at < 0:
+            return False
+        at += len(part)
+    return True
+
+
+def test_the_run_gives_its_debrief_at_the_close_out_once_its_cost_is_in():
+    text = flat(section((PLUGIN / "skills" / "run-slice" / "SKILL.md")
+                        .read_text(), "## The close-out"))
+    assert in_order(text, "`slice_cost.py <slice> --write-state`",
+                    "`debrief.py input <slice> --stage run`",
+                    "`debrief.py give <slice> --stage run`",
+                    "`close_slice.py <slice>`", "`debrief.json`")
+
+
+def test_the_plan_gives_its_debrief_at_the_promotion_and_times_its_preparer():
+    skill = (PLUGIN / "skills" / "plan-slice" / "SKILL.md").read_text()
+    assert in_order(flat(section(skill, "## The promotion")),
+                    "`debrief.py input <slice> --stage plan`",
+                    "`debrief.py give <slice> --stage plan`",
+                    "`git mv", "`plan_debrief.json`")
+    assert in_order(flat(section(skill, "## The start")),
+                    "`debrief.py ground <slice> --start`",
+                    "dispatch `dev:plan-preparer`",
+                    "`debrief.py ground <slice> --end`", "`plan_debrief.json`")
+    preparer = (PLUGIN / "agents" / "plan-preparer.md").read_text()
+    assert flat(preparer).count(ROLE_ASK) == 1
+    assert in_order(flat(section(preparer, "## Hand-back")), ROLE_ASK,
+                    "`debrief.py ground <slice> --words`", "`nothing to ask`")
+
 
 if __name__ == "__main__":
     _tests = [v for k, v in sorted(globals().items())

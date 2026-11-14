@@ -16,8 +16,9 @@ and writes its requirements asks. `plan_loop.py` drives the plan-writer and the 
 (`${CLAUDE_PLUGIN_ROOT}/docs/plan-loop.md`), and the plan's shape is
 `${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md`. This session launches, waits, registers, carries
 out and commits. What has to be read — the slice, an answer to carry into the plan, a bail to
-diagnose, a question about the slice — goes to a sub-agent pointed at the slice folder. Nobody
-downstream reads `slice.md` or a document: what reaches the executors is `plan.md`.
+diagnose, a question about the slice — goes to a sub-agent pointed at the slice folder. The one
+reading of its own is the plan's debriefs, at the promotion. Nobody downstream reads `slice.md`
+or a document: what reaches the executors is `plan.md`.
 
 Below, `<spec-repo>` is your `.aiworkflowrc`'s `spec_repo`, `<slice>` the path of the folder,
 `<spec-repo>/slices/backlog/<NNN_slug>`, of the slice the brief's first line names, which every
@@ -55,13 +56,17 @@ tool takes, `<task>` the brief's plan task, and a tool is
    turn with its last message saying what failed and what fixes it. A pass's notes go into the
    turn's last message.
 3. **Prepare**: `plan_loop.py progress <slice> --ground active`, the work item's steps before
-   the loop exists (pilot.md § The progress), then dispatch `dev:plan-preparer` with `<slice>`,
-   `<task>` and the ticket. It leaves `grounding.md` and `plan.md`'s seeded header in the folder
-   and hands back the path of `asks/1-requirements.json`, or `nothing to ask`.
+   the loop exists (pilot.md § The progress), and `debrief.py ground <slice> --start`, the
+   preparer's start, then dispatch `dev:plan-preparer` with `<slice>`, `<task>` and the ticket.
+   It leaves `grounding.md` and `plan.md`'s seeded header in the folder, gives its debrief into
+   the folder, and hands back the path of `asks/1-requirements.json`, or `nothing to ask`. Once
+   it is back, `debrief.py ground <slice> --end`, its end, which makes the preparer's entry in
+   `plan_debrief.json`; it waits there for the loop's end, in this work item or a later one.
 4. **Put the requirements**: `plan_loop.py progress <slice> --ground done`, `asks.py render
    <store>`, register `asks/1-requirements.md`, attach `grounding.md` and `slice.md` to it,
-   commit `plan.md`, `grounding.md` and `asks/` by name, and end the turn. With nothing to ask,
-   commit `plan.md` and `grounding.md` and go to [the loop](#the-loop).
+   commit `plan.md`, `grounding.md`, `plan_debrief.json` and `asks/` by name, and end the turn.
+   With nothing to ask, commit `plan.md`, `grounding.md` and `plan_debrief.json` and go to
+   [the loop](#the-loop).
 
 ## The loop
 
@@ -188,12 +193,20 @@ At exit 0, in this order:
 
 1. `run_loop.py run <slice> --dry-run` — the plan parses, every `Target:` resolves, the gates
    print. A failure is [diagnosed](#an-error) as a bail is.
-2. `git mv <spec-repo>/slices/backlog/<NNN_slug> <spec-repo>/slices/<NNN_slug>`, and commit the
+2. **Your debrief.** `debrief.py input <slice> --stage plan` prints the loop's ask of you, every
+   debrief its agents gave, the preparer's first, in order, and the plan's figures: its rounds,
+   its durations and the cost `slice_cost.py` computes for the folder. Read it yourself, not
+   through a sub-agent. Then give your own as it asks, on the stdin of `debrief.py give <slice>
+   --stage plan`, which keeps it in the folder's debrief file beside theirs and hands the whole
+   to Pilot where Pilot takes it, a line in `plan_log.txt` saying what came of it. Your debrief
+   is the file's, never the turn's last message. Only the turn the loop completes in gives one:
+   a turn that ends on the requirements, a document, an error or a halt gives none.
+3. `git mv <spec-repo>/slices/backlog/<NNN_slug> <spec-repo>/slices/<NNN_slug>`, and commit the
    move with the loop's `plan_state.json`, `plan_debrief.json` and `plan_log.txt`, staged by
    name; drop a stale
    `plan_bailout.json` and the emptied `plan.lock`. The folder is clean after. No document of the
    slice is open at exit 0, so the move is safe (pilot.md § The documents).
-3. A sub-agent brings the tracker in line with the plan. The slice card goes from triaged to
+4. A sub-agent brings the tracker in line with the plan. The slice card goes from triaged to
    planned, its highlights matching the plan's scope where planning moved it. Each card
    `grounding.md` names as routed to the slice and still open is closed as the convention closes
    an absorbed task where the plan carries its ask, and is left open with a comment quoting the
@@ -201,7 +214,7 @@ At exit 0, in this order:
    either way: where the plan does not carry its ask, it flips to `Won't Do` with a comment
    quoting why — the ruling, or the premise the grounding found false — as the convention flips
    an absorbed task whose requirement planning rules out.
-4. End the turn, its last message the plan's path and its phases, counted.
+5. End the turn, its last message the plan's path and its phases, counted.
 
 ## The clarification
 

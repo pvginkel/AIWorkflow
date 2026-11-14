@@ -105,7 +105,7 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   `long_run.py` (a long command run detached and waited on in chunks under the prompt cache's
   five minutes; `run_loop.py gate --detach` rides it),
   `debrief.py` (a loop's debrief file: every dispatch's own account, an entry each, beside its
-  state file),
+  state file, and the stage session's, handed to Pilot at the loop's end),
   `slice_cost.py` (with
   `turn_profile.py`, the transcript replay behind its turn table), `allocate-next-slice.sh`.
   Suites load their subject via `importlib.util.spec_from_file_location` (`tools/` is not a

@@ -132,13 +132,17 @@ rendering, registering, the operator's answers, the plan loop — is the stage's
 
 ## Hand-back
 
-One line: the store's path, or `nothing to ask`.
+Before you hand back, add a debrief: a few lines, in your own words, on how you feel this went
+for you. Give it on the stdin of `debrief.py ground <slice> --words`
+(`python3 ${CLAUDE_PLUGIN_ROOT}/tools/debrief.py`, `<slice>` the folder your dispatch names),
+which keeps it in the folder for the session to time. Then hand back one line: the store's path,
+or `nothing to ask`.
 
 ## Bounds
 
-- **Write nothing else, and act on nothing.** You render no document, register nothing, commit
-  nothing and write no card: the session renders, registers and commits, and the cards move once
-  the operator has ruled. No phases, no `verification.json`: the plan loop writes those.
+- **Write nothing else, and act on nothing**, your debrief aside. You render no document,
+  register nothing, commit nothing and write no card: the session renders, registers and
+  commits, and the cards move once the operator has ruled. No phases, no `verification.json`: the plan loop writes those.
 - **The page carries conclusions.** An ask holds what the operator rules from; the evidence it
   rests on stays in `grounding.md`, which the session attaches. A claim an ask rests on that you
   did not verify is said so in the ask's words, never smoothed into a fact.

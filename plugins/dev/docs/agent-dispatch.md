@@ -140,7 +140,8 @@ and write-back stays with the dispatching agent. A stage's session is the except
 nothing it would have to read for, so its reading and the writing that rests on it go to
 sub-agents pointed at the slice folder — the `dev:plan-preparer` grounds a slice and writes its
 requirements asks, and a sub-agent carries each answered document into the plan
-([pilot.md](pilot.md)). The doc phase's pages are not delegated:
+([pilot.md](pilot.md)). The debriefs at its loop's end are the one reading it does itself: its
+debrief is its own account (pilot.md § The debrief). The doc phase's pages are not delegated:
 a per-scope authoring sub-agent was built (0.9.14) and read on nine slices — about twice the cost
 per phase of shipped work, a fresh session re-orienting on every hand-over brief — and reverted
 (`docs/research/doc-phase-read-2026-09-04.md` § 5–6); the doc-writer surveys through sub-agents

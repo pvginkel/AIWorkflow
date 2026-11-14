@@ -18,7 +18,8 @@ operator's word at the start's step 3), the doc phase and the wrap-up
 `${CLAUDE_PLUGIN_ROOT}/docs/close-out.md`. This session launches, waits, registers, carries out
 and commits. What has to be read — a bail to diagnose, an answer to carry into the plan, a
 question about the slice — goes to a sub-agent pointed at the slice folder, so the session stays
-small over a run that may last days.
+small over a run that may last days. The one reading of its own is the run's debriefs, at the
+close-out.
 
 Below, `<spec-repo>` is your `.aiworkflowrc`'s `spec_repo`, `<slice>` the path of the folder,
 `<spec-repo>/slices/<NNN_slug>`, of the slice the brief's first line names, which every tool
@@ -163,18 +164,25 @@ At exit 0, in this order:
 
 1. `slice_cost.py <slice> --write-state` — the slice's cost into `state.json`. Say its warnings
    in the turn's last message; never hand-edit the numbers.
-2. `close_slice.py <slice>` — the README entry to Completed, the folder `git mv`ed to
+2. **Your debrief.** `debrief.py input <slice> --stage run` prints the loop's ask of you, every
+   debrief its agents gave, in order, and the loop's figures, the cost among them. Read it
+   yourself, not through a sub-agent. Then give your own as it asks, on the stdin of
+   `debrief.py give <slice> --stage run`, which keeps it in `debrief.json` beside theirs and
+   hands the whole to Pilot where Pilot takes it, a line in `log.txt` saying what came of it.
+   Your debrief is the file's, never the turn's last message. Only the turn the run completes
+   in gives one: a turn that ends on a document, an error or a halt gives none.
+3. `close_slice.py <slice>` — the README entry to Completed, the folder `git mv`ed to
    `slices/completed/`, `run.lock` deleted, all staged by name. Below, `<slice>` is the folder at
    its new path. No document of the slice is open at exit 0, so the move is safe (pilot.md § The
    documents).
-3. `close_out.py render <slice> --step <task>` — the report once more, the cost in its record,
+4. `close_out.py render <slice> --step <task>` — the report once more, the cost in its record,
    its title the plan's one-liner, which says the slice as it was planned. With no ticket in the
    brief, a `--context`: the cards the answers ask for are filed without a parent.
-4. Commit the folder by name — `state.json`, `debrief.json`, `log.txt`, `close-out.json`,
+5. Commit the folder by name — `state.json`, `debrief.json`, `log.txt`, `close-out.json`,
    `close-out.md`,
    `close-out-record.md`, `asks/` — dropping only a stale `bailout.json`.
-5. Move the slice card to delivered.
-6. Register `close-out.md`, attach `close-out-record.md`, `plan.md` and `verification.json` to
+6. Move the slice card to delivered.
+7. Register `close-out.md`, attach `close-out-record.md`, `plan.md` and `verification.json` to
    it, and end the turn. A report with no ask renders no `close-out.md`: then its end runs at once,
    `close_out.py close`, `render`, the commit and the slice card to done, and the turn ends.
 

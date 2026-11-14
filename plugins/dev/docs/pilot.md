@@ -80,7 +80,7 @@ list over a field it does not know. The sender learns that from the Pilot itself
 version or a setting: where a step has a why to send, it first asks the Pilot's `tools/list`, once
 per `wait`, and sends the whys only where `set_progress`'s steps list a `why` field. Against a
 Pilot without one the list goes as it always did. The same answer says whether the Pilot lists
-`register_debrief`. A `tools/list` that gets no answer leaves the whys out of that send and is
+`register_debrief` (§ The debrief). A `tools/list` that gets no answer leaves the whys out of that send and is
 asked again at the next; one refused is taken as a Pilot that takes neither; each goes to the
 slice's log once per `wait`.
 
@@ -90,6 +90,43 @@ each go to the slice's log, `log.txt` or `plan_log.txt`, once per kind per `wait
 output and exit code never change, `progress` prints nothing and exits 0, and nothing in the
 stage reads the answer. A state file with no
 list, from a loop started on a plugin before 0.10.29, publishes nothing.
+
+## The debrief
+
+A stage's work item carries a debrief once its loop completes. Every role the loop dispatched
+gives its own at its hand-back, kept as an entry each in the loop's debrief file
+([runner-state.md](runner-state.md) § debrief.json), and the stage session gives the whole run's
+in the turn its loop completes in: run-slice's close-out, plan-slice's promotion. A turn that ends
+on a document, an error or a halt gives none, so a run has one debrief, the turn it completes in
+carrying the whole of it, its hand-backs included.
+
+The session runs `debrief.py input <slice> --stage run|plan`. It prints the loop's ask of the
+session, in the operator's words, then every entry in order and the loop's figures: a run's
+phases, rounds, consults, durations and cost, the cost once `slice_cost.py --write-state` has
+run; the plan's rounds, its durations and the cost `slice_cost.py` computes for the folder. The
+session reads that itself, the one reading a stage does not hand to a sub-agent, and gives its
+own on the stdin of `debrief.py give <slice> --stage run|plan`. That keeps it as the file's
+`debrief` and hands the whole to Pilot. The turn's last message stays its one line.
+
+The hand-off is one `tools/call` of `pilot-work`'s `register_debrief` (PilotApp's `docs/mcp.md`)
+with the session's words and every entry as the file has it, less its `step`. It goes only where
+the Pilot's own `tools/list` names the tool, as a step's why does, and is held to its limits on
+this side: a text past its limit cut with an ellipsis, and past 500 entries the first 500, the
+file keeping them all. It is best-effort. What came of it is one `[debrief]` line in the slice's
+log, `log.txt` or `plan_log.txt`: the entries Pilot stored, or why none were handed — no
+credentials, no answer, a Pilot that lists no `register_debrief`, a refusal, a second call's
+among them. The debrief stays in the folder either way, committed with it, and the stage's
+outcome and its last message are the same either way.
+
+The plan preparer runs in the stage's session before the loop exists. The session notes its start
+and its end around the dispatch (`debrief.py ground <slice> --start`, `--end`), and the preparer
+gives its words in between (`--words`). Its entry stands first in `plan_debrief.json` and waits
+there, across work items, until the loop completes.
+
+Each half runs on its own too, over a slice folder, with the `PILOT_TOKEN` and `PILOT_MCP_URL`
+of the environment it runs in, and prints what came of it: `debrief.py hand-off <slice> --stage
+run|plan` hands the folder's debrief over, and `pilot_progress.py publish <slice> [--plan]` sends
+its steps once, as `wait` does.
 
 ## The brief
 

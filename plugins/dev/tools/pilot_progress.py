@@ -36,14 +36,29 @@ itself, its own `tools/list` (`discover`), never from a version or a
 setting, and asked only where a step has a why to send. It is best-effort
 and silent — what it could not do goes to the slice's log once per kind per
 `wait` or `publish_steps` call, nothing is printed, and nothing it raises
-reaches the caller. Stdlib only.
+reaches the caller.
+
+The same client hands a work item's debrief to Pilot, once, at its stage's
+end: one `tools/call` of DEBRIEF_TOOL, made only where that Pilot's own
+`tools/list` names it (`hand_off_debrief`), and what came of it goes to the
+slice's log in one line.
+
+Run on its own, over a slice folder's state file, with the session's
+`PILOT_TOKEN` and `PILOT_MCP_URL`:
+
+    pilot_progress.py publish <slice-dir> [--plan]
+
+sends the list once as `wait` sends it, and prints what came of it in one
+line. Stdlib only.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -69,6 +84,7 @@ WHY_MAX = 120
 STEPS_MAX = 100
 
 TIMEOUT = 3          # seconds, the whole call: connect, send, answer
+DEBRIEF_TIMEOUT = 15  # the debrief's one call, which no `wait` budget bounds
 TOOL = "set_progress"
 DEBRIEF_TOOL = "register_debrief"
 # The HTTP seam: `send` takes an opener of its own, and falls back to this
@@ -338,12 +354,14 @@ NOTHING = Takes()
 
 class Answer(NamedTuple):
     """What a call came to: `ok` — with, of a `set_progress`, the list as
-    Pilot now holds it, of a `tools/list` (`discover`), what it takes —
-    `refused` with Pilot's reason, or `no_answer` with why none came."""
+    Pilot now holds it, of a `tools/list` (`discover`), what it takes, of a
+    DEBRIEF_TOOL, the number of entries it stored — `refused` with Pilot's
+    reason, or `no_answer` with why none came."""
     kind: str
     steps: list | None = None
     reason: str = ""
     takes: Takes | None = None
+    entries: int | None = None
 
 
 class _NoAnswer(Exception):
@@ -391,6 +409,28 @@ def send(steps: list[dict], url: str, token: str,
     except _NoAnswer as e:
         return Answer(NO_ANSWER, reason=str(e))
     return _answer(message, token)
+
+
+def send_debrief(words: str, entries: list[dict], url: str, token: str,
+                 opener: Callable | None = None,
+                 timeout: float = DEBRIEF_TIMEOUT) -> Answer:
+    """One `tools/call` of DEBRIEF_TOOL with the stage session's `words` and
+    the run's `entries`, as given: `ok` with the number Pilot stored, else
+    `refused` or `no_answer` with the reason. Never raises; no reason holds
+    the token."""
+    try:
+        message = _post("tools/call", {
+            "name": DEBRIEF_TOOL,
+            "arguments": {"debrief": words, "entries": entries}},
+            url, token, opener, timeout)
+    except _NoAnswer as e:
+        return Answer(NO_ANSWER, reason=str(e))
+    answer = _answer(message, token)
+    if answer.kind != OK:
+        return answer
+    stored = answer.steps.get("entries") if isinstance(answer.steps, dict) \
+        else None
+    return Answer(OK, entries=stored if isinstance(stored, int) else None)
 
 
 def discover(url: str, token: str, opener: Callable | None = None,
@@ -507,6 +547,9 @@ UNLISTED = "unlisted"
 NOT_PUBLISHED = "Pilot progress not published"
 NOT_LISTED = ("Pilot's tools not listed, so it was sent only what every Pilot "
               "takes")
+NOT_TAKEN = "not_taken"
+NOT_HANDED = "Debrief not handed to Pilot, kept in the slice's folder"
+HANDED = "Debrief handed to Pilot"
 REASON_MAX = 300
 
 
@@ -624,6 +667,52 @@ class Publisher(_Sender):
         return sanitize(progress, why=True)
 
 
+def hand_off_debrief(words: str, entries: list[dict],
+                     log_line: Callable[[str], None], environ=None,
+                     opener: Callable | None = None) -> Answer | None:
+    """The work item's debrief handed to Pilot, once: `words`, the stage
+    session's own, and `entries`, held to Pilot's limits by the caller
+    (debrief.for_pilot), sent with the credentials from this process's
+    environment, and only where that Pilot's own `tools/list` names
+    DEBRIEF_TOOL — one that does not would refuse the call as a tool it does
+    not know. What came of it, stored or why not, is one line through
+    `log_line`. The answer of the last call made, or None with no
+    credentials; never raises."""
+    sender = _Sender(log_line, environ, opener)
+    try:
+        if not sender.token or not sender.url:
+            sender._note(UNCONFIGURED, "no PILOT_TOKEN/PILOT_MCP_URL in this "
+                                       "session's environment", NOT_HANDED)
+            return None
+        listed = discover(sender.url, sender.token, sender.opener)
+        if listed.kind == NO_ANSWER:
+            sender._note(UNLISTED, f"its tools not listed, no answer from "
+                                   f"{sender.url}: {listed.reason}", NOT_HANDED)
+            return listed
+        if listed.kind == REFUSED:
+            sender._note(UNLISTED, "its tools not listed, Pilot refused it: "
+                                   f"{listed.reason}", NOT_HANDED)
+            return listed
+        if not listed.takes.debrief:
+            sender._note(NOT_TAKEN, f"this Pilot lists no {DEBRIEF_TOOL}",
+                         NOT_HANDED)
+            return listed
+        answer = send_debrief(words, entries, sender.url, sender.token,
+                              sender.opener)
+        if answer.kind == NO_ANSWER:
+            sender._note(NO_ANSWER, f"no answer from {sender.url}: "
+                                    f"{answer.reason}", NOT_HANDED)
+        elif answer.kind == REFUSED:
+            sender._note(REFUSED, f"Pilot refused it: {answer.reason}",
+                         NOT_HANDED)
+        else:
+            sender._note(OK, f"{answer.entries} entries stored"
+                         if answer.entries is not None else "stored", HANDED)
+        return answer
+    except Exception:
+        return None
+
+
 def publish_steps(steps: list[dict], log_line: Callable[[str], None],
                   environ=None, opener: Callable | None = None) -> Answer | None:
     """One send of `steps`, a list given rather than a state file's — the
@@ -637,3 +726,72 @@ def publish_steps(steps: list[dict], log_line: Callable[[str], None],
             sanitize(steps, why=True))
     except Exception:
         return None
+
+
+# -- run on its own ------------------------------------------------------------
+
+def append_log_line(log_path: Path, text: str, tag: str) -> None:
+    """One `[<tag>]` line in the slice's log, in the loops' line format, as
+    one write on an O_APPEND descriptor, so a driver appending to the same
+    file never splits it. A log that cannot be written loses the line."""
+    line = f"[{datetime.now().strftime('%H:%M:%S')}] [{tag}] {text}\n".encode()
+    try:
+        fd = os.open(log_path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+        try:
+            os.write(fd, line)
+        finally:
+            os.close(fd)
+    except OSError:
+        pass
+
+
+def answer_line(answer: Answer) -> str:
+    """What a send came to, in one line."""
+    if answer.kind == OK:
+        steps = answer.steps.get("steps") if isinstance(answer.steps, dict) \
+            else None
+        return f"ok: Pilot holds {len(steps)} steps" if isinstance(steps, list) \
+            else "ok"
+    return f"{answer.kind}: {answer.reason}"
+
+
+def cmd_publish(args) -> int:
+    """One forced publish of a slice folder's `progress`, as `wait` makes
+    it, outside any loop: its misses in the folder's log, what came of it
+    printed."""
+    slice_dir = Path(args.slice_dir)
+    state_name, log_name = (("plan_state.json", "plan_log.txt") if args.plan
+                            else ("state.json", "log.txt"))
+    if not (slice_dir / state_name).is_file():
+        print(f"Error: no {state_name} in {slice_dir}", file=sys.stderr)
+        return 2
+    publisher = Publisher(slice_dir / state_name, lambda text: append_log_line(
+        slice_dir / log_name, text, "publish"))
+    answer = publisher.publish(force=True)
+    if answer is not None:
+        print(answer_line(answer))
+    elif not publisher.token or not publisher.url:
+        print("not sent: no PILOT_TOKEN/PILOT_MCP_URL in this environment")
+    else:
+        print(f"not sent: {state_name} holds no steps")
+    return 0
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    sub = parser.add_subparsers(dest="command", required=True)
+    publish_p = sub.add_parser(
+        "publish", help="send a slice folder's steps to Pilot once, as a "
+                        "loop's `wait` sends them, with the credentials in "
+                        "this environment")
+    publish_p.add_argument("slice_dir")
+    publish_p.add_argument("--plan", action="store_true",
+                           help="the plan loop's plan_state.json, not the "
+                                "run's state.json")
+    publish_p.set_defaults(func=cmd_publish)
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

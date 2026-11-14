@@ -4,6 +4,33 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-14 — The stage session gives the loop's debrief, and Pilot is handed the whole (v0.10.66)
+
+PilotApp slice 043, the debrief, its phase P9. The operator: "Something like 'report on how you
+felt it went; this is what the rest said; review the run and the report and give your own
+experience'." This release closes the plugin's half of the debrief.
+
+- **The stage session gives its own debrief when its loop completes**: run-slice at its
+  close-out, once the cost is in `state.json`, and plan-slice at its promotion. `debrief.py
+  input` hands it the operator's ask, word for word ("The loop has ended. Below are the debriefs
+  of every agent it dispatched, in order, and the loop's own figures …"), every agent's debrief
+  in order, and the loop's figures. A run's are its phases, rounds, consults, durations and cost.
+  The plan's are its rounds, its durations and the cost `slice_cost.py` gives the folder. The
+  session reads them itself and gives its own through `debrief.py give`, which keeps it as the
+  debrief file's `debrief`. A turn that ends on a document, an error or a halt gives none.
+- **Pilot is handed the whole**, the session's words and every entry, through `pilot-work`'s
+  `register_debrief`, once, and only where that Pilot's own `tools/list` names the tool. The
+  plugin keeps within Pilot's limits itself: a text past its limit is cut with an ellipsis, and
+  past 500 entries the first 500 go. What came of it is one `[debrief]` line in the slice's log.
+  Against a Pilot without the tool, production's today, the debrief stays in the folder, and
+  the stage runs and ends as it did.
+- **The plan preparer gives a debrief too**, at its hand-back, as every role does. The plan-slice
+  session notes its start and its end around the dispatch, and its entry, `The grounding`,
+  stands first in `plan_debrief.json`, waiting there across work items until the loop completes.
+- **Each half runs on its own**, over a slice folder, with the environment's `PILOT_TOKEN` and
+  `PILOT_MCP_URL`: `debrief.py hand-off` hands a folder's debrief over, and `pilot_progress.py
+  publish` sends its steps once, as `wait` does, each printing what came of it.
+
 ## 2026-11-14 — Every role the loops dispatch gives a debrief, each round's an entry of its own (v0.10.65)
 
 PilotApp slice 043, the debrief, its phase P8. The operator: "When I wa running the workflow

@@ -912,6 +912,141 @@ def test_publish_steps_reads_the_process_environment_by_default():
     assert answer.kind == pp.OK and opener.sent() == [GROUNDING]
 
 
+
+# -- the debrief's hand-off ---------------------------------------------------
+
+ENTRIES = [{"section": "P1 · First", "round": 1, "role": "Code writer",
+            "duration": 540, "words": "It went."},
+           {"section": "Completion check", "round": 1, "role": "Gate sweep",
+            "duration": 600, "passed": True}]
+
+
+def stored(n):
+    message = {"jsonrpc": "2.0", "id": 1, "result": {
+        "content": [{"type": "text", "text": json.dumps({"entries": n})}],
+        "structuredContent": {"entries": n}}}
+    return FakeResponse(sse(["event: message",
+                             f"data: {json.dumps(message)}"]))
+
+
+def refused(text):
+    message = {"jsonrpc": "2.0", "id": 1, "result": {
+        "isError": True, "content": [{"type": "text", "text": text}]}}
+    return FakeResponse(sse([f"data: {json.dumps(message)}"]))
+
+
+def hand_off(opener, env=ENV, words="It went well."):
+    lines = []
+    answer = pp.hand_off_debrief(words, ENTRIES, lines.append, environ=env,
+                                 opener=opener)
+    return answer, lines
+
+
+def test_the_debrief_is_one_call_of_register_debrief_to_a_pilot_that_lists_it():
+    opener = FakeOpener(listed(), stored(2))
+    answer, lines = hand_off(opener)
+    assert (answer.kind, answer.entries) == (pp.OK, 2)
+    assert opener.methods() == ["tools/list", "tools/call"]
+    body = json.loads(opener.requests[1][0].data)
+    assert body["params"] == {"name": "register_debrief", "arguments": {
+        "debrief": "It went well.", "entries": ENTRIES}}
+    assert opener.requests[1][1] == pp.DEBRIEF_TIMEOUT
+    assert lines == ["Debrief handed to Pilot: 2 entries stored"]
+
+
+def test_a_pilot_that_lists_no_register_debrief_is_sent_none():
+    opener = FakeOpener(listed(why=False, debrief=False))
+    answer, lines = hand_off(opener)
+    assert answer.kind == pp.OK and opener.methods() == ["tools/list"]
+    assert lines == ["Debrief not handed to Pilot, kept in the slice's folder: "
+                     "this Pilot lists no register_debrief"]
+
+
+def test_the_hand_off_says_in_one_line_why_it_handed_nothing():
+    second = ("Cannot register the debrief of work item 7 because it has its "
+              "debrief already")
+    for opener, env, want in (
+            (FakeOpener(listed()), {}, "no PILOT_TOKEN/PILOT_MCP_URL in this "
+                                       "session's environment"),
+            (FakeOpener(urllib.error.URLError("down")), ENV,
+             f"its tools not listed, no answer from {URL}: URLError: down"),
+            (FakeOpener(FakeResponse(json.dumps({
+                "jsonrpc": "2.0", "id": 1,
+                "error": {"code": -32600, "message": "no"}}),
+                "application/json")), ENV,
+             "its tools not listed, Pilot refused it: no"),
+            (FakeOpener(listed(), urllib.error.URLError("gone")), ENV,
+             f"no answer from {URL}: URLError: gone"),
+            (FakeOpener(listed(), refused(second)), ENV,
+             f"Pilot refused it: {second}")):
+        answer, lines = hand_off(opener, env)
+        assert lines == ["Debrief not handed to Pilot, kept in the slice's "
+                         f"folder: {want}"], lines
+        if not env:
+            assert answer is None and opener.requests == []
+        else:
+            assert answer.kind in (pp.NO_ANSWER, pp.REFUSED)
+
+
+def test_the_hand_off_never_raises_and_holds_no_token():
+    def boom(*a, **k):
+        raise RuntimeError("bad")
+    answer, lines = hand_off(boom)
+    assert answer.kind == pp.NO_ANSWER and len(lines) == 1
+    _, lines = hand_off(FakeOpener(listed(), refused(f"bad token {TOKEN}")))
+    assert TOKEN not in lines[0] and "<token>" in lines[0]
+    assert pp.hand_off_debrief("w", ENTRIES, lambda line: 1 / 0,
+                               environ=ENV, opener=FakeOpener(listed(),
+                                                              stored(2))) \
+        .kind == pp.OK
+
+
+# -- run on its own -----------------------------------------------------------
+
+def run_publish(argv, opener, env=ENV):
+    saved, saved_opener, saved_out = pp.os.environ, pp.OPENER, sys.stdout
+    pp.os.environ, pp.OPENER, sys.stdout = dict(env), opener, io.StringIO()
+    try:
+        code = pp.main(argv)
+        return code, sys.stdout.getvalue()
+    finally:
+        pp.os.environ, pp.OPENER, sys.stdout = saved, saved_opener, saved_out
+
+
+def test_publish_sends_a_folders_steps_once_with_their_whys_and_says_so():
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "state.json").write_text(json.dumps(
+            {"progress": WHY_STEPS}))
+        (Path(tmp) / "plan_state.json").write_text(json.dumps(
+            {"progress": STEPS}))
+        opener = FakeOpener(listed(), ok_stream(WHY_STEPS))
+        assert run_publish(["publish", tmp], opener) == (
+            0, "ok: Pilot holds 3 steps\n")
+        assert opener.sent() == [WHY_STEPS]
+        opener = FakeOpener(ok_stream(STEPS))
+        assert run_publish(["publish", tmp, "--plan"], opener) == (
+            0, "ok: Pilot holds 2 steps\n")
+        assert opener.sent() == [STEPS]
+        # a miss is printed and goes to the folder's log as `wait`'s does
+        assert run_publish(["publish", tmp, "--plan"], FakeOpener(
+            urllib.error.URLError("down"))) == (
+            0, "no_answer: URLError: down\n")
+        log = (Path(tmp) / "plan_log.txt").read_text()
+        assert "] [publish] Pilot progress not published: no answer" in log
+        assert run_publish(["publish", tmp], FakeOpener(listed()), env={}) \
+            == (0, "not sent: no PILOT_TOKEN/PILOT_MCP_URL in this "
+                   "environment\n")
+        (Path(tmp) / "state.json").write_text("{}")
+        assert run_publish(["publish", tmp], FakeOpener(listed())) == (
+            0, "not sent: state.json holds no steps\n")
+    with tempfile.TemporaryDirectory() as tmp:
+        saved = sys.stderr
+        sys.stderr = io.StringIO()
+        try:
+            assert run_publish(["publish", tmp], FakeOpener(listed()))[0] == 2
+        finally:
+            sys.stderr = saved
+
 if __name__ == "__main__":
     _tests = [v for k, v in sorted(globals().items())
               if k.startswith("test_") and callable(v)]
