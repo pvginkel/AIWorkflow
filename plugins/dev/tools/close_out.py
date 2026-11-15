@@ -43,7 +43,9 @@ the agents and the skills:
   restate      give an entry the section the document shows for it — the
                heading, the body, the consequence and the provenance, in
                place of its author's, which the record keeps; a second
-               restatement replaces the first, kept as a note.
+               restatement replaces the first, kept as a note, and keeps
+               its consequence and provenance where it gives none. Prints
+               the section's word count, the card's.
   propose      give an entry its proposal, or replace it, the old one kept as
                a note; `--card` and `--word` make it the wrap-up's request
                for a card, or for the operator's word on an edit, and take a
@@ -1080,16 +1082,24 @@ def _card_text(entry: dict, vmap: dict[str, dict]) -> str:
     return "\n\n".join([_ask_headline(entry, vmap), *_section(entry)])
 
 
+def _card_words(entry: dict, vmap: dict[str, dict]) -> int:
+    """The words of the card an entry files: its heading, body, Consequence
+    and Provenance (`_card_text`)."""
+    return len(_card_text(entry, vmap).split())
+
+
 def _card_problems(entry: dict, vmap: dict[str, dict]) -> list[str]:
     """What keeps an entry's section from being the card it files: more
-    words than `CARD_WORDS_MAX`, heading and body counted."""
-    words = len(_card_text(entry, vmap).split())
+    words than `CARD_WORDS_MAX`, its heading, body, Consequence and
+    Provenance counted."""
+    words = _card_words(entry, vmap)
     if words <= CARD_WORDS_MAX:
         return []
     return [f"{entry['id']}'s section is {words} words, and a card request's is at most "
-            f"{CARD_WORDS_MAX}, heading and body counted: the tracker's limit for a card an "
-            f"agent writes. `restate` it shorter, the card's text alone: the detail stays in "
-            f"the record, where the author's text and every note already are"]
+            f"{CARD_WORDS_MAX}, its heading, body, Consequence and Provenance counted: the "
+            f"tracker's limit for a card an agent writes. `restate` it shorter, the card's "
+            f"text alone: the detail stays in the record, where the author's text and every "
+            f"note already are"]
 
 
 def _proposal_note(who: str, day: str, old: str) -> dict:
@@ -1162,6 +1172,31 @@ def _restated_note(who: str, day: str, old: dict) -> dict:
             "history": "restated"}
 
 
+def _kept_fields(new: dict, old: dict | None) -> list[str]:
+    """Carry into the restatement `new` the consequence and the provenance
+    of the one before, `old`, where `new` gives none of its own — a shorter
+    restate must not bring back the author's lines the facts disproved
+    (KubeCoder slice 254's T1) — and return what it kept, by the names the
+    section gives them."""
+    kept: list[str] = []
+    if not old:
+        return kept
+    if "consequence" not in new and old.get("consequence"):
+        new["consequence"] = old["consequence"]
+        kept.append("Consequence")
+    if "evidence" not in new and (old.get("evidence") or old.get("author")):
+        new.update(evidence=old.get("evidence"), author=old.get("author"))
+        kept.append("Provenance")
+    return kept
+
+
+def _kept_text(kept: list[str]) -> str:
+    """`restate`'s line for the fields it kept from the restatement before."""
+    flags = " or ".join(f"--{name.lower()}" for name in kept)
+    return (f"the previous restatement's {_join(kept)}, which this call leaves out; "
+            f"give {flags} to replace {'them' if len(kept) > 1 else 'it'}")
+
+
 def restate_entry(slice_dir: Path | str, eid: str, by: str, headline: str, body: str,
                   consequence: str | None = None, provenance: str | None = None,
                   date: str | None = None) -> str:
@@ -1170,8 +1205,12 @@ def restate_entry(slice_dir: Path | str, eid: str, by: str, headline: str, body:
     in place of its author's — the current story, told once, where a note
     would have told it again under the author's. The author's text stays
     in the entry, and the record shows it; a restatement already there,
-    and that says something else, stays as a history note. Returns the
-    section's heading."""
+    and that says something else, stays as a history note, and its
+    consequence and provenance stay in the new one where this call gives
+    none (`_kept_fields`). A card request — an entry the route makes one —
+    is refused a section, as it will stand, over `CARD_WORDS_MAX` words,
+    as `propose --card` is. Returns the section's heading, a line naming
+    what was kept, where something was, and the section's word count."""
     who = _collapse(by)
     if not who:
         raise ReportError("a restatement needs --by")
@@ -1193,15 +1232,26 @@ def restate_entry(slice_dir: Path | str, eid: str, by: str, headline: str, body:
         if entry.get("strike"):
             raise ReportError(f"{entry['id']} is struck — a struck entry is settled")
         old = entry.get("restated")
-        if (entry.get("wrap_up") or {}).get("outcome") == "card":
-            problems = _card_problems({**entry, "restated": new}, _verification(slice_dir))
+        kept = _kept_fields(new, old)
+        told = {**entry, "restated": new}
+        vmap = _verification(slice_dir)
+        key, _ = route(entry, touched_repos(slice_dir), slice_stages(slice_dir))
+        if key.startswith("card:"):
+            problems = _card_problems(told, vmap)
             if problems:
-                raise ReportError(problems[0])
+                raise ReportError(problems[0] + (f"\nthe count keeps {_kept_text(kept)}"
+                                                 if kept else ""))
         said = {k: v for k, v in new.items() if k not in ("by", "date")}
         if old and {k: v for k, v in old.items() if k not in ("by", "date")} != said:
             entry["notes"].append(_restated_note(who, day, old))
         entry["restated"] = new
-    return f"## {head}"
+    out = [f"## {head}"]
+    if kept:
+        out.append(f"kept {_kept_text(kept)}")
+    out.append(f"the section is {_card_words(told, vmap)} words, its heading, body, "
+               f"Consequence and Provenance counted; a card request's is at most "
+               f"{CARD_WORDS_MAX}")
+    return "\n".join(out)
 
 
 def _mark_note(mark: dict) -> dict:
@@ -1975,9 +2025,20 @@ FOR_RULE = ("--for names another slice that should take the entry — one still 
 # What `relabel --for` takes to remove the label.
 FOR_CLEAR = "none"
 
+# The `repo` of a fix or an event that lives in no repository — a manual
+# act, a setting changed by hand (AnsibleSpecs slice 067's E5, a fix made on
+# a phone, asked for a card in a repository called "none"). Taken in any
+# case and stored as this; the routes that need a repository skip it.
+REPO_NONE = "none"
+
 
 def _clears_for(labels: dict) -> bool:
     return str(labels.get("for") or "").strip().lower() == FOR_CLEAR
+
+
+def _no_repo(repo) -> bool:
+    """Whether a `repo` label says the entry lives in no repository."""
+    return str(repo or "").strip().lower() == REPO_NONE
 
 
 def check_labels(kind: str, labels: dict, consequence: str | None,
@@ -2117,8 +2178,12 @@ def touched_repos(slice_dir: Path | str) -> set[str] | None:
 
 
 def _elsewhere(lab: dict, touched: set[str] | None) -> str | None:
+    """The repository the slice did not touch that the entry's fix lives
+    in; None where it is the slice's own, or where the entry has none — no
+    label, or `none` (REPO_NONE): the card routing that needs a repository
+    does not fire for it."""
     repo = lab.get("repo")
-    if touched is None or not repo or repo in touched:
+    if touched is None or not repo or _no_repo(repo) or repo in touched:
         return None
     return repo
 
@@ -2590,7 +2655,7 @@ def _triage_words(entry: dict) -> str | None:
         if value is None:
             continue
         if key == "repo":
-            words.append(f"in {value}")
+            words.append("in no repository" if _no_repo(value) else f"in {value}")
         elif key == "for":
             words.append(f"for slice {value}")
         else:
@@ -3556,6 +3621,12 @@ def _label_value(value: str) -> str:
     return re.sub(r"[\s_]+", "-", value.strip().lower())
 
 
+def _repo_value(value: str) -> str:
+    """`--repo` as the tool keeps it: `none` in any case as REPO_NONE, a
+    repository's name as given."""
+    return REPO_NONE if _no_repo(value) else value
+
+
 # The help strings are prompt text: `verb_usage("append", "note", "strike")`
 # is rendered into every dispatch, and `relabel`'s into those that offer it.
 LABEL_HELP = {
@@ -3565,7 +3636,8 @@ LABEL_HELP = {
     "fix": "what is decided about the fix",
     "area": "sensitive: concurrency or timing, stored data, a wire contract, "
             "authentication or secrets",
-    "repo": "the repository the fix lives in, by its directory name",
+    "repo": f"the repository the fix lives in, by its directory name; {REPO_NONE} for a "
+            "fix or an event that lives in no repository, such as a manual act",
     "for": "the number of another slice that should take the entry — one still "
            "to run, or one the plan names that triage has not created yet, for "
            "which the operator is asked to hold it — never the slice being run; "
@@ -3591,8 +3663,10 @@ def _add_label_args(p: argparse.ArgumentParser, relabel: bool = False) -> None:
         if relabel and label == "for":
             help_ += f". --for {FOR_CLEAR} clears it"
         kwargs: dict = {"dest": f"label_{label.replace('-', '_')}", "help": help_}
-        if values is None:
-            kwargs["metavar"] = "NAME" if label == "repo" else "SLICE"
+        if label == "repo":
+            kwargs.update(metavar="NAME", type=_repo_value)
+        elif values is None:
+            kwargs["metavar"] = "SLICE"
         else:
             kwargs.update(choices=values, type=_label_value)
         p.add_argument(f"--{label}", **kwargs)
@@ -3751,9 +3825,11 @@ def build_parser() -> tuple[argparse.ArgumentParser,
                    help="the story as it stands, told once — for a card request the "
                         "card's text, for a word request the exact edit and the rule; "
                         "or - for stdin")
-    p.add_argument("--consequence", help="the Consequence line, where the story changed it")
+    p.add_argument("--consequence", help="the Consequence line, where the story changed it; "
+                                         "left out, a previous restatement's stays")
     p.add_argument("--provenance", help="the Provenance line, where you witnessed or read "
-                                        "it anew: " + provenance_help)
+                                        "it anew: " + provenance_help + "; left out, a "
+                                        "previous restatement's stays")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
     p = verb("propose", "give an entry its proposal, or replace it", entry=True)

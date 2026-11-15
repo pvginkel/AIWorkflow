@@ -199,6 +199,55 @@ def test_row_5_a_fix_in_a_repo_the_slice_did_not_touch():
     assert R(E("defect", labels=quiet), None) == "closed:fault"
 
 
+def test_repo_none_is_no_repository_and_no_card_routing_needs_one_for_it():
+    """AnsibleSpecs slice 067's E5: an event whose fix was a manual act on a
+    phone, written `--repo none`, was asked for a card in a repository
+    called "none". `none`, in any case, is no repository: row 5, and the
+    second table's card for a repository elsewhere, never fit it, and the
+    entry routes as the slice's own."""
+    touched = {"KubeCoder"}
+    for none in ("none", "None", "NONE"):
+        shows = fix_labels(repo=none)
+        assert R(E("defect", labels=shows), touched) == "wrap-up:fix-or-card"
+        assert R(E("defect", labels={**shows, "fix": "one-edit"}), touched) == "wrap-up:fix"
+        quiet = fix_labels(trigger="fault", impact="degraded", repo=none)
+        assert R(E("defect", labels=quiet), touched) == "closed:fault"
+        assert R(E("defect", labels={**quiet, "impact": "severe"}), touched) == \
+            "operator:risk"
+        assert R(E("defect", "major", labels=quiet), touched) == "operator:risk"
+        assert R(E("improvement", labels=imp_labels(repo=none)), touched) == \
+            "wrap-up:improvement"
+        assert R(E("improvement", labels=imp_labels(repo=none, prevents="severe")),
+                 touched) == "wrap-up:improvement"
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        (slice_dir / "state.json").write_text(json.dumps(STATE))
+        # E5's shape: an event with a problem, its fix a manual act — valid, and
+        # stored as `none`
+        event = with_flags(DEFECT, kind="event", trigger="normal-use", repo="None",
+                           headline="the phone kept the old VPN profile")
+        code, out, err = run_cli("append", slice_dir, *event)
+        assert (code, out) == (0, "E1\n"), err
+        assert entry_of(slice_dir, "E1")["labels"]["repo"] == "none"
+        assert route_of(slice_dir, "E1")[0] == "wrap-up:fix-or-card"
+        assert "· in no repository" in close_out._triage_words(entry_of(slice_dir, "E1"))
+        # a card request for a repository elsewhere, relabelled `none`, is no longer one
+        run_cli("append", slice_dir, *with_flags(DEFECT, repo="HelmCharts"))    # B1
+        assert route_of(slice_dir, "B1")[0] == "card:table"
+        code, _, err = run_cli("relabel", slice_dir, "B1", "--by", "wrap-up", "--note",
+                               "the fix is a setting changed by hand", "--repo", "NONE")
+        assert code == 0, err
+        assert entry_of(slice_dir, "B1")["labels"]["repo"] == "none"
+        assert route_of(slice_dir, "B1")[0] == "wrap-up:fix-or-card"
+        assert places(slice_dir) == {"For the wrap-up": ["E1", "B1"]}
+    # the help says when to use it, on every verb that takes the label
+    for verb in ("append", "amend", "relabel"):
+        assert ("    --repo: the repository the fix lives in, by its directory name; none "
+                "for a fix or an event that lives in no repository, such as a manual act"
+                ) in close_out.verb_usage(verb).splitlines(), verb
+
+
 def test_row_6_prose_and_easy_fixes_go_to_the_wrap_up_to_fix():
     assert close_out.route(E("prose", labels=fix_labels(fix="design", area="sensitive",
                                                         trigger="fault"))) == (
@@ -1812,7 +1861,9 @@ def test_restate_gives_the_section_and_the_record_keeps_the_authors_text():
             "--provenance", "witnessed — wrap-up, on abc1234",
             stdin="How it is reached:\n\n- a restart\n- any reload\n")
         assert code == 0, err
-        assert out == "## Card it: the status line is wrong after every restart\n"
+        assert out == ("## Card it: the status line is wrong after every restart\n"
+                       "the section is 33 words, its heading, body, Consequence and "
+                       "Provenance counted; a card request's is at most 200\n")
         b1 = entry_of(slice_dir, "B1")
         assert b1["restated"] == {
             "by": WU, "date": "2026-10-31",
@@ -1869,7 +1920,7 @@ def test_restate_gives_the_section_and_the_record_keeps_the_authors_text():
                                 "the new story", date="2026-11-01")
         b1 = entry_of(slice_dir, "B1")
         assert b1["restated"]["headline"] == "Card it: the status line"
-        assert "consequence" not in b1["restated"]
+        assert b1["restated"]["consequence"] == "every operator reads a wrong status"
         assert b1["notes"][-1] == {
             "by": WU, "date": "2026-11-01",
             "text": ["restatement replaced — was: Card it: the status line is wrong after "
@@ -1878,10 +1929,11 @@ def test_restate_gives_the_section_and_the_record_keeps_the_authors_text():
         close_out.restate_entry(slice_dir, "B1", WU, "Card it: the status line",
                                 "the new story", date="2026-11-02")
         assert len(entry_of(slice_dir, "B1")["notes"]) == len(b1["notes"])
-        # the consequence and the provenance it does not give are the author's
+        # the consequence and the provenance it does not give are the first
+        # restatement's, kept
         close_out.render_report(slice_dir)
-        assert ("the new story\n\n**Consequence:** an operator reads a wrong status\n\n"
-                "**Provenance:** witnessed — code-reviewer, P3 r1") in report(slice_dir)
+        assert ("the new story\n\n**Consequence:** every operator reads a wrong status\n\n"
+                "**Provenance:** witnessed — wrap-up, on abc1234") in report(slice_dir)
         # refused: no headline, no body, a line cited by its number, a struck entry
         for argv, says in [
             (("--headline", " ", "--body", "b"), "needs --headline"),
@@ -1925,6 +1977,132 @@ def test_a_card_requests_section_is_at_most_the_trackers_card_length():
             "reached on every restart; the fix needs a design"]
         card = close_out.card_view(slice_dir, ["B1"])
         assert len(card.split()) <= close_out.CARD_WORDS_MAX
+
+
+def _words(n):
+    return " ".join(["word"] * n)
+
+
+def test_restate_prints_the_count_and_refuses_a_card_request_over_the_limit():
+    """The count is the card's — heading, body, Consequence and Provenance
+    (`_card_text`) — and the refusal says so. `restate` prints it on every
+    call, and refuses a card request's section over `CARD_WORDS_MAX`, as
+    `propose --card` does, leaving the store as it was: a card request is
+    whatever the route makes one, the wrap-up's card or its author's `card:`
+    proposal. The count is of the section as it will stand, a consequence
+    kept from the restatement before included."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        run_cli("append", slice_dir, *with_flags(
+            DEFECT, trigger="fault", proposal="card: file it for KubeCoder"))   # B2
+        assert route_of(slice_dir, "B1")[0] == "wrap-up:fix-or-card"
+        assert route_of(slice_dir, "B2")[0] == "card:author"
+
+        def restate(eid, *argv):
+            return run_cli("restate", slice_dir, eid, "--by", WU, "--headline", "Card it",
+                           "--date", "2026-11-15", *argv)
+
+        def counted(n):
+            return (f"the section is {n} words, its heading, body, Consequence and "
+                    f"Provenance counted; a card request's is at most 200")
+
+        # "Card it" 2, the author's Consequence 7 and Provenance 6: 15 beside the body
+        refused = ("section is 201 words, and a card request's is at most 200, its heading, "
+                   "body, Consequence and Provenance counted: the tracker's limit")
+        # not a card request yet: counted, and written
+        code, out, err = restate("B1", "--body", _words(186))
+        assert code == 0, err
+        assert out == f"## Card it\n{counted(201)}\n"
+        code, _, err = run_cli("propose", slice_dir, "B1", "--by", WU, "--card",
+                               "--text", "Card it, as this section says.")
+        assert code == 2 and f"B1's {refused}" in err, err
+        code, out, err = restate("B1", "--body", _words(185))
+        assert (code, out) == (0, f"## Card it\n{counted(200)}\n"), err
+        code, _, err = run_cli("propose", slice_dir, "B1", "--by", WU, "--card",
+                               "--text", "Card it, as this section says.")
+        assert code == 0, err
+        # a card request — the wrap-up's, its author's — is refused over the limit,
+        # with the count, and the store is as it was
+        for eid in ("B1", "B2"):
+            before = store(slice_dir)
+            code, out, err = restate(eid, "--body", _words(186))
+            assert (code, out) == (2, ""), err
+            assert f"{eid}'s {refused}" in err and "`restate` it shorter" in err, err
+            assert store(slice_dir) == before
+        # the count keeps what the restatement before gave and this call leaves out
+        code, out, err = restate("B2", "--body", "short", "--consequence", _words(100))
+        assert (code, out) == (0, f"## Card it\n{counted(110)}\n"), err
+        before = store(slice_dir)
+        code, out, err = restate("B2", "--body", _words(100))
+        assert code == 2 and "B2's section is 209 words" in err, err
+        assert err.rstrip("\n").endswith(
+            "\nthe count keeps the previous restatement's Consequence, which this call "
+            "leaves out; give --consequence to replace it")
+        assert store(slice_dir) == before
+        code, out, err = restate("B2", "--body", _words(100),
+                                 "--consequence", "a wrong status")
+        assert (code, out) == (0, f"## Card it\n{counted(112)}\n"), err
+
+
+def test_a_second_restate_keeps_the_first_ones_consequence_and_provenance():
+    """KubeCoder slice 254's T1: a shorter second restate, forced by the
+    word limit, brought back a Consequence and a Provenance the facts had
+    already disproved. A restate that leaves either out keeps the
+    restatement before's, and says which it kept; with none before, the
+    section's lines are the author's."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *DEFECT)                                    # B1
+        run_cli("append", slice_dir, *DEFECT)                                    # B2
+
+        def restate(eid, *argv):
+            return run_cli("restate", slice_dir, eid, "--by", WU, "--headline", "Card it",
+                           "--date", "2026-11-15", *argv)
+
+        code, out, err = restate("B1", "--body", "the first story",
+                                 "--consequence", "nobody reads a wrong status: fixed since",
+                                 "--provenance", "read — wrap-up, on abc1234")
+        assert code == 0 and len(out.splitlines()) == 2, err
+        code, out, err = restate("B1", "--body", "shorter")
+        assert code == 0, err
+        assert out.splitlines()[:2] == [
+            "## Card it",
+            "kept the previous restatement's Consequence and Provenance, which this call "
+            "leaves out; give --consequence or --provenance to replace them"]
+        b1 = entry_of(slice_dir, "B1")
+        assert b1["restated"] == {
+            "by": WU, "date": "2026-11-15", "headline": "Card it", "body": ["shorter"],
+            "consequence": "nobody reads a wrong status: fixed since",
+            "evidence": "read", "author": "wrap-up, on abc1234"}
+        assert b1["notes"][-1]["text"] == [
+            "restatement replaced — was: Card it", "", "the first story"]
+        assert close_out.card_view(slice_dir, ["B1"]) == (
+            "Card it\n\nshorter\n\n**Consequence:** nobody reads a wrong status: fixed "
+            "since\n\n**Provenance:** read — wrap-up, on abc1234")
+        # one given, the other kept
+        code, out, err = restate("B1", "--body", "shorter", "--consequence", "a wrong status")
+        assert code == 0, err
+        assert out.splitlines()[1] == (
+            "kept the previous restatement's Provenance, which this call leaves out; give "
+            "--provenance to replace it")
+        b1 = entry_of(slice_dir, "B1")["restated"]
+        assert (b1["consequence"], b1["evidence"], b1["author"]) == (
+            "a wrong status", "read", "wrap-up, on abc1234")
+        # both given: nothing kept
+        code, out, err = restate("B1", "--body", "shorter", "--consequence", "a wrong status",
+                                 "--provenance", "witnessed — wrap-up, on def5678")
+        assert code == 0 and "kept" not in out, err
+        assert entry_of(slice_dir, "B1")["restated"]["author"] == "wrap-up, on def5678"
+        # a first restatement keeps nothing: the section's lines are the author's
+        code, out, err = restate("B2", "--body", "the story")
+        assert code == 0 and "kept" not in out, err
+        assert "consequence" not in entry_of(slice_dir, "B2")["restated"]
+        assert close_out.card_view(slice_dir, ["B2"]) == (
+            "Card it\n\nthe story\n\n**Consequence:** an operator reads a wrong status\n\n"
+            "**Provenance:** witnessed — code-reviewer, P3 r1")
 
 
 def test_a_proposal_is_one_line_of_at_most_the_bound():

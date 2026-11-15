@@ -4,6 +4,26 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-15 — close_out.py: `--repo none`, a card request's count in `restate`, a restatement's lines kept (v0.10.72)
+
+AIWF-166, AIWF-173 and AIWF-181, from the handover AIWF-209.
+
+- **`--repo none` is no repository** (AIWF-166). AnsibleSpecs slice 067's E5, an event whose fix
+  was a manual act on a phone, was written with `--repo none`, and row 5 asked for a card in a
+  repository called "none". `none`, in any case, is now stored as such: no route that needs a
+  repository fires for it, the entry routes as the slice's own, and the label's help says when to
+  use it.
+- **A card request's 200 words count its `Consequence:` and `Provenance:`** (AIWF-173), as
+  `_card_text` always has. The refusal and `wrap-up.md` now say so. `restate` prints the
+  section's word count every time and refuses a card request over 200, as `propose --card` does,
+  for every entry the routes make one (row 5, a `card:` proposal, the wrap-up's card). Before, it
+  checked only the wrap-up's own card mark: seven wrap-ups restated and recounted by hand, and
+  P-236 reached the tracker over the limit.
+- **A second `restate` keeps the first one's consequence and provenance** where it leaves
+  `--consequence` or `--provenance` out, and says which it kept (AIWF-181). KubeCoder slice
+  254's T1: a shorter second restate, forced by the limit, silently brought back an author's
+  Consequence and Provenance the facts had disproved.
+
 ## 2026-11-15 — The code-writer runs Fable 5.2 at `high` again (v0.10.71)
 
 The operator used a weekly limit reset and switched the code-writer's Fable run back on.

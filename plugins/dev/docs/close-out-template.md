@@ -62,7 +62,8 @@ an entry's words are `/dev:writing`'s; this doc is the shape.
   (`restate`): `{"by", "date", "headline", "body", "consequence"?, "evidence"?, "author"?}`. It
   stands in place of the author's headline and body, and of the consequence and the provenance
   where it gives them; the author's stay in the entry, and the record shows them. A second
-  restatement replaces the first, which stays as a history note.
+  restatement replaces the first, which stays as a history note, and keeps its consequence and
+  its provenance where it gives none of its own.
 - **`wrap_up`** is what the wrap-up did with an entry it did not strike: `{"outcome", "by",
   "date", "text"}`, the outcome being `card` (it asks for a card), `word` (it asks for the
   operator's word on an edit) or `left` (it looked and changed nothing). A second mark replaces

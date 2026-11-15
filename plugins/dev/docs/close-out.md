@@ -113,7 +113,7 @@ does not rename the entry.
 | | `several-places` | known and mechanical, in more than one place |
 | | `design` | a choice with consequences is open, or the change adds behaviour — a code path, a piece of state, a process, a gate |
 | `area` | `plain` · `sensitive` | sensitive: the change touches concurrency or timing, the layout of stored data, a wire contract, or authentication and secrets |
-| `repo` | a name | the repository the fix lives in, by its directory name |
+| `repo` | a name, or `none` | the repository the fix lives in, by its directory name; `none` for a fix or an event that lives in no repository, such as a manual act, which no route that needs a repository takes |
 | `for` | a slice, optional | the slice still to run that should take the entry, by its number — one a project's plan names that no folder holds yet among them; `relabel --for none` clears it |
 
 **What could be better** — the labels of an `improvement`, which says what the change would
@@ -317,9 +317,10 @@ An improvement takes the first of these that fits:
 where the fix lives elsewhere (row 5), by the wrap-up where a likely problem is more than it
 can fix responsibly (row 8, `propose --card`), by its author where it would otherwise be closed
 (a `card:` proposal, which the wrap-up vets). Its section is the card — the heading what the
-card would say, the body the card's text, at most 200 words together (`CARD_WORDS_MAX`, the
-tracker's limit for a card an agent writes, which `propose --card` and a restatement of a card
-request hold it to; the detail is the record's) — and its proposal the line Agree files it on;
+card would say, the body the card's text, at most 200 words with its `Consequence:` and
+`Provenance:` lines (`CARD_WORDS_MAX`, the tracker's limit for a card an agent writes, which
+`propose --card` and a restatement of a card request hold it to, `restate` printing the count;
+the detail is the record's) — and its proposal the line Agree files it on;
 the continuation files the section. Nothing is filed before the operator's word. **A request for the
 operator's word** is the wrap-up's for an edit it would make but a rule of the project reserves
 for them (`propose --word`): it comes to them whatever the table's route, the entry restated as
