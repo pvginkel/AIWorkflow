@@ -111,7 +111,11 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   `seed_run_records.py` (a run-once copy of old slices' state files, their facts
   (`slice.json`) and the history's groups into the run records, the loops' record of every run
   in the plugin's data folder,
-  `runner-state.md` § The run records),
+  `runner-state.md` § The run records), `labeller.py` (the command Pilot's analysis dashboard
+  runs for the workflow's labels of every transcript, from the run records: its verbs, and
+  `check`, the replay check over the home's transcripts; with `labeller_vocab.py`,
+  `labeller_files.py`, `labeller_records.py`, `labeller_tools.py`, `labeller_engine.py` and
+  `labeller_check.py`, `labeller.md`),
   `slice_cost.py` (with
   `turn_profile.py`, the transcript replay behind its turn table), `allocate-next-slice.sh`.
   Suites load their subject via `importlib.util.spec_from_file_location` (`tools/` is not a
@@ -123,7 +127,8 @@ kc project lint        # cexec python uv run --with ruff ruff check .
 - **`plugins/dev/docs/`** — the **canonical contract** for all of the above: `run-loop.md`,
   `plan-loop.md`, `runner-state.md`, `plan-template.md`, `agent-dispatch.md`, `close-out.md`,
   `close-out-template.md`, `project-contract.md`, `preflight.md`,
-  `spec-tree.md`, and `pilot.md`, a stage as a Pilot work item. Behaviour
+  `spec-tree.md`, `pilot.md`, a stage as a Pilot work item, and `labeller.md`, the labeller's
+  contract with Pilot's collector. Behaviour
   changes here and in the code together; a doc that describes a loop the code no longer runs is a
   defect.
 

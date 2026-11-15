@@ -56,11 +56,11 @@ answers out.
   `plan_loop.py`, `asks.py`, `close_out.py`, `checks.py`, `github_target.py`, `close_slice.py`,
   `slice_cards.py`, `slice_cost.py`, `turn_profile.py`, `preflight.py`, `project_config.py`,
   `redact_secrets.py`, `spec_check.py`, `long_run.py`, `pilot_progress.py`, `debrief.py`,
-  `seed_run_records.py`, `allocate-next-slice.sh`, with their
-  suites), and the contract docs
+  `seed_run_records.py`, `labeller.py` with its `labeller_*.py` modules,
+  `allocate-next-slice.sh`, with their suites), and the contract docs
   (`pilot.md` / `run-loop.md` / `runner-state.md` / `plan-loop.md` / `plan-template.md` /
   `agent-dispatch.md` / `close-out.md` / `close-out-template.md`, plus `project-contract.md`,
-  `preflight.md`, `spec-tree.md`).
+  `preflight.md`, `spec-tree.md`, `labeller.md`).
 - **`.claude-plugin/marketplace.json`** — makes this repo installable.
 
 `kc project test` and `kc project lint` gate the plugin from this repo — the suites are the reason
@@ -109,8 +109,9 @@ contract and tells a new repo exactly what is missing. See **[`docs/ADOPTING.md`
   phase queue and the consult/test/doc ladder) with `runner-state.md`, `plan-loop.md`,
   `plan-template.md`, `agent-dispatch.md`, and `close-out.md` / `close-out-template.md` (the
   per-slice report every agent writes its out-of-scope observations to) beside it, plus
-  `project-contract.md`, `preflight.md` and `spec-tree.md` (the rule for every commit into the
-  shared spec tree and for citing a line).
+  `project-contract.md`, `preflight.md`, `spec-tree.md` (the rule for every commit into the
+  shared spec tree and for citing a line) and `labeller.md` (the command Pilot's analysis
+  dashboard runs for the workflow's labels of every transcript, and its replay check).
 - **[Fieldnotes](https://github.com/pvginkel/FieldnotesApp)** — a cross-project observation store
   beside the workflow, in a repo of its own: agents post what got in their way while working —
   what is about the work stays in the slice's close-out report — and a scheduled reconciler

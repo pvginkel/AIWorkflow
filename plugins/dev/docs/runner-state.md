@@ -247,7 +247,8 @@ round). Executor inputs come from `plan.md`, never from copies.
 ## The run records
 
 What both loops keep of a run, as it goes, for a reader of every slice on the home at once: the
-analysis dashboard's labeller, which its collector runs over the home's `~/.claude/plugins`. They
+analysis dashboard's labeller, which its collector runs over the home's `~/.claude/plugins`, and
+whose reading of these records is [labeller.md](labeller.md) § Work Units. They
 live in the installed plugin's data folder, Claude Code's `${CLAUDE_PLUGIN_DATA}`, for
 `dev@aiworkflow` `~/.claude/plugins/data/dev-aiworkflow/`. That variable reaches no Bash command,
 so the loops compute the folder from the installed key (`plugin_data_dir`), and a loop run from a
