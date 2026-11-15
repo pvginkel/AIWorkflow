@@ -258,11 +258,13 @@ Every environment shares the home, so the folder holds every project's slices:
 |---|---|
 | `runs/<spec-repo>/<NNN_slug>/state.json` | the run loop's `state.json`, whole, at every save and at the exit record |
 | `runs/<spec-repo>/<NNN_slug>/plan_state.json` | the plan loop's `plan_state.json`, the same way |
+| `runs/<spec-repo>/<NNN_slug>/slice.json` | the slice's facts beyond its state files, for the labeller, which reads no slice folder (below) |
 | `…/gates/P<id>_gate_<n>.json` | every run of the phase's gate, `n` from 1 — the first, the one after a fix round or a `clean` test-fixer, the merge's re-gate: its history row and its log's path |
 | `…/gates/P<id>_regate_<n>.json` | every re-gate of a red by its measurement, the red commands again on the same tree, the same way |
 | `…/gates/P<id>_merge-base_<n>.json` | every run of a red's `kc project` commands on the merge base: the gate-fix `round`, `base_sha`, each command's `outcomes`, `started_at`, `ts`, `duration_s`, `plugin_version` and the `log` |
 | `…/gates/<role>_<n>.json` | the `doc-gate`, `fixes-doc-gate`, `wrap-up-gate` and `fixes-gate` runs, as a phase's gate |
 | `…/sweeps/r<n>.json` | every loop-tail sweep that ran, the record `gate_sweep` holds of the last |
+| `projects/<repo>.json` | a project's file-class rules: `{"repo", "file_classes", "updated_at", "plugin_version"}`, its `.aiworkflowrc`'s `[[file_classes]]` in their order ([project-contract.md](project-contract.md) § File classes), `[]` where it states none; written whole by both loops at their start, so a removed rule reaches the labeller. `<repo>` is the project repository's name, as `<spec-repo>` is the spec repo's |
 | `groups/<SpecRepo>.toml` | the history's groups: the seed's copy of the prototype's `adopted/*.toml` |
 
 - **The keys.** `<spec-repo>` is the spec repo's name, the last component of its `origin`
@@ -270,12 +272,42 @@ Every environment shares the home, so the folder holds every project's slices:
   the same as the folder moves between `backlog/`, `active/` and `completed/`.
 - **Whole files.** Every file is written to a temp file beside it and renamed into place, so a
   reader never sees half of one; a numbered record never replaces another.
+- **`slice.json`.** `{"slice", "card", "title", "plan": {"phases", "acceptance_criteria"},
+  "close_out": {"entries", "fixed", "carded", "closed"}, "updated_at", "plugin_version"}`, and the
+  seed's two findings keys below; a key only where its fact is known. Every writer reads the file,
+  puts its own keys over it, keeps the rest, and writes it whole. `card` is the `issue:` line of
+  `slice.md`'s front matter as given and unchecked, null where it has none; `title` the text of
+  its first `# ` heading. Both loops write them at their start; `plan` the plan loop at its clean
+  end — `phases` as `parse_plan` counts plan.md's, `acceptance_criteria` the items of
+  `verification.json` — and the run loop at its start where no plan loop wrote it, less the
+  phases the run appended (`appended_phases`); `close_out` `close_out.py close`, once the report
+  is closed.
+- **The close-out's fates.** Every entry has one, the first that holds: **carded** where its
+  strike hands it on, its reason opening `folded into` (a fold into another slice) or `deferred
+  to` (Pilot's `deferred`); **fixed** where its strike names a commit, a change landed for it —
+  the wrap-up's, the fixes pass's (`rule --commit` puts the commit on the strike), a consult's
+  or a ruling carried out in a commit; **carded** where the ruling's `did`, or the strike's reason,
+  holds the word card and a card id (`carded as P-12`), as the continuation records a filed card;
+  **closed** otherwise, with no change: left by the wrap-up, ruled closed, struck as a duplicate,
+  closed with the report. `entries` counts them all. A report not closed that still has a live
+  entry tells no fates.
 - **Bookkeeping never holds up a run.** The log says at the loop's start where the records are
   kept, or that none are; a write that fails is one log line for the whole run, and the run goes
-  on. Nothing in a run reads them back: the slice folder's state files stay the run's own.
+  on. Nothing in a run reads them back but `slice.json`, to merge into it: the slice folder's
+  state files stay the run's own.
 - **The seed.** `seed_run_records.py [--groups DIR] [--data-dir DIR] [--dry-run] SPEC_REPO…`
   copies the state files of every slice folder of the spec repos it is given into the same
-  places, and the groups files beside them. It never replaces a record that is there, so a second
+  places, and the groups files beside them, and writes each such slice's `slice.json` from its
+  folder: `card` and `title` from `slice.md`, `plan` from `plan.md` where it parses as a phase
+  queue, the close-out's fates from `close-out.json` (a Markdown report, before 0.9.57, gives
+  none), and two keys a live run's history rows hold instead: `plan_review_findings`, round →
+  the findings of `plan_review_rN.json` as the plan-reviewer's row keeps them
+  ([plan-loop.md](plan-loop.md)), for each round whose row has none (a row from before the loop
+  kept them has none), and `code_review_findings`, phase id → round → the `findings` of
+  `phases/P<id>/review_result_rN.json` as the reviewer gave them, for each round whose
+  code-reviewer row has none (rows carry them since 0.4.3); the keys are strings, the phase id
+  as history rows give it, `{"2": {"1": [...]}}`, and a round with no findings is left out. A fact the folder does not
+  hold is left out, never guessed. It never replaces a record that is there, so a second
   run adds only what the first could not see. It runs in an environment holding the spec repos,
   a checkout or a fresh clone, since a completed slice's state files are committed.
 - **The folder's lifetime**, tried on this home on 2026-11-15: created at its first write, kept

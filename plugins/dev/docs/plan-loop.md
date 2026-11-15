@@ -69,7 +69,10 @@ Every exit past the refusals is on disk as `plan_state.json`'s `exit`: its code,
 § The run records), and each `history` row records what the run loop's does: `started_at`,
 `plugin_version`, `model` and `effort`, and a writer pass's `kind`, `first`, `review-fix` or
 `fold` (the pass that folds in a sibling's ruling once the review is behind the plan; a pass
-after the writer's own questions takes the kind of the pass that asked them).
+after the writer's own questions takes the kind of the pass that asked them). A plan-reviewer
+row that did not `go` carries `findings`, each finding of its `plan_review_rN.json` as the
+reviewer last wrote it, as `{class, headline, gap}`, `gap` whether it went to the fix pass
+without a ruling; a `go` writes no file, and its row has none.
 
 **Detached.** `run … --detach` puts the loop in a session of its own, as the run loop's does, and
 returns once the loop is past its refusals, or with its refusal's code. `plan_loop.py wait
