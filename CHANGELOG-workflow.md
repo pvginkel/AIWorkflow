@@ -4,6 +4,25 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-15 — run-slice strikes a manual pre-run action it can show done, then resumes (v0.10.69)
+
+AIWF-164. Ansible slice 066 (2026-11-06): the run bailed `prerun_action` on A1, `check: manual`
+— ship ANS-374's aac-tools and restart onto it — which an earlier Pilot task had already done,
+and the exit-4 row would have sent it to the operator for nothing. A1's words also named the
+plan loop's environment for the restart, not the run's. Prose only; no code changes.
+
+- **run-slice's exit-4 row** sends `reason: prerun_action` to a new § The actions owed before
+  the run: a sub-agent reads each open action whose check is `manual` or absent — the tracker, a
+  tool container through `cexec`, the registry, origin; it never does the action — and strikes
+  what it can show done, `--reason "checked: …" --by run-slice`. With any struck the session
+  resumes, and the driver's next bail, holding only what is left, is registered without a second
+  check; with none struck the document is registered as before. An action with a check the
+  driver can run stays the driver's.
+- **A pre-run action names the run's environment as such**, never by an id
+  (`close-out.md` § The labels, *What must land first*; `plan-writer.md`).
+- `run-loop.md` § Protocol invariants: a manual action is met once struck on the operator's
+  word or by the run-slice session that read it done.
+
 ## 2026-11-15 — A second strike, rule or settle replaces the first, kept as history (v0.10.68)
 
 AIWF-163. Three reports on 0.10.40–0.10.47 (PilotAppSpecs, AnsibleSpecs): a shell-quoting slip in

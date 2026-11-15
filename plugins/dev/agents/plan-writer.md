@@ -114,8 +114,10 @@ yours. An entry, and a question of your hand-back, is written under
 `questions` verdict, never a report entry. An
 action only the operator can take that the run needs before it starts is an entry of the kind
 `action` headed `Before /dev:run-slice: …`, with the fact that shows it done as `--check` — never
-a commit or an environment (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels, *What must
-land first*, has the vocabulary); the run loop does not start until its checks hold.
+a commit or an environment — and the environment it changes called the run's environment in its
+words, never by your environment's id (`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels,
+*What must land first*, has the vocabulary and why); the run loop does not start until its checks
+hold.
 
 ## Hand-back
 

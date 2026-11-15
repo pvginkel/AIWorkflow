@@ -870,8 +870,9 @@ holds every action's check to). One whose checks all hold is met: a live one the
 "its checks hold: …", by the run loop, so that nobody comes back to strike what the pod already
 shows. One whose check fails is open, struck or not — a strike does not make the fact true:
 slice 007's restart was struck while the commit it waited on was unpushed, and preflight passed.
-One whose check is `manual`, or that has none the driver can read, is met once a person struck
-it. Any open one bails `prerun_action` (exit 4), its document an `action` per open one with what
+One whose check is `manual`, or that has none the driver can read, is met once it is struck: on
+the operator's word, or by the run-slice session that read it done (the skill's § The actions
+owed before the run). Any open one bails `prerun_action` (exit 4), its document an `action` per open one with what
 failed. Once all are met their ids go into `state.json`'s `prerun_held`, and they are never
 evaluated again: the checks gate the start. Slice 027's first executor was dispatched while its
 A1 — push two toolchain commits, restart the pod — was still open, failed its first `cexec` and

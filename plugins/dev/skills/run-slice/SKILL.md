@@ -95,13 +95,35 @@ where the host sets none. Its exit code is a signal, and the lines it prints are
 | The run's exit | The turn |
 |---|---|
 | **0**, complete | [the close-out](#the-close-out) |
-| **4**, a question | register the `document:` line's file; attach `plan.md`, and the phase's review where the bail names a phase; commit `asks/`; end the turn. With no `document:` line, put `bailout.json`'s details as a `question` document first. |
+| **4**, a question | `reason: prerun_action` goes to [the actions owed before the run](#the-actions-owed-before-the-run) first. Otherwise, register the `document:` line's file; attach `plan.md`, and the phase's review where the bail names a phase; commit `asks/`; end the turn. With no `document:` line, put `bailout.json`'s details as a `question` document first. |
 | **3**, an error, or **1** | [the diagnosis](#an-error) |
 | **7**, halted | end the turn, its last message the `halted:` line |
 | **130**, interrupted | someone stopped the driver: end the turn saying where; a nudge resumes it |
 
 A `plugin_version` bail is relaunched from the installed `tools/` path `bailout.json` names, not
 from `${CLAUDE_PLUGIN_ROOT}`: this session's copy is the stale one.
+
+## The actions owed before the run
+
+A `prerun_action` bail stops on actions the run needs done before it starts, and an earlier
+task may have done one already. A sub-agent checks, by this section, each open one whose check is
+`manual` or that has none. One with a check the driver can run it leaves as it is: the driver has
+evaluated that check, and a strike does not make a failing one hold.
+
+- **It shows an action done by reading only**: the tracker, a file or a version in a tool
+  container through `cexec`, the registry, a fetched origin. It never does the action: a push, a
+  merge, a publish or a restart stays the operator's, as at the start's step 2. The environment
+  it reads is its own, the one that runs the slice, whatever environment the action names.
+- **What it can show done, it strikes**:
+  `close_out.py strike <slice> <id> --reason "checked: <what it read, and what that showed>" --by
+  run-slice`, then commits the store by name. A fact it cannot read, or one that falls short of
+  what the action's body says done means, leaves the action open.
+
+With one struck or more, commit `asks/` and resume the run (`run_loop.py run <slice> --resume
+--detach --spec-push`), then wait: the driver evaluates again and, with any left open, bails once
+more on a document holding only those. That bail, following a resume this section made, is
+registered as the exit-4 row says, without a second check. With none struck, the session
+registers the bail's document as that row says.
 
 ## An error
 

@@ -224,7 +224,9 @@ that runs the slice, `file <repo>:<path>` present, `origin <repo> <branch>:<path
 <text>` after a fetch, `slice <NNN> completed` — never a commit, which a push can rebase, nor an
 environment, which may not be the one that runs the slice; `manual` where no check captures it.
 An action owed before the run carries one, which the run loop evaluates before it starts
-([run-loop.md](run-loop.md) § Protocol invariants). One that asks for an answer back names the
+([run-loop.md](run-loop.md) § Protocol invariants). Its words call the environment it changes
+the run's environment, never by an id: the planning environment's may not be the one that runs
+the slice (Ansible slice 066's A1 named the plan loop's for the run's restart). One that asks for an answer back names the
 answers (`--option`).
 
 **The tool refuses**, naming the flag, so that the author corrects in one turn:
