@@ -48,6 +48,10 @@ deploys = true
 [migrations]
 paths = ["backend/app/migrations/versions/*.py"]
 check = "cd backend && test \"$(uv run alembic heads | wc -l)\" -eq 1"
+
+[[file_classes]]
+class = "generated"
+paths = ["backend/openapi-cache/**"]
 ```
 
 Paths are absolute or relative to the repo root, except `devlock.lease` — the one key whose subject
@@ -113,6 +117,19 @@ every phase and nobody loses one by omission. Each switch is an opt-*out*:
 
 A phase that is off is not checked for anything: preflight requires a procedure doc only for a
 phase that runs, or an optional phase would be mandatory again.
+
+### File classes
+
+**`[[file_classes]]`** (default none) — the project's own rules for the class of a file in its
+repository, for the dashboard's labeller, which classes every file the dashboard holds as one of
+`code`, `test`, `docs`, `spec`, `generated` or `record`. Each rule is a `class` and its `paths`,
+one or more patterns. A pattern matches the repository-relative path with `/` separators: `*`
+matches within one segment, `**` any number of segments, and a pattern with no `/` matches the
+basename anywhere. The rules are tried in the file's order and the first that matches wins; a
+project's rules go ahead of the labeller's starting list. A rule's shape is checked here, its
+patterns only by the labeller. The labeller reads no checkout, so the plan loop and the run loop
+copy the rules into the run records at their start ([runner-state.md](runner-state.md) § The run
+records), and a changed rule reaches it with the next plan or run.
 
 ## 3. Host conventions (`~/.claude/CLAUDE.md`)
 

@@ -176,7 +176,7 @@ def test_an_unknown_key_is_a_typo_not_a_key_to_ignore():
         refuses(tmp, 'spec_repo = "../s"\n[test_phase]\nenable = false\n',
                 "unknown key", "`enable`", "enabled")
         refuses(tmp, 'spec_repo = "../s"\nspecs_repo = "../s"\n',
-                "unknown top-level key", "`specs_repo`")
+                "unknown top-level key", "`specs_repo`", "`[[file_classes]]`")
 
 
 def test_a_switched_off_phase_may_not_still_name_a_procedure_doc():
@@ -201,6 +201,41 @@ def test_a_switch_must_be_a_boolean_and_a_pointer_a_path():
         refuses(tmp, '[push]\nenabled = "yes"\n', "must be true or false")
         refuses(tmp, 'spec_repo = ""\n', "non-empty string")
         refuses(tmp, 'test_phase = "on"\n', "must be a table")
+
+
+# -- file classes ---------------------------------------------------------------
+
+def test_file_class_rules_load_in_the_files_order_and_none_is_an_empty_list():
+    """The rules are the project's half of the labeller's classing, tried in
+    order, so the order is kept; a project that states none has none, which
+    the loops copy as `[]` so a removed rule reaches the labeller."""
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = load(tmp, 'spec_repo = "../s"\n'
+                        '[[file_classes]]\nclass = "generated"\n'
+                        'paths = ["backend/openapi-cache/**", " frontend/openapi-cache "]\n'
+                        '[[file_classes]]\nclass = "docs"\npaths = ["*.md"]\n')
+        assert cfg.file_classes == (
+            {"class": "generated",
+             "paths": ["backend/openapi-cache/**", "frontend/openapi-cache"]},
+            {"class": "docs", "paths": ["*.md"]})
+        assert load(tmp, 'spec_repo = "../s"\n').file_classes == ()
+
+
+def test_a_file_class_rule_names_a_known_class_and_one_or_more_paths():
+    with tempfile.TemporaryDirectory() as tmp:
+        refuses(tmp, '[[file_classes]]\nclass = "vendored"\npaths = ["x/**"]\n',
+                "`[[file_classes]]` 1", "'vendored'", "`generated`")
+        refuses(tmp, '[[file_classes]]\nclass = "code"\npaths = []\n',
+                "needs `paths`")
+        refuses(tmp, '[[file_classes]]\nclass = "code"\npaths = "src/**"\n',
+                "needs `paths`")
+        refuses(tmp, '[[file_classes]]\nclass = "code"\npaths = ["src/**", ""]\n',
+                "needs `paths`")
+        refuses(tmp, '[[file_classes]]\nclass = "code"\n', "needs `paths`")
+        refuses(tmp, '[[file_classes]]\nclass = "code"\npaths = ["a"]\npath = ["b"]\n',
+                "unknown key", "`path`")
+        refuses(tmp, '[file_classes]\nclass = "code"\npaths = ["a"]\n',
+                "array of tables")
 
 
 if __name__ == "__main__":

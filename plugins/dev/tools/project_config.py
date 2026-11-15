@@ -32,6 +32,10 @@ TOML, parsed with `tomllib` (read-only, stdlib). Nothing writes this file —
     paths = ["backend/app/migrations/versions/*.py"]
     check = "<a command that exits 0 while the migrations have one head>"
 
+    [[file_classes]]
+    class = "generated"
+    paths = ["backend/openapi-cache/**"]
+
 Paths are absolute or relative to the repo root, except `devlock.lease`, which
 is relative to the **spec repo** — the lease is the one key whose subject is
 that repo, and it is shared by every code repo contending for the one dev
@@ -44,6 +48,11 @@ took origin's commits in over the slice's own migrations, the run loop's phase
 gate runs `check` with `sh -c` from the phase's tree, and any exit but 0 is a
 red gate. The check is the project's — the pipeline names no migration
 tool — and with no table no phase runs one. Both keys, or neither.
+
+`[[file_classes]]` is the project's own file-class rules, which the loops
+copy into the run records for the labeller (`project-contract.md` § File
+classes has the grammar); this module checks their shape alone, `class` one
+of FILE_CLASSES and `paths` one or more non-empty strings.
 
 Defaults are the pipeline's full behaviour, so a repo that names only its
 pointers runs every phase: `test_phase.enabled`, `doc_phase.enabled` and
@@ -73,6 +82,10 @@ CONFIG_NAME = ".aiworkflowrc"
 # The full key set, table by table. Anything outside it is a typo or a key from
 # a newer plugin — either way the project hears about it.
 _ROOT_KEYS = {"spec_repo", "design_philosophy"}
+# The arrays of tables, each table's key set.
+_ARRAYS = {"file_classes": {"class", "paths"}}
+# The classes a `[[file_classes]]` rule may give a file, the labeller's.
+FILE_CLASSES = ("code", "test", "docs", "spec", "generated", "record")
 _TABLES = {
     "test_phase": {"enabled", "strategy"},
     "doc_phase": {"enabled", "plan"},
@@ -110,6 +123,9 @@ class ProjectConfig:
     # migration head — () and None where the project names no check
     migration_paths: tuple[str, ...] = ()
     migration_check: str | None = None
+    # `[[file_classes]]`: the project's file-class rules in the file's order,
+    # each `{"class": ..., "paths": [...]}` — () where it states none
+    file_classes: tuple[dict, ...] = ()
 
 
 def config_path(root: Path) -> Path:
@@ -176,6 +192,40 @@ def _table(data: dict, name: str, path: Path) -> dict:
     return value
 
 
+def _file_classes(data: dict, path: Path) -> tuple[dict, ...]:
+    """`[[file_classes]]`, checked: an array of tables, each with a `class`
+    of FILE_CLASSES and `paths` a list of one or more non-empty strings, no
+    other key. Its patterns are the labeller's to apply, so nothing here
+    reads them as globs."""
+    value = data.get("file_classes", [])
+    if not isinstance(value, list) or not all(isinstance(t, dict) for t in value):
+        raise ConfigError(
+            f"`file_classes` in {path} must be an array of tables — write each "
+            f"rule as `[[file_classes]]` with its `class` and `paths` beneath.")
+    rules = []
+    for n, table in enumerate(value, 1):
+        where = f"`[[file_classes]]` {n} in {path}"
+        unknown = sorted(set(table) - _ARRAYS["file_classes"])
+        if unknown:
+            raise ConfigError(
+                f"{where} has unknown key(s): "
+                + ", ".join(f"`{k}`" for k in unknown)
+                + ". Known keys: `class`, `paths`.")
+        cls = table.get("class")
+        if cls not in FILE_CLASSES:
+            raise ConfigError(
+                f"{where} has `class = {cls!r}`; it is one of "
+                + ", ".join(f"`{c}`" for c in FILE_CLASSES) + ".")
+        paths = table.get("paths")
+        if not isinstance(paths, list) or not paths or not all(
+                isinstance(p, str) and p.strip() for p in paths):
+            raise ConfigError(
+                f"{where} needs `paths`, a list of one or more non-empty "
+                f"strings (got {paths!r}).")
+        rules.append({"class": cls, "paths": [p.strip() for p in paths]})
+    return tuple(rules)
+
+
 def load(root: Path) -> ProjectConfig:
     """Parse and validate the repo's `.aiworkflowrc`. Raises ConfigError with
     an operator-facing message; never returns a partially-valid config."""
@@ -198,14 +248,16 @@ def load(root: Path) -> ProjectConfig:
     except OSError as e:
         raise ConfigError(f"{path} could not be read: {e}") from None
 
-    unknown = sorted(set(data) - _ROOT_KEYS - set(_TABLES))
+    unknown = sorted(set(data) - _ROOT_KEYS - set(_TABLES) - set(_ARRAYS))
     if unknown:
         raise ConfigError(
             f"{path} has unknown top-level key(s): "
             + ", ".join(f"`{k}`" for k in unknown)
             + ". Known: " + ", ".join(f"`{k}`" for k in sorted(_ROOT_KEYS))
-            + " and the tables "
-            + ", ".join(f"`[{t}]`" for t in sorted(_TABLES)) + ".")
+            + ", the tables "
+            + ", ".join(f"`[{t}]`" for t in sorted(_TABLES))
+            + " and the arrays "
+            + ", ".join(f"`[[{a}]]`" for a in sorted(_ARRAYS)) + ".")
 
     spec_value = _string(data, "spec_repo", "spec_repo", path)
     philosophy = _string(data, "design_philosophy", "design_philosophy", path)
@@ -260,6 +312,8 @@ def load(root: Path) -> ProjectConfig:
         migration_check = _string(migrations_tbl, "check", "migrations.check",
                                   path)
 
+    file_classes = _file_classes(data, path)
+
     # The lease lives in the spec repo — the shared mount every contending repo
     # can see — so a lease named with nowhere to resolve it against is broken,
     # not a devlock that quietly never engages.
@@ -285,4 +339,5 @@ def load(root: Path) -> ProjectConfig:
         push_deploys_stated="deploys" in push_tbl,
         migration_paths=migration_paths,
         migration_check=migration_check,
+        file_classes=file_classes,
     )
