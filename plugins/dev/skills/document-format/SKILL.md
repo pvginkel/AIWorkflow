@@ -21,6 +21,10 @@ by section:
 
 - One ask per heading section, its block last in it. A batch of corrections to the record is one
   ask, under `/dev:writing`.
+- A finding outside the document's own project, such as a dead login in another system noticed
+  in passing, is an ask of its own: a section whose heading names the finding and the project it
+  belongs to, its `decision` block offering `Card it` and `No`. Pilot's pass routes blocks only,
+  so a finding left as a sentence in another ask's prose reaches nobody.
 - The context the asks share goes before the first ask's heading.
 - No heading inside an ask: its sub-structure is run-in heads (`**Cost.** …`) and lists.
 - The heading names the ask in one line of about twelve words (`/dev:writing`). Once Pilot has answered or deferred the block, the
@@ -60,7 +64,7 @@ A block is a fence whose info string is the block's kind and its local id:
 ````markdown
 ```decision id=D1
 options:
-  - Nightly: one run at 02:00
+  - Nightly: One run at 02:00
   - Hourly
 recommend: Nightly
 ```
@@ -84,8 +88,9 @@ recommend: Nightly
 | `action` | `options`, `check` |
 
 - `options`: a list, each entry a bare label (`- Yes`) or a label with one line of text
-  (`- Nightly: one run at 02:00`). A label holding a colon is quoted
-  (`- "Plan B: hourly": one run an hour`). No two options share a label, compared trimmed and case
+  (`- Nightly: One run at 02:00`). Pilot shows the line under the label, on a line of its own, so
+  it reads as a sentence of its own and starts with a capital. A label holding a colon is quoted
+  (`- "Plan B: hourly": One run an hour`). No two options share a label, compared trimmed and case
   kept.
 - `recommend`: the label of the option recommended.
 - `proposal`: what is proposed, in place of options; never beside `options` or `recommend`.
@@ -215,8 +220,8 @@ full size.
 
 ```decision id=D1
 options:
-  - Existing domain: nothing to verify, shares the reset mails' reputation
-  - Own domain: a second verification, delivery kept apart
+  - Existing domain: Nothing to verify, shares the reset mails' reputation
+  - Own domain: A second verification, delivery kept apart
 recommend: Existing domain
 ```
 

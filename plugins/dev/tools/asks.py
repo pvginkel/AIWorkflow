@@ -1421,8 +1421,9 @@ def _frame_args(p: argparse.ArgumentParser, *, title_required: bool) -> None:
 
 def _ask_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--option", action="append", nargs="+", metavar=("LABEL", "LINE"),
-                   help="an option: its label, and one line of text if it has one; "
-                        "repeat it for each")
+                   help="an option: its label, and one line of text if it has one, a "
+                        "sentence starting with a capital, which Pilot shows under "
+                        "the label; repeat it for each")
     p.add_argument("--recommend", help="the label of the option recommended")
     p.add_argument("--proposal", help="what is proposed, in place of options: one line of "
                                       f"at most {PROPOSAL_MAX} characters; - for stdin")

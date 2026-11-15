@@ -134,6 +134,12 @@ reading of their own words, it is not on the page. There is nothing between: no 
 shown as settled. A premise that no longer holds is one sentence, what was believed, what is
 true, what changes (1.9, 4.10, 4.11, 6.3, 7.1, 7.2).
 
+**What you noticed outside the work is an ask too.** A worker's note that another system's
+backup login was dead sat as one sentence in a document the operator was reading for another
+decision, and was carded only later, by chance. A finding outside the document's own project is
+put as its own ask, whether to card it and in which project (`/dev:document-format` has its
+section and block), never as an aside.
+
 **A card request is a line and a card.** Card requests are never read: "especially in the Card
 request ones. I never read those." The ask is one line — what the card would say, and why it is
 more than a fix — and the body is the card's text, written for the card and for a reader who

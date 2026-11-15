@@ -102,8 +102,8 @@ reviewer notices.
 
 ```decision id=D1
 options:
-  - Exit 3: in effect; nothing changes
-  - Exit 8: a kc release and every caller on 3
+  - Exit 3: In effect; nothing changes
+  - Exit 8: A kc release and every caller on 3
 recommend: Exit 3
 ```
 ````

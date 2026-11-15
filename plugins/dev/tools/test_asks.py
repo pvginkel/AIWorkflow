@@ -91,8 +91,8 @@ def example_store() -> dict:
         "verification, about two days. The list is small and the\ndeadline near, so the "
         "shared domain is the one recommended; it has not been tried at the list's\nfull "
         "size.",
-        options=[("Existing domain", "nothing to verify, shares the reset mails' reputation"),
-                 ("Own domain", "a second verification, delivery kept apart")],
+        options=[("Existing domain", "Nothing to verify, shares the reset mails' reputation"),
+                 ("Own domain", "A second verification, delivery kept apart")],
         recommend="Existing domain")
     asks.append(
         store, "action", "Confirm the sender address in the provider's console",

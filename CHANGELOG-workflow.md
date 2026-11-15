@@ -4,6 +4,21 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-15 — An option's line starts with a capital; a finding outside the project is its own ask (v0.10.74)
+
+AIWF-208 and AIWF-177, from the handover AIWF-209. Prose and help text; no behaviour changes.
+
+- **A decision option's line reads as a sentence of its own, with a capital** (AIWF-208). The
+  operator on P-248: Pilot now shows the line under the option's label, not after it. No text
+  asked for a lower-case start; the examples did. `dev:document-format` says it and its examples
+  follow, as do `close-out-template.md`'s and the `--option` help of `asks.py`. PilotProjects'
+  skills hold no such guidance.
+- **A finding outside the document's own project is an ask of its own** (AIWF-177): a section
+  whose heading names it and its project, a `decision` block offering `Card it` and `No`, never
+  a sentence in another ask's prose, since Pilot's pass routes blocks only. A worker's note that
+  another system's backup login was dead sat as one sentence in a document read for another
+  decision. `dev:document-format` has the form, `dev:writing` the rule.
+
 ## 2026-11-15 — No phase delivers under `slices/`; a failed test's files are copied first; the stop tests' race (v0.10.73)
 
 AIWF-168, AIWF-170 and AIWF-182, from the handover AIWF-209.
