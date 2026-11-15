@@ -113,7 +113,7 @@ does not rename the entry.
 | | `several-places` | known and mechanical, in more than one place |
 | | `design` | a choice with consequences is open, or the change adds behaviour — a code path, a piece of state, a process, a gate |
 | `area` | `plain` · `sensitive` | sensitive: the change touches concurrency or timing, the layout of stored data, a wire contract, or authentication and secrets |
-| `repo` | a name, or `none` | the repository the fix lives in, by its directory name; `none` for a fix or an event that lives in no repository, such as a manual act, which no route that needs a repository takes |
+| `repo` | a name, or none | the repository the fix lives in, by its directory name; `none` for a fix or an event that lives in no repository, such as a manual act, which no route that needs a repository takes |
 | `for` | a slice, optional | the slice still to run that should take the entry, by its number — one a project's plan names that no folder holds yet among them; `relabel --for none` clears it |
 
 **What could be better** — the labels of an `improvement`, which says what the change would
