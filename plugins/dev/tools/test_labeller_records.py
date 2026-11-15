@@ -204,6 +204,51 @@ def test_a_stale_foreign_or_broken_blob_is_rebuilt():
             assert again != blob and records.stage_rows(f"{K}|run") == want
 
 
+def test_a_changed_file_keeps_the_slices_other_files_from_its_chunk():
+    with data_folder() as data:
+        fresh, blob = load(data)
+        want = fresh.stage_rows(f"{K}|run")
+        path = slice_dir(data) / "slice.json"
+        write(path, dict(SLICE_JSON, title="001 — Renamed"))
+        os.utime(path, ns=(1, 1))
+        read, reduce = [], lr._reduce
+        lr._reduce = lambda rel, p: read.append(rel) or reduce(rel, p)
+        try:
+            records, again = load(data, blob)
+        finally:
+            lr._reduce = reduce
+        assert read == [f"runs/{K}/slice.json"]
+        assert records.unit_rows([K])[0]["title"] == "001 — Renamed"
+        assert records.stage_rows(f"{K}|run") == [
+            dict(r, title="001 — Renamed") if r["key"] == K else r for r in want]
+
+
+def test_a_broken_chunk_reads_the_slice_again_and_stamps_alike():
+    with data_folder() as data:
+        fresh, blob = load(data)
+        want = fresh.stage_rows(f"{K}|run")
+        stamp = stamp_of(fresh, "orch-run")
+        head, *chunks = blob.split(".")
+        broken = ".".join([head, *("!!" for _ in chunks)])
+        records, _ = load(data, broken)
+        assert stamp_of(records, "orch-run") == stamp
+        assert records.stage_rows(f"{K}|run") == want
+
+
+def test_stamps_read_no_chunk():
+    with data_folder() as data:
+        _, blob = load(data)
+        records, _ = load(data, blob)
+        opened, decode = [], lr._decode_chunk
+        lr._decode_chunk = lambda c: opened.append(c) or decode(c)
+        try:
+            for sid in ("cw-1", "cw-5", "orch-run", "orch-plan", "nobody"):
+                stamp_of(records, sid)
+        finally:
+            lr._decode_chunk = decode
+        assert opened == []
+
+
 def test_a_blob_past_the_cap_is_not_handed_back():
     with data_folder() as data:
         cap = lr.MAX_BLOB

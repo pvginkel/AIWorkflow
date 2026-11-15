@@ -202,7 +202,8 @@ carries them. A stamp is the text
 ```
 
 - `<digest>` is 22 characters of url-safe base64 of the sha256 over the canonical JSON of the
-  inputs.
+  inputs. A set of units enters them as one digest of its units' own: each unit's is that of
+  its row and of every row above it, taken when the index is built.
 - `<named>` lists, comma-separated, the slices the transcript's own content named, as named. The
   name that tied it carries its unit after `@`: `PilotAppSpecs/044@run`, `…@close-out`,
   `…@run.P2` for an R3 session's phase. A name tried before it, which tied nothing, stays bare.
@@ -252,8 +253,11 @@ command, the process's start and the JSON included, not promises:
 - `stamps` over 20,000 transcripts with a warm index: under half a second;
 - `classes` over 100,000 files: under a second.
 
-Both are ordinary work in one process: hashing the canonical inputs, with the rows of each set of
-units digested once per call.
+Both are ordinary work in one process. Each unit's row, with the rows above it, is digested once,
+when the index is built, and kept in it; a stamp combines those digests, and the transcripts with
+the same inputs are digested once per call. `stamps` reads the index's head alone: what the ties
+and the stamps take. The units' rows and each slice's files' parsed contents sit in a part of the
+index per slice, read only by `label`, and by a call that finds one of the slice's files changed.
 
 ## The label request and answer
 

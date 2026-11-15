@@ -18,7 +18,6 @@ The open points' defaults (§ Open points) each sit in one constant below.
 """
 
 import base64
-import copy
 import hashlib
 import json
 import os
@@ -26,7 +25,6 @@ import re
 import time
 import tomllib
 import zlib
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -49,9 +47,8 @@ TRIAGE_SESSIONS = False
 
 # ---------------------------------------------------------------- the records' vocabulary
 
-INDEX_FORMAT = 1            # bump when the blob's content changes shape
+INDEX_FORMAT = 2            # bump when the blob's content changes shape
 MAX_BLOB = 16 * 1024 * 1024
-_CACHE_UNITS = True
 STAMP_FORMAT = "1"
 STATE_FILES = {"plan_state.json": "plan", "state.json": "run"}
 STAGE_ORDER = ("triage", "plan", "run", "close-out")
@@ -154,8 +151,11 @@ def _num(v) -> float | None:
         return None
 
 
+_CANON = json.JSONEncoder(sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode
+
+
 def _canon(obj) -> str:
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return _CANON(obj)
 
 
 # A unit's row is built with its keys in one order, so its JSON needs no sorting to be canonical.
@@ -164,6 +164,11 @@ _ROW_JSON = json.JSONEncoder(separators=(",", ":"), ensure_ascii=False).encode
 
 def _digest(obj) -> str:
     raw = hashlib.sha256(_canon(obj).encode()).digest()
+    return base64.urlsafe_b64encode(raw).decode()[:22]
+
+
+def _digest_text(text: str) -> str:
+    raw = hashlib.sha256(text.encode()).digest()
     return base64.urlsafe_b64encode(raw).decode()[:22]
 
 
@@ -386,56 +391,96 @@ def _blob_prefix(data_dir: Path) -> str:
     return f"{INDEX_FORMAT}:{plugin_version()}:"
 
 
-def _decode_blob(blob, data_dir: Path) -> tuple[dict, dict]:
-    """(files, units) of a blob this version wrote for this data folder; else empty."""
+def _decode_blob(blob, data_dir: Path) -> tuple[dict, dict, dict]:
+    """(files, units, chunks) of a blob this version wrote for this data folder; else empty.
+    The blob is its head, then each slice's rows' chunk, in the head's `chunks` order, all
+    joined by `.`; a chunk is decoded only when one of its rows is read."""
     if not isinstance(blob, str) or not blob.startswith(_blob_prefix(data_dir)):
-        return {}, {}
+        return {}, {}, {}
+    head, *chunks = blob[len(_blob_prefix(data_dir)):].split(".")
     try:
-        doc = json.loads(zlib.decompress(base64.b64decode(blob[len(_blob_prefix(data_dir)):])))
+        doc = json.loads(zlib.decompress(base64.b64decode(head)))
     except (ValueError, zlib.error, TypeError):
-        return {}, {}
+        return {}, {}, {}
     if not isinstance(doc, dict) or doc.get("dir") != str(data_dir):
-        return {}, {}
-    files, units = doc.get("files"), doc.get("units")
+        return {}, {}, {}
+    files, units, order = doc.get("files"), doc.get("units"), doc.get("chunks")
     if not isinstance(files, dict):
-        return {}, {}
-    return files, units if isinstance(units, dict) else {}
+        return {}, {}, {}
+    if not isinstance(units, dict) or not isinstance(order, list) or len(order) != len(chunks):
+        return files, {}, {}
+    return files, units, dict(zip(order, chunks, strict=True))
 
 
-def _encode_blob(files: dict, units: dict, data_dir: Path) -> str | None:
+def _encode_blob(files: dict, units: dict, chunks: dict, data_dir: Path) -> str | None:
     """The blob: every file's key and what it holds for the labeller, and each slice's units
-    under its files' keys; none past MAX_BLOB."""
-    raw = json.dumps({"dir": str(data_dir), "files": files, "units": units},
+    under its files' keys, with their rows in a chunk of their own; none past MAX_BLOB."""
+    order = sorted(chunks)
+    raw = json.dumps({"dir": str(data_dir), "files": files, "units": units, "chunks": order},
                      separators=(",", ":"))
-    text = _blob_prefix(data_dir) + base64.b64encode(zlib.compress(raw.encode(), 6)).decode()
+    text = ".".join([_blob_prefix(data_dir) + base64.b64encode(zlib.compress(raw.encode(), 1))
+                     .decode(), *(chunks[k] for k in order)])
     return text if len(text) <= MAX_BLOB else None
+
+
+def _encode_chunk(doc: dict) -> str:
+    return base64.b64encode(zlib.compress(json.dumps(doc, separators=(",", ":"))
+                                          .encode(), 6)).decode()
+
+
+def _decode_chunk(chunk) -> dict | None:
+    """A slice's chunk: its files' reduced contents and its units' order, meta and rows; None
+    for a broken one."""
+    try:
+        doc = json.loads(zlib.decompress(base64.b64decode(chunk)))
+    except (ValueError, zlib.error, TypeError):
+        return None
+    return doc if isinstance(doc, dict) else None
 
 
 # ---------------------------------------------------------------- the tie
 
-@dataclass
 class Tie:
     """What the run records (and the context) say a transcript served.
 
     `units` is every Work Unit its labels may name, whichever Launch names which; `unit_for`
     picks a Launch's. `anchors` are the stages it is the anchor of, `named` the slices its own
-    content named (the stamp's `<named>`), `slices` the slices it serves."""
-    session_id: str
-    agent_id: str | None = None
-    agent_type: str | None = None
-    rule: str | None = None
-    role: str | None = None
-    units: tuple[str, ...] = ()
-    anchors: tuple[str, ...] = ()
-    adopted_group: str | None = None
-    named: tuple[str, ...] = ()
-    slices: tuple[str, ...] = ()
-    pilot: bool = False
-    stage: str | None = None              # an adoption rule's stage, or R3's phase unit
-    _windows: list = field(default_factory=list, repr=False)     # (start, end, key)
-    _stages: list = field(default_factory=list, repr=False)      # (created, stage_key)
-    _sessions: list = field(default_factory=list, repr=False)    # (created, clarification)
-    _fixed: str | None = field(default=None, repr=False)
+    content named (the stamp's `<named>`), `slices` the slices it serves. `stage` is an
+    adoption rule's stage, or R3's phase unit. A plain class rather than a dataclass, whose
+    module costs a `stamps` call its import."""
+
+    FIELDS = ("session_id", "agent_id", "agent_type", "rule", "role", "units", "anchors",
+              "adopted_group", "named", "slices", "pilot", "stage")
+
+    def __init__(self, session_id: str, agent_id: str | None = None,
+                 agent_type: str | None = None, rule: str | None = None,
+                 role: str | None = None, units: tuple = (), anchors: tuple = (),
+                 adopted_group: str | None = None, named: tuple = (), slices: tuple = (),
+                 pilot: bool = False, stage: str | None = None, _windows=None, _stages=None,
+                 _sessions=None, _fixed: str | None = None, _digest: str | None = None):
+        self.session_id, self.agent_id, self.agent_type = session_id, agent_id, agent_type
+        self.rule, self.role, self.units, self.anchors = rule, role, units, anchors
+        self.adopted_group, self.named, self.slices = adopted_group, named, slices
+        self.pilot, self.stage = pilot, stage
+        self._windows = [] if _windows is None else _windows      # (start, end, key)
+        self._stages = [] if _stages is None else _stages         # (created, stage_key)
+        self._sessions = [] if _sessions is None else _sessions   # (created, clarification)
+        self._fixed = _fixed
+        self._digest = _digest      # `units`' rows' digest, where the records held it
+
+    def __repr__(self) -> str:
+        return "Tie(" + ", ".join(f"{f}={getattr(self, f)!r}" for f in self.FIELDS) + ")"
+
+    def __eq__(self, other) -> bool:
+        return type(other) is Tie and self.__dict__ == other.__dict__
+
+    __hash__ = None
+
+    def copy(self) -> "Tie":
+        """A shallow copy, as `copy.copy` makes one, for less."""
+        out = object.__new__(Tie)
+        out.__dict__.update(self.__dict__)
+        return out
 
     @property
     def is_anchor(self) -> bool:
@@ -490,10 +535,18 @@ class Tie:
         return pick
 
 
+# The Sessions of a conversation Pilot handed none with: one object, so that its ties are cached.
+_NO_SESSIONS: tuple = ()
+# A sub-agent's main thread that no run record names: all a sub-agent's tie reads of it.
+_UNTIED = Tie("")
+
+
 # ---------------------------------------------------------------- one slice's units
 
 class _Slice:
-    """One slice's records, and its units once compiled."""
+    """One slice's records, and its units once compiled. A slice the blob holds unchanged
+    keeps its files' reduced contents in its chunk, unread, and its head's `sessions`,
+    `task_runner` and `facts` stand for them."""
 
     def __init__(self, spec: str, folder: str):
         self.spec, self.folder = spec, folder
@@ -504,8 +557,38 @@ class _Slice:
         self.sweeps: list[dict] = []
         self._compiled = None
         self._sessions: set[str] | None = None
+        self._task_runner: bool | None = None
         self.sig: list = []                       # its files' keys, which its units follow
+        self.reds: dict[str, dict] = {}           # rel -> its file's reduced contents
         self.cached: dict | None = None           # its units as the blob held them
+        self.chunk: str | None = None             # and its chunk: their rows, its files
+        self.data_dir: Path | None = None
+
+    def take(self, rel: str, red: dict) -> None:
+        self.reds[rel] = red
+        t = red.get("t")
+        if t == "state":
+            self.states[red["stage"]] = red
+        elif t == "slice":
+            self.facts = red
+        elif t == "gate":
+            self.gates.append(red)
+        elif t == "sweep":
+            self.sweeps.append(red)
+
+    def use_cache(self, head: dict, chunk: str) -> None:
+        self.cached, self.chunk = head, chunk
+        self._sessions = set(head["sessions"])
+        self._task_runner = head["task_runner"]
+        self.facts = head["facts"]
+
+    def read_again(self) -> None:
+        """Its files' reduced contents read from the data folder again, for a broken chunk."""
+        self.states, self.gates, self.sweeps, self.reds = {}, [], [], {}
+        for rel, *_ in self.sig:
+            red = _reduce(rel, self.data_dir / rel) if self.data_dir else None
+            if red is not None:
+                self.take(rel, red)
 
     def sessions(self) -> set[str]:
         if self._sessions is not None:
@@ -523,13 +606,26 @@ class _Slice:
 
     @property
     def task_runner(self) -> bool:
-        return any(st.get("tasks") for st in self.states.values())
+        if self._task_runner is None:
+            self._task_runner = any(st.get("tasks") for st in self.states.values())
+        return self._task_runner
 
     def compiled(self) -> "_Units":
         if self._compiled is None:
-            self._compiled = _Units(self, self.cached)
+            self._compiled = _Units(self, self.cached, self.chunk if self.cached else None)
             self.cached = None
         return self._compiled
+
+    def to_head(self) -> dict:
+        return {**self.compiled().to_cache(), "sessions": sorted(self.sessions()),
+                "task_runner": self.task_runner, "facts": self.facts}
+
+    def to_chunk(self) -> str:
+        """Its chunk of the blob: the one it was read from, else its units' rows and order
+        and its files' reduced contents."""
+        if self.chunk is None:
+            self.chunk = _encode_chunk({"files": self.reds, **self.compiled().to_chunk_doc()})
+        return self.chunk
 
 
 def _row_start(r: dict) -> float | None:
@@ -556,51 +652,133 @@ class _Units:
     """A slice's Work Units in an order where a unit's `part_of` and `occasioned_by` stand
     before it, with what ties and anchors read off them."""
 
-    CACHED = ("order", "meta", "json", "members", "windows", "roles", "orch", "anchor",
-              "test_runs")
+    # What the blob's head keeps of a slice's units: what `stamps` reads. Their order, meta,
+    # rows, row digests and stages' members go into the slice's chunk, read only when one of
+    # them is asked for (`label`), never by `stamps`.
+    CACHED = ("up", "loose", "whole", "stages", "by_session", "windows", "roles", "orch",
+              "anchor", "test_runs")
+    CHUNKED = ("order", "meta", "rows", "dig", "members")
 
-    def __init__(self, sl: _Slice, cached: dict | None = None):
+    def __init__(self, sl: _Slice, cached: dict | None = None, chunk: str | None = None):
         self.slice = sl
-        self.order: list[str] = []                   # every unit's key, in order
+        self._order: list[str] | None = []           # every unit's key, in order
         # key -> [kind, variant, part_of, occasioned_by, place in order]
-        self.meta: dict[str, list] = {}
-        self.json: dict[str, str] = {}               # key -> its row's JSON
-        self.members: dict[str, list[str]] = {}      # stage key -> its units, itself first
+        self._meta: dict[str, list] | None = {}
+        self._json: dict[str, str] | None = {}       # key -> its row's JSON
+        self._dig: dict[str, str] | None = {}        # key -> the digest of its row's JSON
+        self._members: dict[str, list[str]] | None = {}   # stage key -> its units, it first
+        # key -> the digest of its row and every row above it (`Records._up`), where they
+        # are all this slice's; `loose` the keys of the others
+        self.up: dict[str, str] = {}
+        self.loose: list[str] = []
+        self.whole: str = ""                         # the digest of the slice's state
+        self.stages: dict[str, str] = {}             # stage key -> its members' rows' digest
+        self.by_session: dict[str, str] = {}         # session -> its units' rows' digest
+        self._above: dict[str, frozenset] | None = {}   # key -> those keys, while building
         self.windows: dict[str, list] = {}           # session -> [(start, end, key)]
         self.roles: dict[str, str] = {}              # session -> its first row's role
         self.orch: dict[str, list] = {}              # session -> [(created, stage key)]
         self.anchor: dict[str, str] = {}             # stage key -> anchor session
         self.test_runs: dict[str, list] = {}         # stage key -> driver Test Runs
         self._rows: dict[str, dict] = {}
+        self._pending: list = []                     # units added before the chunk is read
+        self._added: dict[str, str] = {}             # their row digests
+        self.chunk = chunk
         if cached is not None:
             for name in self.CACHED:
                 setattr(self, name, cached[name])
+            self._order = self._meta = self._json = self._dig = self._members = None
         else:
             self._build()
+            meta, up = self._meta, self.up
+            self.whole = _digest_rows([self._dig[k] for k in self._order
+                                       if meta[k][0] != "stage" or meta[k][1] in ("plan", "run")])
+            self.loose = [k for k in self._order if k not in up]
+            self.stages = {st: _digest_rows(sorted({up[k] for k in keys}))
+                           for st, keys in self._members.items() if all(k in up for k in keys)}
+            for sid in {*self.windows, *self.orch}:
+                keys = [w[2] for w in self.windows.get(sid, ())] + \
+                    [st for _, st in self.orch.get(sid, ())]
+                if keys and all(k in up for k in keys):
+                    self.by_session[sid] = _digest_rows(sorted({up[k] for k in keys}))
+        self._above = None
 
     def to_cache(self) -> dict:
         return {name: getattr(self, name) for name in self.CACHED}
 
+    def to_chunk_doc(self) -> dict:
+        return {"order": self.order, "meta": self.meta, "rows": self.json, "dig": self.dig,
+                "members": self.members}
+
+    order = property(lambda self: self._open() or self._order)
+    meta = property(lambda self: self._open() or self._meta)
+    json = property(lambda self: self._open() or self._json)
+    dig = property(lambda self: self._open() or self._dig)
+    members = property(lambda self: self._open() or self._members)
+
+    def _open(self) -> None:
+        """The chunk read, once: the units' order, meta, rows, row digests and members; a
+        broken one is built again from the slice's files."""
+        if self._order is not None:
+            return
+        doc = _decode_chunk(self.chunk)
+        types = (("order", list), ("meta", dict), ("rows", dict), ("dig", dict),
+                 ("members", dict))
+        if isinstance(doc, dict) and all(isinstance(doc.get(k), t) for k, t in types) and \
+                set(doc["order"]) == set(doc["meta"]) == set(doc["rows"]) == set(doc["dig"]) \
+                and all(k in doc["dig"] for k in self.up):
+            got = doc
+        else:
+            self.slice.read_again()
+            got = _Units(self.slice).to_chunk_doc()
+        self._order, self._meta, self._json = got["order"], got["meta"], got["rows"]
+        self._dig, self._members = got["dig"], got["members"]
+        for row, stage_key in self._pending:
+            self._place(row, _ROW_JSON(row), stage_key)
+        self._pending = []
+
     def has(self, key: str) -> bool:
-        return key in self.json
+        if self._order is None:
+            return key in self.up or key in self._added or key in self.loose
+        return key in self._dig
+
+    def digest_of(self, key: str) -> str:
+        return self._added.get(key) or self.dig[key]
 
     def row(self, key: str) -> dict | None:
         if key not in self._rows:
-            text = self.json.get(key)
-            if text is None:
+            if not self.has(key):
                 return None
-            self._rows[key] = json.loads(text)
+            self._rows[key] = json.loads(self.json[key])
         return self._rows[key]
+
+    def _place(self, row: dict, text: str, stage_key: str | None) -> None:
+        key = row["key"]
+        if key in self._meta:
+            return
+        self._order.append(key)
+        self._meta[key] = [row["kind"], row["variant"], row["part_of"], row["occasioned_by"],
+                           len(self._order) - 1]
+        self._json[key] = text
+        self._dig[key] = _digest_text(text)
+        if stage_key is not None:
+            self._members.setdefault(stage_key, []).append(key)
 
     def _add(self, row: dict, stage_key: str | None) -> dict:
         key = row["key"]
-        self.order.append(key)
-        self.meta[key] = [row["kind"], row["variant"], row["part_of"], row["occasioned_by"],
-                          len(self.order) - 1]
-        self.json[key] = _ROW_JSON(row)
+        text = _ROW_JSON(row)
+        if self._order is None:
+            self._pending.append((row, stage_key))
+            self._added[key] = _digest_text(text)
+        else:
+            self._place(row, text, stage_key)
+        if self._above is not None:
+            above = [x for x in (row["part_of"], row["occasioned_by"]) if x]
+            if all(x in self._above for x in above):
+                closure = {key}.union(*(self._above[x] for x in above))
+                self._above[key] = frozenset(closure)
+                self.up[key] = _digest_rows(sorted(self._dig[x] for x in closure))
         self._rows[key] = row
-        if stage_key is not None:
-            self.members.setdefault(stage_key, []).append(key)
         return row
 
     def _build(self) -> None:
@@ -883,12 +1061,23 @@ def _gate_runs(rec: dict, key: str, repo: str | None, start, end) -> list[dict]:
     return out
 
 
+# What the blob's head holds of each slice.
+_HEAD = (*_Units.CACHED, "sessions", "task_runner", "facts")
+
+
 # ---------------------------------------------------------------- the records
+
+# What the blob's head holds of each slice.
+_HEAD = (*_Units.CACHED, "sessions", "task_runner", "facts")
+
 
 class Records:
     """Every slice of the data folder, the groups and the projects' file-class rules."""
 
-    def __init__(self, data_dir: Path, files: dict):
+    def __init__(self, data_dir: Path, files: dict, cached: dict | None = None):
+        """`files` maps each records file to its [size, mtime_ns, ino, reduced contents]; a
+        slice's file whose contents its chunk holds has 0 for them, and `cached` maps such a
+        slice to (its files' keys, its head, its chunk)."""
         self.data_dir = data_dir
         self.version = plugin_version()
         self.slices: dict[str, _Slice] = {}
@@ -897,30 +1086,45 @@ class Records:
         self._by_session: dict[str, list[str]] = {}
         self._pilot: frozenset = frozenset()
         self._cache: dict = {}
+        self._ups: dict[str, frozenset] = {}
+        self._digs: dict[str, str] = {}             # key -> its row's digest, as _up meets it
+        self._finds: dict = {}
+        self._numbers: dict[str, dict] = {}         # spec repo -> (number, letter) -> slice
+        lazy: dict[str, list[str]] = {}
         for rel in sorted(files):
             red = files[rel][3]
             if red is None:
                 continue
             parts = rel.split("/")
-            t = red.get("t")
-            if t == "groups":
+            if red == 0 or red.get("t") in ("state", "slice", "gate", "sweep"):
+                sl = self.slices.get(f"{parts[1]}/{parts[2]}")
+                if sl is None:
+                    sl = self.slices[f"{parts[1]}/{parts[2]}"] = _Slice(parts[1], parts[2])
+                    sl.data_dir = data_dir
+                sl.sig.append([rel, *files[rel][:3]])
+                if red != 0:
+                    sl.take(rel, red)
+                else:
+                    lazy.setdefault(sl.key, []).append(rel)
+            elif red.get("t") == "groups":
                 self.group_files[red["spec_repo"]] = red
-                continue
-            if t == "project":
+            elif red.get("t") == "project":
                 self.project_rules[red.get("repo") or Path(rel).stem] = red["rules"]
-                continue
-            sl = self.slices.get(f"{parts[1]}/{parts[2]}")
-            if sl is None:
-                sl = self.slices[f"{parts[1]}/{parts[2]}"] = _Slice(parts[1], parts[2])
-            sl.sig.append([rel, *files[rel][:3]])
-            if t == "state":
-                sl.states[red["stage"]] = red
-            elif t == "slice":
-                sl.facts = red
-            elif t == "gate":
-                sl.gates.append(red)
-            elif t == "sweep":
-                sl.sweeps.append(red)
+        for key, sl in self.slices.items():
+            prev = (cached or {}).get(key)
+            if prev is not None and prev[0] == sl.sig:
+                sl.use_cache(prev[1], prev[2])
+            elif key in lazy:
+                # A slice whose files changed: the unchanged ones' contents from its old chunk,
+                # else from the data folder.
+                doc = _decode_chunk(prev[2]) if prev is not None else None
+                held = doc.get("files") if isinstance(doc, dict) else None
+                held = held if isinstance(held, dict) else {}
+                for rel in lazy[key]:
+                    red = held.get(rel)
+                    red = red if isinstance(red, dict) else _reduce(rel, data_dir / rel)
+                    if red is not None:
+                        sl.take(rel, red)
         for key, sl in self.slices.items():
             for sid in sl.sessions():
                 self._by_session.setdefault(sid, []).append(key)
@@ -939,7 +1143,7 @@ class Records:
         size, mtime_ns or inode differ from the blob's are read again; a missing, stale or
         foreign blob is rebuilt."""
         data_dir = Path(data_dir)
-        old, old_units = _decode_blob(blob, data_dir)
+        old, old_units, old_chunks = _decode_blob(blob, data_dir)
         found = _walk(data_dir)
         files: dict[str, list] = {}
         changed = len(old) != len(found) or not old
@@ -950,25 +1154,32 @@ class Records:
             else:
                 files[rel] = [*key, _reduce(rel, path)]
                 changed = True
-        records = cls(data_dir, files)
-        for key, sl in records.slices.items():
-            prev = old_units.get(key)
-            if isinstance(prev, list) and len(prev) == 2 and prev[0] == sl.sig:
-                sl.cached = prev[1]
-            elif _CACHE_UNITS:
-                changed = True
+        cached = {}
+        for key, prev in old_units.items():
+            if isinstance(prev, list) and len(prev) == 2 and isinstance(prev[1], dict) and \
+                    key in old_chunks and all(n in prev[1] for n in _HEAD):
+                cached[key] = (prev[0], prev[1], old_chunks[key])
+        records = cls(data_dir, files, cached)
+        if any(sl.cached is None for sl in records.slices.values()) or \
+                len(cached) != len(records.slices):
+            changed = True
         if not changed:
             return records, blob
-        units = {key: [sl.sig, sl.compiled().to_cache()] for key, sl in records.slices.items()
-                 } if _CACHE_UNITS else {}
-        return records, _encode_blob(files, units, data_dir)
+        heads = {key: [sl.sig, sl.to_head()] for key, sl in records.slices.items()}
+        chunks = {key: sl.to_chunk() for key, sl in records.slices.items()}
+        out = {rel: [*v[:3], 0] if v[3] is not None and rel.startswith("runs/") else v
+               for rel, v in files.items()}
+        return records, _encode_blob(out, heads, chunks, data_dir)
 
     def use_pilot(self, pilot) -> "Records":
         """The request's `pilot` header (or the list of its conversations): only the adoption
         rule and the stamp's Pilot bit read it."""
         if isinstance(pilot, dict):
             pilot = pilot.get("conversations")
-        ids = frozenset(str(c) for c in pilot or [])
+        if pilot is self._pilot:
+            return self
+        ids = pilot if isinstance(pilot, frozenset) and all(type(c) is str for c in pilot) \
+            else frozenset(str(c) for c in pilot or [])
         if ids != self._pilot:
             self._pilot = ids
             self._cache = {}
@@ -995,23 +1206,45 @@ class Records:
             row = units.close_out_row(key.rsplit("|", 1)[1])
         return row
 
+    def _up(self, key: str) -> frozenset:
+        """The unit and every unit above it through `part_of` and `occasioned_by`; empty for
+        a key no unit has. Each unit's is taken once per load."""
+        memo = self._ups
+        if key in memo:
+            return memo[key]
+        stack, path = [key], []
+        while stack:
+            k = stack[-1]
+            if k in memo:
+                stack.pop()
+                continue
+            units = self._units(k.split("|", 1)[0])
+            if units is None or (not units.has(k) and self._row(k) is None):
+                memo[k] = frozenset()
+                stack.pop()
+                continue
+            _, _, part_of, occ, _ = units.meta[k]
+            above = [x for x in (part_of, occ) if x and x != k]
+            todo = [x for x in above if x not in memo]
+            if todo and k not in path:
+                path.append(k)
+                stack.extend(todo)
+                continue
+            out = {k}
+            for x in above:
+                out.update(memo.get(x, ()))
+            memo[k] = frozenset(out)
+            self._digs[k] = units.digest_of(k)
+            stack.pop()
+        return memo[key]
+
     def _closure(self, keys) -> list[str]:
         """The keys and every unit above them through `part_of` and `occasioned_by`, in an
         order where each unit's `part_of` and `occasioned_by` stand before it."""
         want: set[str] = set()
-        stack = [k for k in keys if k]
-        while stack:
-            k = stack.pop()
-            if k in want:
-                continue
-            units = self._units(k.split("|", 1)[0])
-            if units is None:
-                continue
-            if not units.has(k) and self._row(k) is None:
-                continue
-            want.add(k)
-            _, _, part_of, occ, _ = units.meta[k]
-            stack.extend(x for x in (part_of, occ) if x)
+        for k in keys:
+            if k:
+                want |= self._up(k)
 
         def place(k: str) -> tuple[str, int]:
             slice_key = k.split("|", 1)[0]
@@ -1044,6 +1277,12 @@ class Records:
 
     def _find(self, spec: str | None, ref: str | None) -> str | None:
         """A slice of one spec repo by its folder name, its path, or its number."""
+        k = (spec, ref)
+        if k not in self._finds:
+            self._finds[k] = self._find_now(spec, ref)
+        return self._finds[k]
+
+    def _find_now(self, spec: str | None, ref: str | None) -> str | None:
         folders = self._folders.get(spec or "")
         if not folders or not ref:
             return None
@@ -1053,11 +1292,14 @@ class Records:
         m = re.match(r"(\d+)([a-z]?)(?:_|$)", a)
         if not m:
             return None
-        for name, key in sorted(folders.items()):
-            fm = re.match(r"(\d+)([a-z]?)_", name)
-            if fm and int(fm.group(1)) == int(m.group(1)) and fm.group(2) == m.group(2):
-                return key
-        return None
+        numbers = self._numbers.get(spec)
+        if numbers is None:
+            numbers = self._numbers[spec] = {}
+            for name, key in sorted(folders.items()):
+                fm = re.match(r"(\d+)([a-z]?)_", name)
+                if fm:
+                    numbers.setdefault((int(fm.group(1)), fm.group(2)), key)
+        return numbers.get((int(m.group(1)), m.group(2)))
 
     def adopted(self, slice_key: str) -> bool:
         """A slice of a spec repo with a groups file, run by no task runner and by no Pilot
@@ -1139,7 +1381,7 @@ class Records:
         whose `<named>` part stands for them."""
         sid = str(conversation.get("session_id"))
         agent_id = transcript.get("agent_id")
-        sessions = conversation.get("sessions") or []
+        sessions = conversation.get("sessions") or _NO_SESSIONS
         if agent_id is not None:
             main = self._main_tie(conversation)
             return Tie(sid, agent_id=agent_id, agent_type=transcript.get("agent_type"),
@@ -1148,8 +1390,8 @@ class Records:
                        slices=main.slices, pilot=main.pilot)
         hits = self._by_session.get(sid)
         if hits:
-            return copy.copy(self._cached_tie(sid, hits, sessions))
-        m = PILOT_BRIEF_RE.match(str((sessions[0] if sessions else {}).get("brief") or ""))
+            return self._cached_tie(sid, hits, sessions).copy()
+        m = PILOT_BRIEF_RE.match(str(sessions[0].get("brief") or "")) if sessions else None
         if m:
             return Tie(sid, rule="pilot", role=f"orchestrator:{m.group(1)}")
         if sessions or sid in self._pilot:
@@ -1165,8 +1407,8 @@ class Records:
         sid = str(conversation.get("session_id"))
         hits = self._by_session.get(sid)
         if hits:
-            return self._cached_tie(sid, hits, conversation.get("sessions") or [])
-        return Tie(sid)
+            return self._cached_tie(sid, hits, conversation.get("sessions") or _NO_SESSIONS)
+        return _UNTIED
 
     def _cached_tie(self, sid: str, hits: list[str], sessions: list) -> Tie:
         cache = self._cache.setdefault("ties", {})
@@ -1199,6 +1441,11 @@ class Records:
             role = f"orchestrator:{stage_name}" if stage_name in ("plan", "run") else None
             if any(s.get("clarification") for s in sessions):
                 units.extend(slices)
+        # One slice's session: its units' rows' digest as the slice's units hold it, which is
+        # `_rows_digest` over them, unless the context added the slice to them.
+        digest = self._units(slices[0]).by_session.get(sid) \
+            if len(slices) == 1 and len(units) == len(windows) + len(stages) and \
+            not TRIAGE_SESSIONS else None
         group = None
         for slice_key in slices:
             if self.adopted(slice_key):
@@ -1207,7 +1454,7 @@ class Records:
         return Tie(sid, rule=rule, role=role, units=tuple(dict.fromkeys(units)),
                    anchors=tuple(dict.fromkeys(anchors)), adopted_group=group,
                    slices=tuple(slices), pilot=any(self.pilot_ran(k) for k in slices),
-                   _windows=windows, _stages=stages,
+                   _windows=windows, _stages=stages, _digest=digest,
                    _sessions=[(_epoch(s.get("created_at")), bool(s.get("clarification")))
                               for s in sessions])
 
@@ -1309,30 +1556,46 @@ class Records:
 
     # -- the stamp
 
+    def _updig(self, key: str) -> str | None:
+        """The digest of a unit's row and of every row above it; None for a key no unit has.
+        Taken when the units were built, else from `_up`, alike."""
+        units = self._units(key.split("|", 1)[0])
+        if units is None:
+            return None
+        got = units.up.get(key)
+        if got is None:
+            above = self._up(key)
+            if not above:
+                return None
+            got = units.up[key] = _digest_rows(sorted(map(self._digs.__getitem__, above)))
+        return got
+
     def _rows_digest(self, keys) -> str:
+        """A digest of the rows of the units `keys` names and of every unit above them: of
+        each unit's `_updig`, in their sorted order."""
         cache = self._cache.setdefault("rows", {})
         k = tuple(keys)
         if k not in cache:
-            parts = [self._units(key.split("|", 1)[0]).json[key] for key in self._closure(keys)]
-            cache[k] = _digest_rows(parts)
+            digs = {d for d in map(self._updig, k) if d is not None}
+            cache[k] = _digest_rows(sorted(digs))
         return cache[k]
 
     def _stage_digest(self, stage_key: str) -> str:
         cache = self._cache.setdefault("stage", {})
         if stage_key not in cache:
             units = self._units(stage_key.split("|", 1)[0])
-            keys = (units.members.get(stage_key) if units else None) or [stage_key]
-            cache[stage_key] = _digest([self._rows_digest(keys), self.test_runs(stage_key)])
+            rows = units.stages.get(stage_key) if units else None
+            if rows is None:
+                keys = (units.members.get(stage_key) if units else None) or [stage_key]
+                rows = self._rows_digest(keys)
+            cache[stage_key] = _digest([rows, self.test_runs(stage_key)])
         return cache[stage_key]
 
     def _slice_digest(self, slice_key: str) -> str:
         cache = self._cache.setdefault("slice", {})
         if slice_key not in cache:
             units = self._units(slice_key)
-            cache[slice_key] = _digest_rows([units.json[k] for k in units.order
-                                             if units.meta[k][0] != "stage"
-                                             or units.meta[k][1] in ("plan", "run")]
-                                            if units else [])
+            cache[slice_key] = units.whole if units else _digest_rows([])
         return cache[slice_key]
 
     def stamp_inputs(self, tie: Tie, context: dict | None = None) -> dict:
@@ -1344,11 +1607,15 @@ class Records:
         place, so that the caller's tie and these inputs agree."""
         context = context or {}
         pilot = context.get("pilot")
-        if pilot is not None and frozenset(pilot) != self._pilot:
-            self.use_pilot(pilot)
-            if context.get("conversation") is not None and context.get("transcript") is not None:
-                fresh = self.tie(context["conversation"], context["transcript"])
-                tie.__dict__.update(fresh.__dict__)
+        if pilot is not None and pilot is not self._pilot:
+            if frozenset(pilot) != self._pilot:
+                self.use_pilot(pilot)
+                if context.get("conversation") is not None and \
+                        context.get("transcript") is not None:
+                    fresh = self.tie(context["conversation"], context["transcript"])
+                    tie.__dict__.update(fresh.__dict__)
+            elif isinstance(pilot, frozenset):
+                self._pilot = pilot         # the same set: the next asks compare by identity
         recs: dict = {"role": tie.role, "group": tie.adopted_group, "pilot": tie.pilot}
         if tie.named:
             recs["named"] = []
@@ -1356,12 +1623,13 @@ class Records:
                 spec, _, ref = name.partition("/")
                 key = self._find(spec, ref.partition("@")[0])
                 ok = bool(key and self.adopted(key))
-                recs["named"].append([name, key, ok, self.group_of(key) if ok else None,
-                                      self._slice_digest(key) if ok else None])
+                recs["named"].append((name, key, ok, self.group_of(key) if ok else None,
+                                      self._slice_digest(key) if ok else None))
+            recs["named"] = tuple(recs["named"])
         elif tie.units:
-            recs["units"] = self._rows_digest(sorted(tie.units))
+            recs["units"] = tie._digest or self._rows_digest(sorted(tie.units))
         if tie.anchors:
-            recs["stages"] = [[s, self._stage_digest(s)] for s in tie.anchors]
+            recs["stages"] = tuple((s, self._stage_digest(s)) for s in tie.anchors)
         return recs
 
     def stamp(self, tie: Tie, context: dict | None = None) -> str:

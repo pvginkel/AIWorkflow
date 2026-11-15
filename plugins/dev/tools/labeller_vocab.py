@@ -242,9 +242,12 @@ def nesting() -> list[dict]:
     return [{"inner": inner, "outer": outer} for inner, outer in NESTING]
 
 
+_CANONICAL = json.JSONEncoder(sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode
+
+
 def canonical(value) -> str:
     """The canonical JSON every digest of the labeller's is taken over."""
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return _CANONICAL(value)
 
 
 def digest(value) -> str:

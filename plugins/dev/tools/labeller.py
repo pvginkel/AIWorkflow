@@ -28,6 +28,7 @@ import sys
 sys.dont_write_bytecode = True
 
 import functools  # noqa: E402
+import gc  # noqa: E402
 import json  # noqa: E402
 import re  # noqa: E402
 import traceback  # noqa: E402
@@ -211,6 +212,18 @@ def format_stamp(inputs, named=()) -> str:
     return f"{text}:{','.join(named)}" if named else text
 
 
+# The context of a conversation Pilot handed no Session or Document with, as canonical JSON.
+_NO_CONTEXT = '{"documents":[],"sessions":[]}'
+
+
+def context_key(conversation: dict) -> str:
+    """The canonical JSON of `conversation_inputs`, the stamp's first input."""
+    import labeller_vocab
+    if not conversation.get("sessions") and not conversation.get("documents"):
+        return _NO_CONTEXT
+    return labeller_vocab.canonical(conversation_inputs(conversation))
+
+
 def conversation_inputs(conversation: dict) -> dict:
     """The stamp's inputs of what Pilot handed with a conversation: the
     Sessions' kind, brief, repo, clarification and `created_at`, which
@@ -226,25 +239,36 @@ def conversation_inputs(conversation: dict) -> dict:
 
 
 def transcript_stamp(records, conversation: dict, transcript: dict, pilot: frozenset,
-                     named=(), conv_inputs: dict | None = None):
+                     named=(), conv_key: str | None = None, memo: dict | None = None):
     """(the stamp, the tie) of one transcript. `named` is the slices its own
     content named: the held stamp's for `stamps`, what the engine read in the
     file for `label`. The tie is asked with them as the transcript's
     `named`; the run records' half of the inputs, the Pilot bit included, is
     `records.stamp_inputs`'. The `conversation` slot is the inputs taken
-    from another transcript of the conversation: nothing in contract 1."""
-    named = list(dict.fromkeys(named))
+    from another transcript of the conversation: nothing in contract 1.
+
+    `conv_key` is `context_key(conversation)`, which a caller with many
+    transcripts of a conversation takes once. `memo`, a dict kept for one
+    call over one set of records, holds each stamp under the inputs it was
+    taken over, so that transcripts with the same inputs are digested once."""
+    named = list(dict.fromkeys(named)) if len(named) > 1 else list(named)
     item = {**transcript, "named": named}
     tie = records.tie(conversation, item)
-    context = {"conversation": conversation, "transcript": item, "pilot": pilot}
-    inputs = {
-        "context": conv_inputs if conv_inputs is not None
-        else conversation_inputs(conversation),
-        "agent_type": transcript.get("agent_type"),
-        "records": records.stamp_inputs(tie, context),
-        "conversation": None,
-    }
-    return format_stamp(inputs, named), tie
+    recs = tuple(records.stamp_inputs(
+        tie, {"conversation": conversation, "transcript": item, "pilot": pilot}).items())
+    if conv_key is None:
+        conv_key = context_key(conversation)
+    inputs = (conv_key, transcript.get("agent_type"), recs, None)
+    if memo is None:
+        return format_stamp(inputs, named), tie
+    try:
+        key = (inputs, tuple(named))
+        stamp = memo.get(key)
+    except TypeError:               # inputs no tuple can stand for: digested each time
+        return format_stamp(inputs, named), tie
+    if stamp is None:
+        stamp = memo[key] = format_stamp(inputs, named)
+    return stamp, tie
 
 
 def declarations(records) -> str:
@@ -258,23 +282,33 @@ def vocabularies(records) -> dict:
     return labeller_vocab.vocabularies(CONTRACT, plugin_version(), records.groups())
 
 
-def stamps(request: dict, records, index=None) -> dict:
+def stamps(request: dict, records, index=None, convs=None) -> dict:
     """The `stamps` answer: each transcript's stamp now, in request order,
     computed from the run records and the context alone. A transcript whose
     stamp cannot be computed gets a null stamp, as one no labelling covers."""
     import labeller_files
-    convs = _conversations(request, "stamps")
+    if convs is None:
+        convs = _conversations(request, "stamps")
     version = plugin_version()
     pilot = _pilot(request)
     out = []
+    memo: dict = {}
     for conv in convs:
-        conv_inputs = conversation_inputs(conv)
+        conv_key = context_key(conv)
+        # A sub-agent is stamped from the conversation and its `agent_type` alone (§ The
+        # stamp), so the conversation's sub-agents of one type share a stamp.
+        agents: dict = {}
         for t in conv["transcripts"]:
-            try:
-                stamp, _ = transcript_stamp(records, conv, t, pilot, parse_stamp(t.get("held")),
-                                            conv_inputs)
-            except Exception:  # noqa: BLE001 — one bad transcript fails only itself
-                stamp = None
+            named = parse_stamp(t.get("held"))
+            agent = (t.get("agent_type"), *named) if t.get("agent_id") is not None else None
+            stamp = agents.get(agent) if agent is not None else None
+            if stamp is None:
+                try:
+                    stamp, _ = transcript_stamp(records, conv, t, pilot, named, conv_key, memo)
+                except Exception:  # noqa: BLE001 — one bad transcript fails only itself
+                    stamp = None
+                if agent is not None and stamp is not None:
+                    agents[agent] = stamp
             out.append({"session_id": conv["session_id"], "agent_id": t.get("agent_id"),
                         "stamp": stamp})
     rules = labeller_files.load_rules(data_dir(request["home"]), version)
@@ -380,6 +414,13 @@ def classes(request: dict) -> dict:
 
 
 def _dump(value) -> str:
+    """An answer's JSON. A long ASCII `index` is put in apart, which the encoder's non-ASCII
+    path would take three times as long over."""
+    index = value.get("index") if isinstance(value, dict) else None
+    if isinstance(index, str) and len(index) > 4096 and index.isascii():
+        rest = json.dumps({k: v for k, v in value.items() if k != "index"},
+                          ensure_ascii=False, separators=(",", ":"))
+        return f'{rest[:-1]}{"," if len(rest) > 2 else ""}"index":{json.dumps(index)}}}'
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -393,6 +434,7 @@ def main(argv=None, stdin=None, stdout=None) -> int:
         stdout.flush()
 
     verb = argv[0] if argv else None
+    paused_gc = False
     try:
         if verb == "check":
             import types
@@ -408,6 +450,11 @@ def main(argv=None, stdin=None, stdout=None) -> int:
             answer({"contract": CONTRACT, "version": plugin_version(),
                     "verbs": list(VERBS)})
             return 0
+        if verb == "stamps" and gc.isenabled():
+            # One request's objects, all freed at the exit: the cyclic collector's passes
+            # over them, as the request and the index are parsed, cost a tenth of the call.
+            gc.disable()
+            paused_gc = True
         request = read_request(stdin)
         check_contract(request)
         check_home(request)
@@ -417,9 +464,9 @@ def main(argv=None, stdin=None, stdout=None) -> int:
             records, _ = load_records(request)
             answer(vocabularies(records))
         elif verb == "stamps":
-            _conversations(request, "stamps")
+            convs = _conversations(request, "stamps")
             records, blob = load_records(request)
-            answer(stamps(request, records, blob))
+            answer(stamps(request, records, blob, convs))
         else:
             _conversations(request, "label")
             records, blob = load_records(request)
@@ -427,6 +474,9 @@ def main(argv=None, stdin=None, stdout=None) -> int:
     except Refusal as r:
         answer(r.answer())
         return 2
+    finally:
+        if paused_gc:
+            gc.enable()
     return 0
 
 
