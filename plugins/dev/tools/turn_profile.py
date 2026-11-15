@@ -8,7 +8,8 @@ same price whatever the role. So what a run costs is mostly what its turns
 transcript into ordered turns (usage, tool calls, the results they got), puts
 every turn in exactly one class by what its calls did, counts the read ops
 chained inside one Bash command, and marks the read turns a perfect batcher
-would have folded into the one before them.
+would have folded into the one before them, with the condition that decided
+each (`batchable_why`, one code of BATCHABLE_WHYS).
 
 The classes, first match in this order when a turn mixes calls:
 
@@ -69,6 +70,31 @@ WRITE_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 TURN_CLASSES = ("dispatch", "edit", "gate", "commit", "record", "retry",
                 "fumble", "wait", "git-inspect", "orient-read", "work-read",
                 "think", "other")
+# Why a read-class turn is or is not batchable: the first condition that
+# decides it, in the order the classifier tests them. Exactly one per
+# orient-read, work-read or git-inspect turn, as its `batchable_why`; the code
+# alone gives both verdicts (`run-start` neither, `independent` both, the rest
+# `batchable` but not `batchable_strict`). (code, name, description) — the
+# position is the order.
+BATCHABLE_WHYS = (
+    ("run-start", "First read of its run",
+     "The first read of a run of reads: nothing to batch it with."),
+    ("independent", "Independent",
+     "A later read of its run whose every file was already in the context a turn "
+     "earlier and none of them touched by the turn before: it could have gone "
+     "with the reads before it."),
+    ("no-concrete-file", "Names no concrete file",
+     "A later read of its run with a read that names no file: a search, a "
+     "listing or a shell read whose file could not be told, so its target may "
+     "have come from the turn before."),
+    ("file-not-known", "File not yet in context",
+     "A later read of its run that opens a file not yet in the context a turn "
+     "earlier: the turn before may have shown it where to look."),
+    ("file-touched-before", "File the turn before touched",
+     "A later read of its run that opens a file the turn before read or "
+     "searched: it needed that turn's result to know where to look."),
+)
+BATCHABLE_WHY_CODES = tuple(code for code, _, _ in BATCHABLE_WHYS)
 
 
 # ---------------------------------------------------------------------------
@@ -1189,6 +1215,11 @@ def classify_turns(turns: list[dict], first_edit_turn: int | None, *,
     had work running in the background (the turn before it launched some, or
     the next thing to arrive was a task notification), and `think` otherwise;
     so is a turn whose only tools do nothing (a todo list).
+
+    Each record is {i, cls, reads}, a retry or fumble's `fumble_key`, and for
+    a read-class turn (orient-read, work-read, git-inspect) `independent`,
+    `batchable`, `batchable_strict` and `batchable_why`, the code from
+    BATCHABLE_WHYS of the first condition that decided the two verdicts.
     """
     out: list[dict] = []
     known: set[str] = set()          # paths in context, lagged one turn
@@ -1241,9 +1272,13 @@ def classify_turns(turns: list[dict], first_edit_turn: int | None, *,
         if cls in ("orient-read", "work-read", "git-inspect"):
             paths, resolved = _read_targets(t)
             prev = _touched_files(turns[i - 1]) if i else []
-            rec["independent"] = bool(
-                resolved and all(p in known for p in paths)
-                and not any(_same_file(p, q) for p in paths for q in prev))
+            rec["batchable_why"] = (
+                "no-concrete-file" if not resolved else
+                "file-not-known" if not all(p in known for p in paths) else
+                "file-touched-before" if any(_same_file(p, q)
+                                             for p in paths for q in prev) else
+                "independent")
+            rec["independent"] = rec["batchable_why"] == "independent"
         out.append(rec)
 
         # context lags by one turn: what turn i's result revealed is only
@@ -1260,7 +1295,9 @@ def classify_turns(turns: list[dict], first_edit_turn: int | None, *,
     # batchable runs: consecutive read-only turns. Perfect batching would fold
     # each run into its first turn. A strict one is also independent: every
     # file it opens was in context, and none is one the turn before it read or
-    # searched, whose result may have shown it where to look.
+    # searched, whose result may have shown it where to look. The first turn
+    # of a run is `run-start` whatever its independence said; a later one keeps
+    # the strict condition that decided it (BATCHABLE_WHYS).
     read_only = {"orient-read", "work-read", "git-inspect"}
     run: list[dict] = []
     for rec in out + [{"cls": "-"}]:
@@ -1270,6 +1307,8 @@ def classify_turns(turns: list[dict], first_edit_turn: int | None, *,
         for k, r in enumerate(run):
             r["batchable"] = k > 0
             r["batchable_strict"] = k > 0 and r.get("independent", False)
+            if k == 0:
+                r["batchable_why"] = "run-start"
         run = []
     return out
 

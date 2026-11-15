@@ -768,6 +768,110 @@ def test_a_search_is_never_strictly_batchable():
     assert out[1]["batchable"] is True and out[1]["batchable_strict"] is False
 
 
+def _whys(out):
+    return [r.get("batchable_why") for r in out]
+
+
+def test_the_first_read_of_a_run_is_run_start_even_when_independent():
+    out = tp.classify_turns(
+        [_t(1, _call("Edit", key="a.py")),
+         _t(2, _call("Edit", key="b.py")),
+         _t(3, _call("Bash", cmd="cat a.py")),
+         _t(4, _call("Edit", key="a.py"))], 1)
+    assert _whys(out) == [None, None, "run-start", None]
+    assert out[2]["independent"] is True and out[2]["batchable"] is False
+
+
+def test_a_later_read_of_files_in_context_is_independent():
+    out = tp.classify_turns(
+        [_t(0, _call("Read", key="a.py")),
+         _t(1, _call("Read", key="b.py")),
+         _t(2, _call("Read", key="a.py")),
+         _t(3, _call("Edit", key="a.py"))], 3)
+    assert _whys(out) == ["run-start", "file-not-known", "independent", None]
+    assert out[2]["batchable_strict"] is True
+
+
+def test_a_later_read_that_names_no_concrete_file_says_so():
+    out = tp.classify_turns(
+        [_t(1, _call("Read", key="a.py")),
+         _t(2, _call("Grep", key="run in .")),
+         _t(3, _call("Bash", cmd="ls src")),
+         _t(4, _call("Edit", key="a.py"))], 4)
+    assert _whys(out) == ["run-start", "no-concrete-file", "no-concrete-file", None]
+
+
+def test_a_later_read_of_a_file_not_yet_in_context_says_so():
+    """b.py came back in turn 1's result: known only from turn 3 on."""
+    out = tp.classify_turns(
+        [_t(1, _call("Bash", cmd="cat a.py"), res_paths=["b.py"]),
+         _t(2, _call("Bash", cmd="cat b.py")),
+         _t(3, _call("Edit", key="a.py"))], 3)
+    assert _whys(out) == ["run-start", "file-not-known", None]
+
+
+def test_a_later_read_of_the_file_the_turn_before_touched_says_so():
+    out = tp.classify_turns(
+        [_t(0, _call("Read", key="tests/a.py")),
+         _t(1, _call("Bash", cmd='grep -n "x" tests/a.py')),
+         _t(2, _call("Bash", cmd="sed -n 2470,2520p tests/a.py")),
+         _t(3, _call("Edit", key="tests/a.py"))], 3)
+    assert _whys(out) == ["run-start", "no-concrete-file",
+                          "file-touched-before", None]
+
+
+def test_batchable_whys_is_a_closed_ordered_list_with_descriptions():
+    assert tp.BATCHABLE_WHY_CODES == (
+        "run-start", "independent", "no-concrete-file", "file-not-known",
+        "file-touched-before")
+    assert all(name and desc.endswith(".") for _, name, desc in tp.BATCHABLE_WHYS)
+
+
+def test_the_why_alone_tells_both_verdicts_and_leaves_them_unchanged():
+    """Over the batching fixtures above and the analysed session: every
+    read-class turn has one code from the list, the verdicts are the ones
+    those tests pin, and the code determines both of them."""
+    read = {"orient-read", "work-read", "git-inspect"}
+    verdict = {"run-start": (False, False), "independent": (True, True),
+               "no-concrete-file": (True, False), "file-not-known": (True, False),
+               "file-touched-before": (True, False)}
+    cases = [
+        ([_t(1, _call("Bash", cmd="cat a.py")), _t(2, _call("Bash", cmd="cat b.py")),
+          _t(3, _call("Bash", cmd="cat c.py")), _t(4, _call("Edit", key="a.py"))], 4,
+         [False, True, True, False], [False, False, False, False]),
+        ([_t(1, _call("Bash", cmd="cat a.py"), res_paths=["b.py"]),
+          _t(2, _call("Bash", cmd="cat b.py")), _t(3, _call("Bash", cmd="cat a.py")),
+          _t(4, _call("Edit", key="a.py"))], 4,
+         [False, True, True, False], [False, False, True, False]),
+        ([_t(0, _call("Read", key="tests/a.py")),
+          _t(1, _call("Grep", key="x in tests/a.py")),
+          _t(2, _call("Read", key="tests/a.py")),
+          _t(3, _call("Edit", key="tests/a.py"))], 3,
+         [False, True, True, False], [False, False, False, False]),
+        ([_t(0, _call("Read", key="tests/a.py")),
+          _t(1, _call("Read", key="/work/X/tests/a.py")),
+          _t(2, _call("Bash", cmd="sed -n 1,20p tests/a.py")),
+          _t(3, _call("Edit", key="tests/a.py"))], 3,
+         [False, True, True, False], [False, False, False, False]),
+        ([_t(1, _call("Read", key="a.py")), _t(2, _call("Grep", key="run in .")),
+          _t(3, _call("Edit", key="a.py"))], 3,
+         [False, True, False], [False, False, False]),
+    ]
+    outs = []
+    for turns, fe, loose, strict in cases:
+        out = tp.classify_turns(turns, fe)
+        assert [r.get("batchable", False) for r in out] == loose
+        assert [r.get("batchable_strict", False) for r in out] == strict
+        outs += out
+    outs += tp.analyse(_replay(_session_records()), flat_cost)["classes"]
+    for r in outs:
+        if r["cls"] in read:
+            assert r["batchable_why"] in tp.BATCHABLE_WHY_CODES
+            assert (r["batchable"], r["batchable_strict"]) == verdict[r["batchable_why"]]
+        else:
+            assert "batchable_why" not in r
+
+
 # -- analyse ----------------------------------------------------------------
 
 def _session_records():
