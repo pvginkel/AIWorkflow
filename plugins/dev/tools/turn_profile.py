@@ -52,7 +52,10 @@ orientation — every read is the work, as a reviewer's are) and `plan_is_edit`
 
 Read by `slice_cost.py` (the `turns` table and the `turns` block it writes into
 state.json) and by `docs/research/tools/context_profile.py`, which builds the
-research-only analyses on top of the same replay. Stdlib-only, and not a
+research-only analyses on top of the same replay. The labeller's engine
+(labeller_engine.py) reads a transcript from a byte on, and so takes the two
+halves resumable: `Replay`, the reading a record at a time, and
+`TurnClassifier`, `classify_turns` a turn at a time with its state as JSON. Stdlib-only, and not a
 command: it has no `main()`.
 """
 
@@ -1199,6 +1202,163 @@ def _launched(t: dict) -> bool:
     return False
 
 
+READ_CLASSES = ("orient-read", "work-read", "git-inspect")
+
+
+class TurnClassifier:
+    """`classify_turns` one turn at a time, and resumable: `step` classes the
+    next turn from what the turns before it left, and `state()` is that, as
+    JSON, for `TurnClassifier(state=…)` to go on from. Stepping a list of
+    turns gives what `classify_turns` gives for it, cut anywhere.
+
+    What a turn's class reads of the turns before it is all the state holds:
+    the failed calls' signatures and programs of the two turns before (retry,
+    fumble), whether the turn before left work running and what it read or
+    searched, the paths in context (lagged one turn, as `known` and `pending`),
+    the first edit's turn and the place in a run of reads. `first_edit_turn`
+    is `classify_turns`' argument; left at "auto" it is the first turn stepped
+    whose ops hold an edit, which is `first_edit_turn(turns)` for the turns
+    read so far. `last` marks the session's last turn, which only a turn with
+    no tool call reads."""
+
+    def __init__(self, *, reads_are_work: bool = False, plan_is_edit: bool = False,
+                 first_edit_turn: int | None | str = "auto", state: dict | None = None):
+        self.reads_are_work = reads_are_work
+        self.plan_is_edit = plan_is_edit
+        self.auto = first_edit_turn == "auto"
+        self.first_edit = None if self.auto else first_edit_turn
+        self.known: set[str] = set()      # paths in context, lagged one turn
+        self.pending: list[set[str]] = []  # result paths not yet 'known'
+        self.run = 0                       # read-class turns just before this one
+        self.prev: list[dict] = []         # the two turns before: what they left
+        self._prev_turn: dict | None = None
+        if state is not None:
+            self._load(state)
+
+    def _load(self, st: dict) -> None:
+        self.reads_are_work, self.plan_is_edit = bool(st["flags"][0]), bool(st["flags"][1])
+        self.auto, self.first_edit = bool(st["auto"]), st["first_edit"]
+        self.known = set(st["known"])
+        self.pending = [set(x) for x in st["pending"]]
+        self.run = int(st["run"])
+        self.prev = [{"sigs": set(p["sigs"]), "progs": set(p["progs"]),
+                      "launched": bool(p.get("launched")), "touched": p.get("touched")}
+                     for p in st["prev"]]
+
+    def state(self) -> dict:
+        """What the next `step` reads, as JSON (sorted, so equal states dump
+        equal)."""
+        prev = []
+        for k, p in enumerate(self.prev):
+            last = k == len(self.prev) - 1
+            prev.append({"sigs": sorted(p["sigs"]), "progs": sorted(p["progs"]),
+                         **({"launched": p["launched"], "touched": self._touched()}
+                            if last else {})})
+        return {"flags": [self.reads_are_work, self.plan_is_edit], "auto": self.auto,
+                "first_edit": self.first_edit, "known": sorted(self.known),
+                "pending": [sorted(x) for x in self.pending], "run": self.run, "prev": prev}
+
+    def _touched(self) -> list[str]:
+        p = self.prev[-1] if self.prev else None
+        if p is None:
+            return []
+        if p["touched"] is None:
+            p["touched"] = _touched_files(self._prev_turn) if self._prev_turn else []
+        return p["touched"]
+
+    def step(self, t: dict, *, last: bool = False) -> dict:
+        """The record of turn `t`, the next one: as `classify_turns` gives it."""
+        ops, targets, reads = turn_ops(t, plan_is_edit=self.plan_is_edit)
+        opset = set(ops)
+        sigs_before: set[str] = set().union(*(p["sigs"] for p in self.prev))
+        progs_before: set[str] = set().union(*(p["progs"] for p in self.prev))
+        is_retry = bool(sigs_before) and any(_sigs(r) & sigs_before for r in t["tools"])
+        bad = next((r for r in t["tools"] if _failed(r)
+                    or (progs_before and _is_help(r) and _progs(r) & progs_before)), None)
+        launched_before = bool(self.prev) and self.prev[-1]["launched"]
+        first_edit = self.first_edit
+
+        if not t["tools"]:
+            cls = ("record" if last else
+                   "wait" if t.get("notified") or launched_before else
+                   "think")
+        elif "dispatch" in opset:
+            cls = "dispatch"
+        elif "edit" in opset:
+            cls = "edit"
+        elif "gate" in opset:
+            cls = "gate"
+        elif "git-mutate" in opset:
+            cls = "commit"
+        elif "record" in opset:
+            cls = "record"
+        elif is_retry:
+            cls = "retry"
+        elif bad is not None:
+            cls = "fumble"
+        elif "wait" in opset:
+            cls = "wait"
+        elif opset <= {"git-read", "noop"} and "git-read" in opset and not self.reads_are_work:
+            cls = "git-inspect"
+        elif opset <= {"read", "git-read", "noop"} and opset & {"read", "git-read"}:
+            cls = ("orient-read" if not self.reads_are_work and (
+                first_edit is None or t["i"] < first_edit) else "work-read")
+        elif opset == {"noop"} and all(r["name"] != "Bash" for r in t["tools"]):
+            cls = "think"
+        else:
+            cls = "other"
+
+        rec = {"i": t["i"], "cls": cls, "reads": reads}
+        if cls in ("retry", "fumble"):
+            rec["fumble_key"] = _fumble_key(bad) if bad else ""
+        if cls in READ_CLASSES:
+            paths, resolved = _read_targets(t)
+            prev = self._touched()
+            known = self.known
+            rec["batchable_why"] = (
+                "no-concrete-file" if not resolved else
+                "file-not-known" if not all(p in known for p in paths) else
+                "file-touched-before" if any(_same_file(p, q)
+                                             for p in paths for q in prev) else
+                "independent")
+            rec["independent"] = rec["batchable_why"] == "independent"
+            # batchable runs: consecutive read-only turns. Perfect batching
+            # would fold each run into its first turn. A strict one is also
+            # independent: every file it opens was in context, and none is one
+            # the turn before it read or searched, whose result may have shown
+            # it where to look. The first turn of a run is `run-start`
+            # whatever its independence said; a later one keeps the strict
+            # condition that decided it (BATCHABLE_WHYS).
+            k = self.run
+            rec["batchable"] = k > 0
+            rec["batchable_strict"] = k > 0 and rec["independent"]
+            if k == 0:
+                rec["batchable_why"] = "run-start"
+            self.run += 1
+        else:
+            self.run = 0
+
+        if self.auto and self.first_edit is None and "edit" in opset:
+            self.first_edit = t["i"]
+        # context lags by one turn: what turn i's result revealed is only
+        # 'known' from turn i+2, so a read at i+1 that used it is not independent
+        self.known.update(str(Path(p)) for p in (targets or []))
+        for rr in t["tools"]:
+            self.known.update(str(Path(p)) for p in bash_read_paths(rr.get("cmd") or ""))
+            if rr["name"] in WRITE_TOOLS or rr["name"] == "Read":
+                self.known.add(str(Path(rr["key"])))
+        if self.pending:
+            self.known.update(self.pending.pop(0))
+        self.pending.append(set(t.get("res_paths") or ()))
+        failed = [r for r in t["tools"] if _failed(r)]
+        self.prev = self.prev[-1:] + [{
+            "sigs": set().union(*(_sigs(r) for r in failed)),
+            "progs": set().union(*(_progs(r) for r in failed)),
+            "launched": _launched(t), "touched": None}]
+        self._prev_turn = t
+        return rec
+
+
 def classify_turns(turns: list[dict], first_edit_turn: int | None, *,
                    reads_are_work: bool = False, plan_is_edit: bool = False) -> list[dict]:
     """One class and one read count per turn.
@@ -1220,97 +1380,12 @@ def classify_turns(turns: list[dict], first_edit_turn: int | None, *,
     a read-class turn (orient-read, work-read, git-inspect) `independent`,
     `batchable`, `batchable_strict` and `batchable_why`, the code from
     BATCHABLE_WHYS of the first condition that decided the two verdicts.
+    `TurnClassifier` is the same, a turn at a time.
     """
-    out: list[dict] = []
-    known: set[str] = set()          # paths in context, lagged one turn
-    pending: list[set[str]] = []     # result paths not yet 'known'
+    c = TurnClassifier(reads_are_work=reads_are_work, plan_is_edit=plan_is_edit,
+                       first_edit_turn=first_edit_turn)
     last = len(turns) - 1
-    for i, t in enumerate(turns):
-        ops, targets, reads = turn_ops(t, plan_is_edit=plan_is_edit)
-        opset = set(ops)
-        failed_before = [r for pt in turns[max(0, i - 2):i] for r in pt["tools"]
-                         if _failed(r)]
-        sigs_before: set[str] = set().union(*(_sigs(r) for r in failed_before))
-        progs_before: set[str] = set().union(*(_progs(r) for r in failed_before))
-        is_retry = bool(sigs_before) and any(_sigs(r) & sigs_before for r in t["tools"])
-        bad = next((r for r in t["tools"] if _failed(r)
-                    or (progs_before and _is_help(r) and _progs(r) & progs_before)), None)
-
-        if not t["tools"]:
-            cls = ("record" if i == last else
-                   "wait" if t.get("notified") or (i and _launched(turns[i - 1])) else
-                   "think")
-        elif "dispatch" in opset:
-            cls = "dispatch"
-        elif "edit" in opset:
-            cls = "edit"
-        elif "gate" in opset:
-            cls = "gate"
-        elif "git-mutate" in opset:
-            cls = "commit"
-        elif "record" in opset:
-            cls = "record"
-        elif is_retry:
-            cls = "retry"
-        elif bad is not None:
-            cls = "fumble"
-        elif "wait" in opset:
-            cls = "wait"
-        elif opset <= {"git-read", "noop"} and "git-read" in opset and not reads_are_work:
-            cls = "git-inspect"
-        elif opset <= {"read", "git-read", "noop"} and opset & {"read", "git-read"}:
-            cls = ("orient-read" if not reads_are_work and (
-                first_edit_turn is None or t["i"] < first_edit_turn) else "work-read")
-        elif opset == {"noop"} and all(r["name"] != "Bash" for r in t["tools"]):
-            cls = "think"
-        else:
-            cls = "other"
-
-        rec = {"i": t["i"], "cls": cls, "reads": reads}
-        if cls in ("retry", "fumble"):
-            rec["fumble_key"] = _fumble_key(bad) if bad else ""
-        if cls in ("orient-read", "work-read", "git-inspect"):
-            paths, resolved = _read_targets(t)
-            prev = _touched_files(turns[i - 1]) if i else []
-            rec["batchable_why"] = (
-                "no-concrete-file" if not resolved else
-                "file-not-known" if not all(p in known for p in paths) else
-                "file-touched-before" if any(_same_file(p, q)
-                                             for p in paths for q in prev) else
-                "independent")
-            rec["independent"] = rec["batchable_why"] == "independent"
-        out.append(rec)
-
-        # context lags by one turn: what turn i's result revealed is only
-        # 'known' from turn i+2, so a read at i+1 that used it is not independent
-        known.update(str(Path(p)) for p in (targets or []))
-        for rr in t["tools"]:
-            known.update(str(Path(p)) for p in bash_read_paths(rr.get("cmd") or ""))
-            if rr["name"] in WRITE_TOOLS or rr["name"] == "Read":
-                known.add(str(Path(rr["key"])))
-        if pending:
-            known.update(pending.pop(0))
-        pending.append(t.get("res_paths") or set())
-
-    # batchable runs: consecutive read-only turns. Perfect batching would fold
-    # each run into its first turn. A strict one is also independent: every
-    # file it opens was in context, and none is one the turn before it read or
-    # searched, whose result may have shown it where to look. The first turn
-    # of a run is `run-start` whatever its independence said; a later one keeps
-    # the strict condition that decided it (BATCHABLE_WHYS).
-    read_only = {"orient-read", "work-read", "git-inspect"}
-    run: list[dict] = []
-    for rec in out + [{"cls": "-"}]:
-        if rec["cls"] in read_only:
-            run.append(rec)
-            continue
-        for k, r in enumerate(run):
-            r["batchable"] = k > 0
-            r["batchable_strict"] = k > 0 and r.get("independent", False)
-            if k == 0:
-                r["batchable_why"] = "run-start"
-        run = []
-    return out
+    return [c.step(t, last=i == last) for i, t in enumerate(turns)]
 
 
 # ---------------------------------------------------------------------------
@@ -1374,6 +1449,158 @@ def _user_text_kind(o: dict, txt: str) -> str | None:
     return None if s.startswith(NOT_A_PROMPT) else "prompt"
 
 
+class Replay:
+    """`replay`'s reading, one parsed record at a time (`feed`), for a reader
+    that goes on from a byte of the file rather than its start: the turns so
+    far, the calls still owed their result (`pending`) and the turn a user
+    text would mark `notified` (`awaiting`). Turns are numbered from
+    `first_i`. The `on_*` methods are called at each step and do nothing
+    here; a reader that labels the turns overrides them."""
+
+    def __init__(self, first_i: int = 1):
+        self.first_i = first_i
+        self.turns: list[dict] = []
+        self.by_id: dict[str, dict] = {}
+        self.pending: dict[str, dict] = {}   # tool_use_id -> its call (awaiting its result)
+        self.user_prompts = 0
+        self.injected_chars = 0               # text blocks in user messages that are not results
+        self.awaiting: dict | None = None     # the last turn, until a user text follows it
+
+    # hooks
+    def on_turn(self, turn: dict, o: dict) -> None:
+        """A new turn, at the record that opened it."""
+
+    def on_tool(self, rec: dict, inp: dict, turn: dict, o: dict) -> None:
+        """A tool call added to `turn`."""
+
+    def on_result(self, tid, rec: dict | None, txt: str, blk: dict, o: dict) -> None:
+        """A tool result; `rec` is the call it answers, None for one no call awaits."""
+
+    def on_text(self, o: dict, txt: str, kind: str | None) -> None:
+        """A user text, of `_user_text_kind`'s kind."""
+
+    def _user_text(self, o: dict, txt: str) -> int:
+        kind = _user_text_kind(o, txt)
+        if kind and self.awaiting is not None:
+            self.awaiting["notified"] = kind == "notification"
+            self.awaiting = None
+        self.on_text(o, txt, kind)
+        return kind == "prompt"
+
+    def feed(self, o) -> None:
+        """One record of the transcript, parsed."""
+        if not isinstance(o, dict):
+            return
+        t = o.get("type")
+        msg = o.get("message") or {}
+        if t == "assistant":
+            self._assistant(o, msg)
+        elif t == "user":
+            self._user(o, msg)
+
+    def _assistant(self, o: dict, msg: dict) -> None:
+        mid = msg.get("id")
+        usage = msg.get("usage") or {}
+        if msg.get("model") == SYNTHETIC_MODEL:
+            return
+        out = usage.get("output_tokens", 0) or 0
+        think = (usage.get("output_tokens_details") or {}).get("thinking_tokens", 0) or 0
+        if mid not in self.by_id:
+            if not usage:
+                return
+            cc = usage.get("cache_creation") or {}
+            turn = {
+                "i": self.first_i + len(self.turns),
+                "ts": _ts(o.get("timestamp")),
+                "model": msg.get("model", "unknown"),
+                "effort": o.get("effort"),
+                "stop": msg.get("stop_reason"),
+                "input": usage.get("input_tokens", 0) or 0,
+                "cr": usage.get("cache_read_input_tokens", 0) or 0,
+                "cw": usage.get("cache_creation_input_tokens", 0) or 0,
+                "cw5m": cc.get("ephemeral_5m_input_tokens", 0) or 0,
+                "cw1h": cc.get("ephemeral_1h_input_tokens", 0) or 0,
+                "out": out,
+                "think": think,
+                "tools": [],       # [{name, key, id, result_chars, is_error, …}]
+                "text_chars": 0,
+                "result_chars": 0,  # tool results that followed this turn
+                "res_paths": set(),  # paths those results put into context
+                "notified": False,  # the next user text was a task notification
+            }
+            turn["ctx"] = turn["input"] + turn["cr"] + turn["cw"]
+            self.by_id[mid] = turn
+            self.turns.append(turn)
+            self.awaiting = turn
+            self.on_turn(turn, o)
+        turn = self.by_id[mid]
+        if usage:
+            turn["out"] = max(turn["out"], out)
+            turn["think"] = max(turn["think"], think)
+        if msg.get("stop_reason"):
+            turn["stop"] = msg["stop_reason"]
+        for blk in msg.get("content") or []:
+            if not isinstance(blk, dict):
+                continue
+            bt = blk.get("type")
+            if bt == "tool_use":
+                tid = blk.get("id")
+                if any(x["id"] == tid for x in turn["tools"]):
+                    continue
+                name = blk.get("name", "?")
+                inp = blk.get("input") or {}
+                rec = {"name": name, "key": _tool_key(name, inp), "id": tid,
+                       "cmd": (inp.get("command") or "") if name == "Bash" else "",
+                       "result_chars": 0, "is_error": False, "res_head": "",
+                       "background": bool(inp.get("run_in_background")),
+                       "done": _wrote_done_record(name, inp)}
+                turn["tools"].append(rec)
+                if tid:
+                    self.pending[tid] = rec
+                self.on_tool(rec, inp, turn, o)
+            elif bt == "text":
+                turn["text_chars"] += len(blk.get("text", ""))
+
+    def _user(self, o: dict, msg: dict) -> None:
+        c = msg.get("content")
+        if isinstance(c, str):
+            self.user_prompts += self._user_text(o, c)
+            return
+        for blk in c or []:
+            if not isinstance(blk, dict):
+                continue
+            if blk.get("type") == "tool_result":
+                txt = _result_text(blk)
+                n = len(txt)
+                tid = blk.get("tool_use_id")
+                rec = self.pending.pop(tid, None)
+                if rec is not None:
+                    rec["result_chars"] += n
+                    rec["is_error"] = bool(blk.get("is_error"))
+                    if not rec["res_head"]:
+                        rec["res_head"] = txt[:FAIL_HEAD]
+                # attribute to the last turn (results follow their turn)
+                if self.turns:
+                    self.turns[-1]["result_chars"] += n
+                    seen = self.turns[-1]["res_paths"]
+                    if len(seen) < RESULT_PATH_CAP:
+                        for m in BASH_PATH_RE.finditer(txt[:RESULT_SCAN_CHARS]):
+                            seen.add(str(Path(m.group(0))))
+                            if len(seen) >= RESULT_PATH_CAP:
+                                break
+                self.on_result(tid, rec, txt, blk, o)
+            elif blk.get("type") == "text":
+                txt = blk.get("text", "")
+                if "<system-reminder>" in txt or "<attachment" in txt:
+                    self.injected_chars += len(txt)
+                else:
+                    self.user_prompts += self._user_text(o, txt)
+
+    def result(self) -> dict:
+        return {"turns": self.turns, "user_prompts": self.user_prompts,
+                "injected_chars": self.injected_chars}
+
+
 def replay(path: Path) -> dict:
     """One transcript -> ordered turns with usage, tool calls and their results.
     A record is one `\\n`-terminated line, so the file is read with
@@ -1384,22 +1611,9 @@ def replay(path: Path) -> dict:
     reports (a streamed message's count grows from record to record) and its
     stop reason the last one given. A `<synthetic>` message is no turn: no
     model was called. A turn is marked `notified` when the first user text
-    after it was a background task's notification."""
-    turns: list[dict] = []
-    by_id: dict[str, dict] = {}
-    pending: dict[str, dict] = {}   # tool_use_id -> turn (awaiting its result)
-    user_prompts = 0
-    injected_chars = 0               # text blocks in user messages that are not tool results
-    awaiting: dict | None = None     # the last turn, until a user text follows it
-
-    def user_text(o: dict, txt: str) -> int:
-        nonlocal awaiting
-        kind = _user_text_kind(o, txt)
-        if kind and awaiting is not None:
-            awaiting["notified"] = kind == "notification"
-            awaiting = None
-        return kind == "prompt"
-
+    after it was a background task's notification. `Replay` is the reading,
+    a record at a time."""
+    r = Replay()
     with path.open(errors="replace", newline="\n") as fh:
         for line in fh:
             line = line.strip()
@@ -1409,102 +1623,8 @@ def replay(path: Path) -> dict:
                 o = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            t = o.get("type")
-            msg = o.get("message") or {}
-            if t == "assistant":
-                mid = msg.get("id")
-                usage = msg.get("usage") or {}
-                if msg.get("model") == SYNTHETIC_MODEL:
-                    continue
-                out = usage.get("output_tokens", 0) or 0
-                think = (usage.get("output_tokens_details") or {}).get("thinking_tokens", 0) or 0
-                if mid not in by_id:
-                    if not usage:
-                        continue
-                    cc = usage.get("cache_creation") or {}
-                    turn = {
-                        "i": len(turns) + 1,
-                        "ts": _ts(o.get("timestamp")),
-                        "model": msg.get("model", "unknown"),
-                        "effort": o.get("effort"),
-                        "stop": msg.get("stop_reason"),
-                        "input": usage.get("input_tokens", 0) or 0,
-                        "cr": usage.get("cache_read_input_tokens", 0) or 0,
-                        "cw": usage.get("cache_creation_input_tokens", 0) or 0,
-                        "cw5m": cc.get("ephemeral_5m_input_tokens", 0) or 0,
-                        "cw1h": cc.get("ephemeral_1h_input_tokens", 0) or 0,
-                        "out": out,
-                        "think": think,
-                        "tools": [],       # [{name, key, id, result_chars, is_error, …}]
-                        "text_chars": 0,
-                        "result_chars": 0,  # tool results that followed this turn
-                        "res_paths": set(),  # paths those results put into context
-                        "notified": False,  # the next user text was a task notification
-                    }
-                    turn["ctx"] = turn["input"] + turn["cr"] + turn["cw"]
-                    by_id[mid] = turn
-                    turns.append(turn)
-                    awaiting = turn
-                turn = by_id[mid]
-                if usage:
-                    turn["out"] = max(turn["out"], out)
-                    turn["think"] = max(turn["think"], think)
-                if msg.get("stop_reason"):
-                    turn["stop"] = msg["stop_reason"]
-                for blk in msg.get("content") or []:
-                    if not isinstance(blk, dict):
-                        continue
-                    bt = blk.get("type")
-                    if bt == "tool_use":
-                        tid = blk.get("id")
-                        if any(x["id"] == tid for x in turn["tools"]):
-                            continue
-                        name = blk.get("name", "?")
-                        inp = blk.get("input") or {}
-                        rec = {"name": name, "key": _tool_key(name, inp), "id": tid,
-                               "cmd": (inp.get("command") or "") if name == "Bash" else "",
-                               "result_chars": 0, "is_error": False, "res_head": "",
-                               "background": bool(inp.get("run_in_background")),
-                               "done": _wrote_done_record(name, inp)}
-                        turn["tools"].append(rec)
-                        if tid:
-                            pending[tid] = rec
-                    elif bt == "text":
-                        turn["text_chars"] += len(blk.get("text", ""))
-            elif t == "user":
-                c = msg.get("content")
-                if isinstance(c, str):
-                    user_prompts += user_text(o, c)
-                    continue
-                for blk in c or []:
-                    if not isinstance(blk, dict):
-                        continue
-                    if blk.get("type") == "tool_result":
-                        txt = _result_text(blk)
-                        n = len(txt)
-                        rec = pending.pop(blk.get("tool_use_id"), None)
-                        if rec is not None:
-                            rec["result_chars"] += n
-                            rec["is_error"] = bool(blk.get("is_error"))
-                            if not rec["res_head"]:
-                                rec["res_head"] = txt[:FAIL_HEAD]
-                        # attribute to the last turn (results follow their turn)
-                        if turns:
-                            turns[-1]["result_chars"] += n
-                            seen = turns[-1]["res_paths"]
-                            if len(seen) < RESULT_PATH_CAP:
-                                for m in BASH_PATH_RE.finditer(txt[:RESULT_SCAN_CHARS]):
-                                    seen.add(str(Path(m.group(0))))
-                                    if len(seen) >= RESULT_PATH_CAP:
-                                        break
-                    elif blk.get("type") == "text":
-                        txt = blk.get("text", "")
-                        if "<system-reminder>" in txt or "<attachment" in txt:
-                            injected_chars += len(txt)
-                        else:
-                            user_prompts += user_text(o, txt)
-    return {"turns": turns, "user_prompts": user_prompts,
-            "injected_chars": injected_chars}
+            r.feed(o)
+    return r.result()
 
 
 # ---------------------------------------------------------------------------

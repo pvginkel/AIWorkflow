@@ -872,6 +872,120 @@ def test_the_why_alone_tells_both_verdicts_and_leaves_them_unchanged():
             assert "batchable_why" not in r
 
 
+# -- the stepped form -------------------------------------------------------
+
+def _stepped(turns, cut, **kw):
+    """`TurnClassifier` over `turns`, its state handed through JSON before
+    turn `cut` and stepping resumed from there."""
+    c = tp.TurnClassifier(**kw)
+    out = []
+    for k, t in enumerate(turns):
+        if k == cut:
+            c = tp.TurnClassifier(state=json.loads(json.dumps(c.state())))
+        out.append(c.step(t, last=k == len(turns) - 1))
+    return out
+
+
+def _call_pool():
+    """Invented calls that between them reach every class and every
+    condition the state carries: failures and their retries, help after a
+    failure, work left running, reads of files in and out of context."""
+    bg = {**_call("Bash", cmd="kc project test"), "background": True}
+    return [
+        _call("Bash", cmd="cat a.py"), _call("Bash", cmd="cat b.py"),
+        _call("Read", key="a.py"), _call("Read", key="/work/X/b.py"),
+        _call("Grep", key="def run in tools/a.py"), _call("Grep", key="x in ."),
+        _call("Bash", cmd="sed -n 1,20p tests/c.py"), _call("Bash", cmd="git diff --stat"),
+        _call("Edit", key="a.py"), _call("Write", key="/s/170/plan.md"),
+        {**_call("Edit", key="/s/plan.md"), "done": True},
+        _call("Bash", cmd="kc project test"), _call("Bash", cmd="git commit -am x"),
+        _call("Bash", cmd="close_out.py rep.md list", res="usage: close_out.py [-h] x"),
+        _call("Bash", cmd="close_out.py --help", res="usage: close_out.py [-h]"),
+        _call("Bash", cmd="close_out.py /s/170 list", res="B1"),
+        _call("Bash", cmd="sed -n 1,9p src/q.ts", res="sed: q.ts: No such file or directory",
+              is_error=True),
+        _call("Agent", key="general-purpose: x", res="Async agent launched successfully."),
+        _call("Agent", key="Explore: find"), bg, _call("Bash", cmd="sleep 30"),
+        _call("TodoWrite"), _call("Bash", cmd="cexec python uv run tools/pilot.py x"),
+    ]
+
+
+def _invented_sessions(n, seed):
+    """`n` invented sessions of 1 to 24 turns, some with no tool call, some
+    marked notified, results revealing paths."""
+    import random
+    rnd = random.Random(seed)
+    pool = _call_pool()
+    paths = ["a.py", "b.py", "tests/c.py", "/work/X/b.py", "src/q.ts"]
+    out = []
+    for _ in range(n):
+        turns = []
+        for i in range(1, rnd.randint(1, 24) + 1):
+            calls = [] if rnd.random() < 0.2 else rnd.sample(pool, rnd.choice((1, 1, 1, 2, 3)))
+            turns.append(_t(i, *[dict(c) for c in calls],
+                            res_paths=rnd.sample(paths, rnd.randint(0, 2)),
+                            notified=not calls and rnd.random() < 0.4))
+        out.append(turns)
+    return out
+
+
+def _suite_sessions():
+    """The suite's own sessions: the analysed one and the batching fixtures."""
+    return [_replay(_session_records())["turns"],
+            [_t(1, _call("Bash", cmd="cat a.py"), res_paths=["b.py"]),
+             _t(2, _call("Bash", cmd="cat b.py")), _t(3, _call("Bash", cmd="cat a.py")),
+             _t(4, _call("Edit", key="a.py"))],
+            [_t(0, _call("Read", key="tests/a.py")),
+             _t(1, _call("Grep", key="x in tests/a.py")),
+             _t(2, _call("Read", key="tests/a.py")), _t(3, _call("Edit", key="tests/a.py"))]]
+
+
+def test_the_stepped_form_answers_as_the_whole_one_cut_at_every_turn():
+    """TurnClassifier, its state handed through JSON before any turn, gives
+    classify_turns' records — with the first edit found as it goes, and with
+    the first edit handed to it — under every role's flags."""
+    sessions = _suite_sessions() + _invented_sessions(120, seed=7)
+    for flags in ({}, {"reads_are_work": True}, {"plan_is_edit": True}):
+        for turns in sessions:
+            fe = tp.first_edit_turn(turns, **flags)
+            whole = tp.classify_turns(turns, fe, **flags)
+            for cut in range(len(turns) + 1):
+                assert _stepped(turns, cut, **flags) == whole, (flags, cut)
+            fixed = tp.classify_turns(turns, 3, **flags)
+            assert _stepped(turns, len(turns) // 2, first_edit_turn=3, **flags) == fixed
+
+
+def test_the_last_flag_changes_only_a_tool_less_turns_class_and_no_state():
+    """A tool-less turn stepped as the last is the hand-back; stepped again
+    as not the last it is thinking or a wait. Either leaves the same state,
+    so a reader may class an open last turn and go on from before it."""
+    turns = [_t(1, _call("Bash", cmd="cat a.py")), _t(2)]
+    a, b = tp.TurnClassifier(), tp.TurnClassifier()
+    a.step(turns[0])
+    b.step(turns[0])
+    assert a.step(turns[1], last=True)["cls"] == "record"
+    assert b.step(turns[1])["cls"] == "think"
+    assert a.state() == b.state()
+
+
+def test_a_state_is_json_and_carries_the_flags():
+    c = tp.TurnClassifier(plan_is_edit=True)
+    for t in _suite_sessions()[0]:
+        c.step(t)
+    st = json.loads(json.dumps(c.state()))
+    resumed = tp.TurnClassifier(state=st)
+    assert (resumed.reads_are_work, resumed.plan_is_edit) == (False, True)
+    assert resumed.state() == st
+
+
+def test_replay_is_its_reader_fed_a_record_at_a_time():
+    records = _session_records() + [_text_user("go on"), 7, "x"]
+    r = tp.Replay()
+    for rec in records:
+        r.feed(json.loads(json.dumps(rec)))
+    assert r.result() == _replay(_session_records() + [_text_user("go on")])
+
+
 # -- analyse ----------------------------------------------------------------
 
 def _session_records():
