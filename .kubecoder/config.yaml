@@ -1,0 +1,19 @@
+# An environment of AIWorkflow's own, such as one Pilot creates for a work item.
+# Schema: https://kubecoder.home/help/reference/config-yaml/
+#
+# AIWorkflow is a plugin marketplace: nothing is built, served or deployed from it,
+# so it runs no services. Its suites and ruff run in the python toolchain
+# (.kubecoder/project.yaml). Sessions in other environments work it from Pilot's
+# environment, whose config.yaml clones it beside PilotApp; this file is read
+# only where AIWorkflow is an environment's primary repo.
+#
+# Without this file the controller writes a default one into the checkout,
+# untracked, with no tools at all (AIWF-175).
+
+capabilities:
+  # What that default gives; a written file without it has no GitHub access.
+  github: rw
+
+tools:
+  # The plugin's suites and ruff; the dev container has no uv.
+  - use: python
