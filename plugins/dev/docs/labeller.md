@@ -53,30 +53,34 @@ Every request carries the following keys:
 ```
 
 - `home.plugins` is the folder whose `data/` holds the run records. The data folder inside it is
-  the one `plugin_data_dir` names ([runner-state.md](runner-state.md) § The run records).
-  `home.data` overrides it, for a test.
+  the one `plugin_data_dir` names ([runner-state.md](runner-state.md) § The run records), from
+  the plugin's installed key: the cache layout the script runs from, else the one key of the
+  plugin's name in `installed_plugins.json`. `home.data` overrides it, for a test. Where neither
+  names a folder, the request is refused `home`.
 - **The contract** is an integer the labeller speaks. This page is contract 1, and every answer
   names it. It changes only when a request or an answer changes shape. A new rule within the same
   shapes is a new plugin version, which relabels everything (F152.6). A request whose contract the
-  labeller does not speak is refused with `{"error": {"code": "contract", "speaks": [1]}}` and exit
-  2, and the collector then labels nothing.
+  labeller does not speak is refused with `{"error": {"code": "contract", "detail", "speaks":
+  [1]}}` and exit 2, and the collector then labels nothing.
 - **The version** in every answer is the plugin's, from `.claude-plugin/plugin.json`. It is what
   Pilot stores as a Transcript's `labelled_under`.
 
 | Verb | Reads | Answers |
 |---|---|---|
-| `info` | nothing | `{"contract", "version", "verbs"}` |
+| `info` | nothing: it takes any request, and checks neither its contract nor its home | `{"contract", "version", "verbs"}` |
 | `vocabularies` | the run records' `groups/` | every declared list, the nestings and the groups (§ The vocabularies) |
 | `stamps` | the run records, never a transcript | the stamp each transcript would get now, the declarations' and the file rules' stamps, the index (§ The stamp) |
 | `label` | the transcripts it is handed, and the run records | their labels, whole or appended, one line per transcript (§ The label request and answer) |
 | `classes` | the run records' `projects/` and run folders | the class of each file it is handed (§ File classes) |
-| `check` | transcripts on a home | the replay check's report (§ The replay check) |
+| `check` | transcripts on a home, named by flags rather than a request | the replay check's report, for a person (§ The replay check) |
 
 **Exit codes.** **0**: answered, which includes an answer that holds per-transcript errors. **2**:
-the request was refused (bad JSON, an unknown verb, a missing `home`, a contract not spoken), with
-`{"error": {"code", "detail"}}` on stdout. **1**: the labeller crashed, with a traceback on
-stderr. On exit 1 the collector takes nothing from that call, except the `label` lines that came
-before the crash (§ The label request and answer).
+the request was refused, with `{"error": {"code", "detail"}}` on stdout. The codes are `json` (the
+request is not JSON), `request` (it is not an object, or a field the verb reads has the wrong
+shape), `verb` (an unknown verb), `home` (no `home`, or no data folder it names) and `contract`.
+**1**: the labeller crashed, with a traceback on stderr. On exit 1 the collector takes nothing
+from that call, except the `label` lines that came before the crash (§ The label request and
+answer). `check` exits by its own rule (§ The replay check).
 
 **One bad transcript fails only itself.** In a `label` answer, a transcript that cannot be
 labelled gets this line:
@@ -114,12 +118,15 @@ over:
 | Test Suite, Test | the suite's `code`; a Test by its suite's code and its `name` |
 | Adopted group | its `key` (§ Work Units, *The groups*) |
 
-**The Calls are the collector's.** A whole request lists every Call with its `id`, `position` and
-`launch`, and an appended request lists those from the boundary on. The labeller reads the file and
-matches each handed Call to its assistant lines by `message.id`. It labels every handed Call and no
-other. A handed Call that its rules do not count, such as a `<synthetic>` model line that
-`turn_profile.replay` skips, takes the Segment of the Call before it (of the Call after it, where it
-is the first) and no other label, so the Segments still cover every Call (assertion 554).
+**The Calls are the collector's.** A Call in the file is every distinct `message.id` of an
+assistant line, in the order of its first line, a `<synthetic>` model line and a line with no
+`usage` included. The file's last line, with no newline yet, is read if it parses. A whole request
+lists every Call with its `id`, `position` and `launch`, and an appended request lists those from
+the boundary on. The labeller reads the file and matches each handed Call to its assistant lines
+by `message.id`; Calls that differ are `calls_mismatch`. It labels every handed Call and no other.
+A *counted* Call is one `turn_profile.replay` counts as a turn. A Call it does not count, such as
+a `<synthetic>` one, takes the Segment of the Call before it (of the Call after it, where it is the
+first) and no other label, so the Segments still cover every Call (assertion 554).
 
 ## What Pilot hands with a conversation
 
@@ -170,9 +177,11 @@ transcript of the slice at every walk, and that is the cost the appended path ex
 So the stamp is a digest of the derived inputs the rules below read. A rewrite that changes none
 of them changes no stamp. The inputs are:
 
-- **Of the context:** the Sessions' `kind`, `brief`, `repo` and `clarification` and their order;
-  the Documents' ids, Sessions and source paths; a sub-agent's `agent_type`; and whether a slice
-  the transcript serves is run by Pilot (the `pilot` header, reduced to that one bit).
+- **Of the context:** the Sessions' `kind`, `brief`, `repo`, `clarification` and `created_at`,
+  which places a Launch on its Session, and their order; the Documents' ids, Sessions and source
+  paths; a sub-agent's `agent_type`; and whether a slice the transcript serves is run by Pilot (the
+  `pilot` header, reduced to that one bit). A sub-agent's stamp covers the conversation's context
+  as its main thread's does.
 - **Of the run records:** the rows of every Work Unit the transcript's labels name (§ Work Units).
   That is the unit of each Launch and every unit above it through `part_of` and
   `occasioned_by`, with their measures. For the stage's anchor it is every unit of its stage
@@ -194,8 +203,11 @@ carries them. A stamp is the text
 
 - `<digest>` is 22 characters of url-safe base64 of the sha256 over the canonical JSON of the
   inputs.
-- `<named>` lists, comma-separated, the slices the transcript's own content named, as named, for
-  example `PilotAppSpecs/044`.
+- `<named>` lists, comma-separated, the slices the transcript's own content named, as named. The
+  name that tied it carries its unit after `@`: `PilotAppSpecs/044@run`, `…@close-out`,
+  `…@run.P2` for an R3 session's phase. A name tried before it, which tied nothing, stays bare.
+  The digest covers every unit of each named slice, so a change anywhere in that slice changes
+  the stamp.
 
 `stamps` recomputes a transcript's digest from the `<named>` part of the stamp Pilot holds for it,
 so it never needs the file. Pilot stores the stamp as opaque text and compares it for equality
@@ -216,29 +228,32 @@ alone (database.md, Transcript's `records_stamp`).
 ```
 
 - `held` is the stamp Pilot holds, or null.
-- The stamps come back in request order.
+- The stamps come back in request order. A transcript whose stamp cannot be computed gets
+  `"stamp": null`, as one that no labelling covers, and the others are answered.
 - `declarations` is the digest of what `vocabularies` would answer now. The collector loads the
   vocabularies and the groups again whenever it changes, and before it publishes a label of a new
   version.
 - `file_rules` is § File classes'.
 
 **The index.** To find which slice names a session id, the labeller needs every run record's
-history. Reading and parsing all of them took 0.36 s for 527 state files on 2026-11-15, and that
-grows with every slice. So `stamps` and `label` hand back `index`, an opaque blob of what they
-parsed, keyed by each records file's size, `mtime_ns` and inode. The collector keeps it in memory
-and hands it back at the next call. The labeller then stats the data folder (11 ms for 543 files)
-and parses again only the files that changed.
+history, and reading and parsing all of them is most of a cold call's cost, which grows with every
+slice. So `stamps` and `label` hand back `index`, an opaque blob of what they parsed, keyed by
+each records file's size, `mtime_ns` and inode. The collector keeps it in memory and hands it back
+at the next call. The labeller then stats the data folder and parses again only the files that
+changed.
 
 - A missing, stale or foreign index is rebuilt. It is never an error and never changes an answer,
   only the cost.
-- It is marked with the version and is at most 16 MiB. Past that the labeller hands back none.
+- It is marked with the version and is at most 16 MiB. Past that the labeller hands back none
+  (`"index": null`).
 
-**The cost.** These are targets for § The replay check's timings, not promises:
+**The cost.** These are targets, timed on the home before a release as the collector runs the
+command, the process's start and the JSON included, not promises:
 - `stamps` over 20,000 transcripts with a warm index: under half a second;
 - `classes` over 100,000 files: under a second.
 
-Both are ordinary work in one process: hashing the canonical inputs, with the units of each slice
-digested once per call.
+Both are ordinary work in one process: hashing the canonical inputs, with the rows of each set of
+units digested once per call.
 
 ## The label request and answer
 
@@ -274,7 +289,8 @@ the part starts at, the facts of the Calls from there on, and the checkpoint"):
 
 **The answer is JSON Lines.** The first line is `{"contract", "version"}`. Then comes one line per
 transcript, in request order, main threads before their sub-agents. The last line is `{"done": true,
-"count": n, "index": "<blob>"}`. Lines are written and flushed as each transcript is done. If the
+"count": n, "index": "<blob>"}`, where `n` counts every transcript line, error lines among them.
+Lines are written and flushed as each transcript is done. If the
 collector's time limit cuts a batch short, the lines before the cut stand, and a missing `done` line
 says the batch was cut.
 
@@ -298,9 +314,9 @@ answer gives every row. An appended answer gives those from the boundary on, and
 | `tool_calls` | `{"tool_use_id", "command_class", "effect_kind", "effect_subject", "rules": [codes]}`, only for a Tool Call with at least one | those of the handed Calls |
 | `events` | `{"call", "kind", "at", "detail"}`, the labeller's own kinds | those of the handed Calls |
 | `context_parts` | `{"call", "kind": "digest_section", "name", "characters"}` | those of the handed Calls |
-| `test_runs` | § Test Runs and CI Builds | those of the handed Calls' Tool Calls; on the anchor, its stage's too |
+| `test_runs` | § Test Runs and CI Builds: a Tool Call's with its `tool_use_id`, a unit's with its `work_unit` | those of the handed Calls' Tool Calls; on the anchor, its stage's too |
 | `ci_waits` | `{"tool_use_id", "job", "number"}` | those of the handed Calls' Tool Calls |
-| `documents` | `{"id", "ask_category"}` | always |
+| `documents` | `{"id", "ask_category"}`, on a main thread only | always |
 
 - **`units`** holds the whole row of every Work Unit the labels name, and of every unit above
   them. On the stage's anchor it holds every unit of the stage. They come in an order where a
@@ -320,14 +336,14 @@ labelled whole in the same walk (AIWF-157). `why` is one of:
   transcript's;
 - `stamp`: the stamp now differs from the one the checkpoint was built under;
 - `boundary`: the line at `from.byte` is not the boundary Call's first line;
-- `behind`: an appended line reaches behind the boundary, such as a tool result for a settled Call,
-  which happened 50 times in 2 files on this home;
+- `behind`: an appended line reaches behind the boundary: a tool result for a Call whose result
+  was owed at the boundary (§ Settled, the boundary and the checkpoint);
 - `calls`: the handed Calls do not continue the checkpoint's.
 
 ## Settled, the boundary and the checkpoint
 
 **When a Call is settled** (F152.15). Its labels stop changing once the next Call's first line is
-in the file. Nothing a rule below reads about Call *i* comes after that line:
+in the file, as a rule. What a rule below reads about Call *i* comes before that line:
 
 - its tool results;
 - the user line that says whether a task notification came next (`turn_profile`'s `notified`);
@@ -339,6 +355,10 @@ The last Call is always open. Its labels are given as if it were the last: `turn
 a last turn with no tool as `record`. If more is appended, the open Call is labelled again. A
 whole labelling of the file as it stood gives the same, so a full replay agrees.
 
+A line can still reach back past the next Call's first line: a result that arrives after it, or
+an assistant line that adds a call to an earlier message. The Call it touches is settled only
+once that line is read.
+
 **The one stretch that stays open longer** is a background wait on a build. A `track_build.py` run
 with `run_in_background` gets its result at once, and its summary reaches the transcript later,
 in a later Tool Call's result. The CI Wait is a label of the waiting Tool Call, so that Call stays
@@ -347,32 +367,46 @@ open until one of three things happens:
 - its summary is matched (§ Test Runs and CI Builds);
 - its Launch ends, which means a later Launch began (a sub-agent has no Launch, so only the other
   two close its stretch);
-- 20 Calls have passed since the task notification that names its `tool_use_id`.
+- 20 counted Calls have passed since the task notification that names its `tool_use_id`. A
+  summary in the 20th Call's result still matches.
 
 After the second or the third it makes no CI Build: "ran in the background unread" (database.md,
 CI Wait). The bound keeps a transcript that never reads its waiter's output from holding its
 boundary open for the rest of its life.
 
-**The boundary** is the first Call that is not settled: the earliest open stretch's Call, else the
-last Call. `boundary.call` is that Call's id. `boundary.byte` is the offset of its first assistant
-line. The labeller's state is taken just before that line, so labelling again from there
-recomputes the boundary Call itself: its wake, its class and its Segment. The boundary moves back
-only by a whole labelling. A transcript with no Call has a null boundary and no checkpoint, and
-the collector labels it whole when it grows.
+**The boundary** is the latest counted Call before whose first line every earlier Call is
+settled. What holds it back is a Call a later part could still touch: an open CI wait, a result
+still to come after that line, a call added to an earlier message after it, or a wait matched
+after a later wait on its job opened. Each holds the boundary back to its own Call; with none,
+the boundary is the last counted Call. `boundary.call` is that Call's id. `boundary.byte` is the
+offset of its first assistant line. The labeller's state is taken just before that line, so
+labelling again from there recomputes the boundary Call itself: its wake, its class and its
+Segment. A Call `replay` does not count is never a boundary. The boundary moves back only by a
+whole labelling. A transcript with no counted Call has a null boundary and no checkpoint, and the
+collector labels it whole when it grows.
 
 **The checkpoint** is the labeller's state at the boundary, opaque to the collector and to Pilot.
 It is the text `1:<version>:<base64 of zlib-compressed JSON>`. That JSON holds the following:
 
-- the transcript's ids;
+- the transcript's ids and the contract;
 - the stamp it was built under;
 - the boundary;
-- `turn_profile`'s classifier state at the boundary: the last two turns as `replay` shapes them,
-  the lagged path sets, whether an edit has been seen, and the place in a run of reads;
+- the count of counted Calls before it;
+- `turn_profile`'s classifier state at the boundary: what the last two turns left behind for the
+  rules that look back, the lagged path sets, whether an edit has been seen, and the place in a
+  run of reads;
 - the Segment the Call before the boundary fell in, and its kind;
-- the open stretches;
-- each running Launch's tie to its unit;
-- the tool-use ids of settled Calls whose results are still owed. A result for any other earlier
-  id is `behind`.
+- what woke the transcript since the Call before: a person's prompt, a task notification, the
+  last tool whose result arrived, an opening prompt's digest sections;
+- that Call's tools and its Launch;
+- the running Launch's background tasks not yet notified as ended, with the files they write
+  (`no_tail_on_background_log`);
+- the tool-use ids of Calls whose results are still owed. A result for one of them in a later
+  part is `behind`; a result for any other id changes no label, as in a whole replay.
+
+No open stretch is in it: a CI wait still open holds the boundary at its own Call, so the part
+from the boundary on reads that wait again. A Launch's tie is not in it either: the stamp names
+the run records it was taken from.
 
 It is at most 256 KiB. One that would be larger is not handed back (`"checkpoint": null`), and the
 next labelling is whole.
@@ -407,15 +441,18 @@ rows below, and each `description` is the line given here. Declared lists:
 | `phase` | Phase | One phase of a slice's plan, from its first round to its merge. |
 | `dispatch` | Dispatch | One dispatch of one role in one round, as the driver recorded it. |
 | `sweep` | Sweep | A loop-tail gate sweep the driver ran. |
+| `gate` | Gate | A gate the driver ran: a phase's gate, or the doc, wrap-up or fixes gate. |
 
-Whether a driver's gate is a kind of its own is open (§ Open points, O2).
+A driver's gate is a kind of its own (O2, settled).
 
 **`nesting`** gives each allowed pairing as inner ⊂ outer:
 - stage ⊂ slice;
 - phase ⊂ stage;
 - dispatch ⊂ phase;
 - dispatch ⊂ stage;
-- sweep ⊂ stage.
+- sweep ⊂ stage;
+- gate ⊂ phase;
+- gate ⊂ stage.
 
 **`unit_outcome`:**
 
@@ -573,7 +610,7 @@ Each one's name is its code.
 |---|---|---|
 | `gate_red` | Gate red | A gate or a test suite a session ran came back red. |
 
-Its `is_error` is open (O8).
+Its `is_error` is open (O8): until it is ruled, null.
 
 **`context_part_kind`**, the labeller's own:
 
@@ -599,27 +636,29 @@ transcript served (§ Work Units, *The groups*), and none otherwise.
   billed assistant message, by `message.id`, as `replay` reads it. The flags come from the
   transcript's role (`slice_cost.turn_flags`):
   - a loop dispatch's main thread takes its history row's role;
-  - a Pilot stage's conversation takes `orchestrator:<stage>`;
+  - a stage's own session takes `orchestrator:<stage>`, whether Pilot ran it or not;
   - a sub-agent takes `subagent:<agent_type>`;
-  - anything else takes none.
+  - anything else takes none, an R3 session included.
 - **`avoidable_kind`** is `retry` or `fumble` where the class is that, else `batchable` where
   `batchable_strict` holds. The prototype's `avoid_of` reads them the same way.
 - **`batchable_condition`** is the turn's `batchable_why` code, on a read-class turn only
   (`orient-read`, `work-read`, `git-inspect`).
 - **`segment`** is the position of the Segment the Call falls in.
 - **`wait_cause`** is what woke the transcript between the Call before and this one. The first of
-  these rules that holds decides it:
+  these rules that holds decides it. In rules 1 to 4, a first Call is the first counted one:
   1. The first Call of the transcript: `startup`.
   2. The first Call of a later Launch, in a transcript the run records name as a dispatch: `driver`.
   3. The first Call of a later Launch, in a transcript neither Pilot nor the run records know:
      `person`.
-  4. The first Call of a later Launch of a Pilot conversation: open (O3). Until it is ruled, none.
+  4. The first Call of a later Launch of a Pilot conversation: open (O3). Until it is ruled, none
+     (`labeller_engine.O3_LATER_LAUNCH_OF_PILOT`).
   5. A person's prompt came in between: a user line that is no tool result, no task notification
      and not meta, as `turn_profile`'s `_user_text_kind` reads it: `person`.
   6. A task notification came in between, or the Call before waited on a background task
      (`TaskOutput`, `BashOutput`, `Monitor`): `background_task`.
-  7. The Call before ran tools: the one whose result arrived last decides. An `Agent` (or `Task`)
-     call gives `sub_agent`; any other gives `command`.
+  7. The Call before ran tools: the one whose result arrived last decides, or with no result yet,
+     the Call before's last tool. An `Agent` (or `Task`) call gives `sub_agent`; any other gives
+     `command`.
   8. Otherwise none.
 
 **Segment.** Each Call has a kind, `turn_profile`'s class read through this table, the one the
@@ -647,10 +686,12 @@ program.
   2. `chunked_wait`: it runs `run_loop.py wait`, `plan_loop.py wait` or `long_run.py wait`.
   3. `gate`: it runs `run_loop.py gate` or `spec_check.py`.
   4. `test_suite`: it runs `kc project test`, `pytest`, `go test`, `playwright test`,
-     `npm test`, `pnpm test` or `uv run --with pytest`.
+     `vitest` (bare or through `npx`, `pnpm` or `yarn`), `node --test`, `npm test`, `pnpm test`,
+     `yarn test` or `uv run --with pytest`. `npm test`, `pnpm test` and `yarn test` cover
+     `run test`, a `test:<script>` and the folder options before the script.
   5. `gate`: it runs `kc project lint|build`, `ruff`, `mypy`, `tsc`, `golangci-lint` or
      `ansible-lint`.
-  6. `sleep_poll`: it has a `sleep <n>` segment, or a `while`/`until` loop that sleeps.
+  6. `sleep_poll`: it has a `sleep <n>` segment.
   7. `git`: its program is `git`.
 
   A matching program name inside quoted text or a heredoc does not count.
@@ -664,11 +705,16 @@ program.
   | `mcp__pilot__register_document` | `document_registered` | the path it was given |
   | a `git push` that exited 0 | `push` | none |
 
-  Any `mcp__<server>__<tool>` whose tool is one of these counts, whatever the server's name.
+  Any `mcp__<server>__<tool>` whose tool is one of these counts, whatever the server's name. A
+  `post` that answers `"id": null`, a fieldnote the store already held, has no effect. A push has
+  exited 0 where the call succeeded and its output shows no rejection.
 - **`rules`** lists the codes of the Rules the call breached:
-  - `no_sleep_poll`: its command class is `sleep_poll`.
+  - `no_sleep_poll`: a poll loop, a `while`, `until` or `for` loop that sleeps and runs a check
+    in its body, whatever the command's class. A single sleep that lets something settle, as in
+    `sleep 5 && curl …`, breaches nothing.
   - `no_git_add_all`: `git add -A`, `git add --all`, `git add .`, or `git commit` with `-a`
-    (`-am`). Whether this counts only in a shared tree is open (O9).
+    (`-am`). Whether this counts only in a shared tree is open (O9); until it is ruled, it counts
+    in any tree.
   - `no_tail_on_background_log`: a `tail` of a file that a background task of the same Launch is
     still writing. That means the output file its notification will name, or the target of a
     `>` or `tee` in a `run_in_background` command, where that task has not yet been notified as
@@ -696,8 +742,8 @@ prompt's orientation digest gives one `digest_section` per `## ` section of the 
 | any other `<slice>/asks/<n>-<slug>.md`, put by a run stage's Session | `run_question` |
 | anything else | none |
 
-Here `<slice>` is a slice folder of a spec repo, as § File classes finds one. The stage is the
-putting Session's tie. The slugs are the ones the writers use: the plan-preparer's
+Here `<slice>` is a slice folder, by § File classes' pattern alone, in whatever repository. The
+stage is the putting Session's tie. The slugs are the ones the writers use: the plan-preparer's
 `requirements`, the plan loop's `plan-review` and `plan-questions`, and the run loop's
 `QUESTION_DOCS`. The record's samples put `asks/4-run-stopped-on-postgres-memory.md`, which a
 run-slice session wrote, under `run_question` (`tools/cost-dashboard/logical-model.md` §5).
@@ -713,12 +759,15 @@ Launches are tied in this order:
    slice's run. The Launch is tied to the dispatch whose row's `[started_at, ts]` holds the
    Launch's `started_at`, else to the first row ending after it. `started_at` is the row's, else
    `ts − duration_s` for a row from before 0.10.80. A Launch no ended row holds is the running
-   round, named from `in_flight`.
+   round, named from `in_flight`; with no `in_flight`, a Launch after every row ended has no
+   unit.
 2. **A stage's own session.** Its session id is a state file's `orchestrator.session`. For a
    Pilot work item, that is Pilot's conversation id. Every Launch is the stage's, except one whose
    Pilot Session is a clarification, which is the slice's: the prototype gave a clarification its
    slice and no stage. A Launch's Pilot Session is the latest one created at or before its
-   `started_at` plus 5 s, from the context.
+   `started_at` plus 5 s, from the context. A session that orchestrated two stages, a plan and a
+   run on one conversation, places each Launch the same way by the stages' `created_at`: the
+   latest stage created by then, else the first.
 3. **A Pilot stage before its loop.** The conversation's first Session has a brief that
    `^\s*/dev:(plan|run)-slice\s+(\S+)` matches, and no state file names it yet, as in a plan-slice
    stage while its plan-preparer runs. This gives no unit until the loop's state file names the
@@ -743,14 +792,18 @@ since its conversation is the orchestrator's.
 | dispatch in a phase | `<phase>\|<role>\|<round>` | `…\|run\|P1\|code-writer\|1` |
 | dispatch in a stage | `<stage>\|<role>\|<round>` | `…\|plan\|plan-reviewer\|2`, `…\|run\|test-agent\|1` |
 | sweep | `<slice>\|run\|sweep\|<n>`, `n` the sweep's place among its stage's `sweep` rows, which is `sweeps/r<n>.json`'s `run` | `…\|run\|sweep\|1` |
+| a phase's gate | `<phase>\|gate\|<round>` | `…\|run\|P1\|gate\|2` |
+| a stage's gate | `<stage>\|<role>\|<round>`, the role being `doc-gate`, `wrap-up-gate`, `fixes-gate` or `fixes-doc-gate` | `…\|run\|doc-gate\|1` |
 
 - `<role>` and `<round>` are the history row's own. The triple (phase, role, round) repeats in the
-  history: 210 triples repeat on 2026-11-15, as with a question and the round after its ruling, a
-  reattached session, or old rows with no phase. So the *n*-th row of one such triple, in history
-  order, takes `.<n>` after its round from the second on, as in `…|code-writer|1.2`. History is
-  append-only, so a row's key never changes.
+  history, as with a question and the round after its ruling, a reattached session, or old rows
+  with no phase. So the *n*-th row of one such triple, in history order, takes `.<n>` after its
+  round from the second on, as in `…|code-writer|1.2` or `…|gate|1.2`. History is append-only,
+  so a row's key never changes.
 - A row with no round takes its place among its role's rows in that phase or stage.
 - A history row of the role `orchestrator` is no dispatch.
+- A state file of the older task runner, with a `tasks` key, is read the same way: its `task` and
+  `tasks` stand for the phases, and its run stage is done when its top-level `phase` is `done`.
 
 **The attributes**, each read from the run records alone:
 
@@ -759,23 +812,27 @@ since its conversation is the orchestrator's.
   - a stage: `Plan`, `Run`, `Triage` or `Close out`;
   - a phase: the label of its `P<id>.code` step in `progress`, else `P<id>`;
   - a dispatch: `<role> <round>`;
-  - a sweep: `Gate sweep <n>`.
+  - a sweep: `Gate sweep <n>`;
+  - a gate: `Gate <round>`, `Doc gate <round>`, `Wrap-up gate <round>`, `Fixes gate <round>` or
+    `Fixes doc gate <round>`.
 - **`variant`:**
   - a stage: its stage;
   - a dispatch: the row's `kind` (`first`, `gate-fix`, `review-fix`, `ruling`, `fixes`), or a
-    consult's `site`, where the row has one.
-- **`role`** and **`round`:** a dispatch's, from its row.
+    consult's `site`, where the row has one;
+  - a gate: its row's role.
+- **`role`:** a dispatch's, from its row. A gate has none.
+- **`round`:** a dispatch's or a gate's, from its row; a sweep's `n`.
 - **`card`:** a slice's, `slice.json`'s `card`, as given (AIWF-157).
 - **`started_at` and `ended_at`:**
-  - a dispatch or a sweep: its row's start and `ts`, or `in_flight.started_at` and none while it
-    runs;
+  - a dispatch, a gate or a sweep: its row's start and `ts`, or `in_flight.started_at` and none
+    while it runs;
   - a phase: its first dispatch's start, and its last row's `ts` once its `status` is `merged`;
   - a stage: its state file's `created_at`, and its end once it is done. The plan stage is done
     when `plan_state.json`'s `phase` is `done`. The run stage is done when `state.json`'s
     `run_phase` is `done`. The end is `exit.ts` of a code-0 exit, else the last row's `ts`;
   - a slice: its earliest stage's start, and its run stage's end.
 - **`outcome`:**
-  - a dispatch or a sweep: its row's `outcome`, through the table below;
+  - a dispatch, a gate or a sweep: its row's `outcome`, through the table below;
   - a phase, a stage or a slice: `done` once it is done, as above.
 
   | Role | History outcome | Unit Outcome |
@@ -785,7 +842,7 @@ since its conversation is the orchestrator's.
   | code-reviewer | `signoff` | `signoff` |
   | code-reviewer, plan-reviewer | `issues` | `issues` |
   | gate, sweep, doc-gate, wrap-up-gate, fixes-gate, fixes-doc-gate | `green` / `red` | `green` / `red` |
-  | every other pair | | open (O1). Until it is ruled, none |
+  | every other pair | | open (O1). Until it is ruled, none (`labeller_records.OTHER_OUTCOMES`, empty) |
 
 - **`rework_kind`**, on dispatches, from `slice_cost.derive`'s rule:
   - The run's completion consults take `consult`. These are the consult rows whose `site` is
@@ -797,11 +854,14 @@ since its conversation is the orchestrator's.
 - **`occasioned_by`**, on a dispatch, points at the unit whose outcome made it necessary:
   - a code-writer round of kind `review-fix`, or on a row with no `kind` one that follows an
     `issues` review in its phase: that review;
-  - kind `ruling`, or a writer's row that follows its own `question` row: that question's dispatch;
+  - kind `ruling`, or a writer's row that follows its own `question` row, whatever its kind: that
+    question's dispatch;
+  - a code-writer round of kind `gate-fix`, or on a row with no `kind` one that follows a red gate
+    or a test-fixer in its phase: the red gate before it;
+  - a test-fixer in a phase: the red gate before it; one with no phase, on a sweep flake: the
+    sweep before it;
   - a consult with a phase: the review before it;
-  - a test-fixer on a sweep flake: that sweep;
   - a plan-writer round after the first: the plan-reviewer round before it.
-  - A gate fix's cause is the red gate, which is no unit until O2 is ruled.
 - **Measures** (`unit_measure`):
   - `planned_phases` and `acceptance_criteria` sit on the slice, from `slice.json`'s `plan`.
   - `review_findings` sits on each code-reviewer and plan-reviewer dispatch. It counts the row's
@@ -812,22 +872,23 @@ since its conversation is the orchestrator's.
     the slice's run").
   - A measure is left out where its fact is.
 
-**The stage's anchor.** The units no Launch carries out are the sweeps, and the gates once O2 is
-ruled, with the driver's Test Runs. The *anchor* carries them, together with every other unit of
-its stage. The anchor is the stage's `orchestrator.session` transcript, else, for one of the 22
-stages run by hand with no orchestrator, the transcript of its first history row that names a
-session. The anchor's stamp covers its whole stage, so it is labelled again whole when any unit of
-the stage changes. A run stage's orchestrator is a small transcript of waits, so that costs tens
-of milliseconds.
+**The stage's anchor.** The units no Launch carries out are the sweeps and the gates, with the
+driver's Test Runs. The *anchor* carries them, together with every other unit of its stage. The
+anchor is the stage's `orchestrator.session` transcript, else, for a stage run by hand with no
+orchestrator, the transcript of its first history row that names a session. The anchor's stamp
+covers its whole stage, so it is labelled again whole when any unit of the stage changes. A run
+stage's orchestrator is a small transcript of waits, so that costs tens of milliseconds.
 
 **The groups.** `groups/<SpecRepo>.toml`, the seed's copy of the prototype's `adopted/*.toml`,
 holds the header `spec_repo`, `repo` and `environment`, then `[[project]]` tables with `name`,
 `summary` and `slices`. `vocabularies` declares each as `{"key", "spec_repo", "name",
-"summary", "slices"}`.
+"summary", "slices"}`, where `slices` are the keys of its adopted slices. A project with no adopted
+slice is not declared, and an adopted slice no project lists gets a group of its own, so the
+declared groups follow the `pilot` header.
 
 - **The key** is `<SpecRepo>/<the lowest slice folder it lists>`. It survives a rename and slices
-  added later. A slice listed in no group gets a group of its own, keyed `<SpecRepo>/<folder>` and
-  named after its `slice.json` title, as the toml's own comment has it. If that slice later joins
+  added later. A group of its own is keyed `<SpecRepo>/<folder>` and named after its
+  `slice.json` title, as the toml's own comment has it. If that slice later joins
   a group whose lowest slice it is, the project keeps its row and takes the group's name.
 - **An adopted slice** is a slice of a spec repo that has a groups file, whose state files have no
   `tasks` key, and none of whose recorded sessions (orchestrators, history rows, `in_flight`) is
@@ -849,42 +910,52 @@ holds the header `spec_repo`, `repo` and `environment`, then `[[project]]` table
   `spec_of_cwd` gives it. The transcript's `adopted_group` is its slice's group. Each R2 to R4
   slice name goes into the stamp's `<named>`.
 - **R5 is open** (O6): the triage session, found by the commit that added the slice's `slice.md`.
+  Until it is ruled, none (`labeller_records.TRIAGE_SESSIONS`, off).
 
 ## Test Runs and CI Builds
 
 **A Test Run of a Tool Call.** A foreground Tool Call of the class `test_suite` whose result shows
 a test runner's summary is one Test Run per suite. A `kc project test` that runs several
 components is one per component. A background run, a result saved to disk with no summary in what
-the model saw, and a result with no summary give none. Each Test Run takes these fields:
+the model saw, and a result with no summary give none. So does a `kc` component whose output
+holds no runner's count. A summary whose component head a `tail` cut off is `--project`'s
+component where the command names one, else it is dropped. Each Test Run takes these fields:
 
-- `suite` is `<repo>/<component>/<verb>` for `kc project` (`PilotApp/backend/test`), else
-  `<repo>/<runner>`. `<repo>` is the checkout the command ran in.
+- `suite` is the Test Suite's code: `<repo>/<component>/<verb>` for `kc project`
+  (`PilotApp/backend/test`), else `<repo>/<runner>`. `<repo>` is the checkout the command ran in.
+  The suite's name in `test_suites` is the same words with spaces, `PilotApp backend test`.
 - `passed` is whether the suite's summary has no failure.
-- `tests` is the summary's count.
-- `retries_allowed` is the retries the command or the output shows, as Playwright's
-  `--retries=<n>` or the detect-flakes mode's reruns.
+- `tests` is the summary's count. A plain `go test` prints no count of tests, so without `-v` it
+  counts the packages.
+- `retries_allowed` is the retries the command's flag shows (Playwright's `--retries=<n>`,
+  pytest's `--reruns`, vitest's `--retry`), else those the output shows, as the detect-flakes
+  mode's reruns, else none.
 - `started_at` and `ended_at` are the call's request and result times.
-- One Test Failure is made per test the summary names as failed or flaky, with its attempts and
-  whether it was `flaky`. A Test is its runner's own name: a pytest node id, or a Playwright
-  file and title.
+- One Test Failure is made per test the summary names as failed or flaky, with whether it was
+  `flaky` and its attempts: the output's count, else the retries allowed plus one, else 1 (2 for
+  a flaky test). A Test is its runner's own name: a pytest node id; a Playwright file and its
+  titles, `file › title › title`, with no `:line:col` and no `[project]`; a Go test as
+  `<package>.<Test>`.
 
-Part 3 pins the summaries this reads (pytest, Playwright, `go test`, and kc's own per-component
-lines) with fixtures, one for each runner.
+Part 3 pins the summaries this reads (pytest, Playwright, vitest, `go test`, `node --test`, and
+kc's own per-component lines) with fixtures, one for each runner.
 
 **A Test Run of a Work Unit**, from the driver's records. It is one per `verb: test` result of a
 sweep (`sweeps/r<n>.json`'s `results`), run by the sweep's unit, and one per `projects` entry of a
-phase gate's record (`gates/P<id>_gate_<n>.json`), run by the unit O2 gives a gate. It takes these
-fields:
+phase gate's record (`gates/P<id>_gate_<n>.json`), run by the gate's unit. It takes these fields:
 
-- `suite` is `<repo>/<component>/test`. The repo is the result's `repo`, or for a phase gate
-  `state.json`'s `phases[<id>].target`. `outcome` gives `passed`.
-- `started_at` and `ended_at` come from the record.
-- `nothing_ran` makes no Test Run.
+- `suite` is `<repo>/<component>/test`. The repo is the result's `repo`, or for a phase gate the
+  base name of `state.json`'s `phases[<id>].landed.root`, else of its `target`. `outcome` gives
+  `passed`.
+- `started_at` and `ended_at` come from the record. A sweep's result ended at the sweep's
+  `ran_at` and started its `duration_s` before.
+- No Test Run comes of `nothing_ran`, of a sweep result marked `reused`, or of a gate's
+  `spec_check`, `migration_check`, `waived` or `covered` entries.
 
 The records hold no count of tests, and Test Run's `tests` is required. Whether these Test Runs
-exist before something gives that count is open (O4). Until it is ruled, they are not handed.
-Old slices have no gate or sweep records at all (runner-state.md, "not the gate and sweep
-records").
+exist before something gives that count is open (O4). Until it is ruled, they are not handed
+(`labeller_records.DRIVER_TEST_RUNS`, off). Old slices have no gate or sweep records at all
+(runner-state.md, "not the gate and sweep records").
 
 **CI Builds** come from the wait (F152.10; AIWF-195). A Tool Call of the class `ci_wait` is read
 like this:
@@ -894,19 +965,22 @@ like this:
 - The summary that `track_build.py` prints to stdout under `=== Build tracking summary ===` gives
   the rest. It reaches the transcript in the call's own result, or for a background wait in a
   later Tool Call's result. That later call is one that reads the output file its task
-  notification names, or `TaskOutput` or `BashOutput` with its task's id. Failing both, it is the
-  latest unmatched background wait on the same job in the same Launch.
+  notification names or the target of the wait's own `>` or `tee`, or `TaskOutput` or
+  `BashOutput` with its task's id. Failing those, it is the latest unmatched background wait on
+  the same job in the same Launch.
 - Each table row is one CI Build, by `job` and `number`. That includes the pipelines the build
   triggered, which are rows of the same table, each with a CI Wait from the same Tool Call.
   - `result` is the row's word, as a `build_result`.
   - `queued_at`, `started_at` and `ended_at` come from the row's `↳ queued … started … ended …`
     line (DI-42, 2026-11-15). A `?`, or a summary from before DI-42, gives none.
-  - `commit` is the `--hash`, for the row whose job the command named.
+  - `commit` is the `--hash`, for the row whose job the command named, a build that superseded
+    the first one included.
 - **`deployed_at`** goes on the build that a handoff heading of the `=== Argo CD follow ===`
   section names (`… pushed to main, pins … (PilotApp/Build-Main #180)`), where that section's
-  `Result:` line opens `rolled`. It is the moment the wait returned (database.md, CI Build), which
-  for a background wait is its task notification's time. DI-42's `↳ sync …, roll ended <t>` gives
-  the roll's own end. Which of the two to take is open (O5).
+  `Result:` line opens `rolled`. It is the moment the wait returned (database.md, CI Build; O5,
+  settled): for a background wait its task notification's time, or the reading call's result time
+  where the summary was read before the notification came. DI-42's `↳ sync …, roll ended <t>` is
+  read and not taken.
 - A wait whose summary never reached the transcript makes no CI Build and no CI Wait. Its Tool
   Call keeps `ci_wait` and its run time. Neither does a run that exited before its table: no build
   appeared, or `--help`.
@@ -927,9 +1001,10 @@ The classes come back in request order.
 
 **The rules, first match wins.** A project's own rules go first. They are `projects/<repo>.json`'s
 `file_classes`, in their order, copied from its `.aiworkflowrc`, in the grammar of
-[project-contract.md](project-contract.md) § File classes. The starting list follows in this
-order, from `PilotAppSpecs/tools/cost-dashboard/dispatch-work.md` §7 with AIWorkflow's rule added
-(t17 D2):
+[project-contract.md](project-contract.md) § File classes. A pattern's leading `/` is stripped,
+every pattern being read from the repository's root already. A rule of an unknown class, or with
+no paths, is skipped. The starting list follows in this order, from
+`PilotAppSpecs/tools/cost-dashboard/dispatch-work.md` §7 with AIWorkflow's rule added (t17 D2):
 
 | # | Class | Paths |
 |---|---|---|
@@ -943,16 +1018,17 @@ order, from `PilotAppSpecs/tools/cost-dashboard/dispatch-work.md` §7 with AIWor
 - **`**/` matches zero or more segments**, so `**/generated/**` holds `generated/x` too.
 - **A spec repo** is a name among the run records' `runs/<spec-repo>/` folders or the groups'
   `spec_repo`. A slice folder is a path segment matching `\d{3}[a-z]?_[a-z0-9_]+` directly under
-  `slices/`, or under `slices/<backlog|active|completed|archive|cancelled|deferred>/`.
-- **AIWorkflow's rule** stands where the table has it, after the tests and before the docs. Its
-  place is open (O7).
+  the repository's root `slices/`, or under
+  `slices/<backlog|active|completed|archive|cancelled|deferred>/`.
+- **AIWorkflow's rule** stands where the table has it, after the tests and before the docs (O7,
+  settled), so `plugins/dev/tools/test_*.py` stays `test` and the skills and agents are `code`.
 - **`file_rules`** is the digest of the effective rules: the version, every `projects/*.json`'s
-  rules and the set of spec repos. `stamps` answers it too, at the cost of a stat and a few small
-  reads. The record has every File classed again at every walk, with no stamp on the File
-  (decision 79.33). That is the same as reclassing every File whenever `file_rules` differs from
-  the one the collector last classed under, and classing a new File as it appears. After a restart
-  the collector does not know which `file_rules` Pilot's classes were made under, so it reclasses
-  every File once.
+  rules (the rules alone, not the file's `updated_at`) and the set of spec repos. `stamps` answers
+  it too, at the cost of a stat and a few small reads. The record has every File classed again at
+  every walk, with no stamp on the File (decision 79.33). That is the same as reclassing every File
+  whenever `file_rules` differs from the one the collector last classed under, and classing a new
+  File as it appears. After a restart the collector does not know which `file_rules` Pilot's classes
+  were made under, so it reclasses every File once.
 - **The cost.** Each repository's rules are compiled to one regular expression per rule, so a
   File costs one match per rule.
 
@@ -961,41 +1037,69 @@ order, from `PilotAppSpecs/tools/cost-dashboard/dispatch-work.md` §7 with AIWor
 A full replay is the specification: labelling a file in parts, cut after any Call, gives what
 labelling it whole gives (F152.16). The check is part of the labeller.
 
-**The corpus test**, `test_labeller.py`. Its transcripts are invented, built by a fixture builder
-in the suite, and no real transcript is committed. Between them they exercise every rule of this
-page: each class and wait cause, an open background CI wait that is matched, one left unread, and
-one past its 20 Calls, a late tool result (`behind`), several Launches, a dispatch and a stage
-session with run records, an adopted session, and sub-agents. For each transcript the test:
+**The corpus tests.** Their transcripts are invented, built by the engine suite's fixture builder
+(`Script` in `test_labeller_engine.py`), and no real transcript is committed. Each test labels a
+transcript whole, then grows the file the way the collector meets it: labelled whole as it stood
+at a cut, then from the boundary and checkpoint that handed back at every later cut, an answer
+`whole` labelled whole again. It merges the parts the way Pilot does, the labels before the
+boundary kept and those from it on replaced (assertion 561), and compares the merge with the
+whole, label by label. The cuts fall just before every Call's first line, one at a time, and at
+two and three random bytes in turn, inside a line still being written included.
 
-1. labels it whole;
-2. for every *k*, labels whole the file as it stood just before Call *k+1*'s first line, then
-   labels the rest from the boundary and checkpoint that handed back, through the JSON both ways;
-3. cuts it at two and three random points in turn;
-4. merges each result the way Pilot does: the labels before the boundary kept, and those from it
-   on replaced, as assertion 561 has it;
-5. compares the merge with the whole, label by label.
+- **`test_labeller_engine.py`** holds the engine to it on a corpus that exercises each class and
+  wait cause, an open background CI wait that is matched, one left unread and one past its 20
+  Calls, a late tool result (`behind`), a call added to an earlier message, several Launches,
+  `<synthetic>` Calls and a sub-agent, and on random sessions. Part 2's tie and Part 3's rules are
+  stood in for there, and one test runs Part 3's own.
+- **`test_labeller_check.py`** runs it on real modules throughout, over an invented home: a
+  dispatch with a sub-agent, a stage's own session, an old session adopted by its first prompt
+  and a session nobody knows, beside run records with a slice's plan and run, its gates and
+  sweeps, `slice.json`, a groups file and a project's file rules. It runs `check` over that home,
+  and every verb as a subprocess, JSON both ways: `info`, `vocabularies`, `stamps`, `label` whole
+  and then appended with the checkpoint handed back, `classes` and `check`.
+- **The stamp** is pinned in both `test_labeller_records.py` and `test_labeller_check.py`: a
+  rewrite of `state.json` that changes no derived fact changes no stamp, and one that changes a
+  unit's row changes the stamp of every transcript that names the unit and no other.
 
-It also pins the stamp: a rewrite of `state.json` that changes no derived fact changes no stamp,
-and one that changes a unit's row changes the stamp of every transcript that names the unit.
-
-**The command**, `labeller.py check`, runs the same comparison over real transcripts on a home:
+**The command**, `labeller.py check`, runs the same comparison over real transcripts on a home.
+It takes flags, not a request on stdin:
 
 ```
-check [--projects DIR] [--plugins DIR] [--sample N] [--cuts K] [--seed S] [--context FILE] [PATH…]
+check [--projects DIR] [--plugins DIR] [--data DIR] [--sample N] [--cuts K] [--every N]
+      [--seed S] [--context FILE] [--paths FILE] [--] [PATH…]
 ```
 
-- It takes the transcripts given, else a sample of `N` (default 50) from `projects`. It makes `K`
-  cuts each (default 5, and every cut for a transcript under 200 Calls).
-- It reads the Calls by `message.id` the way `replay` does, and it treats a file as one Launch,
-  since the collector's Launch rule is not the plugin's. Launch-dependent labels are held by the
-  corpus, whose Launches are explicit.
-- `--context` is a JSON file of conversations, shaped as in § What Pilot hands with a conversation.
-  Without it, every conversation has none.
-- It prints a line for each transcript (`ok`, or the first label that differs, with the cut), then
-  the timings of whole, appended and stamp labelling.
-- It exits 0 when every transcript agrees and 1 otherwise.
+- **Which transcripts.** The `PATH`s given and the lines of `--paths`, absolute or under
+  `--projects`, else a sample of `N` (default 50; 0 for every one) drawn with `--seed` from the
+  main threads (`<project>/<session>.jsonl`) and sub-agents (`agent-*.jsonl` under
+  `<project>/<session>/subagents/`) of `--projects`. A relative path starts with a project
+  folder's `-`, so it goes after `--`. A path outside `--projects` is refused.
+- **The home.** `--projects` and `--plugins` default to `~/.claude/projects` and
+  `~/.claude/plugins`; `--data` names the run records' folder in place of the plugins' own, as
+  `home.data` does.
+- **The cuts.** A transcript of fewer than `--every` Calls (default 200) is cut just before every
+  Call's first line, one at a time; a longer one at `K` of them, drawn at random. Then `K` runs
+  (default 5) of one to three random bytes each.
+- **It stands in for the collector.** It reads the Calls as § Names both sides compute gives them,
+  treats a main thread as one Launch, since the collector's Launch rule is not the plugin's, and
+  takes a sub-agent's `agent_type` from its `agent-*.meta.json`. Launch-dependent labels are held
+  by the corpus, whose Launches are explicit. `--context` is a JSON file of conversations, shaped
+  as in § What Pilot hands with a conversation, a list or `{"pilot": {"conversations"},
+  "conversations"}`. Without it, every conversation has none.
+- **What it compares.** Each merge with the whole, label by label, and the rows Pilot writes by
+  their keys (the units, Test Suites and CI Builds), the last one written of each. Then one
+  `stamps` call over every transcript labelled, each with its label's stamp held, which must give
+  every stamp back.
+- **The report**, for a person: a line per transcript, `ok`, `differs` with the cut and the first
+  label that differs, or `error`, with its Call count, its cuts and the `why`s of any answer
+  `whole`; a `stamp` line per stamp not given back; then the count of each, and the timings of
+  whole labelling (seconds per MB, the largest file), of appended labelling (median, p95, max),
+  and of the `stamps` call and the run records' cold load.
+- **Exit codes.** 0 when every transcript agrees and every stamp is given back, 1 otherwise, 2 for
+  arguments it cannot use.
 
-It writes nothing. Run it after any change to a rule, and on the home before a release.
+It writes nothing: a cut is the file read as it stood when it was that long. Run it after any
+change to a rule, and on the home before a release.
 
 Pilot's own net is the replay at rest (F152.16), which logs any settled row that a whole replay
 changes. Such a row is a defect of the labeller's and gets a card here, with the transcript's
@@ -1030,10 +1134,11 @@ check as its reproduction.
 ## Open points
 
 Each changes a figure the dashboard can show, and neither the record nor the rulings settles it.
-Each is the operator's to rule. Until then, the build gives no label where a point has no default
-in the record, as each item says.
+Each is the operator's to rule, and the ruling is pending: PilotAppSpecs
+`tools/cost-dashboard/asks/t17-labeller-2.md` puts them as D5 to D10. Until a point is ruled, the
+build gives its default, set in one place in the code, as each item says.
 
-- **O1. Unit Outcome for the history's other words.** These are the plan-reviewer's `go` and
+- **O1. Unit Outcome for the history's other words** (D5). These are the plan-reviewer's `go` and
   `questions`, the plan-writer's `questions`, the test-agent's `clean` and `findings`, the
   test-fixer's and the old code-tester's `clean` and `issues`, every role's `blocked` and
   `session_limit`, the gates' `nothing_ran`, and the consults' actions (`complete`, `proceed`,
@@ -1041,46 +1146,43 @@ in the record, as each item says.
   - fold them into the record's six (`go` as `signoff`, `questions` as `question`, `clean` as
     `done`, `findings` as `issues`);
   - declare each word as a value of its own;
-  - leave them with no outcome. Until ruled, this is what the build does.
-- **O2. A driver's gate as a Work Unit.** The record's Work Unit covers "a driver's gate or
-  sweep", and its kinds name only `sweep`. The choices:
-  - a kind `gate` (gate ⊂ phase, gate ⊂ stage) for the phase gates and the doc, wrap-up and fixes
-    gates, carried by the anchor;
-  - a `dispatch` with the role `gate`;
-  - no unit, and the gate's Test Runs on its phase.
+  - leave them with no outcome.
 
-  Until ruled, there are no gate units.
-- **O3. The gap before a later Launch of a Pilot conversation.** This is a person answering, Pilot
-  holding the session, or Pilot's own nudge. Telling them apart needs what the record does not
-  hand the labeller: each Session's Holds, and its Turns' `cause`. The choices:
+  The build gives no outcome (`labeller_records.OTHER_OUTCOMES`, empty).
+- **O3. The gap before a later Launch of a Pilot conversation** (D6). This is a person answering,
+  Pilot holding the session, or Pilot's own nudge. Telling them apart needs what the record does
+  not hand the labeller: each Session's Holds, and its Turns' `cause`. The choices:
   - Pilot hands both, and the labeller gives `hold` where a Hold overlaps the gap, else `person` for
     a Turn a person caused, else `driver`;
   - the labeller gives `person` to all of them;
   - none.
 
-  Until ruled, none.
-- **O4. The driver's Test Runs have no test count.** The choices:
+  The build gives none (`labeller_engine.O3_LATER_LAUNCH_OF_PILOT`).
+- **O4. The driver's Test Runs have no test count** (D7). The choices:
   - the driver records each suite's count in the gate and sweep records (an AIWF card);
   - the record makes Test Run's `tests` optional (a P card);
   - no Test Run from the driver's records.
 
-  Until ruled, the third.
-- **O5. `deployed_at`.** The choices are the moment the wait returned, as the record has it, or
-  the `roll ended` time that DI-42 prints, which is the roll's own end. Until ruled, the record's.
-- **O6. The triage sessions of old slices (R5).** The choices:
+  The build gives the third (`labeller_records.DRIVER_TEST_RUNS`, off; on, they are handed with
+  `tests` null).
+- **O6. The triage sessions of old slices (R5)** (D8). The choices:
   - the seed writes each old slice's triage session into `slice.json`, found as the prototype did
     from the commit that added `slice.md` (an AIWF card for the seed);
   - they stay on no project.
 
-  Until ruled, the second.
-- **O7. Where AIWorkflow's `plugins/` rule stands.** The choices:
-  - after the test rule, so `plugins/dev/tools/test_*.py` stays `test`, and before the docs, so
-    the skills and agents are `code`. This is the table's place;
-  - at the head, so all of `plugins/` is `code`.
-- **O8. `gate_red`'s `is_error`.** Whether a red gate counts among the error events.
-- **O9. `no_git_add_all` outside a shared tree.** The record's sample breaches it "in a shared
-  tree", and the labeller cannot tell which trees kc marks shared. The choices are any tree (the
-  rule above) or only a spec repo's.
+  The build gives the second (`labeller_records.TRIAGE_SESSIONS`, off; on, it ties the session
+  ids `slice.json`'s `triage_sessions` lists to the slice's `triage` stage).
+- **O8. `gate_red`'s `is_error`** (D9): whether a red gate counts among the error events. The
+  build declares it null (`labeller_vocab.GATE_RED_IS_ERROR`).
+- **O9. `no_git_add_all` outside a shared tree** (D10). The record's sample breaches it "in a
+  shared tree", and the labeller cannot tell which trees kc marks shared. The choices are any tree
+  or only a spec repo's. The build counts any tree (`labeller_tools.ADD_ALL_ONLY_IN_SPEC_REPO`,
+  off).
+
+**Settled.** O2: a driver's gate is a Work Unit of the kind `gate`, gate ⊂ phase and gate ⊂
+stage, carried by the anchor (§ Work Units). O5: `deployed_at` is the record's, the moment the
+wait returned (`labeller_tools.deployed_at`). O7: AIWorkflow's `plugins/` rule stands after the
+test rule and before the docs rule (§ File classes).
 
 ## Modules and build parts
 
@@ -1089,48 +1191,51 @@ in the record, as each item says.
 
 | Module | Holds |
 |---|---|
-| `labeller.py` | the verbs, the request and answer shapes, the contract check, the errors, the JSON Lines stream, the batch loop |
+| `labeller.py` | the verbs, the request and answer shapes, the contract check, the refusals, the stamp's text and its context inputs, the JSON Lines stream, the batch loop |
 | `labeller_vocab.py` | every declared list as data: § The vocabularies, the nestings, `declarations` |
 | `labeller_records.py` | the run records: the index and its blob, ties, Work Units and their keys, attributes, outcomes, measures and anchors, the driver's Test Runs, the groups and adoption, the stamp's record inputs |
 | `labeller_tools.py` | the rules of one Tool Call or prompt: command class, effects, rule breaches, the Test Run summaries, `track_build.py`'s summary, digest sections. Pure functions of the call, its result and a little context |
 | `labeller_engine.py` | the transcript engine: reading from a byte, matching the handed Calls, the classifier steps, wait causes, Segments, open stretches, settledness, the boundary and the checkpoint |
 | `labeller_files.py` | § File classes: the grammar, the starting list, the spec repos, `file_rules` |
+| `labeller_check.py` | § The replay check's command: the transcripts as the collector finds them, the cuts, Pilot's merge, the comparison, the report |
 
-**The build parts.** There are five. Parts 1 to 3 run in parallel, Part 4 starts beside them
-against their interfaces, and Part 5 comes last.
+**The interfaces between them**, as built:
 
-1. **The command and the declarations**: `labeller.py`, `labeller_vocab.py` and
-   `labeller_files.py`. Its interfaces are three functions, which Parts 2, 4 and 5 fill:
-   - `label_batch(request, records, write_line)`;
-   - `stamps(request, records)`;
-   - `classify(files, rules)`.
+- **`labeller.py`** calls `label_batch(request, records, write_line, index=None)`,
+  `stamps(request, records, index=None)` and `labeller_files.classify(files, rules)`, the index
+  being the blob `Records.load` handed back. It caps the index handed out at 16 MiB. It hands
+  `label_one` the request's transcript with `session_id`, `file` (its absolute path), `stamp`,
+  `conversation`, `pilot` and `restamp(named) -> (stamp, tie)` added; the slices a file names reach
+  `records.tie` as the transcript's `named`.
+- **`labeller_records.Records`**: `load(data_dir, blob=None) -> (records, blob)`;
+  `tie(conversation, transcript) -> Tie`; `unit_rows(keys)`; `stage_rows(stage_key)`;
+  `test_runs(stage_key)` and `driver_test_runs(stage_key)`; `groups()`, as `vocabularies`
+  declares them; `use_pilot(ids)`; `needs_facts(conversation, transcript)` and
+  `named_from_facts(facts)`, beside the module's `read_facts(path, size=None)`; `spec_repos()`;
+  `project_rules`; `stamp_inputs(tie, context)` and `stamp(tie, context)`, the context being
+  `{"conversation", "transcript", "pilot"}` with `pilot` a frozenset.
+- **`labeller_tools`**: `tool_labels(name, input, result, ctx)`, `ctx` a `ToolCtx`, giving the
+  labels and, for the engine, `ci_wait`, `ci_summaries`, `background` and `reads`;
+  `digest_sections(prompt_text)`; and `ci_builds`, `parse_track_summary`,
+  `parse_test_summaries`, `command_class`, `repo_of`, `result_text`, `deployed_at` and
+  `gate_red_event`. It reads commands through `turn_profile`'s private shell helpers (`_bash`,
+  `_split`, `_unwrap`, `_blank`, `_word_end`, `_unquote`, `_verb`), so a change to them is a
+  change to the labeller and runs its suites.
+- **`labeller_engine`**: `label_one(item, tie, records)`, raising `LabelError(code, message)`. It
+  steps `turn_profile.TurnClassifier(reads_are_work, plan_is_edit, first_edit_turn, state)` with
+  `.step(turn, last)` and `.state()`, `first_edit_turn` being `"auto"`, a turn or none, and reads
+  through `turn_profile.Replay(first_i)` with `.feed(record)`; `classify_turns` and `replay` are
+  built on them and answer as before. An item's `size`, which no request carries, reads the file
+  as it stood at that byte, for `check`.
 
-   It owns the stub conversations its own tests feed.
-2. **The run records**: `labeller_records.py`. Its interface:
-   - `Records.load(data_dir, blob=None)`, which gives a `Records` and its new blob;
-   - `records.tie(conversation, transcript)`, which gives a `Tie`: the units of its sessions with
-     their time windows, the role for the classifier, whether it is a stage's anchor, the adopted
-     group, and the `<named>` sources;
-   - `records.unit_rows(keys)`;
-   - `records.stage_rows(stage_key)` for an anchor;
-   - `records.stamp_inputs(tie, context)`.
+**The build parts.** There were five: the command and the declarations (`labeller.py`,
+`labeller_vocab.py`, `labeller_files.py`), the run records, the Tool Call rules and the engine,
+built beside one another against the interfaces above, and last the check and the release:
 
-   It can be built and tested from state files alone.
-3. **The Tool Call rules**: `labeller_tools.py`. It is called as
-   `tool_labels(name, input, result, ctx)` and `digest_sections(prompt_text)`, and its fixtures
-   are per runner and per `track_build.py` summary. It knows nothing of transcripts.
-4. **The engine**: `labeller_engine.py`. It reads lines from a byte and assembles turns as
-   `turn_profile.replay` does. It steps the classifier, and it applies Part 3's rules and Part 2's
-   tie. It computes wait causes, Segments, open CI stretches, the boundary and the checkpoint. It
-   needs `turn_profile` to classify step by step: `classify_turns` gains a resumable form that
-   takes and gives the state above, and answers as the whole function does. That is a change to
-   `turn_profile.py`, made after the work in flight there lands, with its own test that the
-   stepped form equals the whole one on the suite's transcripts.
-5. **The check and the release**:
-   - the corpus test and its fixture builder;
-   - `labeller.py check`;
-   - the timings against § The stamp's targets;
-   - the plugin version and changelog entry, `CLAUDE.md`'s tool map, and `README.md`'s line.
+- the corpus tests and `labeller.py check` (§ The replay check);
+- the timings against § The stamp's targets, on the home;
+- `CLAUDE.md`'s tool map and `README.md`'s lines;
+- the plugin version and changelog entry, once the open points are ruled.
 
-   Slice 052's planning reads this page as released. PilotApp's stub labeller (F122.5) answers
-   the same shapes.
+Slice 052's planning reads this page as released. PilotApp's stub labeller (F122.5) answers the
+same shapes.
