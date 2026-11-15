@@ -28,6 +28,12 @@ close_out = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(close_out)
 ReportError = close_out.ReportError
 
+# The run loop a closed report keeps its fates through (`_keep_fates`, which
+# imports it): no test reaches the operator's own data folder.
+import run_loop  # noqa: E402
+
+run_loop.plugin_data_dir = lambda tools_dir=None: None
+
 
 def make_slice(tmp, name="007_argocd_tools_presync_hook", later=("012_later_slice",)):
     root = Path(tmp) / "specs" / "slices"
@@ -675,6 +681,64 @@ def test_slice_030s_card_proposals_come_to_the_operator_as_card_requests():
             "closed with the report, 2026-11-02"
         assert entry_of(slice_dir, "B3")["strike"]["reason"] == \
             "closed with the report, 2026-11-02, as the table routed it: it needs a fault"
+
+
+def _struck(reason, commit=None, did=None):
+    return {"strike": {"reason": reason, "commit": commit},
+            "ruling": {"answer_lines": {"answer": "Agree"}, "did": did} if did else None}
+
+
+def test_an_entrys_fate_is_fixed_carded_or_closed_and_the_report_counts_them():
+    fixed = [_struck("fixed by the wrap-up in `abc1234`", "abc1234"),
+             _struck("fixed in the fixes pass", "def5678", did="fixed in the fixes pass"),
+             _struck("resolved by consult 1", "0a1b2c3")]
+    carded = [_struck("folded into slice 041 (slices/backlog/041_x/)", "9f8e7d6"),
+              _struck("deferred to t9 by Pilot"),
+              _struck("carded as P-12", did="carded as P-12"),
+              _struck("done by pvginkel: carded on Operator Action ANS-276",
+                      did="carded on Operator Action ANS-276")]
+    closed = [_struck("closed with the report, 2026-11-02"),
+              _struck("closed by the operator (they carded it themselves)",
+                      did="closed by the operator (they carded it themselves)"),
+              _struck("closed, P-222 already carrying it", did="closed, P-222 already carrying it"),
+              _struck("struck: a duplicate of B1")]
+    for want, entries in (("fixed", fixed), ("carded", carded), ("closed", closed)):
+        for entry in entries:
+            assert close_out.entry_fate(entry) == want, entry
+    every = fixed + carded + closed
+    assert close_out.fates({"entries": every}) == {
+        "entries": 11, "fixed": 3, "carded": 4, "closed": 4}
+    # a live entry in a report not closed: no fate is told yet
+    assert close_out.fates({"entries": [*every, {"strike": None}]}) is None
+    assert close_out.fates({"entries": [], "closed": {"date": "2026-11-02"}}) == {
+        "entries": 0, "fixed": 0, "carded": 0, "closed": 0}
+
+
+def test_closing_the_report_keeps_its_fates_in_the_slices_run_records():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        data = Path(tmp) / "plugin-data"
+        folder = run_loop.run_records_dir(slice_dir, data_dir=data)
+        folder.mkdir(parents=True)
+        (folder / "slice.json").write_text(json.dumps({"slice": slice_dir.name,
+                                                       "card": "P-9"}))
+        close_out.init_report(slice_dir)
+        for headline in ("the status line is wrong", "the log says nothing"):
+            close_out.append_entry(slice_dir, "event", headline, "It is.",
+                                   provenance="witnessed: the run loop")
+        b1 = store(slice_dir)["entries"][0]["id"]
+        close_out.strike_entry(slice_dir, b1, "fixed in `abc1234`", by="wrap-up",
+                               commit="abc1234", date="2026-11-01")
+        was = run_loop.plugin_data_dir
+        run_loop.plugin_data_dir = lambda tools_dir=None: data
+        try:
+            assert close_out.close_report(slice_dir, date="2026-11-02") == (1, [])
+        finally:
+            run_loop.plugin_data_dir = was
+        facts = json.loads((folder / "slice.json").read_text())
+        assert facts["card"] == "P-9", "the keys the loops wrote stay"
+        assert facts["close_out"] == {"entries": 2, "fixed": 1, "carded": 0, "closed": 1}
+        assert facts["updated_at"] and "plugin_version" in facts
 
 
 def test_touched_repos_are_the_roots_of_the_state():

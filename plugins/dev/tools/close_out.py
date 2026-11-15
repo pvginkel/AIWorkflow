@@ -90,7 +90,9 @@ the agents and the skills:
                report too: its earlier verdict kept as a note on the
                actions that answered it.
   close        close the report once its answers are carried out: every
-               live entry struck, but one whose ruling nobody carried out.
+               live entry struck, but one whose ruling nobody carried out;
+               a report closed puts its entries by fate in the slice's
+               slice.json in the run records.
 
 The store is open to every author — the appender, the reviewers, the
 consults, the wrap-up — until the report is rendered at the run's end; after
@@ -1936,6 +1938,67 @@ def restore_wrap_up_writes(slice_dir: Path | str, before: dict, left: dict,
     return restored
 
 
+# What became of each entry of a closed report, as the run records count
+# it (`runner-state.md` § The run records has the mapping): a strike's
+# reason that hands the entry on, a card named in what was done.
+HANDED_ON = ("folded into", "deferred to")
+_CARD_ID_RE = re.compile(r"\b[A-Z][A-Z0-9]*-\d+\b")
+_CARDED_RE = re.compile(r"\bcard(?:ed)?\b", re.IGNORECASE)
+
+
+def entry_fate(entry: dict) -> str:
+    """An entry's fate, one of `fixed`, `carded` and `closed`, the first
+    that holds: carded where its strike hands it on — folded into another
+    slice, deferred to Pilot's work; fixed where its strike names a commit,
+    a change landed for it; carded where what was done on it, or its
+    strike's reason, names a card id and the word card; else closed, with
+    no change."""
+    strike = entry.get("strike") or {}
+    reason = strike.get("reason") or ""
+    if reason.startswith(HANDED_ON):
+        return "carded"
+    if strike.get("commit"):
+        return "fixed"
+    did = (entry.get("ruling") or {}).get("did") or ""
+    if any(_CARDED_RE.search(text) and _CARD_ID_RE.search(text)
+           for text in (did, reason)):
+        return "carded"
+    return "closed"
+
+
+def fates(store: dict) -> dict | None:
+    """The report's entries by fate (`entry_fate`): `entries`, `fixed`,
+    `carded` and `closed`, which add up to `entries`. None while an entry
+    is live and the report is not closed: its fate is not told yet."""
+    entries = [e for e in store.get("entries") or [] if isinstance(e, dict)]
+    if not store.get("closed") and any(not e.get("strike") for e in entries):
+        return None
+    counts = {"entries": len(entries), "fixed": 0, "carded": 0, "closed": 0}
+    for entry in entries:
+        counts[entry_fate(entry)] += 1
+    return counts
+
+
+def _keep_fates(slice_dir: Path | str, store: dict) -> None:
+    """The closed report's fates (`fates`) in the slice's slice.json in its
+    run records, beside what the loops wrote there. Bookkeeping: a failure
+    is a warning, and the close stands."""
+    def warn(line: str) -> None:
+        print(f"warning: {line}", file=sys.stderr)
+
+    try:
+        import run_loop
+
+        counts = fates(store)
+        folder = run_loop.run_records_dir(Path(slice_dir))
+        if counts is None or folder is None:
+            return
+        run_loop.keep_slice_facts(run_loop.RunRecords(folder, warn), slice_dir,
+                                  {"close_out": counts})
+    except Exception as e:
+        warn(f"the close-out's fates not kept in the run records ({type(e).__name__}: {e})")
+
+
 def close_report(slice_dir: Path | str, by: str | None = None,
                  date: str | None = None) -> tuple[int, list[str]]:
     """Close the report once the continuation has carried out its answers:
@@ -1966,7 +2029,10 @@ def close_report(slice_dir: Path | str, by: str | None = None,
             n += 1
         if not stay:
             store["closed"] = {"date": day, "by": who}
-        return n, stay
+            closed = copy.deepcopy(store)
+    if not stay:
+        _keep_fates(slice_dir, closed)
+    return n, stay
 
 
 VERIFICATION_NAME = "verification.json"
