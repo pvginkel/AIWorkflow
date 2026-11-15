@@ -28,7 +28,7 @@ tool takes, `<task>` the brief's plan task, and a tool is
 - **A sub-agent runs in the foreground** (pilot.md § A turn's end is the run's end). Brief it with
   the slice folder, the paths it works on and the section of this skill it follows. It loads
   `/dev:writing` before it writes an ask, and hands back a receipt: what it did, with the commits,
-  and the path of any store of asks it wrote.
+  if it made any, and the path of any store of asks it wrote.
 - **The tracker** — the slice card, the cards routed to the slice, the cards a ruling asks for —
   speaks your host convention (`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md` §3). Load it
   before the first tracker call, yours or a sub-agent's. The slice card's id is `slice.md`'s
@@ -59,7 +59,7 @@ tool takes, `<task>` the brief's plan task, and a tool is
    the loop exists (pilot.md § The progress), and `debrief.py ground <slice> --start`, the
    preparer's start, then dispatch `dev:plan-preparer` with `<slice>`, `<task>` and the ticket.
    It leaves `grounding.md` and `plan.md`'s seeded header in the folder, gives its debrief into
-   the folder, and hands back the path of `asks/1-requirements.json`, or `nothing to ask`. Once
+   the folder, commits nothing (step 4 commits its files), and hands back the path of `asks/1-requirements.json`, or `nothing to ask`. Once
    it is back, `debrief.py ground <slice> --end`, its end, which makes the preparer's entry in
    `plan_debrief.json`; it waits there for the loop's end, in this work item or a later one.
 4. **Put the requirements**: `plan_loop.py progress <slice> --ground done`, `asks.py render

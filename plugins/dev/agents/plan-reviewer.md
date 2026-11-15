@@ -54,6 +54,11 @@ plan cites.
    every component its committed files touch, generated and cached files included
    (`${CLAUDE_PLUGIN_ROOT}/docs/run-loop.md` § The per-phase round): an ordering note or a phase
    that expects a suite the phase touches to stay red until a later phase is a blocking finding.
+   Where one phase stands out as the plan's largest or riskiest, the one you expect to take more
+   than one round, it is split, or it says in one line why it must land whole; without either
+   that is a blocking finding, a gap whose proposal is the split or the line, never advice
+   alone. Slice 032's reviewer named its P4 the largest and predicted the rounds, as advice; the
+   phase stayed whole and took three.
 6. **Attachment altitude.** Attachments exist only where the executor genuinely cannot derive
    the design, and sit at the smart-dev altitude — functional success descriptions. Prescribed
    symbol names, pseudo-code, or specced implementations are findings; so is an attachment a

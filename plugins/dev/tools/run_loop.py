@@ -326,8 +326,9 @@ GATE_REUSE_HINT = ("When its last run is green on the tree you hand back — "
 # detached, and the writer waits on it in chunks (HEADLESS_WAIT_LINE).
 # `{wait}` is `gate --wait` over the phase's spec, in backticks.
 GATE_WAIT_HINT = ("It starts the gate detached and returns; wait on it with "
-                  "{wait}, which returns within four minutes, and while it "
-                  "says `running` run it again at once, reading nothing in "
+                  "{wait}, which returns within four minutes — run it with "
+                  "the Bash tool's `timeout: 300000` — and while it says "
+                  "`running` run it again at once, reading nothing in "
                   "between")
 
 # The writer runs the phase gate through the driver's own wrapper (`run_loop.py
@@ -2523,7 +2524,9 @@ four minutes, however your instructions write it — a test suite, a wait on
 a CI build or its deploy — is started detached and waited on in chunks:
 `python3 {LONG_RUN} start --timeout <seconds> -- <command>`, the timeout
 sized for it, with `sh -c '…'` around a pipeline or a `cd`. It prints a
-`next:` line, a wait that returns within four minutes. While that says
+`next:` line, a wait that returns within four minutes: run it with the
+Bash tool's `timeout: 300000`, since at the tool's two-minute default the
+call goes to the background. While that says
 `running`, run the same line again at once, reading nothing in between;
 `ended` brings the command's output and its exit. A phase gate your
 dispatch names has its own pair of lines, used the same way. That line is
@@ -3671,6 +3674,11 @@ edited to depend on something nothing produced.
 If outstanding work clears that bar, append new phases to {plan_path}
 (`### P<id> — <title>` with a `Target:` line; a suffix like P3a inserts
 between P3 and P4 — document order is authoritative) and answer `appended`.
+An appended phase gets no plan review: where you offer it an approach — a
+mechanism, an example of the change — first check the project's design
+record for what constrains that mechanism, and cite the passage in the
+phase; where you have not checked, state the outcome alone, with no
+example.
 Record everything that does not clear the bar as entries in the close-out
 report — and you are the one pass that reconciles that report, through
 close_out.py (its path and its verbs' arguments are in this prompt) and

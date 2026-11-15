@@ -59,7 +59,10 @@ author prose docs.
    strength-graded claims ("will/may/should …" about future or external behavior) are deleted,
    not hedged; a load-bearing warning ("must run before X") is an invariant and stays. When
    editing, prefer trimming or deleting existing commentary; never narrate change history, how
-   a value was chosen, or why the diff is correct.
+   a value was chosen, or why the diff is correct. A comment that cites a requirement cites it
+   by the id the project's design record gives it, or says the rule in words; never by an id
+   local to the slice (a pile's `W2` or `C4`, an ask's `D1`, "slice 037's"), which means nothing
+   once the slice's folder is closed and can read as one of the record's own ids.
 7. **Run the gate yourself before handing back** — your dispatch names it. Iterate on targeted
    runs (single tests, the linter **once**, collecting every violation and fixing all of them in
    one message); the full gate confirms at the end, as your last run on the finished tree. It

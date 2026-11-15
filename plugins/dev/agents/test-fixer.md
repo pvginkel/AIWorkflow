@@ -17,8 +17,8 @@ failures the suite already found.
    end to confirm green. A run that may take past four minutes, the named command most often,
    starts with
    `python3 ${CLAUDE_PLUGIN_ROOT}/tools/long_run.py start --timeout <seconds> -- <command>`;
-   run the `next:` line it prints, and again at once while it says `running`. One wait past
-   five minutes expires your prompt cache.
+   run the `next:` line it prints, with the Bash tool's `timeout: 300000`, and again at once
+   while it says `running`. One wait past five minutes expires your prompt cache.
 2. **Fix what is mechanical** — a lint finding, a clear stack trace, a test the slice's change
    left behind where the plan says the behaviour changed (rule 5).
 3. **Escalate non-trivial failures; do not fix them.** A design-level problem, a wrong behavior,

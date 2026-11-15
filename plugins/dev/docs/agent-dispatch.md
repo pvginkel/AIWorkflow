@@ -183,7 +183,10 @@ prompt `run_kc_session` sends a fresh session, in either loop, opens with one li
 may run past four minutes, however the role's instructions write it (a suite, a gate, a wait on
 a CI build), runs detached and is waited on in chunks. The role starts it with `long_run.py
 start --timeout <seconds> -- <command>` and runs the `next:` line that prints, a wait that
-returns within four minutes, again at once while it says `running`. `ended` brings the
+returns within four minutes, again at once while it says `running`. Every such wait, and every
+`gate --wait`, is run with the Bash tool's `timeout: 300000`: at the tool's default of two
+minutes the call is moved to the background, the pattern the line forbids, and its notification
+reads as a failure while the command still runs. `ended` brings the
 command's output and exit. A phase gate has its own pair, `run_loop.py gate --detach` and `gate
 --wait` ([run-loop.md](run-loop.md) § The per-phase round). That line is the waiter, so the
 role never ends its turn on such a command, sleeps, tails a log or builds a waiter of its own.

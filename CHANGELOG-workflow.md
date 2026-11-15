@@ -4,6 +4,36 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-15 — Small edits to the roles: grounding sized to the slice, comments without slice ids, waits at 300 s, the consult's approach checked, the largest phase split (v0.10.75)
+
+AIWF-172, AIWF-174, AIWF-178, AIWF-179, AIWF-180 and P-258's item 5, from the handover AIWF-209.
+Prose and prompt text; no behaviour of the drivers changes.
+
+- **The preparer's grounding is sized to the slice** (AIWF-172): inline where the code and
+  record the requirements rest on fit in a handful of reads, one read-only sub-agent otherwise,
+  and one per area of the code past about a dozen requirements, each reporting per requirement.
+  Both preparers that met the old one-sub-agent rule departed from it and said so: Pebble's
+  rehearsal rested on about 25 lines, PilotApp slice 041's 40 items were split four ways.
+- **The completion consult checks an approach it offers an appended phase** against the
+  project's design record and cites what constrains it, or states the outcome without an example
+  (AIWF-174). An appended phase gets no plan review: slice 038's consult 3 gave P10 an
+  advisory-lock example the record forbids under PgBouncer's transaction mode, and only the
+  code review caught it.
+- **A chunked wait runs with the Bash tool's `timeout: 300000`** (AIWF-178), in the dispatch's
+  headless-wait line, the gate hint, `agent-dispatch.md` and the test-fixer's definition. At the
+  tool's two-minute default the call goes to the background, and its notification read "failed,
+  exit code 5" while the gate still ran.
+- **A code comment cites a requirement by the design record's id or says the rule in words**,
+  never by a slice-local id (`W2`, `D1`, "slice 037's"), in `code-writer.md` (AIWF-179). Slice
+  037 added about 73 such comment lines, which the wrap-up then paid to remove.
+- **plan-slice's step 3 says the preparer commits nothing**, step 4 committing its files, and
+  the sub-agent receipt asks for "the commits, if it made any" (AIWF-180). A session's dispatch
+  had told the preparer to commit.
+- **The plan's largest or riskiest phase is split, or says in one line why it lands whole**
+  (P-258's item 5, ruled 2026-11-15), in `plan-writer.md`; the plan reviewer holds it to that as
+  a blocking gap, never as advice. Slice 032's reviewer named P4 the largest and predicted its
+  rounds as advice; it stayed whole and took three.
+
 ## 2026-11-15 — An option's line starts with a capital; a finding outside the project is its own ask (v0.10.74)
 
 AIWF-208 and AIWF-177, from the handover AIWF-209. Prose and help text; no behaviour changes.

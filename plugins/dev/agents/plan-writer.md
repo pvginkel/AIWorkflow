@@ -25,7 +25,8 @@ enumeration-shaped sections, no prescribed symbol names, algorithms, or target-s
 outcomes, not implementations.
 
 - **Roughly PR-sized and independently reviewable** — a phase that outgrows that splits; a phase
-  section outgrowing ~a page overflows into an attachment.
+  section outgrowing ~a page overflows into an attachment. The plan's largest or riskiest phase,
+  where one stands out, is split, or says in one line why it must land whole.
 - **Order so producers land before consumers**; each phase assumes every earlier phase is merged.
   There is no other dependency mechanism.
 - **A phase's gate runs every component its committed files touch**, not its Target's alone
