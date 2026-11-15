@@ -10,6 +10,14 @@ keeps them, so the labeller reads the history as it reads a live run's
 records; and with them the history's groups, the prototype's `adopted/*.toml`
 (each group a name, a summary and its slices), into `<data>/groups/`.
 
+Beside each slice's state files it writes the slice's `slice.json`, the facts
+the loops keep of a live run, read from the slice folder: its card and title
+(`slice.md`), its plan's size (`plan.md` less the phases the run appended, and
+`verification.json`), the plan review's findings per round and the code
+review's per phase and round where the history rows carry none, and the
+close-out's fates (`close-out.json`). A fact the folder does not hold, or
+holds in a shape that does not read, is left out, never guessed.
+
     seed_run_records.py [--groups DIR] [--data-dir DIR] [--dry-run] SPEC_REPO...
 
   SPEC_REPO     a spec repo's root, holding `slices/<status>/<NNN_slug>/`; every
@@ -36,6 +44,7 @@ import argparse
 import contextlib
 import json
 import os
+import re
 import sys
 import tempfile
 import tomllib
@@ -43,6 +52,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import close_out  # noqa: E402
+import plan_loop  # noqa: E402
 import run_loop  # noqa: E402
 from run_loop import run_records_dir, spec_repo_name  # noqa: E402
 
@@ -113,6 +124,107 @@ def read_state(path: Path) -> tuple[bytes | None, str | None]:
     return raw, None
 
 
+REVIEW_RE = re.compile(r"^review_result_r(\d+)\.json$")
+PLAN_REVIEW_RE = re.compile(r"^plan_review_r(\d+)\.json$")
+
+
+def _rows(slice_dir: Path, name: str) -> list[dict]:
+    """The history rows of a state file, none where it does not read."""
+    state = run_loop._read_json(slice_dir / name)
+    rows = state.get("history") if isinstance(state, dict) else None
+    return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+
+
+def _by_round(found: dict) -> dict:
+    return dict(sorted(found.items(), key=lambda kv: int(kv[0])))
+
+
+def plan_review_findings(slice_dir: Path) -> dict:
+    """round → the findings its plan_review_rN.json holds
+    (`plan_loop.review_findings`), each round whose plan-reviewer row in
+    plan_state.json carries none; a round with no file, or none in it,
+    is left out."""
+    kept = {str(r.get("round")) for r in _rows(slice_dir, "plan_state.json")
+            if r.get("role") == "plan-reviewer" and r.get("findings")}
+    found = {}
+    for path in slice_dir.iterdir():
+        m = PLAN_REVIEW_RE.match(path.name)
+        if m and str(int(m.group(1))) not in kept:
+            findings = plan_loop.review_findings(path)
+            if findings:
+                found[str(int(m.group(1)))] = findings
+    return _by_round(found)
+
+
+def code_review_findings(slice_dir: Path) -> dict:
+    """phase id → round → the `findings` of
+    `phases/P<id>/review_result_rN.json`, as the reviewer gave them, each
+    round whose code-reviewer row in state.json carries none; a round whose
+    file holds none is left out."""
+    kept = {(str(r.get("phase")), str(r.get("round")))
+            for r in _rows(slice_dir, "state.json")
+            if r.get("role") == "code-reviewer" and r.get("findings")}
+    phases = slice_dir / "phases"
+    found: dict[str, dict] = {}
+    if not phases.is_dir():
+        return found
+    for folder in sorted(p for p in phases.iterdir() if p.is_dir()):
+        if not folder.name.startswith("P"):
+            continue
+        pid = folder.name[1:]
+        for path in folder.iterdir():
+            m = REVIEW_RE.match(path.name)
+            if not m or (pid, str(int(m.group(1)))) in kept:
+                continue
+            verdict = run_loop._read_json(path)
+            findings = verdict.get("findings") if isinstance(verdict, dict) else None
+            if isinstance(findings, list) and findings:
+                found.setdefault(pid, {})[str(int(m.group(1)))] = findings
+    return {pid: _by_round(rounds) for pid, rounds in found.items()}
+
+
+def slice_facts(slice_dir: Path) -> dict:
+    """The facts a live run's slice.json holds, as far as the slice folder
+    tells them: `slice`, `card` and `title`, `plan`, the two findings keys
+    and `close_out`, and the write's stamp."""
+    facts: dict = {"slice": slice_dir.name, **run_loop.slice_card_and_title(slice_dir)}
+    state = run_loop._read_json(slice_dir / "state.json")
+    appended = state.get("appended_phases") if isinstance(state, dict) else None
+    size = run_loop.plan_size(slice_dir, appended if isinstance(appended, list) else ())
+    if size:
+        facts["plan"] = size
+    for key, found in (("plan_review_findings", plan_review_findings(slice_dir)),
+                       ("code_review_findings", code_review_findings(slice_dir))):
+        if found:
+            facts[key] = found
+    store = run_loop._read_json(slice_dir / close_out.STORE_NAME)
+    if isinstance(store, dict) and isinstance(store.get("entries"), list):
+        counts = close_out.fates(store)
+        if counts is not None:
+            facts["close_out"] = counts
+    return run_loop.stamped(facts)
+
+
+def seed_facts(slice_dir: Path, records: Path, dry_run: bool) -> tuple[str, str | None]:
+    """The slice's slice.json into its records unless one is there:
+    (`written`, `kept` or `failed`, the card it names or why it failed)."""
+    try:
+        facts = slice_facts(slice_dir)
+    except Exception as e:
+        return "failed", f"not read ({type(e).__name__}: {e})"
+    dest = records / run_loop.SLICE_FACTS
+    if dest.exists():
+        return "kept", None
+    if not dry_run:
+        try:
+            records.mkdir(parents=True, exist_ok=True)
+            if not place_new(dest, (json.dumps(facts, indent=2) + "\n").encode()):
+                return "kept", None
+        except OSError as e:
+            return "failed", f"not written to {dest} ({e})"
+    return "written", facts.get("card")
+
+
 def seed_repo(repo: Path, data_dir: Path, dry_run: bool) -> tuple[list[str], bool]:
     """Copy one spec repo's state files into the records: (the lines to print,
     whether anything failed)."""
@@ -123,6 +235,7 @@ def seed_repo(repo: Path, data_dir: Path, dry_run: bool) -> tuple[list[str], boo
     name = spec_repo_name(root)
     seen: dict[str, str] = {}       # slice folder name → its status folder
     folders = copied = kept = skipped = 0
+    facts_written = facts_kept = cards = 0
     notes: list[str] = []
     failed = False
     for status in status_order(slices):
@@ -144,6 +257,16 @@ def seed_repo(repo: Path, data_dir: Path, dry_run: bool) -> tuple[list[str], boo
                 notes.append(f"  {status.name}/{slice_dir.name}: its records folder "
                              "cannot be told — skipped")
                 continue
+            outcome, said = seed_facts(slice_dir, records, dry_run)
+            if outcome == "failed":
+                failed = True
+                notes.append(f"  {status.name}/{slice_dir.name}/{run_loop.SLICE_FACTS}: "
+                             f"{said} — skipped")
+            elif outcome == "kept":
+                facts_kept += 1
+            else:
+                facts_written += 1
+                cards += said is not None
             for src in files:
                 rel = f"{status.name}/{slice_dir.name}/{src.name}"
                 raw, why = read_state(src)
@@ -171,7 +294,8 @@ def seed_repo(repo: Path, data_dir: Path, dry_run: bool) -> tuple[list[str], boo
                     notes.append(f"  {rel}: not written to {dest} ({e}) — skipped")
     verb = "to copy" if dry_run else "copied"
     head = (f"{name} ({repo}): {folders} slices seen, {copied} files {verb}, "
-            f"{kept} kept (already there), {skipped} skipped")
+            f"{kept} kept (already there), {skipped} skipped; {facts_written} "
+            f"{run_loop.SLICE_FACTS} {verb} ({cards} naming a card), {facts_kept} kept")
     return [head, *notes], failed
 
 

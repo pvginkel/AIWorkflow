@@ -252,6 +252,121 @@ def test_a_repo_without_slices_fails_and_the_others_go_on():
         assert (records(data, "001_one") / "state.json").exists()
 
 
+
+# -- slice.json: the facts a live run's records hold, from the slice folder -----
+
+PLAN = """# A slice — plan
+
+## Phases
+
+### P1 — First
+
+Target: app
+
+Outcome: one.
+
+### P2 — Second
+
+Target: app
+
+Outcome: two.
+
+### P3 — Appended by the run
+
+Target: app
+
+Outcome: three.
+"""
+FINDING = {"id": "F1", "severity": "Major", "impact": "blocking", "summary": "x"}
+
+
+def write(folder: Path, name: str, content) -> None:
+    path = folder / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content if isinstance(content, str) else json.dumps(content))
+
+
+def facts_of(data: Path, slug: str) -> dict:
+    return json.loads((records(data, slug) / "slice.json").read_text())
+
+
+def test_each_seeded_slice_gets_its_slice_json_with_every_fact_its_folder_holds():
+    with workspace() as (_, repo, data):
+        folder = add_slice(repo, "completed", "001_one", state={
+            "appended_phases": ["3"],
+            "history": [{"role": "code-reviewer", "phase": "1", "round": 1,
+                         "findings": [FINDING]},
+                        {"role": "code-reviewer", "phase": "2", "round": 1}]},
+            plan_state={"history": [{"role": "plan-reviewer", "round": 1},
+                                    {"role": "plan-reviewer", "round": 2}]})
+        write(folder, "slice.md", "---\nissue: P-371\n---\n\n# The first slice\n")
+        write(folder, "plan.md", PLAN)
+        write(folder, "verification.json", {"items": [{"id": "V01"}, {"id": "V02"}]})
+        write(folder, "plan_review_r1.json", {"findings": [
+            {"class": "blocking", "headline": "A gap", "proposal": "close it"},
+            {"class": "operator", "headline": "A choice", "options": [{"label": "a"}]}]})
+        write(folder, "phases/P1/review_result_r1.json", {"findings": [FINDING]})
+        write(folder, "phases/P2/review_result_r1.json", {"findings": [FINDING]})
+        write(folder, "phases/P2/review_result_r2.json", {"findings": []})
+        write(folder, "close-out.json", {"closed": {"date": "2026-11-01"}, "entries": [
+            {"id": "B1", "strike": {"reason": "fixed", "commit": "abc1234"}},
+            {"id": "B2", "strike": {"reason": "carded as P-9"},
+             "ruling": {"did": "carded as P-9"}},
+            {"id": "B3", "strike": {"reason": "closed with the report, 2026-11-01"}}]})
+        code, out = run("--data-dir", data, repo)
+        assert code == 0, out
+        facts = facts_of(data, "001_one")
+        assert facts.pop("plugin_version") == run_loop.plugin_version()
+        assert facts.pop("updated_at")
+        assert facts == {
+            "slice": "001_one", "card": "P-371", "title": "The first slice",
+            "plan": {"phases": 2, "acceptance_criteria": 2},
+            # rounds whose rows carry no findings, by round and by phase and round
+            "plan_review_findings": {"1": [
+                {"class": "blocking", "headline": "A gap", "gap": True},
+                {"class": "operator", "headline": "A choice", "gap": False}]},
+            "code_review_findings": {"2": {"1": [FINDING]}},
+            "close_out": {"entries": 3, "fixed": 1, "carded": 1, "closed": 1}}
+        assert "1 slice.json copied (1 naming a card), 0 kept" in out
+
+
+def test_a_fact_the_folder_does_not_hold_is_left_out():
+    with workspace() as (_, repo, data):
+        add_slice(repo, "completed", "001_old", state={"history": []})   # no slice.md
+        bare = add_slice(repo, "completed", "002_bare", plan_state={})
+        write(bare, "slice.md", "# Only a title\n")
+        write(bare, "plan.md", "# no phases here\n")
+        write(bare, "verification.json", {"items": []})
+        # a report still open over a live entry tells no fates
+        write(bare, "close-out.json", {"entries": [{"id": "B1", "strike": None}]})
+        code, out = run("--data-dir", data, repo)
+        assert code == 0, out
+        old = facts_of(data, "001_old")
+        assert set(old) == {"slice", "updated_at", "plugin_version"}
+        assert {k: v for k, v in facts_of(data, "002_bare").items()
+                if k not in ("updated_at", "plugin_version")} == {
+            "slice": "002_bare", "card": None, "title": "Only a title"}
+        assert "2 slice.json copied (0 naming a card), 0 kept" in out
+
+
+def test_a_slice_json_that_is_there_is_never_replaced_and_a_dry_run_counts_it():
+    with workspace() as (_, repo, data):
+        folder = add_slice(repo, "completed", "001_one", state={})
+        write(folder, "slice.md", "---\nissue: P-1\n---\n# One\n")
+        live = records(data, "001_one")
+        live.mkdir(parents=True)
+        (live / "slice.json").write_text('{"card": "P-live"}')
+        add_slice(repo, "completed", "002_two", state={})
+        code, out = run("--dry-run", "--data-dir", data, repo)
+        assert code == 0, out
+        assert "1 slice.json to copy (0 naming a card), 1 kept" in out
+        assert not records(data, "002_two").exists()
+        code, out = run("--data-dir", data, repo)
+        assert code == 0, out
+        assert (live / "slice.json").read_text() == '{"card": "P-live"}'
+        assert "1 slice.json copied (0 naming a card), 1 kept" in out
+
+
 if __name__ == "__main__":
     _tests = [v for k, v in sorted(globals().items())
               if k.startswith("test_") and callable(v)]
