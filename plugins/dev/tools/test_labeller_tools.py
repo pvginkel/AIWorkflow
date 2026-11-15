@@ -55,6 +55,15 @@ def test_each_rule_of_the_command_class_list():
         "npm run test -- --watch=false": "test_suite",
         "pnpm --dir frontend test": "test_suite",
         "uv run --with pytest python3 tools/test_a.py": "test_suite",
+        "vitest run": "test_suite",
+        "npx vitest --run src/": "test_suite",
+        "pnpm -C frontend exec vitest run": "test_suite",
+        "node --test tests/": "test_suite",
+        "node --experimental-strip-types --test": "test_suite",
+        "yarn test": "test_suite",
+        "yarn --cwd web run test:unit": "test_suite",
+        "yarn workspace web test": "test_suite",
+        "node scripts/build.js --test": None,
         "kc project lint": "gate",
         "kc project build --project frontend": "gate",
         "uv run ruff check .": "gate",
@@ -150,9 +159,17 @@ def test_a_push_that_exited_zero_is_a_push():
 
 # -- rules --------------------------------------------------------------------
 
-def test_a_sleep_poll_breaches_no_sleep_poll():
-    assert _bash("while true; do kc env describe; sleep 20; done")["rules"] == ["no_sleep_poll"]
-    assert _bash("kc project test; sleep 5")["rules"] == []
+def test_a_poll_loop_breaches_no_sleep_poll_and_a_settle_sleep_does_not():
+    for cmd in ("while true; do kc env describe; sleep 20; done",
+                "until curl -s localhost:8080; do sleep 2; done",
+                "for i in 1 2 3; do curl -s x && break; sleep 5; done",
+                "timeout 60 bash -c 'while ! curl -s x; do sleep 1; done'"):
+        assert _bash(cmd)["rules"] == ["no_sleep_poll"], cmd
+    for cmd in ("kc project test; sleep 5", "sleep 30", "sleep 3 && curl -s localhost:8080",
+                "for f in a b; do sleep 1; done", "for f in a b; do echo $f; done; sleep 2",
+                "cat <<'EOF'\nwhile true; do sleep 1; x; done\nEOF"):
+        assert _bash(cmd)["rules"] == [], cmd
+    assert _cls("sleep 3 && curl -s localhost:8080") == "sleep_poll"
 
 
 def test_staging_everything_breaches_no_git_add_all():

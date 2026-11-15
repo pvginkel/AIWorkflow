@@ -157,6 +157,10 @@ _TEST_PROGS: list[tuple[re.Pattern, str]] = [
                 r"\s+(?:run(?:-script)?\s+)?test(?::\S+)?(?=\s|$)"), "npm test"),
     (re.compile(r"^pnpm(?:\s+(?:(?:-C|--dir|--filter|-F|-w)\s+\S+|--?[\w-]+(?:=\S+)?))*"
                 r"\s+(?:run\s+)?test(?::\S+)?(?=\s|$)"), "pnpm test"),
+    (re.compile(r"^yarn(?:\s+(?:(?:--cwd|workspace)\s+\S+|--?[\w-]+(?:=\S+)?))*"
+                r"\s+(?:run\s+)?test(?::\S+)?(?=\s|$)"), "yarn test"),
+    (re.compile(rf"^(?:{_PM})?(?:\S*/)?vitest(?![\w-])"), "vitest"),
+    (re.compile(r"^(?:\S*/)?node(?:\s+-[\w-]+(?:=\S+)?)*?\s+--test(?=\s|$)"), "node --test"),
 ]
 _GATE_PROGS: list[tuple[re.Pattern, str]] = [
     (re.compile(rf"^(?:(?:{_PY})-m\s+|{_PM})?(?:\S*/)?ruff(?![\w-])"), "ruff"),
@@ -403,9 +407,27 @@ def _tails(stages: list[_Stage]) -> list[str]:
     return out
 
 
+# What a shell loop's body leaves behind as a stage of its own, none of them a check.
+_LOOP_NOISE_RE = re.compile(r"^(?:done|break|continue|true|false|:|for\s.*|select\s.*)$")
+_SLEEP_RE = re.compile(r"^sleep\s+\d")
+
+
+def _polls(stages: list[_Stage]) -> bool:
+    """A poll loop: a `while`, `until` or `for` loop (its `done`) that sleeps and checks — a
+    stage that is neither the sleep nor the loop's own words. A single sleep that lets something
+    settle, `sleep 5 && curl …`, is no poll."""
+    blanks = [st.blank.strip() for st in stages]
+    ends = [i for i, b in enumerate(blanks) if b == "done" or b.startswith("done ")]
+    if not ends:
+        return False
+    body = blanks[:ends[-1]]       # what stands before the last loop's end
+    return (any(_SLEEP_RE.match(b) for b in body)
+            and any(b and not _SLEEP_RE.match(b) and not _LOOP_NOISE_RE.match(b) for b in body))
+
+
 def _rules(cls: str | None, stages: list[_Stage], ctx: ToolCtx) -> list[str]:
     out: list[str] = []
-    if cls == SLEEP_POLL:
+    if _polls(stages):
         out.append(NO_SLEEP_POLL)
     for st in stages:
         g = _git(st)
