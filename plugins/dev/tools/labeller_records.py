@@ -1399,18 +1399,31 @@ def _text_of(content) -> str:
     return ""
 
 
-def read_facts(path) -> dict:
+def _text_lines(fh, size: int | None):
+    """A binary file's lines as text, up to `size` bytes when it is given."""
+    pos = 0
+    for raw in fh:
+        if size is not None:
+            if pos >= size:
+                return
+            raw = raw[:size - pos]
+        pos += len(raw)
+        yield raw.decode("utf-8", "replace")
+
+
+def read_facts(path, size: int | None = None) -> dict:
     """What the adoption rules read of a main transcript (R2 to R4): its working directory and
     entrypoint, its first person prompt and that prompt's command, its workflow commands, and
-    the runs of a slice loop its Bash calls make, read with `turn_profile`'s shell reading."""
+    the runs of a slice loop its Bash calls make, read with `turn_profile`'s shell reading.
+    `size` reads the file as it stood when it was that long (the replay check's cuts)."""
     import sys
     sys.path.insert(0, str(TOOLS_DIR))
     import turn_profile as tp
 
     facts = {"cwd": None, "entrypoint": None, "first_prompt": None, "first_cmd": None,
              "cmds": [], "loops": []}
-    with open(path, errors="replace", newline="\n") as fh:
-        for line in fh:
+    with open(path, "rb") as fh:
+        for line in _text_lines(fh, size):
             user = '"type":"user"' in line and '"tool_result"' not in line
             bash = '"name":"Bash"' in line and "_loop.py" in line
             head = facts["cwd"] is None or facts["entrypoint"] is None

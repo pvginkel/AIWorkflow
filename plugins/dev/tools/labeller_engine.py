@@ -95,7 +95,7 @@ def _version() -> str:
 # The entry
 
 
-TRANSCRIPT_EXTRAS = ("session_id", "file", "stamp", "conversation", "pilot", "restamp")
+TRANSCRIPT_EXTRAS = ("session_id", "file", "stamp", "conversation", "pilot", "restamp", "size")
 
 
 def label_one(item: dict, tie, records) -> dict:
@@ -106,6 +106,8 @@ def label_one(item: dict, tie, records) -> dict:
         fh = path.open("rb")
     except OSError as e:
         raise LabelError("unreadable", f"{item.get('path') or path}: {e}") from e
+    if isinstance(item.get("size"), int):
+        fh = _Prefix(fh, item["size"])
     with fh:
         stamp, tie = _restamped(item, tie, records, path)
         job = _Job(item, tie, records, stamp)
@@ -132,7 +134,7 @@ def _restamped(item: dict, tie, records, path: Path):
     if needs is None or item.get("restamp") is None or not needs(conv, transcript):
         return stamp, tie
     import labeller_records
-    named = list(records.named_from_facts(labeller_records.read_facts(path)))
+    named = list(records.named_from_facts(labeller_records.read_facts(path, item.get("size"))))
     if not named:
         return stamp, tie
     return item["restamp"](named)
@@ -639,6 +641,35 @@ class _Run(tp.Replay):
             for x in leading:
                 self.segment_of[x] = pos
         return at_b
+
+
+class _Prefix:
+    """A transcript read as it stood when it was `size` bytes long: the replay check's cuts
+    (`labeller_check`), an item's `size`, which no request of the collector's carries."""
+
+    def __init__(self, fh, size: int):
+        self.fh, self.size = fh, size
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.fh.close()
+
+    def seek(self, pos: int) -> None:
+        self.fh.seek(pos)
+
+    def read(self, n: int = -1) -> bytes:
+        left = self.size - self.fh.tell()
+        return self.fh.read(left if n < 0 else min(n, left)) if left > 0 else b""
+
+    def readline(self) -> bytes:
+        left = self.size - self.fh.tell()
+        return self.fh.readline(left) if left > 0 else b""
+
+    def __iter__(self):
+        while raw := self.readline():
+            yield raw
 
 
 def _line_call(fh, byte: int) -> str | None:
