@@ -4,6 +4,14 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-15 — The code-writer runs Fable 5.2 at `high` again (v0.10.71)
+
+The operator used a weekly limit reset and switched the code-writer's Fable run back on.
+
+- **The code-writer runs `("claude-fable-5-2", "high")`.** That is its `MODELS` entry in
+  `run_loop.py`; every other role is unchanged. The next writer dispatched after this release
+  runs Fable, while a loop already running keeps the model it imported.
+
 ## 2026-11-15 — run-slice merges a spec-repo conflict the plan resolves, then resumes (v0.10.70)
 
 AIWF-165. Ansible slice 067 (2026-11-06): P5's merge into AnsibleSpecs conflicted on one line of
