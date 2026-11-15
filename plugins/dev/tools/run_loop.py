@@ -286,9 +286,16 @@ SWEEP_VERBS = ("lint", "build", "test")
 # conventions, not a project's names.
 TEST_RESULTS_NAME = "test_results.md"
 TEST_RESULTS_DIR = "test-results"
-# A red row's test-results/ copy stops at this many bytes: it can hold videos
-# and traces. The smallest files are copied first, so the text survives.
+# A red row's test-results/ copy stops at this many bytes, a backstop. Video
+# and traces are off by default in ModernAppTemplate's frontend since v0.21.0;
+# what grows is each test's own logs, a test late in its worker carrying that
+# worker's whole log so far. PilotApp slice 038's sweep r2 left 405 files
+# (505.9 MB) out, the failing test's backend.log among them, while passing
+# tests' folders filled the cap (AIWF-170). So a failed test's files — those
+# under a folder Playwright wrote TEST_FAILED_MARK into — are copied first,
+# smallest first, and the rest fills what is left of the cap.
 TEST_RESULTS_DIR_CAP = 50 * 1024 * 1024
+TEST_FAILED_MARK = "error-context.md"
 # A file's mtime comes off the kernel's coarse clock, which runs up to a tick
 # behind time.time(): a file a command wrote at once can read as older than
 # the command's start by that much, which "at or after the start" allows.
@@ -1494,6 +1501,58 @@ def phase_scope(plan_text: str, phase_id: str) -> str:
         if owner is None or owner == phase_id:
             kept.append(line)
     return "\n".join(kept)
+
+
+# What a path under the spec repo's slice tree looks like in a phase's text
+# (AIWF-168): `slices/` opening a path, or after the spec repo's own name
+# (`../PilotAppSpecs/slices/…`, `/work/PilotAppSpecs/slices/…`) — never after
+# another directory, where `src/store/slices/` is a code tree's — with a name
+# after it: the tree itself (`the slices/ tree`, `slices/**`) is no file a
+# phase delivers. Built per spec repo name; the path is group 1.
+SLICE_TREE_PATH = (r"(?:(?<![\w./-])|(?<![\w.-]){spec}/)"
+                   r"(slices/[\w.-][^\s`'\"()<>\[\]{{}}|,;]*)")
+# A path with a line number after it (`…/slice.md:318`) cites what a phase
+# read; it plans no change there.
+LINE_CITATION_RE = re.compile(r":\d")
+
+
+def slice_tree_paths(phase: Phase, spec_name: str) -> list[str]:
+    """The paths under the slice tree that `phase`'s own text names — its
+    title and its section, up to the next heading at `###` or above, as
+    phase_scope bounds it — each once, in the order named (AIWF-168). The
+    driver takes every change a spec-repo phase makes under `slices/` back
+    out at its merge (`_revert_slice_tree`), so on a phase targeting the
+    spec repo each is a change planned where it never lands. PilotApp slice
+    037's P17 had the run edit the slice's own slice.md, under a criterion
+    no run could earn; only the plan review caught it. A line citation is
+    not one (LINE_CITATION_RE); `spec_name` is the spec repo's directory
+    name."""
+    pattern = re.compile(SLICE_TREE_PATH.format(spec=re.escape(spec_name)))
+    lines = [phase.title]
+    for line in phase.body:
+        if SECTION_HEADING_RE.match(line):
+            break
+        lines.append(line)
+    found: list[str] = []
+    for line in lines:
+        for match in pattern.finditer(line):
+            path = match.group(1).rstrip(".:*")
+            if not LINE_CITATION_RE.search(path) and path not in found:
+                found.append(path)
+    return found
+
+
+def slice_tree_problem(paths: list[str]) -> str:
+    """The dry run's plan problem for a spec-repo phase naming `paths`
+    (`slice_tree_paths`)."""
+    named = ", ".join(f"`{path}`" for path in paths)
+    return (f"its text names {named}, under the spec repo's slice tree — the "
+            "driver takes every change a spec-repo phase makes under "
+            "`slices/` back out at its merge, so a change planned there "
+            "never lands and a criterion resting on it is never earned. Make "
+            "a correction to the slice's own files in planning, or leave it "
+            "to the wrap-up; a file the phase only reads is cited with its "
+            "line (`<path>:<line>`).")
 
 
 def is_repo_path(target: str) -> bool:
@@ -4654,8 +4713,10 @@ def copy_fresh_tree(src: Path, dest: Path,
     """Copy the files under `src` the command just run wrote — changed
     since `before` (its `tree_sigs` taken just before it ran) and modified
     at or after `since_ns`, as `fresh_file` judges one — into `dest`,
-    keeping their layout, smallest first while the total stays within
-    `cap` bytes. Returns (copied, over the cap, bytes over the cap,
+    keeping their layout, while the total stays within `cap` bytes: a
+    failed test's files first — those under a folder holding a fresh
+    TEST_FAILED_MARK — smallest first, then the rest, smallest first, in
+    what is left. Returns (copied, over the cap, bytes over the cap,
     failed). A missing or empty `src` copies nothing and creates no
     `dest`.
 
@@ -4663,9 +4724,13 @@ def copy_fresh_tree(src: Path, dest: Path,
     the copies are evidence for this run's dispatches, not record, and a
     slice folder's sweep logs are committed with it. A top-level
     `.gitignore` under `src` is never copied over it."""
-    fresh = sorted((sig[1], rel) for rel, sig in tree_sigs(src).items()
-                   if sig != before.get(rel) and sig[0] >= since_ns
-                   and rel != ".gitignore")
+    fresh = [(sig[1], rel) for rel, sig in tree_sigs(src).items()
+             if sig != before.get(rel) and sig[0] >= since_ns
+             and rel != ".gitignore"]
+    failed_dirs = {Path(rel).parent for _, rel in fresh
+                   if Path(rel).name == TEST_FAILED_MARK}
+    fresh.sort(key=lambda f: (failed_dirs.isdisjoint(Path(f[1]).parents),
+                              f))
     copied = over = over_bytes = failed = total = 0
     for size, rel in fresh:
         if total + size > cap:
@@ -10310,8 +10375,9 @@ class RunLoop:
         component's suite, writing the same file at the repo root, cannot
         overwrite its cause. A red run: the component directory's
         `test-results/` too, as `<Repo>_<component>_test-results<suffix>/`,
-        the files the run wrote within TEST_RESULTS_DIR_CAP, in a folder
-        that ignores itself (`copy_fresh_tree`) — the `test_results.md`
+        the files the run wrote within TEST_RESULTS_DIR_CAP, a failed
+        test's first, in a folder that ignores itself (`copy_fresh_tree`)
+        — the `test_results.md`
         copy, small text, stays committable with the logs. Only a file
         the command wrote is its own (`snapshot`); nothing to copy is not an
         error, and a copy that fails is logged — the row stands on its
@@ -10340,7 +10406,8 @@ class RunLoop:
             if over:
                 self.log(f"[sweep] {name}: {src_dir} is over the "
                          f"{TEST_RESULTS_DIR_CAP / 2**20:g} MB cap — "
-                         f"{copied} file(s) copied, smallest first; {over} "
+                         f"{copied} file(s) copied, a failed test's first, "
+                         f"smallest first; {over} "
                          f"({over_bytes / 2**20:.1f} MB) left out")
             if failed:
                 self.log(f"[sweep] {name}: {failed} file(s) under {src_dir} "
@@ -13766,6 +13833,13 @@ def cmd_dry_run(loop: RunLoop) -> None:
                 target, claimed=claimer is not None)
             if problem:
                 errors.append(f"phase P{phase.id}: {problem}")
+            # The dry run's alone: the merge takes such a change back out
+            # (`_revert_slice_tree`), so a run need not refuse the phase.
+            paths = (slice_tree_paths(phase, loop.spec_root.name) if on_spec
+                     else [])
+            if paths:
+                errors.append(f"phase P{phase.id}: "
+                              + slice_tree_problem(paths))
         except ValueError as e:
             # A name the plan says a phase still has to create is not a bad
             # Target — the dry run reads the plan before anything has run, so

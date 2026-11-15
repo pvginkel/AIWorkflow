@@ -423,9 +423,11 @@ whole plan is a feature of the review, not a cost. Then:
   `test_results.md` that run wrote — the component's directory first, then the repo root, only a
   file the command changed — into `sweeps/r<N>/` as `<Repo>_<component>_test_results.md`: two
   suites writing one file at the repo root no longer overwrite each other's cause. On a red run
-  it copies the component's Playwright `test-results/` too (the files that run wrote, smallest
-  first under a 50 MB cap; the folder ignores itself, so videos and traces never reach the spec
-  repo), then reruns the same `kc project test --project <c>` once, into `…_test_rerun.log`, and
+  it copies the component's Playwright `test-results/` too (the files that run wrote under a
+  50 MB cap, a failed test's folder first — one holding Playwright's `error-context.md` — then
+  the rest, each smallest first: a passing test's logs once filled the cap and left the failing
+  test's `backend.log` out; the folder ignores itself, so none of it reaches the spec repo),
+  then reruns the same `kc project test --project <c>` once, into `…_test_rerun.log`, and
   keeps that run's files the same way. The row stays red either way and is marked `RED
   (reproduced)` or `RED (flaky: passed on re-run)` — a flaky row is reported, never dropped: one
   apparent flake was a real bug in a template's test setup. kc takes no extra arguments,

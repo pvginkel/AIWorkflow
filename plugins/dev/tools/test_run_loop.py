@@ -4879,6 +4879,58 @@ def test_a_dry_run_names_the_spec_check_as_a_spec_repo_phases_gate():
                 in out
 
 
+# -- a spec-repo phase naming the slice tree (AIWF-168) -----------------------
+#
+# PilotApp slice 037's P17 had the run edit the slice's own slice.md, and the
+# driver takes every change a spec-repo phase makes under `slices/` back out
+# at its merge: a criterion no run could earn, caught only by the plan review.
+
+def test_slice_tree_paths_are_paths_under_the_spec_repos_slice_tree():
+    plan = (
+        "### P1 — Drop the clause from slices/074_x/slice.md\n\n"
+        "Target: ../specs\n\n"
+        "- `slices/DAG.md` gains the row; so does slices/DAG.md.\n"
+        "- `../specs/slices/backlog/075_y/plan.md` and "
+        "/work/specs/slices/archive/x.md move.\n"
+        "- Read: `slices/completed/040_z/slice.md:318-319`, "
+        "`otherspecs/slices/a.md`, `frontend/src/store/slices/auth.ts`.\n"
+        "- Leave the `slices/` tree alone: nothing under `slices/**`.\n\n"
+        "## Not in scope\n\n- `slices/after.md`\n")
+    (phase,), errors = run_loop.parse_plan(plan)
+    assert not errors
+    assert run_loop.slice_tree_paths(phase, "specs") == [
+        "slices/074_x/slice.md", "slices/DAG.md",
+        "slices/backlog/075_y/plan.md", "slices/archive/x.md"]
+
+
+def test_a_dry_run_lists_a_spec_repo_phase_that_names_the_slice_tree():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        specs_target = specs_as_target(tmp)
+        named = "`slices/074_test_slice/slice.md` drops the clause.\n"
+        (slice_dir / "plan.md").write_text(
+            "# plan\n\n"
+            + phase_section("1", "Done", specs_target, done=True, body=named)
+            + "\n" + phase_section("2", "Code", PROJECT, body=named)
+            + "\n" + phase_section("3", "Its record", specs_target,
+                                   body=named)
+            + "\n" + phase_section("4", "Read it", specs_target,
+                                   body="Per `slices/074_test_slice/slice.md:"
+                                        "12`, `decisions.md` gains a row.\n"))
+        loop = RunLoop(slice_dir, resume=False)
+        loop._spec_root = (Path(tmp) / "specs").resolve()
+        rc_, out, err = dry_run_from(loop, repo)
+        assert rc_ == 2
+        assert "plan problems:" in err
+        # the one pending spec-repo phase that plans a change there
+        assert ("  - phase P3: its text names "
+                "`slices/074_test_slice/slice.md`, under the spec repo's "
+                "slice tree — the driver takes every change a spec-repo "
+                "phase makes under `slices/` back out at its merge") in err
+        assert "phase P1:" not in err and "phase P2:" not in err
+        assert "phase P4:" not in err
+
+
 # -- the migration check (AIWF-140) -------------------------------------------
 #
 # PilotApp slice 036's migrations from P1 and P5 reused the revision ids
@@ -9479,7 +9531,8 @@ def test_a_red_test_row_keeps_its_test_results_dir_within_the_cap():
         assert not (copied / "video.webm").exists()
         log = (slice_dir / "log.txt").read_text()
         assert f"{results} is over the" in log and "MB cap" in log
-        assert "2 file(s) copied, smallest first; 1 (0.0 MB) left out" in log
+        assert ("2 file(s) copied, a failed test's first, smallest first; "
+                "1 (0.0 MB) left out") in log
         # a file no run here wrote is not this one's
         assert not (kept / "old-run").exists()
         # still red on its re-run: that run's own files, in a folder of its own
@@ -9489,6 +9542,44 @@ def test_a_red_test_row_keeps_its_test_results_dir_within_the_cap():
             == [".gitignore", "error-context.md"]
         assert (kept_rerun / "login-spec-chromium"
                 / "error-context.md").read_text() == "again"
+
+
+def test_a_failed_tests_files_are_copied_before_smaller_passing_ones():
+    """AIWF-170: PilotApp slice 038's sweep r2 left the failing test's
+    backend.log out while passing tests' smaller logs filled the cap. A
+    folder holding error-context.md is a failed test's: its files go first,
+    its largest included, and the passing tests' fill what is left."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        results = repo / "frontend" / run_loop.TEST_RESULTS_DIR
+        failed = results / "late-spec-chromium"
+        passed = [results / f"early-spec-{n}-chromium" for n in range(3)]
+        r = SweepRunLoop(slice_dir, [], repo_root=repo, sweep_steps={
+            ("frontend", "test"): [
+                suite_writes(1, {
+                    failed / "error-context.md": "e" * 10,
+                    failed / "backend.log": b"b" * 60,
+                    failed / "attachments" / "frontend.log": b"f" * 5,
+                    **{spec / "backend.log": b"p" * 20 for spec in passed}}),
+                0],
+        })
+        with patched(run_loop, TEST_RESULTS_DIR_CAP=100):
+            sweep, _ = run_sweep(r, repo, {"frontend": repo / "frontend"})
+        kept = slice_dir / "sweeps" / "r1" / "repo_frontend_test-results"
+        assert sweep_row(sweep, "frontend")["artifacts"] == [str(kept)]
+        # the failed test's three files, 75 bytes, its largest — larger
+        # than any passing test's — among them, a subfolder's file too
+        copied = kept / "late-spec-chromium"
+        assert (copied / "backend.log").read_bytes() == b"b" * 60
+        assert (copied / "error-context.md").is_file()
+        assert (copied / "attachments" / "frontend.log").is_file()
+        # one passing test's 20 bytes fit in the 25 left; two are left out
+        left = [spec.name for spec in passed
+                if not (kept / spec.name / "backend.log").exists()]
+        assert len(left) == 2
+        log = (slice_dir / "log.txt").read_text()
+        assert ("4 file(s) copied, a failed test's first, smallest first; "
+                "2 (0.0 MB) left out") in log
 
 
 def test_a_kept_test_results_dir_ignores_itself_in_the_spec_repo():
@@ -18188,8 +18279,8 @@ signal.signal(signal.SIGINT, signal.SIG_IGN if mode == "ignore"
 fd = os.open(os.path.join(slice_dir, "run.lock"), os.O_RDWR | os.O_CREAT)
 fcntl.flock(fd, fcntl.LOCK_EX)
 os.write(fd, f"host: {socket.gethostname()}\\npid: {os.getpid()}\\n".encode())
-print("ready", flush=True)
 try:
+    print("ready", flush=True)
     while True:
         time.sleep(0.02)
 except KeyboardInterrupt:

@@ -2282,8 +2282,8 @@ signal.signal(signal.SIGINT, signal.default_int_handler)
 fd = os.open(os.path.join(sys.argv[1], "plan.lock"), os.O_RDWR | os.O_CREAT)
 fcntl.flock(fd, fcntl.LOCK_EX)
 os.write(fd, f"host: {socket.gethostname()}\\npid: {os.getpid()}\\n".encode())
-print("ready", flush=True)
 try:
+    print("ready", flush=True)
     while True:
         time.sleep(0.02)
 except KeyboardInterrupt:

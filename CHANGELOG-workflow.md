@@ -4,6 +4,31 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-15 — No phase delivers under `slices/`; a failed test's files are copied first; the stop tests' race (v0.10.73)
+
+AIWF-168, AIWF-170 and AIWF-182, from the handover AIWF-209.
+
+- **No phase delivers a change under the spec repo's `slices/**`** (AIWF-168). PilotApp slice
+  037's plan gave a spec-repo phase an edit of its own `slice.md`, under a criterion no run could
+  earn, since the driver puts such a change back at the merge; only the plan review caught it.
+  The rule was only in `run-loop.md`, which the writer does not read. `plan-template.md`'s
+  mechanical rules and `plan-writer.md`'s Target rules now say it: a correction to `slice.md` is
+  made in planning or left to the wrap-up. `run_loop.py run --dry-run` lists a pending spec-repo
+  phase whose text names a path under `slices/` (opening a path or after the spec repo's name,
+  never after another directory, never a `path:line` citation) as a plan problem. Across 91
+  spec-repo phases in five spec repos it hits the three real `slices/DAG.md` deliveries and
+  nothing else. It does not match a bare `slice.md`, which 10 of the 91 name as a thing they
+  read, so 037's own phase is caught by the writer's rule and the review, not by the dry run.
+- **A red row's `test-results/` copy takes a failed test's folder first** (AIWF-170), one
+  holding Playwright's `error-context.md`, smallest first, then the rest in what is left of the
+  50 MB cap. PilotApp slice 038's sweep r2 copied 780 files and left 405 (505.9 MB) out, the
+  failing test's `backend.log` among them, and the completion consult judged flake vs product
+  without it. The cap's comment no longer blames video and traces, off in the frontend template
+  since v0.21.0.
+- **The stop tests' child prints `ready` inside its `try`** (AIWF-182), in `test_run_loop.py`
+  and `test_plan_loop.py`, so a SIGINT sent the moment the parent reads it is caught and the
+  child exits 130. Under the full suite's load it could die of the signal, `assert -2 == 130`.
+
 ## 2026-11-15 — close_out.py: `--repo none`, a card request's count in `restate`, a restatement's lines kept (v0.10.72)
 
 AIWF-166, AIWF-173 and AIWF-181, from the handover AIWF-209.

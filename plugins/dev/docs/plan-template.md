@@ -88,6 +88,11 @@ The mechanical rules the parser holds every author to:
   `## Driver rulings`; the rest it ignores.
 - **Ids are free-form labels; document order is authoritative.** `P3a` inserted between `P3`
   and `P4` runs between them because of *where it sits*, not its name. Ids must be unique.
+- **No phase delivers a change under the spec repo's `slices/**`.** The slice tree is never a
+  phase's deliverable: the driver puts such a change back at the phase's merge
+  ([run-loop.md](run-loop.md) § The plan is the queue), so a criterion resting on it can never be
+  earned. A correction to the slice's own `slice.md` is made in planning, or left to the wrap-up.
+  `--dry-run` flags a phase whose text names a `slices/` path.
 - **`## Task shape` is the plan-writer's declaration** — `pre-settled`, `localized`, or
   `cross-cutting`, one line of justification anchored in slice.md facts. It binds the writer's
   investigation and the plan review checks it (semantics: [plan-loop.md](plan-loop.md)); the
