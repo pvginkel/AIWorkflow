@@ -138,6 +138,14 @@ plan wins and the operator decides. Then the root cause:
   path in a `Target:`, the spec repo checked out off its base: the sub-agent fixes it and says
   so, and the session resumes (`run_loop.py run <slice> --resume --detach --spec-push`) and
   waits.
+- **A spec-repo merge the plan resolves** — the `blocked` bail on a branch that "does not merge
+  cleanly" into the spec repo's base, where `plan.md` says how every hunk of every conflicted
+  file resolves: a done-record's `Record.` or a ruling that foresaw the other edit. In the shared
+  tree and in one sitting, since another run may commit to that base meanwhile, the sub-agent
+  merges the branch as the bail names it, resolves each hunk as the plan words it, stages only
+  the conflicted files, and commits, the message naming the plan line that resolved each hunk.
+  The session resumes and waits, as above. A hunk the plan does not resolve aborts the merge
+  (`git merge --abort`), and the bail is the next case's.
 - **Anything else** — the sub-agent writes a `decision` store: the diagnosis, and of retry (the
   resume, once what the diagnosis names is done), change the plan and stop here the options that
   are live, with its recommendation. The session renders and registers it, attaches

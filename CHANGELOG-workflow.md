@@ -4,6 +4,20 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-15 — run-slice merges a spec-repo conflict the plan resolves, then resumes (v0.10.70)
+
+AIWF-165. Ansible slice 067 (2026-11-06): P5's merge into AnsibleSpecs conflicted on one line of
+`secret-rotation/catalog.md` with slice 066, running in parallel. P5's done-record had already
+said to keep both clauses, yet the error diagnosis asked for a hand merge through a decision
+document. Prose only; no code changes.
+
+- **run-slice § An error** gains a case before *Anything else*: the driver's `blocked` "does not
+  merge cleanly" bail on the spec repo, where `plan.md` — a done-record's `Record.` or a ruling —
+  says how every hunk of every conflicted file resolves. The sub-agent merges in the shared tree
+  in one sitting, resolves each hunk as the plan words it, stages only the conflicted files,
+  commits with the plan line behind each hunk named, and the session resumes. A hunk the plan
+  does not resolve aborts the merge and goes to a decision, as before.
+
 ## 2026-11-15 — run-slice strikes a manual pre-run action it can show done, then resumes (v0.10.69)
 
 AIWF-164. Ansible slice 066 (2026-11-06): the run bailed `prerun_action` on A1, `check: manual`
