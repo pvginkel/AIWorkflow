@@ -1476,15 +1476,18 @@ class Replay:
     def on_result(self, tid, rec: dict | None, txt: str, blk: dict, o: dict) -> None:
         """A tool result; `rec` is the call it answers, None for one no call awaits."""
 
-    def on_text(self, o: dict, txt: str, kind: str | None) -> None:
-        """A user text, of `_user_text_kind`'s kind."""
+    def on_text(self, o: dict, txt: str, kind: str | None, marked: dict | None) -> None:
+        """A user text, of `_user_text_kind`'s kind; `marked` is the turn it
+        settled `notified` on, if any."""
 
     def _user_text(self, o: dict, txt: str) -> int:
         kind = _user_text_kind(o, txt)
+        marked = None
         if kind and self.awaiting is not None:
-            self.awaiting["notified"] = kind == "notification"
+            marked = self.awaiting
+            marked["notified"] = kind == "notification"
             self.awaiting = None
-        self.on_text(o, txt, kind)
+        self.on_text(o, txt, kind, marked)
         return kind == "prompt"
 
     def feed(self, o) -> None:
