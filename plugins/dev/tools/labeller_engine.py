@@ -395,7 +395,6 @@ class _Run(tp.Replay):
         job = self.job
         mid = (o.get("message") or {}).get("id")
         turn["_call"] = mid if isinstance(mid, str) else None
-        turn["_idx"] = len(self.turns) - 1
         launch = job.launch_of.get(mid) if job.main else None
         turn["_launch"] = launch
         prev_tools, prev_launch = self._prev_of(turn)
@@ -460,8 +459,6 @@ class _Run(tp.Replay):
         rec["_turn"] = turn
 
     def on_result(self, tid, rec: dict | None, txt: str, blk: dict, o: dict) -> None:
-        if self.turns:
-            self._touch(self.turns[-1], self.byte + 1)
         if rec is None:
             if isinstance(tid, str) and tid in self.owed:
                 raise _Whole("behind")
@@ -491,8 +488,6 @@ class _Run(tp.Replay):
                         o.get("timestamp"))
 
     def on_text(self, o: dict, txt: str, kind: str | None, marked: dict | None) -> None:
-        if marked is not None:
-            self._touch(marked, self.byte + 1)
         if kind == "prompt":
             self.wake["person"] = True
             if self.job.digest_launches and self.wake["digest"] is None:
@@ -540,11 +535,12 @@ class _Run(tp.Replay):
                                                         s["notified"] or at))
         self._touch(s["rec"]["_turn"], self.byte + 1)
 
-    def _close(self, s: dict) -> None:
+    @staticmethod
+    def _close(s: dict) -> None:
         """A background wait left unread: its Launch ended, or 20 Calls passed its
-        notification. It makes no CI Build, and no later summary is matched to it."""
+        notification. It makes no CI Build, and no later summary is matched to it. Its Call
+        keeps the labels it had while open, so the close holds no boundary."""
         s["open"] = False
-        self._touch(s["rec"]["_turn"], self.byte)
 
     def _labels(self, rec: dict, result, result_at, is_error: bool) -> dict:
         ctx = {"cwd": rec.get("_cwd"), "requested_at": rec.get("_req"), "result_at": result_at,
@@ -592,7 +588,12 @@ class _Run(tp.Replay):
 
     def _boundary_index(self) -> int | None:
         """The latest counted Call before whose first line every earlier turn of the part is
-        settled; None for a part with no counted Call."""
+        settled; None for a part with no counted Call. What a line after it did to an earlier
+        turn within this part is in that turn's labels already, the classifier's state being
+        taken once the part is read; what holds the boundary is a turn a later part could
+        still touch — a call added to it, a result for one of them, a CI wait still open — or
+        one whose touch a later part could not see, as a wait matched after a later wait on
+        its job opened."""
         turns = self.turns
         settled_by = []
         m = 0.0
