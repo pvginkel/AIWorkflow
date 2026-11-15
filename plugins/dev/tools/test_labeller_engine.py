@@ -1004,11 +1004,9 @@ def test_an_old_session_is_restamped_with_what_its_file_names():
         def needs_facts(self, conversation, transcript):
             return True
 
-        def tie(self, conversation, transcript):
-            assert transcript["facts"]["first_prompt"] == "/dev:run-slice 001_a"
-            t = Tie()
-            t.named = ("Specs/001_a",)
-            return t
+        def named_from_facts(self, facts):
+            assert facts["first_prompt"] == "/dev:run-slice 001_a"
+            return ["Specs/001_a@run"]
     s = Script()
     s.prompt("/dev:run-slice 001_a")
     s.turn(text="Done.")
@@ -1017,11 +1015,11 @@ def test_an_old_session_is_restamped_with_what_its_file_names():
         path = Path(d) / "t.jsonl"
         path.write_bytes(s.data())
         item = _item(path, s.data(), s)
-        item["restamp"] = lambda named: (asked.append(named) or "1:x:Specs/001_a",
+        item["restamp"] = lambda named: (asked.append(named) or "1:x:Specs/001_a@run",
                                          Tie(adopted_group="Specs/001_a"))
         ans = E.label_one(item, Tie(), Old())
-    assert asked == [["Specs/001_a"]]
-    assert ans["stamp"] == "1:x:Specs/001_a"
+    assert asked == [["Specs/001_a@run"]]
+    assert ans["stamp"] == "1:x:Specs/001_a@run"
     assert ans["labels"]["transcript"] == [{"adopted_group": "Specs/001_a"}]
 
 
