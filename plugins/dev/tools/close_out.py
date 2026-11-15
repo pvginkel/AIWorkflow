@@ -31,7 +31,8 @@ the agents and the skills:
   note         add a dated paragraph `<who>, <date> — <text>` to one entry;
                `--left` is the wrap-up's mark that it looked and changed
                nothing.
-  strike       strike one entry, with the reason and the commit.
+  strike       strike one entry, with the reason and the commit; a second
+               strike replaces the first, kept as a note.
   amend        correct a live entry: each field given replaces the entry's,
                checked as `append` checks it, no note left. The id and the
                kind never change.
@@ -65,12 +66,16 @@ the agents and the skills:
                `deferred` closes the entry as Pilot's, an action's `done`
                is what was done on it.
   rule         record what the continuation did on an entry's ruling, which
-               strikes it.
+               strikes it; a second rule replaces what the first recorded,
+               kept as a note.
   settle       settle a criterion owed after an operator's action, once it
                has happened: its verdict, rationale and evidence written
                into verification.json in the file's own escaping, and the
                action that waited on it struck — a push hold's action that
                lists more criteria takes a note until the last is settled.
+               A criterion settled already is settled again, on a closed
+               report too: its earlier verdict kept as a note on the
+               actions that answered it.
   close        close the report once its answers are carried out: every
                live entry struck, but one whose ruling nobody carried out.
 
@@ -820,27 +825,54 @@ def _struck_heading(entry: dict) -> str:
             + _strike_tail(entry["strike"]))
 
 
-def _strike(entry: dict, reason: str, by: str | None, commit: str | None,
-            date: str) -> None:
-    if entry.get("strike"):
-        raise ReportError(f"{entry['id']} is already struck: "
-                          + _struck_heading(entry)[4:] + ". A note adds to it.")
+def _strike_record(reason: str, by: str | None, commit: str | None, date: str) -> dict:
     reason = _collapse(reason)
     if not reason:
         raise ReportError("a strike needs a --reason")
-    entry["strike"] = {"reason": reason, "by": _collapse(by) or None,
-                       "date": date, "commit": _collapse(commit) or None}
+    return {"reason": reason, "by": _collapse(by) or None,
+            "date": date, "commit": _collapse(commit) or None}
+
+
+def _strike(entry: dict, reason: str, by: str | None, commit: str | None,
+            date: str) -> None:
+    """Strike a live entry. One struck already is refused: the tool's own
+    strikes — the read-back's, the close's, a settle's — take live entries
+    only; `strike_entry`, `rule_entry` and `settle_criterion` replace a
+    strike themselves, keeping the earlier one as a history note."""
+    if entry.get("strike"):
+        raise ReportError(f"{entry['id']} is already struck: "
+                          + _struck_heading(entry)[4:] + ". A note adds to it.")
+    entry["strike"] = _strike_record(reason, by, commit, date)
+
+
+def _strike_note(who: str, day: str, old: dict) -> dict:
+    """The history note a strike becomes when a later one replaces it."""
+    return {"by": who, "date": day, "text": [f"strike replaced — was: {_strike_tail(old)}"],
+            "history": "strike"}
 
 
 def strike_entry(slice_dir: Path | str, eid: str, reason: str,
                  by: str | None = None, commit: str | None = None,
                  date: str | None = None) -> str:
-    """Strike a live entry; returns its struck heading. The entry stays in
-    the store — in the Record of the report."""
+    """Strike an entry; returns its struck heading. The entry stays in the
+    store — in the Record of the report. One struck already has its strike
+    replaced — the reason, the striker, the date and the commit — and the
+    earlier strike stays as a history note, signed by whoever struck it
+    again; a strike whose reason, striker and commit are the ones it holds
+    changes nothing and is refused, nothing written."""
     day = _date(date)
     with _writing(slice_dir) as store:
         entry = _find(store, eid)
-        _strike(entry, reason, by, commit, day)
+        old = entry.get("strike")
+        if not old:
+            _strike(entry, reason, by, commit, day)
+            return _struck_heading(entry)
+        new = _strike_record(reason, by, commit, day)
+        if all(new[k] == old.get(k) for k in ("reason", "by", "commit")):
+            raise ReportError(f"strike changes nothing on {entry['id']}: it is struck "
+                              f"so already — {_strike_tail(old)}")
+        entry["notes"].append(_strike_note(new["by"] or "strike", day, old))
+        entry["strike"] = new
         return _struck_heading(entry)
 
 
@@ -1450,7 +1482,10 @@ def rule_entry(slice_dir: Path | str, eid: str, did: str,
     it: a hash taken before the push names a commit the push's `git pull
     --rebase` rewrites, which never reaches the remote. Any other commit is
     refused, whether or not the repo's push is held, and nothing is written;
-    without a commit, no git runs."""
+    without a commit, no git runs.
+
+    An entry whose ruling records what was done already has it replaced
+    (`_rerule`): a ruling reversed, or carried out again."""
     did = _collapse(did)
     if not did:
         raise ReportError("--did is empty")
@@ -1462,7 +1497,8 @@ def rule_entry(slice_dir: Path | str, eid: str, did: str,
             raise ReportError(f"{entry['id']} holds no ruling to act on: `absorb` reads "
                               "the answers of close-out.md back first")
         if entry["ruling"].get("did"):
-            raise ReportError(f"{entry['id']} is done already: {entry['ruling']['did']}")
+            _rerule(entry, did, commit, day, slice_dir if repo is None else repo)
+            return f"{entry['id']}: {_ruling_text(entry)}"
         struck = entry.get("strike")
         if commit and not (struck and struck.get("commit")):
             _commit_on_upstream(slice_dir if repo is None else repo, commit)
@@ -1472,6 +1508,44 @@ def rule_entry(slice_dir: Path | str, eid: str, did: str,
         elif commit and not struck.get("commit"):
             struck["commit"] = commit
         return f"{entry['id']}: {_ruling_text(entry)}"
+
+
+def _rerule(entry: dict, did: str, commit: str | None, day: str,
+            repo: Path | str) -> None:
+    """A second `rule` on an entry: `did` replaces what the ruling says was
+    done, the earlier words kept as a history note. The strike the rule or
+    the read-back wrote — its reason the earlier words, or `done by <who>:`
+    and them — takes the new words and today's date; any other strike's
+    reason stays. A commit given is checked, unless the strike holds it
+    already, and replaces the strike's; none given leaves it. The same
+    words and no other commit change nothing, and are refused."""
+    ruling = entry["ruling"]
+    old = ruling["did"]
+    struck = entry.get("strike")
+    held = (struck or {}).get("commit")
+    new_commit = commit is not None and commit != held
+    if did == old and not new_commit:
+        raise ReportError(f"rule changes nothing on {entry['id']}: it records that done "
+                          f"already — {old}" + (f" ({held})" if held and held not in old
+                                                else ""))
+    if new_commit:
+        _commit_on_upstream(repo, commit)
+    was = old
+    if new_commit:
+        was += (f" ({held})" if held not in old else "") if held else ", no commit"
+    entry["notes"].append({"by": _striker(entry), "date": day,
+                           "text": [f"what was done replaced — was: {was}"],
+                           "history": "ruling"})
+    ruling["did"] = did
+    if not struck:
+        _strike(entry, did, _striker(entry), commit, day)
+        return
+    reason = struck.get("reason") or ""
+    if reason == old or (reason.startswith("done by ") and reason.endswith(f": {old}")):
+        struck["reason"] = reason.removesuffix(old) + did
+        struck["date"] = day
+    if new_commit:
+        struck["commit"] = commit
 
 
 def close_report(slice_dir: Path | str, by: str | None = None,
@@ -1581,30 +1655,73 @@ def _hold_criteria(entry: dict) -> list[str]:
     return vids
 
 
+def _settled_reason(vid: str, listed: list[str] | None, verdicts: dict) -> str:
+    """The reason a settle strikes an action with: `settled V17 pass in
+    verification.json` for the `Settle V17 after …` one (`listed` None), every
+    criterion a push hold's lists, with its verdict, for that one."""
+    settled = ", ".join(f"{v} {verdicts.get(v)}" for v in (listed or [vid]))
+    return f"settled {settled} in {VERIFICATION_NAME}"
+
+
+def _by_settle(strike: dict) -> bool:
+    """Whether a settle wrote this strike: `settled … in verification.json`."""
+    reason = strike.get("reason") or ""
+    return reason.startswith("settled ") and reason.endswith(f" in {VERIFICATION_NAME}")
+
+
+def _resettled_note(vid: str, prior: dict, by: str | None, day: str,
+                    strike: dict | None) -> dict:
+    """The history note a settle of `vid` again leaves on an action that
+    answered it: the verdict and the rationale it replaced and, where it
+    rewrote the action's strike, the strike that was."""
+    text = [f"{vid} settled again — was: {prior['verdict']}"]
+    if prior.get("rationale"):
+        text += ["", f"Its rationale was: {prior['rationale']}"]
+    if strike is not None:
+        text += ["", f"Strike replaced — was: {_strike_tail(strike)}"]
+    return {"by": _collapse(by) or "settle", "date": day, "text": text,
+            "history": "settled"}
+
+
 def _settle_entries(store: dict, vid: str, verdicts: dict, by: str | None,
-                    day: str) -> list[str]:
+                    day: str, prior: dict | None = None) -> list[str]:
     """The live actions a settle of `vid` answers: the `Settle <vid> after …`
     one is struck; a push hold's that lists `vid` is struck once every
     criterion it lists is `pass` or `fail` in `verdicts` (verification.json
     as the settle leaves it), and takes a note naming what is still owed
-    until then. Returns one line per entry changed."""
+    until then. With `prior` — the verdict and rationale a settle of `vid`
+    again replaces — a struck action that answers `vid` takes a history note
+    of them too: a strike a settle wrote is written again from `verdicts`,
+    the note keeping the one it replaces; any other strike stays. Returns
+    one line per entry changed."""
     done: list[str] = []
     for entry in store["entries"]:
-        if entry.get("strike"):
-            continue
         m = _OWED_HEADLINE_RE.match(entry.get("headline") or "")
-        if m and m.group("vid") == vid:
-            _strike(entry, f"settled {vid} {verdicts[vid]} in {VERIFICATION_NAME}", by,
-                    None, day)
-            done.append(_struck_heading(entry))
+        own = bool(m) and m.group("vid") == vid
+        listed = None if own else list(dict.fromkeys(_hold_criteria(entry)))
+        if not own and vid not in listed:
             continue
-        listed = list(dict.fromkeys(_hold_criteria(entry)))
-        if vid not in listed:
+        struck = entry.get("strike")
+        if struck:
+            if prior is None:
+                continue
+            rewrite = _by_settle(struck)
+            note = _resettled_note(vid, prior, by, day, struck if rewrite else None)
+            entry["notes"].append(note)
+            if rewrite:
+                entry["strike"] = _strike_record(_settled_reason(vid, listed, verdicts), by,
+                                                 struck.get("commit"), day)
+                done.append(_struck_heading(entry))
+            else:
+                done.append(f"{entry['id']} noted: {_note_text(note)}")
+            continue
+        if own:
+            _strike(entry, _settled_reason(vid, None, verdicts), by, None, day)
+            done.append(_struck_heading(entry))
             continue
         owed = [v for v in listed if verdicts.get(v) not in SETTLE_VERDICTS]
         if not owed:
-            settled = ", ".join(f"{v} {verdicts[v]}" for v in listed)
-            _strike(entry, f"settled {settled} in {VERIFICATION_NAME}", by, None, day)
+            _strike(entry, _settled_reason(vid, listed, verdicts), by, None, day)
             done.append(_struck_heading(entry))
             continue
         note = {"by": _collapse(by) or "settle", "date": day,
@@ -1624,12 +1741,20 @@ def settle_criterion(slice_dir: Path | str, vid: str, verdict: str,
     evidence added after the test phase's, the rationale naming the action
     and the date unless one is given — and the actions that waited on it
     struck or noted (`_settle_entries`). Refused, nothing written, on a
-    criterion without `owed_after` or with a verdict other than `owed` or
-    none. verification.json is written after the store, so a store write
-    refused leaves both as they were; a slice without a store has nothing
-    to strike and gets verification.json alone. An action the read-back
-    struck as done already stays as it is. Returns one line per thing
-    done."""
+    criterion without `owed_after` or with a verdict other than `owed`,
+    none, or one a settle writes (`pass`, `fail`). verification.json is
+    written after the store, so a store write refused leaves both as they
+    were; a slice without a store has nothing to strike and gets
+    verification.json alone. An action the read-back struck as done already
+    stays as it is.
+
+    A criterion settled already is settled again — a ruling reversed, on a
+    closed report too: the verdict and the rationale replaced, the evidence
+    not held yet added after what it holds, and every action that answers
+    it, struck or live, given the earlier verdict as a history note, the
+    strike a settle wrote written again (`_settle_entries`). A settle again
+    whose verdict, rationale and evidence the criterion holds already
+    changes nothing, and is refused. Returns one line per thing done."""
     vid = vid.strip()
     if verdict not in SETTLE_VERDICTS:
         raise ReportError(f"unknown verdict {verdict!r}; one of " + ", ".join(SETTLE_VERDICTS))
@@ -1651,25 +1776,35 @@ def settle_criterion(slice_dir: Path | str, vid: str, verdict: str,
             raise ReportError(f"{vid} has no owed_after — settle takes a criterion owed "
                               "after an operator's action; the test phase settles the rest")
         held = item.get("verdict")
-        if held not in (None, "owed"):
+        again = held in SETTLE_VERDICTS
+        if held not in (None, "owed") and not again:
             raise ReportError(f"{vid}'s verdict is {held!r} already — settle takes a "
-                              "criterion still owed (verdict owed, or none)")
+                              "criterion still owed (verdict owed, or none), or one it "
+                              f"settled ({' or '.join(SETTLE_VERDICTS)})")
         kept = item.get("evidence")
         if isinstance(kept, str):
             kept = [kept] if kept.strip() else []
         elif not isinstance(kept, list):
             kept = [kept] if kept else []
+        new_rationale = (rationale.strip() if rationale is not None
+                         else f"Settled {verdict} after {_collapse(after)}, {day}.")
+        added = [e for e in dict.fromkeys(evidence) if e not in kept] if again else evidence
+        prior = {"verdict": held, "rationale": item.get("rationale")} if again else None
+        if again and verdict == held and new_rationale == item.get("rationale") \
+                and not added:
+            raise ReportError(f"settle changes nothing on {vid}: it is {held} already, "
+                              "with that rationale and every --evidence given")
         item["verdict"] = verdict
-        item["rationale"] = (rationale.strip() if rationale is not None
-                             else f"Settled {verdict} after {_collapse(after)}, {day}.")
-        item["evidence"] = [*kept, *evidence]
+        item["rationale"] = new_rationale
+        item["evidence"] = [*kept, *added]
         text = _dump_like(raw, data)
         verdicts = {i.get("id"): i.get("verdict") for i in data["items"]
                     if isinstance(i, dict)}
-        done = [f"{vid} settled {verdict} in {VERIFICATION_NAME}"]
+        done = [f"{vid} settled {verdict} in {VERIFICATION_NAME}"
+                + (f", replacing {held}" if again else "")]
         if store_path(slice_dir).exists():
             with _writing(slice_dir) as store:
-                done += _settle_entries(store, vid, verdicts, by, day)
+                done += _settle_entries(store, vid, verdicts, by, day, prior)
         _write_atomic(path, text)
     return done
 
@@ -3575,7 +3710,8 @@ def build_parser() -> tuple[argparse.ArgumentParser,
                         "the note says why, and is the entry's mark")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
-    p = verb("strike", "strike one live entry; prints its heading", entry=True)
+    p = verb("strike", "strike one entry, or replace its strike; prints its heading",
+             entry=True)
     p.add_argument("--reason", required=True,
                    help="why — resolved/refuted names the commit and the re-run")
     p.add_argument("--by", help="who strikes, e.g. `consult 1`")
@@ -3666,8 +3802,8 @@ def build_parser() -> tuple[argparse.ArgumentParser,
                        "block's answer lines into its entry's ruling")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
-    p = verb("rule", "record what was done on an entry's ruling — strikes the entry",
-             entry=True)
+    p = verb("rule", "record what was done on an entry's ruling — strikes the entry; "
+                     "a second rule replaces what was done", entry=True)
     p.add_argument("--did", required=True,
                    help="what was done: carded as <card>, fixed in <commit>, folded "
                         "into <slice>, closed")
@@ -3679,7 +3815,7 @@ def build_parser() -> tuple[argparse.ArgumentParser,
 
     p = verb("settle", "settle a criterion owed after an operator's action — writes its "
                        "verdict into verification.json and strikes the action that waited "
-                       "on it")
+                       "on it; a criterion settled already is settled again")
     p.add_argument("vid", metavar="<Vid>",
                    help="the criterion's id in verification.json, like V17")
     p.add_argument("--verdict", required=True, choices=SETTLE_VERDICTS,

@@ -1273,8 +1273,30 @@ def test_strike_stores_the_reason_and_commit_and_shows_them_in_the_heading():
         heading = close_out.strike_entry(slice_dir, "B2", "resolved by P4 (19640d9)",
                                          commit="19640d9")
         assert heading.endswith("~~ — resolved by P4 (19640d9)")
-        code, _, err = run_cli("strike", slice_dir, "B1", "--reason", "again")
-        assert code == 2 and "already struck" in err
+        # a second strike replaces the first, which stays as a history note
+        code, out, err = run_cli("strike", slice_dir, "B1", "--reason", "refuted: P4 was "
+                                 "not it", "--by", "consult 2", "--date", "2026-10-01")
+        assert code == 0, err
+        assert out.strip() == ("### ~~B1 — controller: the status line is wrong · nit~~ — "
+                               "refuted: P4 was not it; struck by consult 2")
+        b1 = entry_of(slice_dir, "B1")
+        assert b1["strike"] == {"reason": "refuted: P4 was not it", "by": "consult 2",
+                                "date": "2026-10-01", "commit": None}
+        assert b1["notes"] == [{
+            "by": "consult 2", "date": "2026-10-01",
+            "text": ["strike replaced — was: resolved by P4: suite re-run (19640d9); "
+                     "struck by consult 1"],
+            "history": "strike"}]
+        # unsigned, the note is the tool's; the same strike again changes nothing
+        close_out.strike_entry(slice_dir, "B2", "resolved by P5", date="2026-10-02")
+        assert entry_of(slice_dir, "B2")["notes"][-1]["by"] == "strike"
+        before = _files(slice_dir)
+        code, out, err = run_cli("strike", slice_dir, "B1", "--reason", " refuted:  P4 was "
+                                 "not it", "--by", "consult 2", "--date", "2026-10-03")
+        assert code == 2 and not out, (out, err)
+        assert "strike changes nothing on B1: it is struck so already — refuted: P4 was " \
+               "not it; struck by consult 2" in err, err
+        assert _files(slice_dir) == before
         code, _, err = run_cli("strike", slice_dir, "B9", "--reason", "x")
         assert code == 2 and "no entry B9" in err
 
@@ -2542,7 +2564,7 @@ def test_settle_refuses_what_is_not_owed_and_writes_nothing():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = _owed_slice(tmp, [
             _criterion("V01", verdict="owed"),
-            _criterion("V02", DEPLOY, "pass"),
+            dict(_criterion("V02", DEPLOY, "pass", ["seen", "green"]), rationale="r"),
             _criterion("V03", DEPLOY, "proven offline"),
             _criterion("V04", "  "),
             _criterion("V05", DEPLOY, "owed")])
@@ -2554,8 +2576,11 @@ def test_settle_refuses_what_is_not_owed_and_writes_nothing():
                 (["V99", *ev], "no criterion V99 in"),
                 (["V01", *ev], "V01 has no owed_after"),
                 (["V04", *ev], "V04 has no owed_after"),
-                (["V02", *ev], "V02's verdict is 'pass' already"),
                 (["V03", *ev], "V03's verdict is 'proven offline' already"),
+                # settled again with what it holds: its verdict, rationale, evidence
+                (["V02", *ev, "--evidence", "green", "--rationale", " r "],
+                 "settle changes nothing on V02: it is pass already, with that rationale "
+                 "and every --evidence given"),
                 (["V05", "--verdict", "pass", "--evidence", " "], "settle needs --evidence"),
                 (["V05", *ev, "--rationale", ""], "--rationale is empty")):
             code, _, err = run_cli("settle", slice_dir, *argv)
@@ -2657,6 +2682,82 @@ def test_settling_a_push_holds_criteria_notes_its_action_until_the_last_is_settl
         assert a1["strike"]["by"] == "close-out session" and len(a1["notes"]) == 1
         assert a2["strike"] is None
         assert _verification(slice_dir)["V03"]["verdict"] == "owed"
+
+
+def test_settling_again_after_the_close_replaces_the_verdict_and_keeps_the_earlier():
+    """A ruling reversed after the report closed: the criterion is settled
+    again, each action that answered it keeps the earlier verdict as a
+    history note, a strike a settle wrote is written again, any other stays."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _owed_slice(tmp, [
+            _criterion("V01", "../HelmCharts", "owed"),
+            _criterion("V02", DEPLOY, "owed", ["helm template renders"]),
+            _criterion("V03", "../HelmCharts", "owed")])
+        _seed_owed(slice_dir, "V02", DEPLOY)                                     # A1
+        _seed_hold(slice_dir, ["- V01 — the chart deploys", "- V02"])           # A2
+        _seed_hold(slice_dir, ["- V02", "- V03"])                                # A3
+        code, _, err = run_cli("settle", slice_dir, "V02", "--verdict", "fail",
+                               "--evidence", "the pod crash-loops",
+                               "--by", "close-out session")
+        assert code == 0, err
+        close_out.settle_criterion(slice_dir, "V01", "pass", ["the chart is live"])
+        assert close_out.close_report(slice_dir, by="run-slice", date="2026-11-01") == (1, [])
+        closed = store(slice_dir)["closed"]
+        assert closed == {"date": "2026-11-01", "by": "run-slice"}
+        a3_strike = entry_of(slice_dir, "A3")["strike"]
+        assert a3_strike["reason"].startswith("closed with the report, 2026-11-01")
+        first = _verification(slice_dir)["V02"]
+        today = close_out._today()
+        was_fail = f"Its rationale was: Settled fail after {DEPLOY}, {today}."
+        code, out, err = run_cli("settle", slice_dir, "V02", "--verdict", "pass",
+                                 "--evidence", "the pod crash-loops",
+                                 "--evidence", "the operator: redeployed, green",
+                                 "--by", "run-slice")
+        assert code == 0, err
+        assert out == "\n".join([
+            "V02 settled pass in verification.json, replacing fail",
+            f"### ~~A1 — Settle V02 after {DEPLOY}~~ — settled V02 pass in "
+            "verification.json; struck by run-slice",
+            "### ~~A2 — Push HelmCharts by hand when its hold lifts~~ — settled V01 pass, "
+            "V02 pass in verification.json; struck by run-slice",
+            f"A3 noted: run-slice, {today} — V02 settled again — was: fail", "",
+            was_fail]) + "\n"
+        # verification.json: the verdict and rationale replaced, the evidence not held
+        # yet added after what it holds
+        assert _verification(slice_dir)["V02"] == dict(
+            first, verdict="pass", rationale=f"Settled pass after {DEPLOY}, {today}.",
+            evidence=["helm template renders", "the pod crash-loops",
+                      "the operator: redeployed, green"])
+        a1, a2, a3 = store(slice_dir)["entries"]
+        assert a1["strike"] == {"reason": "settled V02 pass in verification.json",
+                                "by": "run-slice", "date": today, "commit": None}
+        assert a1["notes"] == [{
+            "by": "run-slice", "date": today,
+            "text": ["V02 settled again — was: fail", "", was_fail, "",
+                     "Strike replaced — was: settled V02 fail in verification.json; "
+                     "struck by close-out session"],
+            "history": "settled"}]
+        assert a2["strike"]["reason"] == "settled V01 pass, V02 pass in verification.json"
+        assert a2["notes"][-1]["text"][-1] == (
+            "Strike replaced — was: settled V01 pass, V02 fail in verification.json")
+        # a strike no settle wrote stays: the note alone keeps the earlier verdict
+        assert a3["strike"] == a3_strike
+        assert a3["notes"][-1] == {"by": "run-slice", "date": today,
+                                   "text": ["V02 settled again — was: fail", "", was_fail],
+                                   "history": "settled"}
+        assert store(slice_dir)["closed"] == closed
+        # a history note is nobody's finding; `show` gives it with the entry
+        assert not close_out._noted_since(a1)
+        assert f"run-slice, {today} — V02 settled again — was: fail" in \
+            close_out.show_view(slice_dir, ["A1"])
+        # the same settle again changes nothing, and writes nothing
+        verification = (slice_dir / "verification.json").read_bytes()
+        files = _files(slice_dir)
+        code, out, err = run_cli("settle", slice_dir, "V02", "--verdict", "pass",
+                                 "--evidence", "the operator: redeployed, green")
+        assert code == 2 and not out and "settle changes nothing on V02" in err, err
+        assert (slice_dir / "verification.json").read_bytes() == verification
+        assert _files(slice_dir) == files
 
 
 # -- render ----------------------------------------------------------------------
@@ -3575,11 +3676,33 @@ def test_absorb_reads_the_answers_back_into_rulings_the_continuation_carries_out
         assert entry_of(slice_dir, "D1")["strike"] == {
             "reason": "kept the design open", "by": "the operator's ruling",
             "date": close_out._today(), "commit": pushed}
+        # a second rule replaces what was done, and the strike the rule wrote with it
+        today = close_out._today()
+        code, out, err = run_cli("rule", slice_dir, "B1", "--did", "carded as P-131")
+        assert code == 0, err
+        assert out.strip().endswith("chosen by Pilot; the operator did not decide this — "
+                                    "carded as P-131")
+        b1 = entry_of(slice_dir, "B1")
+        assert b1["ruling"]["did"] == "carded as P-131"
+        assert b1["strike"] == {"reason": "carded as P-131", "by": "Pilot's ruling",
+                                "date": today, "commit": None}
+        assert b1["notes"][-1] == {"by": "Pilot's ruling", "date": today,
+                                   "text": ["what was done replaced — was: carded as P-130"],
+                                   "history": "ruling"}
+        # the read-back's strike takes the new words after its `done by <who>:`
+        close_out.rule_entry(slice_dir, "A1", "created by hand, then renamed")
+        a1 = entry_of(slice_dir, "A1")
+        assert a1["strike"]["reason"] == "done by pvginkel: created by hand, then renamed"
+        assert a1["notes"][-1]["text"] == ["what was done replaced — was: created by hand"]
+        assert a1["notes"][-1]["by"] == "the operator's ruling"
         for eid, did, needle in (("B6", "x", "B6 holds no ruling to act on"),
-                                 ("B1", "y", "B1 is done already"),
+                                 ("B1", " carded as  P-131", "rule changes nothing on B1: "
+                                  "it records that done already — carded as P-131"),
                                  ("B1", " ", "--did is empty")):
+            before = _files(slice_dir)
             code, _, err = run_cli("rule", slice_dir, eid, "--did", did)
             assert code == 2 and needle in err, err
+            assert _files(slice_dir) == before
         n, stay = close_out.close_report(slice_dir, by="run-slice", date="2026-10-30")
         assert (n, stay) == (0, [])
         assert store(slice_dir)["closed"] == {"date": "2026-10-30", "by": "run-slice"}
@@ -3762,6 +3885,48 @@ def test_rule_without_a_commit_runs_no_git_and_needs_no_repo():
         # a commit asked for there is refused: there is no repo to find it in
         _rule_refused(slice_dir, "A3", "abc1234", "abc1234 is no commit in",
                       "not a git repository")
+
+
+def test_rule_again_checks_a_new_commit_and_replaces_the_strikes():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _ruled_slice(tmp, 2)
+        spec = _tracking(slice_dir.parent.parent, _bare(tmp))
+        first = _commit(spec, "fix.txt", push=True)
+        code, _, err = _rule(slice_dir, "A1", first)
+        assert code == 0, err
+        close_out.strike_entry(slice_dir, "A2", "fixed", by="wrap-up", commit=first,
+                               date="2026-11-01")
+        close_out.rule_entry(slice_dir, "A2", "fixed it")
+        # the commit the strike holds is not checked again: no git runs for it
+        nowhere = Path(tmp) / "nowhere"
+        _rule_refused(slice_dir, "A1", first, "rule changes nothing on A1: it records "
+                      f"that done already — fixed in {first}", repo=nowhere)
+        close_out.rule_entry(slice_dir, "A2", "fixed it, and its test", commit=first,
+                             repo=nowhere)
+        assert entry_of(slice_dir, "A2")["notes"][-1]["text"] == [
+            "what was done replaced — was: fixed it"]
+        # a new commit is checked as a first one is
+        again = _commit(spec, "again.txt")
+        _rule_refused(slice_dir, "A1", again, f"{again} is not on origin/main")
+        git(spec, "push", "-q")
+        today = close_out._today()
+        code, _, err = _rule(slice_dir, "A1", again)
+        assert code == 0, err
+        a1 = entry_of(slice_dir, "A1")
+        assert a1["ruling"]["did"] == f"fixed in {again}"
+        assert a1["strike"] == {"reason": f"fixed in {again}", "by": "the operator's ruling",
+                                "date": today, "commit": again}
+        assert a1["notes"] == [{"by": "the operator's ruling", "date": today,
+                                "text": [f"what was done replaced — was: fixed in {first}"],
+                                "history": "ruling"}]
+        # the wrap-up's strike keeps its reason and date, and takes the new commit
+        close_out.rule_entry(slice_dir, "A2", "fixed it, and its test", commit=again)
+        a2 = entry_of(slice_dir, "A2")
+        assert a2["ruling"]["did"] == "fixed it, and its test"
+        assert a2["strike"] == {"reason": "fixed", "by": "wrap-up", "date": "2026-11-01",
+                                "commit": again}
+        assert a2["notes"][-1]["text"] == [
+            f"what was done replaced — was: fixed it, and its test ({first})"]
 
 
 def test_closing_the_report_keeps_why_the_table_closed_an_entry():

@@ -32,7 +32,10 @@ files by hand.
 everyone with the pen — an entry's appender, the reviewers, the consults, the wrap-up: `amend`
 corrects any live entry, each field given replacing its own and checked as `append` checks it,
 `relabel` its labels, `propose` its proposal, and nothing is taken back — what was written wrong
-is written again. Nothing renders on a write. The loops render when they stop and at the run's
+is written again. So are a strike, what `rule --did` recorded and a criterion `settle` gave
+`pass` or `fail`: the same verb on the same id replaces the first, which the store keeps as a
+history note, on a closed report too; one that would change nothing is refused. Nothing renders
+on a write. The loops render when they stop and at the run's
 end, after the wrap-up; the last render is the one the run registers. After it, only the run's
 continuation writes, through `absorb`, `rule`, `fold`, `settle` and `close`, and a
 `close-out.md` that carries Pilot's answers is never rendered over: a render writes the record
@@ -540,6 +543,8 @@ there is one), which closes the entry, and closes the report.
   `verification.json`; a hold's action lists every criterion its push owes.
 - **What cannot be carried out as ruled** — a `fix now` no rule allows, a fold into a running
   slice — is a new document with the alternatives as a decision, never a quiet substitute.
+- **A record that turns out wrong** — a slip in `--did`, a verdict the operator reverses after
+  the close — is written again with the verb that wrote it (§ The write model).
 - **Neither `close-out.json` nor `verification.json` is edited by hand.** At the end,
   `close_out.py close`, without `--by`, so the close record names no signer, closes every
   entry still live, but one whose ruling nobody carried out;

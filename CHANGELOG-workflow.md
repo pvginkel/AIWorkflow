@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-15 — A second strike, rule or settle replaces the first, kept as history (v0.10.68)
+
+AIWF-163. Three reports on 0.10.40–0.10.47 (PilotAppSpecs, AnsibleSpecs): a shell-quoting slip in
+a recorded `--did`, a wrong clause in a wrap-up's own strike reason, and a verdict the operator
+reversed after the close — the first two could only get a correcting note, the third took a hand
+edit of `verification.json`. The wrap-up's definition already promised the opposite.
+
+- **`strike`, `rule --did` and `settle` take an entry or criterion already marked**: the second
+  mark replaces the first, and the store keeps the first as a history note on the entry. `rule`
+  rewrites the strike it (or the read-back) wrote and checks a new `--commit` on the upstream;
+  `settle` replaces a criterion's `pass` or `fail`, adds the new evidence after the old, and
+  rewrites the strike a settle wrote on its action — on a closed report too.
+- **Still refused**: a repeat that would change nothing, a `settle` of a verdict it did not
+  write (`proven offline`) or of a criterion without `owed_after`.
+- `close-out.md` § The write model says it; § The continuation points a record that turns out
+  wrong there instead of to a hand edit.
+
 ## 2026-11-15 — The debrief's docs say what the loops do (v0.10.67)
 
 PilotApp slice 043, the debrief, its doc phase. Docs and the stage skills' wording only; no code
