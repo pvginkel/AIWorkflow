@@ -468,6 +468,21 @@ def read_handback(role: str, path: Path) -> tuple[list[dict], list[str]]:
     return out, found
 
 
+def review_findings(path: Path) -> list[dict]:
+    """The findings of a review's hand-back file as its history row keeps
+    them: each finding's `class` and `headline`, and whether it is a gap
+    (`is_gap`); none where the file is not there or holds no `findings`
+    list. The file as the reviewer last wrote it, faults and all — what the
+    review found, not what reached the operator."""
+    data = _read_json(path)
+    items = data.get("findings") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return []
+    return [{"class": item.get("class"), "headline": item.get("headline"),
+             "gap": is_gap(item)}
+            for item in items if isinstance(item, dict)]
+
+
 # ---------------------------------------------------------------------------
 # Dispatch prompts. Role contracts live in the agent definitions; prompts
 # carry only instance data — pointers into the slice folder, never relayed
@@ -659,6 +674,52 @@ class PlanLoop:
                           "plugin's data folder cannot be told (no "
                           "installed_plugins.json key for it)")
         return self._records
+
+    def _keep_start_facts(self) -> None:
+        """At the loop's start, in the run records: the slice's card and
+        title in its slice.json, and the project's file-class rules
+        (`run_loop.keep_project_rules`). Bookkeeping: it never holds up
+        the loop."""
+        def say(line: str) -> None:
+            self.log(f"[records] {line}")
+
+        try:
+            records = self._run_records()
+            run_loop.keep_slice_facts(records, self.slice_dir,
+                                      run_loop.slice_card_and_title(self.slice_dir))
+            try:
+                cfg = project_config.load(self.repo_root)
+            except project_config.ConfigError as e:
+                say("the project's file-class rules not kept: "
+                    + str(e).splitlines()[0])
+            else:
+                run_loop.keep_project_rules(records, cfg)
+        except Exception as e:
+            say(f"the slice's facts not kept ({type(e).__name__}: {e})")
+
+    def _keep_plan_size(self) -> None:
+        """At the loop's clean end, the plan's size in slice.json
+        (`run_loop.plan_size`), over a size an earlier planning wrote."""
+        try:
+            size = run_loop.plan_size(self.slice_dir)
+            if size:
+                run_loop.keep_slice_facts(self._run_records(), self.slice_dir,
+                                          {"plan": size})
+        except Exception as e:
+            self.log(f"[records] the plan's size not kept ({type(e).__name__}: {e})")
+
+    def _keep_review_findings(self, path: Path, round_: int) -> None:
+        """The findings of review round `round_`'s hand-back file
+        (`review_findings`) on that round's plan-reviewer row, saved; a
+        `go`, which writes no file, gives its row none."""
+        findings = review_findings(path)
+        if not findings:
+            return
+        for row in reversed(self.state.get("history") or []):
+            if row.get("role") == "plan-reviewer" and row.get("round") == round_:
+                row["findings"] = findings
+                self._save_state()
+                return
 
     def _record_exit(self, code: int) -> None:
         """The loop's exit, on disk as plan_state.json's `exit` — written
@@ -1309,7 +1370,10 @@ class PlanLoop:
         # operator's, as one document; a gap needs none, and the one writer
         # fix pass closes it with the rulings. A review of gaps alone goes on
         # to that pass with no exit. There is no fix-verify loop.
-        entries = self._handback("plan-reviewer", findings_path, r)
+        try:
+            entries = self._handback("plan-reviewer", findings_path, r)
+        finally:
+            self._keep_review_findings(findings_path, r)
         self._why_next("; ".join(e["headline"].strip().rstrip(".")
                                  for e in entries))
         rulings = [e for e in entries if not is_gap(e)]
@@ -1786,6 +1850,7 @@ class PlanLoop:
                 print(f"  {path}", file=sys.stderr)
             sys.exit(2)
         self._init_state()
+        self._keep_start_facts()
         (self.slice_dir / "plan_bailout.json").unlink(missing_ok=True)
         # The start point: every refusal is behind it, and plan_state.json
         # is on disk for the `wait` that follows a detached start at once.
@@ -1846,6 +1911,7 @@ class PlanLoop:
             self._verify_review_on_file()
             self._verify_plan_parses()
             self._seed_outstanding()
+            self._keep_plan_size()
         except Bailout as bail:
             self._bail(bail)
         except KeyboardInterrupt:

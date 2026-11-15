@@ -19861,6 +19861,54 @@ def test_run_records_that_cannot_be_written_never_stop_a_run_and_say_so_once():
                f"{rec.of(slice_dir)} (" in failed[0]
 
 
+def test_the_run_keeps_the_slices_card_title_and_plan_and_the_projects_rules_at_its_start():
+    with tempfile.TemporaryDirectory() as tmp, records_in(tmp) as rec:
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First"), ("2", "Second")])
+        (slice_dir / "slice.md").write_text(
+            "---\nissue: AIWF-157\n---\n# The labeller's card\n")
+        (slice_dir / "verification.json").write_text(
+            json.dumps({"items": [{"id": "V01"}, {"id": "V02"}, {"id": "V03"}]}))
+        with open(repo / ".aiworkflowrc", "a") as f:
+            f.write('\n[[file_classes]]\nclass = "generated"\npaths = ["gen/**"]\n')
+        at_start = []
+        r = ScriptedLoop(slice_dir, [
+            (*V["exec_done"], lambda lp: at_start.append(json.loads(
+                (rec.of(slice_dir) / "slice.json").read_text()))),
+            V["review_signoff"], V["exec_done"], V["review_signoff"], *TAIL],
+            repo_root=repo)
+        assert run_to_exit(r) == 0
+        facts = at_start[0]
+        assert {k: facts[k] for k in ("slice", "card", "title", "plan")} == {
+            "slice": slice_dir.name, "card": "AIWF-157", "title": "The labeller's card",
+            "plan": {"phases": 2, "acceptance_criteria": 3}}
+        assert facts["plugin_version"] == OURS and iso(facts["updated_at"])
+        rules = json.loads((rec.data / "projects" / "repo.json").read_text())
+        assert (rules["repo"], rules["file_classes"]) == (
+            "repo", [{"class": "generated", "paths": ["gen/**"]}])
+
+
+def test_the_run_keeps_a_plan_size_the_planning_wrote_and_counts_no_appended_phase():
+    with tempfile.TemporaryDirectory() as tmp, records_in(tmp) as rec:
+        slice_dir, repo = make_slice(tmp)
+        (slice_dir / "slice.md").write_text("# No card here\n")
+        folder = rec.of(slice_dir)
+        folder.mkdir(parents=True)
+        planned = {"phases": 7, "acceptance_criteria": 9}
+        (folder / "slice.json").write_text(json.dumps({"plan": planned, "x": 1}))
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"], *TAIL],
+                         repo_root=repo)
+        assert run_to_exit(r) == 0
+        facts = json.loads((folder / "slice.json").read_text())
+        assert (facts["plan"], facts["x"], facts["card"], facts["title"]) == (
+            planned, 1, None, "No card here")
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _ = make_slice(tmp, phases=[("1", "First"), ("2", "Appended")])
+        assert run_loop.plan_size(slice_dir, ["2"]) == {
+            "phases": 1, "acceptance_criteria": 0}
+        (slice_dir / "verification.json").unlink()
+        assert run_loop.plan_size(slice_dir) is None, "no criteria to count"
+
+
 class SpawningGateLoop(SpawningLoop, KcExitLoop):
     """SpawningLoop running the driver's own phase gate and sweep, as
     KcExitLoop does: every row of a phase is the driver's own."""

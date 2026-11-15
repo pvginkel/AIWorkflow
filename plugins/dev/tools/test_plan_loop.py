@@ -3574,6 +3574,124 @@ def test_plan_records_that_cannot_be_written_never_stop_the_loop():
         assert "[records] plan_state.json not written" in failed[0]
 
 
+def slice_facts(data, slice_dir):
+    return json.loads((run_loop.run_records_dir(slice_dir, data_dir=data)
+                       / "slice.json").read_text())
+
+
+def two_criteria(loop):
+    write_phases(loop)
+    (loop.slice_dir / "verification.json").write_text(json.dumps(
+        {"items": [{"id": "V01"}, {"id": "V02"}]}))
+
+
+def test_the_plan_keeps_the_slices_card_and_title_at_its_start_and_its_size_at_its_end():
+    with tempfile.TemporaryDirectory() as tmp:
+        data, patch = records_in(tmp)
+        slice_dir = spec_slice(tmp)
+        (slice_dir / "slice.md").write_text(
+            "---\nissue: P-371\nneeds: 044\n---\n\n# The workflow's labels\n\n## Asks\n")
+        folder = run_loop.run_records_dir(slice_dir, data_dir=data)
+        folder.mkdir(parents=True)
+        # a key another writer put there stays
+        (folder / "slice.json").write_text(json.dumps({"close_out": {"entries": 1}}))
+        starts = []
+        with patch:
+            loop = ScriptedLoop(slice_dir, [
+                (*W_DONE[:2], lambda lp: (starts.append(slice_facts(data, slice_dir)),
+                                          two_criteria(lp))),
+                R_GO])
+            assert run_to_exit(loop) == 0
+        assert starts[0]["card"] == "P-371" and "plan" not in starts[0]
+        facts = slice_facts(data, slice_dir)
+        assert {k: facts[k] for k in ("slice", "card", "title", "plan", "close_out")} == {
+            "slice": slice_dir.name, "card": "P-371", "title": "The workflow's labels",
+            "plan": {"phases": 1, "acceptance_criteria": 2},
+            "close_out": {"entries": 1}}
+        assert facts["plugin_version"] == OURS and iso(facts["updated_at"])
+
+
+def test_a_slice_md_with_no_issue_line_names_no_card_and_a_bail_keeps_no_size():
+    with tempfile.TemporaryDirectory() as tmp:
+        data, patch = records_in(tmp)
+        slice_dir = spec_slice(tmp)
+        (slice_dir / "slice.md").write_text("# A slice of no card\n")
+        with patch, contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE, R_ISSUES])) == 4
+        facts = slice_facts(data, slice_dir)
+        assert (facts["card"], facts["title"]) == (None, "A slice of no card")
+        assert "plan" not in facts
+
+
+def test_the_plan_copies_the_projects_file_class_rules_whole_at_its_start():
+    with tempfile.TemporaryDirectory() as tmp:
+        data, patch = records_in(tmp)
+        slice_dir = spec_slice(tmp)
+        repo = Path(tmp) / "CodeRepo"
+        repo.mkdir()
+        rc = repo / ".aiworkflowrc"
+        rc.write_text('spec_repo = "../Specs"\n[[file_classes]]\nclass = "generated"\n'
+                      'paths = ["backend/openapi-cache/**"]\n')
+        rules = data / "projects" / "CodeRepo.json"
+        with patch:
+            loop = ScriptedLoop(slice_dir, [W_DONE, R_GO])
+            loop.repo_root = repo
+            assert run_to_exit(loop) == 0
+            kept = json.loads(rules.read_text())
+            assert kept["repo"] == "CodeRepo" and kept["plugin_version"] == OURS
+            assert kept["file_classes"] == [
+                {"class": "generated", "paths": ["backend/openapi-cache/**"]}]
+            # a removed rule reaches the labeller: none is `[]`, over the last
+            rc.write_text('spec_repo = "../Specs"\n')
+            (slice_dir / "plan_state.json").unlink()
+            loop = ScriptedLoop(slice_dir, [R_GO])
+            loop.repo_root = repo
+            assert run_to_exit(loop) == 0
+            assert json.loads(rules.read_text())["file_classes"] == []
+            # a config that does not load keeps nothing, and says so
+            rc.write_text('nonsense = 1\n')
+            (slice_dir / "plan_state.json").unlink()
+            loop = ScriptedLoop(slice_dir, [R_GO])
+            loop.repo_root = repo
+            assert run_to_exit(loop) == 0
+        assert json.loads(rules.read_text())["file_classes"] == []
+        assert "[records] the project's file-class rules not kept" in \
+            (slice_dir / "plan_log.txt").read_text()
+
+
+def test_the_plan_reviewers_row_keeps_its_findings_and_a_go_none():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        with contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE, R_ISSUES])) == 4
+        row = load_state(slice_dir)["history"][-1]
+        assert row["role"] == "plan-reviewer"
+        assert row["findings"] == [
+            {"class": "operator", "headline": OPERATOR["headline"], "gap": False},
+            {"class": "blocking", "headline": BLOCKING["headline"], "gap": True}]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE, R_GO])) == 0
+        assert "findings" not in load_state(slice_dir)["history"][-1]
+
+
+def test_a_review_whose_hand_back_has_faults_still_keeps_what_it_found():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        bad = {"class": "blocking", "headline": "A gap with no disposition",
+               "body": "It says no proposal."}
+        with contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            code = run_to_exit(ScriptedLoop(slice_dir, [
+                W_DONE, ("plan-reviewer", {"outcome": "issues", "summary": "x"},
+                         finds(bad))]))
+        assert code == 3
+        assert load_state(slice_dir)["history"][-1]["findings"] == [
+            {"class": "blocking", "headline": "A gap with no disposition", "gap": True}]
+
+
 def kinds(slice_dir):
     return [(h["role"], h["round"], h.get("kind"))
             for h in load_state(slice_dir)["history"]]

@@ -683,17 +683,8 @@ def slice_needs(slice_md: Path) -> list[str]:
     matter, no `needs:` line or an empty one is none. A front matter is the
     block between a first line `---` and the next; a `needs:` line anywhere
     else is the slice's prose, not its order."""
-    lines = slice_md.read_text().splitlines()
-    if not lines or lines[0].strip() != "---":
-        return []
-    for line in lines[1:]:
-        if line.strip() == "---":
-            break
-        key, sep, value = line.partition(":")
-        if sep and key.strip() == "needs":
-            value = value.strip().strip("[]")
-            return [token for token in re.split(r"[\s,]+", value) if token]
-    return []
+    value = run_loop.front_matter(slice_md.read_text()).get("needs", "")
+    return [token for token in re.split(r"[\s,]+", value.strip("[]")) if token]
 
 
 def check_ready_to_plan(cfg: project_config.ProjectConfig | None,

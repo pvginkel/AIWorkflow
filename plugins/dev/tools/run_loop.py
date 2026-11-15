@@ -865,16 +865,21 @@ def plugin_data_dir(tools_dir: Path | None = None) -> Path | None:
     return PLUGINS_HOME / "data" / plugin_data_id(found[0]) if found else None
 
 
-def spec_repo_name(spec_root: Path) -> str:
-    """A spec repo's name in the run records: the last component of its
+def repo_name(root: Path) -> str:
+    """A repository's name in the run records: the last component of its
     `origin` remote's URL less `.git` (`git@github.com:o/PilotAppSpecs.git`
     → `PilotAppSpecs`), else the root's directory name."""
     try:
-        url = _git_in(Path(spec_root), "remote", "get-url", "origin")
+        url = _git_in(Path(root), "remote", "get-url", "origin")
     except ValueError:
         url = ""
     name = re.split(r"[/:]", url.rstrip("/"))[-1].removesuffix(".git")
-    return name or Path(spec_root).name
+    return name or Path(root).name
+
+
+def spec_repo_name(spec_root: Path) -> str:
+    """A spec repo's name in the run records (`repo_name`)."""
+    return repo_name(spec_root)
 
 
 def run_records_dir(slice_dir: Path,
@@ -947,15 +952,22 @@ class RunRecords:
     through `report` — one line for the whole run, not one per write — and
     the next write tried as if nothing had happened."""
 
-    def __init__(self, folder: Path | None, report):
+    def __init__(self, folder: Path | None, report, _once: dict | None = None):
         self.folder = folder
         self._report = report
-        self._failed = False
+        # whether a write has failed, shared with the records `beside` opens
+        self._once = _once if _once is not None else {"failed": False}
+
+    def beside(self, folder: Path | None) -> "RunRecords":
+        """Records in another folder of the data folder — a project's,
+        beside the slice's — whose failure is the one line this one's
+        is: a run reports one failed write, whichever folder it was in."""
+        return RunRecords(folder, self._report, self._once)
 
     def _failure(self, what: str, e: Exception) -> None:
-        if self._failed:
+        if self._once["failed"]:
             return
-        self._failed = True
+        self._once["failed"] = True
         with contextlib.suppress(Exception):
             self._report(f"{what} not written to the run records in "
                          f"{self.folder} ({type(e).__name__}: {e})")
@@ -965,6 +977,23 @@ class RunRecords:
         if self.folder is None:
             return
         try:
+            path = self.folder / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            _write_json_atomic(path, data)
+        except Exception as e:
+            self._failure(name, e)
+
+    def merge(self, name: str, facts: dict, if_absent: dict | None = None) -> None:
+        """`facts` over what `<folder>/<name>` holds, every key another
+        writer put there kept, and `if_absent`'s keys only where the file
+        has none: read, merged, then written whole as `write` writes."""
+        if self.folder is None:
+            return
+        try:
+            old = _read_json(self.folder / name)
+            data = dict(old) if isinstance(old, dict) else {}
+            data.update({k: v for k, v in (if_absent or {}).items() if k not in data})
+            data.update(facts)
             path = self.folder / name
             path.parent.mkdir(parents=True, exist_ok=True)
             _write_json_atomic(path, data)
@@ -983,6 +1012,106 @@ class RunRecords:
         except Exception as e:
             self._failure(f"{subdir}/{stem}_<n>.json", e)
             return None
+
+
+# A slice's facts in its run records (`runner-state.md` § The run records):
+# the file, the front-matter key its card is read from, and the slice.md
+# heading its title is.
+SLICE_FACTS = "slice.json"
+CARD_KEY = "issue"
+TITLE_RE = re.compile(r"^# +(.+?)\s*$")
+
+
+def front_matter(text: str) -> dict[str, str]:
+    """The `key: value` lines of a Markdown file's front matter, the block
+    between a first line `---` and the next; none where it opens otherwise
+    or the block never closes. A key given twice keeps its first value."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+    found: dict[str, str] = {}
+    for line in lines[1:]:
+        if line.strip() == "---":
+            return found
+        key, sep, value = line.partition(":")
+        if sep and key.strip() and key.strip() not in found:
+            found[key.strip()] = value.strip()
+    return {}
+
+
+def slice_card_and_title(slice_dir: Path) -> dict:
+    """What `slice.md` says of the slice: its `card`, the front matter's
+    `issue:` line as given and unchecked, None where it has none; and its
+    `title`, the text of its first `# ` heading below the front matter,
+    where it has one. Nothing where there is no slice.md to read."""
+    try:
+        text = (Path(slice_dir) / "slice.md").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return {}
+    facts: dict = {"card": front_matter(text).get(CARD_KEY) or None}
+    lines = text.splitlines()
+    start = 0
+    if lines and lines[0].strip() == "---":
+        start = next((n + 1 for n, line in enumerate(lines[1:], 1)
+                      if line.strip() == "---"), 0)
+    for line in lines[start:]:
+        m = TITLE_RE.match(line)
+        if m:
+            facts["title"] = m.group(1)
+            break
+    return facts
+
+
+def plan_size(slice_dir: Path, appended=()) -> dict | None:
+    """The plan's size: its `phases`, as `parse_plan` counts plan.md's, less
+    the ones a run appended (`appended`, state.json's `appended_phases`),
+    and its `acceptance_criteria`, the items of verification.json. None
+    where plan.md does not parse as a phase queue or verification.json
+    holds no list of items."""
+    try:
+        phases, errors = parse_plan((Path(slice_dir) / "plan.md").read_text(
+            encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return None
+    data = _read_json(Path(slice_dir) / "verification.json")
+    items = data.get("items") if isinstance(data, dict) else None
+    if errors or not phases or not isinstance(items, list):
+        return None
+    later = {str(a) for a in appended or ()}
+    return {"phases": sum(1 for ph in phases if ph.id not in later),
+            "acceptance_criteria": sum(1 for i in items if isinstance(i, dict))}
+
+
+def stamped(facts: dict) -> dict:
+    """`facts` with the time and the plugin of the write that makes them."""
+    return {**facts, "updated_at": _now_iso(), "plugin_version": plugin_version()}
+
+
+def keep_slice_facts(records: "RunRecords", slice_dir: Path, facts: dict,
+                     if_absent: dict | None = None) -> None:
+    """`facts` into the slice's slice.json in its run records, over the keys
+    another writer put there, which stay (`RunRecords.merge`)."""
+    records.merge(SLICE_FACTS, stamped({"slice": Path(slice_dir).name, **facts}),
+                  if_absent=if_absent)
+
+
+def keep_project_rules(records: "RunRecords", cfg,
+                       data_dir: Path | None = None) -> Path | None:
+    """The project's file-class rules (`cfg.file_classes`) whole at
+    `<data>/projects/<repo>.json`, `[]` where it states none, so a removed
+    rule reaches the labeller; `<repo>` the project repository's name
+    (`repo_name`). Written through records `beside` the slice's `records`,
+    so a failure is their one line. Its path, or None where the data folder
+    cannot be told."""
+    data = data_dir or plugin_data_dir()
+    if data is None:
+        return None
+    name = repo_name(cfg.root)
+    folder = Path(data) / "projects"
+    records.beside(folder).write(
+        f"{name}.json", stamped({"repo": name,
+                                 "file_classes": [dict(r) for r in cfg.file_classes]}))
+    return folder / f"{name}.json"
 
 
 def _install_entry(entries) -> dict | None:
@@ -5632,6 +5761,22 @@ class RunLoop:
                           "plugin's data folder cannot be told (no "
                           "installed_plugins.json key for it)")
         return self._records
+
+    def _keep_start_facts(self) -> None:
+        """At the run's start, in the run records: the slice's card and
+        title in its slice.json, and its plan's size where no plan loop
+        wrote it (a plan written before the records kept it); and the
+        project's file-class rules (`keep_project_rules`). Bookkeeping: it
+        never holds up the run."""
+        try:
+            records = self._run_records()
+            size = plan_size(self.slice_dir, self.state.get("appended_phases"))
+            keep_slice_facts(records, self.slice_dir,
+                             slice_card_and_title(self.slice_dir),
+                             if_absent={"plan": size} if size else None)
+            keep_project_rules(records, self.cfg)
+        except Exception as e:
+            self.log(f"[records] the slice's facts not kept ({type(e).__name__}: {e})")
 
     def _keep_gate(self, stem: str, row: dict, log_path) -> None:
         """A gate the driver ran, in the run records: its history row — or,
@@ -14823,6 +14968,7 @@ class RunLoop:
             self._seed_progress_from_plan()
             if not self.state_path.exists():
                 self._save_state()
+            self._keep_start_facts()
             # The start point: every refusal is behind it. A detached driver
             # reports here, and its parent hands the caller back the run.
             if self.on_start is not None:
