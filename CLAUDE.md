@@ -108,8 +108,9 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   five minutes),
   `debrief.py` (a loop's debrief file: every dispatch's own account, an entry each, beside its
   state file, and the stage session's, handed to Pilot at the loop's end),
-  `seed_run_records.py` (a run-once copy of old slices' state files and the history's groups
-  into the run records, the loops' record of every run in the plugin's data folder,
+  `seed_run_records.py` (a run-once copy of old slices' state files, their facts
+  (`slice.json`) and the history's groups into the run records, the loops' record of every run
+  in the plugin's data folder,
   `runner-state.md` § The run records),
   `slice_cost.py` (with
   `turn_profile.py`, the transcript replay behind its turn table), `allocate-next-slice.sh`.

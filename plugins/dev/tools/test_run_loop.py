@@ -19887,6 +19887,22 @@ def test_the_run_keeps_the_slices_card_title_and_plan_and_the_projects_rules_at_
             "repo", [{"class": "generated", "paths": ["gen/**"]}])
 
 
+def test_a_slices_card_is_its_front_matters_issue_line_and_its_title_its_first_heading():
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp)
+        assert run_loop.slice_card_and_title(folder) == {}, "no slice.md, no facts"
+        md = folder / "slice.md"
+        md.write_text("---\nneeds: 044\nissue:  P-12, P-13 \n# not the title\n---\n"
+                      "## Asks\n\n# The title #1\n\n# A later heading\n")
+        assert run_loop.slice_card_and_title(folder) == {
+            "card": "P-12, P-13", "title": "The title #1"}, "as given, unchecked"
+        md.write_text("---\nissue: P-12\n# never closed\n")
+        assert run_loop.slice_card_and_title(folder) == {
+            "card": None, "title": "never closed"}, "no front matter: its lines are prose"
+        md.write_text("issue: P-12\n\nNo heading at all.\n")
+        assert run_loop.slice_card_and_title(folder) == {"card": None}
+
+
 def test_the_run_keeps_a_plan_size_the_planning_wrote_and_counts_no_appended_phase():
     with tempfile.TemporaryDirectory() as tmp, records_in(tmp) as rec:
         slice_dir, repo = make_slice(tmp)
