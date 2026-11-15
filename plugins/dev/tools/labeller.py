@@ -211,10 +211,12 @@ def format_stamp(inputs, named=()) -> str:
 
 def conversation_inputs(conversation: dict) -> dict:
     """The stamp's inputs of what Pilot handed with a conversation: the
-    Sessions' kind, brief, repo and clarification in their order, and the
-    Documents' ids, Sessions and source paths."""
+    Sessions' kind, brief, repo, clarification and `created_at`, which
+    places a Launch on its Session, in their order, and the Documents' ids,
+    Sessions and source paths."""
     return {
-        "sessions": [[s.get("kind"), s.get("brief"), s.get("repo"), s.get("clarification")]
+        "sessions": [[s.get("kind"), s.get("brief"), s.get("repo"), s.get("clarification"),
+                      s.get("created_at")]
                      for s in conversation.get("sessions") or [] if isinstance(s, dict)],
         "documents": [[d.get("id"), d.get("session"), d.get("source_path")]
                       for d in conversation.get("documents") or [] if isinstance(d, dict)],

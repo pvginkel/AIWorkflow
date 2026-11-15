@@ -380,9 +380,13 @@ def test_a_stamp_changes_with_the_records_inputs_and_the_context_and_only_with_t
                                         documents=moved)) != base
         assert stamp_of(h, conversation("s1", held(), sessions=sessions, documents=docs),
                         pilot=["s1"]) != base
+        # A Session's `created_at` places a Launch on it, so it is an input.
+        later = [dict(sessions[0], created_at="2026-11-16T00:00:00Z")]
+        assert stamp_of(h, conversation("s1", held(), sessions=later, documents=docs)) != base
         # Facts Pilot hands that no rule reads change nothing.
-        later = [dict(sessions[0], id="p9", created_at="2026-11-16T00:00:00Z")]
-        assert stamp_of(h, conversation("s1", held(), sessions=later, documents=docs)) == base
+        renamed = [dict(sessions[0], id="p9")]
+        assert stamp_of(h, conversation("s1", held(), sessions=renamed,
+                                        documents=docs)) == base
 
 
 def test_a_subagents_stamp_takes_its_agent_type():
