@@ -159,7 +159,8 @@ def test_info_answers_the_contract_the_version_and_the_verbs_whatever_it_is_hand
         code, (line,) = run("info", raw=raw)
         assert code == 0
         assert line == {"contract": 1, "version": VERSION,
-                        "verbs": ["info", "vocabularies", "stamps", "label", "classes"]}
+                        "verbs": ["info", "vocabularies", "stamps", "label", "classes",
+                                  "check"]}
 
 
 def test_the_version_is_the_plugins():
@@ -190,10 +191,12 @@ def test_bad_json_an_unknown_verb_and_a_missing_home_are_refused():
         assert set(line["error"]) == {"code", "detail"}
 
 
-def test_check_is_refused_until_it_is_built():
-    code, (line,) = run("check", raw="")
-    assert code == 2
-    assert line["error"]["code"] == "unbuilt" and "check" in line["error"]["detail"]
+def test_check_takes_flags_and_exits_2_on_arguments_it_cannot_use():
+    out = io.StringIO()
+    assert labeller.main(["check", "--projects", "/nonexistent/projects"], io.StringIO(""),
+                         out) == 2
+    assert "is not a folder" in out.getvalue()
+    assert labeller.main(["check", "--sample", "many"], io.StringIO(""), io.StringIO()) == 2
 
 
 def test_the_command_runs_as_a_script_and_exits_as_the_page_says():
@@ -202,10 +205,10 @@ def test_the_command_runs_as_a_script_and_exits_as_the_page_says():
                           capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stderr
     assert json.loads(done.stdout)["contract"] == 1
-    done = subprocess.run([sys.executable, "-B", script, "check"], input="",
+    done = subprocess.run([sys.executable, "-B", script, "relabel"], input="{}",
                           capture_output=True, text=True, timeout=60)
     assert done.returncode == 2
-    assert json.loads(done.stdout)["error"]["code"] == "unbuilt"
+    assert json.loads(done.stdout)["error"]["code"] == "verb"
 
 
 CRASHING = """

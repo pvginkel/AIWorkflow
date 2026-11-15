@@ -11,7 +11,9 @@ one JSON document, except `label`, which streams JSON Lines.
   stamps        the stamp each transcript would get now, never reading one
   label         the labels of the transcripts it is handed, one line each
   classes       the class of each file it is handed
-  check         the replay check (not built yet: refused)
+  check         the replay check over transcripts on a home; its arguments are
+                flags, not a request (`check --help`), and it exits 0 when every
+                transcript agrees, 1 otherwise, 2 for arguments it cannot use
 
 Exit 0 when answered (per-transcript errors included), 2 when the request was
 refused (`{"error": {"code", "detail"}}` on stdout), 1 on a crash.
@@ -36,7 +38,7 @@ sys.path.insert(0, str(TOOLS_DIR))
 
 CONTRACT = 1
 SPEAKS = (1,)
-VERBS = ("info", "vocabularies", "stamps", "label", "classes")
+VERBS = ("info", "vocabularies", "stamps", "label", "classes", "check")
 PLUGIN_MANIFEST = TOOLS_DIR.parent / ".claude-plugin" / "plugin.json"
 # The index handed back is at most this long; past it none is handed back.
 INDEX_CAP = 16 * 1024 * 1024
@@ -393,11 +395,12 @@ def main(argv=None, stdin=None, stdout=None) -> int:
     verb = argv[0] if argv else None
     try:
         if verb == "check":
-            raise Refusal("unbuilt", "`check`, the replay check, is not built yet "
-                                     "(the labeller's build Part 5)")
+            import types
+
+            import labeller_check
+            return labeller_check.main(argv[1:], types.SimpleNamespace(**globals()), stdout)
         if verb not in VERBS:
-            raise Refusal("verb", f"unknown verb {verb!r}; the verbs are "
-                                  + ", ".join(VERBS + ("check",)))
+            raise Refusal("verb", f"unknown verb {verb!r}; the verbs are " + ", ".join(VERBS))
         if verb == "info":
             # Reads nothing: its request is taken and not read, so that a
             # collector of any contract learns the one spoken here.
