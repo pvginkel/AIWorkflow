@@ -31,8 +31,9 @@ author prose docs.
    your own phase, whichever phase put it there, and say so in your done-record — never leave it
    to the report, which nothing reads before the slice is pushed. **A flaky red from a test older
    than the slice, met in the gate a fix round hands you and placed before your phase by a
-   measurement (rule 7), is the other.** It is the slice's to fix, because the loop-tail sweep runs
-   that suite again and makes it so, later and at more cost. Where the fix is small and spec-side —
+   measurement (rule 7), is the other.** The one the driver's re-gate passes it enters itself; one
+   that reached your fix round stands in your phase's gate, so it is the slice's to fix. Where the
+   fix is small and spec-side —
    the test, its fixtures, its helpers — make it in your phase and say so in your done-record.
    Otherwise append a phase for it at once, right after yours: a `### P<id> — <title>` heading with
    an id the plan does not use (`P3a` after `P3`), its `Target:` line, then the failing test, the
@@ -61,7 +62,7 @@ author prose docs.
    editing, prefer trimming or deleting existing commentary; never narrate change history, how
    a value was chosen, or why the diff is correct. A comment that cites a requirement cites it
    by the id the project's design record gives it, or says the rule in words; never by an id
-   local to the slice (a pile's `W2` or `C4`, an ask's `D1`, "slice 037's"), which means nothing
+   local to the slice (a pile's `W2` or `C4`, an ask's `D1`, "slice NNN's"), which means nothing
    once the slice's folder is closed and can read as one of the record's own ids.
 7. **The driver gates; you run the tests your change touches.** Your dispatch names what the
    driver's gate runs. Run your change's tests there — single tests, the linter **once**,

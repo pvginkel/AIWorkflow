@@ -9,8 +9,9 @@ argument-hint: "[the text to write or check]"
 One person reads what the workflow writes them, and how they do it has been read: what they
 open, what they skip, what they answer with one word, what they ask back. Those reads are the
 whole ground of this skill. Each rule ends with the findings it rests on, numbered as in
-`docs/research/operator-reading-synthesis-2026-10-30.md` of the plugin's repo; a rule no finding
-supports is not here, and a rule changes on a read, never on taste.
+`docs/research/operator-reading-synthesis-2026-10-30.md` of the plugin's repo, or, where a later
+read gave it, tells that read's incident in place; a rule no finding supports is not here, and a
+rule changes on a read, never on taste.
 
 The grammar around the prose is elsewhere and is not restated here: a document Pilot reads has
 `/dev:document-format`'s front matter, blocks and sections, and a close-out entry has the fields
@@ -170,15 +171,15 @@ read. In a close-out entry the class opens the `Provenance:` line, before the bo
 overrules the project's design record only where the operator's own words ask for that change and
 the passage is the record of that very behaviour; a ruling whose side effect lands on another
 passage or decision is the operator's — "the decision record pins the y, like a unit test" (the
-operator, 2026-11-01). Slice 030's requirements said what one option overruled in a sentence of
-prose, "It overrules the brain's design, 'Opus unless the work says otherwise'", and nowhere as a
-line the pass reads. So an ask that puts a product choice — a requirement, a plan review's
-question, a close-out decision — ends its body on a paragraph of its own, the `Record:` line: for
-the recommended option and for each other, the passage or the decision it would overrule, cited
-by path and quoted line or by the decision's id and what it says, or `none`. `none` says the
-record was read and holds nothing the option overrules; an author who did not read it writes
-`Record: not checked`, never `none`. The line is body text, never a key of the block, which
-Pilot refuses.
+operator, 2026-11-01). One slice's requirements said what one
+option overruled in a sentence of prose, "It overrules the brain's design, 'Opus unless the work
+says otherwise'", and nowhere as a line the pass reads. So an ask that puts a product choice — a
+requirement, a plan review's question, a close-out decision — ends its body on a paragraph of its
+own, the `Record:` line: for the recommended option and for each other, the passage or the decision
+it would overrule, cited by path and quoted line or by the decision's id and what it says, or
+`none`. `none` says the record was read and holds nothing the option overrules; an author who did
+not read it writes `Record: not checked`, never `none`. The line is body text, never a key of the
+block, which Pilot refuses.
 
 **Price it.** What the operator asks back about an entry is what it says, whether it can happen
 and how bad it is, and whether the fix is cheap and worth it — "I also don't know what the effort

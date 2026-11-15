@@ -32,14 +32,16 @@ drives a plan-writer/plan-reviewer round (`plan_loop.py`) to a reviewed **phase 
 `run-slice` launches a kc-native run loop (`run_loop.py`) that takes each phase through a bounded
 loop — fetch → branch → code-writer → test gate + test-fixer → consult-funded review rounds
 against a rising bar → ff-merge → `✅ DONE` — then closes the slice out with a loop-tail gate
-sweep, a completion consult, a test phase and a doc phase, spawning every agent as a headless
-`kc session`. Both loops run inside the stage's turn and stop at a question with a document for
-the stage to register. The gate is `kc project test` and `lint`, run by the loop itself: detecting
-green needs no model, only fixing red does. **Files are durable; sessions are ephemeral;** scripts drive, agents
-judge.
+sweep, a completion consult, a test phase, a doc phase and the wrap-up of its close-out report,
+spawning every agent as a headless `kc session`; its continuation runs a fixes pass for what the
+operator ruled `fix now`. Both loops run inside the stage's turn and stop at a question with a
+document for the stage to register. The gate is `kc project test` and `lint`, run by the loop
+itself: detecting green needs no model, only fixing red does. **Files are durable; sessions are
+ephemeral;** scripts drive, agents judge.
 
 **The plan is the queue.** One `plan.md` per slice holds phases as `### P<id> — <title>` headings,
-each opening with a `Target:` line naming a `kc project list` component or a sibling repo. Document
+each opening with a `Target:` line naming a `kc project list` component, a sibling repo or a
+`github:<owner>/<repo>`. Document
 order is authoritative; only the driver stamps a phase done. Every agent in the loop may edit the
 plan — appending a phase is how work grows, bounded by a generation bar (work the plan owes
 first, blocking work only after, then the operator). **Everything out of the loops' scope goes in
@@ -94,7 +96,7 @@ contract and tells a new repo exactly what is missing. See **[`docs/ADOPTING.md`
 ## Docs
 
 - **[`docs/ADOPTING.md`](docs/ADOPTING.md)** — install the plugin and make a repo adoptable
-  (manifest + `CLAUDE.md` entries), with a worked example.
+  (manifest + `.aiworkflowrc`), with a worked example.
 - **[`docs/AUTHORING.md`](docs/AUTHORING.md)** — the durable rules for writing/maintaining agents,
   skills, and docs so they stay lean and drift-free.
 - **[`docs/rationale/`](docs/rationale/README.md)** — the explanation layer: why the pipeline is
@@ -110,7 +112,8 @@ contract and tells a new repo exactly what is missing. See **[`docs/ADOPTING.md`
   `project-contract.md`, `preflight.md` and `spec-tree.md` (the rule for every commit into the
   shared spec tree and for citing a line).
 - **[Fieldnotes](https://github.com/pvginkel/FieldnotesApp)** — a cross-project observation store
-  beside the workflow, in a repo of its own: agents post what they now leave in close-out reports,
-  and a scheduled reconciler curates it into a triage doc. It is developed in a KubeCoder environment
-  of its own, with its design note and slices in `pvginkel/FieldnotesAppSpecs`.
+  beside the workflow, in a repo of its own: agents post what got in their way while working —
+  what is about the work stays in the slice's close-out report — and a scheduled reconciler
+  curates it into a triage queue the operator rules on in the app. It is developed in a KubeCoder
+  environment of its own, with its design note and slices in `pvginkel/FieldnotesAppSpecs`.
 - **[`CHANGELOG-workflow.md`](CHANGELOG-workflow.md)** — the plugin's changelog.

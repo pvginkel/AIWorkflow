@@ -38,7 +38,7 @@ If the input is too vague, ask the user to narrow it before proceeding.
 
 ### Step 2: Gather requirements
 
-Ask the user for their requirements — the things the design must deliver. These become fixed constraints for the agent. If the user has already stated them (e.g., in a slice overview), extract them verbatim.
+Ask the user for their requirements — the things the design must deliver. These become fixed constraints for the agent. If the user has already stated them (e.g., in the slice's `slice.md`), extract them verbatim.
 
 ### Step 3: Dispatch the arch-design agent
 

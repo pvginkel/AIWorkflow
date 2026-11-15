@@ -118,10 +118,10 @@ Delete (the plugin provides each):
   retired `slice-dag` / `write-task` / `major-change` / `minor-change` / `write-slice` — under
   `.claude/commands/` or `.claude/skills/`, at **every** `.claude` found in step 1, not just the
   root;
-- the nine dev agents — `code-writer`, `code-reviewer`, `doc-writer`, `plan-writer`,
-  `plan-reviewer`, `test-agent`, `test-fixer`, `rebase-agent`, `arch-design` — plus the retired
-  `plan-briefer`, `plan-scribe`, `slice-grounder`, `slice-verifier` and an older `code-tester`,
-  likewise at every `.claude`;
+- the dev agents a pre-plugin copy holds — `code-writer`, `code-reviewer`, `doc-writer`,
+  `plan-writer`, `plan-reviewer`, `test-agent`, `test-fixer`, `rebase-agent`, `arch-design` — plus
+  the retired `plan-briefer`, `plan-scribe`, `slice-grounder`, `slice-verifier` and an older
+  `code-tester`, likewise at every `.claude`;
 - the pipeline scripts and their session machinery — `run_loop.py`, `plan_loop.py`,
   `close_slice.py`, `slice_cost.py`, `preflight.py`, `allocate-next-slice.sh` and their tests
   (commonly under `tools/ai_workflow/`), plus the retired `sweep_slice.py`, `task_runner.py`,
@@ -134,9 +134,10 @@ Delete (the plugin provides each):
   (`${CLAUDE_PLUGIN_ROOT}/docs/`); a project copy is a second source of truth that will drift and
   be believed.
 
-**What a project keeps owning** are the two docs the config *points at* — its slice testing
-strategy and its slice doc plan. Those describe this project's deploy verification and its
-documentation set; the plugin resolves them through `CLAUDE.md` and never ships them.
+**What a project keeps owning** are the three docs the config *points at* — its design
+philosophy, its slice testing strategy and its slice doc plan. Those describe this project's
+change discipline, its deploy verification and its documentation set; the plugin resolves them
+through `.aiworkflowrc` and never ships them.
 
 Leave everything else, and **say what you left**. A repo's own agents and commands are its own —
 including auxiliary workflow ones `dev` does not replace (`update-docs` is the project's own;
@@ -197,8 +198,9 @@ blocks it — it stays (with its references rewritten, above).
 
 `.kubecoder/project.yaml` is contract item 1 and the pipeline's only source of the component set.
 A repo may already have one for its envs while declaring no automation — which is the part that
-matters here, because **the manifest's `test:` statements are the gate**: `/dev:run-slice`'s run loop
-executes `kc project test --project <name>` itself and merges nothing that comes back red.
+matters here, because **the manifest's `test:` and `lint:` statements are the gate**:
+`/dev:run-slice`'s run loop executes `kc project test --project <name>` and
+`kc project lint --project <name>` itself and merges nothing that comes back red.
 
 **Two modes, and `kc project list` says which.** Where it already resolves against a current
 manifest, this step is *verify*: run the gates, and report a red one as a finding rather than
@@ -211,7 +213,8 @@ the operator, per component:
 - **`build:`** — preflight's run profile runs `kc project setup`, then `kc project build`
   repo-wide as the baseline gate, so a component whose build is red after a setup blocks every
   slice. Confirm it is green now.
-- **`lint:`** — the `code-writer` runs the project's lint before handing back.
+- **`lint:`** — the run loop's phase gate runs it beside the component's test, and a red lint
+  is a red gate.
 
 Verify rather than assume — a manifest that parses but does not run is worse than none:
 
@@ -225,8 +228,9 @@ kc project test --project <name>   # per component: does it do what the operator
 ### 4. `.aiworkflowrc` and the `CLAUDE.md` diet
 
 Write the repo's own contract to `.aiworkflowrc` at the **root**; preflight bails without it, and
-prints the whole schema when it is missing. `${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md` is
-authoritative on what each key means; do not restate it here or in the repo.
+prints the minimal file — its four pointers — when it is missing.
+`${CLAUDE_PLUGIN_ROOT}/docs/project-contract.md` is authoritative on what each key means; do not
+restate it here or in the repo.
 
 ```toml
 spec_repo = "<path>"
@@ -242,16 +246,12 @@ plan = "<path-to-doc>"
 Three of those point at **project-owned docs that must exist** — preflight checks the files, and
 agents read them:
 
-- **`test_phase.strategy`** — how a *slice* is proven once its phases are merged: what gets
-  deployed, which live checks run, where the operator gate sits, how findings resolve. The run
-  loop's test phase is "read this doc and execute it"; nothing names the doc. If the repo has no
-  such procedure, this is the moment to write one with the operator.
-- **`doc_phase.plan`** — the same shape for documentation: which doc surfaces a shipped slice must
-  bring up to date, and the rules for each. The doc phase is "read this doc and execute it". A
-  repo whose docs are one README says exactly that; the phase then has little to do, which is a
-  cheap answer rather than a missing one.
-- **`design_philosophy`** — the change-discipline rules `code-writer` obeys (breaking changes,
-  tombstones, defensive caveats, what "tested" means here).
+- **`test_phase.strategy`** — how a *slice* is proven once its phases are merged. If the repo has
+  no such procedure, this is the moment to write one with the operator.
+- **`doc_phase.plan`** — the same for documentation. A repo whose docs are one README says exactly
+  that; the phase then has little to do, which is a cheap answer rather than a missing one.
+- **`design_philosophy`** — the change discipline (breaking changes, tombstones, defensive
+  caveats, what "tested" means here).
 
 **Those three docs are the work; `.aiworkflowrc` is ten lines.** On a first-time onboarding they
 run to a few hundred, and two things make them specific rather than generic: a **model** — the same
@@ -284,7 +284,8 @@ repo with nothing to deploy-verify or nothing to document — an Ansible tree, a
 the wrong answer for a repo that simply has not written the doc yet. The difference is the
 operator's to state, so put the question to them rather than inferring it from an empty `docs/`.
 Same for `[push] enabled`, `[push] deploys` and `[devlock] lease`: ask what the repo deploys and
-whether anything contends over it.
+whether anything contends over it. And `[migrations]`: ask whether the repo keeps migrations, and
+what command says they are consistent.
 
 While in `CLAUDE.md`, apply the diet in `project-contract.md` ("Keeping `CLAUDE.md` disciplined") —
 one screen, every fact stated once, demote to a `docs/` topic doc rather than inline. A repo
@@ -332,8 +333,8 @@ set `spec_repo`.
 pipeline can navigate, nothing more.
 
 **Do not rewrite slice bodies.** An old-format slice is not a defect to fix here: `/dev:plan-slice`
-reads one and deals with it, with some effort, at the point it plans it (the loop's preflight
-accepts `overview.md` beside `slice.md`). Reworking a
+reads one and deals with it, with some effort, at the point it plans it. It plans only from a
+`slice.md`, so a slice that predates that file needs one before it is planned. Reworking a
 slice you are not planning is speculative effort on something that may never be planned, spent
 without the context the planner will have. Leave them.
 

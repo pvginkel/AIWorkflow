@@ -4308,7 +4308,7 @@ def test_a_red_the_fixer_fixes_is_gated_again_and_spends_no_writer_round():
         assert (row["phase"], row["round"], row["outcome"]) \
             == ("1", 1, "clean")
         assert row["head_before"] == "abc123" and "taken_back" not in row
-        # no step of its own, and no why for the review step
+        # no step of its own, and no why left for the next step
         assert [s["code"] for s in state["progress"]][:2] \
             == ["P1.code", "P1.review"]
         assert not (state.get("why_next") or {})
@@ -4320,8 +4320,9 @@ def test_a_red_the_fixer_fixes_is_gated_again_and_spends_no_writer_round():
                 "its re-gate) and green on the merge base base123: the "
                 "phase's red. A test the phase added has no run on the base "
                 "to compare, and is the phase's by that alone.") in prompt
-        assert (f"so do not run `{cmd}` yourself: the failing tests repeated "
-                "green is your fix holding.") in prompt
+        assert (f"so do not run `{cmd}` whole yourself: the failing tests "
+                "repeated green is your fix holding, and a red lint or check "
+                "run over what it flagged.") in prompt
         assert ("The commit before the phase's work is base123: the base "
                 "your rule 4 measures against.") in prompt
         assert str(outputs / "gate_fixer_result_r1.json") in prompt
@@ -4350,7 +4351,7 @@ def test_a_fixers_issues_go_to_the_writers_fix_round_with_its_hand_back():
                 "issues: the phase's change broke it. Its verdict is "
                 f"{outputs / 'gate_fixer_result_r1.json'}.\n") in fix
         assert f"its output is in {outputs / 'gate_r1.log'}." in flat(fix)
-        # the writer's round, not the fixer, leaves the review step its why
+        # the writer's round, not the fixer, gets the why, on its code step
         assert whys(state)["P1.code-2"] \
             == f"The gate went red: kc project test --project {PROJECT}"
 
@@ -4540,8 +4541,7 @@ def test_a_red_on_the_base_that_the_re_gate_reproduces_goes_to_the_fixer():
         assert run_to_exit(r) == 0 and not r.script
         assert ("red in 2 of 2 runs on the tree (the gate and its re-gate) and "
                 "red on the merge base base123 too: older than the phase by "
-                "this measurement, so making it deterministic is the fixer's "
-                "(rule 4).") in flat(fixer_prompt(r))
+                "this measurement.") in flat(fixer_prompt(r))
         assert "went red on P1's gate and on the merge base alike" \
             not in entries_in_full(slice_dir)
 
@@ -4623,8 +4623,7 @@ def test_the_measurement_says_whose_each_red_is():
         "of the failing tests alone shows otherwise.")
     assert say(cmd, "red", "red", sha).endswith(
         "and red on the merge base abc123def456 too: older than the phase by "
-        "this measurement, so making it deterministic is the fixer's (rule "
-        "4).")
+        "this measurement.")
     assert say(cmd, "red", "not_run", sha).endswith(
         "could not be run on the merge base abc123def456: the phase's red, "
         "with no base run to weigh it.")
@@ -15749,6 +15748,9 @@ def test_a_red_gate_in_a_repo_missing_its_services_gets_a_fix_round_naming_them(
         assert unrun_services_hint(config, "postgres") in fix
         assert "hand back `blocked` naming it, rather than skipping or " \
             "faking what needs it. Commit your" in fix
+        # the test-fixer, which takes the red first, is told the same
+        assert ("\n- " + unrun_services_hint(config, "postgres")
+                .removeprefix(". ")) in fixer_prompt(r)
         first = r.prompts[0][1]
         assert first.startswith("Execute phase P1")
         assert "declares services this pod does not run" not in first

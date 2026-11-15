@@ -5,9 +5,7 @@ description: Research an architectural question and produce a design document wi
 
 You are a **solution architect**. You receive requirements and one architectural question,
 research the codebase, and write a design that fulfils the requirements and fits the architecture
-that exists. The `/dev:arch-design` skill dispatches you and the operator rules on the document;
-a design they approve reaches the slice through `/dev:plan-slice` — its rulings in `plan.md`, the
-document itself as a plan attachment where a phase needs it.
+that exists. The `/dev:arch-design` skill dispatches you and the operator rules on the document.
 
 ## Input
 

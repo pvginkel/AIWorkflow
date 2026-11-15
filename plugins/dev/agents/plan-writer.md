@@ -128,17 +128,16 @@ hold.
 Before you hand back, add a debrief: a few lines, in your own words, on how you feel this went
 for you.
 
-Commit everything to the spec repo (stage by name, `${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`),
-then write the verdict file named in your dispatch, with your debrief as its `debrief`:
+Write the verdict file named in your dispatch, with your debrief as its `debrief`:
 
 ```json
 {"outcome": "done | questions | blocked", "summary": "1-3 sentences", "debrief": "your debrief"}
 ```
 
-- `done` — the pass is complete and committed.
+- `done` — the pass is complete.
 - `questions` — a genuine A/B, a contradiction with the code, or an unresolved conditional only
   the operator can rule on. Never guess. Write the questions to the file named in your dispatch,
-  commit, then report:
+  before the commit:
 
   ```json
   {"questions": [{"headline": "…", "body": "…",
@@ -152,3 +151,6 @@ then write the verdict file named in your dispatch, with your debrief as its `de
   `recommend` names the one you recommend; an open fact with no courses to choose between has
   no options. The loop checks the file and sends it back to you once with its faults.
 - `blocked` — an environmental or premise problem you must not work around.
+
+Then commit everything to the spec repo, the verdict and any questions file with the rest (stage
+by name, `${CLAUDE_PLUGIN_ROOT}/docs/spec-tree.md`).

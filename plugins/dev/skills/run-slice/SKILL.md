@@ -83,7 +83,8 @@ takes, `<task>` the brief's plan task, and a tool is
 ## The wait, and the run's end
 
 Run the `next:` line's `wait` in the foreground, the Bash call's `timeout` the one the
-`timeout:` line under it names, the tool's maximum; `wait` returns a minute inside that cap, or within nine minutes
+`timeout:` line under it names, the tool's maximum; `wait` returns a minute inside that cap, at
+most 55 minutes, or within nine minutes
 where the host sets none. Its exit code is a signal, and the lines it prints are all there is to read:
 
 - **5, running** — run the new `next:` line again at once. Read nothing in between: no log, no
@@ -226,11 +227,12 @@ At exit 0, in this order:
 2. With any marked, the session launches the fixes pass, `run_loop.py fixes <slice> --detach
    --spec-push`, and waits on it as on the run, at the `timeout:` the wait prints. Exit 0's lines
    say what landed and what was carded; any other exit is handled as the run's is, its `next:`
-   line the relaunch.
+   line the relaunch, save that a refusal at its start (exit 2 or 3) writes no `bailout.json`:
+   its reason is in the launch's output and `log.txt`.
 3. A sub-agent carries out every other ruling and records it (`rule --did`), the pass's card
    requests among them, each filed as a `card` ruling is, then runs `close` and `render`. It
-   commits the store, the record, and the `state.json`, `log.txt` and `debrief.json` the pass
-   wrote, by name.
+   commits the store, `close-out.md` as Pilot wrote it back, the record, and the `state.json`,
+   `log.txt` and `debrief.json` the pass wrote, by name.
 
 Then the session moves the slice card to done (pilot.md § Cards) and ends the turn. What the
 sub-agents could not carry out as ruled comes back as a store of asks: the session renders and
@@ -274,7 +276,9 @@ as the continuation reads it.
   the run touched on its base branch; a tree still on a `phase/…` branch afterwards either had
   uncommitted work on it or is another run's branch, and the log says which.
 - **The suite is green before every slice** — preflight does not run it. A failure during the run
-  is the slice's regression; never accept "flaky" or "pre-existing" from anyone.
+  is the slice's regression until a measurement places it before the slice — the driver's on a
+  phase gate's red, the test-fixer's on a sweep's; never accept "flaky" or "pre-existing" on
+  anyone's word.
 - **Promotion is the operator's; pushing is not.** The brief's grants, or the operator's word on
   the start's push ask, authorize the pushes the slice needs — for dev verification, and to
   production where the project deploys on a push — and the devlock hold serialises them.

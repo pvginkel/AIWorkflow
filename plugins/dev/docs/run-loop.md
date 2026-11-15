@@ -151,8 +151,8 @@ at the record.
 
 **The plan doc is writable by every agent in the loop — deliberately; this is load-bearing.**
 Executors append their done-record and edit later phases their work changes, and append the
-phase a flaky test older than the slice needs when their gate met it and their own phase cannot
-carry the fix ([code-writer.md](../agents/code-writer.md), rule 1); consult and test sessions
+phase a flaky test older than the slice needs when it reached their fix round and their own phase
+cannot carry the fix ([code-writer.md](../agents/code-writer.md), rule 1); consult and test sessions
 append phases; the operator edits at will. The driver's mechanical bookkeeping is what
 keeps the shared doc parseable:
 
@@ -171,7 +171,7 @@ keeps the shared doc parseable:
 
 Fresh **code-writer** session per phase (prompt: *"Execute P\<n\> of slice \<name\>"* plus the
 standing contract and **the phase digest** — it works its phase against the live repo from the
-digest, runs the gate itself, appends the done-record, commits on the phase branch
+digest, runs the tests its change touches, appends the done-record, commits on the phase branch
 `phase/<slice>-P<id>`). The digest is the driver's rendering of what it already holds, appended to
 every executor round's prompt (first round and fix rounds alike, rebuilt per round because rulings
 and done-records land mid-run): the slice's intent paragraph (slice.md's first) and the plan's
@@ -194,9 +194,9 @@ whole plan is a feature of the review, not a cost. Then:
   ([runner-state.md](runner-state.md), which also carries the one-driver-per-slice lock the
   first such loss came from). The phase's range is `<merge-base>..HEAD`, and the driver takes
   the merge base (`git merge-base <base> <branch>`) afresh at every read — each code-writer
-  dispatch's gate spec and gate hint, each gate, each review round, the merge's landed record —
-  never once for the phase: a writer that rebases the branch onto a moved base, or merges the
-  base in, moves the range with it, and the log says the merge base moved. PilotApp slice
+  dispatch's gate hint, each gate and its measurement, each review round, the merge's landed
+  record — never once for the phase: a writer that rebases the branch onto a moved base, or merges
+  the base in, moves the range with it, and the log says the merge base moved. PilotApp slice
   020's P3 writer rebased onto `main` as the operator's ruling asked; the range the driver had
   taken before the rebase carried main's own commit, the gate took in the frontend suite the
   phase never touched, and the run stopped (AIWF-104). Had that suite been green, the stale
@@ -337,8 +337,8 @@ whole plan is a feature of the review, not a cost. Then:
   and what it left uncommitted is discarded, ignored files kept. A `clean` is gated again, and
   spends no executor round; an `issues` is the round's executor fix round, which reads the
   measurement and the fixer's summary; a `blocked` bails `blocked` with its summary. The fixer
-  belongs to the gate: it is no step of Pilot's of its own, and only the executor round leaves the
-  review step a why. A crash in the measurement or the fixer is resumed by gating again and
+  belongs to the gate: it is no step of Pilot's of its own, and only the executor round, at its own
+  code step, gets a why. A crash in the measurement or the fixer is resumed by gating again and
   measuring afresh (`gate_fix_open`): a fixer's session is never reattached, and what it left
   uncommitted is set aside under its own name.
 
@@ -665,8 +665,8 @@ whole plan is a feature of the review, not a cost. Then:
 
   **The wrap-up is never a reason to stop a run.** A timeout — whatever the session had
   written by then — a missing or invalid verdict, a `blocked`, changes it left uncommitted, a
-  commit it made outside its branches, a gate that is red with its commits twice on the same
-  tree, or any error the
+  commit it made outside its branches, a gate that is red or times out with its commits twice on
+  the same tree, or any error the
   driver itself meets in the stage is a *soft failure*: all of its commits are left out, in
   every code repo, the repos whose gate was green included — the branches stay, unmerged, for
   whoever wants to read them — the store goes back to what it was before the dispatch, the
@@ -682,8 +682,8 @@ whole plan is a feature of the review, not a cost. Then:
   on its branches, the event asks to land them: its proposal is a `fix now`, and its `left_out`
   keeps the branches and the store as the wrap-up left it, committed before it is taken back.
   Agree has the fixes pass land them (§ The fixes pass). A repo it would branch that holds uncommitted work is a soft failure before
-  anything is dispatched. A gate that goes red with its commits, in the primary repo or a
-  sibling, is run once more on the same tree before the landing is left out, and green there
+  anything is dispatched. A gate that goes red or times out with its commits, in the primary repo
+  or a sibling, is run once more on the same tree before the landing is left out, and green there
   keeps it: PilotApp slice 031's doc gate went red on one test of 497, a timeout, and one sample
   dropped five fixes the continuation then redid, about $10 and 55 minutes. Red twice, the
   primary repo's gate is run once more without the commits: red there too, it is the doc phase's red and goes to the doc-writer as
@@ -715,8 +715,8 @@ and `strike` — and, to the code-reviewer and the consult, `relabel`, for an en
 they can show wrong — enters refuted findings, funding-consult
 merges and every stop of the run (written by the resume that follows the stop, from
 `state.json`'s `bailouts`, at that resume's first dispatch), dispatches the wrap-up, and renders the report — before the doc
-phase, after the wrap-up, whenever the run stops, and when it completes, the run header from
-`state.json` with it; the launching session
+phase, after the wrap-up and after the fixes pass, whenever the run stops, and when it completes,
+the run header from `state.json` with it; the launching session
 renders once more when the cost block has landed and registers the report with Pilot
 ([pilot.md](pilot.md) § The documents).
 
@@ -766,6 +766,10 @@ end lines say it an entry a line: `landed: B3 <sha>`, `carded: T4 — <reason>`,
 - **A soft failure lands nothing.** It is any of a first wrap-up's soft failures, a gate red
   twice among them. The fixes branches stay, unmerged, for whoever wants to read them, and every
   entry is carded with the reason. The pass never stops the continuation.
+
+The pass's wrap-up gives its debrief as every dispatch does, kept in `debrief.json` under
+`Fixes`; Pilot was handed the run's debrief once, when the run completed, so this one stays in
+the file the continuation commits.
 
 A stop before the landing starts the pass again from a clean slate: the trees put back, the
 fixes branches deleted and the store taken back to where the pass found it. A stop at or after
@@ -851,7 +855,9 @@ the commit nudge for a dirty tree — and a verdict on disk after either counts:
 ended without one routinely writes it while committing on the commit nudge (slice 198 P6
 committed its code, its done-record and a valid verdict there; the driver's earlier `blocked`
 ruling stood, bailed the run, and `--resume` spent a fresh executor round on finished work).
-Only after both nudges does a missing verdict count `blocked`, and a tree still dirty bails. A
+Only after both nudges does a missing verdict count `blocked`, and a tree still dirty bails —
+save for the phase gate's test-fixer, whose miss is `issues` and whose leftovers the driver takes
+back (§ The per-phase round), and the wrap-up, whose miss is a soft failure. A
 nudge whose answer is the harness's synthetic no-op — no response, or "No response requested." —
 never reached the model: the session's last turn ended with a background task whose completion
 had landed mid-turn, and the first resume after that is the harness's stopped-task bookkeeping
@@ -1002,11 +1008,12 @@ it. The plan loop checks the host at GO, and `--dry-run` lists the host's as a p
 gate that goes red in another repo is an ordinary red, whatever services that repo declares:
 unlike a tool, a missing service leaves no fixed line in the gate log, so the driver cannot tell
 a red it caused from any other, and a bail on the declaration alone fired on every red in a repo
-that merely declared one (PilotProjects' `pilot-sync`, PilotApp slice 030). The red takes its fix
-round, and the round's gate hint names the services the phase's tree declares and the pod does
-not run, so that the writer, reading the log, hands back `blocked` naming one when it is the
-cause; where kc cannot say which services run, the hint names none. The price is a fix round
-before the `blocked`: Ansible slice 036's P14 targeted ElectronicsInventory from an environment
+that merely declared one (PilotProjects' `pilot-sync`, PilotApp slice 030). The red is measured
+and goes to the test-fixer, and its dispatch and the executor fix round's gate hint both name the
+services the phase's tree declares and the pod does not run, so that either, reading the log,
+hands back `blocked` naming one when it is the cause; where kc cannot say which services run, the
+hint names none. The price is the measurement, and at most a fixer and a fix round, before the
+`blocked`: Ansible slice 036's P14 targeted ElectronicsInventory from an environment
 without its `postgres` and `s3storage`, setup and tests failed on `localhost:5432` and `:9000`,
 and the run stopped on the writer's `blocked`.
 

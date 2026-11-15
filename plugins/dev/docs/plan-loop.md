@@ -35,8 +35,9 @@ stdout and in `plan_state.json`'s `exit`, for the stage to register with Pilot
 ([pilot.md](pilot.md) § The documents). A question with options is a decision with its
 recommendation, one without them a question. A gap is not in the document; a blocking finding
 with options is a decision on them, an operator-decidable one a decision on its options or a
-question, and an advisory note stays in the review. The document opens on its first ask,
-with a summary only over more than one. `plan_state.json`'s `review_ruled` says whether the fix pass follows a ruling or a review of gaps
+question, and an advisory note stays in the review. The review's document opens on its first
+ask; the writer's opens on a line saying which pass stopped and where the answers go. Either has
+a summary only over more than one ask. `plan_state.json`'s `review_ruled` says whether the fix pass follows a ruling or a review of gaps
 alone, and its prompt opens accordingly. The document carries `run --step`'s plan task as its `step`, kept in
 `plan_state.json` for the reruns that do not give it. The loop commits none of it: the session
 commits what it registers, as it commits the rulings before the rerun. A document that cannot be
@@ -57,7 +58,9 @@ the run loop checks them at start ([run-loop.md](run-loop.md) § Protocol invari
 before a pass — the pass in flight finished, `plan_state.json` is current, and the rerun once the
 file is gone takes the next pass under the round it would have had; there at the start, nothing
 ran ([run-loop.md](run-loop.md) § Protocol invariants) · **2** refused before it reads or writes
-anything: another plan loop holds the slice's `plan.lock`, or its run loop holds `run.lock` ·
+anything: another plan loop holds the slice's `plan.lock`, or its run loop holds `run.lock`; the
+slice has no `slice.md` or no `plan.md`; an agent definition is missing; or the slice folder has
+uncommitted changes ·
 **130** interrupted: `plan_loop.py stop <slice-dir>` sends the loop SIGINT, as Ctrl-C, and waits
 for `plan.lock` to go free, as the run loop's `stop` does ([runner-state.md](runner-state.md)).
 Every exit past the refusals is on disk as `plan_state.json`'s `exit`: its code, and for an exit
@@ -148,13 +151,13 @@ reruns, and the loop resumes after the pass that wrote them.
 
 **The spec repo is pushed after every commit**, as the run loop pushes it
 ([run-loop.md](run-loop.md) § Protocol invariants): after each of the loop's own commits — the
-close-out report's creation, the seeded actions — and after each session it dispatched returns,
-a plain push, never forced. It is not permitted where `.aiworkflowrc` sets `push.enabled = false`
-or where the loop was launched without `--spec-push`, the flag the stage's session passes on the
-brief's grant to push the spec repo, given at every launch: the push is skipped, and the run
-counts as one that cannot push. A push refused, without an upstream or skipped is
-`plan_state.json`'s `spec_unpushed` — the unpushed `tip`, `ahead`, `environment`, `since` and
-the `error`, which for a skipped push says push is disabled or not granted — logged to
+close-out report's creation, a fold of a sibling's rulings, the seeded actions — and after each
+session it dispatched returns, a plain push, never forced. It is not permitted where `.aiworkflowrc`
+sets `push.enabled = false` or where the loop was launched without `--spec-push`, the flag the
+stage's session passes on the brief's grant to push the spec repo, given at every launch: the push
+is skipped, and the run counts as one that cannot push. A push refused, without an upstream or
+skipped is `plan_state.json`'s `spec_unpushed` — the unpushed `tip`, `ahead`, `environment`, `since`
+and the `error`, which for a skipped push says push is disabled or not granted — logged to
 `plan_log.txt`, tried again at the next commit, cleared by the push that lands, and printed by
 `status`.
 
@@ -188,16 +191,18 @@ heading levels, the `Target:` line, done-record shape, the `verification.json` s
   slice.md facts. The declaration binds the writer's investigation budget — its register
   carries the binding (`pre-settled` forbids research sub-agents and repo sweeps; research runs
   only against a named open question).
-- **Ordering constraints**, **push holds** — the repos this slice must not push, the only `##`
-  section the run loop reads and absent from almost every plan — and **not-in-scope**.
-- **Phases** — `### P<id> — <title>` sections (format details: [run-loop.md](run-loop.md)), each
-  opening with its `Target:` line, **self-sufficient by reference**: outcome, the few constraints
-  the executor can't figure out, pointers to attachments. Roughly PR-sized and independently
-  reviewable; a phase outgrowing that splits, a section outgrowing ~a page overflows into an
-  attachment. No testing phase and no auto-doc phase — the loop owns those — and **no auto-doc
-  content anywhere in the plan**: the doc phase derives its updates from the shipped diff and
-  the requirements/rulings; the rulings are the only steering it gets. A doc *task* a
-  requirement names is a phase like any other (the doc phase carries no slice task).
+- **Ordering constraints**; **push holds**, the repos this slice must not push, and **driver
+  rulings**, both absent from almost every plan; **without a criterion**, a requirement a record
+  other than a ruling lets go without one; and **not-in-scope**. Which `##` sections the run loop
+  reads is [plan-template.md](plan-template.md)'s.
+- **Phases** — `### P<id> — <title>` sections (format details:
+  [plan-template.md](plan-template.md)), each opening with its `Target:` line, **self-sufficient by
+  reference**: outcome, the few constraints the executor can't figure out, pointers to attachments.
+  Roughly PR-sized and independently reviewable; a phase outgrowing that splits, a section
+  outgrowing ~a page overflows into an attachment. No testing phase and no auto-doc phase — the loop
+  owns those — and **no auto-doc content anywhere in the plan**: the doc phase derives its updates
+  from the shipped diff and the requirements/rulings; the rulings are the only steering it gets. A
+  doc *task* a requirement names is a phase like any other (the doc phase carries no slice task).
 - **Done-records** are appended under each phase's own heading (never a new `###`) in
   [plan-template.md](plan-template.md)'s two-part shape: the `**Done (P<id>).**` paragraph and its
   `Later phases:` list, then the record. Finds that affect later phases are edited into those
@@ -215,20 +220,8 @@ run cannot take, a held push above all ([plan-template.md](plan-template.md)).
 
 ## The reviewer's charter
 
-ACs outcome-level and complete against slice.md; the task shape declared and justified from
-slice.md facts that hold; detailed designs correct (load-bearing citations
-verified against the code); every phase's `Target:` present and real; phases independently
-reviewable and roughly PR-sized; no phase or ordering note that expects a suite the phase's diff
-touches to stay red until a later phase — a blocking finding, since the gate runs every touched
-component ([run-loop.md](run-loop.md) § The per-phase round); attachments at the altitude
-above; no auto-doc content (an altitude finding — flagged, never fact-checked claim by claim)
-and no criterion only the doc phase could earn; no correction-chained rulings; nothing
-load-bearing silently uncertain; no phase `Target:` or push hold on a scratch clone another
-slice in flight holds without an ordering constraint putting this slice after that push — an
-operator-decidable finding. For that last one the reviewer's dispatch, alone of the loop's,
-lists the push holds the other plans under `slices/` and `slices/backlog/` declare. A step an
-ordering constraint shares with a named sibling slice is compared with that slice's `plan.md`,
-its done-record too once it has run; each difference is an operator-decidable finding that
-names no winner. Findings describe problems, never corrections.
+What the review checks is the reviewer's own ([plan-reviewer.md](../agents/plan-reviewer.md)).
+What the loop adds: the reviewer's dispatch, alone of the loop's, lists the push holds the other
+plans under `slices/` and `slices/backlog/` declare, for its check of another slice's held push.
 One round, ever — a gap goes to the writer's fix pass, every other finding to the operator.
 Verdicts: `go` / `issues` / `questions`.

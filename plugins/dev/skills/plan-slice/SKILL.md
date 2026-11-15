@@ -59,11 +59,12 @@ tool takes, `<task>` the brief's plan task, and a tool is
    the loop exists (pilot.md § The progress), and `debrief.py ground <slice> --start`, the
    preparer's start, then dispatch `dev:plan-preparer` with `<slice>`, `<task>` and the ticket.
    It leaves `grounding.md` and `plan.md`'s seeded header in the folder, gives its debrief into
-   the folder, commits nothing (step 4 commits its files), and hands back the path of `asks/1-requirements.json`, or `nothing to ask`. Once
-   it is back, `debrief.py ground <slice> --end`, its end, which makes the preparer's entry in
+   the folder, commits nothing (step 4 commits its files), and hands back the path of its store,
+   `asks/<n>-requirements.json`, or `nothing to ask`. Once it is back,
+   `debrief.py ground <slice> --end`, its end, which makes the preparer's entry in
    `plan_debrief.json`; it waits there for the loop's end, in this work item or a later one.
 4. **Put the requirements**: `plan_loop.py progress <slice> --ground done`, `asks.py render
-   <store>`, register `asks/1-requirements.md`, attach `grounding.md` and `slice.md` to it,
+   <store>`, register the store's `.md` beside it, attach `grounding.md` and `slice.md` to it,
    commit `plan.md`, `grounding.md`, `plan_debrief.json` and `asks/` by name, and end the turn.
    With nothing to ask, commit `plan.md`, `grounding.md` and `plan_debrief.json` and go to
    [the loop](#the-loop).
@@ -71,10 +72,10 @@ tool takes, `<task>` the brief's plan task, and a tool is
 ## The loop
 
 **Launch, detached**: `plan_loop.py run <slice> --detach --step <task> --spec-push`. It returns
-once the loop holds the slice, its last line the `next:` wait. A rerun is the same command; the
-loop takes it up where it paused and always dispatches the writer's fix pass after a review.
-Refused (exit 2) because another plan loop holds `plan.lock`, the loop is live: wait on it,
-`plan_loop.py wait <slice>`. Refused because the slice's run loop holds `run.lock`, re-planning
+once the loop holds the slice, its last lines the `next:` wait and its `timeout:`. A rerun is the
+same command; the loop takes it up where it paused and always dispatches the writer's fix pass after
+a review. Refused (exit 2) because another plan loop holds `plan.lock`, the loop is live: wait on
+it, `plan_loop.py wait <slice>`. Refused because the slice's run loop holds `run.lock`, re-planning
 would rewrite the queue it executes: that is an `action` document as in the start's step 2.
 
 **Wait**: run the `next:` line's `wait` in the foreground, the Bash call's `timeout` the one
@@ -89,7 +90,7 @@ minutes where the host sets none. Its exit code is a signal, and the lines it pr
 | The loop's exit | The turn |
 |---|---|
 | **0**, plan complete | [the promotion](#the-promotion) |
-| **4**, the writer's questions or the review's findings | register the `document:` line's file; attach `plan.md`, and for a review its prose, `plan_review_rN.md`; commit `asks/`; end the turn. With no `document:` line, a sub-agent puts the hand-back file the exit names as a `question` document first. |
+| **4**, the writer's questions or the review's findings | register the `document:` line's file; attach `plan.md`, and for a review its prose, `plan_review_rN.md`; commit `asks/`; end the turn. With no `document:` line, a sub-agent puts the hand-back file as a `question` document first: `plan_state.json`'s `pending_questions` names the writer's, and its `pending_review` the round of the review's `plan_review_r<N>.json`. |
 | **3**, a bail, or **1** | [the diagnosis](#an-error) |
 | **7**, halted | end the turn, its last message the `halted:` line |
 | **130**, interrupted | someone stopped the loop: end the turn saying where; a nudge resumes it |
@@ -121,9 +122,9 @@ and pilot.md § The continuation, each with `asks.py absorb <document>`. Every r
 `plan.md`'s `## Requirements / rulings` in the operator's words, a ruling that corrects an earlier
 one replacing it in place, and is committed by name before anything is launched: the next writer
 reads the plan, not the document. A reading of the preparer's in that section that depends on the
-ruling ("if D1 rules …") is rewritten in the same commit to the branch that was ruled, still
-marked the preparer's: every role after reads the header verbatim, and a branch the ruling closed
-rides into every round. Two readings beside pilot.md's:
+ruling ("if the decision rules …") is rewritten in the same commit to the branch that was ruled,
+still marked the preparer's: every role after reads the header verbatim, and a branch the ruling
+closed rides into every round. Two readings beside pilot.md's:
 
 - **A hedged answer is not a ruling.** One that rules conditionally ("if X, then fine") has its
   condition checked; where it holds, the ruling stands as given, and where it does not, the ask

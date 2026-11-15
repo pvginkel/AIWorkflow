@@ -20,9 +20,11 @@ validation.
   agent definition, the prompt is the whole protocol. `create-headless` does **not** validate the
   agent name — an unknown one spawns a plain SDK session that answers anyway — so both scripts
   assert their definitions exist before dispatching anything.
-- **cwd** is the invoking repo's root for every dispatch — including phases targeting a sibling
-  repo: the definitions resolve from the plugin regardless of cwd, and the dispatch prompt carries
-  the sibling's path; the *driver's* git and gate operations root at the `Target:` repo — at its
+- **cwd** is the invoking repo's root for every dispatch but the driver's test-fixer, which runs
+  in the tree it fixes (a phase's tree, or the repo a sweep ran in) — including phases targeting
+  a sibling repo: the definitions resolve from the plugin regardless of cwd, and the dispatch
+  prompt carries the sibling's path; the *driver's* git and gate operations root at the `Target:`
+  repo — at its
   worktree, for a shared target ([run-loop.md](run-loop.md) § The plan is the queue).
 - **`-e FORCE_PROMPT_CACHING_5M=1`** on every `create-headless`: ephemeral sessions must not pay
   the 1-hour cache-write premium; a long wait is chunked under the five minutes instead (§ Nested
@@ -113,9 +115,10 @@ whenever mechanical turned out to mean judgment.
 
 ## Timeouts
 
-Run-loop sessions: code-writer, doc-writer and wrap-up 7200s, code-reviewer 3600s, consults
-1800s, test-agent 14400s (it waits out a CI build). Plan-loop sessions: plan-writer 7200s, plan-reviewer
-3600s. Both scripts give a protocol nudge 900s, and the gate subprocess 3600s. A timeout is a
+Run-loop sessions: code-writer, doc-writer and wrap-up 7200s, code-reviewer and test-fixer
+3600s, consults 1800s, test-agent 14400s (it waits out a CI build). Plan-loop sessions:
+plan-writer 7200s, plan-reviewer 3600s. Both scripts give a protocol nudge 900s, and the gate
+subprocess 3600s. A timeout is a
 bail, not a retry — a stuck agent is a problem to surface, not to mask; the wrap-up's is the one
 that does not stop the run ([run-loop.md](run-loop.md) § After the last phase). On timeout the dispatch
 interrupts the `send` (which posts a worker interrupt, so the turn is never stranded) and ends

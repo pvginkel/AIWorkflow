@@ -213,11 +213,10 @@ LOOP_OWNED_FILES = frozenset({
     "plan.lock",          # the loop's lock; its note names the live holder
     debrief.PLAN_FILE,    # every pass's debrief, committed with the folder
 })
-# The report the loop renders from its store at every exit, and commits only
-# where it commits the store: left modified by an exit that commits nothing,
-# it is the loop's own output, not an agent's work left uncommitted, so the
-# cleanliness checks pass it by as they pass the files above. The store
-# itself is an agent's commit and stays checked.
+# The report's rendered files. The loop renders neither — the run renders the
+# report — and a copy left modified in the folder is no agent's work left
+# uncommitted, so the cleanliness checks pass it by as they pass the files
+# above. The store itself is an agent's commit and stays checked.
 RENDERED_FILES = frozenset({"close-out.md", "close-out-record.md"})
 
 # The kind the exit-0 seed enters, by its old section name, and the widths it
@@ -481,10 +480,10 @@ phases (each opening with its `Target:` line), ordering constraints,
 not-in-scope, attachments/ only where an executor genuinely cannot derive
 the design, and verification.json's outcome-level acceptance criteria.
 {philosophy_line}{skill_line}{close_out_line}
-Commit to the spec repo (stage by name), then write your verdict
-to {verdict_path}. Questions only the operator can rule go to
-{questions_path}, shaped as your hand-back section says, with verdict
-`questions`.
+Write your verdict to {verdict_path}, then commit everything to the spec
+repo, the verdict with it (stage by name). Questions only the operator can
+rule go to {questions_path} before the commit, shaped as your hand-back
+section says, with verdict `questions`.
 """
 
 WRITER_FIX_PROMPT = """\
@@ -496,9 +495,10 @@ reflect and resolve every blocking finding the rulings do not overrule —
 the reviewer and the operator state problems; the fix design is yours. This
 is the only fix pass: no review follows it.
 {philosophy_line}{skill_line}{close_out_line}
-Commit (stage by name), then write your verdict to {verdict_path}. A
-finding the rulings leave genuinely unresolved goes to {questions_path},
-shaped as your hand-back section says, with verdict `questions`.
+Write your verdict to {verdict_path}, then commit everything, the verdict
+with it (stage by name). A finding the rulings leave genuinely unresolved
+goes to {questions_path} before the commit, shaped as your hand-back section
+says, with verdict `questions`.
 """
 
 # The fix pass's opening: after the operator ruled on the review, or after a
@@ -1894,8 +1894,8 @@ def cmd_progress(args) -> None:
 
 
 def cmd_stop(args) -> None:
-    """SIGINT the slice's plan loop — its KeyboardInterrupt path: the
-    report rendered, plan_state.json current, exit 130; the rerun takes the
+    """SIGINT the slice's plan loop — its KeyboardInterrupt path:
+    plan_state.json current, exit 130; the rerun takes the
     interrupted pass again — and wait for it to let plan.lock go."""
     sys.exit(stop_driver(Path(args.slice_dir) / "plan.lock", None))
 

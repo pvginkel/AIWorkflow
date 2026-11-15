@@ -6,9 +6,9 @@ appending phases mid-run, the operator editing at will — produces a doc `run_l
 drives without nudges. Semantics (who writes which section, review charter, loop mechanics) are
 [plan-loop.md](plan-loop.md) and [run-loop.md](run-loop.md); this doc is the shape. Sanity-check
 a plan with `run_loop.py run <slice-dir> --dry-run` — it parses, resolves every `Target:`, and
-prints the gates without touching anything. Run from the spec repo, it resolves the Targets in
-the one code repo whose `.aiworkflowrc` names that spec repo, and stops with "run from the code
-repo" when none or several do.
+prints the gates, touching nothing but a `github:` target's scratch clone, which it clones or syncs.
+Run from the spec repo, it resolves the Targets in the one code repo whose `.aiworkflowrc` names
+that spec repo, and stops with "run from the code repo" when none or several do.
 
 ## plan.md
 
@@ -84,8 +84,10 @@ The mechanical rules the parser holds every author to:
 
 - **Every `###` heading is a phase heading** — `### P<id> — <title>` (em dash), id
   `[A-Za-z0-9]+`. Any other `###` line is a structure error the driver nudges back. All
-  non-phase sections use `##`, and the driver reads exactly two of them — `## Push holds` and
-  `## Driver rulings`; the rest it ignores.
+  non-phase sections use `##`, and the driver parses exactly two of them — `## Push holds` and
+  `## Driver rulings`. Three more ride verbatim in every code-writer's digest —
+  `## Requirements / rulings`, `## Without a criterion` and `## Not in scope` — and the rest it
+  ignores.
 - **Ids are free-form labels; document order is authoritative.** `P3a` inserted between `P3`
   and `P4` runs between them because of *where it sits*, not its name. Ids must be unique.
 - **No phase delivers a change under the spec repo's `slices/**`.** The slice tree is never a
@@ -96,7 +98,7 @@ The mechanical rules the parser holds every author to:
 - **`## Task shape` is the plan-writer's declaration** — `pre-settled`, `localized`, or
   `cross-cutting`, one line of justification anchored in slice.md facts. It binds the writer's
   investigation and the plan review checks it (semantics: [plan-loop.md](plan-loop.md)); the
-  run loop's parser ignores it, as it does every `##` section but the next one.
+  run loop's parser ignores it (which `##` sections it reads: above).
 - **`## Push holds` names the repos this run must not push** — one `- <target> — <why>`
   bullet each (em dash), target in the same vocabulary as `Target:` — a scratch clone no phase
   targets, such as a ledger phase's, is named `github:<owner>/<repo>`, and the driver never
@@ -193,10 +195,11 @@ The mechanical rules the parser holds every author to:
 - **Done-records go under the phase's own heading** — appended below the phase text as plain
   paragraphs or lists, **never a new `###`** — in two parts, the summary first:
   1. a bold `**Done (P<id>).**` paragraph — what landed (the files and names that now exist)
-     and the gate's result — then a `Later phases:` line and **one contiguous list** of what a
-     later phase must know: what is settled beyond the plan's text, the seams and harness it can
-     use, what is owed or unexercised. About ten lines together.
-  2. the record — the narrative, the witnessed reds, the fix rounds, the gate lines — hard cap
+     and the tests the writer ran on it (the phase gate is the driver's) — then a
+     `Later phases:` line and **one contiguous list** of what a later phase must know: what is
+     settled beyond the plan's text, the seams and harness it can use, what is owed or
+     unexercised. About ten lines together.
+  2. the record — the narrative, the witnessed reds, the fix rounds, the tests run — hard cap
      ~25 lines, settlements not narration.
   The run loop's phase digest hands later phases part 1 only; the doc phase's digest and the
   reviewer read the whole record. A record without the `Later phases:` list rides in later
@@ -206,9 +209,10 @@ The mechanical rules the parser holds every author to:
   over it, not left in the done-record.
 - **Phases are roughly PR-sized and independently reviewable** — one branch, one gate run over
   every component the diff touches ([run-loop.md](run-loop.md) § The per-phase round), one
-  reviewable diff. A phase outgrowing that splits; a phase *section* outgrowing ~a page
-  overflows into `attachments/` (referenced, never inlined). No end-to-end testing phase and
-  no auto-doc phase — the loop owns those; a phase's own tests ride the phase.
+  reviewable diff. A phase outgrowing that splits, and so does the plan's largest or riskiest phase,
+  where one stands out, unless it says in one line why it must land whole; a phase *section*
+  outgrowing ~a page overflows into `attachments/` (referenced, never inlined). No end-to-end
+  testing phase and no auto-doc phase — the loop owns those; a phase's own tests ride the phase.
 - **A doc task is a phase.** The loop's doc phase is auto docs only — the doc surfaces that
   already describe the changed behavior, brought up to date from the shipped diff — and it
   carries no slice task. So a requirement that *is* a doc change — a decision to close, a

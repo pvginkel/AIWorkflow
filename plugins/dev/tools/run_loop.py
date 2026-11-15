@@ -230,8 +230,8 @@ MODELS: dict[str, tuple[str, str | None]] = {
     "wrap-up": ("opus", "xhigh"),
     "consult": ("opus", "xhigh"),
     "test-agent": ("sonnet", None),
-    # dispatched by the driver itself on a sweep flake (AIWF-141), and as a
-    # sub-agent by the test and doc phases
+    # dispatched by the driver itself on a phase gate's red and on a sweep
+    # flake, and as a sub-agent by the test and doc phases
     "test-fixer": ("sonnet", None),
 }
 
@@ -1705,8 +1705,8 @@ def manifest_claimer(phases: list[Phase], index: int,
 
 
 def parse_push_holds(text: str) -> tuple[list[tuple[str, str]], list[str]]:
-    """(held target → why, structure errors) from `## Push holds` — the one
-    `##` section the driver reads. A repo listed there is one this slice must
+    """(held target → why, structure errors) from `## Push holds`, one of
+    the two `##` sections the driver parses. A repo listed there is one this slice must
     not push: the push check reports it held instead of nudging the test
     session and bailing. Prose and comments in the section are ignored; a
     bullet that is not a hold is a structure error, because a hold the driver
@@ -1934,7 +1934,7 @@ def done_record(phase: Phase) -> list[str]:
 
 def done_record_summary(phase: Phase) -> list[str] | None:
     """A done phase's record reduced to its two summary parts: the opener
-    paragraph (what landed and the gate result) and the `Later phases:`
+    paragraph (what landed and the tests run) and the `Later phases:`
     list right after it (what is settled, what a later phase may use or is
     owed). None when the record has no opener, or no `Later phases:` block
     behind the opener — there is nothing to reduce, so the caller carries
@@ -2445,8 +2445,7 @@ def measurement_sentence(cmd: str, regate: str | None, base: str | None,
             sha=base_sha[:12])
     if base == "red":
         return (f"{tree} and {said}: older than the phase by this "
-                "measurement, so making it deterministic is the fixer's "
-                "(rule 4).")
+                "measurement.")
     if base == "green" and runs == 2:
         return (f"{tree} and {said}: the phase's red. A test the phase added "
                 "has no run on the base to compare, and is the phase's by "
@@ -3420,14 +3419,16 @@ GATE_FIXER_LINE = ("The test-fixer took this red first and handed it back as "
 # `{measurement}` is the measurement's sentences, `{phase_text}` the phase's
 # section and `{handover}` the handovers, both indented under their bullet,
 # and `{secrets}` the reviewer's Secret and never-print paragraphs where the
-# phase's diff calls for them (`_review_secrets`), indented the same way. The
+# phase's diff calls for them (`_review_secrets`), indented the same way.
+# `{services}` is the executor round's services hint (`_unrun_services_hint`)
+# as a bullet of its own, empty where the tree declares none the pod lacks. The
 # rules it cites are the test-fixer's own.
 GATE_FIXER_PROMPT = """\
 The gate for phase P{phase_id} of slice {slice_name} is red, and you take
 it first (branch {branch}{where}). The plan: {plan_path}.
 
 - The gate went red on {red_cmds}; its output is in {gate_log}. Each command
-  is fail-fast and terse, so its output ends at its first failing statement.
+  is fail-fast and terse, so its output ends at its first failing statement.{services}
 - The driver's measurement: {measurement}
 - The phase's section of the plan:
 {phase_text}
@@ -3440,9 +3441,10 @@ it first (branch {branch}{where}). The plan: {plan_path}.
   measures against.
 
 Commit on {branch}, and nowhere else. The driver gates again after you hand
-back, so do not run {red_cmds} yourself: the failing tests repeated green is
-your fix holding. An existing test's expectation changes only on a plan line
-(rule 5); a behaviour the handover names with its plan line is that line,
+back, so do not run {red_cmds} whole yourself: the failing tests repeated
+green is your fix holding, and a red lint or check run over what it flagged.
+An existing test's expectation changes only on a plan line (rule 5); a
+behaviour the handover names with its plan line is that line,
 which you quote. Write your verdict to {verdict_path}.
 
 Before you hand back, add a debrief: a few lines, in your own words, on how
@@ -3487,7 +3489,7 @@ For a finding about prose the default fix is deleting or narrowing the claim,
 not rewording it — a fix that grows the section is suspect. Run the tests
 your fixes touch; the driver gates after you hand back{gate_hint}. Commit
 your fixes, update the phase's done-record if what landed changed, then write
-your verdict to {verdict_path}.
+your verdict, with its handover, to {verdict_path}.
 {pointers}"""
 
 # Appended by the driver to a round's review file when the fix round refuted
@@ -4175,7 +4177,7 @@ Deterministic facts from the driver:
   rebase-merges the branch onto {base_branch} and pushes; the dev roll that
   push triggers is left to land on its own.
 
-Run the doc gates the doc names yourself as you work, commit, then write
+Run the doc gates the doc names yourself, commit, then write
 your verdict to {verdict_path}.
 """
 
@@ -9764,7 +9766,7 @@ class RunLoop:
         again; its `issues` is the round's executor fix round, which reads
         what it handed back; its `blocked` bails. The fixer is no step of
         Pilot's of its own — it belongs to the gate, in the code step before
-        it — so only the executor round leaves the review step a why.
+        it — so only the executor round, its own code step, gets a why.
 
         Every pass re-takes the merge base first (`_merge_base`, AIWF-104),
         and the gate, the measurement and the fix round all read that one:
@@ -10072,8 +10074,12 @@ class RunLoop:
         secrets = self._review_secrets(
             phase, outputs, r, work, [(merge_base, head_before)],
             stem="gate_fixer", who="test-fixer").strip("\n")
+        services = self._unrun_services_hint(target)
+        services = ("\n- " + services.removeprefix(". ") + "."
+                    if services else "")
         prompt = GATE_FIXER_PROMPT.format(
             phase_id=phase_id, slice_name=self.slice_name, branch=branch,
+            services=services,
             where=where, plan_path=self.plan_path,
             red_cmds=_ticked(m["red"]),
             gate_log=m["logs"].get("gate") or "(no log)",

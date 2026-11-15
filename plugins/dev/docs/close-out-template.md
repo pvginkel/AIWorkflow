@@ -33,8 +33,8 @@ an entry's words are `/dev:writing`'s; this doc is the shape.
       "wrap_up": null,
       "strike": null,
       "ruling": null,
-      "options": [{"label": "Exit 3", "line": "in effect; nothing changes"},
-                  {"label": "Exit 8", "line": "a kc release and every caller on 3"}],
+      "options": [{"label": "Exit 3", "line": "In effect; nothing changes"},
+                  {"label": "Exit 8", "line": "A kc release and every caller on 3"}],
       "recommend": "Exit 3"
     }
   ]
@@ -72,7 +72,15 @@ an entry's words are `/dev:writing`'s; this doc is the shape.
   entry; **`ruling`** is `{"answer_lines", "did", "date"}` — the answer lines Pilot wrote,
   verbatim (`answer`, `by`, `at`, `note`, `via`, `to`, `done`), and what the continuation did on
   them. A report from before 0.10 holds `{"words", "did", "date"}` instead.
-- **`closed`**, on the report, is `{"date", "by"}` once the continuation has closed it.
+- **`fix_now`** is the continuation's mark on a ruled entry the fixes pass makes: `{"by",
+  "date", "change"?}`, `change` the ruled change in the operator's words where the proposal does
+  not say it. A second mark replaces the first, which stays as a history note.
+- **`left_out`**, on the run loop's event that a wrap-up's landing was left out, is what landing
+  it takes: `branches`, each `{repo, branch, cut, head}`; `store` and `before`, the spec repo
+  commits at which the store held what the wrap-up wrote and what it held before; the store's
+  `path` in that repo; and the `entries` it was given.
+- **`closed`**, on the report, is `{"date", "by"}` once the continuation has closed it, `by`
+  `null` where the close names no signer, as the continuation's does.
 - **`step`**, **`summary`** and **`context`**, on the report, are the document's own fields,
   there where `render` was given them.
 - **The route is not in the store**, and neither is the run header: the first is computed from
@@ -147,7 +155,7 @@ rework 14 %)
 
 **The wrap-up** fixed B3 and P2, a commit each.
 
-Closed: 2026-10-30 — by run-slice
+Closed: 2026-10-30
 
 ## Ruled
 
@@ -183,7 +191,7 @@ Closed: 2026-10-30 — by run-slice
 
 ### ~~B5 — <headline> · minor~~ — resolved by P4 (19640d9): suite re-run; struck by consult 1
 
-### ~~B8 — <headline> · nit~~ — closed with the report, 2026-10-30, as the table routed it: it needs a fault; struck by run-slice
+### ~~B8 — <headline> · nit~~ — closed with the report, 2026-10-30, as the table routed it: it needs a fault
 ```
 
 The run header is one block of plain lines written from `state.json` when the slice folder
@@ -192,7 +200,8 @@ holds one — every piece present in the state, nothing guessed for the pieces t
 done, and what the wrap-up settled, each where there is any: the run's account, which the
 document does not carry. **Ruled** is every entry with a ruling, its heading struck
 once it is carried out, the ruling on one line, never wrapped: the answer lines, then ` — ` and
-what was done; then its trail, as Asked has it. **Asked** is what the document asks and nobody
+what was done, and a `**Fix now:**` line under it where the continuation marked the entry for
+the fixes pass; then its trail, as Asked has it. **Asked** is what the document asks and nobody
 has answered, under the heading it is asked by, each with the trail its section leaves out: the
 author's own text where a restatement took its place, then every note in order — a consult's, a
 relabel's, a replaced proposal or restatement — and the wrap-up's mark last. A card its author
@@ -206,7 +215,7 @@ out.
 
 ## The verbs
 
-Every verb takes the slice directory or the report's path as its first argument.
+Every verb but `labels` takes the slice directory or the report's path as its first argument.
 
 | verb | whose | what it does |
 |---|---|---|
@@ -227,7 +236,7 @@ Every verb takes the slice directory or the report's path as its first argument.
 | `render` | the loops, `/dev:run-slice` | writes the record, and the document unless Pilot wrote it back; `--step`, `--summary` and `--context` set the document's own fields |
 | `absorb` | the continuation | reads `close-out.md`, as Pilot wrote it back, into the store: each block's answer lines into its entry's ruling; `deferred` and an action's `done` close the entry; refused on a document whose blocks are no entries of the store |
 | `rule` | the continuation | records what was done on an entry's ruling, which strikes it |
-| `settle` | the continuation | settles a criterion owed after an operator's action: writes its `pass` or `fail`, rationale and evidence into `verification.json` in the file's own escaping, `owed_after` kept ([plan-template.md](plan-template.md) § verification.json), and strikes the action that waited on it — a push hold's action listing several criteria takes a note until the last of them is settled; refused on a criterion without `owed_after` or already settled |
+| `settle` | the continuation | settles a criterion owed after an operator's action: writes its `pass` or `fail`, rationale and evidence into `verification.json` in the file's own escaping, `owed_after` kept ([plan-template.md](plan-template.md) § verification.json), and strikes the action that waited on it — a push hold's action listing several criteria takes a note until the last of them is settled; refused on a criterion without `owed_after`, or where it would change nothing |
 | `close` | the continuation | closes the report: every entry still live is struck, but one whose ruling nobody carried out — that one stays, and the report stays open over it |
 
 No verb renders: the store changes, and the files follow at the next `render`.

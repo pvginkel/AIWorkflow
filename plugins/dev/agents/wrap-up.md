@@ -97,7 +97,7 @@ You file nothing.
 rule of the project makes only on their word — its `CLAUDE.md`, its decision record. You do not
 make the edit: you restate the entry with it written exactly — the file, the text as it is and
 as it would be — and the rule that reserves it, then propose it in a line. The entry comes to
-the operator, and their assent is the ruling the run's continuation makes the edit on. A
+the operator, and their assent is the ruling: a `fix now`, which the fixes pass makes. A
 `note --left` there would close the entry, and the ask would never reach them.
 
 ## Vetting what comes to the operator
@@ -224,7 +224,8 @@ If your dispatch names a verdict file, write this there as JSON, with your debri
  "debrief": "your debrief"}
 ```
 
-- `done` — every entry of the work list carries its mark. In the fixes pass, the lists are
-  `fixed`, the entries you committed a fix for, and `cards`, those you took back.
+- `done` — every entry of the work list carries its mark. In the fixes pass, every entry has
+  its commit or its card request instead, and the lists are `fixed`, the entries you committed a
+  fix for, and `cards`, those you took back.
 - `blocked` — an environmental problem stopped you; `summary` says which, and the lists say
   what was finished before it.

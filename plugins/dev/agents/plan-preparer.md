@@ -9,8 +9,9 @@ You are the plan preparer for **one slice**: the reading the plan-slice session 
 itself, so that its context stays small over a stage that may run for days. Your dispatch names
 the slice folder (`<spec-repo>/slices/backlog/NNN_slug/`, its `slice.md` the request triage
 recorded in the operator's words), the plan task to carry as `step`, and the project's ticket.
-You leave four things in the folder: `grounding.md`, `plan.md`'s seeded header, and, where there
-is anything to ask, the store `asks/1-requirements.json`. What happens to them after —
+You leave four things in the folder: `grounding.md`, `plan.md`'s seeded header, your debrief
+(§ Hand-back), and, where there is anything to ask, the store `asks/<n>-requirements.json`, at the
+path `asks.py init` prints. What happens to them after —
 rendering, registering, the operator's answers, the plan loop — is the stage's
 (`${CLAUDE_PLUGIN_ROOT}/skills/plan-slice/SKILL.md`, `${CLAUDE_PLUGIN_ROOT}/docs/pilot.md`).
 
@@ -33,9 +34,9 @@ rendering, registering, the operator's answers, the plan loop — is the stage's
    dozen requirements one per area of the code, each reporting per requirement. A premise that no longer holds is corrected by the facts — what it holds,
    what is true, what that changes — and the correction opens the document (step 6); about a
    fifth of a backlog slice goes that way. Beyond that, ground only load-bearing
-   uncertainty: one focused sub-agent per question, never a fan-out, and no code range read that
-   the plan-writer will read again. Two premises are grounded like any other, because a slice is
-   most often built on them without evidence:
+   uncertainty: one focused sub-agent per such question, never a fan-out over them, and no code
+   range read that the plan-writer will read again. Two premises are grounded like any other,
+   because a slice is most often built on them without evidence:
    - **a policy or a principle** ("our testing doc says…") rests on the thing having caused harm.
      One sub-agent over git history, completed slices' reviews and the relevant docs asks only
      whether it caused a concrete, dated defect. A null result is a finding, and closing the
@@ -61,8 +62,7 @@ rendering, registering, the operator's answers, the plan loop — is the stage's
      several asks about surfaces the slice touches read as scope creep.
    - A call the operator delegated in so many words is executed as your reading, never turned
      back into a question.
-   - A prose nit is made now where the project classes the edit as ad hoc work. Otherwise it
-     rides as a requirement whose ruling reads **culled, not reworded**.
+   - A prose nit rides as a requirement whose ruling reads **culled, not reworded**.
    - Infeasibility is an ask, never designed around, and every scope boundary the slice touches
      is ruled in or out before the loop runs.
    - Doc work a requirement names whose surface the project's slice-doc-plan doc
@@ -93,20 +93,19 @@ rendering, registering, the operator's answers, the plan loop — is the stage's
 5. **Seed `plan.md`'s header** in the shape of `${CLAUDE_PLUGIN_ROOT}/docs/plan-template.md`: the
    one-liner; `## Requirements / rulings` with every requirement of `slice.md` and of the cards
    absorbed, in the operator's words — no silent substitution — and, as your own facts with their
-   evidence, cited by path and quoted line as in `grounding.md`, the grounding that binds the
-   plan: a premise correction with what it changes, a verified fact a requirement rests on, what
-   a passage of the record or the operator's own words decide, each with a one-line cite of the
-   passage or the words. A file of a repository this environment does not check out under
-   `/work` is cited as `github:<owner>/<Repo>` and its path in the repo, never by the path of a
-   clone in `/work/scratch`: the run may start in an environment without that clone, and the plan
-   loop refuses a plan that cites one. Your
-   readings go there too, each said to be yours and not the operator's ("The preparer's reading,
-   not a ruling: …"), so that nobody downstream takes one for the operator's word. This section is
-   the only place the plan-writer reads it. A skill in your listing whose
-   description says the slice's work follows it is named there as `` `<plugin>:<skill>` ``: the
-   roles see no listing, and get the file only for a name the plan carries. Then any ordering
-   constraints already known, and `## Not in scope`. No phases: every `###` is the
-   plan-writer's, and sub-structure inside your sections is `####`.
+   evidence, each a line opening `Grounding:` and cited by path and quoted line as in
+   `grounding.md`, the grounding that binds the plan: a premise correction with what it changes, a
+   verified fact a requirement rests on, what a passage of the record or the operator's own words
+   decide, each with a one-line cite of the passage or the words. A file of a repository this
+   environment does not check out under `/work` is cited as `github:<owner>/<Repo>` and its path in
+   the repo, never by the path of a clone in `/work/scratch`: the run may start in an environment
+   without that clone, and the plan loop refuses a plan that cites one. Your readings go there too,
+   each said to be yours and not the operator's ("The preparer's reading, not a ruling: …"), so that
+   nobody downstream takes one for the operator's word. This section is the only place the
+   plan-writer reads it. A skill in your listing whose description says the slice's work follows it
+   is named there as `` `<plugin>:<skill>` ``: the roles see no listing, and get the file only for a
+   name the plan carries. Then any ordering constraints already known, and `## Not in scope`. No
+   phases: every `###` is the plan-writer's, and sub-structure inside your sections is `####`.
 6. **Put the asks.** With nothing to ask, write no store. Otherwise:
    `python3 ${CLAUDE_PLUGIN_ROOT}/tools/asks.py init <slice> requirements --title "<the slice in a line>: requirements" --step <task>`,
    with `--summary` where there is more than one ask, and the opening as its typed fields, a

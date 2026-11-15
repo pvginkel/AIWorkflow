@@ -4,6 +4,48 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-15 — The plugin read whole after the handover: what no longer added up (v0.10.79)
+
+The consistency review of AIWF-209. Five readers on Fable 5.2 at `high` read the plugin's agents,
+skills and docs whole against the code after 0.10.72–0.10.78 — the run loop's docs, the phase
+agents, the close-out, the planning side, the chat skills and the project contract — and their
+findings were confirmed against the source before any was fixed.
+
+- **Prompts and behaviour.**
+  - The plan-writer writes its verdict, and any questions file, before its one commit; it
+    committed first and left the verdict untracked, which drew the commit nudge every pass
+    (PilotAppSpecs slices 042–046).
+  - A red gate's measurement no longer calls an older red "the fixer's (rule 4)": the same text
+    reaches the code-writer's fix round, whose rule 4 is another rule.
+  - The review-fix prompt asks for the handover, as the other executor prompts do.
+  - The gate's test-fixer is told what confirms a fix to a red lint or check, and of the services
+    the tree declares that the pod does not run, as the executor's fix round was.
+  - The doc-writer's prompt runs the doc gates once, as its definition says, not "as you work".
+- **Agents.**
+  - Code-writer rule 1's older-flaky-red exception covers the red that reached its fix round;
+    the driver enters the one its re-gate passes.
+  - The code-reviewer may `relabel`; the test-agent's "never flaky or pre-existing" yields to a
+    measurement.
+  - The plan-reviewer's blocking finding carries a proposal or options, never both.
+  - The preparer's ad-hoc prose-nit branch is gone; its `Grounding:` label and the requirements
+    store's numbered path are named.
+  - The wrap-up's word request is a `fix now` the fixes pass makes.
+- **Docs.**
+  - run-loop.md, runner-state.md and agent-dispatch.md now cover the fixes pass and the gate's
+    move throughout: history roles, files, debrief placement, the wait's `timeout:` line, what is
+    never reattached, the test-fixer's cwd and timeout, and the state keys the docs never listed.
+  - close-out.md and the template: `fix-now` in the verb lists, the driver's two defect entries,
+    the `fix_now` and `left_out` fields, the unsigned close, and `settle`'s refusal.
+  - The plan template is the one statement of which `##` sections the driver reads, and
+    plan-loop.md's reviewer charter is a pointer.
+  - The onboard skill, project-contract.md, preflight.md and the README match the code and one
+    another.
+  - Real tracker keys and slice numbers are gone from the agents' and skills' examples.
+- **Left as found.** Restatements that have not drifted (the stage skills restating pilot.md,
+  the plan-writer the template). A sibling's ruling meant for a slice whose requirements document
+  is still open goes into its `slice.md` after the preparer read it, and nothing carries it into
+  `plan.md`: a behaviour gap, not a prose one.
+
 ## 2026-11-15 — The gate moves out of the code-writer: the driver gates, measures a red, and the test-fixer takes it first (v0.10.78)
 
 AIWF-204, phase 2 of the cache-miss plan (PilotAppSpecs `research/cache-misses/findings.md`), from

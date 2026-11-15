@@ -18,7 +18,8 @@ whole life, from the plan loop's first append to the continuation's last ruling.
 labels (`relabel`) and of its proposal (`propose`); the section the document shows for an entry
 (`restate`); the wrap-up's marks (`propose --card`, `propose --word`, `note --left`); the fold of an entry into a later slice's `slice.md` (`fold`,
 which stages that file and writes nothing else); the render (`render`); the answers Pilot wrote
-back (`absorb`) and what was done on them (`rule`); the criterion an owed-after action settles
+back (`absorb`), the marks of what the fixes pass makes (`fix-now`) and what was done on them
+(`rule`); the criterion an owed-after action settles
 (`settle`, which writes `verification.json` too); and the close (`close`). It prints an entry in
 full (`show`) and counts the report. Both loops import it, and every dispatch names it beside the
 report's path — which the tool takes as its positional, the slice directory or the report
@@ -322,11 +323,12 @@ card would say, the body the card's text, at most 200 words with its `Consequenc
 `Provenance:` lines (`CARD_WORDS_MAX`, the tracker's limit for a card an agent writes, which
 `propose --card` and a restatement of a card request hold it to, `restate` printing the count;
 the detail is the record's) — and its proposal the line Agree files it on;
-the continuation files the section. Nothing is filed before the operator's word. **A request for the
+the continuation files the section. Nothing is filed before the operator's word: their Agree,
+or their `fix now` on an entry the fixes pass could not land. **A request for the
 operator's word** is the wrap-up's for an edit it would make but a rule of the project reserves
 for them (`propose --word`): it comes to them whatever the table's route, the entry restated as
 the exact edit and the rule, its proposal the line their assent makes it on, so that their
-assent is the ruling and the continuation makes the edit.
+assent is the ruling: a `fix now`, which the fixes pass makes.
 
 ## The document and the record
 
@@ -413,7 +415,10 @@ invariants).
   `unknown`. A refuted finding, a funding-consult merge and every stop of the run (entered by the
   resume that follows it) each become an event, as does each `## Driver rulings` bullet, once, the
   first time it takes effect ([run-loop.md](run-loop.md)), and a scratch clone the driver left for a
-  `github:` Target. **Each loop renders when it stops, for whatever reason, and when it
+  `github:` Target. Two are defects, each a suite's, with labels the driver fixes and a `card:`
+  proposal: a sweep's red the test-fixer did not settle, and a phase gate's red older than the
+  phase ([run-loop.md](run-loop.md) § The per-phase round). **Each loop renders when it stops, for
+  whatever reason, and when it
   completes**, and the driver once more before it dispatches the doc phase, so that a run that
   stalls there leaves a report that can be read, and once after the wrap-up. The run header is
   written by `render` from `state.json` (run window, phases planned/appended, bail-outs, test
@@ -421,11 +426,13 @@ invariants).
   has added the `cost` block, with the brief's `step` (`render --step`).
 - **the wrap-up** — strikes for what it fixed, corrected labels, card requests, the proposal
   of a risk that has none, and what it left ([below](#the-wrap-up)).
-- **the run's continuation** — what Pilot's answers say (`absorb`), what it did on them (`rule`),
-  and the close ([below](#the-continuation)).
+- **the run's continuation** — what Pilot's answers say (`absorb`), what the fixes pass makes
+  (`fix-now`), what it did on them (`rule`), and the close ([below](#the-continuation)).
 
-**Reading the report is never a license to act on it.** Phase agents append only — otherwise
-the report becomes a new source of scope bleed, a writer "fixing while here" what an earlier
+**Reading the report is never a license to act on it.** Phase agents write the report — an
+entry, a note, a correction of what is wrong in one — and never do the work an entry describes:
+otherwise the report becomes a new source of scope bleed, a writer "fixing while here" what an
+earlier
 phase reported. Reconcile is the completion consult's; render is the loops'; fixing what the
 table sends it is the wrap-up's, and only that; ruling is the operator's. A strike is for
 whoever resolved the entry — the consult for what a phase resolved, the doc-writer for what its
@@ -440,10 +447,11 @@ the operator used to ask for by hand, "fix inline please": it fixes what is deci
 asks for a card where a likely problem is more than it can fix responsibly, and the rest stays
 closed. [Its definition](../agents/wrap-up.md) holds its bar and what it does entry by entry.
 
-**It is the one exception to "append only".** For the entries the table sends it, and for
+**It is the one exception.** For the entries the table sends it, and for
 fixing alone, the report is a license to act, before the operator has ruled. Nothing else is:
 what the table closed stays live until the report is closed, what comes to the operator is
-theirs, and no card is filed without their word.
+theirs, and no card is filed without their word — a `fix now` that did not land is filed on
+that ruling.
 
 | it finds | it writes |
 |---|---|

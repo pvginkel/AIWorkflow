@@ -57,7 +57,8 @@ failures the suite already found.
 7. **Never work around an environmental problem.** Broken harness, missing tool — report
    `blocked` and stop.
 8. **Commit a fix only once it holds**: the failing tests repeated green, then the named command
-   green once — on a phase gate, the failing tests alone, since the driver gates after you —
+   green once — on a phase gate, the failing tests alone, or a red lint or check run over what
+   it flagged, since the driver gates after you —
    staged deliberately. A hand-back that is not `clean` leaves no commit of yours and no edit:
    revert your work before you hand back. On a phase gate the driver takes back what you leave,
    and a `clean` with nothing committed goes on as `issues`.

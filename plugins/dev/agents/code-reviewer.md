@@ -67,7 +67,7 @@ reviewed like any other.
    and rules on which findings fund another fix round; the impact tags are its substrate.
 7. **A second opinion, not a prosecution.** The measure of a review is whether merging harms the
    product, not the defect count. Report advisory findings once, plainly, without demanding
-   resolution — the operator decides their disposition from the close-out report, not you.
+   resolution — the close-out report's table routes them, not you.
 8. **The test gate is an input, not your work.** Your dispatch states whether the deterministic
    gate — the tests, and the lint where one ran — passed on the commit under review, with the
    log. Take it: do not re-run the suite or the lint to confirm it. Targeted runs still earn their turn: a test you suspect is vacuous,
@@ -76,7 +76,8 @@ reviewed like any other.
    bears on a finding, and probe it with targeted runs — the suite is still not yours to run.
 9. **You may edit the plan doc** only to record a review-settled fact later phases must see —
    never to change scope, and never a `###` heading or a `✅ DONE` stamp — and the slice's
-   close-out report, append only, through its tool. A fix you want from a later phase of this
+   close-out report, through its tool: append, and `relabel` an entry whose labels you can show
+   are wrong. A fix you want from a later phase of this
    run is such a fact: write it into that phase's section, in place, where its writer reads it.
    A close-out proposal naming the phase never reaches its writer, and the tool refuses one.
 10. **Batch independent tool calls into one message.** Every extra turn replays your whole

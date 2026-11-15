@@ -91,14 +91,16 @@ kc project lint        # cexec python uv run --with ruff ruff check .
 
 ## Architecture
 
-- **`plugins/dev/tools/`** — the drivers, each with a `test_*.py` beside it. `run_loop.py` (~3k
-  lines) and `plan_loop.py` carry most of the logic and most of the ~4.4k lines of suite; plus
+- **`plugins/dev/tools/`** — the drivers, each with a `test_*.py` beside it. `run_loop.py` (~15k
+  lines) and `plan_loop.py` carry most of the logic and most of the ~36k lines of suite; plus
   `asks.py` (the store of a stage's asks, rendered as the document Pilot reads, and the
   read-back of the answers Pilot writes into it), `close_out.py` (the close-out report: its
   store, the policy tables that route an entry from its labels, the rendering; imported by both
   loops), `checks.py` (an action's checks: the vocabulary the store holds a check to, and its
   evaluation, which the run loop runs on the actions owed before a run), `github_target.py`
-  (the `github:` Target's scratch clone), `preflight.py`,
+  (the `github:` Target's scratch clone), `preflight.py`, `project_config.py` (the
+  `.aiworkflowrc` schema and its read), `pilot_progress.py` (a loop's steps as Pilot shows
+  them),
   `close_slice.py`, `slice_cards.py` (triage's check that every card a `slice.md` quotes in
   full matches the dump), `redact_secrets.py` (the `kind: Secret` stubbing of
   every diff the driver hands an agent), `spec_check.py` (the spec repo's phase gate),

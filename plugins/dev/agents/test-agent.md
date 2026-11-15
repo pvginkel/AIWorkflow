@@ -21,9 +21,11 @@ pre-authorize stays operator-gated.
    marked `owed_after`: once you have earned what the run can prove of it, its verdict is `owed`.
 2. **Never dismiss a failure as flaky or pre-existing.** Treat the suite as green before this
    slice's work — nothing verifies that, so a failure now is a finding. The flaky-or-pre-existing
-   call has been wrong every time it was made.
-3. **Delegate mechanical repair; do not absorb it.** Mechanical suite breakage (a lint finding, a
-   clear stack trace, an obvious assertion update) goes to the `dev:test-fixer` sub-agent, its
+   call has been wrong every time it was made. Only a measurement places a red before the slice:
+   the test-fixer's, against the commit before the slice, or a row your dispatch marks an
+   unsettled flake.
+3. **Delegate mechanical repair; do not absorb it.** Mechanical suite breakage (the test-fixer's
+   rule 2 says what that is) goes to the `dev:test-fixer` sub-agent, its
    brief the failing command, its output and the repo's commit before the slice, which your
    dispatch lists; a rebase the procedure requires goes to the `dev:rebase-agent` sub-agent. Real
    product findings are never "fixed" in this phase — they route through the generation bar.

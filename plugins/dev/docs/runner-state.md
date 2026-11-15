@@ -59,7 +59,9 @@ the consult as before), `flakes` (one record per suite a `flake` gave the test-f
 `repo`, `component`, `consult`, `sweep`, `round` — none for a suite it already had — the
 verdict's `outcome` and `summary`, `settled`, the `head` its row was noted on, and the close-out
 `entry` that asks for its card when it was not settled; [run-loop.md](run-loop.md) § After the
-last phase), `test_fixer_rounds` (the test-fixer's rounds the run has dispatched), `in_flight`, `exit` (how the run ended — its exit `code` and `ts`, the driver's last
+last phase), `test_fixer_rounds` (the test-fixer's rounds the run has dispatched on a sweep
+flake; a phase gate's fixer is numbered by its gate-fix round), `in_flight`, `exit` (how the run
+ended — its exit `code` and `ts`, the driver's last
 write, after `bailout.json`; cleared when a `--resume` starts, so a run that is not running and
 has none was killed from outside; the fixes pass clears it as it starts and writes its own,
 with `pass: fixes`, which `wait` reads its end lines by), `bailouts` (every stop this run made — `reason`, `phase`,
@@ -90,7 +92,10 @@ phase's goes with it; [run-loop.md](run-loop.md) § The steps Pilot shows),
 (the ids the plan gained after the run started — a consult's, the test phase's, or the
 operator's, as opposed to the phases it began with), `holds_reported` (the repos held by the
 plan's `## Push holds` section that the driver has already entered in the close-out report — one
-entry per repo per run), `wrap_up` (the wrap-up's record: `outcome` — `skipped` when nothing
+entry per repo per run), `rulings_reported` (the `## Driver rulings` the driver has entered there,
+once per run each, the first time one changed what it did) and `scratch_clones_reported` (the
+`github:` scratch clones it has entered there), `wrap_up` (the wrap-up's record: `outcome` —
+`skipped` when nothing
 waited for it, `landed`, or `left_out` with its `reason`; its `session`; the `entries` its work
 list named at dispatch; `store`, the spec repo commit the store stood at before it; and per
 repo its `branch`, the `base` sha the branch was cut from and its `head`), `doc_phase` (the
@@ -103,7 +108,8 @@ commit; and `sibling_heads`, each other code repo's base sha as the ladder began
 and may be rebased), `fixes` (the fixes pass's record, [run-loop.md](run-loop.md) § The fixes
 pass: its `stage` — `cut` | `dispatch` | `gate` | `landing` | `record` | `done` — its `outcome`,
 `nothing` | `landed` | `partial` | `carded`, and the `reason` nothing landed where there is one;
-`store`, the spec repo commit the store stood at as the pass found it; its `session`; per entry
+`started_at` and `ended_at`; `store`, the spec repo commit the store stood at as the pass found it;
+its `session`; per entry
 its `state` — `pending` | `landed` | `carded` — whether it is a left-out wrap-up's `landing`, its
 `commit` and `repo`, the `reason` it was carded and whose card it is, `wrap-up` or `driver`; per
 repo the `branch`, the `base`, the `cut` sha, the `head`, its `commits`, the sha it `landed` at
@@ -139,7 +145,11 @@ no `lint` is from before 0.9.145),
 `origin_taken` (how the phase's start took a moved origin into a diverged base — `how`,
 `rebased` or `merged`, `base`, the `own` and `behind` counts, and the slice's `migrations` there
 when origin came in over them, which the phase's gate then owes the check for; every
-code-writer dispatch of the phase says it), `rebase_requested` (set when a merge-time rebase bails `blocked` and hands the
+code-writer dispatch of the phase says it), `review_set_start` and `review_set_ambiguous_start`
+(a `Review:` phase's ledger as the phase began: its clone and commit pairs, and the lines naming
+more than one commit for a clone — what the reviewer is pointed past), `operator_question` (a
+writer's `question` at the review stage, so the resume goes straight back to a writer round with
+the ruling), `rebase_requested` (set when a merge-time rebase bails `blocked` and hands the
 rebase to the operator — `base`, `from` (the branch head it asked to rebase), `ts`; cleared when
 the resume takes the rebased branch, and at the merge), `set_aside` (what a resume set aside
 from a dead round's tree — each entry's `round`, `patch`, `untracked` and `files`; named in the
@@ -166,14 +176,17 @@ has none, and the doc dispatch names it as missing from the files.
 
 `history` is append-only, one entry per agent run plus one per gate run (role `gate`), one per
 loop-tail sweep (role `sweep`), one per doc gate (role `doc-gate`), one per gate on a wrap-up
-branch outside the primary repo (role `wrap-up-gate`), one per test-fixer round on a sweep flake
+branch outside the primary repo (role `wrap-up-gate`), and in the fixes pass one per gate of a
+fixes branch outside it (role `fixes-gate`) and per doc gate on it (role `fixes-doc-gate`), one per
+test-fixer round on a sweep flake
 (role `test-fixer`), one per test-fixer on a phase gate's red (role `test-fixer`, its `round` the
 gate-fix round, with `head_before`, and `as` and `taken_back` where the driver overrode it or took
 its commits back) and one per consult: `ts`,
 `phase`, `role`, `round`, `outcome`, `summary`, `session`, `transcript`, `duration_s` (a gate,
-sweep or doc-gate row's outcome is `green`, `red` or `nothing_ran`; a `wrap-up-gate` row names
-its `repo`; a gate, sweep, doc-gate or wrap-up-gate row that took a command from an earlier gate's
-green has `reused` as a map of each such command to that run). A wrap-up row carries the id lists of
+sweep or doc-gate row's outcome is `green`, `red` or `nothing_ran`, and so is a fixes pass's; a
+`wrap-up-gate` or `fixes-gate` row names its `repo`; any gate row that took a command from an
+earlier gate's green has `reused` as a map of each such command to that run). A wrap-up row carries
+the id lists of
 its
 verdict. A code-reviewer row additionally carries the verdict's `findings` list (id, severity,
 impact, category, anchor per finding — the review contract's telemetry) and a review-fix executor
@@ -200,8 +213,9 @@ off this state (`created_at` → `updated_at`, `known_phases` against
 [close-out.md](close-out.md).
 
 Session outputs live under `<slice>/phases/P<id>/` (review docs, gate logs, verdict files) and at
-the slice root for the consult/test/doc stages and the wrap-up (`wrap_up_result.json`,
-`wrap_up_gate_r<N>.log`); the run-start `kc project setup` logs under `<slice>/setup/` (one
+the slice root for the consult/test/doc stages, the wrap-up (`wrap_up_result.json`,
+`wrap_up_gate_r<N>.log`) and the fixes pass (`fixes_result.json`, `fixes_gate_r<N>.log`,
+`fixes_doc_gate_r<N>.log`); the run-start `kc project setup` logs under `<slice>/setup/` (one
 `<repo>.log` per Target repo, rewritten at every start); the loop-tail sweep's logs live under
 `<slice>/sweeps/r<N>/`; the doc phase's diff files under `<slice>/doc_phase/` (one `<repo>.diff`
 per repo a phase merged or committed into, a section per merged phase over its `landed` range and
@@ -228,8 +242,9 @@ Every role the run dispatches is asked at its hand-back, in the operator's words
 hand back, add a debrief: a few lines, in your own words, on how you feel this went for you.",
 and gives it as its verdict's `debrief`; nothing else primes it or labels it. The ask is in the
 hand-back of the code-writer, the code-reviewer, the test agent, the doc writer and the
-wrap-up, in `CONSULT_PROMPT`, and in a sweep's test-fixer's dispatch, `FLAKE_FIX_PROMPT`, never
-in `test-fixer.md`: the test and doc phases dispatch the test-fixer as a sub-agent, and a role's
+wrap-up, in `CONSULT_PROMPT`, and in the driver's two dispatches of the test-fixer, a phase
+gate's red's (`GATE_FIXER_PROMPT`) and a sweep flake's (`FLAKE_FIX_PROMPT`), never in
+`test-fixer.md`: the test and doc phases dispatch the test-fixer as a sub-agent, and a role's
 own sub-agents give none.
 
 The driver keeps each dispatch's debrief in `debrief.json` beside `state.json`, as an entry of its
@@ -245,7 +260,7 @@ writes the file; the plan loop keeps `plan_debrief.json` by the same rules
 
 | Field | What it holds |
 |---|---|
-| `section` | where the full debrief Pilot shows puts it: a phase's entries, its code and review rounds and a consult at its review, under its first step's label, `P3 · <title>`; the sweeps, the completion consults and a sweep's test-fixer under `Completion check`; then `Test phase`, `Doc phase` and `Wrap-up` |
+| `section` | where the full debrief Pilot shows puts it: a phase's entries, its code and review rounds, its gate's test-fixer and a consult at its review, under its first step's label, `P3 · <title>`; the sweeps, the completion consults and a sweep's test-fixer under `Completion check`; then `Test phase`, `Doc phase`, `Wrap-up` and the fixes pass's wrap-up under `Fixes` |
 | `round` | the round of the step it ran under, as Progress numbers it |
 | `role` | `Code writer`, `Code reviewer`, `Review consult`, `Gate sweep`, `Completion consult`, `Test fixer`, `Test agent`, `Doc writer` or `Wrap-up` |
 | `duration` | the dispatch's whole seconds, as its history row has them; a timeout's, the role's timeout |
@@ -279,10 +294,11 @@ document; `wait` prints each as an `attach:` line.
 |---|:-:|---|
 | `operator_question` | ✓ | an executor or the doc-writer returned `question` |
 | `plan_doc` | ✓ | the plan doc is broken and no session could fix it on a nudge |
+| `plan_unreadable` | – | `plan.md` cannot be read at all (the details give the OS error) |
 | `generation_exhausted` | ✓ | a third follow-up generation of appended work is pending |
 | `prerun_action` | ✓ | at startup, fresh or `--resume`, before the run's actions owed before it were all met: one whose check fails, struck or not, or one without a check the driver can run that nobody struck ([run-loop.md](run-loop.md) § Protocol invariants) |
 | `missing_tools` | ✓ | a Target repo's manifest calls a `cexec <tool>` this environment does not run — at startup, fresh or `--resume`, or at a phase gate that meets it mid-run; the details name the tools and the `- use:` lines ([run-loop.md](run-loop.md) § Protocol invariants) |
-| `missing_services` | ✓ | the host's own `.kubecoder/config.yaml` declares a service this environment does not run, at startup, fresh or `--resume` (another Target repo's are never read: a red gate there takes its fix round, whose hint names them); the details name the services and the `services:` lines ([run-loop.md](run-loop.md) § Protocol invariants) |
+| `missing_services` | ✓ | the host's own `.kubecoder/config.yaml` declares a service this environment does not run, at startup, fresh or `--resume` (another Target repo's are never read: a red gate there goes to its test-fixer and fix round, both told of them); the details name the services and the `services:` lines ([run-loop.md](run-loop.md) § Protocol invariants) |
 | `service_oom_killed` | ✓ | a phase-gate command went red while `kc env describe` says a service the pod runs was `OOMKilled` after the command or run began; no fix round is spent, and the details name the service, its memory limit and the `resources:` line ([run-loop.md](run-loop.md) § Protocol invariants) |
 | `target_not_cloned` | – | a pending phase's `Target:` is a repo path the environment's `.kubecoder/config.yaml` declares and the pod has not cloned — the plan is fine, so no session is nudged; the details name each such phase and the fix: `kc env restart`, or a clone plus `kc project setup` ([run-loop.md](run-loop.md) § The plan is the queue) |
 | `blocked` | – | an agent reported `blocked`, or a protocol failure after the nudge |
@@ -319,7 +335,9 @@ the run's end). It is a signal, not a report, and answers **0** the run ended (`
 where there is one, and the `bailout:` file), **5** still running (`running`, with the active step
 and the time in it where the state names them, `running: P4 code, 12m`, and the `next:` wait to
 re-arm with nothing read) or **6** `gone`, with no `exit` recorded (and the `next:`
-relaunch). Liveness is the `flock`, never the pid. `run_loop.py stop <slice-dir>`
+relaunch). Every `next:` that names a wait is followed by a `timeout:` line, the milliseconds the
+session's Bash call for it takes. A fixes pass's lines are its own ([run-loop.md](run-loop.md) §
+The fixes pass). Liveness is the `flock`, never the pid. `run_loop.py stop <slice-dir>`
 sends the driver SIGINT: the 130 path, as Ctrl-C. While it waits, `wait` publishes the run's
 `progress` to Pilot ([pilot.md](pilot.md) § The progress).
 
@@ -349,9 +367,11 @@ is complete — counted from the file under the record's session id, with no dur
 and no session resumed or spawned. Slice 222 spent a second full test phase on a `clean` verdict
 already on disk.
 
-Two things are deliberately never reattached: **consults**, which are cheap and whose action
-vocabulary may have changed, and **timed-out sessions**, whose `in_flight` record is cleared as
-soon as the timeout fires — a stuck agent is a problem to surface, not to continue.
+Some sessions are deliberately never reattached: **consults**, which are cheap and whose action
+vocabulary may have changed; **timed-out sessions**, whose `in_flight` record is cleared as soon as
+the timeout fires — a stuck agent is a problem to surface, not to continue; **a phase gate's
+test-fixer**, whose round is measured and dispatched afresh; and **the wrap-up**, in either of its
+dispatches, whose stage starts again.
 
 A timeout reads the verdict file before it bails, though. Every dispatch unlinks that file first,
 so one present when the timeout fires was written by this round: the agent finished its work,

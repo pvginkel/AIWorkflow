@@ -54,9 +54,9 @@ the pre-filtered state — by hand, or with `/dev:inbox`, which sorts every proj
 and moves what is slice-shaped there — with the dated inbox ruling a card carries shown on its
 line like any ruling (step 5). The whole intake queue is the batch only when the operator says
 so, and a selection they scope the run to (ids, a list) replaces either: the rest stay untouched,
-and the close-out says so. Other projects' cards stay: a card filed under another project whose
-substance is this project's is flagged by id — mine, misfiled? — never adopted; moving it is the
-operator's. Every card is read afresh — the tracker carries no verdict, and reading a card twice
+and the closing message says so. Other projects' cards stay: a card filed under another project
+whose substance is this project's is flagged by id — mine, misfiled? — never adopted; moving it is
+the operator's. Every card is read afresh — the tracker carries no verdict, and reading a card twice
 costs little.
 
 Before anything else, the raw material lands verbatim in
@@ -87,7 +87,7 @@ deletes it. The operator never reads it.
 generally one item; a card that is itself a list of independent asks (a residuals card) becomes
 several. When it is unclear whether something is one task or many, keep it as one — the planner
 splits cheaply. Ids are assigned once and never change — the card's id as the tracker writes it,
-suffixed `a`, `b`… when a card yields several items (`KC-472b`), the findings-document section, a
+suffixed `a`, `b`… when a card yields several items (`ABC-472b`), the findings-document section, a
 running number for chat passages — so an item that changes fate keeps its handle. For each item
 hold its id, its ask — the title and the stated symptom and consequence, in the source's words —
 its question when one exists (below), and what the decisions check finds. None of this is
@@ -237,7 +237,7 @@ ruling for what it does:
 
 - **A close or a later is binding**: no re-derivation, no argument. A close closes the card as
   rejected, with a one-line comment carrying the ruling ("closed at triage: duplicate of
-  KC-12"); a later takes the deferred disposition.
+  ABC-12"); a later takes the deferred disposition.
 - **An answer that takes an option the message put takes the whole option.** The option's own
   text is recorded beside the operator's words, in the requirement it rules and in the Q&A, and
   what the option carried is ruled with it: never written up as open, never left for the planner
@@ -339,10 +339,10 @@ README to the specs repo, staging files by name (`${CLAUDE_PLUGIN_ROOT}/docs/spe
 - **The dump is deleted when nothing in it is still open** — every item filed, closed, or
   parked. A partial disposition (a selection of the cards, a run that stopped) leaves it in
   place, committed. If deleting it would lose a fact, it isn't absorbed yet.
-- **Notify the operator** per the host convention — "N items triaged: K closed at the filter,
+- **Notify the operator** per the host convention — "N items triaged: K closed at triage,
   M slices under `<spec-repo>/slices/backlog/`." — and stop. The closing message is that
-  receipt: each slice filed with its folder and its card, the cards closed. It names no next
-  command and points at no planning.
+  receipt: each slice filed with its folder and its card, the cards closed, and for a selection
+  that the rest stayed untouched. It names no next command and points at no planning.
 
 Stop means stop: planning is the operator's to start, in their own time, and the close does not
 start it, suggest it or name its command. The one exception — the operator explicitly asks to

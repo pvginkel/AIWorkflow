@@ -57,8 +57,7 @@ plan cites.
    Where one phase stands out as the plan's largest or riskiest, the one you expect to take more
    than one round, it is split, or it says in one line why it must land whole; without either
    that is a blocking finding, a gap whose proposal is the split or the line, never advice
-   alone. Slice 032's reviewer named its P4 the largest and predicted the rounds, as advice; the
-   phase stayed whole and took three.
+   alone.
 6. **Attachment altitude.** Attachments exist only where the executor genuinely cannot derive
    the design, and sit at the smart-dev altitude — functional success descriptions. Prescribed
    symbol names, pseudo-code, or specced implementations are findings; so is an attachment a
@@ -92,17 +91,18 @@ plan cites.
    the plan cites each by its path and quoted line. A ruling in the operator's own words stays
    as they wrote it.
 
-**Describe problems; never design corrections.** A finding that carries its own fix is invalid
-output: state the defect and the evidence, then stop. Do not manufacture findings — a clean plan
-gets `go` with an empty list; leanness findings matter only where the text would cost every
-downstream session. Batch independent tool calls into one message — read the plan and its cited
-code together. Out-of-scope observations about the spec or the estate go in the slice's
-close-out report (path and tool in your dispatch — `close_out.py append`; `list` first to see
-what is already there; never a hand edit), append only; your findings and questions keep their
-route — the review file and the verdict. Label what you enter — the facts
-`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels asks for (`close_out.py labels` prints
-them), `unknown` where you cannot tell; where an entry goes is the tool's to decide, never
-yours. An entry, and a finding of the findings file, is written under
+**Describe problems; never design corrections.** In the review file a finding that carries its
+own fix is invalid output: state the defect and the evidence, then stop. A disposition in the
+findings file (§ Output) is the outcome the plan holds, never the edit. Do not manufacture findings
+— a clean plan gets `go` with an empty list; leanness findings matter only where the text would cost
+every downstream session. Batch independent tool calls into one message — read the plan and its
+cited code together. Out-of-scope observations about the spec or the estate go in the slice's
+close-out report (path and tool in your dispatch — `close_out.py append`; `list` first to see what
+is already there; never a hand edit), append only; your findings and questions keep their route —
+the review file and the verdict. Label what you enter — the facts
+`${CLAUDE_PLUGIN_ROOT}/docs/close-out.md` § The labels asks for (`close_out.py labels` prints them),
+`unknown` where you cannot tell; where an entry goes is the tool's to decide, never yours. An entry,
+and a finding of the findings file, is written under
 `${CLAUDE_PLUGIN_ROOT}/skills/writing/SKILL.md`.
 
 ## Output
@@ -114,8 +114,12 @@ dispatch:
 
 ```json
 {"findings": [{"class": "operator | blocking", "headline": "…", "body": "…",
-               "proposal": "…", "options": [{"label": "…", "line": "…"}], "recommend": "<a label>"}]}
+               "proposal": "…"},
+              {"class": "operator | blocking", "headline": "…", "body": "…",
+               "options": [{"label": "…", "line": "…"}], "recommend": "<a label>"}]}
 ```
+
+No finding carries both a `proposal` and `options`.
 
 The class decides where a finding goes. A `blocking` finding with a `proposal` and no `options`
 is a gap: its fix needs no product choice, and it goes to the writer's fix pass without reaching
@@ -125,12 +129,12 @@ where the fix is a choice the operator could make either way, and where the reco
 only an option that would overrule a passage; then it goes to them. An `operator` finding always goes to them. Each finding that reaches
 the operator is one ask of the document the loop puts to them in Pilot. The `headline` is the
 problem, in a line of about twelve words; the `body` is its grounds, in Markdown paragraphs or a list, with no heading
-and no fenced block. A `blocking` finding says its disposition as its `proposal`: what the plan
-holds once the finding is resolved, the outcome and never the edit. An `operator` finding gives
-the courses as `options`, each a label and at most one line, with `recommend` only where you have
-grounds — a step two slices specify differently names no winner — or no options where it is an
-open question. Advisory notes stay in the review file. The loop checks the file and sends it back
-to you once with its faults.
+and no fenced block. A `blocking` finding says its disposition, as its `proposal` or its
+`options`: what the plan holds once the finding is resolved, the outcome and never the edit. An
+`operator` finding gives the courses as `options`, each a label and at most one line, with
+`recommend` only where you have grounds — a step two slices specify differently names no winner — or
+no options where it is an open question. Advisory notes stay in the review file. The loop checks the
+file and sends it back to you once with its faults.
 
 Before you hand back, add a debrief: a few lines, in your own words, on how you feel this went
 for you.

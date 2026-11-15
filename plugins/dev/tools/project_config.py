@@ -39,9 +39,10 @@ instance — and `migrations.paths`, git glob pathspecs relative to the repo roo
 (`*` stays within a directory, `**/` crosses any number of them).
 
 `[migrations]` is the project's migration check, for the phases whose Target is
-this repo: when a phase's diff adds a file under one of `paths`, the run loop's
-phase gate runs `check` with `sh -c` from the phase's tree, and any exit but 0
-is a red gate. The check is the project's — the pipeline names no migration
+this repo: when a phase's diff adds a file under one of `paths`, or its start
+took origin's commits in over the slice's own migrations, the run loop's phase
+gate runs `check` with `sh -c` from the phase's tree, and any exit but 0 is a
+red gate. The check is the project's — the pipeline names no migration
 tool — and with no table no phase runs one. Both keys, or neither.
 
 Defaults are the pipeline's full behaviour, so a repo that names only its

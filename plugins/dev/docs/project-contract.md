@@ -2,9 +2,10 @@
 
 The pipeline is generic and portable; each project describes **itself**. A repo becomes usable
 by the pipeline when it provides the three things below. Nothing here is a template you copy — it is
-a small set of facts the pipeline reads (via `kc` and one config file), all **enforced by
-preflight** (`${CLAUDE_PLUGIN_ROOT}/tools/preflight.py`; see [`preflight.md`](preflight.md)). A new
-repo self-onboards from preflight's error text.
+a small set of facts the pipeline reads. The first two, read via `kc` and one config file, are
+**enforced by preflight** (`${CLAUDE_PLUGIN_ROOT}/tools/preflight.py`; see
+[`preflight.md`](preflight.md)), and a new repo self-onboards from preflight's error text; the
+third is the host's.
 
 ## 1. `.kubecoder/project.yaml` — the component manifest
 
@@ -16,7 +17,7 @@ parses the YAML itself; only `kc` reads it. The manifest also declares the **cur
 
 - **Absent or malformed** → preflight (plan/run) bails.
 - A phase's `Target:` in `plan.md` must name one of these component names (or a sibling repo
-  path — see [run-loop.md](run-loop.md)).
+  path, or `github:<owner>/<repo>` — see [run-loop.md](run-loop.md)).
 
 See `kc`'s own `project-manifest.md` for the manifest schema.
 
@@ -24,8 +25,8 @@ See `kc`'s own `project-manifest.md` for the manifest schema.
 
 TOML at the repo root. One file carries every fact about the project the pipeline needs: where its
 slices live, which procedure docs its phases execute, which phases it runs at all. The schema of
-record is [`project_config.py`](../tools/project_config.py); a repo that has none gets the whole
-file printed back at it by preflight.
+record is [`project_config.py`](../tools/project_config.py); a repo that has none gets the minimal
+file, its four pointers, printed back at it by preflight.
 
 ```toml
 spec_repo = "../KestrelSpecs"
@@ -93,12 +94,12 @@ every phase and nobody loses one by omission. Each switch is an opt-*out*:
   `origin` and nothing else. Refused beside `enabled = false`: a run that pushes nothing deploys
   nothing. Preflight's `run` pass reports both keys ([preflight.md](preflight.md) § Output).
 - **`devlock.lease`** — the flock inode for the cooperative occupancy lease over a single dev
-  instance, held for the test phase and again for the doc landing's push — never for the doc
-  phase's writing ([run-loop.md](run-loop.md)). This one defaults **off**: one dev instance is a
-  fact about a deployed project, not about every repo, and a lease that is not named cannot be
-  taken. Run profile checks the directory it would live in
-  exists — a typo'd path takes a lock nothing else contends for, which looks exactly like
-  coordination and is none.
+  instance, held for the test phase and again for the pushes of the doc landing and of the fixes
+  pass's landing — never for the doc phase's writing ([run-loop.md](run-loop.md)). This one defaults
+  **off**: one dev instance is a fact about a deployed project, not about every repo, and a lease
+  that is not named cannot be taken. Run profile checks the directory it would live in exists — a
+  typo'd path takes a lock nothing else contends for, which looks exactly like coordination and is
+  none.
 
 - **`[migrations]`** (default off) — the project's migration check. `paths` are git glob
   pathspecs, relative to the repo root, that a migration file matches; `check` is a command, run
@@ -106,7 +107,7 @@ every phase and nobody loses one by omission. Each switch is an opt-*out*:
   alembic, that `alembic heads` prints one head. Both keys or neither. The run loop closes a
   phase's gate with it, for a phase whose Target is in this repo, when the phase adds a file
   under `paths` or its start brought origin's commits in over the slice's own migrations
-  ([run-loop.md](run-loop.md) § The per-phase round); a red takes the writer's fix round. The
+  ([run-loop.md](run-loop.md) § The per-phase round); a red is taken like any red gate. The
   run profile checks each glob matches a tracked file: one that matches nothing is a typo the
   check would never fire on. The pipeline names no migration tool; the command is the project's.
 
@@ -118,7 +119,9 @@ phase that runs, or an optional phase would be mandatory again.
 The skills speak about the **issue tracker** and **notifications** in the workflow's own
 vocabulary, never a concrete tool's. A **card** is one tracker item, cited by its id as the
 tracker writes it. Each project owns its cards, and how the tracker tells one project's cards from
-another's is the host's. A project has an **intake queue**; the operator has an **action queue**.
+another's is the host's. A project has an **intake queue**, and a **pre-filtered** state its
+triage takes its batch from, where the operator moves the cards they meant for a slice; the
+operator has an **action queue**.
 A card is **closed** with one of three dispositions — **resolved** (the work happened),
 **absorbed** (folded into a slice, under whose card it then hangs) or **rejected** (ruled out,
 invalid, a duplicate) — or **deferred**, which parks it open. One **slice card** per slice advances

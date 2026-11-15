@@ -415,11 +415,12 @@ def current_branch(repo: Path) -> str | None:
 
 # ---------------------------------------------------------------------------
 # A repo on a run loop's phase branch. The loop checks `phase/<slice>-P<id>`
-# (the doc phase: `phase/<slice>-docs`) out in the phase's target repo — the
-# shared spec tree included — and checks the base back out once the phase
-# merges, or at a bail. Met here, the branch is usually a live run's, often
-# another environment's: pushing it, tracking it or checking something else
-# out changes that run's branch under it. So such a repo is refused before any
+# (the doc phase: `phase/<slice>-docs`) out in the phase's target repo — a
+# shared repo and the spec repo in a worktree of their own instead — and
+# checks the base back out once the phase merges, or at a bail. Met here, the
+# branch is usually a live run's, often another environment's: pushing it,
+# tracking it or checking something else out changes that run's branch under
+# it. So such a repo is refused before any
 # other check looks at it, naming the run when its run.lock is held.
 # ---------------------------------------------------------------------------
 

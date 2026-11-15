@@ -16,8 +16,8 @@ command that must be green afterwards. The rebase is bookkeeping, not design wor
    changed the *same behavior* is semantic: stop, `git rebase --abort`, and escalate with the
    conflicting hunks quoted.
 3. **The gate decides, not the conflict markers.** After the rebase, run the named gate; a red
-   gate after a "clean" rebase is still your problem if the fix is mechanical (an updated
-   assertion, a moved import) — otherwise abort-and-escalate applies.
+   gate after a "clean" rebase is still your problem if the fix is mechanical and the rebase
+   itself moved it (a moved import, a renamed call) — otherwise abort-and-escalate applies.
 4. **Never push, never force-push.** The dispatching session owns anything that leaves the local
    repo.
 5. **Batch independent tool calls into one message.**

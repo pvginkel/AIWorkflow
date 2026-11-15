@@ -1,12 +1,12 @@
 # Preflight — the pipeline's gate, expressed over `kc`
 
-`${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage|plan|run` is one repo-shipped,
-**stdlib-only** script each pipeline skill runs as **step one**. The checks are `kc` primitives
-plus the repo's `.aiworkflowrc` contract from [`project-contract.md`](project-contract.md) — and
-three steps that act rather than check: removing the spec-tree guard an older plugin installed in
-the spec repo (§ Notes on the spec-tree guard), the sync that brings the environment's repos up
-to their origins (§ Notes on the sync), and the `kc project setup` the run baseline runs before
-its build (§ Notes on the run baseline).
+`${CLAUDE_PLUGIN_ROOT}/tools/preflight.py --for triage|plan|run` is one plugin-shipped,
+**stdlib-only** script that `/dev:triage` and the two stages run at their start. The checks are `kc`
+primitives plus the repo's `.aiworkflowrc` contract from
+[`project-contract.md`](project-contract.md) — and three steps that act rather than check: removing
+the spec-tree guard an older plugin installed in the spec repo (§ Notes on the spec-tree guard), the
+sync that brings the environment's repos up to their origins (§ Notes on the sync), and the `kc
+project setup` the run baseline runs before its build (§ Notes on the run baseline).
 
 **Silent on success** — but for its notes: the line saying it removed the spec-tree guard, under
 `plan` a `warning:` line for each repo the sync passed over (§ Notes on the sync), and under
