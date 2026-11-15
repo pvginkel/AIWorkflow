@@ -11,9 +11,10 @@ order: fetch the target repo (nothing else in a run refreshes a
 remote-tracking ref, so an unfetched clone dates an agent's read of
 `origin/<base>` to the day it was cloned) and fast-forward a base with no
 commits of its own → branch → executor session (fresh code-writer) →
-deterministic gate (red spawns a fresh executor fix round, capped; the
-writer's own green run of it, through `gate`, stands in for it on the tree it
-ran on) → code-reviewer loop (round 1's fix is automatic; from round 2 a
+deterministic gate (a red is measured — the red commands again on the tree,
+and on the merge base — then goes to the test-fixer and, where it hands the
+red back, to a fresh executor fix round, capped) → code-reviewer loop
+(round 1's fix is automatic; from round 2 a
 consult funds each further round against a bar that rises per round;
 backstop cap) → gate-checked merge → the driver stamps `✅ DONE <date>` on
 the phase heading. Only the driver stamps.
@@ -125,23 +126,6 @@ Usage:
     run_loop.py wait <slice-dir> [--for SECONDS]
     run_loop.py stop <slice-dir>
     run_loop.py status <slice-dir>
-    run_loop.py gate <phase-outputs>/gate_spec.json
-    run_loop.py gate --detach <phase-outputs>/gate_spec.json [--timeout SECONDS]
-    run_loop.py gate --wait <phase-outputs>/gate_spec.json [--for SECONDS]
-
-`gate` is the code-writer's, not the operator's: it runs the phase gate the
-driver would run, from the spec the driver wrote at the dispatch, and records
-the run beside it; a green the driver can prove was on the tree it is handed
-is its gate, not run again. It exits 0 green · 1 red · 3 nothing ran · 2 no
-run (an unreadable spec, a tree git cannot hash). `gate --detach` starts that
-same run detached (long_run.py, its job dir gate_run/ beside the spec, killed
-at --timeout, default 3600) and exits 0 once it started, printing the
-`gate --wait` line to run next · 2 refused: no spec to run, or a gate still
-running there. `gate --wait` waits on it for at most --for seconds (default
-240, under a session's five-minute prompt cache) and exits with its own code,
-not the gate's: 0 the gate ended (its exit, what that means and its whole
-output in the output) · 5 still running · 6 gone, no exit record · 2 no gate
-started there.
 
 Exit codes of run: 0 slice complete · 3 bailed on an error (bailout.json
 written) · 4 bailed with an operator question (bailout.json written) ·
@@ -335,45 +319,6 @@ NOTHING_RAN_HINT = ("Exit 3 is kc's \"nothing ran\" — not red, nothing to "
                     "fix: the component declares no statement for the verb; "
                     "say what you checked instead")
 
-# Closes every gate hint that names the wrapper: what a green run of it buys.
-GATE_REUSE_HINT = ("When its last run is green on the tree you hand back — "
-                   "unchanged since that run began; committing changes "
-                   "nothing, any edit does — the driver takes that run as "
-                   "its gate and runs none of it again")
-
-# Follows the gate in every gate hint that names the wrapper: it runs
-# detached, and the writer waits on it in chunks (HEADLESS_WAIT_LINE).
-# `{wait}` is `gate --wait` over the phase's spec, in backticks.
-GATE_WAIT_HINT = ("It starts the gate detached and returns; wait on it with "
-                  "{wait}, which returns within four minutes — run it with "
-                  "the Bash tool's `timeout: 300000` — and while it says "
-                  "`running` run it again at once, reading nothing in "
-                  "between")
-
-# The writer runs the phase gate through the driver's own wrapper (`run_loop.py
-# gate <spec>`, `run_writer_gate`): the spec, written into the phase's outputs
-# dir at every code-writer dispatch, says what the gate is; each run records
-# what it ran and on what tree beside it, one record per round, so only the
-# latest round's can stand in for the driver's gate (`_reusable_writer_gate`).
-GATE_SPEC_NAME = "gate_spec.json"
-
-# What the wrapper writes beside the spec when a run of it went red while a
-# service the pod runs was OOM-killed (AIWF-139, `record_gate_oom`): the
-# services killed, and each such run's red commands and times. Apart from the
-# round's record, because a later run in the same round replaces that record:
-# a writer that ran the gate again after a kill — and saw it green, the
-# service back up — would leave the driver no trace of the kill. So a later
-# run of the round adds its kills to the file and never drops the earlier
-# ones. The driver removes it before every fresh code-writer round and bails
-# on it once the round's session is back (`RunLoop._writer_oom_check`).
-GATE_OOM_NAME = "gate_oom.json"
-
-# `gate --detach` runs that same wrapper through long_run.py, its job dir
-# this one beside the spec — so `gate --wait <spec>` finds it from the spec
-# alone — and `gate --wait`'s ended line says what the wrapper's exit means.
-GATE_RUN_DIR = "gate_run"
-GATE_EXIT_MEANINGS = {0: "green", 1: "red", 3: "nothing ran", 2: "no run"}
-
 # A spec-repo phase's gate opens with the plugin's spec check (AIWF-68 —
 # AnsibleSpecs has no manifest, script or CI, so every phase there wrote a
 # throwaway check and the driver's gate had nothing to run), and goes on to
@@ -399,10 +344,6 @@ SPEC_CHECK_HINT = ("the plugin's spec check, `{argv}`, which lists every "
                    "each")
 
 
-def writer_gate_record_name(round_: int) -> str:
-    return f"writer_gate_r{round_}.json"
-
-
 # The component `Target: root` names — the repo as a whole to a plan's
 # authors — and the gate it falls back to when root declares no tests, or,
 # for the lint beside it, no lint.
@@ -410,7 +351,10 @@ ROOT_COMPONENT = "root"
 REPO_GATE_ARGV = ["kc", "project", "test"]
 REPO_LINT_ARGV = ["kc", "project", "lint"]
 
-GATE_FIX_CAP = 3       # executor fix rounds against a red gate, per phase
+# Gate-fix rounds against a red gate, per phase: each the driver's
+# measurement of the red, the test-fixer, and — where it hands the red back —
+# an executor fix round (`_gate_until_green`).
+GATE_FIX_CAP = 3
 # Nudges at the test session over a repo it committed to but never pushed.
 # The driver checks rather than pushes: a slice touching several repos may
 # need an order only the agent running the verification knows.
@@ -1637,6 +1581,20 @@ def phase_scope(plan_text: str, phase_id: str) -> str:
     return "\n".join(kept)
 
 
+def phase_section_text(plan_text: str, phase_id: str) -> str:
+    """Phase `phase_id`'s own section of the plan, its heading first, as
+    phase_scope bounds it — empty where the plan has no such phase."""
+    kept: list[str] = []
+    owner: str | None = None
+    for line in plan_text.splitlines():
+        if SECTION_HEADING_RE.match(line):
+            match = PHASE_RE.match(line)
+            owner = match.group(1) if match else None
+        if owner == phase_id:
+            kept.append(line)
+    return "\n".join(kept).strip("\n")
+
+
 # What a path under the spec repo's slice tree looks like in a phase's text
 # (AIWF-168): `slices/` opening a path, or after the spec repo's own name
 # (`../PilotAppSpecs/slices/…`, `/work/PilotAppSpecs/slices/…`) — never after
@@ -2271,10 +2229,8 @@ def spec_check_argv(base: str, work_root: Path) -> list[str]:
     """The spec check over what a spec-repo phase changed since `base` in
     the tree at `work_root` (AIWF-68): the plugin's own tool, from the tools
     dir this driver runs from. `base` is a sha, never a ref that moves: the
-    writer's `gate` wrapper and the driver each resolve the phase's merge
-    base when their run begins (AIWF-104), so the two run the very same
-    command over the same base, and a writer's run against a base that has
-    since moved is another command, which the driver does not reuse."""
+    driver resolves the phase's merge base again at every gate (AIWF-104),
+    so a branch rebased onto a moved base is checked against the new one."""
     return ["python3", str(TOOLS_DIR / "spec_check.py"), "--base", base,
             str(work_root)]
 
@@ -2283,8 +2239,8 @@ def migration_pathspecs(globs) -> list[str]:
     """`.aiworkflowrc`'s `migrations.paths` as the pathspecs git matches
     them by (AIWF-140): globs from the top of the tree, where `*` stays
     within a directory and `**/` crosses any number of them. Preflight
-    lists what each matches; the phase gate and the writer's `gate`
-    wrapper ask which of them a phase's diff adds."""
+    lists what each matches; the phase gate asks which of them a phase's
+    diff adds."""
     return [f":(top,glob){g}" for g in globs]
 
 
@@ -2362,8 +2318,8 @@ def content_tree(root: Path) -> str:
     exactly when the content a gate would run on does.
 
     Hashed through a copy of the index, never the index itself — the
-    writer's own gate runs this mid-session, and staging behind its back
-    would change what it commits. A linked worktree's index is its own,
+    driver hashes a tree an agent may be working in, and staging behind
+    its back would change what it commits. A linked worktree's index is its own,
     which `--git-path` names. No index yet is an empty one. ValueError,
     with git's message, when git cannot say."""
     root = Path(root)
@@ -2407,90 +2363,6 @@ def markdown_only(root: Path | str, old: str, new: str) -> bool:
     return _MARKDOWN_ONLY[key]
 
 
-def _is_argv(value) -> bool:
-    return (isinstance(value, list) and bool(value)
-            and all(isinstance(a, str) for a in value))
-
-
-def _shape_problem(data, keys: dict[str, type]) -> str | None:
-    """What keeps `data` from being an object with `keys`, each of its
-    type — None when nothing does."""
-    if not isinstance(data, dict):
-        return "not a JSON object"
-    for key, kind in keys.items():
-        if not isinstance(data.get(key), kind) \
-                or (kind is int and isinstance(data[key], bool)):
-            return f"no `{key}` of type {kind.__name__}"
-    return None
-
-
-def gate_spec_problem(spec) -> str | None:
-    """What makes `spec` no gate spec (`RunLoop._write_gate_spec`), None
-    when it is one. `base` is the base branch the wrapper resolves the
-    phase's merge base against (AIWF-104), and `spec_check` whether the
-    gate opens with the spec check. `lint_argv` and `lint_fallback`, the
-    lint beside the Target's test (AIWF-105), and `touched.lint_accepted`,
-    the components whose lint an accept ruling keeps from running, are
-    absent from a spec an older driver wrote, whose gate lints nothing; so
-    is `migrations`, the migration check's `paths` and `check` (AIWF-140),
-    and its gate runs none — and its `owed`, the slice's migrations a
-    phase's start took origin over, absent where there are none."""
-    problem = _shape_problem(spec, {"phase": str, "round": int,
-                                    "work_root": str, "gate_cwd": str,
-                                    "base": str, "spec_check": bool})
-    if problem:
-        return problem
-    if not spec["base"]:
-        return "`base` is empty"
-    # a spec repo with no manifest is gated by its spec check alone
-    if not _is_argv(spec.get("argv")) \
-            and not (spec.get("argv") is None and spec["spec_check"]):
-        return "`argv` is not a command"
-    for key in ("fallback", "lint_argv", "lint_fallback"):
-        if spec.get(key) is not None and not _is_argv(spec[key]):
-            return f"`{key}` is not a command"
-    touched = spec.get("touched")
-    if touched is not None:
-        problem = _shape_problem(touched, {"target": str, "waived": list})
-        if problem or not all(isinstance(c, str) for c in touched["waived"]):
-            return f"`touched` is off-shape: {problem or 'waived'}"
-        accepted = touched.get("lint_accepted")
-        if accepted is not None and not (
-                isinstance(accepted, list)
-                and all(isinstance(c, str) for c in accepted)):
-            return "`touched` is off-shape: lint_accepted"
-    migrations = spec.get("migrations")
-    if migrations is not None:
-        problem = _shape_problem(migrations, {"paths": list, "check": str})
-        owed = migrations.get("owed", []) if not problem else []
-        if problem or not migrations["check"] or not migrations["paths"] \
-                or not all(isinstance(g, str) and g
-                           for g in migrations["paths"]) \
-                or not isinstance(owed, list) \
-                or not all(isinstance(m, str) and m for m in owed):
-            return ("`migrations` is off-shape: "
-                    f"{problem or 'paths, check or owed'}")
-    return None
-
-
-def writer_gate_record_problem(record) -> str | None:
-    """What makes `record` no record of the `gate` wrapper's run
-    (`run_writer_gate`), None when it is one."""
-    problem = _shape_problem(record, {
-        "phase": str, "round": int, "work_root": str, "gate_cwd": str,
-        "start_tree": str, "end_tree": str, "started": str, "finished": str,
-        "commands": list, "outcome": str})
-    if problem:
-        return problem
-    if not record["commands"]:
-        return "`commands` is empty"
-    for command in record["commands"]:
-        if _shape_problem(command, {"rc": int, "output": str}) \
-                or not _is_argv(command.get("argv")):
-            return "a command is off-shape"
-    return None
-
-
 def sweep_row_outcome(row: dict) -> str:
     """A sweep row's outcome — read off its `green` for a row recorded
     before rows carried one (a resume over an older plugin's sweep)."""
@@ -2527,6 +2399,125 @@ def rerun_mark(row: dict, short: bool = False) -> str | None:
     if short and outcome in RERUN_SHORT_MARKS:
         return RERUN_SHORT_MARKS[outcome]
     return RERUN_MARKS.get(outcome, f"re-run {outcome}")
+
+
+# A red command's outcome on the merge base, as the measurement of a red
+# phase gate records it (`RunLoop._base_run`) and its log and narration name
+# it: kc's three, and four that are no measurement of the suite at all.
+BASE_OUTCOME_LABELS = {"green": "GREEN", "red": "RED",
+                       "nothing_ran": "nothing ran",
+                       "not_run": "not run",
+                       "unrunnable": "unrunnable (tool missing)",
+                       "timeout": "timed out",
+                       "oom_killed": "cut short by a service killed for memory"}
+
+# How a measurement sentence says a red command fared on the merge base, by
+# its outcome there (`measurement_sentence`); `{sha}` is the base, shortened.
+BASE_OUTCOME_PHRASES = {
+    "green": "green on the merge base {sha}",
+    "red": "red on the merge base {sha} too",
+    "nothing_ran": "ran nothing on the merge base {sha}",
+    "not_run": "could not be run on the merge base {sha}",
+    "unrunnable": "could not run on the merge base {sha}, a tool missing",
+    "timeout": "timed out on the merge base {sha}",
+    "oom_killed": ("was cut short on the merge base {sha} by a service "
+                   "killed for memory"),
+}
+
+
+def measurement_sentence(cmd: str, regate: str | None, base: str | None,
+                         base_sha: str) -> str:
+    """One red command of a phase gate as the driver measured it: how many
+    of its two runs on the tree — the gate and its re-gate — went red, how
+    it fared on the merge base (`base`, None for a check that has no run
+    there: the spec check, the migration check), and whose red that makes
+    it. Red on the base as well is older than the phase; green there is
+    the phase's, a red the re-gate passed included — a red that passes
+    once more is no measurement."""
+    runs = 2 if regate == "red" else 1
+    tree = (f"`{cmd}` went red in {runs} of 2 runs on the tree (the gate and "
+            "its re-gate)")
+    if base is None:
+        return (f"{tree}, and has no run on the merge base: what it checks is "
+                "the phase's diff, so its red is the phase's.")
+    said = BASE_OUTCOME_PHRASES.get(
+        base, f"came to {base} on the merge base {{sha}}").format(
+            sha=base_sha[:12])
+    if base == "red":
+        return (f"{tree} and {said}: older than the phase by this "
+                "measurement, so making it deterministic is the fixer's "
+                "(rule 4).")
+    if base == "green" and runs == 2:
+        return (f"{tree} and {said}: the phase's red. A test the phase added "
+                "has no run on the base to compare, and is the phase's by "
+                "that alone.")
+    if base == "green":
+        return (f"{tree} and {said}: the phase's red until a measurement of "
+                "the failing tests alone shows otherwise.")
+    return f"{tree} and {said}: the phase's red, with no base run to weigh it."
+
+
+def measurement_text(red: list[str], regate: dict, base: dict,
+                     base_sha: str, logs: dict) -> str:
+    """A red gate's measurement as the test-fixer and the executor's fix
+    round read it: a sentence per red command (`measurement_sentence`),
+    then where each run's output is."""
+    sentences = [measurement_sentence(cmd, regate.get(cmd), base.get(cmd),
+                                      base_sha) for cmd in red]
+    where = [f"{whose} in {logs[key]}" for key, whose in (
+        ("gate", "the gate's"), ("regate", "the re-gate's"),
+        ("base", "the merge base's")) if logs.get(key)]
+    if where:
+        sentences.append(f"Their output: {', '.join(where)}.")
+    return " ".join(sentences)
+
+
+def handover_problem(handover) -> str | None:
+    """What keeps a code-writer verdict's `handover` from being one the
+    test-fixer can read — `{"changed": [{"behaviour", "plan_line"}],
+    "breaks": [{"test", "behaviour"}]}`, either list absent for none —
+    None when nothing does."""
+    if not isinstance(handover, dict):
+        return "it is not an object"
+    if "changed" not in handover and "breaks" not in handover:
+        return "it has neither `changed` nor `breaks`"
+    for key, fields in (("changed", ("behaviour", "plan_line")),
+                        ("breaks", ("test", "behaviour"))):
+        items = handover.get(key, [])
+        if not isinstance(items, list):
+            return f"its `{key}` is not a list"
+        for item in items:
+            if not (isinstance(item, dict) and all(
+                    isinstance(item.get(f), str) and item[f].strip()
+                    for f in fields)):
+                return (f"a `{key}` item lacks "
+                        + " or ".join(f"`{f}`" for f in fields))
+    return None
+
+
+def handover_text(handovers) -> str:
+    """The phase's handovers as the test-fixer reads them: each code-writer
+    round's, in order — what it changed on purpose with the plan line, the
+    existing tests it expected to break — and NO_HANDOVER for a round that
+    gave none, or for the phase where none did."""
+    rounds = sorted((int(k), h) for k, h in (handovers or {}).items()
+                    if str(k).isdigit())
+    if not any(h for _, h in rounds):
+        return NO_HANDOVER
+    lines: list[str] = []
+    for k, h in rounds:
+        if not isinstance(h, dict):
+            lines.append(f"Code-writer round {k}: {NO_HANDOVER}")
+            continue
+        lines.append(f"Code-writer round {k}:")
+        lines += [f"- changed on purpose: {c['behaviour']} — the plan line: "
+                  f"{c['plan_line']}" for c in h.get("changed") or ()]
+        lines += [f"- expected to break: {b['test']} — {b['behaviour']}"
+                  for b in h.get("breaks") or ()]
+        if not h.get("changed") and not h.get("breaks"):
+            lines.append("- no behaviour changed on purpose, and no existing "
+                         "test expected to break")
+    return "\n".join(lines)
 
 
 class SessionResult:
@@ -2645,9 +2636,9 @@ def _kc_send(name: str, prompt: str, cwd: Path, timeout: int,
 # of 2026-11-01 to 11-08, 208 misses and $173, $115 of it code-writers
 # waiting on their phase gate, which takes 5 to 10 minutes there, foreground
 # or backgrounded alike (PilotAppSpecs research/cache-misses/findings.md).
-# So a long command runs detached (long_run.py, or the gate's own `gate
-# --detach`) and is waited on in chunks under the cache's lifetime, each
-# return a cache read: the run-slice skill's `wait --for`, for a command.
+# So a long command runs detached (long_run.py) and is waited on in chunks
+# under the cache's lifetime, each return a cache read: the run-slice skill's
+# `wait --for`, for a command.
 LONG_RUN = long_run.LONG_RUN
 HEADLESS_WAIT_LINE = f"""\
 You run as a headless session of your own, not as a sub-agent. Your prompt
@@ -2661,9 +2652,8 @@ sized for it, with `sh -c '…'` around a pipeline or a `cd`. It prints a
 Bash tool's `timeout: 300000`, since at the tool's two-minute default the
 call goes to the background. While that says
 `running`, run the same line again at once, reading nothing in between;
-`ended` brings the command's output and its exit. A phase gate your
-dispatch names has its own pair of lines, used the same way. That line is
-the waiter: never background such a command and end your turn on it,
+`ended` brings the command's output and its exit. That line is the
+waiter: never background such a command and end your turn on it,
 never sleep, tail its log or build a waiter of your own. A shorter command
 runs in the foreground under `timeout(1)`. A `kc project test` its timeout
 killed printed nothing: the newest log under /tmp/kc/project says how far
@@ -3252,9 +3242,13 @@ it there (your done-record, later phases your work changes) and open it for
 what the digest points at — an attachment, a later phase's text — rather
 than re-reading it whole.
 
-Run the phase's test gate yourself before handing back{gate_hint}.
+Run the tests your phase's change touches; the driver gates the phase
+after you hand back{gate_hint}.
 
 When done:
+- Write the handover into your verdict: each behaviour you changed on
+  purpose, with the plan line that asks for it, and each existing test you
+  expect that change to break.
 - Append the phase's done-record in the plan, under the phase's own heading
   (never a new `###` heading), in the plan template's two-part shape: the
   `**Done (P{phase_id}).**` paragraph and its `Later phases:` list first,
@@ -3341,8 +3335,11 @@ def set_aside_line(records: list[dict]) -> str:
         untracked = (f", and `{rec['untracked']}` holds copies of its {n} "
                      f"untracked file{'' if n == 1 else 's'} — those files "
                      "are still in the tree" if rec["untracked"] else "")
+        who = (f"The test-fixer of gate-fix round {rec['round']}"
+               if rec.get("by") == "test-fixer"
+               else f"Code-writer round {rec['round']}")
         sentences.append(
-            f"Code-writer round {rec['round']} of this phase died with "
+            f"{who} of this phase died with "
             "uncommitted work, and the resume set it aside before resetting "
             f"the branch to its last commit: `{rec['patch']}` is its `git "
             f"diff HEAD`{untracked}.")
@@ -3389,6 +3386,9 @@ green.
 # `{red_cmds}` is every gate command that went red, each in backticks: a
 # component Target's gate also runs each component its diff touches (AIWF-91),
 # and the red may be one of those rather than the Target's own.
+# `{measurement}` is the driver's measurement of the red (GATE_MEASUREMENT_LINE)
+# and `{fixer}` the test-fixer's hand-back (GATE_FIXER_LINE), empty where no
+# fixer ran: a round reattached over a phase begun on an older plugin.
 EXECUTOR_GATE_FIX_PROMPT = """\
 The gate for phase P{phase_id} of slice {slice_name} is red (branch
 {branch}, fix round {round}). The plan: {plan_path}, digested below.
@@ -3396,11 +3396,68 @@ The gate for phase P{phase_id} of slice {slice_name} is red (branch
 The gate went red on {red_cmds}; its output is in {gate_log}. Each command is
 fail-fast and terse, so its output ends at its FIRST failing statement — there
 may be more behind it. The phase's work so far is git diff
-{merge_base}..HEAD{where}. Make the gate green without weakening what it
-checks; run the gate yourself before handing back{gate_hint}. Commit your
-fixes, update the phase's done-record if what landed changed, then write your
-verdict to {verdict_path}.
+{merge_base}..HEAD{where}.
+{measurement}{fixer}
+Make the gate green without weakening what it checks. Run the failing tests
+and the tests your fix touches; the driver gates again after you hand
+back{gate_hint}. Commit your fixes, update the phase's done-record if what
+landed changed, then write your verdict, with its handover, to {verdict_path}.
 {pointers}"""
+
+# EXECUTOR_GATE_FIX_PROMPT's `{measurement}`: the measurement's sentences
+# (`measurement_text`).
+GATE_MEASUREMENT_LINE = "The driver's measurement: {text}\n"
+
+# EXECUTOR_GATE_FIX_PROMPT's `{fixer}`: what the test-fixer handed back, which
+# took the red first.
+GATE_FIXER_LINE = ("The test-fixer took this red first and handed it back as "
+                   "issues: {summary}. Its verdict is {verdict}.\n")
+
+# The test-fixer's dispatch on a red phase gate, before any executor round:
+# it takes the red the driver measured (`_measure_red`), the phase's own
+# section and the code-writer's handovers (`handover_text`), so that a test
+# the phase's change broke on purpose is told from one it broke by mistake.
+# `{measurement}` is the measurement's sentences, `{phase_text}` the phase's
+# section and `{handover}` the handovers, both indented under their bullet,
+# and `{secrets}` the reviewer's Secret and never-print paragraphs where the
+# phase's diff calls for them (`_review_secrets`), indented the same way. The
+# rules it cites are the test-fixer's own.
+GATE_FIXER_PROMPT = """\
+The gate for phase P{phase_id} of slice {slice_name} is red, and you take
+it first (branch {branch}{where}). The plan: {plan_path}.
+
+- The gate went red on {red_cmds}; its output is in {gate_log}. Each command
+  is fail-fast and terse, so its output ends at its first failing statement.
+- The driver's measurement: {measurement}
+- The phase's section of the plan:
+{phase_text}
+- The code-writer's handover — each behaviour it changed on purpose, with
+  the plan line that asks for it, and the existing tests it expected that to
+  break:
+{handover}
+- The phase's work is git diff {merge_base}..HEAD{where}.{secrets}
+- The commit before the phase's work is {merge_base}: the base your rule 4
+  measures against.
+
+Commit on {branch}, and nowhere else. The driver gates again after you hand
+back, so do not run {red_cmds} yourself: the failing tests repeated green is
+your fix holding. An existing test's expectation changes only on a plan line
+(rule 5); a behaviour the handover names with its plan line is that line,
+which you quote. Write your verdict to {verdict_path}.
+
+Before you hand back, add a debrief: a few lines, in your own words, on how
+you feel this went for you. The verdict is JSON, with your debrief as its
+`debrief`:
+  {{"outcome": "clean" | "issues" | "blocked",
+    "summary": "<what you measured, what you fixed and committed, or the escalation>",
+    "debrief": "<your debrief>"}}
+`clean` only with your fix committed on {branch}; `issues` hands the red to
+the code-writer, with your summary as its brief.
+"""
+
+# Where a phase has no handover on record from a code-writer round, the
+# test-fixer reads this in its place (`handover_text`).
+NO_HANDOVER = "(the code-writer gave no handover)"
 
 EXECUTOR_REVIEW_FIX_PROMPT = """\
 You are resolving review findings for phase P{phase_id} of slice
@@ -3427,10 +3484,10 @@ fix touched and breeds its own findings — comment fixes especially. Leave
 them. The phase's section in the plan carries its intent; earlier rounds'
 reviews sit next to this one — check them before re-deciding anything.
 For a finding about prose the default fix is deleting or narrowing the claim,
-not rewording it — a fix that grows the section is suspect. Run the gate
-yourself before handing back{gate_hint}. Commit your fixes, update the
-phase's done-record if what landed changed, then write your verdict to
-{verdict_path}.
+not rewording it — a fix that grows the section is suspect. Run the tests
+your fixes touch; the driver gates after you hand back{gate_hint}. Commit
+your fixes, update the phase's done-record if what landed changed, then write
+your verdict to {verdict_path}.
 {pointers}"""
 
 # Appended by the driver to a round's review file when the fix round refuted
@@ -5141,9 +5198,8 @@ def services_check(roots: Sequence[Path],
 # after 77 minutes — seven kills, about $25 and 3 hours. No change to the code
 # can fix it, only the service's memory limit, which is the operator's. So a
 # red gate while one was killed bails at once with the cause named
-# (`service_oom_killed`, an operator question) and funds no fix round: the
-# driver's own gate (`RunLoop._oom_check`), and the writer's run of it, which
-# leaves GATE_OOM_NAME for the driver (`record_gate_oom`).
+# (`service_oom_killed`, an operator question) and funds no fix round
+# (`RunLoop._oom_check`).
 # ---------------------------------------------------------------------------
 
 def oom_killed_services(since: datetime) -> list[dict]:
@@ -5191,10 +5247,9 @@ def _kill_names(kills: Sequence[dict]) -> list[str]:
 def oom_killed_details(kills: Sequence[dict], ran: str, log_path: Path,
                        host_root: Path) -> str:
     """The `service_oom_killed` bail's details: each kill, during what —
-    `ran`, a command in backticks or the code-writer's own gate run — with
-    where its output is, then what fixes it, on the host's environment
-    config (`host_root`'s: the pod's config is the invoking repo's), and
-    why the fix is the operator's."""
+    `ran`, a command in backticks — with where its output is, then what
+    fixes it, on the host's environment config (`host_root`'s: the pod's
+    config is the invoking repo's), and why the fix is the operator's."""
     config = Path(host_root) / ENV_CONFIG_REL
     names = _kill_names(kills)
     one = len(names) == 1
@@ -5247,49 +5302,6 @@ def oom_killed_bailout(phase_id: str | None, kills: Sequence[dict], ran: str,
                    asks=[oom_killed_ask(_kill_names(kills), details)])
 
 
-def _valid_kills(items) -> list[dict]:
-    """The kills of a GATE_OOM_NAME file's `services` list: each a mapping
-    with a name, the rest of it as it was written."""
-    return [k for k in (items if isinstance(items, list) else ())
-            if isinstance(k, dict) and isinstance(k.get("name"), str)
-            and k["name"]]
-
-
-def record_gate_oom(spec_path: Path, spec: dict, kills: list[dict],
-                    red: list[str], started: str, finished: str) -> Path:
-    """GATE_OOM_NAME beside the spec, for the driver: the services `kills`
-    names, and this run — its red commands, its times — added to what an
-    earlier run of the same round wrote there, a kill it already holds not
-    twice. A file another phase or round left is not added to but replaced:
-    the driver removes the file before a fresh round, so one still there is
-    an older driver's. Its path."""
-    path = Path(spec_path).parent / GATE_OOM_NAME
-    earlier = _read_json(path)
-    if not (isinstance(earlier, dict) and earlier.get("phase") == spec["phase"]
-            and earlier.get("round") == spec["round"]):
-        earlier = {}
-    services = _valid_kills(earlier.get("services"))
-    services += [k for k in kills if k not in services]
-    runs = [r for r in earlier.get("runs") or () if isinstance(r, dict)]
-    runs.append({"started": started, "finished": finished, "red": red,
-                 "services": kills})
-    _write_json_atomic(path, {"phase": spec["phase"], "round": spec["round"],
-                              "services": services, "runs": runs})
-    return path
-
-
-def gate_oom_line(kills: Sequence[dict]) -> str:
-    """The wrapper's closing line for a red run while a service was killed
-    for memory, in place of the plain RED line: the cause, and that the
-    writer stops on it."""
-    said = _join([f"{k['name']} OOMKilled"
-                  + (f" at its {k['memoryLimit']} memory limit"
-                     if k.get("memoryLimit") else "") for k in kills])
-    return (f"=== gate RED: {said} while the gate ran — the environment's, "
-            "not the code's: change no code for it; hand back `blocked` "
-            "naming it, and the driver puts it to the operator ===")
-
-
 # ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
@@ -5322,6 +5334,9 @@ class RunLoop:
         self.state: dict = {}
         self._log_file = None
         self._reattach: dict | None = None
+        # (phase, gate-fix round) of a test-fixer a crash interrupted, whose
+        # leftovers the resume sets aside under its name (`_set_aside`)
+        self._dead_fixer: tuple[str, int] | None = None
         self.repo_root = _git_toplevel()
         self._spec_root: Path | None = None
         self._cfg: project_config.ProjectConfig | None = None
@@ -5699,28 +5714,33 @@ class RunLoop:
         the dead session's transcript.
 
         Under the phase's `set-aside/`, named for the phase's last
-        code-writer round — the one whose work the tree holds — go its `git
-        diff HEAD` as a patch `git apply` takes (an external diff driver,
-        textconv and colour held off) and copies of its untracked files,
-        which stay in the tree: `reset --hard` leaves them, and so does
+        code-writer round — the one whose work the tree holds, or the gate's
+        test-fixer, `fixer-r<N>` for its gate-fix round, where it was the one
+        that died (`_drop_fixer_reattach`) — go its `git diff HEAD` as a
+        patch `git apply` takes (an external diff driver, textconv and
+        colour held off) and copies of its untracked files, which stay in
+        the tree: `reset --hard` leaves them, and so does
         this. The folder ignores itself, as `doc_phase/` does: the patch is
         git's raw answer, Secret data and all. The record in `set_aside`
         reaches the phase's next code-writer (`set_aside_line`). A save
         that fails stops the resume before anything is reset."""
         if not self._worktree_dirty(root):
             return
-        k = ps["executor_rounds"]
+        fixer = (self._dead_fixer[1] if self._dead_fixer
+                 and self._dead_fixer[0] == phase_id else None)
+        k = ps["executor_rounds"] if fixer is None else fixer
         out = self.slice_dir / "phases" / f"P{phase_id}" / "set-aside"
         pathspec = self._bookkeeping_pathspec(root)
         spec = ["--", *pathspec] if pathspec else []
         try:
             out.mkdir(parents=True, exist_ok=True)
             (out / ".gitignore").write_text("*\n")
-            stem, n = f"r{k}", 1
+            stem = first = f"r{k}" if fixer is None else f"fixer-r{k}"
+            n = 1
             while ((out / f"{stem}.patch").exists()
                    or (out / f"{stem}-untracked").exists()):
                 n += 1
-                stem = f"r{k}-{n}"
+                stem = f"{first}-{n}"
             patch = out / f"{stem}.patch"
             self.git("diff", "--binary", "--no-ext-diff", "--no-textconv",
                      "--no-color", f"--output={patch}", "HEAD", *spec,
@@ -5751,7 +5771,8 @@ class RunLoop:
         ps.setdefault("set_aside", []).append({
             "round": k, "patch": str(patch),
             "untracked": str(untracked) if untracked else None,
-            "files": len(files)})
+            "files": len(files),
+            **({"by": "test-fixer"} if fixer is not None else {})})
         self._save_state()
 
     def _reset_tracked(self, root: Path) -> None:
@@ -7432,10 +7453,11 @@ class RunLoop:
     # -- the deterministic test gate -----------------------------------------
 
     def _phase_gate(self, phase_id: str, ps: dict, outputs: Path,
-                    target: ResolvedTarget,
-                    merge_base: str) -> tuple[bool, Path | None]:
+                    target: ResolvedTarget, merge_base: str,
+                    rerun: dict | None = None) -> tuple[bool, Path | None]:
         """The phase's gate as every caller takes it — the first gate, a fix
-        round's re-gate, the merge's re-gate. A target plan.md's `## Driver
+        round's re-gate, the measurement's re-gate of a red (`rerun`,
+        `_run_gate`), the merge's re-gate. A target plan.md's `## Driver
         rulings` waives passes unrun, like a target with no deterministic
         gate: no green commit is recorded, the reviewer is told why, and no
         fix round is spent on a red the operator already ruled on — nor are
@@ -7457,7 +7479,8 @@ class RunLoop:
         ruling = self._gate_ruling(target)
         if ruling is None:
             self._refuse_ungated_github(phase_id, target)
-            return self._run_gate(phase_id, ps, outputs, target, merge_base)
+            return self._run_gate(phase_id, ps, outputs, target, merge_base,
+                                  rerun=rerun)
         self.log(f"[P{phase_id}] test gate for {target.name} waived by "
                  f"plan.md's `## Driver rulings` (substitute: "
                  f"{ruling.substitute_text}) — not run, proceeding "
@@ -7466,8 +7489,8 @@ class RunLoop:
         return True, None
 
     def _run_gate(self, phase_id: str, ps: dict, outputs: Path,
-                  target: ResolvedTarget,
-                  merge_base: str) -> tuple[bool, Path | None]:
+                  target: ResolvedTarget, merge_base: str,
+                  rerun: dict | None = None) -> tuple[bool, Path | None]:
         """Run the target's test gate as a subprocess: (passed, its log).
         The exit code decides; full output goes to gate_r<N>.log in the
         phase's outputs dir, kc's full-output file inlined after kc's own
@@ -7536,26 +7559,22 @@ class RunLoop:
         ran nothing, plays no part in the gate's outcome. An accept ruling
         never covers a test here.
 
-        The writer runs this same gate before it hands back, through the
-        `gate` wrapper, and the driver used to run it again on the tree the
-        writer had just seen green (AIWF-93 — on PilotApp, 75 % of driver
-        gates re-ran such a green). So the latest code-writer round's record
-        of that run, where it passes `_reusable_writer_gate` — the commands
-        this gate would run, none red, on a tree unchanged since the run
-        began — is replayed in place of running anything: the same code
-        lays out the log, records the outcome and the green or empty head,
-        and only the log's header, the narration and the history row's
-        `reused` say it was the writer's run. A record that fails a check is
-        logged with why, and the gate runs as it always did. A flaky suite
-        green once on that tree is taken as green: an accepted risk.
+        A command an earlier gate of this run — a phase gate, the sweep, the
+        doc gate — ran green, or ran nothing, on this tree is not run
+        (`_earlier_runner`, AIWF-142), nor a `test` across a change of
+        Markdown files alone; the history row's `reused` maps each such
+        command to its run. Every command that ran green or nothing is
+        recorded for a later gate (`_note_greens`). A flaky suite green once
+        on that tree is taken as green: an accepted risk. The tree the gate
+        began on is `gate_tree`, where it was the same when the gate ended.
 
-        Where no writer's run stands for it, a command an earlier gate of
-        this run — a phase gate, the sweep, the doc gate — ran green, or ran
-        nothing, on this tree is not run either (`_earlier_runner`,
-        AIWF-142), nor a `test` across a change of Markdown files alone; the
-        history row's `reused` then maps each such command to its run. Every
-        command that ran green or nothing is recorded for a later gate
-        (`_note_greens`).
+        `rerun` is the measurement's re-gate of a red (`_measure_red`): the
+        red gate's `tree` and `projects`, and its `run` as the narration
+        names it. Its kc commands that did not go red stand from
+        `gate_greens`, as above; so do its spec check and its migration
+        check, which `gate_greens` never records, where they went green in
+        that gate on this very tree (`_rerun_green`). So the re-gate runs
+        the red commands alone.
 
         A phase on the spec repo opens its gate with the plugin's spec check
         (AIWF-68, `spec_check_argv`) over what the phase changed since
@@ -7593,28 +7612,13 @@ class RunLoop:
         accepts = self._lint_accepts() if argv is not None else []
         migration = self._migration_check(target, merge_base,
                                           self._owed_migrations(ps))
-        record_path = outputs / writer_gate_record_name(ps["executor_rounds"])
-        replay = tree = None
-        if record_path.exists():
-            record, found = self._reusable_writer_gate(
-                record_path, target, touched, gates, check, accepts,
-                migration[0] if migration else None)
-            if record is None:
-                self.log(f"[P{phase_id}] the writer's gate run "
-                         f"({record_path.name}) not reused — {found}; "
-                         "running the gate")
-            else:
-                tree = found
-                replay = self._writer_gate_replay(phase_id, record_path,
-                                                  record)
-        # Where no writer's run stands for the gate, a command an earlier
-        # green of this run stands for on the phase's tree is not run
-        # (`_earlier_runner`, AIWF-142); `reused` maps each to its run.
+        # A command an earlier green of this run stands for on the phase's
+        # tree is not run (`_earlier_runner`, AIWF-142); `reused` maps each
+        # to its run.
         reused: dict[str, str] = {}
-        if replay is None:
-            tree = self._tree_now(target.work_root)
-        runner = replay or (self._earlier_runner(phase_id, target, tree,
-                                                 reused) if tree else None)
+        tree = self._tree_now(target.work_root)
+        runner = (self._earlier_runner(phase_id, target, tree, reused, rerun)
+                  if tree else None)
         also = (f", and for the components the phase's diff touches: "
                 f"{', '.join(touched)}" if touched else "")
         if migration is not None:
@@ -7624,24 +7628,15 @@ class RunLoop:
                      ", then the migration check, owed for the slice's own "
                      "migrations origin came in over at the phase's start: "
                      f"`{self.cfg.migration_check}`")
-        if replay is None:
-            running = ", then ".join(
-                " ".join(a) for a in (check, argv, argv and lint_twin(argv))
-                if a)
-            self.log(f"[P{phase_id}] gate #{n} running ({running})" + also)
-        else:
-            self.log(f"[P{phase_id}] gate #{n} reusing the writer's run "
-                     f"({record_path.name}) — tree {tree[:12]} unchanged "
-                     "since it began" + also)
+        running = ", then ".join(
+            " ".join(a) for a in (check, argv, argv and lint_twin(argv)) if a)
+        self.log(f"[P{phase_id}] gate #{n} running ({running})" + also
+                 + (f" — the re-gate of {rerun['run']}'s red" if rerun
+                    else ""))
         t0 = time.monotonic()
         projects: list[dict] = []
         runs: list[tuple[str, str]] = []   # (outcome, tail), command by command
         with open(log_path, "w") as log_file:
-            if replay is not None:
-                log_file.write(f"=== the writer's run of this gate, reused: "
-                               f"{record_path} — the tree ({tree}) is the one "
-                               "it ran on, unchanged since it began; its "
-                               "output follows ===\n")
             if check is not None:
                 log_file.write(f"=== the spec check: `{' '.join(check)}` "
                                "===\n")
@@ -7704,15 +7699,16 @@ class RunLoop:
         elif outcome == "nothing_ran":
             ps["gate_nothing_ran_commit"] = self.git("rev-parse", "HEAD",
                                                      root=target.work_root)
+        ended = self._tree_now(target.work_root) if tree else None
+        ps["gate_tree"] = tree if tree and ended == tree else None
         self._note_greens(
             target.git_root, tree,
             [(cmd.split(), o, str(log_path)) for p in projects
              for cmd, o in gate_entry_cmds(p) if cmd not in reused],
-            f"P{phase_id} gate r{n}", work_root=target.work_root)
+            f"P{phase_id} gate r{n}", work_root=target.work_root,
+            ended=ended)
         extra = {"projects": projects}
-        if replay:
-            extra["reused"] = str(record_path)
-        elif reused:
+        if reused:
             extra["reused"] = reused
         self._record(phase_id, "gate", n, outcome, tail, None, duration_s,
                      extra=extra)
@@ -7800,118 +7796,20 @@ class RunLoop:
                        f"rulings` accepts its red ({ruling.why}) ===\n")
         log_file.flush()
 
-    def _reusable_writer_gate(self, path: Path, target: ResolvedTarget,
-                              touched: list[str] | None, gates: list,
-                              check: list[str] | None = None,
-                              accepts: list | None = None,
-                              migration: list[str] | None = None
-                              ) -> tuple[dict | None, str]:
-        """(the record, the tree it ran on) when the writer's recorded gate
-        run at `path` can stand for this gate, else (None, why not) — the
-        checks cheapest first, the tree's hash last. It stands only where it
-        ran in the phase's tree, ran exactly the commands this gate would
-        run now — the spec check (`check`, a spec-repo phase's), the
-        Target's test and then its lint, each followed by the whole repo's
-        after an empty root, then each touched component no gate ruling
-        covers, its test and then its lint (AIWF-105) — but not a verb whose
-        whole repo's ran after an empty root, which ran it (AIWF-154) — then
-        the migration check (`migration`, AIWF-140), in that order, no
-        lint an accept ruling covers (`accepts`) among them — none of them
-        red, and on a tree that has not changed since it began: a
-        change during the run, or after it, is a tree the run did not see.
-        The check's `--base` and the touched set both come from the merge
-        base this gate re-took, so a run against a base that has moved since
-        is not this gate's commands (AIWF-104)."""
-        try:
-            record = json.loads(path.read_text())
-        except (OSError, ValueError) as e:
-            return None, f"unreadable: {e}"
-        problem = writer_gate_record_problem(record)
-        if problem:
-            return None, f"unreadable: {problem}"
-        for key, here in (("work_root", target.work_root),
-                          ("gate_cwd", target.gate_cwd)):
-            if record[key] != str(here):
-                return None, f"it ran in {record[key]}, the gate runs in {here}"
-        commands = record["commands"]
-        expected = [list(check)] if check else []
-        argv, accepts = target.gate_argv, accepts or []
-        root = target.git_root
-        bare = [False, False]   # whether the test's, the lint's, went bare
-        if argv is not None:
-            steps = [(argv, REPO_GATE_ARGV, False)]
-            if self._target_lint_ruling(accepts, target) is None:
-                steps.append((lint_twin(argv), REPO_LINT_ARGV,
-                              self._covering(accepts, root, None) is not None))
-            for verb, (own, whole, whole_accepted) in enumerate(steps):
-                at = len(expected)
-                expected.append(list(own))
-                if self._is_root(target) and not whole_accepted \
-                        and len(commands) > at \
-                        and commands[at]["rc"] == KC_NOTHING_RAN:
-                    expected.append(list(whole))
-                    bare[verb] = True
-        for c in touched or ():
-            if self._covering(gates, root, c) is None:
-                if not bare[0]:
-                    expected.append(component_gate_argv(c))
-                if not bare[1] and self._covering(accepts, root, c) is None:
-                    expected.append(component_lint_argv(c))
-        if migration:
-            expected.append(list(migration))
-        ran = [c["argv"] for c in commands]
-        if ran != expected:
-            return None, (f"it ran {_ticked([' '.join(a) for a in ran])}, "
-                          "the gate is "
-                          f"{_ticked([' '.join(a) for a in expected])}")
-        red = next((c for c in commands
-                    if c["rc"] not in (0, KC_NOTHING_RAN)), None)
-        if red is not None:
-            return None, f"`{' '.join(red['argv'])}` went red"
-        try:
-            now = content_tree(target.work_root)
-        except ValueError as e:
-            return None, f"the tree could not be hashed: {e}"
-        start, end = record["start_tree"], record["end_tree"]
-        if not start == end == now:
-            return None, (f"the tree changed after it began (began "
-                          f"{start[:12]}, ended {end[:12]}, now {now[:12]})")
-        return record, now
-
-    @staticmethod
-    def _writer_gate_replay(phase_id: str, path: Path,
-                            record: dict) -> Callable:
-        """`_gate_cmd_outcome`'s replay over a record `_reusable_writer_gate`
-        passed: each call takes the next recorded command, writes its output
-        into the log and answers its exit code. The check made the record's
-        commands the gate's own, so a call out of step is a driver bug."""
-        commands = list(record["commands"])
-
-        def replay(argv: list[str], log_file) -> int:
-            if not commands or commands[0]["argv"] != list(argv):
-                raise Bailout(
-                    "protocol_failure", phase=phase_id,
-                    details=f"replaying the writer's gate run ({path}) went "
-                            f"out of step at `{' '.join(argv)}` — a driver "
-                            "bug: the record was checked against the gate's "
-                            "commands before the replay began")
-            command = commands.pop(0)
-            log_file.write(command["output"])
-            return command["rc"]
-
-        return replay
-
     def _earlier_runner(self, phase_id: str, target: ResolvedTarget,
-                        tree: str, reused: dict[str, str]) -> Callable:
-        """`_gate_cmd_outcome`'s replay for a gate no writer's run stands
-        for: a command an earlier green of this run stands for on `tree`
-        (`_earlier_green`, AIWF-142) is not run — the log and the narration
-        say whose green it takes, `reused` maps the command to that run, and
-        its exit code is the one that run's outcome reads as — and any other
-        runs as ever."""
+                        tree: str, reused: dict[str, str],
+                        rerun: dict | None = None) -> Callable:
+        """`_gate_cmd_outcome`'s replay: a command an earlier green of this
+        run stands for on `tree` (`_earlier_green`, AIWF-142) — or, at the
+        measurement's re-gate, one that did not go red in the gate it
+        re-runs (`rerun`, `_rerun_green`) — is not run; the log and the
+        narration say whose green it takes, `reused` maps the command to
+        that run, and its exit code is the one that run's outcome reads as.
+        Any other runs as ever."""
         def run(argv: list[str], log_file) -> int:
-            found = self._earlier_green(target.git_root, argv, tree,
-                                        work_root=target.work_root)
+            found = (self._earlier_green(target.git_root, argv, tree,
+                                         work_root=target.work_root)
+                     or self._rerun_green(argv, tree, rerun))
             if found is None:
                 return self._gate_exec(argv, target.gate_cwd, log_file)
             cmd = " ".join(argv)
@@ -7922,6 +7820,30 @@ class RunLoop:
             return 0 if found["outcome"] == "green" else KC_NOTHING_RAN
 
         return run
+
+    @staticmethod
+    def _rerun_green(argv: list[str], tree: str | None,
+                     rerun: dict | None) -> dict | None:
+        """What stands for `argv` at the measurement's re-gate of a red gate
+        (`rerun`: its `tree`, `projects` and `run`) where `gate_greens` has
+        nothing: the spec check or the migration check, which it never
+        records, green in that gate on this very tree — the re-gate runs the
+        red commands alone. A kc command stands from `gate_greens` or not at
+        all. None where nothing stands."""
+        if not rerun or not tree or rerun.get("tree") != tree \
+                or gate_cmd_key(argv) is not None:
+            return None
+        cmd = " ".join(argv)
+        for entry in rerun.get("projects") or ():
+            if not isinstance(entry, dict):
+                continue
+            ran = (" ".join(migration_check_argv(entry.get("cmd") or ""))
+                   if entry.get("project") == MIGRATION_CHECK_NAME
+                   else entry.get("cmd"))
+            if ran == cmd and entry.get("outcome") == "green":
+                return {"outcome": "green", "run": rerun["run"],
+                        "log": rerun.get("log"), "why": "on the same tree"}
+        return None
 
     def _spec_check_argv(self, target: ResolvedTarget,
                          merge_base: str) -> list[str] | None:
@@ -7946,8 +7868,8 @@ class RunLoop:
                          ) -> tuple[list[str], list[str], list[str]] | None:
         """(the migration check's command, the migrations the phase adds,
         the slice's own it is owed for) when the phase's diff —
-        `<merge_base>..HEAD` in its tree, the range its reviewer reads, as
-        the writer's `gate` wrapper reads its own — adds a file under
+        `<merge_base>..HEAD` in its tree, the range its reviewer reads —
+        adds a file under
         `migrations.paths`, or its start took origin over the slice's own
         migrations (`owed`, `_owed_migrations`), else None (AIWF-140).
         Added alone, never edited or deleted: a new migration is what makes
@@ -8034,11 +7956,10 @@ class RunLoop:
     def _touched_components(self, phase_id: str, target: ResolvedTarget,
                             merge_base: str) -> list[str]:
         """The components other than the Target that the phase's diff
-        touches, in manifest order (`touched_components`, which the writer's
-        `gate` wrapper shares). The diff is `<merge_base>..HEAD` in the
-        phase's tree — the range its reviewer reads, from the merge base the
-        caller just re-took (AIWF-104), as the wrapper resolves its own when
-        its run begins — and the components are kc's list there, so one the
+        touches, in manifest order (`touched_components`). The diff is
+        `<merge_base>..HEAD` in the phase's tree — the range its reviewer
+        reads, from the merge base the caller just re-took (AIWF-104) — and
+        the components are kc's list there, so one the
         phase registered is seen. Where kc lists no root, no gate holds a
         file outside every component, and the log says so. `--no-renames`
         names both ends of a rename, so a file moved out of a component
@@ -8149,14 +8070,12 @@ class RunLoop:
         own lines alone: a failing test's output quoting cexec's line is
         not a missing tool.
 
-        `replay(argv, log_file) → rc`, when given, stands in for running
-        the command: the writer's recorded run of it, its output written
-        into the log as the run would have (`_run_gate`), and everything
-        after classifies it as it would a run. A replay is never red — the
-        writer's run is reused only where none of it was, and an earlier
-        green's stand-in answers green or nothing ran — so a red here is a
-        command just run, and only a red asks kc for a kill since `began`,
-        taken just before it ran.
+        `replay(argv, log_file) → rc`, when given, runs the command or
+        stands in for it (`_earlier_runner`): an earlier green's stand-in
+        writes its line into the log and answers green or nothing ran, and
+        everything after classifies it as it would a run. A stand-in is
+        never red, so a red here is a command just run, and only a red asks
+        kc for a kill since `began`, taken just before it ran.
 
         `kc` False is a command that is not kc's — the spec check, which
         exits 0 clean, 1 on a problem and 2 on a usage error, read as kc's
@@ -8369,19 +8288,25 @@ class RunLoop:
 
     def _note_greens(self, root: Path, tree: str | None,
                      ran: list[tuple[list[str], str, str]], run: str,
-                     work_root: Path | None = None) -> None:
+                     work_root: Path | None = None,
+                     ended: str | None | bool = False) -> None:
         """Record each gate command in `ran` — (argv, outcome, log) — that
         went green or ran nothing on `tree`, the tree of the repo at `root`
         (in `work_root`, where it is elsewhere) when the run began, as
         `run`'s (the history row's role and round, as the narration names
         it), for a later gate to take (`_earlier_green`). Only where the
-        tree is still `tree`: a suite that changed it ran on a tree that is
-        not there any more. A command an earlier run stood for is not in
-        `ran`; a red is never recorded."""
+        tree is still `tree` — `ended`, where the caller has just hashed
+        it: a suite that changed it ran on a tree that is not there any
+        more. A command an earlier run stood for is not in `ran`; a red is
+        never recorded."""
         kept = [(gate_cmd_key(argv), outcome, log) for argv, outcome, log in ran
                 if gate_cmd_key(argv) is not None
                 and outcome in ("green", "nothing_ran")]
-        if not tree or not kept or self._tree_now(work_root or root) != tree:
+        if not tree or not kept:
+            return
+        if ended is False:
+            ended = self._tree_now(work_root or root)
+        if ended != tree:
             return
         repo = str(Path(root).resolve())
         greens = self.state.setdefault("gate_greens", [])
@@ -8638,14 +8563,17 @@ class RunLoop:
         return "\n\n".join(paragraphs) + "\n\n", list(dict.fromkeys(clones))
 
     def _review_secrets(self, phase: Phase, outputs: Path, r: int,
-                        root: Path, ranges: list[tuple[str, str]]) -> str:
+                        root: Path, ranges: list[tuple[str, str]],
+                        stem: str = "review", who: str = "reviewer") -> str:
         """The Secret and never-print paragraphs of a reviewer dispatch
         (AIWF-51) — each ending in its blank line — or empty. `ranges` are
         the ones the prompt names, in its order: the branch, or a delta
-        round's fix range and then the branch.
+        round's fix range and then the branch. The gate's test-fixer, which
+        reads the phase's diff too, is handed the same (`stem` and `who`
+        name its file and it).
 
         A range that changes Secret data is written out redacted, a section
-        per range, to `review_r<N>.diff` beside the round's review, and the
+        per range, to `<stem>_r<N>.diff` beside the round's review, and the
         reviewer reads that instead of running `git diff` — which would
         print the values before it knew what the diff held. Telling costs a
         `--name-only` per range: only a range touching a file the redactor
@@ -8694,9 +8622,9 @@ class RunLoop:
                 sections.append(
                     f"{root} — git diff {base[:12]}..{head[:12]}"
                     f"\n\n{stat}\n\n{diff}\n")
-            path = outputs / f"review_r{r}.diff"
+            path = outputs / f"{stem}_r{r}.diff"
             path.write_text("\n".join(sections))
-            self.log(f"[P{phase.id}] reviewer handed {path}: {stubbed} "
+            self.log(f"[P{phase.id}] {who} handed {path}: {stubbed} "
                      "Secret data line(s) stubbed")
             notes += REVIEW_SECRETS_NOTE.format(
                 path=path, ranges=named, root=root, tool=tool,
@@ -8825,101 +8753,22 @@ class RunLoop:
             return ""
         return PHILOSOPHY_LINE.format(philosophy=self.cfg.design_philosophy)
 
-    def _write_gate_spec(self, phase_id: str, round_: int, outputs: Path,
-                         target: ResolvedTarget, base: str) -> None:
-        """The phase's gate as the `gate` wrapper runs it for code-writer
-        round `round_` (`run_writer_gate`): where, which command, the whole
-        repo after an empty root, and — for a component Target, `root`
-        included (AIWF-154) — what it needs to find the components the diff
-        touches: the Target, and those
-        a gate ruling covers, which the driver's gate waives unrun.
-        Rewritten at every dispatch, so it is the gate as it stands then;
-        the driver checks a run against its gate as it stands at gate time
-        anyway (`_reusable_writer_gate`). A spec-repo phase's spec says it
-        opens with the spec check (`spec_check`) — and, with no manifest in
-        the phase's tree, has no `argv` at all. The lint beside the
-        Target's test is `lint_argv`, and `lint_fallback` the whole repo's
-        after an empty root's (AIWF-105); a touched component's is the
-        wrapper's to make, as its test is, except for those in
-        `touched.lint_accepted`. A lint an accept ruling covers is in none
-        of them: the wrapper runs it no more than the driver does
-        (`_lint_accepted`). A phase on the invoking repo of a project that
-        names a migration check carries it as `migrations`, its `paths` and
-        its `check` (AIWF-140): the wrapper runs it last when the phase's
-        diff adds a file under one of them — or whatever the diff adds, with
-        `owed`, the slice's own migrations the phase's start took origin
-        over (`_owed_migrations`).
-
-        The spec names the phase's base branch (`base`), never a merge base:
-        the wrapper resolves `git merge-base <base> HEAD` itself when its run
-        begins (AIWF-104). A sha baked in here went stale the moment the
-        writer rebased the branch onto a moved base, or merged the base into
-        it, inside its round — and the wrapper then ran the components, and
-        the spec check, of the base's own commits (PilotApp slice 020 P3: a
-        frontend suite the phase never touched, red, and the writer handed
-        back blocked)."""
-        touched = None
-        accepts = self._lint_accepts()
-        if self._gates_touched(target):
-            gates = [(r, t) for r, t in self._current_rulings()
-                     if r.kind == "gate"]
-            components = (list(load_project_dirs(target.gate_cwd))
-                          if gates or accepts else [])
-            touched = {"target": target.name,
-                       "waived": [c for c in components if self._covering(
-                           gates, target.git_root, c) is not None],
-                       "lint_accepted": [c for c in components
-                                         if self._covering(
-                                             accepts, target.git_root, c)
-                                         is not None]}
-        argv = target.gate_argv
-        root = self._is_root(target)
-        lints = (argv is not None
-                 and self._target_lint_ruling(accepts, target) is None)
-        whole_lints = (lints and root and self._covering(
-            accepts, target.git_root, None) is None)
-        # the migration check (AIWF-140), named only where it may run: the
-        # wrapper asks the diff whether the phase adds a migration, as the
-        # driver's gate does
-        globs = self._migration_paths(target)
-        owed = self._owed_migrations(self.state["phases"].get(phase_id, {}))
-        migrations = ({"migrations": {"paths": list(globs),
-                                      "check": self.cfg.migration_check,
-                                      **({"owed": owed} if owed else {})}}
-                      if globs and self.cfg.migration_check else {})
-        _write_json_atomic(outputs / GATE_SPEC_NAME, {
-            "phase": phase_id, "round": round_,
-            "work_root": str(target.work_root),
-            "gate_cwd": str(target.gate_cwd),
-            "base": base,
-            "spec_check": self._is_spec_root(target.git_root),
-            "argv": argv,
-            "fallback": list(REPO_GATE_ARGV) if root else None,
-            "lint_argv": lint_twin(argv) if lints else None,
-            "lint_fallback": list(REPO_LINT_ARGV) if whole_lints else None,
-            "touched": touched, **migrations})
-
-    def _gate_hint(self, target: ResolvedTarget, outputs: Path,
-                   merge_base: str) -> str:
-        """The gate the executor runs itself, from the phase's working tree —
-        a shared repo's worktree, where it has one: kc's verbs are
-        cwd-bound. Where the driver has a gate, the executor is pointed at
-        the `gate` wrapper over the phase's spec (`_write_gate_spec`): it
-        runs exactly what the driver's gate would, and the driver reuses its
-        green rather than running the suite a second time. A spec-repo
-        phase's gate opens with the spec check against `merge_base`, the
-        review's base as the dispatch re-took it (AIWF-104 — the wrapper
-        resolves its own at its run, so a writer that moves the base runs
-        the check against the new one), and is that check alone where the
-        phase's tree has no manifest (AIWF-68); a sibling repo with none has
-        no gate the driver runs. A phase on the invoking repo of a project
-        that names a migration check is told the gate closes with it where
-        the phase adds a migration (AIWF-140)."""
+    def _gate_hint(self, target: ResolvedTarget, merge_base: str) -> str:
+        """What the driver's gate will run once the code-writer's round hands
+        back, as its dispatch names it — so the writer knows which tests to
+        run, while the gate itself is the driver's. kc's verbs are
+        cwd-bound: the commands run from the phase's working tree, a shared
+        repo's worktree where it has one. A component Target's gate, `root`
+        included, takes in every other component the phase's diff touches
+        (AIWF-91, AIWF-154), each linted beside its test (AIWF-105). A
+        spec-repo phase's gate opens with the spec check against
+        `merge_base`, the review's base as the dispatch re-took it
+        (AIWF-104), and is that check alone where the phase's tree has no
+        manifest (AIWF-68); a sibling repo with none has no gate the driver
+        runs. A phase on the invoking repo of a project that names a
+        migration check is told the gate closes with it where the phase
+        adds a migration (AIWF-140)."""
         work = target.work_root
-        spec_path = outputs / GATE_SPEC_NAME
-        wrapper = f"`python3 {SCRIPT} gate --detach {spec_path}`"
-        waits = GATE_WAIT_HINT.format(
-            wait=f"`python3 {SCRIPT} gate --wait {spec_path}`")
         check = self._spec_check_argv(target, merge_base)
         spec = (SPEC_CHECK_HINT.format(argv=" ".join(check))
                 if check is not None else "")
@@ -8929,39 +8778,31 @@ class RunLoop:
                 f"{_ticked(globs)}, the project's migration check "
                 f"`{self.cfg.migration_check}` from {work}, red on any exit "
                 "but 0" if globs and self.cfg.migration_check else "")
+        where = "" if work == self.repo_root else f" from {work}"
         if self._is_root(target):
-            where = "" if work == self.repo_root else f" from {work}"
-            return (f" — through {wrapper}, which runs the driver's own gate: "
-                    f"{first}`kc project test --project root`{where}, and bare "
-                    "`kc project test`, every component once, when that runs "
-                    "nothing (exit 3), and the same two steps for `kc project "
-                    "lint`; then both, `--project <c>`, for every other "
-                    "component the phase's diff touches, but not a verb that "
-                    "went bare, which ran every component already"
-                    f"{last}. {waits}. {GATE_REUSE_HINT}. {NOTHING_RAN_HINT}")
+            return (f": {first}`kc project test --project root`{where}, and "
+                    "bare `kc project test`, every component once, when that "
+                    "runs nothing (exit 3), and the same two steps for `kc "
+                    "project lint`; then both, `--project <c>`, for every "
+                    "other component the phase's diff touches, but not a verb "
+                    "that went bare, which ran every component already"
+                    f"{last}. {NOTHING_RAN_HINT}")
         if target.kind == "project":
-            # The driver gates every component the diff touches beside the
-            # Target's own (AIWF-91), each linted beside its test (AIWF-105),
-            # and so does the wrapper.
-            where = "" if work == self.repo_root else f" from {work}"
-            return (f" — through {wrapper}, which runs the driver's own gate: "
-                    f"{first}`kc project test --project {target.name}` and "
+            return (f": {first}`kc project test --project {target.name}` and "
                     f"`kc project lint --project {target.name}`{where}, and "
                     "both for every other component the phase's diff "
-                    f"touches{last}. {waits}. {GATE_REUSE_HINT}. "
-                    f"{NOTHING_RAN_HINT}")
+                    f"touches{last}. {NOTHING_RAN_HINT}")
         if target.gate_argv:
-            return (f" — through {wrapper}, which runs the driver's own gate: "
-                    f"{first}`kc project test` from {work}{last}. {waits}. "
-                    f"{GATE_REUSE_HINT}")
+            return (f": {first}`kc project test` and `kc project lint` from "
+                    f"{work}{last}")
         if spec:
-            return (f" — through {wrapper}, which runs the driver's own gate: "
-                    f"{spec}; and `kc project test` from {work} after it, "
-                    "once this phase adds `.kubecoder/project.yaml`. "
-                    f"{waits}. {GATE_REUSE_HINT}")
-        return (f" ({work} has no kc manifest — gate per that repo's own "
-                "conventions; if this phase adds `.kubecoder/project.yaml`, "
-                f"the driver's gate is `kc project test` from {work})")
+            return (f": {spec}; and `kc project test` and `kc project lint` "
+                    f"from {work} after it, once this phase adds "
+                    "`.kubecoder/project.yaml`")
+        return (f" — but {work} has no kc manifest, so the driver runs no "
+                "gate there: test per that repo's own conventions; if this "
+                "phase adds `.kubecoder/project.yaml`, the driver's gate is "
+                f"`kc project test` and `kc project lint` from {work}")
 
     @staticmethod
     def _recorded_commits(ps: dict) -> list[str]:
@@ -9259,6 +9100,7 @@ class RunLoop:
                      "phase goes on from the refs it has — "
                      + " ".join(e.details.split())[:300])
         self._merge_bases.pop(phase_id, None)
+        self._drop_fixer_reattach(phase_id)
 
         # Branch setup (fresh or resume) — over a branch reconciled against
         # what the record says is committed on it.
@@ -9326,19 +9168,9 @@ class RunLoop:
             interrupted keeps its number: the in-flight record banked it.
             What a resume set aside rides the first round after it, and is
             dropped from the state only once that round's session returns:
-            a run that dies mid-dispatch hands it to the next one. The gate
-            spec the round's `gate` wrapper reads is written first, carrying
-            the round's number — the driver reuses a run of that round
-            alone — and the base branch the wrapper resolves the merge base
-            against at its own run (AIWF-104).
-
-            A run of the wrapper gone red while a service was OOM-killed
-            leaves GATE_OOM_NAME, and the round bails on it once its session
-            is back, whatever the writer handed back (`_writer_oom_check`,
-            AIWF-139). A fresh round removes the file first: one still there
-            is an earlier round's, whose bail is spent — so the resume after
-            it does not stop on it again. A reattached round keeps it: it
-            may be that very session's evidence."""
+            a run that dies mid-dispatch hands it to the next one. A `done`
+            round's handover is kept on the phase for the test-fixer
+            (`_keep_handover`)."""
             pending = self._reattach_round("code-writer", phase_id)
             if pending is None:
                 ps["executor_rounds"] += 1
@@ -9349,10 +9181,6 @@ class RunLoop:
                 "code", r, f"P{phase_id} · "
                 + (self._plain_title(phase) if r == 1 else f"code {r}"),
                 phase_id, track=f"P{phase_id}")
-            if pending is None:
-                (outputs / GATE_OOM_NAME).unlink(missing_ok=True)
-            if self._has_gate(target):
-                self._write_gate_spec(phase_id, r, outputs, target, base)
             prompt = (build_prompt(executor_verdict_path(r)) + "\n"
                       + self._phase_digest(phase_id))
             if ps.get("set_aside"):
@@ -9370,8 +9198,8 @@ class RunLoop:
                 verdict, executor_verdict_path(r))
             self._assert_record_still_on(phase_id, ps, root, branch)
             self._save_state()
-            self._writer_oom_check(phase_id, outputs, r)
             self._handle_executor_terminals(verdict, phase_id)
+            self._keep_handover(phase_id, ps, r, verdict)
             return verdict
 
         # ---- executor stage ----
@@ -9380,8 +9208,7 @@ class RunLoop:
         # writer may have moved it since the last read.
         if ps["stage"] == "executor":
             gate_hint = self._gate_hint(
-                target, outputs,
-                self._merge_base(phase_id, root, base, branch))
+                target, self._merge_base(phase_id, root, base, branch))
             spawn_executor(lambda vp: EXECUTOR_PROMPT.format(
                 phase_id=phase_id, plan_path=self.plan_path,
                 slice_name=self.slice_name, target=phase.target,
@@ -9416,7 +9243,7 @@ class RunLoop:
                 self.log(f"[P{phase_id}] operator ruling tagged onto "
                          f"{review_path.name}; dispatching the writer")
                 merge_base = self._merge_base(phase_id, root, base, branch)
-                gate_hint = self._gate_hint(target, outputs, merge_base)
+                gate_hint = self._gate_hint(target, merge_base)
                 fix_verdict = spawn_executor(
                     lambda vp, _r=r: EXECUTOR_REVIEW_FIX_PROMPT.format(
                         phase_id=phase_id, slice_name=self.slice_name,
@@ -9475,6 +9302,21 @@ class RunLoop:
             self.log(f"[P{phase_id}] merged into {base}")
             self.announce(f"P{phase_id} merged")
             self._stamp_done(phase_id)
+
+    def _drop_fixer_reattach(self, phase_id: str) -> None:
+        """A test-fixer of this phase's gate a crash interrupted is never
+        reattached: the resume is one at stage `gate` (`_gate_until_green`),
+        which sets the tree's uncommitted work aside and resets it, gates
+        again first, and dispatches the round's fixer afresh where the red
+        stands."""
+        r = self._reattach
+        if r and r.get("role") == "test-fixer" and r.get("phase") == phase_id:
+            self.log(f"[P{phase_id}] the interrupted test-fixer (gate-fix "
+                     f"round {r.get('round')}) is not reattached — the gate "
+                     "runs again first")
+            self._reattach = None
+            if isinstance(r.get("round"), int):
+                self._dead_fixer = (phase_id, r["round"])
 
     def _reattaching(self, phase_id: str) -> bool:
         """Whether this resume reattaches to a session of this phase that a
@@ -9865,34 +9707,6 @@ class RunLoop:
                  "diff unchanged")
         return merge_base
 
-    def _writer_oom_check(self, phase_id: str, outputs: Path,
-                          round_: int) -> None:
-        """Bail `service_oom_killed` where the code-writer's own gate run
-        in round `round_` went red while a service was OOM-killed — the
-        wrapper's GATE_OOM_NAME in the phase's outputs names at least one
-        (AIWF-139). Whatever the writer handed back: told by the wrapper to
-        change no code for it and hand back `blocked`, it may still have run
-        the gate again and handed back `done` on a green the restarted
-        service let through, or asked. A file that does not parse, or names
-        no service, is no kill."""
-        path = outputs / GATE_OOM_NAME
-        data = _read_json(path)
-        kills = _valid_kills(data.get("services")) if isinstance(
-            data, dict) else []
-        if not kills:
-            return
-        red = list(dict.fromkeys(
-            cmd for run in data.get("runs") or () if isinstance(run, dict)
-            for cmd in run.get("red") or () if isinstance(cmd, str)))
-        ran = ("the code-writer's own gate run in round "
-               f"{round_}" + (f", red on {_ticked(red)}" if red else ""))
-        self.log(f"[P{phase_id}] the code-writer's gate went red with "
-                 f"{_join(_kill_names(kills))} OOMKilled ({path}) — the "
-                 "environment's, not the code's")
-        raise oom_killed_bailout(phase_id, kills, ran,
-                                 outputs / writer_gate_record_name(round_),
-                                 self.repo_root)
-
     def _handle_executor_terminals(self, verdict: dict,
                                    phase_id: str) -> None:
         """`question` is the operator's (exit 4); `blocked` is an error the
@@ -9935,52 +9749,489 @@ class RunLoop:
     def _gate_until_green(self, phase: Phase, ps: dict, outputs: Path,
                           target: ResolvedTarget, base: str, branch: str,
                           where: str, spawn_executor) -> None:
-        """A red gate spawns a fresh executor fix round (the fix rounds are
-        the executor's — there is no separate fixer in the phase loop),
-        capped; still red at the cap bails. A gate that ran nothing passes
-        (`_run_gate`): no round can make a target without tests go green.
+        """The phase gate until it is green. A red banks a gate-fix round,
+        capped (GATE_FIX_CAP); still red at the cap bails `gate_red`. A gate
+        that ran nothing passes (`_run_gate`): no round can make a target
+        without tests go green.
+
+        The round measures the red first (`_measure_red`): the red commands
+        again on the tree, and once on the merge base. A red the re-gate
+        passes that is red on the base as well is older than the phase: the
+        round ends there, the re-gate's green the phase's gate, and the
+        close-out report asks for its card (`_report_older_red`). Any other
+        red goes to the test-fixer (`_gate_fixer`), told what was measured
+        and what the code-writer changed on purpose. Its `clean` is gated
+        again; its `issues` is the round's executor fix round, which reads
+        what it handed back; its `blocked` bails. The fixer is no step of
+        Pilot's of its own — it belongs to the gate, in the code step before
+        it — so only the executor round leaves the review step a why.
 
         Every pass re-takes the merge base first (`_merge_base`, AIWF-104),
-        and the gate and the fix round it funds both read that one: the
-        round before it may have rebased the branch onto a moved base.
+        and the gate, the measurement and the fix round all read that one:
+        the round before may have rebased the branch onto a moved base.
 
         A resume at stage `gate` re-runs the gate before anything else, so a
-        fix round a crash interrupted arrives here again — its number was
-        banked before the crash, and re-banking it would spend the cap
-        twice."""
+        round a crash interrupted arrives here again, its number banked
+        before the crash: re-banking it would spend the cap twice. An
+        executor round is reattached (`_reattach_round`); a round that died
+        in its measurement or its fixer — `gate_fix_open` still names it —
+        is measured again and its fixer dispatched afresh, a fixer's
+        session never reattached (`_drop_fixer_reattach`)."""
         while True:
             merge_base = self._merge_base(phase.id, target.git_root, base,
                                           branch)
             passed, gate_log = self._phase_gate(phase.id, ps, outputs,
                                                 target, merge_base)
             if passed:
+                if ps.pop("gate_fix_open", None) is not None:
+                    self._save_state()
                 return
-            if ps["gate_fix_rounds"] >= GATE_FIX_CAP:
+            writer = self._reattach_round("code-writer", phase.id) is not None
+            reopened = (not writer and ps["gate_fix_rounds"] > 0
+                        and ps.get("gate_fix_open") == ps["gate_fix_rounds"])
+            if ps["gate_fix_rounds"] >= GATE_FIX_CAP \
+                    and not (writer or reopened):
                 raise Bailout(
                     "gate_red", phase=phase.id,
-                    details=f"gate still red after {GATE_FIX_CAP} executor "
-                            f"fix rounds (latest output: {gate_log})",
+                    details=f"gate still red after {GATE_FIX_CAP} gate-fix "
+                            f"rounds (latest output: {gate_log})",
                 )
-            if self._reattach_round("code-writer", phase.id) is None:
+            if not (writer or reopened):
                 ps["gate_fix_rounds"] += 1
-                self._why_next(f"P{phase.id}", "The gate went red: " + ", ".join(
-                    self._red_cmd_list(ps, target)))
+                ps["gate_fix_open"] = ps["gate_fix_rounds"]
             r = ps["gate_fix_rounds"]
             self._save_state()
-            red_cmds = self._red_cmds(ps, target)
-            hint = (self._gate_hint(target, outputs, merge_base)
+            if writer:
+                m = self._measurement_of(ps, r)
+            else:
+                if reopened:
+                    self.log(f"[P{phase.id}] gate-fix round {r} died before "
+                             "its fix — measured again, its test-fixer "
+                             "dispatched afresh")
+                m = self._measure_red(phase.id, ps, outputs, target,
+                                      merge_base, branch, r, gate_log)
+                if m["older"]:
+                    ps.pop("gate_fix_open", None)
+                    self._save_state()
+                    self._report_older_red(phase.id, target, m)
+                    return
+                fixer = self._gate_fixer(phase, ps, outputs, target,
+                                         merge_base, branch, where, r, m)
+                ps.pop("gate_fix_open", None)
+                self._save_state()
+                if fixer["as"] == "clean":
+                    continue
+                if fixer["as"] == "blocked":
+                    raise Bailout("blocked", phase=phase.id,
+                                  details=fixer["summary"])
+                self._why_next(f"P{phase.id}", "The gate went red: "
+                               + ", ".join(m["red"]))
+            red_cmds = (_ticked(m["red"]) if m
+                        else self._red_cmds(ps, target))
+            red_log = (m["logs"].get("gate") if m else None) or gate_log
+            measurement = (GATE_MEASUREMENT_LINE.format(text=m["text"])
+                           if m and m.get("text") else "")
+            fixer_line = self._fixer_line(m)
+            hint = (self._gate_hint(target, merge_base)
                     + self._unrun_services_hint(target))
-            spawn_executor(lambda vp, _r=r, _log=gate_log, _red=red_cmds,
-                           _mb=merge_base, _hint=hint:
+            spawn_executor(lambda vp, _r=r, _log=red_log, _red=red_cmds,
+                           _mb=merge_base, _hint=hint, _m=measurement,
+                           _f=fixer_line:
                            EXECUTOR_GATE_FIX_PROMPT.format(
                                phase_id=phase.id, slice_name=self.slice_name,
                                branch=branch, round=_r,
                                plan_path=self.plan_path, red_cmds=_red,
                                gate_log=_log, merge_base=_mb,
-                               where=where, gate_hint=_hint,
-                               verdict_path=vp,
+                               where=where, measurement=_m, fixer=_f,
+                               gate_hint=_hint, verdict_path=vp,
                                pointers=self._pointers(target, phase.id)))
             self._after_session_plan_check()
+
+    # -- a red phase gate: the measurement, then the test-fixer ---------------
+    #
+    # The writer used to gate itself and fix its own red, and a red that
+    # passes once more was taken as fixed. A red is now measured by the
+    # driver before anyone edits — the red commands again on the tree, and
+    # once on the merge base — and goes to the test-fixer with that
+    # measurement and the code-writer's handover; only what the fixer hands
+    # back goes to an executor fix round.
+
+    @staticmethod
+    def _measurement_of(ps: dict, r: int) -> dict | None:
+        """The measurement of gate-fix round `r` on record, None where the
+        round has none — a round begun on an older plugin."""
+        found = [m for m in ps.get("measurements") or ()
+                 if isinstance(m, dict) and m.get("round") == r]
+        return found[-1] if found else None
+
+    def _cmd_outcomes(self, ps: dict, cmds: list[str],
+                      passed: bool) -> dict[str, str]:
+        """Each of `cmds` as the gate just run recorded it — the whole gate's
+        outcome for one it has no entry of, as a gate with no projects on
+        record has none."""
+        ran = {cmd: o for p in self._gate_projects(ps)
+               for cmd, o in gate_entry_cmds(p)}
+        return {c: ran.get(c) or ("green" if passed else "red") for c in cmds}
+
+    def _measure_red(self, phase_id: str, ps: dict, outputs: Path,
+                     target: ResolvedTarget, merge_base: str, branch: str,
+                     r: int, gate_log: Path | None) -> dict:
+        """Gate-fix round `r`'s measurement of the red gate just run, before
+        any fixer: the gate again on the same tree, which takes every
+        command that did not go red from that gate and so runs the red ones
+        alone (`_run_gate`'s `rerun`), then each red `kc project` command
+        once on the merge base (`_base_run`). Recorded in the phase's
+        `measurements` — `round`, `red`, `regate` and `base` (each red
+        command's outcome), `base_sha`, `logs`, whether the red is `older`
+        than the phase, and its `text`, the sentences the fixer and the
+        executor round read (`measurement_text`) — a round measured again
+        replacing its record.
+
+        Older is the re-gate green and every red command red on the base
+        too. A re-gate green where the base was green is still the phase's
+        red: a red that passes once more is no measurement."""
+        red = self._red_cmd_list(ps, target)
+        rerun = {"tree": ps.get("gate_tree"),
+                 "projects": copy.deepcopy(self._gate_projects(ps)),
+                 "run": f"P{phase_id} gate r{ps['gate_runs']}",
+                 "log": str(gate_log) if gate_log else None}
+        self.log(f"[P{phase_id}] gate-fix round {r}: the red measured first "
+                 f"— {_ticked(red)} again on the tree, then on the merge "
+                 f"base {merge_base[:12]}")
+        passed, regate_log = self._phase_gate(phase_id, ps, outputs, target,
+                                              merge_base, rerun=rerun)
+        regate = self._cmd_outcomes(ps, red, passed)
+        base_log = outputs / f"measure_r{r}_base.log"
+        base = self._base_run(phase_id, target, merge_base, branch, red,
+                              base_log)
+        logs = {"gate": str(gate_log) if gate_log else None,
+                "regate": str(regate_log) if regate_log else None,
+                "base": str(base_log) if base else None}
+        m = {"round": r, "red": red, "regate": regate, "base": base,
+             "base_sha": merge_base, "logs": logs,
+             "older": passed and all(base.get(c) == "red" for c in red),
+             "text": measurement_text(red, regate, base, merge_base, logs)}
+        kept = ps.setdefault("measurements", [])
+        kept[:] = [x for x in kept
+                   if not (isinstance(x, dict) and x.get("round") == r)]
+        kept.append(m)
+        self._save_state()
+        self.log(f"[P{phase_id}] measured: {m['text']}")
+        return m
+
+    def _base_run(self, phase_id: str, target: ResolvedTarget,
+                  merge_base: str, branch: str, red: list[str],
+                  log_path: Path) -> dict[str, str]:
+        """Each red `kc project` command in `red` — test or lint, the argv
+        the gate ran — run once on `merge_base`, checked out detached in the
+        phase's tree and the branch checked back out after, whatever
+        happened: {command: outcome}, the output in `log_path`. The tree is
+        committed by then. The spec check and the migration check are never
+        run there: what they check is the phase's diff, so their red is the
+        phase's. Nothing here is recorded in `gate_greens` — no later gate
+        runs on the base. A base that cannot be checked out is logged, and
+        every command's result is then `not_run`."""
+        cmds = [c for c in red if gate_cmd_key(c.split()) is not None]
+        if not cmds:
+            return {}
+        work = target.work_root
+        with open(log_path, "w") as log_file:
+            try:
+                self.git("checkout", "--detach", merge_base, root=work)
+            except Bailout as e:
+                why = " ".join(e.details.split())[:300]
+                self.log(f"[P{phase_id}] the merge base {merge_base[:12]} not "
+                         f"checked out in {work} — {why}; {_ticked(cmds)} not "
+                         "run on it")
+                log_file.write(f"=== the merge base {merge_base} could not be "
+                               f"checked out in {work}: {why} ===\n")
+                return dict.fromkeys(cmds, "not_run")
+            try:
+                results = {cmd: self._base_cmd(cmd, target, merge_base,
+                                               log_file, log_path)
+                           for cmd in cmds}
+            finally:
+                self.git("checkout", branch, root=work)
+        self.log(f"[P{phase_id}] on the merge base {merge_base[:12]}: "
+                 + "; ".join(f"`{c}` {BASE_OUTCOME_LABELS.get(o, o)}"
+                             for c, o in results.items())
+                 + f" ({log_path})")
+        return results
+
+    def _base_cmd(self, cmd: str, target: ResolvedTarget, merge_base: str,
+                  log_file, log_path: Path) -> str:
+        """One red command's run on the merge base, into the base's log: its
+        outcome. kc's usage error, a command that cannot start (a component
+        the base has not got) and a red that is a missing tool or a service
+        killed for memory are no measurement of the suite (`not_run`,
+        `unrunnable`, `oom_killed`); a timeout is `timeout`."""
+        log_file.write(f"=== `{cmd}` from {target.gate_cwd}, on the merge "
+                       f"base {merge_base} ===\n")
+        log_file.flush()
+        start = _file_size(log_path)
+        began = datetime.now(UTC)
+        try:
+            rc_ = self._base_exec(cmd.split(), target.gate_cwd, log_file)
+        except subprocess.TimeoutExpired:
+            outcome = "timeout"
+        except OSError as e:
+            log_file.write(f"{e}\n")
+            outcome = "not_run"
+        else:
+            log_file.flush()
+            outcome = "not_run" if rc_ == 2 else kc_outcome(rc_)
+            if outcome == "red" and unavailable_tool(log_path, start):
+                outcome = "unrunnable"
+            elif outcome == "red":
+                try:
+                    if oom_killed_services(began):
+                        outcome = "oom_killed"
+                except ValueError:
+                    pass
+            _inline_kc_full_output(log_file, log_path, start)
+        log_file.write(f"\n=== on the merge base: "
+                       f"{BASE_OUTCOME_LABELS.get(outcome, outcome)} ===\n\n")
+        log_file.flush()
+        return outcome
+
+    def _base_exec(self, argv: list[str], cwd: Path, log_file) -> int:
+        """A red command's run on the merge base — the gate's own subprocess
+        seam (`_gate_exec`), isolated for tests."""
+        return self._gate_exec(argv, cwd, log_file)
+
+    def _report_older_red(self, phase_id: str, target: ResolvedTarget,
+                          m: dict) -> None:
+        """The close-out entry of a red older than the phase (`_measure_red`),
+        one per suite, in `_report_flake`'s shape: a defect of the suite,
+        labelled FLAKE_LABELS so the fix table closes it, its `card:`
+        proposal making it a card request instead. Entered once: a phase
+        that meets the same red again says so in the log alone."""
+        repo = Path(target.git_root).name
+        suites: dict[str, list[str]] = {}
+        for cmd in m["red"]:
+            component = (gate_cmd_key(cmd.split()) or (None, ""))[0]
+            suites.setdefault(f"{repo}/{component}" if component else repo,
+                              []).append(cmd)
+        r, sha = m["round"], m["base_sha"]
+        logs = m.get("logs") or {}
+        for suite, cmds in suites.items():
+            one = len(cmds) == 1
+            headline = (f"{suite}'s tests went red on P{phase_id}'s gate and "
+                        "on the merge base alike, and green on its re-gate")
+            if find_by_headline(self.slice_dir, "defect", headline):
+                self.log(f"[P{phase_id}] the close-out report already says "
+                         f"{suite}'s red is older than the phase — no second "
+                         "entry")
+                continue
+            body = (f"P{phase_id}'s gate went red on {_ticked(cmds)} in "
+                    f"{repo}, in gate-fix round {r}. The driver ran "
+                    f"{'it' if one else 'them'} again on the same tree, where "
+                    f"{'it' if one else 'they'} went green, and once on the "
+                    f"merge base {sha}, the commit before the phase's work, "
+                    f"where {'it' if one else 'they'} went red too: the red "
+                    "is older than the phase. No test-fixer ran, and the "
+                    "phase went on, its re-gate green.\n\n"
+                    f"- the gate's run: {logs.get('gate') or '(no log)'}\n"
+                    f"- its re-gate: {logs.get('regate') or '(no log)'}\n"
+                    f"- the merge base's run: {logs.get('base') or '(no log)'}")
+            self._report(
+                "defect", headline, body,
+                consequence="the suite can go red at random — in a phase "
+                            "gate, a sweep or CI — until those tests are "
+                            "deterministic; this phase went on past it, its "
+                            "re-gate green.",
+                provenance=f"witnessed — P{phase_id}'s gate, gate-fix round "
+                           f"{r}",
+                proposal=f"card: make the tests of {suite} deterministic — "
+                         f"red on the merge base {sha[:12]} as on "
+                         f"P{phase_id}'s tree, from the three runs above",
+                labels={**FLAKE_LABELS, "repo": repo})
+
+    def _gate_fixer(self, phase: Phase, ps: dict, outputs: Path,
+                    target: ResolvedTarget, merge_base: str, branch: str,
+                    where: str, r: int, m: dict) -> dict:
+        """The test-fixer on gate-fix round `r`'s red, in the phase's tree on
+        its branch (GATE_FIXER_PROMPT): what it handed back, checked against
+        what it committed (`_check_fixer`), on the round's measurement as
+        its `fixer` — `outcome` as answered, `as` as the driver takes it,
+        `summary`, `verdict`, `head_before`, `taken_back`. Its history row is
+        role `test-fixer`, the phase and the round, which `slice_cost.py`
+        prices, and carries `head_before`, and `as` and `taken_back` where
+        they apply. Its commits are checked onto the branch's record as an
+        executor round's are (`_assert_record_still_on`)."""
+        phase_id = phase.id
+        work = target.work_root
+        verdict_path = outputs / f"gate_fixer_result_r{r}.json"
+        head_before = self.git("rev-parse", "HEAD", root=work)
+        try:
+            plan_text = self.plan_path.read_text()
+        except OSError:
+            plan_text = ""
+        section = (phase_section_text(plan_text, phase_id)
+                   or f"### P{phase_id} — {phase.title}")
+        secrets = self._review_secrets(
+            phase, outputs, r, work, [(merge_base, head_before)],
+            stem="gate_fixer", who="test-fixer").strip("\n")
+        prompt = GATE_FIXER_PROMPT.format(
+            phase_id=phase_id, slice_name=self.slice_name, branch=branch,
+            where=where, plan_path=self.plan_path,
+            red_cmds=_ticked(m["red"]),
+            gate_log=m["logs"].get("gate") or "(no log)",
+            measurement=m["text"],
+            phase_text=textwrap.indent(section, "  "),
+            handover=textwrap.indent(handover_text(ps.get("handovers")),
+                                     "  "),
+            merge_base=merge_base,
+            secrets=("\n" + textwrap.indent(secrets, "  ") if secrets
+                     else ""),
+            verdict_path=verdict_path)
+        self.log(f"[P{phase_id}] gate-fix round {r}: the test-fixer takes the "
+                 "red first")
+        verdict, session = self._spawn(
+            "test-fixer", prompt, work, verdict_path, phase_id, r,
+            agent="test-fixer", display="test-fixer")
+        fixer = self._check_fixer(phase_id, work, branch, head_before,
+                                  verdict, session, verdict_path)
+        m["fixer"] = fixer
+        row = next((h for h in reversed(self.state.get("history") or [])
+                    if (h.get("role"), h.get("phase"), h.get("round"))
+                    == ("test-fixer", phase_id, r)), None)
+        if row is not None:
+            row["head_before"] = head_before
+            if fixer["as"] != fixer["outcome"]:
+                row["as"] = fixer["as"]
+            if fixer["taken_back"]:
+                row["taken_back"] = fixer["taken_back"]
+        self._save_state()
+        self._assert_record_still_on(phase_id, ps, target.git_root, branch)
+        self.log(f"[P{phase_id}] the test-fixer → `{fixer['as']}`"
+                 + (f" (it answered `{fixer['outcome']}`)"
+                    if fixer["as"] != fixer["outcome"] else "")
+                 + (": the gate runs again on its commit"
+                    if fixer["as"] == "clean" else
+                    ": the red goes to the executor's fix round"
+                    if fixer["as"] == "issues" else ""))
+        return fixer
+
+    def _check_fixer(self, phase_id: str, work: Path, branch: str,
+                     head_before: str, verdict: dict, session: str | None,
+                     verdict_path: Path) -> dict:
+        """What the test-fixer handed back, held against what it committed
+        since `head_before` — two of the trial's fixers handed back
+        unsettled and kept their commits. A tree left off the phase's
+        branch is checked back out, its uncommitted edits discarded, and a
+        `clean` there is `issues`. A `clean` with a dirty tree takes the
+        commit nudge (`_ensure_committed`), and so does a round with no
+        valid verdict, whose verdict the nudge may salvage, as on the
+        sweep's flake route; a tree still dirty after it, or no verdict
+        still, is `issues` — never the bail that route would make, so the
+        executor round still gets its turn. A `clean` that committed
+        nothing is `issues`: a re-run to green is no fix. Whatever is not
+        `clean` leaves no commit and no edit: what it committed is taken
+        back (`reset --hard` to `head_before`) and what it left uncommitted
+        is discarded."""
+        label = f"[P{phase_id}] [test-fixer]"
+        answered = verdict.get("outcome") or "blocked"
+        outcome, why = answered, None
+        on = self.git("rev-parse", "--abbrev-ref", "HEAD", root=work,
+                      check=False)
+        if on != branch:
+            self._discard_uncommitted(work)
+            self.git("checkout", branch, root=work)
+            self.log(f"{label} it left {work} on {on or '?'}, not {branch} — "
+                     f"{branch} checked back out")
+            if outcome == "clean":
+                outcome, why = "issues", (f"it answered clean and left {work} "
+                                          f"on {on or '?'}, not {branch} — a "
+                                          "fix off the phase's branch is none")
+        if outcome == "clean" or verdict.get("_protocol_failure"):
+            try:
+                salvaged = self._ensure_committed(
+                    phase_id, "test-fixer", session, work, verdict,
+                    verdict_path) or verdict
+            except Bailout:
+                outcome, why = "issues", (f"it left uncommitted changes in "
+                                          f"{work} after a commit nudge")
+            else:
+                if verdict.get("_protocol_failure") \
+                        and not salvaged.get("_protocol_failure"):
+                    verdict = salvaged
+                    answered = outcome = verdict.get("outcome") or "blocked"
+        summary = verdict.get("summary") or ""
+        if verdict.get("_protocol_failure"):
+            outcome, why = "issues", f"it handed back no valid verdict: {summary}"
+        head = self.git("rev-parse", "HEAD", root=work)
+        if outcome == "clean" and head == head_before:
+            outcome, why = "issues", ("it answered clean and committed nothing "
+                                      "— a re-run to green is no fix")
+        if why:
+            summary = why
+            self.log(f"{label} its `{answered}` is taken as `issues`: {why}")
+        taken = 0
+        if outcome != "clean":
+            if head != head_before:
+                count = self.git("rev-list", "--count", f"{head_before}..HEAD",
+                                 root=work, check=False)
+                taken = int(count) if count.isdigit() else 0
+            dirty = self._worktree_dirty(work)
+            if head != head_before or dirty:
+                self.git("reset", "--hard", head_before, root=work)
+                self._discard_uncommitted(work)
+            if taken:
+                self.log(f"{label} the test-fixer answered `{answered}` and "
+                         f"left {taken} commit(s) — taken back: a hand-back "
+                         "that is not clean leaves no commit")
+            if dirty:
+                self.log(f"{label} its uncommitted edits in {work} discarded")
+        return {"verdict": str(verdict_path), "outcome": answered,
+                "as": outcome, "summary": summary, "head_before": head_before,
+                "taken_back": taken}
+
+    def _discard_uncommitted(self, root: Path) -> None:
+        """Whatever `root` holds uncommitted, gone: tracked edits reset to
+        HEAD (`_reset_tracked`), and files git does not ignore and does not
+        track removed — never an ignored one."""
+        if not self._worktree_dirty(root):
+            return
+        self._reset_tracked(root)
+        if self._worktree_dirty(root):
+            pathspec = self._bookkeeping_pathspec(root)
+            self.git("clean", "-fd", *(["--", *pathspec] if pathspec else []),
+                     root=root)
+
+    @staticmethod
+    def _fixer_line(m: dict | None) -> str:
+        """GATE_FIXER_LINE over a measurement's fixer, empty where none ran."""
+        fixer = (m or {}).get("fixer")
+        if not isinstance(fixer, dict):
+            return ""
+        summary = _clip(fixer.get("summary") or "", 600).rstrip(". ") \
+            or "(no summary)"
+        return GATE_FIXER_LINE.format(summary=summary,
+                                      verdict=fixer.get("verdict") or "?")
+
+    def _keep_handover(self, phase_id: str, ps: dict, r: int,
+                       verdict: dict) -> None:
+        """Code-writer round `r`'s handover, kept on the phase for the
+        test-fixer as `handovers[<r>]` (`handover_text`): None where its
+        verdict carries none, or one off-shape (`handover_problem`), which
+        is logged — a verdict is never refused for it."""
+        given = verdict.get("handover")
+        problem = ("its verdict carries none" if given is None
+                   else handover_problem(given))
+        kept = ps.setdefault("handovers", {})
+        if problem:
+            self.log(f"[P{phase_id}] code-writer round {r} gave no handover the "
+                     f"test-fixer can read — {problem}")
+            kept[str(r)] = None
+        else:
+            kept[str(r)] = {
+                "changed": [{"behaviour": c["behaviour"],
+                             "plan_line": c["plan_line"]}
+                            for c in given.get("changed") or ()],
+                "breaks": [{"test": b["test"], "behaviour": b["behaviour"]}
+                           for b in given.get("breaks") or ()]}
+        self._save_state()
 
     def _review_loop(self, phase: Phase, ps: dict, outputs: Path,
                      target: ResolvedTarget, base: str, branch: str,
@@ -10090,7 +10341,7 @@ class RunLoop:
                     return
                 why = pilot_progress.clip_why(choice.get("why")) or why
             self._why_next(f"P{phase_id}", why)
-            hint = self._gate_hint(target, outputs, merge_base)
+            hint = self._gate_hint(target, merge_base)
             fix_verdict = spawn_executor(
                 lambda vp, _r=r, _mb=merge_base, _hint=hint:
                 EXECUTOR_REVIEW_FIX_PROMPT.format(
@@ -15248,325 +15499,6 @@ def cmd_status(args) -> None:
               f"  {h['role']} r{h['round']} → {h['outcome']}")
 
 
-def _tee_exec(argv: list[str], cwd: Path) -> tuple[int, str]:
-    """One gate command run from `cwd`, its stdout and stderr passed
-    through to ours as they come and kept: (its exit code, its output) —
-    the seam the `gate` wrapper runs its commands through, isolated for
-    tests. No timeout: the session running the wrapper owns its clock."""
-    sys.stdout.flush()
-    out = sys.stdout.buffer
-    kept = bytearray()
-    with subprocess.Popen(argv, cwd=str(cwd), stdout=subprocess.PIPE,
-                          stderr=subprocess.STDOUT) as proc:
-        while chunk := proc.stdout.read1(65536):
-            out.write(chunk)
-            out.flush()
-            kept += chunk
-        returncode = proc.wait()
-    return returncode, kept.decode(errors="replace")
-
-
-def read_gate_spec(spec_path: Path) -> tuple[dict | None, str | None]:
-    """The gate spec at `spec_path`, or None and the `gate:` line that says
-    why there is none to run."""
-    try:
-        spec = json.loads(Path(spec_path).read_text())
-    except (OSError, ValueError) as e:
-        return None, f"gate: cannot read the gate spec {spec_path}: {e}"
-    problem = gate_spec_problem(spec)
-    if problem:
-        return None, f"gate: {spec_path} is not a gate spec: {problem}"
-    return spec, None
-
-
-def run_writer_gate(spec_path: Path) -> int:
-    """The `gate` subcommand: the phase gate as the driver runs it
-    (`RunLoop._run_gate`), from the spec the driver wrote for this
-    code-writer round (`RunLoop._write_gate_spec`) — a spec-repo phase's
-    spec check, the Target's test and then its lint, each followed by the
-    whole repo's when an empty root's ran nothing, then each component the
-    phase's diff touches that no gate ruling waives, its test and then its
-    lint (AIWF-105), but no lint the spec leaves out because an accept
-    ruling covers it, and no verb whose whole repo's ran after an empty
-    root's, which ran it (AIWF-154), then the project's migration check
-    when the phase's diff adds a file under its `paths` or the spec says it
-    is `owed` (AIWF-140) — its output passed through as it runs, and the
-    run recorded beside the spec for the driver to reuse
-    (`RunLoop._reusable_writer_gate`). The exit code is the gate's:
-    0 green, 1 red, 3 nothing ran; 2 is no run at all. A lint reds the gate
-    and does nothing else, as in the driver's: a spec an older driver wrote
-    names no lint, and its gate lints nothing. So does the migration
-    check, whose every exit but 0 is red.
-
-    The merge base, where the gate reads a range (touched components, the
-    spec check), is resolved here when the run begins — `git merge-base
-    <base> HEAD` in the phase's tree, from the base branch the spec names —
-    never read from the spec (AIWF-104): a writer that rebases its branch
-    onto a moved base, or merges the base into it, mid-round would otherwise
-    gate against a base the branch has left, and the base's own commits
-    would read as the phase's. `HEAD`, not the branch's name: the tree as it
-    stands. A spec-repo phase's spec check runs against that merge base
-    (`spec_check_argv`), as the driver's gate runs it against the one it
-    re-takes, so a run against a base that moved after it is another
-    command, which the driver does not reuse. The touched components, and
-    the migrations the phase adds, are
-    the diff from it to the tree as it is when the run begins — committed
-    or not, as the gate sees it, where `<merge_base>..HEAD` would miss what
-    the writer has yet to commit. The tree is hashed (`content_tree`)
-    before the first command and after the last, so the record says
-    whether it changed while the run went on. A later run in the same round
-    replaces the record: the driver takes the last one or none.
-
-    A red run asks kc whether a service the pod runs was OOM-killed since
-    the run began (`oom_killed_services`, AIWF-139) — unless the spec check
-    alone went red, which uses no service. Where one was, the red is the
-    environment's, and no change to the code can fix it: the run leaves
-    GATE_OOM_NAME beside the spec for the driver (`record_gate_oom`), and
-    its closing line names the cause and tells the writer to stop
-    (`gate_oom_line`) where the plain RED line would send it hunting a
-    regression — PilotApp slice 036's writer spent 46–96 minutes a round
-    on a dropped connection. The exit stays 1: the gate is red. kc not
-    answering is a `gate:` warning on stderr and no kill."""
-    spec, problem = read_gate_spec(spec_path)
-    if spec is None:
-        print(problem, file=sys.stderr)
-        return 2
-    work_root, gate_cwd = Path(spec["work_root"]), Path(spec["gate_cwd"])
-    touched = spec.get("touched")
-    migrations = spec.get("migrations")
-    started = _now_iso()
-    began = datetime.now(UTC)
-    try:
-        start = content_tree(work_root)
-        # only a gate that reads a range needs one — a whole repo's does not
-        merge_base = (_git_in(work_root, "merge-base", spec["base"], "HEAD")
-                      if touched is not None or spec["spec_check"]
-                      or migrations is not None else "")
-        components: list[str] = []
-        uncovered = False
-        if touched is not None:
-            changed = _git_in(work_root, "diff", "--name-only",
-                              "--no-renames", merge_base, start)
-            components, uncovered = touched_components(
-                load_project_dirs(gate_cwd), work_root, changed,
-                touched["target"])
-        # the migrations the phase adds (AIWF-140), over the same range
-        added = ([name.strip() for name in _git_in(
-            work_root, "diff", "--name-only", "--no-renames",
-            "--diff-filter=A", merge_base, start, "--",
-            *migration_pathspecs(migrations["paths"])).splitlines()
-            if name.strip()] if migrations is not None else [])
-    except ValueError as e:
-        print(f"gate: {e}", file=sys.stderr)
-        return 2
-    except Bailout as e:
-        print(f"gate: {e.details}", file=sys.stderr)
-        return 2
-
-    commands: list[dict] = []
-    outcomes: list[tuple[str, str, bool]] = []   # (command, outcome, a lint?)
-
-    def run(argv: list[str], header: str) -> str:
-        print(header, flush=True)
-        returncode, output = _tee_exec(argv, gate_cwd)
-        commands.append({"argv": list(argv), "rc": returncode,
-                         "output": output})
-        return kc_outcome(returncode)
-
-    def target_verb(argv: list[str], fallback: list[str] | None, lint: bool,
-                    lead: str) -> str | None:
-        """The Target's verb in its steps; the bare command it fell back to
-        and ran, every component's (AIWF-154), else None."""
-        own, outcome = argv, run(argv, f"{lead}=== `{' '.join(argv)}` from "
-                                       f"{gate_cwd} ===")
-        went_bare = bool(fallback) and outcome == "nothing_ran"
-        if went_bare:
-            own = fallback
-            gate = "the gate lints" if lint else "the gate is"
-            outcome = run(own, f"\n=== `{' '.join(argv)}` ran nothing (exit "
-                               f"3) — {gate} the whole repo: "
-                               f"`{' '.join(own)}` ===")
-        outcomes.append((" ".join(own), outcome, lint))
-        return " ".join(own) if went_bare else None
-
-    check = (spec_check_argv(merge_base, work_root) if spec["spec_check"]
-             else None)
-    argv, lint = spec.get("argv"), spec.get("lint_argv")
-    # by a lint?: the bare command the Target's verb fell back to and ran
-    bare: dict[bool, str | None] = {False: None, True: None}
-    if check:
-        outcomes.append((" ".join(check), run(
-            check, f"=== the spec check: `{' '.join(check)}` ==="), False))
-    if argv:
-        bare[False] = target_verb(argv, spec.get("fallback"), False,
-                                  "\n" if check else "")
-    if argv and lint:
-        bare[True] = target_verb(lint, spec.get("lint_fallback"), True, "\n")
-    # a spec from before the gate linted names no `lint_accepted`
-    lint_accepted = (touched or {}).get("lint_accepted")
-    for component in components:
-        verbs = [(component_gate_argv(component), False)]
-        if lint_accepted is not None:
-            verbs.append((component_lint_argv(component), True))
-        if component in touched["waived"]:
-            cmds = " and ".join(f"`{' '.join(a)}`" for a, _ in verbs)
-            print(f"\n=== the phase's diff touches {component}: {cmds} "
-                  "waived by plan.md's `## Driver rulings` — not run ===",
-                  flush=True)
-            continue
-        for verb_argv, linted in verbs:
-            cmd = " ".join(verb_argv)
-            if linted and component in lint_accepted:
-                print(f"\n=== the phase's diff touches {component}: `{cmd}` "
-                      "not run: plan.md's `## Driver rulings` accepts its red "
-                      "===", flush=True)
-                continue
-            if bare[linted]:
-                print(f"\n=== the phase's diff touches {component}: `{cmd}` "
-                      f"not run — the bare `{bare[linted]}` above ran every "
-                      "component ===", flush=True)
-                continue
-            outcomes.append((cmd, run(verb_argv, "\n=== the phase's diff "
-                                      f"touches {component}: `{cmd}` ==="),
-                             linted))
-    if uncovered:
-        print("\n=== the phase's diff touches files outside every component "
-              "and kc lists no root — no gate covers them ===", flush=True)
-    owed = (migrations or {}).get("owed") or []
-    if added or owed:
-        check_cmd = migrations["check"]
-        print(f"\n=== {migration_check_why(added, owed)}: the migration "
-              f"check `{check_cmd}` from {work_root} ===", flush=True)
-        migration_argv = migration_check_argv(check_cmd)
-        returncode, output = _tee_exec(migration_argv, work_root)
-        commands.append({"argv": migration_argv, "rc": returncode,
-                         "output": output})
-        # the project's command, not kc's: any exit but 0 is red — and, like
-        # a lint, it reds the gate and never makes one green
-        outcomes.append((check_cmd, "green" if returncode == 0 else "red",
-                         True))
-    try:
-        end = content_tree(work_root)
-    except ValueError as e:
-        # no tree to vouch for: the record stands, and the driver gates
-        print(f"gate: {e}", file=sys.stderr)
-        end = ""
-    tests = [o for _, o, linted in outcomes if not linted]
-    outcome = ("red" if any(o == "red" for _, o, _ in outcomes)
-               else "green" if "green" in tests else "nothing_ran")
-    record = Path(spec_path).parent / writer_gate_record_name(spec["round"])
-    finished = _now_iso()
-    _write_json_atomic(record, {
-        "phase": spec["phase"], "round": spec["round"],
-        "work_root": spec["work_root"], "gate_cwd": spec["gate_cwd"],
-        "start_tree": start, "end_tree": end,
-        "started": started, "finished": finished,
-        "commands": commands, "outcome": outcome})
-    red = [c for c, o, _ in outcomes if o == "red"]
-    kills: list[dict] = []
-    if outcome == "red" and any(c != " ".join(check or ()) for c in red):
-        try:
-            kills = oom_killed_services(began)
-        except ValueError as e:
-            print(f"gate: not checked for a service killed for memory — {e}",
-                  file=sys.stderr)
-        if kills:
-            record_gate_oom(spec_path, spec, kills, red, started, finished)
-    print(flush=True)
-    if outcome == "green" and start == end:
-        print(f"=== gate GREEN on tree {start[:12]}, recorded in {record}. "
-              "Hand back this tree — committing it changes nothing — and the "
-              "driver takes this run as its gate; edit anything first and it "
-              "runs the gate again. ===")
-    elif outcome == "green":
-        print(f"=== gate GREEN, but the tree changed while it ran "
-              f"({start[:12]} → {end[:12]}): the driver will run the gate "
-              "again. Run this once more on the finished tree to spare it "
-              "that. ===")
-    elif kills:
-        print(gate_oom_line(kills))
-    elif outcome == "red":
-        print("=== gate RED: " + _ticked(red) + " ===")
-    else:
-        print("=== gate: nothing ran (exit 3) — not red, nothing to fix ===")
-    return {"green": 0, "red": 1}.get(outcome, KC_NOTHING_RAN)
-
-
-def _gate_wait_line(spec_path: Path) -> str:
-    return f"next: python3 {SCRIPT} gate --wait {spec_path}"
-
-
-def detach_writer_gate(spec_path: Path,
-                       timeout: float = long_run.DEFAULT_TIMEOUT) -> int:
-    """`gate --detach`: the wrapper's own run (`run_writer_gate`) started
-    through long_run.py, in the job dir GATE_RUN_DIR beside the spec,
-    killed at `timeout` seconds — so the writer waits on it in chunks under
-    its prompt cache's lifetime (HEADLESS_WAIT_LINE) instead of in one call
-    the length of the gate. Prints `started:` and the `gate --wait` line to
-    run next and returns 0; 2 is a refusal — no spec to run, or a gate
-    still running there — with the reason on stderr."""
-    spec_path = Path(os.path.abspath(spec_path))
-    spec, problem = read_gate_spec(spec_path)
-    if spec is None:
-        print(problem, file=sys.stderr)
-        return 2
-    code, text = long_run.start_job(
-        [sys.executable, str(SCRIPT), "gate", str(spec_path)],
-        spec_path.parent / GATE_RUN_DIR, None, timeout,
-        next_line=_gate_wait_line(spec_path))
-    print(text, file=sys.stdout if code == 0 else sys.stderr, flush=True)
-    return code
-
-
-def wait_writer_gate(spec_path: Path,
-                     for_seconds: float = long_run.CHUNK) -> int:
-    """`gate --wait`: long_run.py's wait on the gate `gate --detach` started
-    over this spec, at most `for_seconds`, its `next:` line naming
-    `gate --wait` again, its ended line what the gate's exit means
-    (GATE_EXIT_MEANINGS) — and wait's own exit code, not the gate's: 0 the
-    gate ended · 5 still running · 6 gone with no exit record · 2 no gate
-    started there."""
-    spec_path = Path(os.path.abspath(spec_path))
-    job_dir = spec_path.parent / GATE_RUN_DIR
-    if not (job_dir / long_run.JOB).is_file():
-        print(f"gate: no gate was started over {spec_path} — start it with "
-              f"`python3 {SCRIPT} gate --detach {spec_path}`",
-              file=sys.stderr)
-        return 2
-    code, text = long_run.wait_job(job_dir, for_seconds,
-                                   next_line=_gate_wait_line(spec_path),
-                                   meaning=GATE_EXIT_MEANINGS.get)
-    print(text, end="" if text.endswith("\n") else "\n",
-          file=sys.stderr if code == 2 else sys.stdout, flush=True)
-    return code
-
-
-def cmd_gate(args) -> None:
-    """`gate`: the wrapper in the foreground; with `--detach` it is started
-    detached, with `--wait` waited on. An args object with only `spec`, as
-    a caller of the foreground run passes, is the foreground run."""
-    spec = Path(args.spec)
-    detach_, wait_ = getattr(args, "detach", False), getattr(args, "wait", False)
-    timeout = getattr(args, "timeout", None)
-    for_seconds = getattr(args, "for_seconds", None)
-    if detach_ and wait_:
-        print("gate: --detach and --wait do not combine", file=sys.stderr)
-        sys.exit(2)
-    if timeout is not None and not detach_:
-        print("gate: --timeout goes with --detach", file=sys.stderr)
-        sys.exit(2)
-    if for_seconds is not None and not wait_:
-        print("gate: --for goes with --wait", file=sys.stderr)
-        sys.exit(2)
-    if detach_:
-        sys.exit(detach_writer_gate(
-            spec, long_run.DEFAULT_TIMEOUT if timeout is None else timeout))
-    if wait_:
-        sys.exit(wait_writer_gate(
-            spec, long_run.CHUNK if for_seconds is None else for_seconds))
-    sys.exit(run_writer_gate(spec))
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -15628,33 +15560,6 @@ def main() -> None:
     status_p = sub.add_parser("status", help="print a slice's run state")
     status_p.add_argument("slice_dir")
     status_p.set_defaults(func=cmd_status)
-
-    gate_p = sub.add_parser(
-        "gate", help="run a phase's test gate as the driver does and record "
-                     "the run for the driver; exit 0 green, 1 red, 3 nothing "
-                     "ran, 2 no run — or, with --detach, start it detached "
-                     "(exit 0 started, 2 refused), and with --wait wait on "
-                     "it (exit 0 ended, 5 still running, 6 gone, 2 none "
-                     "started)")
-    gate_p.add_argument("spec", help="the phase's gate_spec.json, as its "
-                                     "code-writer dispatch names it")
-    mode = gate_p.add_mutually_exclusive_group()
-    mode.add_argument("--detach", action="store_true",
-                      help="start the gate detached, in gate_run/ beside the "
-                           "spec, and print the `gate --wait` line to run "
-                           "next")
-    mode.add_argument("--wait", action="store_true",
-                      help="wait on the gate --detach started, at most --for "
-                           "seconds; its output once it ended")
-    gate_p.add_argument("--timeout", type=float, default=None,
-                        metavar="SECONDS",
-                        help="with --detach: kill the gate after this long "
-                             f"(default {long_run.DEFAULT_TIMEOUT})")
-    gate_p.add_argument("--for", dest="for_seconds", type=float,
-                        default=None, metavar="SECONDS",
-                        help="with --wait: give up waiting after this long "
-                             f"(default {long_run.CHUNK})")
-    gate_p.set_defaults(func=cmd_gate)
 
     args = parser.parse_args()
     args.func(args)

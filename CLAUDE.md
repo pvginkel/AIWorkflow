@@ -103,7 +103,7 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   full matches the dump), `redact_secrets.py` (the `kind: Secret` stubbing of
   every diff the driver hands an agent), `spec_check.py` (the spec repo's phase gate),
   `long_run.py` (a long command run detached and waited on in chunks under the prompt cache's
-  five minutes; `run_loop.py gate --detach` rides it),
+  five minutes),
   `debrief.py` (a loop's debrief file: every dispatch's own account, an entry each, beside its
   state file, and the stage session's, handed to Pilot at the loop's end),
   `slice_cost.py` (with
@@ -290,7 +290,7 @@ instead of reopening it.
 - **No test-result cache keyed on tree state in kc** (2026-10-24, AIWF-93): "it will bite" — a
   suite's result rests on more than the tree (a database not reset), and nobody can tell why a
   suite did not run. The ruling is kc's, not the plugin's (the operator, 2026-11-04): inside a
-  run the driver takes the writer's own run of a phase gate (AIWF-93) and any green an earlier
-  gate of the run recorded on the same tree, a `test` across a change of Markdown alone too
-  (AIWF-142). A flake that passes there is an accepted risk, not a cost to design for: a second
+  run the driver takes any green an earlier gate of the run recorded on the same tree, a `test`
+  across a change of Markdown alone too (AIWF-142); the writer's own run of a phase gate, which
+  it took from AIWF-93 on, went with the gate's move out of the writer (AIWF-204). A flake that passes there is an accepted risk, not a cost to design for: a second
   run can pass it just the same, and CI catches it.

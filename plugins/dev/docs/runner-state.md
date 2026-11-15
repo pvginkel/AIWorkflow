@@ -143,7 +143,18 @@ code-writer dispatch of the phase says it), `rebase_requested` (set when a merge
 rebase to the operator — `base`, `from` (the branch head it asked to rebase), `ts`; cleared when
 the resume takes the rebased branch, and at the merge), `set_aside` (what a resume set aside
 from a dead round's tree — each entry's `round`, `patch`, `untracked` and `files`; named in the
-phase's next code-writer prompt, and cleared once that session returns), and `landed` — set at
+phase's next code-writer prompt, and cleared once that session returns; one a test-fixer left has
+`by` `test-fixer`), `handovers` (each code-writer round's handover, keyed by the round as a string:
+`changed`, each `behaviour` with its `plan_line`, and `breaks`, each `test` with its `behaviour`, or
+`null` for a round that gave none or one off that shape — what the test-fixer reads), `measurements`
+(one per gate-fix round the driver measured: its `round`, the `red` commands, each one's outcome on
+the `regate` and on the `base`, `base_sha`, the three `logs`, whether the red is `older` than the
+phase, the `text` the fixer and the executor round read, and the round's `fixer`, if one ran — its
+`verdict` file, its `outcome` as answered and `as` the driver took it, `summary`, `head_before` and
+how many commits it had `taken_back`), `gate_fix_open` (a banked gate-fix round whose measurement or
+fixer has not finished, so that a resume redoes it without banking another), `gate_tree` (the
+content hash the last gate began on, set only where the tree was the same at its end — what the
+re-gate takes the greens of), and `landed` — set at
 the merge: the phase's `root` (the shared repo, for a worktree phase), the `base` — the
 branch's merge base with the base branch, taken before the merge, since after it that is the
 branch's own head: the sha it was cut from, or the base commit a rebase carried it onto —
@@ -156,13 +167,14 @@ has none, and the doc dispatch names it as missing from the files.
 `history` is append-only, one entry per agent run plus one per gate run (role `gate`), one per
 loop-tail sweep (role `sweep`), one per doc gate (role `doc-gate`), one per gate on a wrap-up
 branch outside the primary repo (role `wrap-up-gate`), one per test-fixer round on a sweep flake
-(role `test-fixer`) and one per consult: `ts`,
+(role `test-fixer`), one per test-fixer on a phase gate's red (role `test-fixer`, its `round` the
+gate-fix round, with `head_before`, and `as` and `taken_back` where the driver overrode it or took
+its commits back) and one per consult: `ts`,
 `phase`, `role`, `round`, `outcome`, `summary`, `session`, `transcript`, `duration_s` (a gate,
 sweep or doc-gate row's outcome is `green`, `red` or `nothing_ran`; a `wrap-up-gate` row names
-its `repo`; a gate row taken from the writer's own run of the gate names that run's record in
-`reused`, and its `duration_s` is the replay's; a gate, sweep, doc-gate or wrap-up-gate row
-that took a command from an earlier gate's green has `reused` as a map of each such command to
-that run). A wrap-up row carries the id lists of its
+its `repo`; a gate, sweep, doc-gate or wrap-up-gate row that took a command from an earlier gate's
+green has `reused` as a map of each such command to that run). A wrap-up row carries the id lists of
+its
 verdict. A code-reviewer row additionally carries the verdict's `findings` list (id, severity,
 impact, category, anchor per finding — the review contract's telemetry) and a review-fix executor
 row its `refuted` list, exactly as the agent reported them. The
@@ -200,27 +212,15 @@ in the spec repo). A phase gate's `gate_r<N>.log` holds kc's own lines and, belo
 output kc keeps under `/tmp/kc/project`, inlined so the log stands on its own once that file is
 gone — whole up to 1.25 MiB; past that its first 256 KiB and its last 1 MiB, with a line between
 them saying how many bytes were cut (slice 030's backend gate logs ran to 35 MB each, committed
-to the spec repo); when the driver took the writer's own run instead, it says so at its top. Beside
-it, `gate_spec.json` is what the writer's gate wrapper runs, rewritten at every code-writer
-dispatch — on a spec-repo phase with the spec check's command as its `check`, its `argv` the
-repo's own `kc project test` or `null`; `lint_argv` and `lint_fallback` beside the test's, and
-each touched component's lint beside its test, none where an `accept` ruling covers the lint,
-which `touched.lint_accepted` names instead; and `migrations`, the check's command and the
-files that owe it (`owed`), where the phase owes the migration check — and `writer_gate_r<N>.json` the wrapper's record of its last run in code-writer round
-`N`: the commands with their exit codes and output, and the tree's content hash when the run
-began and ended ([run-loop.md](run-loop.md) § The per-phase round). `gate_oom.json`, where it
-is there, is the wrapper's note of a red run while a service was OOM-killed: the phase and round,
-the services killed (`name`, `memoryLimit`, `finishedAt`) and each such run's red commands and
-times. The round's later runs add to it, and a fresh round removes it before dispatch
-([run-loop.md](run-loop.md) § Protocol invariants). `gate_run/` beside them is
-the job of the writer's last `gate --detach`, ignoring itself (`.gitignore`, `*`): its
-`run.lock`, held while the gate runs, `job.json`, `output.log` and the `exit.json` it ends
-with, which `gate --wait` reads. A review round whose range
-changes Secret data leaves `review_r<N>.diff` beside its review, the range redacted the same
-way. What a dead round left uncommitted, set aside by the resume before it resets the tree, is under
-`phases/P<id>/set-aside/` (`r<N>.patch` and `r<N>-untracked/`, unredacted, so that folder ignores
-itself the same way; [run-loop.md](run-loop.md) § The per-phase round). Executor inputs come from
-`plan.md`, never from copies.
+to the spec repo). A red gate's measurement leaves `measure_r<N>_base.log` beside it (`N` the
+gate-fix round), each red `kc project` command's run on the merge base, and the test-fixer on that
+red its verdict, `gate_fixer_result_r<N>.json` ([run-loop.md](run-loop.md) § The per-phase round). A
+review round whose range changes Secret data leaves `review_r<N>.diff` beside its review, the range
+redacted the same way, and so does a test-fixer whose phase's diff does, as `gate_fixer_r<N>.diff`.
+What a dead round left uncommitted, set aside by the resume before it resets the tree, is under
+`phases/P<id>/set-aside/` (`r<N>.patch` and `r<N>-untracked/`, a test-fixer's as `fixer-r<N>.patch`,
+unredacted, so that folder ignores itself the same way; [run-loop.md](run-loop.md) § The per-phase
+round). Executor inputs come from `plan.md`, never from copies.
 
 ## debrief.json
 
@@ -283,10 +283,10 @@ document; `wait` prints each as an `attach:` line.
 | `prerun_action` | ✓ | at startup, fresh or `--resume`, before the run's actions owed before it were all met: one whose check fails, struck or not, or one without a check the driver can run that nobody struck ([run-loop.md](run-loop.md) § Protocol invariants) |
 | `missing_tools` | ✓ | a Target repo's manifest calls a `cexec <tool>` this environment does not run — at startup, fresh or `--resume`, or at a phase gate that meets it mid-run; the details name the tools and the `- use:` lines ([run-loop.md](run-loop.md) § Protocol invariants) |
 | `missing_services` | ✓ | the host's own `.kubecoder/config.yaml` declares a service this environment does not run, at startup, fresh or `--resume` (another Target repo's are never read: a red gate there takes its fix round, whose hint names them); the details name the services and the `services:` lines ([run-loop.md](run-loop.md) § Protocol invariants) |
-| `service_oom_killed` | ✓ | a phase-gate command went red — the driver's run of it, or the code-writer's through the `gate` wrapper, which leaves `gate_oom.json` beside the spec for the driver to bail on once the round's session is back — while `kc env describe` says a service the pod runs was `OOMKilled` after the command or run began; no fix round is spent, and the details name the service, its memory limit and the `resources:` line ([run-loop.md](run-loop.md) § Protocol invariants) |
+| `service_oom_killed` | ✓ | a phase-gate command went red while `kc env describe` says a service the pod runs was `OOMKilled` after the command or run began; no fix round is spent, and the details name the service, its memory limit and the `resources:` line ([run-loop.md](run-loop.md) § Protocol invariants) |
 | `target_not_cloned` | – | a pending phase's `Target:` is a repo path the environment's `.kubecoder/config.yaml` declares and the pod has not cloned — the plan is fine, so no session is nudged; the details name each such phase and the fix: `kc env restart`, or a clone plus `kc project setup` ([run-loop.md](run-loop.md) § The plan is the queue) |
 | `blocked` | – | an agent reported `blocked`, or a protocol failure after the nudge |
-| `gate_red` | – | the gate stayed red through the executor fix cap, or at merge |
+| `gate_red` | – | the gate stayed red through the gate-fix cap (three rounds, each a measurement, the test-fixer and, on its `issues`, an executor round), or at merge |
 | `consult_bail` | – | any consult chose `bail` |
 | `devlock_timeout` | – | the dev occupancy lease stayed held past the wait cap |
 | `timeout` | – | a driver-run gate or sweep command exceeded its limit, or an agent session did with no usable verdict on disk |

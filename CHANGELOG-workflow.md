@@ -4,6 +4,41 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-15 — The gate moves out of the code-writer: the driver gates, measures a red, and the test-fixer takes it first (v0.10.78)
+
+AIWF-204, phase 2 of the cache-miss plan (PilotAppSpecs `research/cache-misses/findings.md`), from
+the handover AIWF-209; its fourth ask, the reviewer on a test rewrite that drops coverage, shipped
+in 0.10.76. **This is the version where the gate leaves the writer**, for the Fable comparison: the
+code-writer has run Fable 5.2 at `high` since 0.10.71, so slices from 0.10.71 to 0.10.77 are the
+writer gating itself on Fable, and from 0.10.78 on Fable without the gate.
+
+- **The writer hands over and stops gating.** Every executor prompt — the first round, a review-fix
+  round, a gate-fix round — tells it to run the tests its change touches and names the gate the
+  driver runs after it; the `gate` wrapper, its detached pair, its record and the driver's reuse of
+  the writer's green are gone, with `gate_spec.json`, `writer_gate_r<N>.json`, `gate_run/` and the
+  wrapper's `gate_oom.json` (the driver's own bail on a service killed for memory stays). A `done`
+  verdict carries a `handover`: each behaviour changed on purpose with its plan line, and each
+  existing test expected to break. The driver keeps it as `handovers`, and logs a verdict with none
+  without refusing it. Code-writer rule 7 is rewritten for it.
+- **The driver measures a red before anyone edits it.** Each red banks a gate-fix round (cap 3, as
+  before), then the driver gates the tree again, running the red commands alone, and runs each red
+  `kc project` command once on the merge base, checked out detached in the phase's tree
+  (`measure_r<N>_base.log`); the spec and migration checks have no base run. A red the re-gate
+  passes that is red on the base too is older than the phase: no fixer runs, the re-gate's green
+  stands, and the close-out report gets a defect entry per suite with a card request. The record
+  is `measurements`.
+- **Any other red goes to the test-fixer first**, on Sonnet, with the measurement, the phase's
+  section, the handovers and the diff; it runs the failing tests, never the gate. Its verdict is
+  held against its commits: a `clean` with nothing committed, a dirty tree after the nudge, a
+  branch left or no valid verdict is `issues`, and whatever is not `clean` has its commits reset
+  and its edits discarded. `clean` is gated again with no executor round spent; `issues` goes to
+  the Opus gate-fix round, which reads the measurement and the fixer's summary; `blocked` bails.
+  The fixer is no Pilot step of its own. Test-fixer rules 1, 4, 5 and 8 take the phase-gate case.
+- **What to read in its trial** (the plan's list): gate-fix commits that touch a timeout, an
+  assertion or a spec the phase did not touch; the reds that go on to the Opus round; gate-fix
+  rounds and bails per phase; the reviewer's findings on gate-fix commits; the cost per red, now
+  with the fixer's row and the measurement's base run beside it.
+
 ## 2026-11-15 — A `fix now` is made in a fixes pass: the wrap-up's second dispatch, gated, landed and recorded (v0.10.77)
 
 AIWF-171 and AIWF-176's landing route, from the handover AIWF-209.

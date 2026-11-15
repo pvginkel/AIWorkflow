@@ -17,7 +17,6 @@ import itertools
 import json
 import os
 import re
-import shlex
 import shutil
 import signal
 import stat
@@ -481,11 +480,18 @@ class ScriptedLoop(RunLoop):
     """RunLoop with _spawn replaced by a script of (role, verdict[, effect])
     steps and the test gate replaced by a scripted green/red sequence
     (default green once the sequence is exhausted). `effect` is called with
-    the loop and stands in for what the session would have done on disk."""
+    the loop and stands in for what the session would have done on disk.
+
+    A red gate's measurement re-gates the tree and runs the red commands on
+    the merge base: the re-gate answers from `regates` (red once spent: the
+    red reproduces), each command on the base from `base_gates` (green once
+    spent: the red is the phase's), so a red goes to the test-fixer unless
+    a test says otherwise."""
 
     def __init__(self, slice_dir, script, resume=False, gates=None,
                  doc_gates=None, repo_root=None, sweep_reds=None,
-                 wrap_ups=None, wrap_gates=None, setup_rcs=None):
+                 wrap_ups=None, wrap_gates=None, setup_rcs=None,
+                 regates=None, base_gates=None):
         super().__init__(Path(slice_dir), resume=resume)
         if repo_root is not None:
             self.repo_root = Path(repo_root)
@@ -493,6 +499,9 @@ class ScriptedLoop(RunLoop):
         self.spawned = []    # (role, phase, round, outcome)
         self.prompts = []    # (role, prompt)
         self.gates = list(gates or [])
+        self.regates = list(regates or [])
+        self.base_gates = list(base_gates or [])
+        self.base_runs = []   # (argv, cwd) of each command run on the base
         self.gate_calls = []
         self.gate_merge_bases = []   # the review range's base each gate took
         self.doc_gates = list(doc_gates or [])
@@ -607,12 +616,16 @@ class ScriptedLoop(RunLoop):
         return (self.fake_git.attempts.pop(0) if self.fake_git.attempts
                 else (0, "Fast-forward"))
 
-    def _run_gate(self, phase_id, ps, outputs, target, merge_base):
+    def _run_gate(self, phase_id, ps, outputs, target, merge_base,
+                  rerun=None):
         if target.gate_argv is None:
             return True, None
         self.gate_merge_bases.append(merge_base)
         ps["gate_runs"] += 1
-        green = self.gates.pop(0) if self.gates else True
+        if rerun is not None:
+            green = self.regates.pop(0) if self.regates else False
+        else:
+            green = self.gates.pop(0) if self.gates else True
         self.gate_calls.append((phase_id, green))
         self.gate_cwds.append(Path(target.gate_cwd))
         log_path = outputs / f"gate_r{ps['gate_runs']}.log"
@@ -624,6 +637,12 @@ class ScriptedLoop(RunLoop):
         self._record(phase_id, "gate", ps["gate_runs"],
                      "green" if green else "red", "", None, 0)
         return green, log_path
+
+    def _base_exec(self, argv, cwd, log_file):
+        green = self.base_gates.pop(0) if self.base_gates else True
+        self.base_runs.append((list(argv), Path(cwd)))
+        log_file.write(f"{' '.join(argv)} on the base\n")
+        return 0 if green is True else 1 if green is False else green
 
     def _run_doc_gate(self, ds, stem="doc_gate", role="doc-gate", label=None):
         ds["gate_runs"] += 1
@@ -955,6 +974,23 @@ V = {
 # The tail every completed slice runs: completion consult → test → docs.
 TAIL = [V["consult_complete"], V["test_clean"], V["doc_done"]]
 
+# A red phase gate goes to the test-fixer first (`_gate_fixer`): its
+# hand-back of a red it leaves to the executor's fix round.
+FIXER_ISSUES = ("test-fixer", {"outcome": "issues",
+                               "summary": "the phase's change broke it"})
+
+
+def fixer_commits(head="fixer1"):
+    """A test-fixer step's effect: it committed its fix — HEAD moves."""
+    def effect(loop):
+        loop.fake_git.head = head
+    return effect
+
+
+# The test-fixer's `clean`, its fix committed: the gate runs again on it.
+FIXER_FIXES = ("test-fixer", {"outcome": "clean", "summary": "fixed the race"},
+               fixer_commits())
+
 
 # -- plan parsing -------------------------------------------------------------
 
@@ -1157,8 +1193,8 @@ def test_executor_digest_carries_the_slice_and_every_round_gets_it():
             "two lines of it.\n\nFiled by triage.\n")
         (slice_dir / "verification.json").write_text(json.dumps({"items": [
             {"id": "V01", "area": "core", "description": "It ships."}]}))
-        script = [V["exec_done"], V["exec_done"],   # P2: initial + gate fix
-                  V["review_signoff"],
+        script = [V["exec_done"], FIXER_ISSUES,   # P2: initial, fixer,
+                  V["exec_done"], V["review_signoff"],   # gate fix
                   V["exec_done"], V["review_signoff"],   # P3
                   *TAIL]
         r = ScriptedLoop(slice_dir, script, gates=[False, True],
@@ -2147,9 +2183,9 @@ def test_the_drivers_gate_reads_kcs_exit_codes():
     bug, never a red suite)."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
-        r = KcExitLoop(slice_dir, [V["exec_done"], V["exec_done"],
-                                   V["review_signoff"], *TAIL],
-                       repo_root=repo, gate_rcs=[1, 0])
+        r = KcExitLoop(slice_dir, [V["exec_done"], FIXER_ISSUES,
+                                   V["exec_done"], V["review_signoff"], *TAIL],
+                       repo_root=repo, gate_rcs=[1, 1, 0])
         assert run_to_exit(r) == 0
         assert not r.script
         ps = load_state(slice_dir)["phases"]["1"]
@@ -2269,24 +2305,28 @@ def test_a_root_gate_that_ran_nothing_falls_back_to_the_whole_repo():
 def test_a_red_whole_repo_gate_after_an_empty_root_is_a_red_gate():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo, r, code = root_gate_run(
-            tmp, [V["exec_done"], V["exec_done"], V["review_signoff"], *TAIL],
-            [3, 1, 3, 0])
+            tmp, [V["exec_done"], FIXER_ISSUES, V["exec_done"],
+                  V["review_signoff"], *TAIL],
+            [3, 1, 3, 1, 3, 0])
         assert code == 0 and not r.script
         state = load_state(slice_dir)
         assert state["phases"]["1"]["gate_fix_rounds"] == 1
         assert [h["outcome"] for h in state["history"]
-                if h["role"] == "gate"] == ["red", "green"]
+                if h["role"] == "gate"] == ["red", "red", "green"]
+        # the whole repo's red measured on the merge base
+        assert r.base_runs == [(BARE_ARGV, repo)]
         writers = [p for role, p in r.prompts if role == "code-writer"]
         assert "The gate went red on `kc project test`;" in writers[1]
         # the one review came after the fix round's green, never the red
         reviews = [p for role, p in r.prompts if role == "code-reviewer"]
         assert len(reviews) == 1
         assert [argv for argv, _, _ in r.phase_gate_runs] == [
-            ROOT_ARGV, BARE_ARGV, ROOT_ARGV, BARE_ARGV]
+            ROOT_ARGV, BARE_ARGV] * 3
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo, r, code = root_gate_run(
-            tmp, [V["exec_done"]] * (run_loop.GATE_FIX_CAP + 1),
-            [3, 1] * (run_loop.GATE_FIX_CAP + 1))
+            tmp, [V["exec_done"]]
+            + [FIXER_ISSUES, V["exec_done"]] * run_loop.GATE_FIX_CAP,
+            [3, 1] * (2 * run_loop.GATE_FIX_CAP + 1))
         assert code == 3
         bail = json.loads((slice_dir / "bailout.json").read_text())
         assert bail["reason"] == "gate_red"
@@ -2323,44 +2363,24 @@ def test_a_component_gate_that_ran_nothing_never_falls_back():
         assert "whole repo" not in (slice_dir / "log.txt").read_text()
 
 
-def wrapper_cmd(outputs):
-    """The `gate` wrapper over a phase's spec, as a gate hint names it: run
-    detached, and waited on with `waits`' line."""
-    return (f"`python3 {run_loop.SCRIPT} gate --detach "
-            f"{Path(outputs) / 'gate_spec.json'}`")
-
-
-def waits(outputs):
-    """The gate hint's wait on that detached gate (GATE_WAIT_HINT)."""
-    return run_loop.GATE_WAIT_HINT.format(
-        wait=f"`python3 {run_loop.SCRIPT} gate --wait "
-             f"{Path(outputs) / 'gate_spec.json'}`")
-
-
 def test_every_component_gate_hint_says_what_exit_3_means():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         r = ScriptedLoop(slice_dir, [], repo_root=repo)
         r.project_dirs = root_components(repo)
-        outputs = slice_dir / "phases" / "P1"
-        component = r._gate_hint(r._resolve_target(PROJECT), outputs,
-                                 "base123")
-        root = r._gate_hint(r._resolve_target("root"), outputs, "base123")
+        component = r._gate_hint(r._resolve_target(PROJECT), "base123")
+        root = r._gate_hint(r._resolve_target("root"), "base123")
         assert component == (
-            f" — through {wrapper_cmd(outputs)}, which runs the driver's own "
-            f"gate: `kc project test --project {PROJECT}` and `kc project lint "
+            f": `kc project test --project {PROJECT}` and `kc project lint "
             f"--project {PROJECT}`, and both for every other component the "
-            f"phase's diff touches. {waits(outputs)}. "
-            f"{run_loop.GATE_REUSE_HINT}. {run_loop.NOTHING_RAN_HINT}")
+            f"phase's diff touches. {run_loop.NOTHING_RAN_HINT}")
         assert root == (
-            f" — through {wrapper_cmd(outputs)}, which runs the driver's own "
-            "gate: `kc project test --project root`, and bare `kc project "
+            ": `kc project test --project root`, and bare `kc project "
             "test`, every component once, when that runs nothing (exit 3), "
             "and the same two steps for `kc project lint`; then both, "
             "`--project <c>`, for every other component the phase's diff "
             "touches, but not a verb that went bare, which ran every "
-            f"component already. {waits(outputs)}. "
-            f"{run_loop.GATE_REUSE_HINT}. {run_loop.NOTHING_RAN_HINT}")
+            f"component already. {run_loop.NOTHING_RAN_HINT}")
         assert "Exit 3 is kc's \"nothing ran\"" in run_loop.NOTHING_RAN_HINT
 
 
@@ -2468,10 +2488,10 @@ def test_a_component_gate_runs_every_component_its_diff_touches():
         assert "does not cover" not in prompt
         writer = next(p for role, p in r.prompts
                       if role == "code-writer").replace("\n", " ")
-        assert ("which runs the driver's own gate: `kc project test --project "
-                "frontend` and `kc project lint --project frontend`, and both "
-                "for every other component the phase's diff touches.") \
-            in writer
+        assert ("the driver gates the phase after you hand back: `kc project "
+                "test --project frontend` and `kc project lint --project "
+                "frontend`, and both for every other component the phase's "
+                "diff touches.") in writer
         narration = (slice_dir / "log.txt").read_text()
         assert ("gate #1 running (kc project test --project frontend, then "
                 "kc project lint --project frontend), and for the components "
@@ -2484,14 +2504,17 @@ def test_a_component_gate_runs_every_component_its_diff_touches():
 def test_a_red_touched_component_fails_the_gate_into_a_fix_round_naming_it():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo, r, code = touched_gate_run(
-            tmp, [V["exec_done"], V["exec_done"], V["review_signoff"], *TAIL],
-            [0, 1, 0, 0], ["frontend/src/App.tsx", "backend/app/api.py"])
+            tmp, [V["exec_done"], FIXER_ISSUES, V["exec_done"],
+                  V["review_signoff"], *TAIL],
+            [0, 1, 0, 1, 0, 0], ["frontend/src/App.tsx", "backend/app/api.py"])
         assert code == 0 and not r.script
         state = load_state(slice_dir)
         ps = state["phases"]["1"]
         assert ps["gate_fix_rounds"] == 1
         gates = [h for h in state["history"] if h["role"] == "gate"]
-        assert [h["outcome"] for h in gates] == ["red", "green"]
+        assert [h["outcome"] for h in gates] == ["red", "red", "green"]
+        # the red component alone measured on the merge base
+        assert r.base_runs == [(component_argv("backend"), repo)]
         # the red row's summary is the red command's, not the Target's
         assert gates[0]["summary"] == "kc project test --project backend: " \
             "exit 1"
@@ -2504,11 +2527,12 @@ def test_a_red_touched_component_fails_the_gate_into_a_fix_round_naming_it():
     # known to the fix round
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo, r, code = touched_gate_run(
-            tmp, [V["exec_done"], V["exec_done"], V["review_signoff"], *TAIL],
-            [1, 1, 0, 0], ["frontend/src/App.tsx", "backend/app/api.py"])
+            tmp, [V["exec_done"], FIXER_ISSUES, V["exec_done"],
+                  V["review_signoff"], *TAIL],
+            [1, 1, 1, 1, 0, 0], ["frontend/src/App.tsx", "backend/app/api.py"])
         assert code == 0
         assert [argv for argv, _, _ in r.phase_gate_runs] == [
-            component_argv("frontend"), component_argv("backend")] * 2
+            component_argv("frontend"), component_argv("backend")] * 3
         writers = [p for role, p in r.prompts if role == "code-writer"]
         assert ("The gate went red on `kc project test --project frontend`, "
                 "`kc project test --project backend`;") \
@@ -2885,8 +2909,6 @@ def test_a_writer_that_moves_the_merge_base_moves_the_phases_range():
         ps = load_state(slice_dir)["phases"]["1"]
         assert ps["landed"]["base"] == NEW_MB
         assert ps["reviewed_base"] == NEW_MB
-        # the spec the writer's wrapper read named the base branch alone
-        assert gate_spec(r)["base"] == "main"
         log = (slice_dir / "log.txt").read_text()
         assert log.count(MOVED_LINE) == 1, log
         # the first read, when the phase began, logged nothing
@@ -3035,68 +3057,19 @@ def test_a_gate_with_no_projects_on_record_reads_as_it_always_did():
         assert r._phase_state("1")["gate_projects"] is None
 
 
-# -- the writer's gate run, reused as the driver's (AIWF-93) -------------------
+# -- a green taken from an earlier gate on the same tree (AIWF-142) -----------
 #
-# The code-writer runs the phase gate before it hands back, and the driver ran
-# the same commands again on the same tree: on PilotApp, 75 % of driver gates
-# re-ran a green the writer had just seen. The writer now runs it through the
-# driver's `gate` wrapper, which records what it ran and on what tree, and the
-# driver replays a run it can prove stands for its own gate — and otherwise
-# gates exactly as before.
+# Every gate the driver runs records each command that went green or ran
+# nothing on the tree it ran on, and a later gate on that tree takes it in
+# place of running the command. The executor prompts say what the driver's
+# gate runs; the writer runs the tests its change touches and hands over.
 
 TREE = "7ee0" * 10        # what a stubbed content_tree answers
-OTHER_TREE = "0e1d" * 10
 DONE = {"outcome": "done", "summary": "built"}
 
 
 def outputs_of(loop, pid="1"):
     return loop.slice_dir / "phases" / f"P{pid}"
-
-
-def gate_spec(loop, pid="1"):
-    return json.loads((outputs_of(loop, pid) / "gate_spec.json").read_text())
-
-
-def writer_record(spec, ran, start=TREE, end=TREE, **over):
-    """What the `gate` wrapper records over `spec` for a run of `ran` —
-    (argv, rc) pairs, each with the output KcExitLoop's kc writes — on a tree
-    that was `start` when it began and `end` when it finished; `over` sets
-    any key outright."""
-    record = {"phase": spec["phase"], "round": spec["round"],
-              "work_root": spec["work_root"], "gate_cwd": spec["gate_cwd"],
-              "start_tree": start, "end_tree": end,
-              "started": "2026-10-24T09:00:00+02:00",
-              "finished": "2026-10-24T09:01:00+02:00",
-              "commands": [{"argv": list(argv), "rc": rc_,
-                            "output": f"{' '.join(argv)}: exit {rc_}\n"}
-                           for argv, rc_ in ran],
-              "outcome": "green"}
-    record.update(over)
-    return record
-
-
-def ran_gate(*commands, text=None, **over):
-    """A code-writer step's effect: it ran the gate through the wrapper,
-    which recorded `commands` for the round the spec names — or left `text`
-    in the record instead."""
-    def effect(loop):
-        spec = gate_spec(loop)
-        path = outputs_of(loop) / f"writer_gate_r{spec['round']}.json"
-        path.write_text(text if text is not None else json.dumps(
-            writer_record(spec, commands, **over)))
-    return effect
-
-
-def wrote_gate(*commands, **over):
-    """A code-writer step that ran the gate through the wrapper."""
-    return ("code-writer", DONE, ran_gate(*commands, **over))
-
-
-def with_lint(argv, rc_, lint_rc=3):
-    """A gate's test command run with exit code `rc_`, and the lint the
-    wrapper runs beside it (AIWF-105) — kc's "nothing ran" unless given:
-    two (argv, rc) pairs of a writer record."""
-    return (argv, rc_), (run_loop.lint_twin(argv), lint_rc)
 
 
 def tree_is(tree):
@@ -3105,320 +3078,6 @@ def tree_is(tree):
 
 def gate_rows(slice_dir):
     return [h for h in load_state(slice_dir)["history"] if h["role"] == "gate"]
-
-
-def reused_header(record, tree=TREE):
-    return (f"=== the writer's run of this gate, reused: {record} — the tree "
-            f"({tree}) is the one it ran on, unchanged since it began; its "
-            "output follows ===\n")
-
-
-def test_a_green_writer_run_on_the_tree_handed_back_is_the_drivers_gate():
-    app = component_argv(PROJECT)
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = KcExitLoop(slice_dir, [wrote_gate(*with_lint(app, 0)),
-                                   V["review_signoff"], *TAIL], repo_root=repo)
-        with tree_is(TREE):
-            assert run_to_exit(r) == 0
-        assert not r.script
-        assert r.phase_gate_order == [], "the driver ran no suite of its own"
-        record = outputs_of(r) / "writer_gate_r1.json"
-        rows = gate_rows(slice_dir)
-        assert [(h["outcome"], h.get("reused")) for h in rows] == [
-            ("green", str(record))]
-        assert rows[0]["summary"] == f"{' '.join(app)}: exit 0"
-        ps = load_state(slice_dir)["phases"]["1"]
-        assert ps["gate_runs"] == 1
-        assert ps["gate_green_commit"] == r.fake_git.head
-        assert ps["gate_cmd"] == " ".join(app)
-        assert ps["gate_projects"] == [gate_entry(PROJECT, "green")]
-        lint = " ".join(lint_argv(PROJECT))
-        assert Path(ps["gate_green_log"]).read_text() == (
-            reused_header(record) + f"{' '.join(app)}: exit 0\n"
-            f"\n=== `{lint}` from {repo} ===\n{lint}: exit 3\n")
-        assert ("The deterministic test gate ran GREEN on this exact commit "
-                f"({r.fake_git.head[:12]}): `{' '.join(app)}` in {repo} — "
-                f"with full output in {ps['gate_green_log']}") \
-            in reviewer_prompt(r)
-        narration = (slice_dir / "log.txt").read_text()
-        assert ("[P1] gate #1 reusing the writer's run (writer_gate_r1.json) "
-                f"— tree {TREE[:12]} unchanged since it began\n") in narration
-        assert "gate #1 running" not in narration
-        assert "[P1] gate #1 → GREEN" in narration
-
-
-def test_a_reused_gate_inlines_kcs_full_output_as_a_run_does():
-    app = component_argv(PROJECT)
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        full = kc_full_log(tmp, "test-1.log", "every line kc ran\n")
-
-        def effect(loop):
-            spec = gate_spec(loop)
-            record = writer_record(spec, with_lint(app, 0))
-            record["commands"][0]["output"] += f"full output: {full}\n"
-            (outputs_of(loop) / "writer_gate_r1.json").write_text(
-                json.dumps(record))
-
-        r = KcExitLoop(slice_dir, [("code-writer", DONE, effect),
-                                   V["review_signoff"], *TAIL],
-                       repo_root=repo)
-        with tree_is(TREE):
-            assert run_to_exit(r) == 0
-        log = Path(load_state(slice_dir)["phases"]["1"]["gate_green_log"])
-        assert (f"full output: {full}\n\n=== kc's full output ({full}) ===\n"
-                "every line kc ran\n\n=== `kc project lint") in log.read_text()
-
-
-def test_a_reused_touched_gate_records_what_a_run_of_it_would():
-    touched = ["frontend/src/App.tsx", "backend/app/api.py"]
-    frontend, backend = component_argv("frontend"), component_argv("backend")
-    with tempfile.TemporaryDirectory() as tmp:
-        real_dir, real_repo, real, code = touched_gate_run(
-            tmp, [V["exec_done"], V["review_signoff"], *TAIL], [0, 0],
-            touched)
-        assert code == 0 and len(real.phase_gate_runs) == 2
-        real_ps = load_state(real_dir)["phases"]["1"]
-        real_log = Path(real_ps["gate_green_log"]).read_text()
-    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
-        slice_dir, repo, r, code = touched_gate_run(
-            tmp, [wrote_gate(*with_lint(frontend, 0), *with_lint(backend, 0)),
-                  V["review_signoff"], *TAIL], [], touched)
-        assert code == 0 and not r.script
-        assert r.phase_gate_order == []
-        ps = load_state(slice_dir)["phases"]["1"]
-        assert ps["gate_projects"] == real_ps["gate_projects"] == [
-            gate_entry("frontend", "green"), gate_entry("backend", "green")]
-        assert ps["gate_cmd"] == real_ps["gate_cmd"]
-        # the log is the real run's, laid out by the same code, under the
-        # reuse's header — its own repo where a header names one
-        record = outputs_of(r) / "writer_gate_r1.json"
-        assert Path(ps["gate_green_log"]).read_text() \
-            == reused_header(record) + real_log.replace(str(real_repo),
-                                                        str(repo))
-        assert ("It covers frontend, backend: the phase's Target and every "
-                "project its diff touches.") in reviewer_prompt(r)
-        assert ("gate #1 reusing the writer's run (writer_gate_r1.json) — "
-                f"tree {TREE[:12]} unchanged since it began, and for the "
-                "components the phase's diff touches: backend") \
-            in (slice_dir / "log.txt").read_text()
-    # a component a gate ruling waives is in no run, the writer's or the
-    # driver's: the record without it is the gate
-    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
-        slice_dir, repo, r, code = touched_gate_run(
-            tmp, [wrote_gate(*with_lint(frontend, 0)), V["review_signoff"],
-                  *TAIL], [],
-            touched, rulings=["gate backend — Jenkins validation build — "
-                              "suites need Postgres"])
-        assert code == 0 and r.phase_gate_order == []
-        ps = load_state(slice_dir)["phases"]["1"]
-        assert ps["gate_projects"] == [gate_entry("frontend", "green"),
-                                       gate_entry("backend", "waived")]
-        assert gate_rows(slice_dir)[0]["reused"]
-
-
-def test_a_reused_root_gate_that_fell_back_is_the_whole_repos():
-    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
-        slice_dir, repo, r, code = root_gate_run(
-            tmp, [wrote_gate((ROOT_ARGV, 3), (BARE_ARGV, 0),
-                             (ROOT_LINT_ARGV, 3), (BARE_LINT_ARGV, 3)),
-                  V["review_signoff"], *TAIL], [])
-        assert code == 0 and not r.script
-        assert r.phase_gate_order == []
-        ps = load_state(slice_dir)["phases"]["1"]
-        assert ps["gate_cmd"] == "kc project test"
-        assert ps["gate_green_commit"] == r.fake_git.head
-        log = Path(ps["gate_green_log"]).read_text()
-        assert log.index("--project root: exit 3") < log.index(
-            "=== `kc project test --project root` ran nothing (exit 3) — the "
-            "gate is the whole repo: `kc project test` ===") \
-            < log.index("kc project test: exit 0")
-        assert f"`kc project test` in {repo} — with full output in" \
-            in reviewer_prompt(r)
-    # nothing ran anywhere is reused as nothing ran
-    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
-        slice_dir, repo, r, code = root_gate_run(
-            tmp, [wrote_gate((ROOT_ARGV, 3), (BARE_ARGV, 3),
-                             (ROOT_LINT_ARGV, 3), (BARE_LINT_ARGV, 3)),
-                  V["review_signoff"], *TAIL], [3, 3])
-        assert code == 0 and not r.script
-        rows = gate_rows(slice_dir)
-        # the merge re-gates: no green on record, and the tree, still the
-        # writer's, takes its run again
-        assert [(h["outcome"], bool(h.get("reused"))) for h in rows] == [
-            ("nothing_ran", True), ("nothing_ran", True)]
-        assert r.phase_gate_order == []
-
-
-def reuse_miss_run(tmp, effect, tree=TREE):
-    """One phase on PROJECT whose code-writer leaves `effect` behind, gated
-    by the driver's own gate on a tree that hashes to `tree`."""
-    slice_dir, repo = make_slice(tmp)
-    r = KcExitLoop(slice_dir, [("code-writer", DONE, effect),
-                               V["review_signoff"], *TAIL], repo_root=repo)
-    with tree_is(tree):
-        code = run_to_exit(r)
-    return slice_dir, repo, r, code
-
-
-def assert_gate_ran(slice_dir, r, why=None):
-    """The driver ran its own gate, reusing nothing — and logged `why` it
-    did not reuse round 1's record, or nothing at all with no `why`."""
-    assert r.phase_gate_runs, "the driver ran its own gate"
-    assert not any("reused" in h for h in gate_rows(slice_dir))
-    narration = (slice_dir / "log.txt").read_text()
-    assert "[P1] gate #1 running (" in narration
-    assert "reusing the writer's run" not in narration
-    if why is None:
-        assert "not reused" not in narration
-    else:
-        assert ("[P1] the writer's gate run (writer_gate_r1.json) not reused "
-                f"— {why}; running the gate\n") in narration
-
-
-def test_a_writer_run_on_another_tree_is_never_the_drivers_gate():
-    app = component_argv(PROJECT)
-    # the tree changed after the run
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, _, r, code = reuse_miss_run(
-            tmp, ran_gate(*with_lint(app, 0)), tree=OTHER_TREE)
-        assert code == 0
-        assert_gate_ran(slice_dir, r, (
-            f"the tree changed after it began (began {TREE[:12]}, ended "
-            f"{TREE[:12]}, now {OTHER_TREE[:12]})"))
-    # ... or while it ran, and is back where it began
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, _, r, code = reuse_miss_run(
-            tmp, ran_gate(*with_lint(app, 0), end=OTHER_TREE))
-        assert code == 0
-        assert_gate_ran(slice_dir, r, (
-            f"the tree changed after it began (began {TREE[:12]}, ended "
-            f"{OTHER_TREE[:12]}, now {TREE[:12]})"))
-
-    # a tree git cannot hash is no tree to vouch for
-    def unhashable(root):
-        raise ValueError("git is gone")
-
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = KcExitLoop(slice_dir, [wrote_gate(*with_lint(app, 0)),
-                                   V["review_signoff"], *TAIL], repo_root=repo)
-        with patched(run_loop, content_tree=unhashable):
-            assert run_to_exit(r) == 0
-        assert_gate_ran(slice_dir, r,
-                        "the tree could not be hashed: git is gone")
-
-
-def test_a_writer_run_of_other_commands_or_a_red_is_never_the_drivers_gate():
-    app = component_argv(PROJECT)
-    frontend, backend = component_argv("frontend"), component_argv("backend")
-    touched = ["frontend/src/App.tsx", "backend/app/api.py"]
-    # a red is never reused, whatever the tree
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, _, r, code = reuse_miss_run(tmp, ran_gate(*with_lint(app, 1)))
-        assert code == 0
-        assert_gate_ran(slice_dir, r, f"`{' '.join(app)}` went red")
-    # ... and a red lint is a red
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, _, r, code = reuse_miss_run(
-            tmp, ran_gate(*with_lint(app, 0, lint_rc=1)))
-        assert code == 0
-        assert_gate_ran(slice_dir, r,
-                        f"`{' '.join(lint_argv(PROJECT))}` went red")
-    # a run from before the wrapper linted is not this gate's commands
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, _, r, code = reuse_miss_run(tmp, ran_gate((app, 0)))
-        assert code == 0
-        assert_gate_ran(slice_dir, r, (
-            f"it ran `{' '.join(app)}`, the gate is `{' '.join(app)}`, "
-            f"`{' '.join(lint_argv(PROJECT))}`"))
-    # the diff touches a component the run did not gate
-    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
-        slice_dir, _, r, code = touched_gate_run(
-            tmp, [wrote_gate(*with_lint(frontend, 0)), V["review_signoff"],
-                  *TAIL], [0, 0], touched)
-        assert code == 0
-        assert_gate_ran(slice_dir, r, (
-            "it ran `kc project test --project frontend`, `kc project lint "
-            "--project frontend`, the gate is `kc project test --project "
-            "frontend`, `kc project lint --project frontend`, `kc project "
-            "test --project backend`, `kc project lint --project backend`"))
-    # the run gated a component a gate ruling waives
-    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
-        slice_dir, _, r, code = touched_gate_run(
-            tmp, [wrote_gate(*with_lint(frontend, 0), *with_lint(backend, 0)),
-                  V["review_signoff"], *TAIL], [0], touched,
-            rulings=["gate backend — Jenkins validation build — suites need "
-                     "Postgres"])
-        assert code == 0
-        assert_gate_ran(slice_dir, r, (
-            "it ran `kc project test --project frontend`, `kc project lint "
-            "--project frontend`, `kc project test --project backend`, `kc "
-            "project lint --project backend`, the gate is `kc project test "
-            "--project frontend`, `kc project lint --project frontend`"))
-    # a root that ran nothing is the whole repo's gate too
-    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
-        slice_dir, _, r, code = root_gate_run(
-            tmp, [wrote_gate((ROOT_ARGV, 3)), V["review_signoff"], *TAIL],
-            [3, 0])
-        assert code == 0
-        assert_gate_ran(slice_dir, r, (
-            "it ran `kc project test --project root`, the gate is `kc "
-            "project test --project root`, `kc project test`, `kc project "
-            "lint --project root`"))
-
-
-def test_a_writer_record_off_shape_or_from_elsewhere_is_not_reused():
-    app = component_argv(PROJECT)
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, _, r, code = reuse_miss_run(tmp, ran_gate(text="{torn"))
-        assert code == 0
-        assert_gate_ran(slice_dir, r, (
-            "unreadable: Expecting property name enclosed in double quotes: "
-            "line 1 column 2 (char 1)"))
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, _, r, code = reuse_miss_run(
-            tmp, ran_gate((app, 0), commands=[]))
-        assert code == 0
-        assert_gate_ran(slice_dir, r, "unreadable: `commands` is empty")
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, _, r, code = reuse_miss_run(
-            tmp, ran_gate((app, 0), start_tree=None))
-        assert code == 0
-        assert_gate_ran(slice_dir, r, "unreadable: no `start_tree` of type str")
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo, r, code = reuse_miss_run(
-            tmp, ran_gate((app, 0), work_root="/elsewhere"))
-        assert code == 0
-        assert_gate_ran(slice_dir, r,
-                        f"it ran in /elsewhere, the gate runs in {repo}")
-
-
-def test_only_the_latest_writer_rounds_run_can_be_the_drivers_gate():
-    """A review-fix round that never ran the wrapper leaves round 1's record
-    the only one: the gate after it runs, and says nothing of round 1's."""
-    app = component_argv(PROJECT)
-    trees = [TREE]
-    # the fix round's commit is a tree no gate has seen (AIWF-142)
-    fixed = ("code-writer", DONE, lambda loop: trees.__setitem__(0, OTHER_TREE))
-    with tempfile.TemporaryDirectory() as tmp, \
-            patched(run_loop, content_tree=lambda root: trees[0]):
-        slice_dir, repo = make_slice(tmp)
-        r = KcExitLoop(slice_dir, [wrote_gate(*with_lint(app, 0)),
-                                   V["review_issues"],
-                                   fixed, V["review_signoff"],
-                                   *TAIL], repo_root=repo)
-        assert run_to_exit(r) == 0 and not r.script
-        rows = gate_rows(slice_dir)
-        assert [bool(h.get("reused")) for h in rows] == [True, False]
-        assert [argv for argv, _, _ in r.phase_gate_runs] == [app]
-        assert gate_spec(r)["round"] == 2
-        assert (outputs_of(r) / "writer_gate_r1.json").exists()
-        assert not (outputs_of(r) / "writer_gate_r2.json").exists()
-        narration = (slice_dir / "log.txt").read_text()
-        assert "not reused" not in narration
-        assert "[P1] gate #2 running (" in narration
 
 
 def test_a_gate_takes_an_earlier_gates_green_on_the_same_tree():
@@ -3455,109 +3114,18 @@ def test_a_gate_takes_an_earlier_gates_green_on_the_same_tree():
             ["kc", "project", "build", "--project", PROJECT]]
 
 
-def test_every_code_writer_dispatch_writes_the_gate_spec_with_its_round():
-    specs = []
-
-    def seen(loop):
-        specs.append(gate_spec(loop))
-
+def test_the_executor_prompts_name_no_gate_wrapper():
+    """The writer hands over and stops gating: every executor prompt says
+    what the driver's gate will run, and names no `gate` wrapper."""
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir, [("code-writer", DONE, seen),
-                                     ("code-writer", DONE, seen),
-                                     V["review_issues"],
-                                     ("code-writer", DONE, seen),
-                                     V["review_signoff"], *TAIL],
+        r = ScriptedLoop(slice_dir, [V["exec_done"], FIXER_ISSUES,
+                                     V["exec_done"], V["review_issues"],
+                                     V["exec_done"], V["review_signoff"],
+                                     *TAIL],
                          repo_root=repo, gates=[False, True, True])
         assert run_to_exit(r) == 0 and not r.script
-        assert [s["round"] for s in specs] == [1, 2, 3]
-        # the base branch, never a merge base: the wrapper resolves that
-        # itself when its run begins (AIWF-104)
-        assert specs[0] == {
-            "phase": "1", "round": 1, "work_root": str(repo),
-            "gate_cwd": str(repo), "base": "main", "spec_check": False,
-            "argv": component_argv(PROJECT), "fallback": None,
-            "lint_argv": lint_argv(PROJECT), "lint_fallback": None,
-            "touched": {"target": PROJECT, "waived": [], "lint_accepted": []}}
-        assert all(run_loop.gate_spec_problem(s) is None for s in specs)
-    # root: the whole repo after an empty root, and its touched components
-    # found as any component Target's are (AIWF-154)
-    specs.clear()
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp, phases=[("1", "First", "root")])
-        r = ScriptedLoop(slice_dir, [("code-writer", DONE, seen),
-                                     V["review_signoff"], *TAIL],
-                         repo_root=repo)
-        with patched(run_loop, load_project_dirs=root_components):
-            assert run_to_exit(r) == 0
-        assert (specs[0]["argv"], specs[0]["fallback"], specs[0]["touched"]) \
-            == (ROOT_ARGV, BARE_ARGV,
-                {"target": "root", "waived": [], "lint_accepted": []})
-        assert (specs[0]["lint_argv"], specs[0]["lint_fallback"]) \
-            == (ROOT_LINT_ARGV, BARE_LINT_ARGV)
-    # a gate ruling's component is named, so the wrapper waives it too
-    specs.clear()
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp, phases=[("1", "Web", "frontend")])
-        ruled_plan(slice_dir, "gate backend — Jenkins validation build — "
-                   "suites need Postgres",
-                   body=phase_section("1", "Web", "frontend"))
-        r = ScriptedLoop(slice_dir, [("code-writer", DONE, seen),
-                                     V["review_signoff"], *TAIL],
-                         repo_root=repo)
-        with patched(run_loop, load_project_dirs=split_components):
-            assert run_to_exit(r) == 0
-        assert specs[0]["touched"] == {"target": "frontend",
-                                       "waived": ["backend"],
-                                       "lint_accepted": []}
-
-
-def test_a_shared_repos_gate_spec_is_its_worktrees():
-    specs = []
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        gated_specs(tmp)
-        shared = specs_phase(slice_dir, tmp)
-        r = ScriptedLoop(slice_dir, [
-            ("code-writer", DONE, lambda loop: specs.append(gate_spec(loop))),
-            V["review_signoff"], *TAIL], repo_root=repo)
-        work = specs_worktree(r)
-        with patched(run_loop, shared_repo_dirs=lambda: {shared}):
-            assert run_to_exit(r) == 0
-        assert (specs[0]["work_root"], specs[0]["gate_cwd"]) \
-            == (str(work), str(work))
-        assert (specs[0]["argv"], specs[0]["fallback"], specs[0]["touched"]) \
-            == (BARE_ARGV, None, None)
-
-
-def test_a_phase_with_no_gate_gets_no_gate_spec():
-    with tempfile.TemporaryDirectory() as tmp:
-        make_sibling(tmp, manifest=False)
-        slice_dir, repo = make_slice(tmp)
-        written = []
-        r = ScriptedLoop(slice_dir, [
-            ("code-writer", DONE, lambda loop: written.append(
-                (outputs_of(loop) / "gate_spec.json").exists())),
-            V["review_signoff"], *TAIL], repo_root=repo)
-        (slice_dir / "plan.md").write_text(
-            "# plan\n\n" + phase_section("1", "Chart", "../Sibling"))
-        assert run_to_exit(r) == 0
-        assert written == [False]
-        writer = next(p for role, p in r.prompts if role == "code-writer")
-        assert " gate " + str(outputs_of(r)) not in writer
-        assert "has no kc manifest" in writer
-
-
-def test_every_code_writer_prompt_names_the_gate_wrapper():
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir, [V["exec_done"], V["exec_done"],
-                                     V["review_issues"], V["exec_done"],
-                                     V["review_signoff"], *TAIL],
-                         repo_root=repo, gates=[False, True, True])
-        assert run_to_exit(r) == 0 and not r.script
-        writers = [p.replace("\n", " ") for role, p in r.prompts
-                   if role == "code-writer"]
+        writers = [flat(p) for role, p in r.prompts if role == "code-writer"]
         assert len(writers) == 3
         assert writers[0].startswith("Execute phase P1")
         assert writers[1].startswith("The gate for phase P1")
@@ -3565,53 +3133,34 @@ def test_every_code_writer_prompt_names_the_gate_wrapper():
                 "its FIRST failing statement — there may be more behind it."
                 ) in writers[1]
         assert writers[2].startswith("You are resolving review findings")
-        hint = (f"before handing back — through {wrapper_cmd(outputs_of(r))}, "
-                "which runs the driver's own gate: `kc project test --project "
+        hint = (": `kc project test --project "
                 f"{PROJECT}` and `kc project lint --project {PROJECT}`, and "
                 "both for every other component the phase's diff touches. "
-                f"{waits(outputs_of(r))}. "
-                f"{run_loop.GATE_REUSE_HINT}. {run_loop.NOTHING_RAN_HINT}.")
+                f"{run_loop.NOTHING_RAN_HINT}.")
+        assert ("Run the tests your phase's change touches; the driver gates "
+                f"the phase after you hand back{hint}") in writers[0]
+        assert ("- Write the handover into your verdict: each behaviour you "
+                "changed on purpose, with the plan line that asks for it, and "
+                "each existing test you expect that change to break. - Append "
+                "the phase's done-record") in writers[0]
+        assert ("Run the failing tests and the tests your fix touches; the "
+                f"driver gates again after you hand back{hint} Commit your "
+                "fixes") in writers[1]
+        assert "write your verdict, with its handover, to" in writers[1]
+        assert ("Run the tests your fixes touch; the driver gates after you "
+                f"hand back{hint}") in writers[2]
         for writer in writers:
-            assert hint in writer
-        assert ("checks; run the gate yourself before handing back — "
-                "through") in writers[1]
-        assert "test your own work" not in writers[1]
+            assert "gate --detach" not in writer and "gate --wait" not in writer
+            assert "gate_spec.json" not in writer
+            assert "run the gate yourself" not in writer.lower()
+        for template in (run_loop.EXECUTOR_PROMPT,
+                         run_loop.EXECUTOR_GATE_FIX_PROMPT,
+                         run_loop.EXECUTOR_REVIEW_FIX_PROMPT,
+                         run_loop.HEADLESS_WAIT_LINE):
+            assert "gate --" not in template and "yourself" not in template
 
 
-# The wrapper itself, over real git: `_tee_exec` is the only seam faked.
-
-class FakeTee:
-    """`_tee_exec` scripted by exit code, in order: `rcs` for every command
-    but `kc project lint` (0 once spent), `lint_rcs` for those (3 once
-    spent, as KcExitLoop's); each call's output passed through to stdout and
-    returned, as the real one's is; `effect`, when given, runs once, before
-    the first call's output."""
-
-    def __init__(self, rcs=(), effect=None, lint_rcs=()):
-        self.rcs = list(rcs)
-        self.lint_rcs = list(lint_rcs)
-        self.calls = []        # (argv, cwd), lint commands apart
-        self.lint_calls = []
-        self.order = []        # every call's argv, in the order made
-        self.effect = effect
-
-    def __call__(self, argv, cwd):
-        if self.effect is not None:
-            self.effect()
-            self.effect = None
-        lint = list(argv[:3]) == ["kc", "project", "lint"]
-        if lint:
-            rc_ = self.lint_rcs.pop(0) if self.lint_rcs else 3
-        else:
-            rc_ = self.rcs.pop(0) if self.rcs else 0
-        (self.lint_calls if lint else self.calls).append((list(argv), Path(cwd)))
-        self.order.append(list(argv))
-        output = f"{' '.join(argv)}: exit {rc_}\n"
-        sys.stdout.write(output)
-        return rc_, output
-
-
-def wrapper_repo(tmp):
+def split_repo(tmp):
     """A real repo laid out as split_components lays its components out,
     everything committed on main: (the repo, that commit)."""
     repo = Path(tmp) / "repo"
@@ -3626,313 +3175,9 @@ def wrapper_repo(tmp):
     return repo, sh(repo, "rev-parse", "HEAD")
 
 
-def write_spec(tmp, repo, argv, fallback=None, touched=None, round_=1,
-               spec_check=False, base="main", lint=None, lint_fallback=None):
-    """A gate spec as the driver writes one — without `lint`, as one from
-    before the gate linted (AIWF-105) reads."""
-    outputs = Path(tmp) / "phases" / "P1"
-    outputs.mkdir(parents=True, exist_ok=True)
-    spec = outputs / "gate_spec.json"
-    spec.write_text(json.dumps({
-        "phase": "1", "round": round_, "work_root": str(repo),
-        "gate_cwd": str(repo), "base": base, "spec_check": spec_check,
-        "argv": argv, "fallback": fallback, "lint_argv": lint,
-        "lint_fallback": lint_fallback, "touched": touched}))
-    return spec
-
-
-def run_wrapper(spec, tee, components=split_components):
-    with patched(run_loop, _tee_exec=tee, load_project_dirs=components):
-        return call(run_loop.cmd_gate, spec=str(spec))
-
-
-def record_of(spec, round_=1):
-    return json.loads((spec.parent / f"writer_gate_r{round_}.json").read_text())
-
-
-def test_the_gate_wrapper_runs_the_drivers_gate_and_records_the_run():
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, _ = wrapper_repo(tmp)
-        # since the base: worker committed on the phase's branch, backend an
-        # untracked file and frontend (the Target) an edit — uncommitted
-        # work is the gate's too
-        sh(repo, "checkout", "-qb", "phase/074-P1")
-        (repo / "backend" / "worker" / "job.py").write_text("changed\n")
-        sh(repo, "commit", "-qam", "worker")
-        (repo / "backend" / "new.py").write_text("new\n")
-        (repo / "frontend" / "App.tsx").write_text("changed\n")
-        spec = write_spec(tmp, repo, component_argv("frontend"), touched={
-            "target": "frontend", "waived": []})
-        tee = FakeTee()
-        code, out, err = run_wrapper(spec, tee)
-        assert code == 0, err
-        names = ("frontend", "backend", "worker")
-        assert tee.calls == [(component_argv(c), repo) for c in names]
-        record = record_of(spec)
-        assert run_loop.writer_gate_record_problem(record) is None
-        tree = run_loop.content_tree(repo)
-        assert record["start_tree"] == record["end_tree"] == tree
-        assert (record["phase"], record["round"], record["work_root"],
-                record["gate_cwd"], record["outcome"]) \
-            == ("1", 1, str(repo), str(repo), "green")
-        assert record["commands"] == [
-            {"argv": component_argv(c), "rc": 0,
-             "output": f"kc project test --project {c}: exit 0\n"}
-            for c in names]
-        assert out.index(f"=== `kc project test --project frontend` from "
-                         f"{repo} ===") \
-            < out.index("kc project test --project frontend: exit 0") \
-            < out.index("=== the phase's diff touches backend: `kc project "
-                        "test --project backend` ===") \
-            < out.index("kc project test --project backend: exit 0") \
-            < out.index("=== the phase's diff touches worker:")
-        record_path = spec.parent / "writer_gate_r1.json"
-        assert out.rstrip("\n").endswith(
-            f"\n=== gate GREEN on tree {tree[:12]}, recorded in "
-            f"{record_path}. Hand back this tree — committing it changes "
-            "nothing — and the driver takes this run as its gate; edit "
-            "anything first and it runs the gate again. ===")
-        # what it vouched for survives the commit
-        sh(repo, "add", "-A")
-        sh(repo, "commit", "-qm", "P1")
-        assert run_loop.content_tree(repo) == tree
-        # a component a gate ruling waives is named, not run — and the
-        # round's later run replaces its record
-        spec = write_spec(tmp, repo, component_argv("frontend"), touched={
-            "target": "frontend", "waived": ["backend"]})
-        tee = FakeTee()
-        code, out, _ = run_wrapper(spec, tee)
-        assert code == 0
-        assert [argv for argv, _ in tee.calls] == [
-            component_argv("frontend"), component_argv("worker")]
-        assert ("=== the phase's diff touches backend: `kc project test "
-                "--project backend` waived by plan.md's `## Driver rulings` "
-                "— not run ===") in out
-        assert [c["argv"] for c in record_of(spec)["commands"]] == [
-            component_argv("frontend"), component_argv("worker")]
-
-
-def test_the_gate_wrapper_exits_with_the_gates_outcome():
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, _ = wrapper_repo(tmp)
-        (repo / "backend" / "api.py").write_text("changed\n")
-        spec = write_spec(tmp, repo, component_argv("frontend"), touched={
-            "target": "frontend", "waived": []})
-        code, out, _ = run_wrapper(spec, FakeTee([0, 1]))
-        assert code == 1
-        assert out.rstrip("\n").endswith(
-            "\n=== gate RED: `kc project test --project backend` ===")
-        assert record_of(spec)["outcome"] == "red"
-        # kc's usage error is red here, never a pass
-        code, out, _ = run_wrapper(spec, FakeTee([2, 0]))
-        assert code == 1
-        assert "=== gate RED: `kc project test --project frontend` ===" in out
-        code, out, _ = run_wrapper(spec, FakeTee([3, 3]))
-        assert code == 3
-        assert out.rstrip("\n").endswith(
-            "\n=== gate: nothing ran (exit 3) — not red, nothing to fix ===")
-        assert record_of(spec)["outcome"] == "nothing_ran"
-        code, _, _ = run_wrapper(spec, FakeTee([3, 0]))
-        assert code == 0 and record_of(spec)["outcome"] == "green"
-        # a file no component holds, where kc lists no root: said, not run
-
-        def rootless(cwd):
-            components = split_components(cwd)
-            del components["root"]
-            return components
-
-        (repo / "README.md").write_text("changed\n")
-        tee = FakeTee()
-        code, out, _ = run_wrapper(spec, tee, components=rootless)
-        assert code == 0
-        assert [argv for argv, _ in tee.calls] == [
-            component_argv("frontend"), component_argv("backend")]
-        assert ("=== the phase's diff touches files outside every component "
-                "and kc lists no root — no gate covers them ===") in out
-
-
-def test_the_gate_wrapper_falls_back_to_the_whole_repo_only_after_an_empty_root():
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, _ = wrapper_repo(tmp)
-        spec = write_spec(tmp, repo, ROOT_ARGV, fallback=BARE_ARGV)
-        tee = FakeTee([3, 0])
-        code, out, _ = run_wrapper(spec, tee)
-        assert code == 0
-        assert [argv for argv, _ in tee.calls] == [ROOT_ARGV, BARE_ARGV]
-        assert ("=== `kc project test --project root` ran nothing (exit 3) — "
-                "the gate is the whole repo: `kc project test` ===") in out
-        for rcs in ([0], [1]):
-            tee = FakeTee(rcs)
-            code, _, _ = run_wrapper(spec, tee)
-            assert code == rcs[0]
-            assert [argv for argv, _ in tee.calls] == [ROOT_ARGV]
-        code, out, _ = run_wrapper(spec, FakeTee([3, 1]))
-        assert code == 1 and "=== gate RED: `kc project test` ===" in out
-
-
-def root_spec(tmp, repo):
-    """A root phase's gate spec as the driver writes one (AIWF-154): both
-    verbs in two steps, and the touched components to find."""
-    return write_spec(tmp, repo, ROOT_ARGV, fallback=BARE_ARGV,
-                      lint=ROOT_LINT_ARGV, lint_fallback=BARE_LINT_ARGV,
-                      touched={"target": "root", "waived": [],
-                               "lint_accepted": []})
-
-
-def test_the_gate_wrapper_runs_no_touched_verb_roots_bare_fallback_ran():
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, _ = wrapper_repo(tmp)
-        (repo / "frontend" / "App.tsx").write_text("changed\n")
-        (repo / "backend" / "api.py").write_text("changed\n")
-        spec = root_spec(tmp, repo)
-        # root's own test ran nothing: the bare one ran every component's
-        tee = FakeTee([3, 0], lint_rcs=[0, 0, 0])
-        code, out, _ = run_wrapper(spec, tee)
-        assert code == 0
-        gate = [ROOT_ARGV, BARE_ARGV, ROOT_LINT_ARGV, lint_argv("frontend"),
-                lint_argv("backend")]
-        assert tee.order == gate
-        assert [c["argv"] for c in record_of(spec)["commands"]] == gate
-        assert out.index("kc project test: exit 0") < out.index(
-            "=== the phase's diff touches frontend: `kc project test "
-            "--project frontend` not run — the bare `kc project test` above "
-            "ran every component ===") < out.index(
-            "=== the phase's diff touches frontend: `kc project lint "
-            "--project frontend` ===")
-        # both verbs went bare: nothing touched runs
-        tee = FakeTee([3, 0], lint_rcs=[3, 0])
-        code, out, _ = run_wrapper(spec, tee)
-        assert code == 0
-        assert tee.order == [ROOT_ARGV, BARE_ARGV, ROOT_LINT_ARGV,
-                             BARE_LINT_ARGV]
-        assert ("=== the phase's diff touches backend: `kc project lint "
-                "--project backend` not run — the bare `kc project lint` above "
-                "ran every component ===") in out
-        # root's own ran both: every touched component runs both
-        tee = FakeTee(lint_rcs=[0, 0, 0])
-        assert run_wrapper(spec, tee)[0] == 0
-        assert tee.order == [ROOT_ARGV, ROOT_LINT_ARGV,
-                             component_argv("frontend"), lint_argv("frontend"),
-                             component_argv("backend"), lint_argv("backend")]
-
-
-def test_the_drivers_root_gate_is_the_wrappers_run_that_went_bare():
-    """End to end over real git, as a component Target's: the wrapper over
-    a root phase whose own test ran nothing runs no touched component's
-    test, and the driver, which would skip the same, replays that run."""
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        slice_dir, repo = make_slice(tmp, phases=[("1", "First phase",
-                                                   "root")])
-        sh(repo, "init", "-q", "-b", "main")
-        sh(repo, "add", "-A")
-        sh(repo, "commit", "-qm", "init")
-        ran = []
-
-        def works_and_gates(loop):
-            for rel in ROOT_TOUCHED:
-                (repo / rel).parent.mkdir(parents=True, exist_ok=True)
-                (repo / rel).write_text("the phase's\n")
-            ran.append(call(run_loop.cmd_gate, spec=str(
-                outputs_of(loop) / "gate_spec.json")))
-            sh(repo, "add", "-A")
-            sh(repo, "commit", "-qm", "P1")
-
-        r = KcExitLoop(slice_dir, [("code-writer", DONE, works_and_gates),
-                                   V["review_signoff"], *TAIL],
-                       repo_root=repo)
-        r.fake_git.merge_bases = [sh(repo, "rev-parse", "HEAD")]
-        r.fake_git.diff_files = "\n".join(ROOT_TOUCHED)
-        tee = FakeTee([3, 0], lint_rcs=[0, 0, 0])
-        with patched(run_loop, _tee_exec=tee,
-                     load_project_dirs=split_components):
-            assert run_to_exit(r) == 0
-        assert ran[0][0] == 0, ran
-        assert tee.order == [ROOT_ARGV, BARE_ARGV, ROOT_LINT_ARGV,
-                             lint_argv("frontend"), lint_argv("backend")]
-        assert r.phase_gate_order == []
-        assert gate_rows(slice_dir)[0]["reused"] \
-            == str(outputs_of(r) / "writer_gate_r1.json")
-        ps = load_state(slice_dir)["phases"]["1"]
-        assert ps["gate_green_commit"] == r.fake_git.head
-        assert ps["gate_projects"] == [
-            root_entry(test=BARE_ARGV),
-            gate_entry("frontend", "covered", "green"),
-            gate_entry("backend", "covered", "green")]
-
-
-def test_a_tree_that_changed_while_the_wrapper_ran_is_recorded_so():
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, _ = wrapper_repo(tmp)
-        spec = write_spec(tmp, repo, component_argv(PROJECT))
-        start = run_loop.content_tree(repo)
-        tee = FakeTee(effect=lambda: (repo / "mid_run.py").write_text("x\n"))
-        code, out, _ = run_wrapper(spec, tee)
-        assert code == 0
-        record = record_of(spec)
-        end = run_loop.content_tree(repo)
-        assert record["start_tree"] == start != end == record["end_tree"]
-        assert out.rstrip("\n").endswith(
-            f"\n=== gate GREEN, but the tree changed while it ran "
-            f"({start[:12]} → {end[:12]}): the driver will run the gate "
-            "again. Run this once more on the finished tree to spare it "
-            "that. ===")
-        assert "recorded in" not in out
-
-
-def test_the_gate_wrapper_without_a_usable_spec_runs_and_records_nothing():
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, _ = wrapper_repo(tmp)
-        outputs = Path(tmp) / "phases" / "P1"
-        outputs.mkdir(parents=True)
-        tee = FakeTee()
-        code, _, err = run_wrapper(outputs / "gate_spec.json", tee)
-        assert code == 2 and err.startswith("gate: cannot read the gate spec")
-        for text in ("{torn", json.dumps([1]), json.dumps({"phase": "1"})):
-            (outputs / "gate_spec.json").write_text(text)
-            code, _, err = run_wrapper(outputs / "gate_spec.json", tee)
-            assert code == 2 and err.startswith("gate: "), err
-        touched = {"target": "frontend", "waived": []}
-        # kc cannot list the components
-        spec = write_spec(tmp, repo, component_argv("frontend"),
-                          touched=touched)
-        code, _, err = run_wrapper(spec, tee,
-                                   components=kc_lists(repo="kc is down"))
-        assert (code, err) == (2, "gate: kc is down\n")
-        # a base branch git does not know: no merge base to read a range from
-        for spec_check, touched_ in ((False, touched), (True, None)):
-            spec = write_spec(tmp, repo, component_argv("frontend"),
-                              touched=touched_, spec_check=spec_check,
-                              base="gone")
-            code, _, err = run_wrapper(spec, tee)
-            assert code == 2 and "git merge-base gone HEAD" in err, err
-        # a tree git cannot hash
-        (Path(tmp) / "plain").mkdir()
-        spec = write_spec(tmp, Path(tmp) / "plain", component_argv(PROJECT))
-        code, _, err = run_wrapper(spec, tee)
-        assert code == 2 and "git rev-parse" in err
-        assert tee.calls == []
-        assert not list(outputs.glob("writer_gate_r*.json"))
-
-
-def test_tee_exec_passes_a_commands_output_through_and_keeps_it():
-    with tempfile.TemporaryDirectory() as tmp:
-        raw = io.BytesIO()
-        out = io.TextIOWrapper(raw, encoding="utf-8")
-        argv = [sys.executable, "-c",
-                "import os, sys; print(os.getcwd()); "
-                "print('to err', file=sys.stderr); sys.exit(3)"]
-        with patched(sys, stdout=out):
-            print("before", flush=True)
-            code, output = run_loop._tee_exec(argv, Path(tmp))
-        out.flush()
-        assert code == 3
-        assert os.path.realpath(tmp) in output and "to err" in output
-        assert raw.getvalue().decode() == "before\n" + output
-
-
 def test_content_tree_is_the_tree_a_commit_of_the_working_tree_makes():
     with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, _ = wrapper_repo(tmp)
+        repo, _ = split_repo(tmp)
         clean = run_loop.content_tree(repo)
         assert clean == sh(repo, "rev-parse", "HEAD^{tree}")
         index = repo / ".git" / "index"
@@ -3990,7 +3235,7 @@ def test_markdown_only_is_a_change_of_markdown_files_alone():
     """The one change across which a gate takes an earlier green `test`
     (AIWF-142): `.md` files, and nothing else — not a code comment."""
     with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, _ = wrapper_repo(tmp)
+        repo, _ = split_repo(tmp)
         base = sh(repo, "rev-parse", "HEAD^{tree}")
         (repo / "README.md").write_text("more\n")
         (repo / "docs").mkdir()
@@ -4006,39 +3251,6 @@ def test_markdown_only_is_a_change_of_markdown_files_alone():
         # no change at all is none of Markdown; git that cannot say is no
         assert not run_loop.markdown_only(repo, base, base)
         assert not run_loop.markdown_only(Path(tmp) / "gone", base, docs)
-
-
-def test_the_drivers_gate_is_the_wrappers_own_run_on_the_tree_handed_back():
-    """End to end over real git: the writer runs the wrapper on its spec,
-    commits what it ran on, and hands back; the driver replays that run."""
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        slice_dir, repo = make_slice(tmp)
-        sh(repo, "init", "-q", "-b", "main")
-        sh(repo, "add", "-A")
-        sh(repo, "commit", "-qm", "init")
-        ran = []
-
-        def works_and_gates(loop):
-            (repo / "src.py").write_text("the phase's\n")
-            ran.append(call(run_loop.cmd_gate, spec=str(
-                outputs_of(loop) / "gate_spec.json")))
-            sh(repo, "add", "-A")
-            sh(repo, "commit", "-qm", "P1")
-
-        r = KcExitLoop(slice_dir, [("code-writer", DONE, works_and_gates),
-                                   V["review_signoff"], *TAIL],
-                       repo_root=repo)
-        r.fake_git.merge_bases = [sh(repo, "rev-parse", "HEAD")]
-        tee = FakeTee()
-        with patched(run_loop, _tee_exec=tee):
-            assert run_to_exit(r) == 0
-        assert ran[0][0] == 0, ran
-        assert tee.order == [component_argv(PROJECT), lint_argv(PROJECT)]
-        assert r.phase_gate_order == []
-        assert gate_rows(slice_dir)[0]["reused"] \
-            == str(outputs_of(r) / "writer_gate_r1.json")
-        assert load_state(slice_dir)["phases"]["1"]["gate_green_commit"] \
-            == r.fake_git.head
 
 
 # -- the lint beside the test (AIWF-105) ---------------------------------------
@@ -4107,13 +3319,16 @@ def test_the_gate_lints_every_project_it_tests():
 def test_a_red_lint_is_a_red_gate_and_its_fix_round_names_it():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo, r, code = touched_gate_run(
-            tmp, [V["exec_done"], V["exec_done"], V["review_signoff"], *TAIL],
-            [0, 0, 0, 0], LINT_TOUCHED, setup=linting(0, 1, 0, 0))
+            tmp, [V["exec_done"], FIXER_ISSUES, V["exec_done"],
+                  V["review_signoff"], *TAIL],
+            [0] * 6, LINT_TOUCHED, setup=linting(0, 1, 0, 1, 0, 0))
         assert code == 0 and not r.script
         state = load_state(slice_dir)
         assert state["phases"]["1"]["gate_fix_rounds"] == 1
         rows = [h for h in state["history"] if h["role"] == "gate"]
-        assert [h["outcome"] for h in rows] == ["red", "green"]
+        assert [h["outcome"] for h in rows] == ["red", "red", "green"]
+        # a red lint is measured on the merge base as a red test is
+        assert r.base_runs == [(lint_argv("backend"), repo)]
         assert rows[0]["summary"] == "kc project lint --project backend: exit 1"
         assert rows[0]["projects"][1] == gate_entry("backend", "green", "red")
         writers = [p for role, p in r.prompts if role == "code-writer"]
@@ -4124,12 +3339,12 @@ def test_a_red_lint_is_a_red_gate_and_its_fix_round_names_it():
     # a red lint reds a gate whose tests ran nothing
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
-        r = KcExitLoop(slice_dir, [V["exec_done"], V["exec_done"],
-                                   V["review_signoff"], *TAIL],
-                       repo_root=repo, gate_rcs=[3, 3, 3], lint_rcs=[1])
+        r = KcExitLoop(slice_dir, [V["exec_done"], FIXER_ISSUES,
+                                   V["exec_done"], V["review_signoff"], *TAIL],
+                       repo_root=repo, gate_rcs=[3, 3, 3, 3], lint_rcs=[1, 1])
         assert run_to_exit(r) == 0 and not r.script
         assert [h["outcome"] for h in gate_rows(slice_dir)] \
-            == ["red", "nothing_ran", "nothing_ran"]
+            == ["red", "red", "nothing_ran", "nothing_ran"]
         writers = [p for role, p in r.prompts if role == "code-writer"]
         assert (f"The gate went red on `kc project lint --project {PROJECT}`;"
                 in writers[1].replace("\n", " "))
@@ -4205,76 +3420,13 @@ def test_a_root_target_lints_in_the_same_two_steps_as_it_tests():
     # the whole repo's lint red: a fix round, told so
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo, r, code = root_gate_run(
-            tmp, [V["exec_done"], *script], [3, 0, 3, 0], [3, 1, 3, 0])
+            tmp, [V["exec_done"], FIXER_ISSUES, *script], [3, 0] * 3,
+            [3, 1, 3, 1, 3, 0])
         assert code == 0 and not r.script
-        assert [h["outcome"] for h in gate_rows(slice_dir)] == ["red", "green"]
+        assert [h["outcome"] for h in gate_rows(slice_dir)] \
+            == ["red", "red", "green"]
         writers = [p for role, p in r.prompts if role == "code-writer"]
         assert "The gate went red on `kc project lint`;" in writers[1]
-
-
-def test_a_writer_run_that_linted_is_the_drivers_gate_and_names_the_lint():
-    app = component_argv(PROJECT)
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = KcExitLoop(slice_dir, [wrote_gate(*with_lint(app, 0, lint_rc=0)),
-                                   V["review_signoff"], *TAIL], repo_root=repo)
-        with tree_is(TREE):
-            assert run_to_exit(r) == 0
-        assert not r.script
-        assert r.phase_gate_order == [], "the driver ran nothing itself"
-        assert gate_rows(slice_dir)[0]["reused"]
-        ps = load_state(slice_dir)["phases"]["1"]
-        assert ps["gate_projects"] == [gate_entry(PROJECT, "green", "green")]
-        assert (f"`{' '.join(app)}`, `{' '.join(lint_argv(PROJECT))}` in "
-                f"{repo} — with full output in") in reviewer_prompt(r)
-
-
-def test_the_gate_wrapper_lints_beside_every_test_it_runs():
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, _ = wrapper_repo(tmp)
-        (repo / "backend" / "api.py").write_text("changed\n")
-        touched = {"target": "frontend", "waived": [], "lint_accepted": []}
-        spec = write_spec(tmp, repo, component_argv("frontend"),
-                          touched=touched, lint=lint_argv("frontend"))
-        tee = FakeTee(lint_rcs=[0, 0])
-        code, out, _ = run_wrapper(spec, tee)
-        assert code == 0
-        gate = [component_argv("frontend"), lint_argv("frontend"),
-                component_argv("backend"), lint_argv("backend")]
-        assert tee.order == gate
-        assert [c["argv"] for c in record_of(spec)["commands"]] == gate
-        assert out.index(f"=== `kc project lint --project frontend` from "
-                         f"{repo} ===") \
-            < out.index("=== the phase's diff touches backend: `kc project "
-                        "lint --project backend` ===")
-        # a red lint reds the gate; one that ran nothing does not, and a
-        # clean one over tests that ran nothing is no green
-        code, out, _ = run_wrapper(spec, FakeTee(lint_rcs=[0, 1]))
-        assert code == 1
-        assert out.rstrip("\n").endswith(
-            "\n=== gate RED: `kc project lint --project backend` ===")
-        assert run_wrapper(spec, FakeTee(lint_rcs=[3, 3]))[0] == 0
-        assert run_wrapper(spec, FakeTee([3, 3], lint_rcs=[0, 0]))[0] == 3
-        # a component a gate ruling waives: both named, neither run
-        spec = write_spec(tmp, repo, component_argv("frontend"), touched={
-            "target": "frontend", "waived": ["backend"], "lint_accepted": []},
-            lint=lint_argv("frontend"))
-        tee = FakeTee()
-        code, out, _ = run_wrapper(spec, tee)
-        assert code == 0
-        assert tee.order == gate[:2]
-        assert ("=== the phase's diff touches backend: `kc project test "
-                "--project backend` and `kc project lint --project backend` "
-                "waived by plan.md's `## Driver rulings` — not run ===") in out
-        # root: the whole repo's lint after an empty root's, as for the test
-        spec = write_spec(tmp, repo, ROOT_ARGV, fallback=BARE_ARGV,
-                          lint=ROOT_LINT_ARGV, lint_fallback=BARE_LINT_ARGV)
-        tee = FakeTee(lint_rcs=[3, 0])
-        code, out, _ = run_wrapper(spec, tee)
-        assert code == 0
-        assert tee.order == [ROOT_ARGV, ROOT_LINT_ARGV, BARE_LINT_ARGV]
-        assert ("=== `kc project lint --project root` ran nothing (exit 3) — "
-                "the gate lints the whole repo: `kc project lint` ===") in out
 
 
 ACCEPT_BACKEND_LINT = "accept backend lint — red before this slice, ANS-99"
@@ -4350,73 +3502,12 @@ def test_a_lint_an_accept_ruling_covers_is_not_run_at_the_phase_gate():
     # an accept ruling never covers a test at the phase gate
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo, r, code = touched_gate_run(
-            tmp, [V["exec_done"], V["exec_done"], V["review_signoff"], *TAIL],
-            [0, 1, 0, 0], LINT_TOUCHED,
+            tmp, [V["exec_done"], FIXER_ISSUES, V["exec_done"],
+                  V["review_signoff"], *TAIL],
+            [0, 1, 0, 1, 0, 0], LINT_TOUCHED,
             rulings=["accept backend test — flaky before this slice, ANS-1"])
         assert code == 0 and not r.script
         assert load_state(slice_dir)["phases"]["1"]["gate_fix_rounds"] == 1
-
-
-def test_an_accepted_lint_is_in_no_spec_wrapper_run_or_reuse():
-    # the Target's: no `lint_argv`, so the wrapper runs its test alone, and
-    # the driver takes that run as its gate
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        slice_dir, repo = make_slice(tmp)
-        ruled_plan(slice_dir, "accept app lint — red before this slice, ANS-99")
-        sh(repo, "init", "-q", "-b", "main")
-        sh(repo, "add", "-A")
-        sh(repo, "commit", "-qm", "init")
-        specs = []
-
-        def works_and_gates(loop):
-            specs.append(gate_spec(loop))
-            (repo / "src.py").write_text("the phase's\n")
-            call(run_loop.cmd_gate, spec=str(
-                outputs_of(loop) / "gate_spec.json"))
-            sh(repo, "add", "-A")
-            sh(repo, "commit", "-qm", "P1")
-
-        r = KcExitLoop(slice_dir, [("code-writer", DONE, works_and_gates),
-                                   V["review_signoff"], *TAIL],
-                       repo_root=repo)
-        r.fake_git.merge_bases = [sh(repo, "rev-parse", "HEAD")]
-        tee = FakeTee()
-        with patched(run_loop, _tee_exec=tee):
-            assert run_to_exit(r) == 0
-        assert (specs[0]["lint_argv"], specs[0]["lint_fallback"]) == (None, None)
-        assert specs[0]["touched"]["lint_accepted"] == [PROJECT]
-        assert tee.order == [component_argv(PROJECT)]
-        assert r.phase_gate_order == []
-        assert gate_rows(slice_dir)[0]["reused"]
-        assert load_state(slice_dir)["phases"]["1"]["gate_projects"] == [
-            gate_entry(PROJECT, "green", "accepted")]
-    # a touched component's: named in the spec, said and not run by the
-    # wrapper, and absent from the record the driver reuses
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, _ = wrapper_repo(tmp)
-        (repo / "backend" / "api.py").write_text("changed\n")
-        spec = write_spec(tmp, repo, component_argv("frontend"), touched={
-            "target": "frontend", "waived": [], "lint_accepted": ["backend"]},
-            lint=lint_argv("frontend"))
-        tee = FakeTee(lint_rcs=[0])
-        code, out, _ = run_wrapper(spec, tee)
-        assert code == 0
-        assert tee.order == [component_argv("frontend"), lint_argv("frontend"),
-                             component_argv("backend")]
-        assert out.index("kc project test --project backend: exit 0") \
-            < out.index("=== the phase's diff touches backend: `kc project "
-                        "lint --project backend` not run: plan.md's `## Driver "
-                        "rulings` accepts its red ===")
-    frontend, backend = component_argv("frontend"), component_argv("backend")
-    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
-        slice_dir, repo, r, code = touched_gate_run(
-            tmp, [wrote_gate(*with_lint(frontend, 0), (backend, 0)),
-                  V["review_signoff"], *TAIL], [], LINT_TOUCHED,
-            rulings=[ACCEPT_BACKEND_LINT])
-        assert code == 0 and not r.script
-        assert r.phase_gate_order == [], "the writer's run is the gate"
-        assert load_state(slice_dir)["phases"]["1"]["gate_projects"][1] \
-            == gate_entry("backend", "green", "accepted")
 
 
 def test_a_gate_projects_record_from_before_the_lint_still_reads():
@@ -4478,20 +3569,6 @@ def spec_gate_run(tmp, script, gate_rcs=(), manifest=False):
 def spec_entry(work, outcome, base="base123"):
     return {"project": run_loop.SPEC_CHECK_NAME,
             "cmd": spec_check_cmd(work, base), "outcome": outcome}
-
-
-def ran_spec_gate(loop):
-    """A code-writer step's effect: it ran a spec-repo phase's gate through
-    the wrapper — the check its spec says it opens with, against the merge
-    base the wrapper resolves (the fake git's), then the repo's own command
-    and its lint where there is one — and every command passed, or for the
-    lint ran nothing."""
-    spec = gate_spec(loop)
-    check = (run_loop.spec_check_argv(loop.fake_git.merge_base,
-                                      Path(spec["work_root"]))
-             if spec["spec_check"] else None)
-    ran_gate(*[(argv, 0) for argv in (check, spec["argv"]) if argv],
-             *([(spec["lint_argv"], 3)] if spec["lint_argv"] else []))(loop)
 
 
 def test_a_spec_repo_phase_is_gated_by_the_spec_check_against_its_base():
@@ -4559,29 +3636,32 @@ def test_a_spec_gate_is_red_on_either_red_and_the_fix_round_names_it():
     def writers(loop):
         return [p for role, p in loop.prompts if role == "code-writer"]
 
-    script = [V["exec_done"], V["exec_done"], V["review_signoff"], *TAIL]
+    script = [V["exec_done"], FIXER_ISSUES, V["exec_done"],
+              V["review_signoff"], *TAIL]
     # the check red: a fix round, told what went red and how to re-gate
     with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, work, r, code = spec_gate_run(tmp, script, [1, 0])
+        slice_dir, work, r, code = spec_gate_run(tmp, script, [1, 1, 0])
         assert code == 0 and not r.script
-        assert [h["outcome"] for h in gate_rows(slice_dir)] == ["red", "green"]
+        assert [h["outcome"] for h in gate_rows(slice_dir)] \
+            == ["red", "red", "green"]
         assert load_state(slice_dir)["phases"]["1"]["gate_fix_rounds"] == 1
         fix = writers(r)[1]
         assert f"The gate went red on `{spec_check_cmd(work)}`;" in fix
         assert spec_check_hint(work) in fix
     # the check green, the repo's own red: red on that alone
     with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, work, r, code = spec_gate_run(tmp, script, [0, 1, 0, 0],
-                                                 manifest=True)
+        slice_dir, work, r, code = spec_gate_run(
+            tmp, script, [0, 1, 0, 1, 0, 0], manifest=True)
         assert code == 0 and not r.script
-        assert [h["outcome"] for h in gate_rows(slice_dir)] == ["red", "green"]
+        assert [h["outcome"] for h in gate_rows(slice_dir)] \
+            == ["red", "red", "green"]
         assert "The gate went red on `kc project test`;" in writers(r)[1]
     # both red: both ran, and both are named
     with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, work, r, code = spec_gate_run(tmp, script, [1, 1, 0, 0],
-                                                 manifest=True)
+        slice_dir, work, r, code = spec_gate_run(
+            tmp, script, [1, 1, 1, 1, 0, 0], manifest=True)
         assert code == 0
-        assert len(r.phase_gate_runs) == 4
+        assert len(r.phase_gate_runs) == 6
         assert (f"The gate went red on `{spec_check_cmd(work)}`, `kc project "
                 "test`;") in writers(r)[1]
     # the repo's own ran nothing: green on the check, the repo unverified
@@ -4615,195 +3695,14 @@ def test_a_spec_check_red_is_never_asked_as_a_missing_service():
         (Path(tmp) / "specs" / ".kubecoder" / "config.yaml").write_text(
             "services:\n  - use: postgres\n")
         specs_phase(slice_dir, tmp)
-        r = KcExitLoop(slice_dir, [V["exec_done"], V["exec_done"],
-                                   V["review_signoff"], *TAIL],
-                       repo_root=repo, gate_rcs=[1, 0])
+        r = KcExitLoop(slice_dir, [V["exec_done"], FIXER_ISSUES,
+                                   V["exec_done"], V["review_signoff"], *TAIL],
+                       repo_root=repo, gate_rcs=[1, 1, 0])
         with patched(run_loop, running_services=set):
             assert run_to_exit(r) == 0
         assert not (slice_dir / "bailout.json").exists()
-        assert [h["outcome"] for h in gate_rows(slice_dir)] == ["red", "green"]
-
-
-def test_a_spec_repo_phases_gate_spec_carries_its_check_for_the_wrapper():
-    specs = []
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, work, r, code = spec_gate_run(tmp, [
-            ("code-writer", DONE, lambda loop: specs.append(gate_spec(loop))),
-            V["review_signoff"], *TAIL])
-        assert code == 0
-        # the check, not its command: the wrapper builds that over the
-        # merge base it resolves from `base` (AIWF-104)
-        assert specs == [{
-            "phase": "1", "round": 1, "work_root": str(work),
-            "gate_cwd": str(work), "base": "main", "spec_check": True,
-            "argv": None, "fallback": None, "lint_argv": None,
-            "lint_fallback": None, "touched": None}]
-        assert run_loop.gate_spec_problem(specs[0]) is None
-    specs.clear()
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, work, r, code = spec_gate_run(tmp, [
-            ("code-writer", DONE, lambda loop: specs.append(gate_spec(loop))),
-            V["review_signoff"], *TAIL], manifest=True)
-        assert code == 0
-        assert (specs[0]["spec_check"], specs[0]["argv"],
-                specs[0]["lint_argv"]) == (True, BARE_ARGV, BARE_LINT_ARGV)
-
-
-def test_the_writers_run_of_a_spec_gate_is_the_drivers_gate():
-    for manifest in (False, True):
-        with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
-            slice_dir, work, r, code = spec_gate_run(tmp, [
-                ("code-writer", DONE, ran_spec_gate), V["review_signoff"],
-                *TAIL], manifest=manifest)
-            assert code == 0 and not r.script
-            assert r.phase_gate_runs == [], "the driver ran nothing itself"
-            record = outputs_of(r) / "writer_gate_r1.json"
-            assert [h.get("reused") for h in gate_rows(slice_dir)] \
-                == [str(record)]
-            ps = load_state(slice_dir)["phases"]["1"]
-            assert ps["gate_projects"][0] == spec_entry(work, "green")
-            assert len(ps["gate_projects"]) == (2 if manifest else 1)
-            assert ps["gate_green_commit"] == r.fake_git.head
-
-
-def test_a_writer_run_without_the_spec_check_is_not_the_drivers_gate():
-    """A run of the repo's own gate alone — the wrapper of a plugin before
-    the check, or `kc project test` by hand — is not the gate: the driver
-    runs it, check first."""
-    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
-        slice_dir, work, r, code = spec_gate_run(tmp, [
-            wrote_gate((BARE_ARGV, 0)), V["review_signoff"], *TAIL],
-            manifest=True)
-        assert code == 0
-        check = run_loop.spec_check_argv("base123", work)
-        assert [argv for argv, _, _ in r.phase_gate_runs] == [check, BARE_ARGV]
-        assert ("[P1] the writer's gate run (writer_gate_r1.json) not reused "
-                "— it ran `kc project test`, the gate is "
-                f"`{' '.join(check)}`, `kc project test`, `kc project lint`; "
-                "running the gate") \
-            in (slice_dir / "log.txt").read_text()
-    # an older base in the check is another command
-    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
-        def stale(loop):
-            ran_gate((run_loop.spec_check_argv("0ld", specs_worktree(loop)),
-                      0))(loop)
-
-        slice_dir, work, r, code = spec_gate_run(tmp, [
-            ("code-writer", DONE, stale), V["review_signoff"], *TAIL])
-        assert code == 0
-        assert [argv for argv, _, _ in r.phase_gate_runs] \
-            == [run_loop.spec_check_argv("base123", work)]
-
-
-def test_the_gate_wrapper_runs_a_spec_repos_check_first():
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, base = wrapper_repo(tmp)
-        check = run_loop.spec_check_argv(base, repo)
-        cmd = " ".join(check)
-        # no manifest: the check is the gate, and its red is the gate's
-        spec = write_spec(tmp, repo, None, spec_check=True)
-        tee = FakeTee(rcs=[1])
-        code, out, _ = run_wrapper(spec, tee)
-        assert code == 1
-        assert tee.calls == [(check, repo)]
-        record = record_of(spec)
-        assert run_loop.writer_gate_record_problem(record) is None
-        assert ([c["argv"] for c in record["commands"]], record["outcome"]) \
-            == ([check], "red")
-        assert out.startswith(f"=== the spec check: `{cmd}` ===\n")
-        assert out.rstrip("\n").endswith(f"=== gate RED: `{cmd}` ===")
-        # a manifest: the check, then the repo's own
-        spec = write_spec(tmp, repo, BARE_ARGV, spec_check=True)
-        tee = FakeTee()
-        code, out, _ = run_wrapper(spec, tee)
-        assert code == 0
-        assert tee.calls == [(check, repo), (BARE_ARGV, repo)]
-        assert out.index(f"=== the spec check: `{cmd}` ===") \
-            < out.index(f"{cmd}: exit 0") \
-            < out.index(f"\n=== `kc project test` from {repo} ===") \
-            < out.index("kc project test: exit 0")
-        # a spec with no command at all, or a check flag that is none, is
-        # no spec
-        for argv, bad in ((None, False), (BARE_ARGV, "spec_check.py")):
-            spec = write_spec(tmp, repo, argv, spec_check=bad)
-            code, _, err = run_wrapper(spec, FakeTee())
-            assert code == 2 and "is not a gate spec" in err, err
-
-
-def test_the_gate_wrapper_resolves_the_merge_base_when_its_run_begins():
-    """AIWF-104: the spec names the base branch, and the wrapper takes `git
-    merge-base <base> HEAD` itself at every run — so a writer that rebases
-    its branch onto a moved base, or merges the base into it, mid-round
-    gates the phase's own range: the base's commits touch no component, and
-    the spec check reads from the new merge base."""
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, fork = wrapper_repo(tmp)
-        sh(repo, "checkout", "-qb", "phase/074-P1")
-        (repo / "frontend" / "App.tsx").write_text("the phase's\n")
-        sh(repo, "commit", "-qam", "P1")
-        spec = write_spec(tmp, repo, component_argv("frontend"),
-                          touched={"target": "frontend", "waived": []},
-                          spec_check=True)
-
-        def gated(base):
-            return [(run_loop.spec_check_argv(base, repo), repo),
-                    (component_argv("frontend"), repo)]
-
-        def base_moves(path, text):
-            sh(repo, "checkout", "-q", "main")
-            (repo / path).write_text(text)
-            sh(repo, "commit", "-qam", f"main: {path}")
-            moved = sh(repo, "rev-parse", "HEAD")
-            sh(repo, "checkout", "-q", "phase/074-P1")
-            return moved
-
-        tee = FakeTee()
-        assert run_wrapper(spec, tee)[0] == 0
-        assert tee.calls == gated(fork)
-        # another session lands backend work on main; the writer rebases
-        moved = base_moves("backend/api.py", "main's\n")
-        sh(repo, "rebase", "-q", "main")
-        tee = FakeTee()
-        assert run_wrapper(spec, tee)[0] == 0
-        assert tee.calls == gated(moved), "backend is main's, not the phase's"
-        assert [c["argv"] for c in record_of(spec)["commands"]] \
-            == [argv for argv, _ in gated(moved)]
-        # merged rather than rebased: the merge base is main's tip all the same
-        again = base_moves("backend/worker/job.py", "main's again\n")
-        sh(repo, "merge", "-q", "--no-edit", "main")
-        tee = FakeTee()
-        assert run_wrapper(spec, tee)[0] == 0
-        assert tee.calls == gated(again)
-
-
-def test_a_gate_spec_names_its_base_branch_and_whether_it_checks_the_spec():
-    problem = run_loop.gate_spec_problem
-    good = {"phase": "1", "round": 1, "work_root": "/w", "gate_cwd": "/w",
-            "base": "main", "spec_check": False,
-            "argv": component_argv(PROJECT), "fallback": None,
-            "touched": {"target": PROJECT, "waived": []}}
-    assert problem(good) is None
-    # a spec repo with no manifest: its spec check is the whole gate
-    assert problem(dict(good, spec_check=True, argv=None)) is None
-    assert problem(dict(good, argv=None)) == "`argv` is not a command"
-    # the lint beside the test (AIWF-105); a spec from before it has none
-    linted = dict(good, lint_argv=lint_argv(PROJECT), lint_fallback=None)
-    assert problem(linted) is None
-    assert problem(dict(linted, lint_argv="kc project lint")) \
-        == "`lint_argv` is not a command"
-    assert problem(dict(linted, lint_fallback=[])) \
-        == "`lint_fallback` is not a command"
-    assert problem({k: v for k, v in good.items() if k != "base"}) \
-        == "no `base` of type str"
-    assert problem(dict(good, base="")) == "`base` is empty"
-    assert problem(dict(good, spec_check="yes")) \
-        == "no `spec_check` of type bool"
-    # the shape before AIWF-104 — a merge base baked in, the check's command
-    # in place of the flag — is no spec the wrapper runs
-    before = {k: v for k, v in good.items() if k not in ("base", "spec_check")}
-    before.update(check=None, touched={"merge_base": "abc123",
-                                       "target": PROJECT, "waived": []})
-    assert problem(before) == "no `base` of type str"
+        assert [h["outcome"] for h in gate_rows(slice_dir)] \
+            == ["red", "red", "green"]
 
 
 def test_the_drivers_spec_gate_runs_the_real_check_on_the_phases_tree():
@@ -4850,15 +3749,12 @@ def test_a_spec_repo_phases_dispatch_names_the_spec_check_as_its_gate():
         slice_dir, work, r, code = spec_gate_run(
             tmp, [V["exec_done"], V["review_signoff"], *TAIL])
         assert code == 0
-        writer = next(p for role, p in r.prompts if role == "code-writer")
-        outputs = slice_dir / "phases" / "P1"
-        assert ("Run the phase's test gate yourself before handing back — "
-                f"through {wrapper_cmd(outputs)}, which runs the driver's own "
-                f"gate: {spec_check_hint(work)}; and `kc project test` from "
-                f"{work} after it, once this phase adds "
-                f"`.kubecoder/project.yaml`. {waits(outputs)}. "
-                f"{run_loop.GATE_REUSE_HINT}.") \
-            in writer
+        writer = flat(next(p for role, p in r.prompts
+                           if role == "code-writer"))
+        assert ("the driver gates the phase after you hand back: "
+                f"{spec_check_hint(work)}; and `kc project test` and `kc "
+                f"project lint` from {work} after it, once this phase adds "
+                "`.kubecoder/project.yaml`.") in writer
         assert "own conventions" not in writer
     # a sibling repo with no manifest keeps its own conventions
     with tempfile.TemporaryDirectory() as tmp:
@@ -4869,11 +3765,13 @@ def test_a_spec_repo_phases_dispatch_names_the_spec_check_as_its_gate():
         r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
                                      *TAIL], repo_root=repo)
         assert run_to_exit(r) == 0
-        writer = next(p for role, p in r.prompts if role == "code-writer")
-        assert (f"handing back ({sib.resolve()} has no kc manifest — gate per "
-                "that repo's own conventions; if this phase adds "
+        writer = flat(next(p for role, p in r.prompts
+                           if role == "code-writer"))
+        assert (f"after you hand back — but {sib.resolve()} has no kc "
+                "manifest, so the driver runs no gate there: test per that "
+                "repo's own conventions; if this phase adds "
                 "`.kubecoder/project.yaml`, the driver's gate is `kc project "
-                f"test` from {sib.resolve()}).") in writer
+                f"test` and `kc project lint` from {sib.resolve()}.") in writer
         assert "spec check" not in writer
 
 
@@ -4973,13 +3871,13 @@ def test_a_phase_that_adds_a_migration_closes_its_gate_with_the_migration_check(
     app = component_argv(PROJECT)
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp, config=rc() + MIGRATIONS_RC)
-        r = KcExitLoop(slice_dir, [V["exec_done"], V["exec_done"],
-                                   V["review_signoff"], *TAIL],
-                       repo_root=repo, gate_rcs=[0, 1, 0, 0])
+        r = KcExitLoop(slice_dir, [V["exec_done"], FIXER_ISSUES,
+                                   V["exec_done"], V["review_signoff"], *TAIL],
+                       repo_root=repo, gate_rcs=[0, 1, 0, 1, 0, 0])
         r.fake_git.diff_files = "db/versions/0024_two.py\n"
         assert run_to_exit(r) == 0 and not r.script
         assert [(argv, cwd) for argv, cwd, _ in r.phase_gate_runs] \
-            == [(app, repo), (MIGRATION_ARGV, repo)] * 2
+            == [(app, repo), (MIGRATION_ARGV, repo)] * 3
         assert [argv for argv, _, _ in r.phase_gate_order[:3]] \
             == [app, lint_argv(PROJECT), MIGRATION_ARGV]
         assert ("diff", "--name-only", "--no-renames", "--diff-filter=A",
@@ -4994,7 +3892,8 @@ def test_a_phase_that_adds_a_migration_closes_its_gate_with_the_migration_check(
         ps = load_state(slice_dir)["phases"]["1"]
         assert ps["gate_projects"] == [gate_entry(PROJECT, "green"),
                                        migration_entry("green")]
-        assert [h["outcome"] for h in gate_rows(slice_dir)] == ["red", "green"]
+        assert [h["outcome"] for h in gate_rows(slice_dir)] \
+            == ["red", "red", "green"]
         assert ("\n=== the phase adds db/versions/0024_two.py under "
                 "`migrations.paths`: the migration check `heads-are-one` from "
                 f"{repo} ===\nsh -c heads-are-one: exit 1\n") \
@@ -5029,7 +3928,6 @@ def test_the_migration_check_runs_only_where_a_migration_is_added_and_never_make
             assert asked == (config != rc())
             writer = next(p for role, p in r.prompts if role == "code-writer")
             assert ("migration check" in writer) == (config != rc())
-            assert "migrations" not in gate_spec(r) or config != rc()
     # a Target that ran nothing: the check's green leaves the gate empty
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp, config=rc() + MIGRATIONS_RC)
@@ -5046,20 +3944,22 @@ def test_the_migration_check_runs_only_where_a_migration_is_added_and_never_make
 
 def test_a_phase_whose_start_took_origin_over_the_slices_migrations_owes_the_check():
     """The phase adds no migration, but its start took origin over P1's: the
-    gate closes with the check, red takes the phase's fix round, and the
-    writer is told why it is owed; the gate spec says so for the wrapper."""
+    gate closes with the check, red takes the phase's fix round — the
+    check measured on the tree alone, since it has no run on the base — and
+    the writer is told why it is owed."""
     app = component_argv(PROJECT)
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp, config=rc() + MIGRATIONS_RC)
-        r = KcExitLoop(slice_dir, [V["exec_done"], V["exec_done"],
-                                   V["review_signoff"], *TAIL],
-                       repo_root=repo, gate_rcs=[0, 1, 0, 0])
+        r = KcExitLoop(slice_dir, [V["exec_done"], FIXER_ISSUES,
+                                   V["exec_done"], V["review_signoff"], *TAIL],
+                       repo_root=repo, gate_rcs=[0, 1, 0, 1, 0, 0])
         r._sync_base = lambda phase_id, root, base: {
             "how": "rebased", "base": "main", "own": 1, "behind": 1,
             "migrations": ["db/versions/0023_mine.py"]}
         assert run_to_exit(r) == 0 and not r.script
         assert [(argv, cwd) for argv, cwd, _ in r.phase_gate_runs] \
-            == [(app, repo), (MIGRATION_ARGV, repo)] * 2
+            == [(app, repo), (MIGRATION_ARGV, repo)] * 3
+        assert r.base_runs == []
         writers = [flat(p) for role, p in r.prompts if role == "code-writer"]
         owed = ("Origin's commits came in alongside the slice's own "
                 "migrations (`db/versions/0023_mine.py`), so this phase's "
@@ -5074,105 +3974,12 @@ def test_a_phase_whose_start_took_origin_over_the_slices_migrations_owes_the_che
         assert (", then the migration check, owed for the slice's own "
                 "migrations origin came in over at the phase's start: "
                 "`heads-are-one`\n") in (slice_dir / "log.txt").read_text()
-        assert gate_spec(r)["migrations"] == {
-            "paths": ["db/versions/*.py"], "check": "heads-are-one",
-            "owed": ["db/versions/0023_mine.py"]}
-        assert run_loop.gate_spec_problem(gate_spec(r)) is None
+        assert ("`heads-are-one` went red in 2 of 2 runs on the tree (the "
+                "gate and its re-gate), and has no run on the merge base: "
+                "what it checks is the phase's diff, so its red is the "
+                "phase's.") in writers[1]
         assert load_state(slice_dir)["phases"]["1"]["gate_projects"][-1] \
             == migration_entry("green")
-
-
-def test_a_writer_run_is_the_drivers_gate_only_where_it_ran_the_migration_check():
-    app = component_argv(PROJECT)
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp, config=rc() + MIGRATIONS_RC)
-        r = KcExitLoop(slice_dir, [
-            wrote_gate(*with_lint(app, 0), (MIGRATION_ARGV, 0)),
-            V["review_signoff"], *TAIL], repo_root=repo)
-        r.fake_git.diff_files = "db/versions/0024_two.py\n"
-        with tree_is(TREE):
-            assert run_to_exit(r) == 0 and not r.script
-        assert r.phase_gate_order == [], "the driver ran nothing itself"
-        assert load_state(slice_dir)["phases"]["1"]["gate_projects"] \
-            == [gate_entry(PROJECT, "green"), migration_entry("green")]
-        assert gate_spec(r)["migrations"] == {"paths": ["db/versions/*.py"],
-                                              "check": "heads-are-one"}
-        assert run_loop.gate_spec_problem(gate_spec(r)) is None
-    # a run without it — a wrapper before the check — is not the gate
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp, config=rc() + MIGRATIONS_RC)
-        r = KcExitLoop(slice_dir, [wrote_gate(*with_lint(app, 0)),
-                                   V["review_signoff"], *TAIL],
-                       repo_root=repo)
-        r.fake_git.diff_files = "db/versions/0024_two.py\n"
-        with tree_is(TREE):
-            assert run_to_exit(r) == 0 and not r.script
-        assert [argv for argv, _, _ in r.phase_gate_runs] \
-            == [app, MIGRATION_ARGV]
-        assert ("not reused — it ran `kc project test --project app`, `kc "
-                "project lint --project app`, the gate is `kc project test "
-                "--project app`, `kc project lint --project app`, `sh -c "
-                "heads-are-one`; running the gate") \
-            in (slice_dir / "log.txt").read_text()
-
-
-def test_the_gate_wrapper_closes_with_the_migration_check_where_the_phase_adds_one():
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, _ = wrapper_repo(tmp)
-        spec = write_spec(tmp, repo, component_argv("frontend"))
-        data = json.loads(spec.read_text())
-        data["migrations"] = {"paths": ["backend/versions/*.py"],
-                              "check": "heads-are-one"}
-        spec.write_text(json.dumps(data))
-        # an edit elsewhere, and a file `*` does not reach one level down
-        (repo / "backend" / "api.py").write_text("changed\n")
-        (repo / "backend" / "versions" / "old").mkdir(parents=True)
-        (repo / "backend" / "versions" / "old" / "0000.py").write_text("")
-        tee = FakeTee()
-        code, out, _ = run_wrapper(spec, tee)
-        assert code == 0
-        assert tee.calls == [(component_argv("frontend"), repo)]
-        assert "migration check" not in out
-        # a migration added, uncommitted: run last, from the phase's tree,
-        # and any exit but 0 is red — kc's "nothing ran" among them
-        (repo / "backend" / "versions" / "0002_two.py").write_text("")
-        tee = FakeTee(rcs=[0, 3])
-        code, out, _ = run_wrapper(spec, tee)
-        assert code == 1
-        assert tee.calls == [(component_argv("frontend"), repo),
-                             (MIGRATION_ARGV, repo)]
-        assert ("\n=== the phase adds backend/versions/0002_two.py under "
-                "`migrations.paths`: the migration check `heads-are-one` from "
-                f"{repo} ===\n") in out
-        assert out.rstrip("\n").endswith("\n=== gate RED: `heads-are-one` ===")
-        record = record_of(spec)
-        assert ([c["argv"] for c in record["commands"]], record["outcome"]) \
-            == ([component_argv("frontend"), MIGRATION_ARGV], "red")
-        code, _, _ = run_wrapper(spec, FakeTee(rcs=[0, 0]))
-        assert code == 0 and record_of(spec)["outcome"] == "green"
-        # its green is never the gate's: a Target that ran nothing stays so
-        code, _, _ = run_wrapper(spec, FakeTee(rcs=[3, 0]))
-        assert code == 3
-        # owed for the slice's own migrations, the phase adding none
-        (repo / "backend" / "versions" / "0002_two.py").unlink()
-        data["migrations"]["owed"] = ["backend/versions/0001_mine.py"]
-        spec.write_text(json.dumps(data))
-        tee = FakeTee(rcs=[0, 1])
-        code, out, _ = run_wrapper(spec, tee)
-        assert code == 1
-        assert tee.calls == [(component_argv("frontend"), repo),
-                             (MIGRATION_ARGV, repo)]
-        assert ("\n=== origin came in at this phase's start over the slice's "
-                "own migrations backend/versions/0001_mine.py: the migration "
-                f"check `heads-are-one` from {repo} ===\n") in out
-        for bad in ({"paths": [], "check": "heads-are-one"},
-                    {"paths": ["backend/versions/*.py"], "check": ""},
-                    {"paths": ["backend/versions/*.py"]},
-                    {"paths": ["backend/versions/*.py"],
-                     "check": "heads-are-one", "owed": "0001_mine.py"}):
-            data["migrations"] = bad
-            assert "`migrations` is off-shape" \
-                in run_loop.gate_spec_problem(data)
 
 
 # -- kc's full output inlined into the gate log (AIWF-85) ---------------------
@@ -5326,9 +4133,10 @@ def test_the_missing_tool_scan_never_reads_the_inlined_full_output():
         slice_dir, repo = make_slice(tmp)
         full = kc_full_log(tmp, "test-red.log",
                            f"FAILED test_cexec_message\n{CEXEC_MISSING}")
-        r = KcFullOutputLoop(slice_dir, [V["exec_done"], V["exec_done"],
-                                         V["review_signoff"], *TAIL],
-                             repo_root=repo, gate_rcs=[1, 0],
+        r = KcFullOutputLoop(slice_dir, [V["exec_done"], FIXER_ISSUES,
+                                         V["exec_done"], V["review_signoff"],
+                                         *TAIL],
+                             repo_root=repo, gate_rcs=[1, 1, 0],
                              full_outputs=[full, full])
         assert run_to_exit(r) == 0
         assert not r.script
@@ -5389,14 +4197,15 @@ def test_each_root_gate_step_inlines_its_own_full_output():
 def test_red_gate_spawns_fresh_executor_fix_round():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
-        script = [V["exec_done"], V["exec_done"],   # initial + gate fix
-                  V["review_signoff"], *TAIL]
+        script = [V["exec_done"], FIXER_ISSUES,   # initial, the fixer,
+                  V["exec_done"], V["review_signoff"], *TAIL]   # gate fix
         r = ScriptedLoop(slice_dir, script, gates=[False, True],
                          repo_root=repo)
         assert run_to_exit(r) == 0
         assert not r.script
-        assert r.gate_calls == [("1", False), ("1", True)]
-        fix_prompt = r.prompts[1][1]
+        # the gate, the measurement's re-gate, the gate after the fix round
+        assert r.gate_calls == [("1", False), ("1", False), ("1", True)]
+        fix_prompt = [p for role, p in r.prompts if role == "code-writer"][1]
         assert "gate_r1.log" in fix_prompt and "red" in fix_prompt
         assert "without weakening" in fix_prompt
         state = load_state(slice_dir)
@@ -5408,14 +4217,519 @@ def test_gate_fix_cap_bails_red():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         cap = run_loop.GATE_FIX_CAP
-        script = [V["exec_done"]] + [V["exec_done"]] * cap
+        script = [V["exec_done"]] + [FIXER_ISSUES, V["exec_done"]] * cap
         r = ScriptedLoop(slice_dir, script, gates=[False] * (cap + 1),
                          repo_root=repo)
         assert run_to_exit(r) == 3
+        assert not r.script
         bail = json.loads((slice_dir / "bailout.json").read_text())
         assert bail["reason"] == "gate_red"
         assert bail["phase"] == "1"
         assert not bail["question"]
+        assert f"after {cap} gate-fix rounds" in bail["details"]
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["gate_fix_rounds"] == cap
+        assert [m["round"] for m in ps["measurements"]] == [1, 2, 3]
+
+
+# -- a red phase gate: measured, then the test-fixer, then the writer --------
+#
+# The code-writer no longer gates itself. A red gate is measured by the
+# driver — the red commands again on the tree, and once on the merge base —
+# and goes to the Sonnet test-fixer with that measurement and the writer's
+# handover; only what the fixer hands back as issues reaches an Opus round.
+
+HANDOVER = {"changed": [{"behaviour": "the list sorts by name",
+                         "plan_line": "P1: sort the list by name"}],
+            "breaks": [{"test": "test_list_order",
+                        "behaviour": "the list sorts by name"}]}
+
+
+def fixer_prompt(loop):
+    return next(p for role, p in loop.prompts if role == "test-fixer")
+
+
+def fixer_rows(slice_dir):
+    return [h for h in load_state(slice_dir)["history"]
+            if h["role"] == "test-fixer"]
+
+
+def test_a_green_first_gate_dispatches_no_fixer_and_measures_nothing():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0 and not r.script
+        assert "test-fixer" not in [role for role, *_ in r.spawned]
+        assert r.gate_calls == [("1", True)] and r.base_runs == []
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["gate_fix_rounds"] == 0
+        assert "measurements" not in ps and "gate_fix_open" not in ps
+        assert not list((slice_dir / "phases" / "P1").glob("measure_r*"))
+
+
+def test_a_red_the_fixer_fixes_is_gated_again_and_spends_no_writer_round():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], FIXER_FIXES,
+                                     V["review_signoff"], *TAIL],
+                         repo_root=repo, gates=[False, True])
+        assert run_to_exit(r) == 0 and not r.script
+        # the gate, its re-gate (red again), the gate on the fixer's commit
+        assert r.gate_calls == [("1", False), ("1", False), ("1", True)]
+        assert r.base_runs == [(component_argv(PROJECT), repo)]
+        # the merge base checked out detached, and the branch back after
+        checkouts = [c for root, c in r.fake_git.mutations("checkout")
+                     if root == repo]
+        at = checkouts.index(("checkout", "--detach", "base123"))
+        assert checkouts[at + 1] == ("checkout", "phase/074-P1")
+        state = load_state(slice_dir)
+        ps = state["phases"]["1"]
+        assert ps["gate_fix_rounds"] == 1 and ps["executor_rounds"] == 1
+        assert ps["gate_green_commit"] == "fixer1"
+        assert "gate_fix_open" not in ps
+        [m] = ps["measurements"]
+        cmd = f"kc project test --project {PROJECT}"
+        outputs = slice_dir / "phases" / "P1"
+        assert m["round"] == 1 and m["red"] == [cmd]
+        assert m["regate"] == {cmd: "red"} and m["base"] == {cmd: "green"}
+        assert m["base_sha"] == "base123" and m["older"] is False
+        assert m["logs"] == {"gate": str(outputs / "gate_r1.log"),
+                             "regate": str(outputs / "gate_r2.log"),
+                             "base": str(outputs / "measure_r1_base.log")}
+        assert (f"{cmd} on the base\n"
+                in (outputs / "measure_r1_base.log").read_text())
+        assert m["fixer"] == {
+            "verdict": str(outputs / "gate_fixer_result_r1.json"),
+            "outcome": "clean", "as": "clean", "summary": "fixed the race",
+            "head_before": "abc123", "taken_back": 0}
+        # its own history row, the phase's, for slice_cost to price
+        [row] = fixer_rows(slice_dir)
+        assert (row["phase"], row["round"], row["outcome"]) \
+            == ("1", 1, "clean")
+        assert row["head_before"] == "abc123" and "taken_back" not in row
+        # no step of its own, and no why for the review step
+        assert [s["code"] for s in state["progress"]][:2] \
+            == ["P1.code", "P1.review"]
+        assert not (state.get("why_next") or {})
+        prompt = flat(fixer_prompt(r))
+        assert prompt.startswith(
+            "The gate for phase P1 of slice 074_test_slice is red, and you "
+            "take it first (branch phase/074-P1).")
+        assert (f"`{cmd}` went red in 2 of 2 runs on the tree (the gate and "
+                "its re-gate) and green on the merge base base123: the "
+                "phase's red. A test the phase added has no run on the base "
+                "to compare, and is the phase's by that alone.") in prompt
+        assert (f"so do not run `{cmd}` yourself: the failing tests repeated "
+                "green is your fix holding.") in prompt
+        assert ("The commit before the phase's work is base123: the base "
+                "your rule 4 measures against.") in prompt
+        assert str(outputs / "gate_fixer_result_r1.json") in prompt
+        assert DEBRIEF_ASK in prompt and '"debrief": "<your debrief>"' \
+            in fixer_prompt(r)
+
+
+def test_a_fixers_issues_go_to_the_writers_fix_round_with_its_hand_back():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], FIXER_ISSUES,
+                                     V["exec_done"], V["review_signoff"],
+                                     *TAIL],
+                         repo_root=repo, gates=[False, True])
+        assert run_to_exit(r) == 0 and not r.script
+        assert [role for role, *_ in r.spawned][:4] == [
+            "code-writer", "test-fixer", "code-writer", "code-reviewer"]
+        state = load_state(slice_dir)
+        ps = state["phases"]["1"]
+        assert ps["gate_fix_rounds"] == 1 and ps["executor_rounds"] == 2
+        [fix] = gate_fix_prompts(r)
+        outputs = slice_dir / "phases" / "P1"
+        assert ("The driver's measurement: `kc project test --project "
+                f"{PROJECT}` went red in 2 of 2 runs on the tree") in fix
+        assert ("The test-fixer took this red first and handed it back as "
+                "issues: the phase's change broke it. Its verdict is "
+                f"{outputs / 'gate_fixer_result_r1.json'}.\n") in fix
+        assert f"its output is in {outputs / 'gate_r1.log'}." in flat(fix)
+        # the writer's round, not the fixer, leaves the review step its why
+        assert whys(state)["P1.code-2"] \
+            == f"The gate went red: kc project test --project {PROJECT}"
+
+
+def test_a_fixers_clean_with_no_commit_is_the_writers_fix_round():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        idle = ("test-fixer", {"outcome": "clean", "summary": "green now"})
+        r = ScriptedLoop(slice_dir, [V["exec_done"], idle, V["exec_done"],
+                                     V["review_signoff"], *TAIL],
+                         repo_root=repo, gates=[False, True])
+        assert run_to_exit(r) == 0 and not r.script
+        why = "it answered clean and committed nothing — a re-run to green " \
+              "is no fix"
+        [fix] = gate_fix_prompts(r)
+        assert f"handed it back as issues: {why}. Its verdict is" in fix
+        [row] = fixer_rows(slice_dir)
+        assert row["outcome"] == "clean" and row["as"] == "issues"
+        m = load_state(slice_dir)["phases"]["1"]["measurements"][0]
+        assert (m["fixer"]["outcome"], m["fixer"]["as"]) == ("clean", "issues")
+        assert f"its `clean` is taken as `issues`: {why}" \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_a_fixer_that_hands_back_issues_has_its_commits_taken_back():
+    def commits_and_hands_back(loop):
+        loop.fake_git.head = "fixer2"
+        loop.fake_git.ahead["abc123..HEAD"] = "2"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        unsettled = ("test-fixer", {"outcome": "issues",
+                                    "summary": "a race in the product"},
+                     commits_and_hands_back)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], unsettled,
+                                     V["exec_done"], V["review_signoff"],
+                                     *TAIL],
+                         repo_root=repo, gates=[False, True])
+        assert run_to_exit(r) == 0 and not r.script
+        assert (repo, ("reset", "--hard", "abc123")) \
+            in r.fake_git.mutations("reset")
+        [row] = fixer_rows(slice_dir)
+        assert row["taken_back"] == 2 and "as" not in row
+        m = load_state(slice_dir)["phases"]["1"]["measurements"][0]
+        assert m["fixer"]["taken_back"] == 2
+        assert ("[P1] [test-fixer] the test-fixer answered `issues` and left 2 "
+                "commit(s) — taken back: a hand-back that is not clean leaves "
+                "no commit") in (slice_dir / "log.txt").read_text()
+        assert "issues: a race in the product. Its verdict" \
+            in gate_fix_prompts(r)[0]
+
+
+def test_a_fixer_that_leaves_the_branch_is_checked_back_and_its_clean_is_issues():
+    def wanders(loop):
+        loop.fake_git.branch_at[str(loop.repo_root)] = "elsewhere"
+        loop.fake_git.head = "fixer3"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [
+            V["exec_done"],
+            ("test-fixer", {"outcome": "clean", "summary": "fixed"}, wanders),
+            V["exec_done"], V["review_signoff"], *TAIL],
+            repo_root=repo, gates=[False, True])
+        assert run_to_exit(r) == 0 and not r.script
+        assert r.fake_git.branch_at[str(repo)] in ("phase/074-P1", "main")
+        calls = [c for root, c in r.fake_git.calls if root == repo]
+        back = calls.index(("checkout", "phase/074-P1"),
+                           calls.index(("checkout", "--detach", "base123")) + 2)
+        assert ("reset", "--hard", "abc123") in calls[back:]
+        assert ("a fix off the phase's branch is none"
+                in gate_fix_prompts(r)[0])
+        assert "it left " + str(repo) + " on elsewhere, not phase/074-P1" \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_a_fixers_missing_verdict_is_issues_never_a_bail():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        lost = ("test-fixer", {"outcome": "blocked",
+                               "summary": "test-fixer wrote no verdict",
+                               "_protocol_failure": True})
+        r = ScriptedLoop(slice_dir, [V["exec_done"], lost, V["exec_done"],
+                                     V["review_signoff"], *TAIL],
+                         repo_root=repo, gates=[False, True])
+        assert run_to_exit(r) == 0 and not r.script
+        assert ("issues: it handed back no valid verdict: test-fixer wrote no "
+                "verdict. Its verdict is") in gate_fix_prompts(r)[0]
+
+
+def test_a_fixers_clean_on_a_dirty_tree_takes_the_commit_nudge():
+    """The real `_spawn`: the fixer's session, then the commit nudge of a
+    `clean` it left uncommitted, in its own session; its history row names
+    the transcript `slice_cost.py` prices."""
+    def edits(loop):
+        loop.fake_git.dirty = " M tests/test_list.py"
+
+    def commits_it(loop):
+        loop.fake_git.dirty = ""
+        loop.fake_git.head = "fixer5"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [V["exec_done"],
+                  ("test-fixer", {"outcome": "clean", "summary": "fixed"},
+                   edits),
+                  ("test-fixer", "committed", commits_it),   # the nudge
+                  V["review_signoff"], *TAIL]
+        r = SpawningLoop(slice_dir, script, repo_root=repo,
+                         gates=[False, True])
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert not r.script
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["executor_rounds"] == 1
+        assert ps["gate_green_commit"] == "fixer5"
+        [row] = fixer_rows(slice_dir)
+        assert (row["phase"], row["round"], row["outcome"]) == ("1", 1, "clean")
+        assert row["session"] == "sess-2" and row["transcript"]
+        assert "[P1] [test-fixer] committed its leftovers on the nudge" \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_a_fixers_blocked_bails_blocked_with_its_summary():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        def commits_one(loop):
+            loop.fake_git.head = "fixer4"
+            loop.fake_git.ahead["abc123..HEAD"] = "1"
+
+        stuck = ("test-fixer", {"outcome": "blocked",
+                                "summary": "the harness cannot start"},
+                 commits_one)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], stuck], repo_root=repo,
+                         gates=[False])
+        assert run_to_exit(r) == 3 and not r.script
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["reason"] == "blocked" and bail["phase"] == "1"
+        assert bail["details"] == "the harness cannot start"
+        assert (repo, ("reset", "--hard", "abc123")) \
+            in r.fake_git.mutations("reset")
+        assert fixer_rows(slice_dir)[0]["taken_back"] == 1
+        assert "gate_fix_open" not in load_state(slice_dir)["phases"]["1"]
+
+
+def test_a_red_older_than_the_phase_skips_the_fixer_and_asks_for_a_card():
+    """Green on the re-gate and red on the merge base: the red was there
+    before the phase. No fixer, no writer round; the re-gate's green is the
+    phase's gate, and the close-out report asks for the suite's card."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL],
+                         repo_root=repo, gates=[False], regates=[True],
+                         base_gates=[False])
+        assert run_to_exit(r) == 0 and not r.script
+        assert "test-fixer" not in [role for role, *_ in r.spawned]
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["gate_fix_rounds"] == 1 and ps["executor_rounds"] == 1
+        assert ps["gate_green_commit"] == r.fake_git.head
+        [m] = ps["measurements"]
+        assert m["older"] is True and "fixer" not in m
+        assert "ran GREEN on this exact commit" in reviewer_prompt(r)
+        entry, route = flake_entry(slice_dir)
+        assert entry["kind"] == "defect" and route == "card:author"
+        assert entry["headline"] == (
+            f"{repo.name}/{PROJECT}'s tests went red on P1's gate and on the "
+            "merge base alike, and green on its re-gate")
+        assert entry["labels"] == {**run_loop.FLAKE_LABELS,
+                                   "repo": repo.name}
+        assert entry["proposal"].startswith("card: make the tests of ")
+        shown = entries_in_full(slice_dir)
+        outputs = slice_dir / "phases" / "P1"
+        for log in ("gate_r1.log", "gate_r2.log", "measure_r1_base.log"):
+            assert str(outputs / log) in shown
+        assert f"`kc project test --project {PROJECT}`" in shown
+        assert "witnessed — P1's gate, gate-fix round 1" in shown
+
+
+def test_a_red_on_the_base_that_the_re_gate_reproduces_goes_to_the_fixer():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], FIXER_FIXES,
+                                     V["review_signoff"], *TAIL],
+                         repo_root=repo, gates=[False, True],
+                         regates=[False], base_gates=[False])
+        assert run_to_exit(r) == 0 and not r.script
+        assert ("red in 2 of 2 runs on the tree (the gate and its re-gate) and "
+                "red on the merge base base123 too: older than the phase by "
+                "this measurement, so making it deterministic is the fixer's "
+                "(rule 4).") in flat(fixer_prompt(r))
+        assert "went red on P1's gate and on the merge base alike" \
+            not in entries_in_full(slice_dir)
+
+
+def test_the_fixer_reads_the_phase_section_and_the_writers_handover():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[
+            phase_section("1", "Sort the list", body="Sort it by name.\n"),
+            ("2", "Later")])
+        handed = ("code-writer", {"outcome": "done", "summary": "built",
+                                  "handover": HANDOVER})
+        r = ScriptedLoop(slice_dir, [handed, FIXER_FIXES, V["review_signoff"],
+                                     V["exec_done"], V["review_signoff"],
+                                     *TAIL],
+                         repo_root=repo, gates=[False, True])
+        assert run_to_exit(r) == 0 and not r.script
+        prompt = fixer_prompt(r)
+        assert ("- The phase's section of the plan:\n"
+                "  ### P1 — Sort the list\n\n  Target: app\n\n"
+                "  Sort it by name.\n") in prompt
+        assert "P2 — Later" not in prompt
+        assert ("break:\n  Code-writer round 1:\n"
+                "  - changed on purpose: the list sorts by name — the plan "
+                "line: P1: sort the list by name\n"
+                "  - expected to break: test_list_order — the list sorts by "
+                "name\n") in prompt
+        assert load_state(slice_dir)["phases"]["1"]["handovers"] == {
+            "1": HANDOVER}
+    # none, or one off-shape: logged, and the fixer told there is none
+    for verdict, why in (({"outcome": "done", "summary": "built"},
+                          "its verdict carries none"),
+                         ({"outcome": "done", "summary": "built",
+                           "handover": {"changed": "sorted"}},
+                          "its `changed` is not a list")):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo = make_slice(tmp)
+            r = ScriptedLoop(slice_dir, [("code-writer", verdict),
+                                         FIXER_FIXES, V["review_signoff"],
+                                         *TAIL],
+                             repo_root=repo, gates=[False, True])
+            assert run_to_exit(r) == 0 and not r.script
+            assert ("break:\n  (the code-writer gave no handover)\n"
+                    in fixer_prompt(r))
+            assert load_state(slice_dir)["phases"]["1"]["handovers"] \
+                == {"1": None}
+            assert ("[P1] code-writer round 1 gave no handover the test-fixer "
+                    f"can read — {why}") in (slice_dir / "log.txt").read_text()
+
+
+def test_handover_text_renders_each_writer_round():
+    assert run_loop.handover_text(None) == run_loop.NO_HANDOVER
+    assert run_loop.handover_text({"1": None}) == run_loop.NO_HANDOVER
+    assert run_loop.handover_text({"1": None, "2": {"changed": [],
+                                                    "breaks": []}}) == (
+        "Code-writer round 1: (the code-writer gave no handover)\n"
+        "Code-writer round 2:\n"
+        "- no behaviour changed on purpose, and no existing test expected "
+        "to break")
+    assert run_loop.handover_problem(HANDOVER) is None
+    assert run_loop.handover_problem({"breaks": []}) is None
+    assert run_loop.handover_problem({}) \
+        == "it has neither `changed` nor `breaks`"
+    assert run_loop.handover_problem({"changed": [{"behaviour": "x"}]}) \
+        == "a `changed` item lacks `behaviour` or `plan_line`"
+
+
+def test_the_measurement_says_whose_each_red_is():
+    say = run_loop.measurement_sentence
+    sha = "abc123def4567890"
+    cmd = "kc project test --project frontend"
+    assert say(cmd, "red", "green", sha) == (
+        f"`{cmd}` went red in 2 of 2 runs on the tree (the gate and its "
+        "re-gate) and green on the merge base abc123def456: the phase's red. "
+        "A test the phase added has no run on the base to compare, and is "
+        "the phase's by that alone.")
+    assert say(cmd, "green", "green", sha).endswith(
+        "red in 1 of 2 runs on the tree (the gate and its re-gate) and green "
+        "on the merge base abc123def456: the phase's red until a measurement "
+        "of the failing tests alone shows otherwise.")
+    assert say(cmd, "red", "red", sha).endswith(
+        "and red on the merge base abc123def456 too: older than the phase by "
+        "this measurement, so making it deterministic is the fixer's (rule "
+        "4).")
+    assert say(cmd, "red", "not_run", sha).endswith(
+        "could not be run on the merge base abc123def456: the phase's red, "
+        "with no base run to weigh it.")
+    assert say("heads-are-one", "red", None, sha).endswith(
+        "and has no run on the merge base: what it checks is the phase's "
+        "diff, so its red is the phase's.")
+    text = run_loop.measurement_text(
+        [cmd], {cmd: "red"}, {cmd: "green"}, sha,
+        {"gate": "/g.log", "regate": "/r.log", "base": None})
+    assert text.endswith("Their output: the gate's in /g.log, the re-gate's "
+                         "in /r.log.")
+
+
+def test_the_re_gate_runs_the_red_commands_alone():
+    """The measurement's re-gate takes every command the red gate ran green,
+    or ran nothing, on the same tree — kc's from `gate_greens` — and runs
+    the red ones; the base runs those alone too."""
+    frontend, backend = component_argv("frontend"), component_argv("backend")
+    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
+        slice_dir, repo, r, code = touched_gate_run(
+            tmp, [V["exec_done"], FIXER_FIXES, V["review_signoff"], *TAIL],
+            [0, 1, 1], ["frontend/src/App.tsx", "backend/app/api.py"])
+        assert code == 0 and not r.script
+        assert [argv for argv, _, _ in r.phase_gate_order][:5] == [
+            frontend, lint_argv("frontend"), backend, lint_argv("backend"),
+            backend]
+        assert r.base_runs == [(backend, repo)]
+        regate = gate_rows(slice_dir)[1]
+        assert regate["reused"] == {
+            " ".join(frontend): "P1 gate r1",
+            " ".join(lint_argv("frontend")): "P1 gate r1",
+            " ".join(lint_argv("backend")): "P1 gate r1"}
+        assert "— the re-gate of P1 gate r1's red" \
+            in (slice_dir / "log.txt").read_text()
+    # the spec check, which gate_greens never records, stands from the red
+    # gate on the same tree; the repo's own red runs again
+    with tempfile.TemporaryDirectory() as tmp, tree_is(TREE):
+        slice_dir, work, r, code = spec_gate_run(
+            tmp, [V["exec_done"], FIXER_FIXES, V["review_signoff"], *TAIL],
+            [0, 1, 1], manifest=True)
+        assert code == 0 and not r.script
+        ran = [argv for argv, _, _ in r.phase_gate_runs]
+        assert ran[:3] == [spec_check_cmd(work).split(), ["kc", "project",
+                                                          "test"]] \
+            + [["kc", "project", "test"]]
+        assert r.base_runs == [(["kc", "project", "test"], work)]
+        assert gate_rows(slice_dir)[1]["reused"][spec_check_cmd(work)] \
+            == "P1 gate r1"
+
+
+def test_a_base_that_cannot_be_checked_out_is_no_measurement():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], FIXER_FIXES,
+                                     V["review_signoff"], *TAIL],
+                         repo_root=repo, gates=[False, True])
+        r.fake_git.fails.add(("checkout", "--detach", "base123"))
+        assert run_to_exit(r) == 0 and not r.script
+        assert r.base_runs == []
+        m = load_state(slice_dir)["phases"]["1"]["measurements"][0]
+        assert m["base"] == {f"kc project test --project {PROJECT}": "not_run"}
+        assert "could not be run on the merge base" in fixer_prompt(r)
+        assert "[P1] the merge base base123 not checked out in" \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_a_resume_during_the_fixer_gates_again_and_redoes_the_round():
+    """The fixer is never reattached: the tree is set aside and reset, the
+    gate runs again first, and the banked round is measured again and its
+    fixer dispatched afresh — no second round banked."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        state = resume_state(PROJECT, stage="gate")
+        state["phases"]["1"].update(gate_fix_rounds=1, gate_fix_open=1,
+                                    gate_runs=2)
+        verdict = slice_dir / "phases" / "P1" / "gate_fixer_result_r1.json"
+        state["in_flight"] = {"phase": "1", "role": "test-fixer", "round": 1,
+                              "verdict_path": str(verdict),
+                              "session": "sess-dead", "started_at": "t"}
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        r = ScriptedLoop(slice_dir, [(*FIXER_ISSUES, commits_round(repo)),
+                                     V["exec_done"], V["review_signoff"],
+                                     *TAIL],
+                         resume=True, repo_root=repo, gates=[False, True])
+        r.fake_git.branches.add("phase/074-P1")
+        dead_round_in(r, repo)
+        assert run_to_exit(r) == 0 and not r.script
+        fixer = next(s for s in r.spawned if s[0] == "test-fixer")
+        assert fixer[2] == 1 and fixer[4] is None, "dispatched afresh"
+        assert (repo, ("reset", "--hard", "HEAD")) \
+            in r.fake_git.mutations("reset")
+        ps = load_state(slice_dir)["phases"]["1"]
+        assert ps["gate_fix_rounds"] == 1
+        assert [m["round"] for m in ps["measurements"]] == [1]
+        # what the dead fixer left uncommitted is set aside under its name,
+        # and the next writer is told whose it was
+        patch = set_aside_dir(slice_dir) / "fixer-r1.patch"
+        assert patch.read_text() == DEAD_ROUND_DIFF
+        [fix] = gate_fix_prompts(r)
+        assert ("The test-fixer of gate-fix round 1 of this phase died with "
+                "uncommitted work, and the resume set it aside") in flat(fix)
+        log = (slice_dir / "log.txt").read_text()
+        assert ("[P1] the interrupted test-fixer (gate-fix round 1) is not "
+                "reattached — the gate runs again first") in log
+        assert "[P1] gate-fix round 1 died before its fix" in log
 
 
 def test_review_issues_round1_fix_is_automatic():
@@ -5759,7 +5073,8 @@ def test_every_dispatch_carries_the_report_path():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp, phases=[("1", "First")])
         script = [
-            V["exec_done"], V["exec_done"],           # executor, gate-fix
+            V["exec_done"], FIXER_ISSUES,             # executor, the fixer,
+            V["exec_done"],                           # gate-fix
             V["review_issues"], V["exec_done"],       # round 1 + review-fix
             V["review_signoff"],
             *TAIL,
@@ -5771,6 +5086,8 @@ def test_every_dispatch_carries_the_report_path():
         by_role = {}
         for role, prompt in r.prompts:
             by_role.setdefault(role, []).append(prompt)
+        # the gate's test-fixer hands back to the driver, never to the report
+        assert not any(pointer in p for p in by_role.pop("test-fixer"))
         # initial executor, gate-fix round, review-fix round
         assert len(by_role["code-writer"]) == 3
         assert all(pointer in p for p in by_role["code-writer"])
@@ -5785,7 +5102,8 @@ def test_every_dispatch_carries_the_report_path():
         # pointer to its labels, the ban on hand edits, and `append`'s
         # arguments — never restated within a prompt.
         report = slice_dir / "close-out.md"
-        for _, prompt in r.prompts:
+        for _, prompt in [(role, p) for role, p in r.prompts
+                          if role != "test-fixer"]:
             assert prompt.count(CLOSE_OUT_TOOL) == 2, prompt
             assert f"`python3 {CLOSE_OUT_TOOL}\n<verb> {report} …`" in prompt
             assert f"`python3 {CLOSE_OUT_TOOL} labels` prints" in prompt
@@ -6651,9 +5969,10 @@ def test_a_sibling_phase_that_adds_its_manifest_is_gated_by_it():
         assert r.gate_calls == [("1", True)]
         assert r.gate_cwds == [sib]
         prompt = next(p for role, p in r.prompts if role == "code-writer")
-        assert (f"({sib} has no kc manifest — gate per that repo's own "
-                "conventions; if this phase adds `.kubecoder/project.yaml`, "
-                f"the driver's gate is `kc project test` from {sib})"
+        assert (f"— but {sib} has no kc manifest, so the driver runs no gate "
+                "there: test per that repo's own conventions; if this phase "
+                "adds `.kubecoder/project.yaml`, the driver's gate is `kc "
+                f"project test` and `kc project lint` from {sib}."
                 ) in prompt.replace("\n", " ")
         prompt = next(p for role, p in r.prompts if role == "code-reviewer")
         assert f"`kc project test` in {sib} — with full output" in prompt
@@ -6888,13 +6207,11 @@ def test_a_sibling_repos_component_resolves_in_that_repo():
         assert target.gate_argv == ["kc", "project", "test",
                                     "--project", "aac-tools"]
         assert r._executor_where(target) == f" in the sibling repo {sib}"
-        outputs = slice_dir / "phases" / "P1"
-        assert r._gate_hint(target, outputs, "base123") == (
-            f" — through {wrapper_cmd(outputs)}, which runs the driver's own "
-            "gate: `kc project test --project aac-tools` and `kc project lint "
+        assert r._gate_hint(target, "base123") == (
+            ": `kc project test --project aac-tools` and `kc project lint "
             f"--project aac-tools` from {sib}, and both for every other "
-            f"component the phase's diff touches. {waits(outputs)}. "
-            f"{run_loop.GATE_REUSE_HINT}. {run_loop.NOTHING_RAN_HINT}")
+            "component the phase's diff touches. "
+            f"{run_loop.NOTHING_RAN_HINT}")
         # a checkout without a manifest has no components to ask for, and
         # the spec repo beside it has none either
         assert lists.asked == ["repo", "ArgoCDTools"]
@@ -6914,10 +6231,8 @@ def test_the_invoking_repos_components_shadow_a_siblings():
             target = r._resolve_target("root")
         assert target.git_root == repo and target.gate_cwd == repo
         assert r._executor_where(target) == ""
-        outputs = slice_dir / "phases" / "P1"
-        assert r._gate_hint(target, outputs, "base123").startswith(
-            f" — through {wrapper_cmd(outputs)}, which runs the driver's own "
-            "gate: `kc project test --project root`, and bare")
+        assert r._gate_hint(target, "base123").startswith(
+            ": `kc project test --project root`, and bare")
         assert lists.asked == ["repo"]
 
 
@@ -7100,12 +6415,10 @@ def test_a_shared_repos_phase_is_dispatched_gated_and_checked_in_its_worktree():
             for prompt in prompts:
                 assert where in prompt, role
                 assert "git add -A" not in prompt
-        writer = next(p for role, p in r.prompts if role == "code-writer")
-        assert (f" — through {wrapper_cmd(slice_dir / 'phases' / 'P1')}, "
-                f"which runs the driver's own gate: {spec_check_hint(work)}, "
-                f"then `kc project test` from {work}. "
-                f"{waits(slice_dir / 'phases' / 'P1')}. "
-                f"{run_loop.GATE_REUSE_HINT}.") in writer
+        writer = flat(next(p for role, p in r.prompts
+                           if role == "code-writer"))
+        assert (f"after you hand back: {spec_check_hint(work)}, then `kc "
+                f"project test` and `kc project lint` from {work}.") in writer
         assert r.gate_cwds and set(r.gate_cwds) == {work}
         adds = [c for root, c in r.fake_git.calls
                 if c[:2] == ("worktree", "add")]
@@ -7413,8 +6726,8 @@ def test_the_set_aside_line_reaches_the_first_writer_after_the_resume_only():
         (slice_dir / "state.json").write_text(
             json.dumps(resume_state(PROJECT, stage="executor")))
         r = ScriptedLoop(slice_dir, [(*V["exec_done"], commits_round(repo)),
-                                     V["exec_done"], V["review_signoff"],
-                                     *TAIL],
+                                     FIXER_ISSUES, V["exec_done"],
+                                     V["review_signoff"], *TAIL],
                          resume=True, repo_root=repo, gates=[False, True])
         r.fake_git.branches.add("phase/074-P1")
         dead_round_in(r, repo)
@@ -10125,8 +9438,8 @@ def test_diverged_bases_are_never_moved_and_every_writer_dispatch_says_so():
         pushed(other, "docs/runbook.md", "restart: the script\n")
         pushed(other, "src/other.py", "other\n")
         seen = {}
-        script = [(*V["exec_done"], cuts_and_commits(seen)), V["exec_done"],
-                  V["review_signoff"], V["consult_complete"]]
+        script = [(*V["exec_done"], cuts_and_commits(seen)), FIXER_ISSUES,
+                  V["exec_done"], V["review_signoff"], V["consult_complete"]]
         r = FetchingLoop(slice_dir, script, gates=[False, True],
                          repo_root=repo)
         assert run_to_exit(r) == 0
@@ -10145,7 +9458,7 @@ def test_diverged_bases_are_never_moved_and_every_writer_dispatch_says_so():
             assert line in flat(prompt)
             assert "src/other.py" not in prompt
         others = [role for role, p in r.prompts if role != "code-writer"]
-        assert others == ["code-reviewer", "consult"]
+        assert others == ["test-fixer", "code-reviewer", "consult"]
         assert not any(AHEAD_WORDS in p for role, p in r.prompts
                        if role != "code-writer")
 
@@ -10174,8 +9487,8 @@ def test_a_diverged_base_is_rebased_onto_origin_before_the_phase_is_cut():
         pushed(other, "docs/runbook.md", "restart: the script\n")
         tip = pushed(other, "src/other.py", "other\n")
         seen = {}
-        script = [(*V["exec_done"], cuts_and_commits(seen)), V["exec_done"],
-                  V["review_signoff"], V["consult_complete"]]
+        script = [(*V["exec_done"], cuts_and_commits(seen)), FIXER_ISSUES,
+                  V["exec_done"], V["review_signoff"], V["consult_complete"]]
         r = FetchingLoop(slice_dir, script, gates=[False, True],
                          repo_root=repo)
         assert run_to_exit(r) == 0
@@ -14877,7 +14190,8 @@ def test_a_skill_the_phase_names_reaches_its_writer_and_reviewer_rounds():
         def fixes(loop):
             loop.fake_git.head = "fixhead"
 
-        script = [V["exec_done"], V["exec_done"],         # executor, gate fix
+        script = [V["exec_done"], FIXER_ISSUES,           # executor, fixer,
+                  V["exec_done"],                         # gate fix
                   V["review_issues"], (*V["exec_done"], fixes),
                   V["review_signoff"],                    # the delta round
                   V["exec_done"], V["review_signoff"], *TAIL]
@@ -14888,11 +14202,13 @@ def test_a_skill_the_phase_names_reaches_its_writer_and_reviewer_rounds():
         line = (SKILL_HEADER + "- `kubecoder:jenkins-pipelines`: "
                 f"{skill_md(kc, 'jenkins-pipelines')}\n")
         named = [(role, p) for role, pid, p in by_phase(r) if pid == "1"]
-        assert [role for role, _ in named] == ["code-writer"] * 2 + [
-            "code-reviewer", "code-writer", "code-reviewer"]
+        assert [role for role, _ in named] == [
+            "code-writer", "test-fixer", "code-writer", "code-reviewer",
+            "code-writer", "code-reviewer"]
         assert "Re-review phase P1" in named[-1][1]
         for role, prompt in named:
-            assert prompt.count(line) == 1, role
+            # the gate's test-fixer reads the phase's section, not its skills
+            assert prompt.count(line) == (role != "test-fixer"), role
         for role, pid, prompt in by_phase(r):
             if pid != "1":
                 assert "Skills this phase names" not in prompt, (role, pid)
@@ -16422,8 +15738,9 @@ def test_a_red_gate_in_a_repo_missing_its_services_gets_a_fix_round_naming_them(
         slice_dir, repo = make_slice(tmp)
         r = KcExitLoop(slice_dir,
                        [(*V["exec_done"], declares_services("postgres")),
-                        V["exec_done"], V["review_signoff"], *TAIL],
-                       repo_root=repo, gate_rcs=[1, 0])
+                        FIXER_ISSUES, V["exec_done"], V["review_signoff"],
+                        *TAIL],
+                       repo_root=repo, gate_rcs=[1, 1, 0])
         assert run_to_exit(r) == 0
         assert not r.script
         assert load_state(slice_dir)["phases"]["1"]["gate_fix_rounds"] == 1
@@ -16450,10 +15767,10 @@ def test_a_red_gate_in_a_sibling_missing_its_services_ends_blocked_after_a_fix_r
             + phase_section("1", "Inventory change", "../Inventory"))
         blocked = ("code-writer", {"outcome": "blocked",
                                    "summary": "postgres is not running"})
-        r = KcExitLoop(slice_dir, [V["exec_done"], blocked], repo_root=repo,
-                       gate_rcs=[1])
+        r = KcExitLoop(slice_dir, [V["exec_done"], FIXER_ISSUES, blocked],
+                       repo_root=repo, gate_rcs=[1, 1])
         assert run_to_exit(r) == 3
-        assert not r.script and len(r.spawned) == 2
+        assert not r.script and len(r.spawned) == 3
         bail = json.loads((slice_dir / "bailout.json").read_text())
         assert bail["reason"] == "blocked" and not bail.get("question")
         assert bail["phase"] == "1"
@@ -16467,9 +15784,9 @@ def test_a_red_gate_in_a_repo_whose_services_all_run_gets_its_fix_round():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         host_services(repo, "postgres")
-        r = KcExitLoop(slice_dir, [V["exec_done"], V["exec_done"],
-                                   V["review_signoff"], *TAIL],
-                       repo_root=repo, gate_rcs=[1, 0])
+        r = KcExitLoop(slice_dir, [V["exec_done"], FIXER_ISSUES,
+                                   V["exec_done"], V["review_signoff"], *TAIL],
+                       repo_root=repo, gate_rcs=[1, 1, 0])
         with patched(run_loop, running_services=lambda: {"postgres"}):
             assert run_to_exit(r) == 0
         assert not r.script
@@ -16482,8 +15799,9 @@ def test_a_red_gate_in_a_repo_whose_services_all_run_gets_its_fix_round():
         slice_dir, repo = make_slice(tmp)
         r = KcExitLoop(slice_dir,
                        [(*V["exec_done"], declares_services("postgres")),
-                        V["exec_done"], V["review_signoff"], *TAIL],
-                       repo_root=repo, gate_rcs=[1, 0])
+                        FIXER_ISSUES, V["exec_done"], V["review_signoff"],
+                        *TAIL],
+                       repo_root=repo, gate_rcs=[1, 1, 0])
 
         def broken():
             raise ValueError("`kc env describe --output=json` failed (rc=1)")
@@ -16741,8 +16059,9 @@ def test_a_red_phase_gate_with_only_an_older_oom_kill_takes_its_fix_round():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         killed = datetime.now(run_loop.UTC) - timedelta(hours=1)
-        r = OomKillLoop(slice_dir, [V["exec_done"], V["exec_done"],
-                                    V["review_signoff"], *TAIL],
+        r = OomKillLoop(slice_dir, [V["exec_done"], FIXER_ISSUES,
+                                    V["exec_done"], V["review_signoff"],
+                                    *TAIL],
                         repo_root=repo, gate_rcs=[1, 0], kill_reds=False,
                         services=[oom_entry(kc_time(killed))])
         asked = []
@@ -16769,8 +16088,9 @@ def test_a_green_phase_gate_never_asks_kc_for_an_oom_kill():
 def test_kc_not_answering_the_oom_check_leaves_the_red_its_fix_round():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
-        r = OomKillLoop(slice_dir, [V["exec_done"], V["exec_done"],
-                                    V["review_signoff"], *TAIL],
+        r = OomKillLoop(slice_dir, [V["exec_done"], FIXER_ISSUES,
+                                    V["exec_done"], V["review_signoff"],
+                                    *TAIL],
                         repo_root=repo, gate_rcs=[1, 0])
         asked = []
         with describing(KC_DOWN, asked):
@@ -16786,14 +16106,16 @@ def test_a_red_spec_check_never_asks_kc_for_an_oom_kill():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
         specs_phase(slice_dir, tmp)
-        r = OomKillLoop(slice_dir, [V["exec_done"], V["exec_done"],
-                                    V["review_signoff"], *TAIL],
-                        repo_root=repo, gate_rcs=[1, 0])
+        r = OomKillLoop(slice_dir, [V["exec_done"], FIXER_ISSUES,
+                                    V["exec_done"], V["review_signoff"],
+                                    *TAIL],
+                        repo_root=repo, gate_rcs=[1, 1, 0])
         asked = []
         with describing(lambda: r.services, asked):
             assert run_to_exit(r) == 0
         assert not r.script and asked == []
-        assert [h["outcome"] for h in gate_rows(slice_dir)] == ["red", "green"]
+        assert [h["outcome"] for h in gate_rows(slice_dir)] \
+            == ["red", "red", "green"]
 
 
 def test_a_red_migration_check_while_a_service_was_oom_killed_bails():
@@ -16847,209 +16169,6 @@ def test_the_drivers_gate_command_asks_for_an_oom_kill_only_on_a_kc_red():
         since, = asked
         assert since.tzinfo is not None
         assert before <= since <= datetime.now(run_loop.UTC)
-
-
-# The writer's run of the gate: the wrapper over real git, `_tee_exec` and the
-# describe faked.
-
-def run_wrapper_killing(spec, tee, kills, asked=None):
-    """`run_wrapper` with `oom_killed_services` answering `kills` (or
-    raising it, an exception), each ask's `since` appended to `asked`."""
-    def answer(since):
-        if asked is not None:
-            asked.append(since)
-        if isinstance(kills, Exception):
-            raise kills
-        return list(kills)
-
-    with patched(run_loop, oom_killed_services=answer):
-        return run_wrapper(spec, tee)
-
-
-OOM_LINE = ("=== gate RED: postgres OOMKilled at its 1Gi memory limit while "
-            "the gate ran — the environment's, not the code's: change no code "
-            "for it; hand back `blocked` naming it, and the driver puts it to "
-            "the operator ===")
-
-
-def test_the_gate_wrapper_records_an_oom_kill_while_it_ran_red_and_tells_the_writer_to_stop():
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, _ = wrapper_repo(tmp)
-        spec = write_spec(tmp, repo, component_argv("frontend"),
-                          touched={"target": "frontend", "waived": []})
-        oom = spec.parent / run_loop.GATE_OOM_NAME
-        asked = []
-        before = datetime.now(run_loop.UTC)
-        code, out, _ = run_wrapper_killing(spec, FakeTee([1]), [OOM_KILL],
-                                           asked)
-        assert code == 1
-        assert out.rstrip("\n").endswith("\n" + OOM_LINE)
-        assert "=== gate RED: `kc project test" not in out
-        since, = asked
-        assert before <= since <= datetime.now(run_loop.UTC)
-        record = record_of(spec)
-        assert record["outcome"] == "red"
-        data = json.loads(oom.read_text())
-        assert (data["phase"], data["round"], data["services"]) \
-            == ("1", 1, [OOM_KILL])
-        run, = data["runs"]
-        assert run == {"started": record["started"],
-                       "finished": record["finished"],
-                       "red": ["kc project test --project frontend"],
-                       "services": [OOM_KILL]}
-        # the round's later runs: a red with another kill adds it, a red
-        # with none and a green leave the file as it is — the record they
-        # replace is not where the kill is kept
-        s3 = {"name": "s3storage", "memoryLimit": "256Mi",
-              "finishedAt": "2026-11-04T10:20:00Z"}
-        code, out, _ = run_wrapper_killing(spec, FakeTee([1]), [s3])
-        assert code == 1 and "=== gate RED: s3storage OOMKilled at its 256Mi" \
-            " memory limit while the gate ran" in out
-        for rcs in ([1], [0]):
-            asked = []
-            code, out, _ = run_wrapper_killing(spec, FakeTee(rcs), [], asked)
-            assert code == rcs[0] and len(asked) == rcs[0]
-        assert "=== gate GREEN" in out
-        data = json.loads(oom.read_text())
-        assert data["services"] == [OOM_KILL, s3]
-        assert [r_["services"] for r_ in data["runs"]] == [[OOM_KILL], [s3]]
-        # another round's file is not added to
-        spec = write_spec(tmp, repo, component_argv("frontend"),
-                          touched={"target": "frontend", "waived": []},
-                          round_=2)
-        run_wrapper_killing(spec, FakeTee([1]), [s3])
-        data = json.loads(oom.read_text())
-        assert (data["round"], data["services"], len(data["runs"])) \
-            == (2, [s3], 1)
-
-
-def test_the_gate_wrapper_without_an_oom_kill_says_red_as_ever():
-    with tempfile.TemporaryDirectory() as tmp, plain_git():
-        repo, base = wrapper_repo(tmp)
-        spec = write_spec(tmp, repo, component_argv("frontend"),
-                          touched={"target": "frontend", "waived": []})
-        oom = spec.parent / run_loop.GATE_OOM_NAME
-        asked = []
-        code, out, err = run_wrapper_killing(spec, FakeTee([1]), [], asked)
-        assert code == 1 and len(asked) == 1 and not oom.exists()
-        assert out.rstrip("\n").endswith(
-            "\n=== gate RED: `kc project test --project frontend` ===")
-        # kc not answering: a warning, and the plain red
-        code, out, err = run_wrapper_killing(spec, FakeTee([1]), KC_DOWN)
-        assert code == 1 and not oom.exists()
-        assert ("gate: not checked for a service killed for memory — `kc env "
-                "describe --output=json` failed (rc=1): no pod") in err
-        assert out.rstrip("\n").endswith(
-            "\n=== gate RED: `kc project test --project frontend` ===")
-        # green, and the spec check's red alone: kc never asked
-        asked = []
-        code, _, _ = run_wrapper_killing(spec, FakeTee([0]), [OOM_KILL], asked)
-        assert code == 0
-        spec = write_spec(tmp, repo, None, spec_check=True)
-        code, _, _ = run_wrapper_killing(spec, FakeTee([1]), [OOM_KILL], asked)
-        assert code == 1 and asked == [] and not oom.exists()
-
-
-def writes_gate_oom(loop, services=(OOM_KILL,), round_=1):
-    """A code-writer step's effect: its gate run went red while the
-    services were killed, and the wrapper left its file for the driver."""
-    path = outputs_of(loop) / run_loop.GATE_OOM_NAME
-    path.write_text(json.dumps({
-        "phase": "1", "round": round_, "services": list(services),
-        "runs": [{"started": "s", "finished": "f",
-                  "red": ["kc project test --project app"],
-                  "services": list(services)}]}))
-
-
-def test_a_writer_round_whose_gate_run_met_an_oom_kill_bails_whatever_it_handed_back():
-    for verdict in ({"outcome": "done", "summary": "built"},
-                    {"outcome": "blocked", "summary": "postgres OOMKilled"},
-                    {"outcome": "question", "summary": "more memory?"}):
-        with tempfile.TemporaryDirectory() as tmp:
-            slice_dir, repo = make_slice(tmp)
-            r = ScriptedLoop(slice_dir, [("code-writer", verdict,
-                                          writes_gate_oom)], repo_root=repo)
-            assert run_to_exit(r) == 4, verdict
-            assert not r.gate_calls, "the driver's gate never ran"
-            bail = json.loads((slice_dir / "bailout.json").read_text())
-            assert (bail["reason"], bail["question"], bail["phase"]) \
-                == ("service_oom_killed", True, "1")
-            record = outputs_of(r) / "writer_gate_r1.json"
-            assert ("during the code-writer's own gate run in round 1, red on "
-                    f"`kc project test --project app` (output in {record})"
-                    ) in bail["details"]
-            assert "- postgres — OOMKilled at its 1Gi memory limit, at " \
-                "2026-11-04T10:12:33Z" in bail["details"]
-            ps = load_state(slice_dir)["phases"]["1"]
-            assert (ps["stage"], ps["executor_rounds"]) == ("executor", 1)
-            assert "operator_question" not in ps
-
-
-def test_a_fresh_writer_round_drops_the_oom_kill_an_earlier_one_bailed_on():
-    """The resume after the bail dispatches a fresh round, which removes
-    the file first — so it does not stop on it again; a round that writes
-    no file and a file naming no service are no kill."""
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir, [(*V["exec_done"], writes_gate_oom)],
-                         repo_root=repo)
-        assert run_to_exit(r) == 4
-        oom = outputs_of(r) / run_loop.GATE_OOM_NAME
-        assert oom.exists()
-        seen = []
-
-        def looks(loop):
-            seen.append(oom.exists())
-
-        r2 = ScriptedLoop(slice_dir, [(*V["exec_done"], looks),
-                                      V["review_signoff"], *TAIL],
-                          resume=True, repo_root=repo)
-        r2.fake_git.branches.add("phase/074-P1")
-        assert run_to_exit(r2) == 0 and not r2.script
-        assert seen == [False]
-        assert load_state(slice_dir)["phases"]["1"]["executor_rounds"] == 2
-    with tempfile.TemporaryDirectory() as tmp:
-        slice_dir, repo = make_slice(tmp)
-        r = ScriptedLoop(slice_dir, [
-            (*V["exec_done"], lambda loop: writes_gate_oom(loop, services=())),
-            V["review_signoff"], *TAIL], repo_root=repo)
-        assert run_to_exit(r) == 0 and not r.script
-
-
-def test_a_resumed_writer_round_keeps_its_own_oom_kill():
-    """A round a crash interrupted is the same round, salvaged from its
-    verdict or reattached to its session: the file may be that session's
-    evidence, and the round bails on it once it is back."""
-    for salvaged in (True, False):
-        with tempfile.TemporaryDirectory() as tmp:
-            slice_dir, repo = make_slice(tmp)
-            outputs = slice_dir / "phases" / "P1"
-            outputs.mkdir(parents=True)
-            verdict_path = outputs / "executor_result_r1.json"
-            if salvaged:
-                verdict_path.write_text(json.dumps(
-                    {"outcome": "blocked", "summary": "postgres OOMKilled"}))
-            (outputs / run_loop.GATE_OOM_NAME).write_text(json.dumps({
-                "phase": "1", "round": 1, "services": [OOM_KILL],
-                "runs": []}))
-            state = resume_state(PROJECT, stage="executor")
-            state["in_flight"] = {
-                "phase": "1", "role": "code-writer", "round": 1,
-                "verdict_path": str(verdict_path), "session": "sess-hung",
-                "started_at": "t"}
-            (slice_dir / "state.json").write_text(json.dumps(state))
-            r = ScriptedLoop(slice_dir, [] if salvaged else [V["exec_done"]],
-                             resume=True, repo_root=repo)
-            r.fake_git.branches.add("phase/074-P1")
-            assert run_to_exit(r) == 4
-            if salvaged:
-                assert not r.spawned
-            else:
-                assert r.spawned[0][4] == "sess-hung", "reattached"
-            bail = json.loads((slice_dir / "bailout.json").read_text())
-            assert bail["reason"] == "service_oom_killed"
-            assert load_state(slice_dir)["phases"]["1"]["executor_rounds"] \
-                == 1
 
 
 # -- the run-start setup -------------------------------------------------------
@@ -18059,16 +17178,19 @@ def test_each_step_carries_the_time_the_driver_started_it():
 def test_a_red_gate_and_a_review_with_issues_take_rounds_of_their_own():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp, phases=[("1", "First")])
-        script = [V["exec_done"], V["exec_done"],          # red → gate fix
+        script = [V["exec_done"], FIXER_ISSUES,           # red → the fixer
+                  V["exec_done"],                          # → gate fix
                   V["review_issues"], V["exec_done"],      # → review fix
                   V["review_signoff"], *TAIL]
         r = ScriptedLoop(slice_dir, script, gates=[False, True],
                          repo_root=repo)
         seen = watching(r, "_spawn")
         assert run_to_exit(r) == 0
-        assert [codes for _, codes in seen][:5] == [
-            ["P1.code"], ["P1.code-2"], ["P1.review"], ["P1.code-3"],
-            ["P1.review-2"]]
+        # the gate's test-fixer is no step of its own: it runs in the code
+        # step before it
+        assert [codes for _, codes in seen][:6] == [
+            ["P1.code"], ["P1.code"], ["P1.code-2"], ["P1.review"],
+            ["P1.code-3"], ["P1.review-2"]]
         state = load_state(slice_dir)
         assert [(s["code"], s["label"]) for s in state["progress"]][:5] == [
             ("P1.code", "P1 · First"), ("P1.code-2", "P1 · code 2"),
@@ -18762,127 +17884,6 @@ def test_a_detached_run_refuses_and_runs_through_the_real_handshake():
         assert exit_record(slice_dir)["code"] == 0
 
 
-# -- the gate detached, and waited on in chunks ------------------------------
-#
-# Every role runs on the five-minute prompt cache, and PilotApp's phase gates
-# take 5 to 10 minutes: a writer that waited on one in a single call paid to
-# write its whole context again at the next. `gate --detach` starts the
-# wrapper through long_run.py, beside the spec; `gate --wait` waits on it in
-# calls of at most four minutes. The detached wrapper is the real
-# `run_loop.py gate` in a process of its own, so these run real commands.
-
-def gate_cli(spec, **flags):
-    return call(run_loop.cmd_gate, spec=str(spec), **flags)
-
-
-def gate_wait_line(spec):
-    return f"next: python3 {run_loop.SCRIPT} gate --wait {spec}"
-
-
-def test_a_detached_gate_is_waited_on_to_its_end_and_says_what_its_exit_means():
-    with tempfile.TemporaryDirectory() as tmp, plain_git(), \
-            patched(run_loop.long_run, POLL=0.02):
-        repo, _ = wrapper_repo(tmp)
-        not_a_repo = Path(tmp) / "plain"
-        not_a_repo.mkdir()
-        for root, rc, said, outcome in ((repo, 1, "red", "red"),
-                                        (repo, 0, "green", "green"),
-                                        (repo, 3, "nothing ran", "nothing_ran"),
-                                        (not_a_repo, 0, "no run", None)):
-            spec = write_spec(tmp, root, ["sh", "-c", f"echo gate-ran; exit {rc}"])
-            code, out, err = gate_cli(spec, detach=True)
-            assert code == 0, err
-            started = shlex.join([sys.executable, str(run_loop.SCRIPT), "gate",
-                                  str(spec)])
-            assert out.splitlines() == [
-                f"started: {started} in {os.getcwd()}, at most 3600s",
-                gate_wait_line(spec)]
-            code, out, err = gate_cli(spec, wait=True, for_seconds=60)
-            assert code == 0, err
-            lines = out.splitlines()
-            expected = 2 if outcome is None else rc
-            assert lines[0].startswith(
-                f"ended: exit {expected} ({said}) after "), lines
-            job = spec.parent / run_loop.GATE_RUN_DIR
-            assert lines[1] == f"output: {job / 'output.log'}"
-            assert lines[2] == ""
-            if outcome is None:
-                # the wrapper's own refusal, in the output it left
-                assert lines[3].startswith("gate: "), lines
-                assert not (spec.parent / "writer_gate_r1.json").exists()
-                continue
-            assert lines[3] == "=== `sh -c echo gate-ran; exit " \
-                               f"{rc}` from {repo} ===", lines
-            assert "gate-ran" in lines
-            # the run is the wrapper's: recorded beside the spec as ever
-            assert record_of(spec)["outcome"] == outcome
-            (spec.parent / "writer_gate_r1.json").unlink()
-        assert (job / ".gitignore").read_text() == "*\n"
-
-
-def test_a_gate_is_not_detached_twice_nor_waited_on_where_none_started():
-    with tempfile.TemporaryDirectory() as tmp, plain_git(), \
-            patched(run_loop.long_run, POLL=0.02):
-        repo, _ = wrapper_repo(tmp)
-        spec = write_spec(tmp, repo, ["sh", "-c", "sleep 30"])
-        code, out, err = gate_cli(spec, wait=True, for_seconds=0)
-        assert (code, out) == (2, "")
-        assert err == (f"gate: no gate was started over {spec} — start it "
-                       f"with `python3 {run_loop.SCRIPT} gate --detach "
-                       f"{spec}`\n")
-        code, out, err = gate_cli(spec, detach=True, timeout=1)
-        assert code == 0, err
-        assert out.splitlines()[0].endswith(", at most 1s")
-        code, out, err = gate_cli(spec, detach=True)
-        assert (code, out) == (2, "")
-        assert err.splitlines() == [
-            "long_run: a job is already running in "
-            f"{spec.parent / run_loop.GATE_RUN_DIR} — wait on it:",
-            gate_wait_line(spec)]
-        code, out, _ = gate_cli(spec, wait=True, for_seconds=0)
-        assert code == run_loop.long_run.WAIT_RUNNING
-        running, again = out.splitlines()
-        assert running.startswith("running: ") \
-            and running.endswith(" of at most 1s")
-        assert again == gate_wait_line(spec)
-        # the timeout kills the wrapper and the suite it runs
-        code, out, _ = gate_cli(spec, wait=True, for_seconds=30)
-        assert code == 0
-        assert out.splitlines()[0] == "ended: exit 124, timed out after 1s"
-
-
-def test_gate_refuses_a_bad_spec_and_flags_that_do_not_combine():
-    with tempfile.TemporaryDirectory() as tmp:
-        bad = Path(tmp) / "phases" / "P1" / "gate_spec.json"
-        bad.parent.mkdir(parents=True)
-        bad.write_text("{}")
-        code, out, err = gate_cli(bad, detach=True)
-        assert (code, out) == (2, "")
-        assert err.startswith(f"gate: {bad} is not a gate spec: ")
-        assert not (bad.parent / run_loop.GATE_RUN_DIR).exists()
-        for flags, why in (({"detach": True, "wait": True}, "do not combine"),
-                           ({"timeout": 5}, "--timeout goes with --detach"),
-                           ({"for_seconds": 5}, "--for goes with --wait"),
-                           ({"detach": True, "for_seconds": 5},
-                            "--for goes with --wait")):
-            code, out, err = gate_cli(bad, **flags)
-            assert (code, out) == (2, ""), flags
-            assert why in err, (flags, err)
-        # the parser itself refuses the pair
-        argv = ["run_loop.py", "gate", "--detach", "--wait", str(bad)]
-        with patched(sys, argv=argv), \
-                contextlib.redirect_stderr(io.StringIO()) as err:
-            try:
-                run_loop.main()
-            except SystemExit as e:
-                assert e.code == 2
-            else:
-                raise AssertionError("main did not exit")
-        assert "not allowed with argument" in err.getvalue()
-        assert run_loop.GATE_EXIT_MEANINGS == {
-            0: "green", 1: "red", 3: "nothing ran", 2: "no run"}
-
-
 # -- where each repo stood before the slice: a test-fixer's measure ----------
 #
 # Slice 039's completion consult ruled a product regression "a flake or a
@@ -19231,7 +18232,6 @@ def test_wait_answers_0_with_the_halt_and_where_it_stopped():
         assert out.splitlines() == ["ended: exit 7", "halted: before P3"]
 
 
-
 # -- the spec repo's push (AIWF-159) -------------------------------------------
 #
 # Both loops push the spec repo after each commit of theirs and after each
@@ -19456,7 +18456,6 @@ def test_push_spec_never_raises_and_leaves_a_repo_it_cannot_read_as_it_was():
                                             previous=None)
         assert record["error"] == ("the push could not be made: OSError: "
                                    "no git here")
-
 
 
 def on_a_hand_branch(spec):
@@ -19807,7 +18806,6 @@ def test_the_spec_repo_s_diverged_base_is_left_for_the_run_to_push():
                 "it pushes it after each commit, and a push it could not "
                 "make is state.json's spec_unpushed") in \
             (slice_dir / "log.txt").read_text()
-
 
 
 # -- the debrief ----------------------------------------------------------------

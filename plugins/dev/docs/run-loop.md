@@ -249,18 +249,17 @@ whole plan is a feature of the review, not a cost. Then:
   `[migrations]`, [project-contract.md](project-contract.md) § 2) and the phase's Target is in the
   repo that holds it: when the phase's diff adds a file under its `paths`, or when the phase's
   start took origin over migrations the slice's merged phases added there. It runs last, its
-  command through `sh -c` from the phase's tree, in the gate and in the writer's gate wrapper
-  alike; any exit but 0 is a red gate, which takes the writer's fix round like any red, and its
-  green never makes a gate green whose tests ran nothing. Slice 036's P1 and P5 added migrations
-  that reused revision ids origin's already had, and nothing said so until the test phase's push
-  was rejected; now the collision is red at the phase that made it, or at the first phase start
-  that brings origin's in.
+  command through `sh -c` from the phase's tree; any exit but 0 is a red gate, taken like any red,
+  and its green never makes a gate green whose tests ran nothing. Slice 036's P1 and P5 added
+  migrations that reused revision ids origin's already had, and nothing said so until the test
+  phase's push was rejected; now the collision is red at the phase that made it, or at the first
+  phase start that brings origin's in.
   A build breakage is caught deterministically by the loop-tail sweep and the doc gate. Green is
   recorded commit+log and stated in the reviewer's dispatch so the review never re-runs the
-  suite; the claim covers a lint only where one ran. A red gate spawns a **fresh executor fix round** (cap 3,
-  then `gate_red` bails); there is no separate fixer in the phase loop. A red while a service
-  the pod runs was OOM-killed takes no round: it bails `service_oom_killed` (§ Protocol
-  invariants). A gate kc says **ran
+  suite; the claim covers a lint only where one ran. A red gate is measured, goes to the test-fixer,
+  and only what that hands back spawns an executor fix round (*A red gate is measured first*, below;
+  cap 3 gate-fix rounds, then `gate_red` bails). A red while a service the pod runs was OOM-killed
+  takes no round: it bails `service_oom_killed` (§ Protocol invariants). A gate kc says **ran
   nothing** (exit 3: the target defines no tests) is neither: the phase proceeds as with no
   gate, no green is recorded, and the reviewer is told the target defines no tests, so the
   state is unverified. A `gate` ruling in the plan waives the gate outright (§ After the last
@@ -292,47 +291,56 @@ whole plan is a feature of the review, not a cost. Then:
   manifest, after the test. A red lint is the gate's red and a fix round, like a red test. A lint
   that ran nothing (no lint statement) is skipped: it neither reds the gate nor makes a gate
   green whose tests ran nothing. A lint an `accept` ruling covers is not run (§ After the last
-  phase, operator rulings). `gate_spec.json` carries the lint commands, so the writer's wrapper
-  runs them and the reuse below holds. The reviewer is told the lint is clean only where a lint
-  ran green. PilotApp slices 008 (P10) and 020 (P9) gated a frontend on Playwright alone, so its
+  phase, operator rulings). The reviewer is told the lint is clean only where a lint ran green.
+  PilotApp slices 008 (P10) and 020 (P9) gated a frontend on Playwright alone, so its
   `pnpm check` — eslint, `tsc -b`, knip — waited for the loop-tail sweep, while the plans said
   "tsc is green at this phase's gate" and the reviewer was told the gate was not to be re-run.
-- **The writer's green run stands for an unchanged tree** — the writer runs the gate through
-  the driver: every code-writer dispatch names `python3 run_loop.py gate
-  phases/P<id>/gate_spec.json`, a spec the driver rewrites at each dispatch with the round, the
-  phase's tree, the Target's command, root's fallback, the base branch and the components a
-  `gate` ruling covers. The wrapper runs what the driver's gate would run — the touched
-  components, and a spec-repo phase's spec check, from the merge base it takes itself as the run
-  begins (`git merge-base <base> HEAD`, so a rebase earlier in the round is the range it gates)
-  against the tree as it stands, uncommitted work included — and
-  records the run in `writer_gate_r<N>.json` (`N` the code-writer round): each command with its
-  exit code and output, and the tree's content hash when the run began and when it ended. At
-  gate time the driver takes the latest round's record in place of running the suites when its
-  commands are those it would run now, none went red, and the tree's hash now equals the hash at
-  both ends of the run. It replays the record through the gate's own code, so the log, the
-  green commit, `gate_projects` and the history row come out as from a run: `gate_r<N>.log`
-  says at its top that it is the writer's run, and the row names the record (`reused`). No
-  record, an edit after the run began, another set of touched components or a red, and the
-  driver gates as before, its log saying why it did not take the record. The content hash is
-  git's tree id for the working tree, staged into a throwaway copy of the index: tracked files
-  as they are on disk and untracked files git does not ignore, never ignored files or
-  timestamps, so a commit of the tree after the run changes nothing. The green is not taken on
-  an agent's word: the commands are the driver's, run and recorded by its code, and the driver
-  checks the tree itself. A flake that passes the writer's run is an accepted risk; a second
-  run could pass it just the same, and CI catches it. Across ten PilotApp slices, 93 of 124
-  driver gates (133 of their 170 minutes) re-ran a green the writer had seen on an unchanged
-  tree.
+- **The driver gates; the writer runs the tests its change touches.** No code-writer dispatch runs
+  the phase gate. The first round, a review-fix round and a gate-fix round each run the tests their
+  change touches, the linter once, and hand back; each dispatch names the gate the driver runs after
+  it, so that the writer knows what has to pass. A `done` verdict carries the round's handover: each
+  behaviour it changed on purpose, with the plan line that asks for it, and each existing test it
+  expects that change to break. The driver keeps it on the phase (`handovers`), for the test-fixer;
+  a verdict with none, or one off its shape, is logged and never refused. Until the gate moved, the
+  writer ran it itself, through a wrapper of the driver's whose green the driver took in place of
+  its own, and its session sat out the gate's 3 to 12 minutes: in PilotApp's week of 2026-11-01 to
+  11-08 those waits were 108 prompt-cache misses and $115, which the chunked wait had already cut.
+  What the move adds is a green detected with no model call, and a red measured before anyone edits
+  it.
 
-  **The writer starts its gate detached and waits on it in chunks.** The dispatch names `gate
-  --detach <spec>`, which runs the wrapper in a process of its own (`long_run.py`, its job in
-  `phases/P<id>/gate_run/`) and returns, and `gate --wait <spec>`, which returns within four
-  minutes: `running`, or `ended` with the gate's output and its exit (0 green, 1 red, 3 nothing
-  ran, 2 no run). The writer runs the wait again at once until it ends. A gate in one wait past
-  five minutes expired the writer's prompt cache, so the call after it wrote the whole context
-  again: 108 misses and $115 in PilotApp's week of 2026-11-01 to 11-08, where a frontend gate
-  takes 7.5 minutes at the median, against about $7 of chunk returns
-  ([agent-dispatch.md](agent-dispatch.md) § Nested delegation, the chunked wait). The record and
-  its reuse are the same either way: `gate --detach` runs the wrapper itself.
+  **A red gate is measured first.** Each red banks a gate-fix round, before anyone edits. The driver
+  gates the tree again, which runs the red commands alone (every other one stands from the red gate:
+  *A green the driver ran*, below), then runs each red `kc project` command once on the merge base —
+  the commit before the phase's work, checked out detached in the phase's tree, the branch checked
+  back out after, its output in `phases/P<id>/measure_r<N>_base.log`. The spec check and the
+  migration check have no run there: what they check is the phase's diff, so their red is the
+  phase's. A base that cannot be checked out, a component it has not got, a missing tool or a
+  service killed for memory is no measurement (`not_run`, `unrunnable`, `oom_killed`), never an
+  older red. The round's record is in `measurements`, with the sentences the test-fixer and the
+  executor round read: for each red command, how many of its two runs on the tree went red, how it
+  fared on the base, and whose red that makes it.
+
+  **A red the re-gate passes that is red on the base too is older than the phase.** The round ends
+  there: no fixer runs, the re-gate's green is the phase's gate, and the close-out report gets an
+  entry per suite, labelled as the sweep's unsettled flake is (*A `flake` is a `complete`*, below),
+  with a card request to make the suite deterministic. A green on the base is the phase's red, a red
+  the re-gate passed included: a red that passes once more is no measurement.
+
+  **Any other red goes to the test-fixer**, on Sonnet, in the phase's tree on its branch. Its
+  dispatch carries the red commands and the gate's log, the measurement, the phase's own section of
+  the plan, every code-writer round's handover, the phase's diff and the merge base it measures
+  against. It runs the failing tests and never the gate: the driver gates after it. Its verdict is
+  held against its commits. A `clean` that committed nothing is `issues` — a re-run to green is no
+  fix — and so is a `clean` that left the tree dirty after the commit nudge, one that left the
+  phase's branch (which is checked back out), and a session with no valid verdict. Whatever is not
+  `clean` leaves no commit and no edit: what it committed is reset away (`taken_back` on its row)
+  and what it left uncommitted is discarded, ignored files kept. A `clean` is gated again, and
+  spends no executor round; an `issues` is the round's executor fix round, which reads the
+  measurement and the fixer's summary; a `blocked` bails `blocked` with its summary. The fixer
+  belongs to the gate: it is no step of Pilot's of its own, and only the executor round leaves the
+  review step a why. A crash in the measurement or the fixer is resumed by gating again and
+  measuring afresh (`gate_fix_open`): a fixer's session is never reattached, and what it left
+  uncommitted is set aside under its own name.
 
   **A green the driver ran is not run again on the same tree.** Every gate the driver runs — a
   phase gate, the sweep, the doc gate, a wrap-up gate in a sibling — records each `kc project`
@@ -347,7 +355,7 @@ whole plan is a feature of the review, not a cost. Then:
   to a code comment is a change to code, since telling one apart needs a parser per language
   (slice 033's consult edited a comment and the sweep ran 6.6 minutes again), and a suite that
   reads Markdown files, a fixture or a docs test, is not run again after a change to them
-  alone. The writer's own run, above, stays the first that stands for a phase gate.
+  alone.
 - **Review** — fresh **code-reviewer** per round against the phase's outcome, the acceptance
   criteria (`verification.json`) and repo conventions. Round 1 full branch diff; rounds 2+ are
   delta-scoped to the fix range, save after a merge base that moved since the last review (the
@@ -1012,14 +1020,9 @@ began. If one was, the run bails `service_oom_killed` (exit 4) before a fix roun
 details name the service, the limit it was killed at, when, and the command. They also give the
 fix, which is the operator's because of the restart: `resources: {limits: {memory: …}}` on the
 service's `- use: <name>` entry under `services:` in the host's `.kubecoder/config.yaml`, then
-`kc env restart`. The writer's wrapper does the same check over its whole run. On a kill it writes
-`gate_oom.json` beside the spec and closes on a RED line that names the cause and tells the writer
-to change no code and hand back `blocked`; its exit stays 1. A later run in the same round adds to
-the file and never drops a kill from it: a writer that ran again and saw green on the restarted
-service must not hide the kill. Once the round's session is back, whatever it handed back, the
-driver bails `service_oom_killed` on the file. A fresh round removes the file before dispatch, so
-the resume after the bail does not stop on it again. A kill older than the command or the run
-counts for nothing: `lastTermination` outlives the restart that follows it. A red is checked
+`kc env restart`. On the merge base, in a red gate's measurement, a kill makes that run no
+measurement (`oom_killed`) rather than a bail. A kill older than the command counts for nothing:
+`lastTermination` outlives the restart that follows it. A red is checked
 whatever its log says, because a dropped connection reads differently in each driver and
 language, and the call is one kc read. Where kc does not answer, a warning is logged and the red
 takes its fix round as before. The sweep, the doc gate and the wrap-up's gate are not checked.

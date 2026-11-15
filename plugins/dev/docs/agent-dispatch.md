@@ -98,9 +98,9 @@ word; the code-writer's `MODELS` entry says which runs. Every other role stays a
 
 The only exceptions are the **always-Sonnet agents**, which additionally pin `model: sonnet` in
 their own definitions so they stay Sonnet even as sub-agents: **test-agent** (the test phase),
-**test-fixer** (mechanical suite repair; the run loop also dispatches it itself, `--model
-sonnet`, on a sweep flake), and the **rebase-agent**. Two Opus agents pin their
-model too. The
+**test-fixer** (mechanical suite repair; the run loop also dispatches it itself, `--model sonnet`,
+first on a phase gate's red and on a sweep flake), and the **rebase-agent**. Two Opus agents pin
+their model too. The
 **plan-preparer** pins `model: opus` and `effort: xhigh`: it grounds the slice and writes the
 requirements asks the operator rules on, and that work does not inherit the model of the stage's
 session ([plan-slice](../skills/plan-slice/SKILL.md)). The **wrap-up** pins `model: opus` too, though the driver is its one caller now
@@ -183,13 +183,11 @@ prompt `run_kc_session` sends a fresh session, in either loop, opens with one li
 may run past four minutes, however the role's instructions write it (a suite, a gate, a wait on
 a CI build), runs detached and is waited on in chunks. The role starts it with `long_run.py
 start --timeout <seconds> -- <command>` and runs the `next:` line that prints, a wait that
-returns within four minutes, again at once while it says `running`. Every such wait, and every
-`gate --wait`, is run with the Bash tool's `timeout: 300000`: at the tool's default of two
-minutes the call is moved to the background, the pattern the line forbids, and its notification
-reads as a failure while the command still runs. `ended` brings the
-command's output and exit. A phase gate has its own pair, `run_loop.py gate --detach` and `gate
---wait` ([run-loop.md](run-loop.md) § The per-phase round). That line is the waiter, so the
-role never ends its turn on such a command, sleeps, tails a log or builds a waiter of its own.
+returns within four minutes, again at once while it says `running`. Every such wait is run with the
+Bash tool's `timeout: 300000`: at the tool's default of two minutes the call is moved to the
+background, the pattern the line forbids, and its notification reads as a failure while the command
+still runs. `ended` brings the command's output and exit. That line is the waiter, so the role never
+ends its turn on such a command, sleeps, tails a log or builds a waiter of its own.
 A shorter command runs in the foreground under `timeout(1)`. A `kc project test` that its
 timeout killed prints nothing, so the line points the role at kc's log under `/tmp/kc/project`,
 and a run that only waited, with no test run, is run again rather than fixed.
