@@ -4212,6 +4212,191 @@ def test_the_record_show_and_document_escape_an_authors_less_than_outside_code()
         assert "- **Keep \\<it>** (recommended): nothing changes" in shown
 
 
+# -- the fixes pass: `fix-now`, `worklist --fixes`, the driver's record ---------
+
+def _fix_slice(tmp):
+    """B1 unruled; B2 and B3 agreed to by the operator; B4 agreed to and
+    carried out; B5 a request for the operator's word Pilot agreed to, B6 one
+    the operator agreed to; B7 deferred."""
+    slice_dir = make_slice(tmp)
+    close_out.init_report(slice_dir)
+    for i in range(1, 8):
+        code, _, err = run_cli("append", slice_dir, *with_flags(
+            EASY, headline=f"controller: defect {i}", proposal=f"fix now: correct {i}"))
+        assert code == 0, err
+    for eid in ("B5", "B6"):
+        restated(slice_dir, eid, headline="say it syncs on start", body=WORD)
+        close_out.propose_entry(slice_dir, eid, WU, "edit the page on your word",
+                                mark="word")
+    for eid in ("B2", "B3", "B4", "B6"):
+        answer(slice_dir, eid, answer="Agree", by="pvginkel")
+    answer(slice_dir, "B5", answer="Agree", by="agent")
+    answer(slice_dir, "B7", answer="deferred", to="P-12", by="agent")
+    close_out.rule_entry(slice_dir, "B4", "fixed by hand")
+    return slice_dir
+
+
+def test_fix_now_marks_a_ruled_entry_and_refuses_what_is_not_the_passs():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _fix_slice(tmp)
+        for eid, needle in (("B1", "B1 holds no ruling"),
+                            ("B4", "B4's ruling is carried out already: fixed by hand"),
+                            ("B5", "Pilot chose its ruling: that edit is made on the "
+                                   "operator's own word alone"),
+                            ("B7", "B7 is struck")):
+            before = _files(slice_dir)
+            code, out, err = run_cli("fix-now", slice_dir, eid, "--by", "run-slice")
+            assert code == 2 and not out and needle in err, (eid, err)
+            assert _files(slice_dir) == before
+        code, out, err = run_cli("fix-now", slice_dir, "B2", "--by", "run-slice",
+                                 "--change", "say 'ready' — the operator's words",
+                                 "--date", "2026-11-15")
+        assert code == 0, err
+        assert out.strip() == ("B2: fix now, marked by run-slice, 2026-11-15 — the "
+                               "ruled change: say 'ready' — the operator's words")
+        assert entry_of(slice_dir, "B2")["fix_now"] == {
+            "by": "run-slice", "date": "2026-11-15",
+            "change": "say 'ready' — the operator's words"}
+        # the operator's own word on a word request makes it
+        assert run_cli("fix-now", slice_dir, "B6", "--by", "run-slice")[0] == 0
+        # a second mark replaces the first, kept as history
+        assert run_cli("fix-now", slice_dir, "B2", "--by", "run-slice",
+                       "--date", "2026-11-16")[0] == 0
+        b2 = entry_of(slice_dir, "B2")
+        assert b2["fix_now"] == {"by": "run-slice", "date": "2026-11-16"}
+        assert b2["notes"][-1]["history"] == close_out.FIX_NOW_HISTORY
+        assert "say 'ready'" in b2["notes"][-1]["text"][0]
+        # show and the record carry the mark
+        assert "**Fix now:** marked by run-slice, 2026-11-16" in close_out.show_view(
+            slice_dir, ["B2"])
+
+
+def test_worklist_fixes_names_what_the_pass_takes_and_the_plain_worklist_never():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = _fix_slice(tmp)
+        code, out, _ = run_cli("worklist", slice_dir, "--fixes")
+        assert (code, out.strip()) == (0, "nothing is ruled fix now")
+        close_out.fix_now_entry(slice_dir, "B2", "run-slice", change="say 'ready'")
+        close_out.fix_now_entry(slice_dir, "B3", "run-slice")
+        close_out.append_entry(slice_dir, "event", "The wrap-up was left out", "b",
+                               consequence="its fixes stay on branches",
+                               proposal="fix now: land the wrap-up's branches")
+        close_out.set_left_out(slice_dir, "E1", {"branches": [], "entries": []})
+        answer(slice_dir, "E1", answer="Agree", by="pvginkel")
+        close_out.fix_now_entry(slice_dir, "E1", "run-slice")
+        code, out, _ = run_cli("worklist", slice_dir, "--fixes")
+        assert code == 0
+        lines = out.splitlines()
+        assert lines[0] == "3 entries are ruled fix now"
+        assert "B2 · fix now — the ruled change: say 'ready'" in lines
+        assert ("B3 · fix now — as the proposal the ruling agreed to says: fix now: "
+                "correct 3") in lines
+        assert ("E1 · land — the wrap-up's branches, left out of its landing: the "
+                "driver lands them, and they are not yours") in lines
+        assert "    Ruling: answer: Agree · by pvginkel" in lines
+        # the dispatch's view leaves the driver's landing out
+        assert "E1 ·" not in close_out.fixes_view(slice_dir, landing=False)
+        # carried out, an entry leaves the list
+        close_out.fixes_landed(slice_dir, "B3", "fixed in the fixes pass")
+        assert [e["id"] for e, _ in close_out.fixes_worklist(slice_dir)] == ["B2", "E1"]
+        # the plain worklist names none of them: a ruled entry waits for no
+        # wrap-up
+        assert [e["id"] for e, _ in close_out.worklist(slice_dir)] == ["B1"]
+
+
+def test_the_left_out_events_landing_comes_to_the_operator():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        close_out.append_entry(slice_dir, "event", "The wrap-up was left out", "b",
+                               consequence="its fixes stay on branches",
+                               proposal="fix now: land the wrap-up's branches")
+        # the plain event: the tool's labels, which would send it to a look
+        assert close_out.route(entry_of(slice_dir, "E1"))[0] == "wrap-up:look"
+        close_out.set_left_out(slice_dir, "E1", {"branches": [{"repo": "/r"}]})
+        assert close_out.route(entry_of(slice_dir, "E1")) == close_out.LANDING_ROUTE
+        assert not close_out.worklist(slice_dir), "the driver's, not the wrap-up's"
+        close_out.render_report(slice_dir)
+        doc = report(slice_dir)
+        assert "```decision id=E1" in doc
+        assert "proposal: \"fix now: land the wrap-up's branches\"" in doc \
+            or "proposal: fix now: land the wrap-up's branches" in doc
+
+
+def test_fixes_card_restates_the_entry_as_its_card_within_the_words():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        run_cli("append", slice_dir, *with_flags(
+            EASY, body="\n\n".join(f"Paragraph {i}: " + "the long story " * 25
+                                   for i in range(4)),
+            proposal="fix now: correct it"))                                  # B1
+        answer(slice_dir, "B1", answer="Agree", by="pvginkel")
+        close_out.fix_now_entry(slice_dir, "B1", "run-slice")
+        # a strike the session wrote in the pass is the driver's to take back
+        close_out.strike_entry(slice_dir, "B1", "fixed", by="wrap-up", commit="abc1234")
+        words = close_out.fixes_card(slice_dir, "B1", "the gate went red (output in "
+                                     "/s/fixes_doc_gate_r2.log)", date="2026-11-15")
+        assert words <= close_out.CARD_WORDS_MAX
+        e = entry_of(slice_dir, "B1")
+        assert not e["strike"] and not e["ruling"].get("did")
+        assert e["notes"][-1]["history"] == "strike" or any(
+            "strike taken back" in n["text"][0] for n in e["notes"])
+        assert e["restated"]["by"] == close_out.RUN_LOOP
+        assert e["restated"]["headline"] == "controller: the status line is wrong"
+        assert e["restated"]["body"][0] == (
+            "The fix this entry was ruled for did not land in the fixes pass: the gate "
+            "went red (output in /s/fixes_doc_gate_r2.log).")
+        assert e["restated"]["body"][-1] == close_out.FIXES_CARD_REST.format(id="B1")
+        assert e["proposal"] == close_out.FIXES_CARD_PROPOSAL
+        assert e["wrap_up"]["outcome"] == "card" and e["wrap_up"]["by"] == "the run loop"
+        assert close_out.route(e)[0] == "card:wrap-up"
+        # the operator's ruling stands, and the proposal it ruled on is history
+        assert e["ruling"]["answer_lines"] == {"answer": "Agree", "by": "pvginkel"}
+        assert any("proposal replaced — was: fix now: correct it" in n["text"][0]
+                   for n in e["notes"])
+        card = close_out.card_view(slice_dir, ["B1"])
+        assert len(card.split()) <= close_out.CARD_WORDS_MAX
+        assert "Paragraph 0:" in card and "Paragraph 3:" not in card
+
+
+def test_restore_wrap_up_writes_brings_its_work_back_over_no_ruling():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        for _ in range(3):
+            run_cli("append", slice_dir, *EASY)                               # B1–B3
+        before = store(slice_dir)
+        close_out.strike_entry(slice_dir, "B1", "fixed", by=WU, commit="w1" + "0" * 38)
+        close_out.strike_entry(slice_dir, "B2", "fixed", by=WU, commit="w2" + "0" * 38)
+        restated(slice_dir, "B3", headline="the card", body="its text")
+        close_out.propose_entry(slice_dir, "B3", WU, "Card it.", mark="card")
+        close_out.append_entry(slice_dir, "event", "the wrap-up's own", "b",
+                               consequence="none")                            # E1
+        left = store(slice_dir)
+        # taken back, the rollback's event in E1's place, B2 and B3 ruled since
+        (slice_dir / "close-out.json").write_text(json.dumps(before))
+        close_out.append_entry(slice_dir, "event", "left out", "b", consequence="none")
+        answer(slice_dir, "B2", answer="card", by="pvginkel")
+        answer(slice_dir, "B3", answer="Agree", by="pvginkel")
+        restored = close_out.restore_wrap_up_writes(
+            slice_dir, before, left, {"w1" + "0" * 38: "p1" + "0" * 38,
+                                      "w2" + "0" * 38: "p2" + "0" * 38},
+            "the fixes pass landed its branches", date="2026-11-15")
+        assert restored == ["B1", "B2", "B3", "E2"]
+        b1, b2, b3 = (entry_of(slice_dir, i) for i in ("B1", "B2", "B3"))
+        assert b1["strike"]["commit"] == "p1" + "0" * 38
+        assert b1["notes"][-1]["history"] == close_out.LANDED
+        assert not b2["strike"] and b2["ruling"]["answer_lines"]["answer"] == "card"
+        assert "It had struck the entry — fixed (`p2" in " ".join(b2["notes"][-1]["text"])
+        assert b3["restated"]["headline"] == "the card" and not b3.get("wrap_up")
+        assert b3["proposal"] == entry_of(slice_dir, "B3")["proposal"] != "Card it."
+        # the appended entry comes back under a free id
+        e2 = entry_of(slice_dir, "E2")
+        assert e2["headline"] == "the wrap-up's own"
+        assert entry_of(slice_dir, "E1")["headline"] == "left out"
+
+
 if __name__ == "__main__":
     _tests = [v for k, v in sorted(globals().items())
               if k.startswith("test_") and callable(v)]

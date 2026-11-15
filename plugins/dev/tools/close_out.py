@@ -55,7 +55,15 @@ the agents and the skills:
                of the slice still unplanned it is `for` (or `--into`), and
                stage that file; prints the strike that follows its commit.
                Writes neither the store nor the report.
-  worklist     what waits for the wrap-up, with what is asked of each.
+  worklist     what waits for the wrap-up, with what is asked of each;
+               `--fixes`, what the fixes pass (`run_loop.py fixes`) takes:
+               every entry marked `fix now` whose ruling is not carried
+               out, with the ruled change.
+  fix-now      mark a ruled entry as one the fixes pass makes: `--by` who
+               marks it, `--change` the ruled change in the ruling's words.
+               Refused on an entry with no ruling, one struck, one whose
+               ruling is carried out, and on Pilot's ruling of the
+               wrap-up's request for the operator's word.
   show         one or more entries in full — what the document and the
                record cut short; `--card`, the card an agreed card request
                files: the section's heading, then its body.
@@ -83,8 +91,10 @@ the agents and the skills:
 
 The store is open to every author — the appender, the reviewers, the
 consults, the wrap-up — until the report is rendered at the run's end; after
-it, only the continuation writes, through `absorb`, `rule`, `fold`, `settle`
-and `close`. Nothing renders on a write. `append`, `amend`, `note` and
+it, only the continuation writes, through `absorb`, `fix-now`, `rule`,
+`fold`, `settle` and `close`, and the fixes pass it starts: the wrap-up's
+card requests, and the driver's record of what landed (`fixes_landed`,
+`fixes_card`, `restore_wrap_up_writes`). Nothing renders on a write. `append`, `amend`, `note` and
 `propose` refuse an author's text that cites a line by its number outside a
 fenced block (`asks.citation_problems`; the rule is `docs/spec-tree.md`
 § Citing a line), and `restate` does too; `append`, `amend` and `propose`
@@ -120,6 +130,7 @@ Exit codes: 0 ok · 2 usage/precondition error.
 
 import argparse
 import contextlib
+import copy
 import difflib
 import fcntl
 import json
@@ -1598,6 +1609,321 @@ def _rerule(entry: dict, did: str, commit: str | None, day: str,
         struck["commit"] = commit
 
 
+# -- the fixes pass: a `fix now` the operator ruled, made by the wrap-up -------
+#
+# The continuation marks the rulings that are a `fix now` (`fix-now`: which
+# ones are is judgment — an Agree to a proposal that opens `fix now:`, or the
+# operator's own words asking for the fix); `run_loop.py fixes` takes what is
+# marked and not carried out (`fixes_worklist`), has the wrap-up make it on a
+# branch of its own, gates it and lands it, and records each entry: a fix that
+# landed through `rule` (`fixes_landed`), one that did not as a card request
+# (the wrap-up's own, or `fixes_card`) for the continuation to file.
+
+# Who signs what the run loop writes into the store.
+RUN_LOOP = "the run loop"
+# The history notes of the pass: a mark replaced, a strike the wrap-up wrote
+# in the pass and the driver took back, and the note that the left-out
+# wrap-up's work came back with its landing (which makes the note that it
+# was left out, DROPPED, history).
+FIX_NOW_HISTORY = "fix-now"
+LANDED = "wrap-up-landed"
+# The route of the run loop's ask to land a left-out wrap-up's branches: the
+# left-out event the driver enters, given that proposal (`left_out`).
+LANDING_ROUTE = ("operator:landing",
+                 "to you — the wrap-up's branches, left out of the landing, land "
+                 "on your word")
+# The driver's card request on an entry the pass did not land: the line its
+# section opens with, the proposal Agree files it on, and the line a section
+# cut to fit CARD_WORDS_MAX ends with.
+FIXES_CARD_LINE = "The fix this entry was ruled for did not land in the fixes pass: {reason}"
+FIXES_CARD_PROPOSAL = ("Card it, as this section says: the fix you agreed to did not "
+                       "land in the fixes pass.")
+FIXES_CARD_REST = "The rest of the entry is in the close-out record (`close_out.py show {id}`)."
+
+
+def _fix_now_text(mark: dict) -> str:
+    said = f"marked by {mark.get('by')}, {mark.get('date')}"
+    if mark.get("change"):
+        said += f" — the ruled change: {mark['change']}"
+    return said
+
+
+def fix_now_entry(slice_dir: Path | str, eid: str, by: str, change: str | None = None,
+                  date: str | None = None) -> str:
+    """Mark a ruled entry as one the fixes pass makes: `fix_now: {by, date,
+    change}` on it, `change` the ruled change in the ruling's words where
+    the proposal alone does not say it. Refused, nothing written, on an
+    entry with no ruling, one struck, one whose ruling is carried out
+    already (`did`), and on an entry the wrap-up brought for the operator's
+    word (`propose --word`) whose ruling Pilot chose: an edit a rule of the
+    project reserves for the operator is made on their own word alone. A
+    second mark replaces the first, kept as a history note. Returns the
+    mark as `show` gives it."""
+    who = _collapse(by)
+    if not who:
+        raise ReportError("fix-now needs --by: who marks the ruling")
+    said = _collapse(change) or None
+    day = _date(date)
+    with _writing(slice_dir) as store:
+        entry = _find(store, eid)
+        eid = entry["id"]
+        if not _ruled(entry):
+            raise ReportError(f"{eid} holds no ruling: only a ruling makes a fix now, and "
+                              "`absorb` reads the answers of close-out.md back first")
+        if entry["ruling"].get("did"):
+            raise ReportError(f"{eid}'s ruling is carried out already: "
+                              f"{entry['ruling']['did']}")
+        if entry.get("strike"):
+            raise ReportError(f"{eid} is struck — a struck entry is settled")
+        lines = entry["ruling"].get("answer_lines") or {}
+        if (entry.get("wrap_up") or {}).get("outcome") == "word" and lines \
+                and _answered_by(lines) == PILOT:
+            raise ReportError(
+                f"{eid} asks for the operator's word on an edit a rule of the project "
+                "reserves for them, and Pilot chose its ruling: that edit is made on the "
+                "operator's own word alone, so put it to them")
+        new = {"by": who, "date": day, **({"change": said} if said else {})}
+        old = entry.get("fix_now")
+        if old and old != new:
+            entry["notes"].append({"by": who, "date": day,
+                                   "text": [f"fix now replaced — was: {_fix_now_text(old)}"],
+                                   "history": FIX_NOW_HISTORY})
+        entry["fix_now"] = new
+        return f"{eid}: fix now, {_fix_now_text(new)}"
+
+
+def _fix_waits(entry: dict) -> bool:
+    """Marked `fix now`, live, and its ruling not carried out."""
+    return (bool(entry.get("fix_now")) and not entry.get("strike")
+            and _ruled(entry) and not entry["ruling"].get("did"))
+
+
+def _fix_asked(entry: dict) -> str:
+    """What the fixes pass is asked of a marked entry: the landing of a
+    left-out wrap-up, which the driver makes, or the ruled change — the
+    mark's words, else the proposal the ruling agreed to."""
+    if entry.get("left_out"):
+        return ("land — the wrap-up's branches, left out of its landing: the driver "
+                "lands them, and they are not yours")
+    change = (entry.get("fix_now") or {}).get("change")
+    if change:
+        return f"fix now — the ruled change: {change}"
+    if entry.get("proposal"):
+        return f"fix now — as the proposal the ruling agreed to says: {entry['proposal']}"
+    return "fix now — as the ruling says"
+
+
+def fixes_worklist(slice_dir: Path | str) -> list[tuple[dict, str]]:
+    """(entry, what is asked) for every entry the fixes pass takes — marked
+    `fix now`, live, its ruling not carried out — in order of arrival."""
+    store = _read_store(slice_dir)
+    return [(entry, _fix_asked(entry)) for entry in store["entries"]
+            if _fix_waits(entry)]
+
+
+def fixes_view(slice_dir: Path | str, landing: bool = True) -> str:
+    """`worklist --fixes`: each entry the fixes pass takes, its id and what
+    is asked, then its heading as the document showed it, its Consequence
+    and its ruling. Without `landing`, a left-out wrap-up's landing — the
+    driver's — is left out: the wrap-up's dispatch names it nowhere."""
+    items = [(e, a) for e, a in fixes_worklist(slice_dir)
+             if landing or not e.get("left_out")]
+    if not items:
+        return "nothing is ruled fix now"
+    verb = "is" if len(items) == 1 else "are"
+    out = [f"{_plural(len(items), 'entry', 'entries')} {verb} ruled fix now"]
+    for entry, asked in items:
+        told = entry.get("restated") or {}
+        out.append(f"{entry['id']} · {asked}")
+        out.append(f"    {told.get('headline') or _headline_with_grade(entry)}")
+        consequence = told.get("consequence") or entry.get("consequence")
+        out.append(f"    Consequence: {consequence}" if consequence
+                   else "    (no Consequence line)")
+        out.append(f"    Ruling: {_ruling_text(entry)}")
+    return "\n".join(out)
+
+
+def _take_back_strike(entry: dict, day: str) -> None:
+    """A strike written on a marked entry since its ruling — by the wrap-up
+    in the fixes pass, whose prompt says not to — taken off, kept as a
+    history note: the driver records a fix once it has landed, with the
+    commit as the upstream holds it."""
+    old = entry.get("strike")
+    if not old or (entry.get("ruling") or {}).get("did"):
+        return
+    entry["notes"].append({"by": RUN_LOOP, "date": day,
+                           "text": ["strike taken back — the fixes pass records a fix "
+                                    f"once it has landed; was: {_strike_tail(old)}"],
+                           "history": "strike"})
+    entry["strike"] = None
+
+
+def fixes_landed(slice_dir: Path | str, eid: str, did: str, commit: str | None = None,
+                 repo: Path | str | None = None, date: str | None = None) -> str:
+    """The run loop's record of a fix the fixes pass landed: `rule` with
+    `did` and the commit — refused unless the upstream of the branch
+    checked out in `repo` holds it (`rule_entry`) — after any strike the
+    wrap-up wrote on the entry in the pass is taken back. Returns the
+    ruling as the record shows it."""
+    day = _date(date)
+    with _writing(slice_dir) as store:
+        _take_back_strike(_find(store, eid), day)
+    return rule_entry(slice_dir, eid, did, commit=commit, date=day, repo=repo)
+
+
+def _fit_card(entry: dict, new: dict, vmap: dict[str, dict]) -> None:
+    """`new`, the restatement of a card the driver writes, cut to the
+    card's CARD_WORDS_MAX words: lines of its body dropped from its end,
+    the line it opens with never, and a last line saying where the rest
+    is. What does not fit is the record's, where the author's text is."""
+    body = new["body"]
+    lead, rest = body[:1], body[1:]
+
+    def words(lines: list[str]) -> int:
+        return _card_words({**entry, "restated": {**new, "body": lines}}, vmap)
+
+    if words(body) <= CARD_WORDS_MAX:
+        return
+    tail = ["", FIXES_CARD_REST.format(id=entry["id"])]
+    while rest and words([*lead, *rest, *tail]) > CARD_WORDS_MAX:
+        rest.pop()
+    while rest and not rest[-1].strip():
+        rest.pop()
+    new["body"] = [*lead, *rest, *tail]
+
+
+def fixes_card(slice_dir: Path | str, eid: str, reason: str,
+               date: str | None = None) -> int:
+    """The run loop's card request on an entry the fixes pass did not land
+    — no second document asks again: its section restated as the card — the
+    heading it had, a line saying why the fix did not land (FIXES_CARD_LINE,
+    with `reason`), then the body it had, its consequence and provenance
+    kept, cut to CARD_WORDS_MAX where it runs over (`_fit_card`) — and the
+    line Agree files it on, marked a card request. The ruling stays as it
+    stands, without a `did`, for the continuation to file the card under
+    the slice's ticket and record that. A strike the wrap-up wrote on it in
+    the pass is taken back. Returns the card's words."""
+    day = _date(date)
+    said = _collapse(FIXES_CARD_LINE.format(reason=_collapse(reason).rstrip(".")
+                                            or "an unknown failure")) + "."
+    vmap = _verification(slice_dir)
+    with _writing(slice_dir) as store:
+        entry = _find(store, eid)
+        _take_back_strike(entry, day)
+        told = entry.get("restated") or {}
+        new: dict = {"by": RUN_LOOP, "date": day,
+                     "headline": told.get("headline") or entry["headline"],
+                     "body": [said, "", *(told.get("body") or entry.get("body") or [])]}
+        if not any(line.strip() for line in new["body"][2:]):
+            new["body"] = [said]
+        _kept_fields(new, told or None)
+        _fit_card(entry, new, vmap)
+        if told and {k: v for k, v in told.items() if k not in ("by", "date")} \
+                != {k: v for k, v in new.items() if k not in ("by", "date")}:
+            entry["notes"].append(_restated_note(RUN_LOOP, day, told))
+        entry["restated"] = new
+        _set_proposal(entry, RUN_LOOP, day, FIXES_CARD_PROPOSAL)
+        _mark(entry, "card", RUN_LOOP, day, [said])
+        return _card_words(entry, vmap)
+
+
+def set_left_out(slice_dir: Path | str, eid: str, record: dict) -> None:
+    """Keep on the run loop's left-out event what a landing of the wrap-up's
+    work needs (`left_out`): the branch of each repo it committed to, where
+    each was cut and where it stood, and the spec repo's commits at which
+    the store held what the wrap-up wrote, and what it held before it. An
+    event that carries it, and a proposal, comes to the operator
+    (LANDING_ROUTE)."""
+    with _writing(slice_dir) as store:
+        _find(store, eid)["left_out"] = copy.deepcopy(record)
+
+
+# What the wrap-up may have written on an entry, besides its notes and its
+# strike, that a landing of its left-out work brings back — on an entry
+# nobody has ruled on since; on one ruled since, the restatement alone.
+_RESTORED = ("headline", "body", "consequence", "evidence", "author", "grade", "kind",
+             "labels", "proposal", "restated", "wrap_up", "options", "recommend",
+             "check", "due")
+
+
+def _remapped(commit: str | None, remap: dict[str, str]) -> str | None:
+    """The commit a cherry-pick and the landing made of `commit` — a sha or
+    its abbreviation of seven characters or more — or `commit` itself."""
+    if not commit:
+        return commit
+    for old, new in remap.items():
+        if len(commit) >= 7 and old.startswith(commit):
+            return new
+    return commit
+
+
+def restore_wrap_up_writes(slice_dir: Path | str, before: dict, left: dict,
+                           remap: dict[str, str], landed: str,
+                           date: str | None = None) -> list[str]:
+    """Bring back what a left-out wrap-up wrote to the store, once its
+    branches landed in the fixes pass: every entry `left` (the
+    store as it left it) holds otherwise than `before` (the store before
+    it). On an entry nobody has ruled on since, its restatement, labels,
+    proposal, mark, amended fields and notes return, and its strike, its
+    commit remapped to the commit the landing made of it (`remap`). The
+    operator's rulings stand: nothing absorbed is overwritten, and an
+    entry ruled since gets its restatement back — so a card filed from it
+    is the wrap-up's text — and its notes, never a strike over its ruling;
+    where the wrap-up had struck it, a note says so, with the commit. A
+    field changed since the wrap-up is left as it stands. An entry the
+    wrap-up appended comes back too, under a new id where its own is
+    taken. Each entry restored gets the history note LANDED, with
+    `landed`. Returns the ids restored."""
+    day = _date(date)
+    was = {e.get("id"): e for e in before.get("entries") or [] if isinstance(e, dict)}
+    restored: list[str] = []
+    with _writing(slice_dir) as store:
+        by_id = {e["id"]: e for e in store["entries"]}
+        for after in left.get("entries") or []:
+            if not isinstance(after, dict) or not after.get("id"):
+                continue
+            eid = after["id"]
+            old = was.get(eid)
+            if old is None:
+                entry = copy.deepcopy(after)
+                if eid in by_id:
+                    entry["id"] = _next_id(store, eid[0])
+                if entry.get("strike"):
+                    entry["strike"]["commit"] = _remapped(entry["strike"].get("commit"),
+                                                          remap)
+                entry.setdefault("notes", []).append(
+                    {"by": RUN_LOOP, "date": day, "history": LANDED,
+                     "text": [f"The wrap-up appended this entry ({eid}), and was left out of "
+                              f"the landing; it is back now that {landed}."]})
+                store["entries"].append(entry)
+                restored.append(entry["id"])
+                continue
+            cur = by_id.get(eid)
+            if cur is None or after == old:
+                continue
+            ruled = _ruled(cur)
+            for key in (("restated",) if ruled else _RESTORED):
+                if after.get(key) != old.get(key) and cur.get(key) == old.get(key):
+                    cur[key] = copy.deepcopy(after.get(key))
+            cur["notes"].extend(copy.deepcopy(
+                (after.get("notes") or [])[len(old.get("notes") or []):]))
+            text = [f"What the wrap-up wrote on this entry is back, now that {landed}."]
+            strike = after.get("strike")
+            if strike and strike != old.get("strike"):
+                commit = _remapped(strike.get("commit"), remap)
+                if ruled or cur.get("strike"):
+                    text.append(f"It had struck the entry — {strike.get('reason')}"
+                                + (f" (`{commit}`)" if commit else "")
+                                + " — and the ruling stands: no strike is written over "
+                                  "it.")
+                else:
+                    cur["strike"] = {**copy.deepcopy(strike), "commit": commit}
+            cur["notes"].append({"by": RUN_LOOP, "date": day, "text": text,
+                                 "history": LANDED})
+            restored.append(eid)
+    return restored
+
+
 def close_report(slice_dir: Path | str, by: str | None = None,
                  date: str | None = None) -> tuple[int, list[str]]:
     """Close the report once the continuation has carried out its answers:
@@ -2345,6 +2671,8 @@ def table_route(entry: dict, touched: set[str] | None = None,
     labels and is not a kind the tool labels itself. A close is a card
     request where the author proposes a card (`card: …`). `touched` is
     `touched_repos()`, `stages` `slice_stages()`, of the slice."""
+    if entry.get("left_out") and entry.get("proposal"):
+        return LANDING_ROUTE
     lab = effective_labels(entry)
     if lab is None or entry.get("kind") not in KINDS:
         return "unlabelled", "none yet — the entry has no labels"
@@ -2477,8 +2805,11 @@ def _asked(entry: dict, touched: set[str] | None,
     last changed (`_noted_since`). One that comes to the operator is asked a
     `note` where it is a risk, else a `vet`: the checks the operator would
     otherwise have to make before ruling — and, a card its author asks for,
-    its section held to the card it files."""
-    if entry.get("strike") or entry.get("wrap_up") or _ruled(entry):
+    its section held to the card it files. The run loop's ask to land a
+    left-out wrap-up (`left_out`) is the driver's, and waits for no
+    wrap-up."""
+    if entry.get("strike") or entry.get("wrap_up") or _ruled(entry) \
+            or entry.get("left_out"):
         return None
     key, _ = table_route(entry, touched, stages)
     if key == "unlabelled":
@@ -2766,6 +3097,8 @@ def _tail(entry: dict, route_words: str | None) -> list[str]:
     if _ruled(entry):
         # the answer lines verbatim, never wrapped
         out.append(f"**Ruling:** {_ruling_text(entry)}")
+    if entry.get("fix_now"):
+        out.append(f"**Fix now:** {_fix_now_text(entry['fix_now'])}")
     return out
 
 
@@ -2868,6 +3201,8 @@ def _entry_markdown(entry: dict, form: str, route_words: str | None) -> str:
         return _heading(entry)
     if form in ("asked", "ruled"):
         ruling = [f"**Ruling:** {_ruling_text(entry)}"] if form == "ruled" else []
+        if form == "ruled" and entry.get("fix_now"):
+            ruling.append(f"**Fix now:** {_fix_now_text(entry['fix_now'])}")
         said = [f"**Route:** {route_words}"] if route_words else []
         return "\n\n".join([_asked_heading(entry), *ruling, *said, *_trail(entry)])
     if form == "full":
@@ -3025,8 +3360,13 @@ def _ask_lead(entry: dict, place: str, key: str, words: str) -> str | None:
     (`wrap_up_dropped`) wherever it is, and in the wrap-up's place that
     stands for the lead that says no wrap-up reached it."""
     target = (effective_labels(entry) or {}).get("for")
+    # The last of the two history notes: a landing of the left-out wrap-up's
+    # work (LANDED, the fixes pass) after the note that it was left out
+    # makes that note history.
     dropped = next((n for n in reversed(entry.get("notes") or [])
-                    if n.get("history") == DROPPED), None)
+                    if n.get("history") in (DROPPED, LANDED)), None)
+    if dropped is not None and dropped.get("history") == LANDED:
+        dropped = None
     if dropped is not None:
         said = ("**Reached, not landed.**" if dropped.get("reached")
                 else "**Not landed.**")
@@ -3856,7 +4196,18 @@ def build_parser() -> tuple[argparse.ArgumentParser,
     p.add_argument("--date", help="YYYY-MM-DD, the date the fold's first line "
                                   "carries; today when omitted")
 
-    verb("worklist", "what waits for the wrap-up, with what is asked of each")
+    p = verb("worklist", "what waits for the wrap-up, with what is asked of each")
+    p.add_argument("--fixes", action="store_true",
+                   help="what the fixes pass takes instead: every entry marked fix now "
+                        "whose ruling is not carried out, with the ruled change")
+
+    p = verb("fix-now", "mark a ruled entry as one the fixes pass makes — the wrap-up "
+                        "makes it, the driver gates, lands and records it", entry=True)
+    p.add_argument("--by", required=True, help="who marks it — the continuation")
+    p.add_argument("--change",
+                   help="the ruled change, the ruling's words quoted, where the proposal "
+                        "the ruling agreed to does not say it alone")
+    p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
     p = verb("show", "one or more entries in full — body, notes, labels, marks, the "
                      "ruling; without an id, every live entry")
@@ -4192,7 +4543,10 @@ def main(argv=None) -> int:
         elif command == "fold":
             print(fold_entry(slice_dir, args.id, into=args.into, date=args.date))
         elif command == "worklist":
-            print(worklist_view(slice_dir))
+            print(fixes_view(slice_dir) if args.fixes else worklist_view(slice_dir))
+        elif command == "fix-now":
+            print(fix_now_entry(slice_dir, args.id, args.by, change=args.change,
+                                date=args.date))
         elif command == "show":
             if args.card and not args.ids:
                 raise ReportError("show --card names the entries whose card it prints")

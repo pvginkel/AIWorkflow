@@ -189,7 +189,7 @@ follows: "Could not be read: <path>, <path>."
 
 The skill reads each answered document back into its store (`asks.py absorb`, the close-out's
 through `close_out.py`), acts on every ruling as the stage says, into `plan.md`, a card, a fold,
-a strike or a slice folder, and goes on with the stage. Three readings are fixed:
+a fix, a strike or a slice folder, and goes on with the stage. Three readings are fixed:
 
 - **The operator's words travel verbatim.** `answer` and `note` are quoted wherever the ruling is
   restated, never paraphrased or completed.

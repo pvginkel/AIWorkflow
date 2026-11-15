@@ -106,9 +106,22 @@ carries `--spec-push` (the brief's grant, this launch's alone); a push it
 could not make, or was not permitted to, is state.json's `spec_unpushed`
 until one lands, and `status` prints it.
 
+`fixes` is the run's continuation's: once the close-out is
+answered and the continuation has marked the rulings that are a `fix now`
+(`close_out.py fix-now`), one more `dev:wrap-up` session makes them on
+branches of its own (`phase/<NNN>-fixes`), the driver gates them once over
+the stack as it gates the first wrap-up's, lands and pushes them under the
+run's grants and holds, and records each — `rule` with the commit as the
+upstream holds it, or a card request where it did not land — and it lands a
+left-out wrap-up's branches where its event was ruled so. It takes
+run.lock and records its exit as `run` does, so `wait`, `status` and `stop`
+work on it; its record is state.json's `fixes`. It exits 0 whatever became of
+the fixes, 130 interrupted, 7 halted, 2 or 3 refused at the start.
+
 Usage:
     run_loop.py run <slice-dir> [--resume] [--detach] [--step ID] [--spec-push]
                     [--verbose] [--dry-run]
+    run_loop.py fixes <slice-dir> [--detach] [--spec-push] [--verbose]
     run_loop.py wait <slice-dir> [--for SECONDS]
     run_loop.py stop <slice-dir>
     run_loop.py status <slice-dir>
@@ -188,6 +201,10 @@ from close_out import (  # noqa: E402
     dispatch_line,
     entry_counts,
     find_by_headline,
+    fixes_card,
+    fixes_landed,
+    fixes_view,
+    fixes_worklist,
     init_report,
     live_entries,
     owed_before_push,
@@ -196,6 +213,8 @@ from close_out import (  # noqa: E402
     record_path,
     render_report,
     report_path,
+    restore_wrap_up_writes,
+    set_left_out,
     stamp_header,
     store_path,
     strike_entry,
@@ -689,6 +708,16 @@ class WrapUpLeftOut(Exception):
         self.without = without
 
 
+class FixesLeftOut(Exception):
+    """A soft failure of the fixes pass (`RunLoop._fixes_pass`): never a
+    stop, the reason nothing of it lands — every entry it took that the
+    wrap-up did not take back itself is carded with it."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
 # Every timestamp the loops write or print is the operator's local wall clock
 # (the process's TZ, UTC if unset) — these are read by the human watching the
 # run, never compared across hosts. The ISO stamps stay offset-aware, so they
@@ -708,6 +737,52 @@ def _now_hms() -> str:
 def _clip(text: str, limit: int) -> str:
     text = (text or "").strip()
     return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+
+
+def _names_entry(subject: str, eid: str) -> bool:
+    """Whether a commit's subject names close-out entry `eid` as a whole
+    token — `B3:`, `(B3)`, `B3,` name B3; `B30` and `AB3` do not. The
+    wrap-up's commits carry their entry's id in the subject."""
+    return re.search(rf"(?<![A-Za-z0-9]){re.escape(eid)}(?![A-Za-z0-9])",
+                     subject or "") is not None
+
+
+def _match_by_subject(old: list, new: list) -> dict[str, str]:
+    """{old sha: new sha} for commits a rebase rewrote, `old` and `new` each
+    `[sha, subject]` in order: each old commit to the first new one not yet
+    taken with its subject. One the rebase dropped maps to nothing."""
+    taken: set[int] = set()
+    out: dict[str, str] = {}
+    for sha, subject in old:
+        for i, (new_sha, new_subject) in enumerate(new):
+            if i not in taken and new_subject == subject:
+                taken.add(i)
+                out[sha] = new_sha
+                break
+    return out
+
+
+def fixes_lines(fx) -> list[str]:
+    """What the fixes pass came to, a line per entry — `landed: B3 <commit>`,
+    `carded: T4 — <reason>`, `pending: D2` while it runs — or one line where
+    it took nothing: what `wait` prints at its end and `status` under its
+    state line."""
+    if not isinstance(fx, dict):
+        return []
+    entries = fx.get("entries") or {}
+    if not entries:
+        return [f"fixes: {fx.get('reason') or 'nothing was ruled fix now'}"]
+    out = []
+    for eid, ent in entries.items():
+        state = ent.get("state") if isinstance(ent, dict) else None
+        if state == "landed":
+            out.append(f"landed: {eid} {ent.get('commit') or '(no commit)'}")
+        elif state == "carded":
+            out.append(f"carded: {eid} — "
+                       + _clip(ent.get("reason") or "its fix did not land", 240))
+        else:
+            out.append(f"pending: {eid}")
+    return out
 
 
 def _write_state(path: Path, state: dict) -> None:
@@ -4119,6 +4194,61 @@ WRAP_UP_LEFT_OUT_HEADLINE = "The wrap-up was left out of the landing: {reason}"
 WRAP_UP_LEFT_OUT_CONSEQUENCE = (
     "none in this run — what the table gave the wrap-up comes to the operator "
     "in the close-out, said as not reached")
+# The same event where the wrap-up left commits on its branches:
+# it asks to land them, and Agree is a `fix now` the fixes pass makes — the
+# commits cherry-picked onto its branch, gated once over them, landed, and
+# what the wrap-up wrote to the store brought back. Its Consequence does not
+# open with "none": the event comes to the operator (close_out's
+# LANDING_ROUTE, on its `left_out` record).
+WRAP_UP_LANDING_PROPOSAL = (
+    "fix now: land the wrap-up's branches — {branches} — gated once over them")
+WRAP_UP_LANDING_CONSEQUENCE = (
+    "the wrap-up's fixes stay on branches nobody merges, off the slice's bases, "
+    "until they land; what the table gave it comes to you said as reached, not "
+    "landed")
+WRAP_UP_LANDING_BODY = (
+    "Agree lands them in the run's fixes pass: each branch's commits picked "
+    "onto a branch of the pass's own, gated once over them with whatever else "
+    "was ruled `fix now`, landed and pushed, and what the wrap-up wrote to the "
+    "close-out store brought back — over no ruling of yours. A commit that "
+    "does not pick cleanly makes this a card request instead.")
+
+# The wrap-up's second dispatch, the fixes pass (`run_loop.py fixes`):
+# the first dispatch's facts, with an opening of its own. Every
+# entry was ruled `fix now`, so nothing is labelled, vetted or left; the
+# record is the driver's, written once the fixes landed.
+FIXES_PROMPT = """\
+Slice {slice_name} is built and its close-out answered. This is the fixes
+pass, the wrap-up's second dispatch (§ The fixes pass): every entry below
+was ruled `fix now`, and the ruling decided what to change. Make each fix.
+
+Deterministic facts from the driver:
+- {close_out_line}
+  The verbs the fixes pass uses, with their arguments:
+{close_out_verbs}
+- What was ruled `fix now`, as `worklist --fixes` prints it now, the ruled
+  change with each:
+{worklist}
+- The repositories this slice touched, the branch your commits go on in
+  each, and the gate you run on a fix there. A repository that is not in
+  this list is not yours to change:
+{repo_rows}
+- The spec repo is {spec_root}. A fix there — a decision record, a page —
+  and the report's store go on the branch that is checked out, staged by
+  name: other sessions share that tree.
+{hold_block}- The plan is {plan_path}; the slice folder is {slice_dir}.
+- Strike nothing, and never push — any repo, any branch. After your
+  hand-back the driver gates what you committed once over the stack, then
+  lands it and records each fix with its commit as the upstream holds it,
+  or lands none of it and asks a card for every entry.
+
+Write your verdict to {verdict_path}: `fixed`, the entries you committed a
+fix for, and `cards`, those you took back.
+"""
+
+# The fixes pass's step on Pilot's tile, beside the run's (`progress`).
+FIXES_STEP = pilot_progress.step_code("fixes")
+FIXES_LABEL = "Fixes"
 
 # The test-phase dispatch's prd line: fixed, unless plan.md's `## Driver
 # rulings` authorize prd for named targets.
@@ -5311,7 +5441,7 @@ class RunLoop:
         self.state["updated_at"] = _now_iso()
         _write_state(self.state_path, self.state)
 
-    def _record_exit(self, code: int) -> None:
+    def _record_exit(self, code: int, extra: dict | None = None) -> None:
         """The run's exit code, on disk — written last, after bailout.json,
         whatever the exit. A detached driver's code reaches nobody else.
         Added to state.json as the run last saved it rather than to memory:
@@ -5319,13 +5449,16 @@ class RunLoop:
         interrupted resume's cleared `in_flight` is the reattach it still
         owes). Nothing is written for a fresh run refused before it wrote a
         state.json — that would make the next attempt a --resume — and
-        nothing here may mask the exit."""
+        nothing here may mask the exit. `extra` goes in the record beside
+        the code: the fixes pass's `pass`, which `wait` reads its end lines
+        by."""
         if not self._owns_state:
             return
         state = _read_json(self.state_path)
         if state is None:
             return
-        state["exit"] = self.state["exit"] = {"code": code, "ts": _now_iso()}
+        state["exit"] = self.state["exit"] = {"code": code, "ts": _now_iso(),
+                                              **(extra or {})}
         try:
             _write_state(self.state_path, state)
         except OSError as e:
@@ -11934,7 +12067,9 @@ class RunLoop:
             self._ensure_committed(None, "doc-writer", session,
                                    self.repo_root)
 
-    def _run_doc_gate(self, ds: dict) -> tuple[bool, Path]:
+    def _run_doc_gate(self, ds: dict, stem: str = "doc_gate",
+                      role: str = "doc-gate",
+                      label: str = "[doc-phase]") -> tuple[bool, Path]:
         """The full cross-component sweep — `kc project lint` + `build` +
         `test`, fail-fast across the verbs — run by the driver as the doc
         phase's deterministic gate. Fail-fast rather than per-component:
@@ -11955,11 +12090,15 @@ class RunLoop:
         what the sweep had run green minutes before, over a diff of docs
         alone): on the same tree, or, for `test`, with only Markdown files
         changed since. Its line in the log names that run, and the history
-        row's `reused` maps the command to it."""
+        row's `reused` maps the command to it.
+
+        The fixes pass runs it too, on its own branch: `stem`, `role` and
+        `label` name its log files, its history rows and its log lines, and
+        `ds` is its own count of runs."""
         ds["gate_runs"] += 1
         n = ds["gate_runs"]
         self._save_state()
-        log_path = self.slice_dir / f"doc_gate_r{n}.log"
+        log_path = self.slice_dir / f"{stem}_r{n}.log"
         tree = self._tree_now(self.repo_root)
         reused: dict[str, str] = {}
         ran: list[tuple[list[str], str, str]] = []
@@ -11970,7 +12109,7 @@ class RunLoop:
                        if any(r.verb == v for r, _ in rulings)]
         components = (list(load_project_dirs(self.repo_root))
                       if ruled_verbs else [])
-        self.log(f"[doc-phase] gate #{n} running "
+        self.log(f"{label} gate #{n} running "
                  f"(kc project {' + '.join(SWEEP_VERBS)}"
                  + (f"; {', '.join(ruled_verbs)} per component, by ruling"
                     if ruled_verbs else "") + ")")
@@ -12005,13 +12144,13 @@ class RunLoop:
             tail = lines[-1] if lines else ""
         except OSError:
             pass
-        self._note_greens(self.repo_root, tree, ran, f"doc-gate r{n}")
-        self._record(None, "doc-gate", n, outcome, tail, None, duration_s,
+        self._note_greens(self.repo_root, tree, ran, f"{role} r{n}")
+        self._record(None, role, n, outcome, tail, None, duration_s,
                      extra={"reused": reused} if reused else None)
         empty = [verb for verb, o in outcomes.items() if o == "nothing_ran"]
         unrunnable = [verb for verb, o in outcomes.items()
                       if o == "unrunnable"]
-        self.log(f"[doc-phase] gate #{n} → {GATE_OUTCOME_LABELS[outcome]} "
+        self.log(f"{label} gate #{n} → {GATE_OUTCOME_LABELS[outcome]} "
                  f"({duration_s}s) {tail[:120]}"
                  + (f" — {', '.join(empty)} ran nothing" if empty else "")
                  + (f" — {', '.join(unrunnable)} unrunnable (tool missing)"
@@ -12452,20 +12591,23 @@ class RunLoop:
                             "that red is the doc phase's (output in "
                             f"{log_without})", without)
 
-    def _wrap_up_doc_gate(self, ds: dict) -> tuple[bool, Path, bool]:
+    def _wrap_up_doc_gate(self, ds: dict, stem: str = "doc_gate",
+                          role: str = "doc-gate",
+                          label: str = "[wrap-up]") -> tuple[bool, Path, bool]:
         """One run of the doc gate with the wrap-up's commits: (green, its
         output, whether it timed out). A command past GATE_TIMEOUT is not
         the stop here it is in the doc phase's own gate (`_doc_gate_cmd`):
         the run is red, and gets the re-run a red gets. Any other stop
-        passes."""
+        passes. The fixes pass's run names its files, rows and lines by
+        `stem`, `role` and `label` (`_run_doc_gate`)."""
         try:
-            green, log_path = self._run_doc_gate(ds)
+            green, log_path = self._run_doc_gate(ds, stem, role, label)
         except Bailout as e:
             if e.reason != "timeout":
                 raise
-            self.log(f"[wrap-up] doc gate #{ds['gate_runs']} timed out — "
+            self.log(f"{label} doc gate #{ds['gate_runs']} timed out — "
                      f"{e.details}")
-            return (False, self.slice_dir / f"doc_gate_r{ds['gate_runs']}.log",
+            return (False, self.slice_dir / f"{stem}_r{ds['gate_runs']}.log",
                     True)
         return green, log_path, False
 
@@ -12581,7 +12723,8 @@ class RunLoop:
             verdict_path=verdict_path)
 
     def _dispatch_wrap_up(self, prompt: str, verdict_path: Path,
-                          wu: dict) -> str | None:
+                          wu: dict, label: str = "[wrap-up]",
+                          round_: int = 1) -> str | None:
         """The wrap-up's session, through a path of its own: `_spawn` ends
         in `_rule_on_round`, whose protocol failure bails the run, and the
         wrap-up's may not. Kept from the ordinary dispatch: the session
@@ -12595,14 +12738,17 @@ class RunLoop:
         into the stage starts it over. Returns None for a verdict the
         landing may go on from, else the soft failure's reason. The session
         over, whatever its outcome, the spec repo is pushed (`_push_spec`):
-        the wrap-up commits the store there on its base."""
+        the wrap-up commits the store there on its base. The fixes pass's
+        dispatch is the same session under its own `label` and `round_`."""
         with pushing_after(self._push_spec):
-            return self._dispatch_wrap_up_session(prompt, verdict_path, wu)
+            return self._dispatch_wrap_up_session(prompt, verdict_path, wu,
+                                                  label, round_)
 
     def _dispatch_wrap_up_session(self, prompt: str, verdict_path: Path,
-                                  wu: dict) -> str | None:
+                                  wu: dict, label: str = "[wrap-up]",
+                                  round_: int = 1) -> str | None:
         """`_dispatch_wrap_up`'s session and its ruling."""
-        role, label, cwd = "wrap-up", "[wrap-up]", self.repo_root
+        role, cwd = "wrap-up", self.repo_root
         model, effort = MODELS[role]
 
         def _note_session(sid: str) -> None:
@@ -12617,12 +12763,12 @@ class RunLoop:
         while True:
             # The wrap-up never reattaches: a halt here leaves the stage for
             # the resume to start over from a clean slate, as an interrupt.
-            self._halt_point("before the [wrap-up] session")
+            self._halt_point(f"before the {label} session")
             self.log(f"{label} session starting")
-            self.announce("wrap-up")
+            self.announce(label.strip("[]"))
             verdict_path.unlink(missing_ok=True)
             self.state["in_flight"] = {
-                "phase": None, "role": role, "round": 1,
+                "phase": None, "role": role, "round": round_,
                 "verdict_path": str(verdict_path), "session": None,
                 "started_at": _now_iso(),
             }
@@ -12643,10 +12789,10 @@ class RunLoop:
                 sid = (self.state.get("in_flight") or {}).get("session")
                 self.state["in_flight"] = None
                 why = f"the session timed out after {TIMEOUTS[role]}s"
-                self._record(None, role, 1, "timeout", why, sid,
+                self._record(None, role, round_, "timeout", why, sid,
                              TIMEOUTS[role],
                              transcript=_transcript_path(cwd, sid))
-                self._debrief(role, None, 1, TIMEOUTS[role])
+                self._debrief(role, None, round_, TIMEOUTS[role])
                 self.log(f"{label} → timeout: {why}")
                 return why
             except Exception:
@@ -12662,7 +12808,7 @@ class RunLoop:
             if notice is None:
                 break
             self.state["in_flight"] = None
-            self._record(None, role, 1, "session_limit",
+            self._record(None, role, round_, "session_limit",
                          notice.replace("\n", " ")[:200], session_id,
                          duration_s, transcript=_transcript_path(cwd, session_id))
             self._wait_out_session_limit(notice, label)
@@ -12677,9 +12823,9 @@ class RunLoop:
                     else type(verdict).__name__
                 why = f"its verdict is invalid (outcome {outcome!r})"
             summary = f"{why}; the session ended rc={returncode}"
-            self._record(None, role, 1, "invalid", summary, session_id,
+            self._record(None, role, round_, "invalid", summary, session_id,
                          duration_s, transcript=transcript)
-            self._debrief(role, None, 1, duration_s, verdict)
+            self._debrief(role, None, round_, duration_s, verdict)
             self.log(f"{label} → invalid: {summary}")
             return why
         if returncode != 0:
@@ -12689,16 +12835,17 @@ class RunLoop:
         summary = str(verdict.get("summary") or "")
         lists = {key: [str(x) for x in verdict[key]] for key in WRAP_UP_LISTS
                  if isinstance(verdict.get(key), list)}
-        self._record(None, role, 1, outcome, summary, session_id, duration_s,
-                     transcript=transcript, extra=lists)
-        self._debrief(role, None, 1, duration_s, verdict)
+        self._record(None, role, round_, outcome, summary, session_id,
+                     duration_s, transcript=transcript, extra=lists)
+        self._debrief(role, None, round_, duration_s, verdict)
         self.log(f"{label} → {outcome}: {summary[:160]}")
         if outcome == "blocked":
             return "it answered blocked" + (f": {_clip(summary, 200)}"
                                             if summary else "")
         return None
 
-    def _wrap_up_settle(self, wu: dict, ctx: dict) -> list[str]:
+    def _wrap_up_settle(self, wu: dict, ctx: dict, branch: str | None = None,
+                        label: str = "[wrap-up]") -> list[str]:
         """After the session, whatever its outcome: what it left uncommitted
         discarded where it left it, the head of each wrap-up branch recorded,
         every tree back on the branch the ladder expects, and a base or the
@@ -12709,9 +12856,10 @@ class RunLoop:
 
         A tree that held uncommitted work before the dispatch (a held repo:
         the wrap-up is not dispatched into a dirty repo it branches) is left
-        as it is — that work is not the wrap-up's to discard."""
+        as it is — that work is not the wrap-up's to discard. The fixes pass
+        settles its own `branch` the same way, under its `label`."""
         problems: list[str] = []
-        branch = self._wrap_up_branch()
+        branch = branch or self._wrap_up_branch()
         for key, watch in ctx["watch"].items():
             root = watch["root"]
             if not watch["dirty"] and self._worktree_dirty(root):
@@ -12733,7 +12881,7 @@ class RunLoop:
                         self.git("checkout", self._base_branch(root),
                                  root=root)
                     self.git("branch", "-D", ref, root=root)
-                    self.log(f"[wrap-up] {ref} in {root.name} deleted — it "
+                    self.log(f"{label} {ref} in {root.name} deleted — it "
                              "did not exist before the stage")
                 continue
             now = self.git("rev-parse", ref, root=root)
@@ -12743,7 +12891,7 @@ class RunLoop:
                 self.git("reset", "--hard", sha, root=root)
             else:
                 self.git("branch", "-f", ref, sha, root=root)
-            self.log(f"[wrap-up] {ref} in {root.name} was at {now[:12]} — put "
+            self.log(f"{label} {ref} in {root.name} was at {now[:12]} — put "
                      f"back to {sha[:12]}")
             problems.append(f"it committed outside its branches ({ref} in "
                             f"{root.name} moved to {now[:12]})")
@@ -12759,8 +12907,9 @@ class RunLoop:
         self.git("clean", "-fd", *(["--", *pathspec] if pathspec else []),
                  root=root)
 
-    def _wrap_up_sibling_gate(self, root: Path, branch: str,
-                              base: str) -> tuple[bool, str]:
+    def _wrap_up_sibling_gate(self, root: Path, branch: str, base: str,
+                              role: str = "wrap-up-gate",
+                              label: str = "[wrap-up]") -> tuple[bool, str]:
         """The gate a phase whose Target is this whole repo gets, run by the
         driver on the wrap-up branch: (passed, where its output is). A repo
         with no manifest, or one a gate ruling waives, passes unrun, as such
@@ -12768,24 +12917,25 @@ class RunLoop:
         nothing in it bails: a gate that times out is red. An earlier green
         of this run that stands for the command on the branch's tree
         (`_earlier_green`, AIWF-142) is taken in place of running it, the
-        row's `reused` naming its run."""
+        row's `reused` naming its run. The fixes pass's run is a `role` of
+        its own, its log lines `label`'s."""
         target = self._repo_path_target(str(root), root)
         ruling = self._gate_ruling(target)
         if ruling is not None:
-            self.log(f"[wrap-up] the gate in {root.name} is waived by plan.md's "
+            self.log(f"{label} the gate in {root.name} is waived by plan.md's "
                      f"`## Driver rulings` (substitute: "
                      f"{ruling.substitute_text}) — not run")
-            self._report_ruling(ruling, "wrap-up gate")
+            self._report_ruling(ruling, role.replace("-", " "))
             return True, "waived"
         if target.gate_argv is None:
-            self.log(f"[wrap-up] no deterministic gate in {root.name} — its "
+            self.log(f"{label} no deterministic gate in {root.name} — its "
                      "commits pass unverified")
             return True, "no gate"
         n = 1 + sum(1 for row in self.state["history"]
-                    if row.get("role") == "wrap-up-gate")
-        log_path = self.slice_dir / f"wrap_up_gate_r{n}.log"
+                    if row.get("role") == role)
+        log_path = self.slice_dir / f"{role.replace('-', '_')}_r{n}.log"
         argv = target.gate_argv
-        self.log(f"[wrap-up] gate #{n} running in {root.name} on {branch} "
+        self.log(f"{label} gate #{n} running in {root.name} on {branch} "
                  f"({' '.join(argv)})")
         self.git("checkout", branch, root=root)
         t0 = time.monotonic()
@@ -12810,7 +12960,7 @@ class RunLoop:
                 self._note_greens(root, tree,
                                   [(argv, kc_outcome(returncode),
                                     str(log_path))],
-                                  f"wrap-up-gate r{n}")
+                                  f"{role} r{n}")
         finally:
             self.git("checkout", base, root=root)
         duration_s = int(time.monotonic() - t0)
@@ -12821,11 +12971,11 @@ class RunLoop:
         except OSError:
             lines = []
         tail = lines[-1] if lines else ""
-        self._record(None, "wrap-up-gate", n, outcome, tail, None, duration_s,
+        self._record(None, role, n, outcome, tail, None, duration_s,
                      extra={"repo": str(root),
                             **({"reused": {" ".join(argv): found["run"]}}
                                if found is not None else {})})
-        self.log(f"[wrap-up] gate #{n} → {GATE_OUTCOME_LABELS[outcome]} "
+        self.log(f"{label} gate #{n} → {GATE_OUTCOME_LABELS[outcome]} "
                  f"({duration_s}s) {tail[:120]}")
         return outcome != "red", str(log_path)
 
@@ -12857,11 +13007,13 @@ class RunLoop:
             self._push_spec()
         return self.specs_git("rev-parse", "HEAD")
 
-    def _wrap_up_restore_store(self, sha: str) -> None:
+    def _wrap_up_restore_store(self, sha: str, what: str = "the wrap-up",
+                               label: str = "[wrap-up]") -> None:
         """The store as it is in the spec repo's commit `sha`, written over
         the current one, rendered and committed: the entries the run's
         agents appended before the wrap-up are in it, what the wrap-up wrote
-        is not."""
+        is not. The fixes pass takes its store back the same way, `what`
+        and `label` naming it."""
         store = store_path(self.slice_dir)
         text = self.specs_git("show", f"{sha}:./{store.name}")
         tmp = store.with_name(store.name + ".tmp")
@@ -12869,8 +13021,9 @@ class RunLoop:
         os.replace(tmp, store)
         self._render_report()
         self._commit_report(f"slice {self.slice_num}: close-out report back to "
-                            f"where it stood before the wrap-up ({sha[:12]})")
-        self.log(f"[wrap-up] the store is back to {sha[:12]}")
+                            f"where it stood before {what} ({sha[:12]})",
+                            label=label)
+        self.log(f"{label} the store is back to {sha[:12]}")
 
     def _wrap_up_leave_out(self, ds: dict, wu: dict, ctx: dict, reason: str,
                            without: dict | None) -> None:
@@ -12883,7 +13036,14 @@ class RunLoop:
         store taken back reads as one no wrap-up reached), one event entered
         through the driver's own `_report`, and the ladder moved on. Each
         step is best-effort: the leave-out is what stands between the
-        wrap-up and a stopped run, so it cannot be a stop itself."""
+        wrap-up and a stopped run, so it cannot be a stop itself.
+
+        Where it left commits on its branches, the event asks to land them:
+        its proposal a `fix now` the fixes pass makes on the operator's
+        Agree, and its `left_out` record what that landing needs
+        — each branch with its cut and its head, and the spec repo's
+        commits holding the store before the wrap-up and as it left it,
+        committed here before it is taken back (`_wrap_up_landing`)."""
         reason = " ".join(str(reason).split()) or "an unknown failure"
         self.log(f"[wrap-up] left out of the landing: {reason}")
         try:
@@ -12891,6 +13051,7 @@ class RunLoop:
         except Exception as e:
             why = e.details if isinstance(e, Bailout) else str(e)
             self.log(f"[wrap-up] the trees could not all be put back ({why})")
+        left_at = None
         if wu.get("store"):
             # the store as the wrap-up left it, read before it is taken back
             try:
@@ -12899,6 +13060,16 @@ class RunLoop:
                 left = None
                 self.log(f"[wrap-up] the store as it left it could not be "
                          f"read ({e}) — its entries are not noted")
+            if left is not None:
+                # on record in the spec repo, for a landing to bring back
+                try:
+                    left_at = self._commit_report(
+                        f"slice {self.slice_num}: close-out report as the "
+                        "wrap-up left it, before it is taken back")
+                except Exception as e:
+                    why = e.details if isinstance(e, Bailout) else str(e)
+                    self.log(f"[wrap-up] the store as it left it was not "
+                             f"committed ({why}) — no landing is asked")
             try:
                 self._wrap_up_restore_store(wu["store"])
             except Exception as e:
@@ -12917,16 +13088,55 @@ class RunLoop:
             ds["gate_last"] = without
         wu["reason"] = reason
         try:
-            self._report(
+            landing = self._wrap_up_landing(wu, left_at)
+            body = self._wrap_up_event_body(wu)
+            if landing is not None:
+                body += "\n\n" + WRAP_UP_LANDING_BODY
+            eid = self._report(
                 "Notable events",
                 WRAP_UP_LEFT_OUT_HEADLINE.format(reason=_clip(reason, 300)),
-                self._wrap_up_event_body(wu),
-                consequence=WRAP_UP_LEFT_OUT_CONSEQUENCE,
-                provenance="witnessed — the driver's wrap-up stage")
+                body,
+                consequence=(WRAP_UP_LEFT_OUT_CONSEQUENCE if landing is None
+                             else WRAP_UP_LANDING_CONSEQUENCE),
+                provenance="witnessed — the driver's wrap-up stage",
+                proposal=None if landing is None else landing["proposal"])
+            if eid is not None and landing is not None:
+                set_left_out(self.slice_dir, eid, landing["record"])
+                self.log(f"[wrap-up] {eid} asks to land its branches: "
+                         + landing["proposal"])
         except Exception as e:
             self.log(f"[wrap-up] the event was not entered ({e})")
         self._wrap_up_decide(ds, wu, "left_out")
         self.announce("wrap-up left out")
+
+    def _wrap_up_landing(self, wu: dict, left_at: str | None) -> dict | None:
+        """What the left-out event asks to land, where the wrap-up left a
+        commit on any of its branches and the store as it left it is on
+        record (`left_at`): `{proposal, record}`, the record the event's
+        `left_out` — `branches`, a row per repo with a commit on its branch
+        (`repo`, `branch`, `cut`, `head`); `store`, the spec repo's commit
+        holding the store as the wrap-up left it; `before`, the one holding
+        it before the wrap-up; `path`, the store's path in the spec repo at
+        both, which a slice's move to `slices/completed/` does not follow;
+        and `entries`, the ids it was given. None where there is nothing to
+        land."""
+        rows = [{"repo": key, "branch": info.get("branch"),
+                 "cut": info.get("base"), "head": info.get("head")}
+                for key, info in (wu.get("repos") or {}).items()
+                if info.get("head") and info.get("base")
+                and info["head"] != info["base"]]
+        if not rows or not left_at or not wu.get("store"):
+            return None
+        prefix = self.specs_git("rev-parse", "--show-prefix")
+        names = ", ".join(f"`{row['branch']}` in {Path(row['repo']).name}"
+                          for row in rows)
+        return {
+            "proposal": _clip(WRAP_UP_LANDING_PROPOSAL.format(branches=names),
+                              asks.PROPOSAL_MAX),
+            "record": {"branches": rows, "store": left_at,
+                       "before": wu["store"],
+                       "path": f"{prefix}{store_path(self.slice_dir).name}",
+                       "entries": list(wu.get("entries") or [])}}
 
     def _wrap_up_event_body(self, wu: dict) -> str:
         """The left-out event's body: where the wrap-up's work can be read."""
@@ -13001,6 +13211,927 @@ class RunLoop:
             except Exception as e:
                 why = e.details if isinstance(e, Bailout) else str(e)
                 self.log(f"[wrap-up] the store could not be taken back ({why})")
+
+    # -- the fixes pass --------------------------------------------------------
+    #
+    # After the close-out is answered: what the continuation marked `fix now`
+    # (`close_out.py fix-now`) is made by a second `dev:wrap-up` dispatch on
+    # branches of its own, gated once over the stack as the first wrap-up's
+    # commits are, landed and pushed under the run's grants and holds, and
+    # recorded by the driver — and a left-out wrap-up's branches, where its
+    # event was ruled so, are picked onto those branches and land with them.
+    # Its record is state.json's `fixes`; it never fails: what does not land
+    # is carded, for the continuation to file.
+
+    def _fixes_branch(self) -> str:
+        return f"phase/{self.slice_num}-fixes"
+
+    def fixes(self) -> None:
+        """`run_loop.py fixes`: the fixes pass, on a slice folder wherever it
+        stands, `slices/completed/` included. It holds `run.lock` for its
+        duration, as `run` does, and records its exit in state.json marked
+        as the pass's (`pass: fixes`), so that `wait`, `status` and `stop`
+        work on it as on a run. Exit 0 whatever became of the fixes — what
+        did is in `fixes` and in `wait`'s end lines; 130 an interrupt, 7
+        Pilot's halt, 2 or 3 a refusal at the start."""
+        holder = self._slice_lock.acquire()
+        if holder is not None:
+            print(f"Error: {self._slice_lock.lock_path} is held — another "
+                  "driver is running this slice:\n"
+                  + "\n".join(f"  {line}" for line in holder.splitlines())
+                  + "\nWait for it, or stop it, before the fixes pass.",
+                  file=sys.stderr)
+            sys.exit(2)
+        try:
+            self._fixes()
+        except BaseException as e:
+            self._record_exit(_exit_status(e), {"pass": "fixes"})
+            raise
+        finally:
+            self._slice_lock.release()
+            # A completed slice has no run left: its lock goes with the pass,
+            # as close_slice.py deleted the run's.
+            if self.slice_dir.parent.name == "completed":
+                self._slice_lock.lock_path.unlink(missing_ok=True)
+
+    def _fixes(self) -> None:
+        """The pass's refusals, then the pass under the exits it can take."""
+        if halt_requested():
+            print(f"Halted: {HALT_FILE} is present — Pilot's halt holds, and "
+                  "the fixes pass does not start. Run the same command again "
+                  "once the file is gone.", file=sys.stderr)
+            sys.exit(EXIT_HALTED)
+        state = _read_json(self.state_path)
+        if not isinstance(state, dict):
+            print(f"Error: {self.state_path} does not exist or does not read — "
+                  "the run loop has not run this slice, and the fixes pass "
+                  "follows its close-out.", file=sys.stderr)
+            sys.exit(2)
+        if state.get("run_phase") != "done":
+            print(f"Error: the run of slice {self.slice_name} is not over "
+                  f"(run_phase {state.get('run_phase')!r}) — the fixes pass "
+                  "follows its close-out; take the run to its end first.",
+                  file=sys.stderr)
+            sys.exit(2)
+        if not store_path(self.slice_dir).is_file():
+            print(f"Error: {store_path(self.slice_dir)} does not exist — there "
+                  "is no close-out to take fixes from.", file=sys.stderr)
+            sys.exit(2)
+        self.state = state
+        try:
+            self._assert_spec_on_base()
+            self._assert_current()
+        except Bailout as e:
+            print(f"Error: the fixes pass does not start — {e.details}",
+                  file=sys.stderr)
+            sys.exit(3)
+        # Cleared on disk before anything else, as a resume clears it: a
+        # stale exit under a live pass would read as the pass's end.
+        self._owns_state = True
+        self.state.pop("exit", None)
+        self.state["driver"] = {**self._slice_lock.driver, "pass": "fixes"}
+        self.state["in_flight"] = None
+        self._save_state()
+        if self.on_start is not None:
+            self.on_start()
+        try:
+            try:
+                self.project_dirs = load_project_dirs(self.repo_root)
+            except Bailout as e:
+                print(f"Error: the fixes pass does not start — {e.details}",
+                      file=sys.stderr)
+                sys.exit(3)
+            self._assert_agents()
+            self._fixes_pass()
+        except KeyboardInterrupt:
+            self.devlock.release(self.log)
+            self.log("[fixes] interrupted — state.json is current; the same "
+                     "command takes the pass up again")
+            print("Interrupted — run `fixes` again to take the pass up.",
+                  file=sys.stderr)
+            sys.exit(130)
+        except Halted as halt:
+            self.devlock.release(self.log)
+            self.state.setdefault("halts", []).append(
+                {"at": halt.where, "run_phase": "fixes", "ts": _now_iso()})
+            self._save_state()
+            self.log(f"[fixes] HALTED {halt.where}: {HALT_FILE} is present — "
+                     "the same command takes the pass up once it is gone")
+            print(f"Halted {halt.where}: {HALT_FILE} is present — run `fixes` "
+                  "again once it is gone.", file=sys.stderr)
+            sys.exit(EXIT_HALTED)
+        self.devlock.release(self.log)
+        sys.exit(0)
+
+    def _fixes_pass(self) -> None:
+        """The pass from where state.json's `fixes` stands: taken up at its
+        landing or its record where a crash or a stop left it there — a push
+        may be out by then — or started again from a clean slate from
+        anywhere before (`_fixes_clean_slate`), as the first wrap-up is. A
+        soft failure lands nothing (`_fixes_leave_out`); the record and the
+        end follow whatever happened."""
+        fx = self.state.get("fixes")
+        if isinstance(fx, dict) and fx.get("stage") in ("landing", "record"):
+            self.log(f"[fixes] the pass is taken up at its {fx['stage']}")
+            self._fixes_step_start()
+        else:
+            if isinstance(fx, dict) and fx.get("stage") not in (None, "done"):
+                self._fixes_clean_slate(fx)
+            fx = self._fixes_begin()
+            if fx is None:
+                return
+            ctx: dict = {"watch": {}, "guard": {}}
+            try:
+                self._fixes_run(fx, ctx)
+            except Exception as e:
+                reason = (e.reason if isinstance(e, FixesLeftOut)
+                          else e.details if isinstance(e, Bailout)
+                          else f"{type(e).__name__}: {e}")
+                self._fixes_leave_out(fx, ctx, reason)
+        if fx["stage"] == "landing":
+            self._fixes_land(fx)
+        if fx["stage"] == "record":
+            self._fixes_record(fx)
+        self._fixes_end(fx)
+
+    def _fixes_begin(self) -> dict | None:
+        """The pass's record, fresh, over what `worklist --fixes` names; None,
+        and an outcome `nothing` on record, where it names nothing — the
+        pass then ends at once, no dispatch, no step."""
+        now = _now_iso()
+        try:
+            items = fixes_worklist(self.slice_dir)
+            reason = None
+        except ReportError as e:
+            items, reason = [], f"its work list could not be read ({e})"
+        if not items:
+            self.state["fixes"] = {
+                "stage": "done", "outcome": "nothing", "reason": reason,
+                "started_at": now, "ended_at": now, "entries": {}, "repos": {},
+                "gates": []}
+            self._save_state()
+            self.log("[fixes] " + (reason or "nothing is ruled fix now")
+                     + " — the pass ends, nothing done")
+            return None
+        fx = self.state["fixes"] = {
+            "stage": "cut", "outcome": None, "reason": None,
+            "started_at": now, "ended_at": None, "store": None,
+            "session": None,
+            "entries": {entry["id"]: {
+                "state": "pending", "landing": bool(entry.get("left_out")),
+                "commit": None, "repo": None, "reason": None, "card": None}
+                for entry, _ in items},
+            "repos": {}, "spec_commits": [], "picked": {}, "gate_runs": 0,
+            "gates": []}
+        self._save_state()
+        self._fixes_step_start()
+        self.log("[fixes] the pass takes " + ", ".join(fx["entries"]))
+        return fx
+
+    def _fixes_step_start(self) -> None:
+        """Pilot's tile shows the pass as a step of its own while it runs."""
+        started = _now_iso()
+        self._progress(lambda steps: pilot_progress.start(
+            steps, FIXES_STEP, FIXES_LABEL, started))
+
+    def _fixes_run(self, fx: dict, ctx: dict) -> None:
+        """The pass up to its landing: the store committed, the branches cut,
+        a left-out wrap-up's commits picked, the dispatch, the trees settled,
+        the session's card requests read, each entry's commits found, and
+        the gate once over the stack. A soft failure raises."""
+        label, branch = "[fixes]", self._fixes_branch()
+        # 1. The store as the pass found it, committed: what a clean slate
+        # takes it back to, and what the session's writes are read against.
+        fx["store"] = self._commit_report(
+            f"slice {self.slice_num}: close-out report before the fixes pass",
+            label=label)
+        self._save_state()
+        before = _read_json(store_path(self.slice_dir)) or {}
+        # 2. The installs, as a run's start sets them up, so a gate fails on
+        # the fix and not on install state.
+        try:
+            self._setup_targets()
+        except Exception as e:
+            self.log(f"{label} setup not run ({e})")
+        # 3. The branches, cut from each repo's current base, in the repos
+        # the slice touched less those the plan holds.
+        repos = self._wrap_up_repos(self._held_roots())
+        for root, base in self._touched_roots():
+            ctx["guard"][(str(root), base)] = self.git("rev-parse", base,
+                                                       root=root)
+        off: list[str] = []
+        for root, base in repos:
+            cur = self._current_branch(root)
+            if cur != base:
+                off.append(f"{root.name} is on {cur}, not {base}")
+            ctx["watch"][str(root)] = {"root": root,
+                                       "expected": base if cur == base else cur,
+                                       "dirty": self._worktree_dirty(root)}
+        for root, _ in self._touched_roots():
+            ctx["watch"].setdefault(str(root), {
+                "root": root, "expected": self._current_branch(root),
+                "dirty": self._worktree_dirty(root)})
+        dirty = [root.name for root, _ in repos
+                 if ctx["watch"][str(root)]["dirty"]]
+        if dirty:
+            raise FixesLeftOut("uncommitted changes in " + ", ".join(dirty)
+                               + " before its dispatch")
+        if off:
+            raise FixesLeftOut("; ".join(off) + " — another run's branch, "
+                               "which the pass does not move")
+        pushing = self._push_on()
+        for root, base in repos:
+            if pushing:
+                self._fixes_sync_base(root, base)
+                ctx["guard"][(str(root), base)] = self.git("rev-parse", base,
+                                                           root=root)
+            sha = self.git("rev-parse", base, root=root)
+            if self.git("branch", "--list", branch, root=root):
+                self.git("branch", "-D", branch, root=root)
+            self.git("checkout", "-b", branch, sha, root=root)
+            fx["repos"][str(root)] = {"branch": branch, "base": base,
+                                      "cut": sha, "head": None, "commits": [],
+                                      "landed": None, "pushed": False}
+            self._save_state()
+            self.log(f"{label} {branch} cut in {root.name} from {base} "
+                     f"({sha[:12]})")
+        # 4. A left-out wrap-up's landing: its commits picked onto the branch.
+        for eid, ent in fx["entries"].items():
+            if ent["landing"]:
+                self._fixes_pick(fx, eid, branch)
+        # 5. The dispatch, over every other entry.
+        ids = [eid for eid, ent in fx["entries"].items() if not ent["landing"]]
+        reasons: list[str | None] = []
+        if ids:
+            fx["stage"] = "dispatch"
+            self._save_state()
+            verdict_path = self.slice_dir / "fixes_result.json"
+            round_ = 1 + max((h.get("round") or 1
+                              for h in self.state["history"]
+                              if h.get("role") == "wrap-up"), default=0)
+            reasons.append(self._dispatch_wrap_up(
+                self._fixes_prompt(repos, branch, verdict_path), verdict_path,
+                fx, label=label, round_=round_))
+        # 6. After the session, whatever its outcome: the trees settled, and
+        # what it took back read off the store.
+        reasons += self._wrap_up_settle(fx, ctx, branch=branch, label=label)
+        self._fixes_cards_asked(fx, before, ids)
+        found = [r for r in reasons if r]
+        if found:
+            raise FixesLeftOut("; ".join(found))
+        # 7. What each branch carries, and an entry with nothing on any.
+        self._fixes_read_commits(fx, branch)
+        for eid in ids:
+            ent = fx["entries"][eid]
+            if ent["state"] == "pending" and not self._fixes_entry_commits(fx, eid):
+                ent.update(state="carded", card="driver",
+                           reason="the wrap-up left it with no fix and no "
+                                  "card request")
+        self._save_state()
+        # 8. The gate, once over the stack.
+        fx["stage"] = "gate"
+        self._save_state()
+        self._fixes_gate(fx, repos, branch)
+        fx["stage"] = "landing"
+        self._save_state()
+
+    def _fixes_sync_base(self, root: Path, base: str) -> None:
+        """Bring a repo's local base up to `origin/<base>` before the fixes
+        branch is cut there, where it is a plain ancestor of it — the
+        continuation may come days after the run. Best effort: a fetch that
+        fails, or a base with commits of its own, is a log line, and the
+        branch is cut from the base as it stands; the landing rebases onto
+        a moved origin."""
+        try:
+            self._fetch_origin(root)
+        except Bailout as e:
+            self.log(f"[fixes] origin not fetched in {root.name} ({e.details})")
+            return
+        origin = f"refs/remotes/origin/{base}"
+        tip = self.git("rev-parse", "--verify", "--quiet", origin, root=root,
+                       check=False)
+        if not tip or self.git_ok("merge-base", "--is-ancestor", origin, base,
+                                  root=root):
+            return
+        if not self.git_ok("merge-base", "--is-ancestor", base, origin,
+                           root=root):
+            self.log(f"[fixes] {base} in {root.name} has diverged from "
+                     f"origin/{base} — the branch is cut from {base} as it "
+                     "stands")
+            return
+        rc, out = self._git_attempt("merge", "--ff-only", tip, root=root)
+        if rc:
+            self.log(f"[fixes] {base} in {root.name} not brought up to "
+                     f"origin/{base}: {_clip(out, 200)}")
+            return
+        self.log(f"[fixes] {base} fast-forwarded to origin/{base} in "
+                 f"{root.name}")
+
+    def _fixes_pick(self, fx: dict, eid: str, branch: str) -> None:
+        """A left-out wrap-up's landing, ruled `fix now`: per
+        repo, the wrap-up's commits (`<cut>..<head>` of its branch, as its
+        event's `left_out` names them) cherry-picked onto the fixes branch,
+        in order, the map from each to its pick kept in `picked`. A repo the
+        pass does not branch, a commit gone, or a pick that conflicts —
+        aborted — takes this entry's picks back in every repo, and the entry
+        is carded with the reason. The store writes come back only once the
+        commits landed (`_fixes_record_landing`)."""
+        ent = fx["entries"][eid]
+        try:
+            entry = next(e for e in (_read_json(store_path(self.slice_dir))
+                                     or {}).get("entries") or []
+                         if e.get("id") == eid)
+        except StopIteration:
+            entry = {}
+        rows = (entry.get("left_out") or {}).get("branches") or []
+        starts: dict[str, str] = {}
+        picked: dict[str, list[list[str]]] = {}
+        why = None if rows else "its event names no branch to land"
+        for row in rows:
+            if why:
+                break
+            key, root = row.get("repo"), Path(row.get("repo") or ".")
+            if key not in fx["repos"]:
+                held = key in self._held_roots()
+                why = (f"the plan holds {root.name}, where its branch is" if held
+                       else f"{root.name}, where its branch is, is no repo the "
+                            "pass branches")
+                break
+            head, cut = row.get("head"), row.get("cut")
+            if not (head and cut and self.git_ok(
+                    "merge-base", "--is-ancestor", cut, head, root=root)):
+                why = (f"the wrap-up's commits on {row.get('branch')} in "
+                       f"{root.name} are gone ({_clip(str(head), 12)})")
+                break
+            starts.setdefault(key, self.git("rev-parse", "HEAD", root=root))
+            for sha in self.git("rev-list", "--reverse", f"{cut}..{head}",
+                                root=root).split():
+                rc, out = self._git_attempt("cherry-pick",
+                                            "--keep-redundant-commits", sha,
+                                            root=root)
+                if rc:
+                    files = self.git("diff", "--name-only", "--diff-filter=U",
+                                     root=root, check=False).split()
+                    self._git_attempt("cherry-pick", "--abort", root=root)
+                    why = (f"the wrap-up's commit {sha[:12]} does not "
+                           f"cherry-pick cleanly onto {branch} in {root.name}"
+                           + (f" (conflicts in {', '.join(files)})" if files
+                              else f": {_clip(out, 160)}"))
+                    break
+                picked.setdefault(key, []).append(
+                    [sha, self.git("rev-parse", "HEAD", root=root)])
+        if why:
+            for key, sha in starts.items():
+                self.git("reset", "--hard", sha, root=Path(key))
+            ent.update(state="carded", card="driver", reason=why)
+            self.log(f"[fixes] {eid}: the wrap-up's branches are not picked — "
+                     f"{why}")
+        else:
+            fx["picked"][eid] = picked
+            self.log(f"[fixes] {eid}: "
+                     + ", ".join(f"{len(rows_)} commit(s) of the wrap-up picked "
+                                 f"onto {branch} in {Path(key).name}"
+                                 for key, rows_ in picked.items()))
+        self._save_state()
+
+    def _fixes_prompt(self, repos: list[tuple[Path, str]], branch: str,
+                      verdict_path: Path) -> str:
+        rows = [f"  - {root} — branch {branch} — gate: "
+                f"{self._wrap_up_gate_text(root)}" for root, _ in repos]
+        return FIXES_PROMPT.format(
+            slice_name=self.slice_name,
+            close_out_line=dispatch_line(self.report_path),
+            close_out_verbs=textwrap.indent(
+                verb_usage("worklist", "show", "restate", "propose", "note"),
+                "  "),
+            worklist=textwrap.indent(fixes_view(self.slice_dir, landing=False),
+                                     "  "),
+            repo_rows="\n".join(rows) or "  (none — the plan holds every code "
+                                         "repo this slice touched)",
+            spec_root=self.spec_root,
+            hold_block=self._hold_block(WRAP_UP_HOLD_BLOCK),
+            plan_path=self.plan_path, slice_dir=self.slice_dir,
+            verdict_path=verdict_path)
+
+    def _fixes_cards_asked(self, fx: dict, before: dict,
+                           ids: list[str]) -> None:
+        """Each entry the session took back — its mark a card request it
+        wrote in this pass — carded as the wrap-up's, its reason the first
+        line of the section it restated."""
+        now = _read_json(store_path(self.slice_dir)) or {}
+        was = {e.get("id"): e for e in before.get("entries") or []
+               if isinstance(e, dict)}
+        for entry in now.get("entries") or []:
+            eid = entry.get("id") if isinstance(entry, dict) else None
+            if eid not in ids or fx["entries"][eid]["state"] != "pending":
+                continue
+            mark = entry.get("wrap_up") or {}
+            old = was.get(eid) or {}
+            if mark.get("outcome") != "card" or mark == old.get("wrap_up"):
+                continue
+            told = entry.get("restated") or {}
+            said = ((told.get("body") or [""])[0]
+                    if told and told != old.get("restated")
+                    else (mark.get("text") or [""])[0])
+            fx["entries"][eid].update(
+                state="carded", card="wrap-up",
+                reason=_clip("the wrap-up took the fix back"
+                             + (f": {said}" if said.strip() else ""), 240))
+        self._save_state()
+
+    def _fixes_read_commits(self, fx: dict, branch: str) -> None:
+        """What each fixes branch carries over its cut, `[sha, subject]` in
+        order, and the spec repo's commits of the pass (`spec_commits`)."""
+        for key, info in fx["repos"].items():
+            root = Path(key)
+            if not self.git("branch", "--list", branch, root=root):
+                info["commits"] = []
+                continue
+            info["head"] = self.git("rev-parse", branch, root=root)
+            out = self.git("log", "--reverse", "--format=%H%x1f%s",
+                           f"{info['cut']}..{branch}", root=root)
+            info["commits"] = [line.split("\x1f", 1) for line in out.splitlines()
+                               if "\x1f" in line]
+        fx["spec_commits"] = self._fixes_spec_commits(fx)
+        self._save_state()
+
+    def _fixes_spec_commits(self, fx: dict) -> list[list[str]]:
+        """The pass's fixes in the spec repo, which the wrap-up commits on
+        the branch checked out there, as every agent does: the commits on
+        its base since the store the pass began from whose subject names an
+        entry of the pass, and that touch more than this slice's folder —
+        the store's own commits are not fixes. The tree is shared, so a
+        commit of another session's that names the id the same way is
+        taken too."""
+        start = fx.get("store")
+        if not start:
+            return []
+        try:
+            base = self._base_branch(self.spec_root)
+            out = self.git("log", "--reverse", "--format=%H%x1f%s",
+                           f"{start}..{base}", root=self.spec_root)
+            mine = str(self.slice_dir.relative_to(self.spec_root)) + "/"
+        except (Bailout, ValueError) as e:
+            self.log(f"[fixes] the spec repo's commits not read ({e})")
+            return []
+        found: list[list[str]] = []
+        for line in out.splitlines():
+            sha, _, subject = line.partition("\x1f")
+            if not any(_names_entry(subject, eid) for eid in fx["entries"]):
+                continue
+            files = [f for f in self.git("show", "--name-only", "--format=",
+                                         sha, root=self.spec_root).splitlines()
+                     if f.strip()]
+            if files and all(f.startswith(mine) for f in files):
+                continue
+            found.append([sha, subject])
+        return found
+
+    def _fixes_entry_commits(self, fx: dict,
+                             eid: str) -> list[tuple[str, str]]:
+        """(repo, sha) of each commit the pass made for `eid` — its id in the
+        subject, a pick of the left-out wrap-up's not counted — each sha as
+        the landing left it (a rebase onto a moved origin maps it,
+        `rebased`), the spec repo's last."""
+        picked = {old_new[1] for repos in (fx.get("picked") or {}).values()
+                  for rows in repos.values() for old_new in rows}
+        out: list[tuple[str, str]] = []
+        for key, info in fx["repos"].items():
+            rebased = info.get("rebased") or {}
+            for sha, subject in info.get("commits") or []:
+                if sha not in picked and _names_entry(subject, eid):
+                    out.append((key, rebased.get(sha, sha)))
+        out += [(str(self.spec_root), sha)
+                for sha, subject in fx.get("spec_commits") or []
+                if _names_entry(subject, eid)]
+        return out
+
+    def _fixes_gate(self, fx: dict, repos: list[tuple[Path, str]],
+                    branch: str) -> None:
+        """The gate once over the stack, as the first wrap-up's: every other
+        repo with a commit on its branch with the gate a phase there gets,
+        then the primary with the doc gate's full sweep — each run once more
+        on the same tree on a red or a timeout before nothing of
+        the pass lands."""
+        label = "[fixes]"
+        carried = {key for key, info in fx["repos"].items()
+                   if info.get("commits")}
+        if not carried:
+            self.log(f"{label} no commit on any fixes branch — nothing to gate "
+                     "or land in a code repo")
+            return
+        for root, base in repos:
+            if self._is_primary(root) or str(root) not in carried:
+                continue
+            for attempt in (1, 2):
+                green, where = self._wrap_up_sibling_gate(
+                    root, branch, base, role="fixes-gate", label=label)
+                fx["gates"].append({"repo": str(root),
+                                    "outcome": "green" if green else "red",
+                                    "log": where})
+                self._save_state()
+                if green:
+                    break
+                if attempt == 1:
+                    self.log(f"{label} the gate in {root.name} is red with the "
+                             "fixes — once more on the same tree before "
+                             "nothing lands")
+            if not green:
+                raise FixesLeftOut(f"the fixes were made, and the gate in "
+                                   f"{root.name} went red on them twice "
+                                   f"(output in {where})")
+        primary = next(((root, base) for root, base in repos
+                        if self._is_primary(root)), None)
+        if primary is not None and str(primary[0]) in carried:
+            self._fixes_primary_gate(fx, branch, primary[1])
+
+    def _fixes_primary_gate(self, fx: dict, branch: str, home: str) -> None:
+        """The doc gate's full sweep on the fixes branch in the primary repo,
+        run once more on a red or a timeout; red twice, nothing lands."""
+        primary = self.repo_root
+        self.log(f"[fixes] the doc gate on {branch}, with the fixes")
+        self.git("checkout", branch, root=primary)
+        late = []
+        try:
+            for attempt in (1, 2):
+                green, log_path, timed_out = self._wrap_up_doc_gate(
+                    fx, stem="fixes_doc_gate", role="fixes-doc-gate",
+                    label="[fixes]")
+                late.append(timed_out)
+                fx["gates"].append({"repo": str(primary),
+                                    "outcome": ("green" if green else
+                                                "timeout" if timed_out
+                                                else "red"),
+                                    "log": str(log_path)})
+                self._save_state()
+                if green:
+                    break
+                if attempt == 1:
+                    self.log("[fixes] the doc gate "
+                             + ("timed out" if timed_out else "is red")
+                             + " with the fixes — once more on the same tree "
+                               "before nothing lands")
+        finally:
+            self.git("checkout", home, root=primary)
+        if green:
+            return
+        went = ("timed out on them twice" if all(late)
+                else "went red on them twice" if not any(late)
+                else "went red and timed out on them")
+        raise FixesLeftOut(f"the fixes were made, and the doc gate {went} "
+                           f"(output in {log_path})")
+
+    def _fixes_leave_out(self, fx: dict, ctx: dict, reason: str) -> None:
+        """A soft failure — every one of the first wrap-up's: nothing of the
+        pass lands. The trees put back and every guarded ref where it stood;
+        the fixes branches stay, unmerged, for whoever wants to read them;
+        each entry the wrap-up did not take back itself is carded with the
+        reason (in the record, `_fixes_record`). The store is not taken back:
+        the wrap-up writes no record in the pass, and its card requests
+        stand. Best effort: it cannot be a stop itself."""
+        reason = " ".join(str(reason).split()) or "an unknown failure"
+        self.log(f"[fixes] nothing of the pass lands: {reason}")
+        branch = self._fixes_branch()
+        try:
+            self._wrap_up_settle(fx, ctx, branch=branch, label="[fixes]")
+        except Exception as e:
+            why = e.details if isinstance(e, Bailout) else str(e)
+            self.log(f"[fixes] the trees could not all be put back ({why})")
+        try:
+            self._fixes_read_commits(fx, branch)
+        except Exception as e:
+            why = e.details if isinstance(e, Bailout) else str(e)
+            self.log(f"[fixes] its commits could not be read ({why})")
+        fx["reason"] = reason
+        fx["stage"] = "record"
+        self._save_state()
+
+    def _fixes_land(self, fx: dict) -> None:
+        """Each fixes branch fast-forwarded into its base and pushed, as the
+        first wrap-up's landing is: a repo the plan holds, or a project that
+        does not push, takes the merge and no push; the devlock is held over
+        the pushes, where the project names one. A repo already landed — the
+        pass taken up after a stop — is passed over. A landing that fails
+        stops the landing there: what landed before it stays landed, and the
+        entries whose commits did not land are carded with the reason."""
+        branch = self._fixes_branch()
+        todo = [(Path(key), info) for key, info in fx["repos"].items()
+                if info.get("commits") and info.get("landed") is None]
+        # A branch that carries nothing has nothing to land, and nothing for
+        # anyone to read.
+        for key, info in fx["repos"].items():
+            if not info.get("commits"):
+                with contextlib.suppress(Exception):
+                    if self.git("branch", "--list", branch, root=Path(key)) \
+                            and self._current_branch(Path(key)) != branch:
+                        self.git("branch", "-D", branch, root=Path(key))
+        root = None
+        try:
+            if todo:
+                pushing = self._push_on()
+                held = self._held_roots()
+                if pushing and any(str(r) not in held for r, _ in todo):
+                    self._acquire_devlock("fixes landing")
+                for root, info in todo:
+                    self._fixes_land_repo(root, info, branch,
+                                          pushing and str(root) not in held)
+                    self._save_state()
+        except (KeyboardInterrupt, Halted):
+            raise
+        except Exception as e:
+            why = (e.reason if isinstance(e, FixesLeftOut)
+                   else e.details if isinstance(e, Bailout) else str(e))
+            where = root.name if root is not None else "a repo"
+            fx["failed"] = {"repo": str(root) if root else None, "reason": why}
+            if not any(info.get("landed") for info in fx["repos"].values()):
+                fx["reason"] = f"its landing failed in {where}: {why}"
+            self.log(f"[fixes] the landing stopped in {where}: {why}")
+            if root is not None:
+                with contextlib.suppress(Exception):
+                    base = fx["repos"][str(root)]["base"]
+                    if self._current_branch(root) != base:
+                        self.git("checkout", base, root=root)
+        finally:
+            self.devlock.release(self.log)
+        fx["stage"] = "record"
+        self._save_state()
+
+    def _fixes_land_repo(self, root: Path, info: dict, branch: str,
+                         push: bool) -> None:
+        """One repo's landing: the base must not have moved since the cut
+        but by this landing; pushing, the commits the cut stood on must be
+        on origin — the pass pushes its own alone — and a moved origin is
+        taken by rebasing the branch onto it, each commit's new sha kept
+        (`rebased`). Then the fast-forward, the push, and the branch
+        deleted."""
+        base, cut, name = info["base"], info["cut"], root.name
+        if not self.git("branch", "--list", branch, root=root):
+            raise FixesLeftOut(f"{branch} is gone from {name}")
+        if not self.git_ok("merge-base", "--is-ancestor", base, branch,
+                           root=root):
+            raise FixesLeftOut(f"{base} in {name} moved since the fixes branch "
+                               "was cut, so the fixes cannot go in as a "
+                               "fast-forward")
+        if push:
+            self.git("fetch", "origin", root=root)
+            origin = f"origin/{base}"
+            if not self.git_ok("merge-base", "--is-ancestor", cut, origin,
+                               root=root):
+                raise FixesLeftOut(f"{base} in {name} held commits {origin} "
+                                   "lacks when the fixes branch was cut, and "
+                                   "the pass pushes its own alone")
+            if not self.git_ok("merge-base", "--is-ancestor", origin, branch,
+                               root=root):
+                if self.git("rev-parse", base, root=root) != cut:
+                    raise FixesLeftOut(f"{origin} in {name} moved after the "
+                                       f"fixes were merged into {base} — push "
+                                       f"{base} there by hand")
+                self.git("checkout", branch, root=root)
+                rc, out = self._git_attempt("rebase", origin, root=root)
+                if rc:
+                    self._git_attempt("rebase", "--abort", root=root)
+                    self.git("checkout", base, root=root)
+                    raise FixesLeftOut(f"the fixes do not rebase cleanly onto "
+                                       f"{origin} in {name}")
+                rows = self.git("log", "--reverse", "--format=%H%x1f%s",
+                                f"{origin}..{branch}", root=root).splitlines()
+                info["rebased"] = _match_by_subject(
+                    info.get("commits") or [],
+                    [line.split("\x1f", 1) for line in rows if "\x1f" in line])
+                self.git("checkout", base, root=root)
+                self.log(f"[fixes] the fixes rebased onto {origin} in {name}")
+        if self._current_branch(root) != base:
+            self.git("checkout", base, root=root)
+        if self.git("rev-parse", base, root=root) != self.git(
+                "rev-parse", branch, root=root):
+            self.git("merge", "--ff-only", branch, root=root)
+        if push:
+            self._halt_point(f"before pushing {base} in {root}")
+            self.git("push", "origin", base, root=root)
+            info["pushed"] = True
+        info["landed"] = self.git("rev-parse", base, root=root)
+        # on record before the branch goes: a pass taken up after a stop
+        # here finds the repo landed, not its branch gone
+        self._save_state()
+        self.git("branch", "-D", branch, root=root)
+        self.log(f"[fixes] {len(info.get('commits') or [])} commit(s) of "
+                 f"{branch} taken into {base} in {name}"
+                 + (" and pushed" if push else " — not pushed"))
+
+    def _fixes_record(self, fx: dict) -> None:
+        """The record, the driver's, through close_out's functions: each
+        landed fix ruled done with what was fixed, the gate on record and
+        the commit as the upstream holds it (`fixes_landed`); a left-out
+        wrap-up's landing ruled done, and what it wrote to the store brought
+        back; each entry that did not land carded — the wrap-up's own card
+        request kept, else the driver's (`fixes_card`) — its ruling left
+        without a `did` for the continuation to file the card. Then the
+        report rendered and committed. Idempotent over a pick-up: an entry
+        recorded already is passed over."""
+        green = [Path(g["log"]).name for g in fx.get("gates") or []
+                 if g.get("outcome") == "green" and g.get("log")]
+        gated = (f"the fixes pass's gate green over it ({', '.join(green)})"
+                 if green else "no gate of the fixes pass ran on it")
+        landed = {key for key, info in fx["repos"].items() if info.get("landed")}
+        ruled = {e.get("id"): e for e in (_read_json(store_path(
+                     self.slice_dir)) or {}).get("entries") or []
+                 if isinstance(e, dict) and (e.get("ruling") or {}).get("did")}
+        for eid, ent in fx["entries"].items():
+            if ent.get("written"):
+                continue
+            if ent["state"] == "pending" and eid in ruled:
+                # recorded before a stop cut the pass short of saying so
+                ent.update(state="landed", commit=(
+                    (ruled[eid].get("strike") or {}).get("commit")
+                    or ent.get("commit")))
+            if ent["state"] == "pending":
+                if ent["landing"]:
+                    self._fixes_record_landing(fx, eid, ent, landed, gated)
+                else:
+                    self._fixes_record_fix(fx, eid, ent, landed, gated)
+            if ent["state"] == "carded" and ent.get("card") == "driver":
+                try:
+                    fixes_card(self.slice_dir, eid, ent["reason"] or "")
+                except ReportError as e:
+                    self.log(f"[fixes] {eid}'s card request not written ({e})")
+            ent["written"] = True
+            self._save_state()
+        self._render_report()
+        try:
+            self._commit_report(f"slice {self.slice_num}: close-out report "
+                                "after the fixes pass", label="[fixes]")
+        except Exception as e:
+            why = e.details if isinstance(e, Bailout) else str(e)
+            self.log(f"[fixes] close-out report not committed ({why})")
+        states = [ent["state"] for ent in fx["entries"].values()]
+        fx["outcome"] = ("landed" if "carded" not in states
+                         else "carded" if "landed" not in states else "partial")
+        fx["stage"] = "done"
+        fx["ended_at"] = _now_iso()
+        self._save_state()
+
+    def _fixes_not_landed(self, fx: dict, keys: list[str]) -> str:
+        """Why an entry's commits did not land: the pass's own reason, or the
+        landing that stopped short of their repo."""
+        if fx.get("reason"):
+            return fx["reason"]
+        failed = fx.get("failed") or {}
+        names = ", ".join(sorted({Path(k).name for k in keys}))
+        return (f"the fixes were made and gated green, and their landing in "
+                f"{names} did not happen: {failed.get('reason') or 'unknown'}")
+
+    def _fixes_rule(self, eid: str, did: str, key: str, sha: str,
+                    pushed: bool) -> None:
+        """`fixes_landed` with the commit as the upstream holds it; one the
+        upstream does not hold — a project that does not push, a spec push
+        not granted — is named in `did` instead, and so said."""
+        if pushed:
+            try:
+                fixes_landed(self.slice_dir, eid, did, commit=sha, repo=key)
+                return
+            except ReportError as e:
+                self.log(f"[fixes] {eid}'s commit not recorded on its upstream "
+                         f"({e})")
+        fixes_landed(self.slice_dir, eid,
+                     f"{did} — `{sha[:12]}` is not on its upstream, so no commit "
+                     "is recorded")
+
+    def _fixes_record_fix(self, fx: dict, eid: str, ent: dict,
+                          landed: set[str], gated: str) -> None:
+        mine = self._fixes_entry_commits(fx, eid)
+        spec = str(self.spec_root)
+        code = [key for key, _ in mine if key != spec]
+        if not mine:
+            ent.update(state="carded", card="driver",
+                       reason=fx.get("reason") or "the wrap-up left it with no "
+                                                  "fix and no card request")
+            return
+        if (fx.get("reason") and code) or any(k not in landed for k in code):
+            ent.update(state="carded", card="driver",
+                       reason=self._fixes_not_landed(
+                           fx, [k for k in code if k not in landed] or code))
+            return
+        named = "; ".join(f"`{sha[:12]}` in {Path(key).name}" for key, sha in mine)
+        key, sha = mine[0] if code else mine[-1]
+        pushed = (bool(fx["repos"].get(key, {}).get("pushed")) if key != spec
+                  else not self.state.get("spec_unpushed"))
+        did = f"fixed in the fixes pass: {named} — " + (
+            gated if code else "no gate of the fixes pass covers the spec repo")
+        try:
+            self._fixes_rule(eid, did, key, sha, pushed)
+        except ReportError as e:
+            self.log(f"[fixes] {eid} not recorded ({e})")
+            ent.update(state="carded", card="driver",
+                       reason=f"its fix landed in {named}, and its record could "
+                              f"not be written: {e}")
+            return
+        ent.update(state="landed", commit=sha, repo=key)
+        self.log(f"[fixes] {eid} landed: {named}")
+
+    def _fixes_record_landing(self, fx: dict, eid: str, ent: dict,
+                              landed: set[str], gated: str) -> None:
+        """A left-out wrap-up's landing, recorded: its picks landed, what it
+        wrote to the store comes back over the store as it stands — every
+        commit its strikes name remapped to the one that landed, the
+        operator's rulings standing (`restore_wrap_up_writes`) — and the
+        event is ruled done, naming what landed."""
+        picked = (fx.get("picked") or {}).get(eid) or {}
+        if fx.get("reason") or not picked or any(k not in landed for k in picked):
+            ent.update(state="carded", card="driver",
+                       reason=self._fixes_not_landed(fx, list(picked))
+                       if picked else "its branches were not picked")
+            return
+        final: dict[str, str] = {}
+        for key, rows in picked.items():
+            rebased = fx["repos"][key].get("rebased") or {}
+            for old, new in rows:
+                final[old] = rebased.get(new, new)
+        named = "; ".join(f"{len(rows)} commit(s) in {Path(key).name}, "
+                          f"`{final[rows[-1][0]][:12]}` the last"
+                          for key, rows in picked.items())
+        restored: list[str] = []
+        try:
+            store = _read_json(store_path(self.slice_dir)) or {}
+            rec = next(e for e in store.get("entries") or []
+                       if e.get("id") == eid).get("left_out") or {}
+            before = json.loads(self.specs_git(
+                "show", f"{rec['before']}:{rec['path']}"))
+            left = json.loads(self.specs_git(
+                "show", f"{rec['store']}:{rec['path']}"))
+            restored = restore_wrap_up_writes(
+                self.slice_dir, before, left, final,
+                f"the fixes pass landed its branches ({named})")
+            back = (f"; what the wrap-up wrote to the store is back on "
+                    f"{_join(restored)}" if restored else "")
+        except Exception as e:
+            why = e.details if isinstance(e, Bailout) else str(e)
+            self.log(f"[fixes] {eid}: what the wrap-up wrote to the store not "
+                     f"brought back ({why})")
+            back = "; what the wrap-up wrote to the store could not be brought back"
+        key = next(iter(picked))
+        sha = final[picked[key][-1][0]]
+        did = (f"landed the wrap-up's branches in the fixes pass: {named} — "
+               f"{gated}{back}")
+        try:
+            self._fixes_rule(eid, did, key, sha,
+                             bool(fx["repos"][key].get("pushed")))
+        except ReportError as e:
+            self.log(f"[fixes] {eid} not recorded ({e})")
+        ent.update(state="landed", commit=sha, repo=key)
+        self.log(f"[fixes] {eid} landed: {named}"
+                 + (f"; store writes back on {_join(restored)}" if restored
+                    else ""))
+
+    def _fixes_end(self, fx: dict) -> None:
+        """The step done, its label saying what came of it, and a log line
+        per entry — the lines `wait` prints at the end (`fixes_lines`)."""
+        lines = fixes_lines(fx)
+        counts = [(n, word) for n, word in (
+            (sum(1 for e in fx["entries"].values() if e["state"] == "landed"),
+             "landed"),
+            (sum(1 for e in fx["entries"].values() if e["state"] == "carded"),
+             "carded")) if n]
+        label = FIXES_LABEL + (" · " + ", ".join(f"{n} {w}" for n, w in counts)
+                               if counts else "")
+        self._progress(lambda steps: [
+            dict(s, state=pilot_progress.DONE, label=label)
+            if s.get("code") == FIXES_STEP else dict(s) for s in steps])
+        for line in lines:
+            self.log(f"[fixes] {line}")
+        self.announce("fixes pass over: "
+                      + (", ".join(f"{n} {w}" for n, w in counts) or "nothing"))
+
+    def _fixes_clean_slate(self, fx: dict) -> None:
+        """A pass that stopped before its landing starts again from nothing:
+        each tree it left on its branch put back on its base (what it held
+        uncommitted discarded, a pick in progress aborted), the fixes
+        branches deleted, and the store taken back to where the pass found
+        it. Never a failure: what cannot be undone is logged, and the
+        pass's own steps meet it again."""
+        branch = self._fixes_branch()
+        self.log("[fixes] an earlier pass stopped before its landing — the "
+                 "pass starts again from a clean slate")
+        for key, info in (fx.get("repos") or {}).items():
+            root = Path(key)
+            try:
+                base = info.get("base") or self._base_branch(root)
+                if self._current_branch(root) == branch:
+                    self._git_attempt("cherry-pick", "--abort", root=root)
+                    if self._worktree_dirty(root):
+                        self._wrap_up_discard(root)
+                    self.git("checkout", base, root=root)
+                if self.git("branch", "--list", branch, root=root):
+                    self.git("branch", "-D", branch, root=root)
+            except Exception as e:
+                why = e.details if isinstance(e, Bailout) else str(e)
+                self.log(f"[fixes] {root.name} not put back ({why})")
+        if fx.get("store"):
+            try:
+                self._wrap_up_restore_store(fx["store"], what="the fixes pass",
+                                            label="[fixes]")
+            except Exception as e:
+                why = e.details if isinstance(e, Bailout) else str(e)
+                self.log(f"[fixes] the store could not be taken back ({why})")
 
     # -- top level -----------------------------------------------------------
 
@@ -13581,6 +14712,22 @@ def _detached_child(body, log_path: Path, pipe_fd: int) -> None:
     os._exit(code)
 
 
+def cmd_fixes(args) -> None:
+    """`fixes`: the fixes pass on a slice folder whose run is over."""
+    slice_dir = Path(args.slice_dir)
+    if not slice_dir.is_dir():
+        print(f"Error: slice directory not found: {slice_dir}",
+              file=sys.stderr)
+        sys.exit(2)
+    loop = RunLoop(slice_dir, resume=True, verbose=args.verbose,
+                   spec_push=bool(args.spec_push))
+    print(f"run loop log: {loop.log_path}", flush=True)
+    if args.detach:
+        run_detached(loop, slice_dir, method="fixes")
+        return
+    loop.fixes()
+
+
 def cmd_run(args) -> None:
     slice_dir = Path(args.slice_dir)
     if not slice_dir.is_dir():
@@ -13604,15 +14751,17 @@ def cmd_run(args) -> None:
     loop.run()
 
 
-def run_detached(loop, slice_arg: Path, script: Path = SCRIPT) -> None:
-    """`run --detach`, either loop's: the driver goes on in its own session,
-    and this process says how to wait on it. `loop` has `log_path`, an
-    `on_start` it calls past its refusals, and `run()`; `script` is the
-    loop's own file, whose `stop` and `wait` the lines name."""
+def run_detached(loop, slice_arg: Path, script: Path = SCRIPT,
+                 method: str = "run") -> None:
+    """`run --detach`, either loop's, and `fixes --detach`: the driver goes
+    on in its own session, and this process says how to wait on it. `loop`
+    has `log_path`, an `on_start` it calls past its refusals, and the
+    `method` it runs (`run()`, or the fixes pass's `fixes()`); `script` is
+    the loop's own file, whose `stop` and `wait` the lines name."""
 
     def body(started) -> None:
         loop.on_start = started
-        loop.run()
+        getattr(loop, method)()
 
     pid, code, text = detach(body, loop.log_path)
     if text:
@@ -13707,15 +14856,41 @@ def _ended_lines(code: int, slice_dir: Path) -> list[str]:
     return lines
 
 
+def _wait_ended(record: dict, slice_dir: Path) -> list[str]:
+    """`wait`'s lines for an exit on record: the run's (`_ended_lines`), or
+    the fixes pass's — its exit, then where a halt stopped it, or at exit 0
+    a line per entry it took (`fixes_lines`)."""
+    code = record.get("code")
+    if record.get("pass") != "fixes":
+        return _ended_lines(code, slice_dir)
+    lines = [f"ended: exit {code}"]
+    state = _read_json(slice_dir / "state.json") or {}
+    if code == EXIT_HALTED:
+        halts = state.get("halts") or []
+        where = halts[-1].get("at") if halts else None
+        lines.append(f"halted: {where or 'at a safe point'}")
+    elif code == 0:
+        lines += fixes_lines(state.get("fixes"))
+    return lines
+
+
+def _wait_relaunch(state: dict, where: str) -> str:
+    """The relaunch `wait` names for a driver gone with no exit on record:
+    the fixes pass's own command where the driver was the pass's, else the
+    run's resume."""
+    driver = state.get("driver") if isinstance(state, dict) else None
+    if isinstance(driver, dict) and driver.get("pass") == "fixes":
+        return f"fixes {where} --detach"
+    return f"run {where} --resume --detach"
+
+
 def cmd_wait(args) -> None:
     """Block until the run ends or `--for` seconds pass, then say which, and
     nothing a session must read: `running` and the step the run is in, with
     the wait to re-arm, `ended: exit <n>` with what the exit leaves, or
-    `gone` with the relaunch."""
+    `gone` with the relaunch. A fixes pass is waited on the same way."""
     wait_on_driver(Path(args.slice_dir), "state.json", "run.lock", "log.txt",
-                   args.for_seconds, SCRIPT, "--resume --detach",
-                   lambda record, slice_dir: _ended_lines(record.get("code"),
-                                                          slice_dir))
+                   args.for_seconds, SCRIPT, _wait_relaunch, _wait_ended)
 
 
 def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
@@ -13729,7 +14904,8 @@ def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
     pilot_progress.active_summary; bare where no step is active), and the
     wait to re-arm with its `timeout:` line (5), `ended(record, slice_dir)`'s lines
     for the exit recorded in `state_name` (0), or `gone` and the relaunch
-    with `relaunch`'s flags (6). Liveness is the flock, never the pid.
+    with `relaunch`'s flags (6) — or, `relaunch` a callable, the command
+    `relaunch(state, where)` names. Liveness is the flock, never the pid.
 
     Meanwhile it publishes the driver's steps to Pilot (pilot_progress): at
     its first probe, at every probe that finds the list changed, and once
@@ -13773,9 +14949,11 @@ def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
     elif record is not None:
         code, lines = 0, ended(record, slice_dir)
     else:
+        tail = (relaunch(state, where) if callable(relaunch)
+                else f"run {where} {relaunch}")
         code, lines = WAIT_KILLED, [
             "gone: the driver left no exit record",
-            f"next: python3 {script} run {where} {relaunch}"]
+            f"next: python3 {script} {tail}"]
     print("\n".join(lines), flush=True)
     sys.exit(code)
 
@@ -14048,6 +15226,13 @@ def cmd_status(args) -> None:
     print(f"  {driver_line(state.get('driver'), slice_dir / 'run.lock')}")
     if isinstance(state.get("spec_unpushed"), dict):
         print(f"  {spec_unpushed_line(state['spec_unpushed'])}")
+    fx = state.get("fixes")
+    if isinstance(fx, dict):
+        print(f"  fixes pass: stage {fx.get('stage')}"
+              + (f", {fx['outcome']}" if fx.get("outcome") else "")
+              + (f" — {fx['reason']}" if fx.get("reason") else ""))
+        for line in fixes_lines(fx):
+            print(f"    {line}")
     for pid in state.get("known_phases", []):
         ps = state.get("phases", {}).get(pid)
         if not ps:
@@ -14405,6 +15590,26 @@ def main() -> None:
     run_p.add_argument("--spec-push", action="store_true",
                        help=SPEC_PUSH_HELP)
     run_p.set_defaults(func=cmd_run)
+
+    fixes_p = sub.add_parser(
+        "fixes", help="the fixes pass, once the close-out is answered: the "
+                      "wrap-up makes what the continuation marked fix now "
+                      "(close_out.py fix-now) on branches of its own, gated "
+                      "once over the stack, landed, pushed and recorded; exit "
+                      "0 whatever became of the fixes (state.json's `fixes`, "
+                      "`wait`'s end lines), 130 interrupted, 7 halted, 2 or 3 "
+                      "refused at the start")
+    fixes_p.add_argument("slice_dir", help="path to the slice folder, "
+                                           "slices/completed/ included")
+    fixes_p.add_argument("-v", "--verbose", action="store_true",
+                         help="echo the log to stdout as well as log.txt")
+    fixes_p.add_argument("--detach", action="store_true",
+                         help="run the pass in its own session, outliving this "
+                              "shell; exits once it started and prints the "
+                              "`wait` command to follow it with")
+    fixes_p.add_argument("--spec-push", action="store_true",
+                         help=SPEC_PUSH_HELP)
+    fixes_p.set_defaults(func=cmd_fixes)
 
     wait_p = sub.add_parser(
         "wait", help="wait on a slice's driver, in the foreground; exit 0 "

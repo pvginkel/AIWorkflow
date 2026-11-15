@@ -523,7 +523,7 @@ class ScriptedLoop(RunLoop):
         self.setup_rcs = list(setup_rcs or [])
         self.setup_runs = []                       # (argv, cwd, spawns so far)
 
-    def run(self):
+    def _faked_sessions(self):
         outer = run_loop.run_kc_session
 
         def route(prompt, cwd, timeout, agent=None, **kw):
@@ -537,9 +537,16 @@ class ScriptedLoop(RunLoop):
                 f"a test reached the real run_kc_session (agent {agent!r})")
             return outer(prompt, cwd, timeout, agent=agent, **kw)
 
-        with patched(run_loop, run_kc_session=route,
-                     WORKTREE_ROOT=self.worktree_root):
+        return patched(run_loop, run_kc_session=route,
+                       WORKTREE_ROOT=self.worktree_root)
+
+    def run(self):
+        with self._faked_sessions():
             return super().run()
+
+    def fixes(self):
+        with self._faked_sessions():
+            return super().fixes()
 
     def _wrap_up_session(self, prompt, cwd, timeout, agent=None, model=None,
                          effort=None, resume_session=None, extra_env=None,
@@ -558,7 +565,11 @@ class ScriptedLoop(RunLoop):
         # what the session did on disk, whatever it answered after
         if len(step) > 1:
             step[1](self)
-        verdict_path = self.slice_dir / "wrap_up_result.json"
+        # the verdict file the dispatch names: the first wrap-up's, or the
+        # fixes pass's
+        named = re.search(r"Write your verdict to (\S+\.json)", prompt)
+        verdict_path = (Path(named.group(1)) if named
+                        else self.slice_dir / "wrap_up_result.json")
         if payload is TIMED_OUT:
             raise subprocess.TimeoutExpired("kc", timeout)
         if isinstance(payload, tuple) and payload[0] is TIMED_OUT:
@@ -614,18 +625,18 @@ class ScriptedLoop(RunLoop):
                      "green" if green else "red", "", None, 0)
         return green, log_path
 
-    def _run_doc_gate(self, ds):
+    def _run_doc_gate(self, ds, stem="doc_gate", role="doc-gate", label=None):
         ds["gate_runs"] += 1
         green = self.doc_gates.pop(0) if self.doc_gates else True
         self.doc_gate_calls.append(green)
-        log_path = self.slice_dir / f"doc_gate_r{ds['gate_runs']}.log"
+        log_path = self.slice_dir / f"{stem}_r{ds['gate_runs']}.log"
         log_path.write_text("doc gate output\n")
         if green == "timeout":
             # as the real `_doc_gate_cmd` stops on a command past the cap
             raise run_loop.Bailout(
                 "timeout", details="doc-phase gate `kc project test` exceeded "
                                    f"{run_loop.GATE_TIMEOUT}s (output in {log_path})")
-        self._record(None, "doc-gate", ds["gate_runs"],
+        self._record(None, role, ds["gate_runs"],
                      "green" if green else "red", "", None, 0)
         return green, log_path
 
@@ -11889,9 +11900,29 @@ def left_out_run(tmp, step, reason, outcome, **kw):
         == r.store_at_dispatch["entries"]
     assert event["headline"].startswith(
         "The wrap-up was left out of the landing: " + reason)
-    assert event["consequence"].startswith("none in this run")
     assert f"`{WRAP}` at" in "\n".join(event["body"])
-    # in the record, not on the wrap-up's own list
+    # where it left commits, the event asks to land them (AIWF-176): the
+    # branch per repo, and the store's commits before it and as it left it
+    committed = {str(root): g.refs[str(root)][WRAP]
+                 for root, base in ((repo, "d0"), (sib, "s0"))
+                 if g.refs[str(root)].get(WRAP) not in (None, base)}
+    if committed:
+        assert event["consequence"] == run_loop.WRAP_UP_LANDING_CONSEQUENCE
+        assert event["proposal"].startswith(
+            "fix now: land the wrap-up's branches — ")
+        assert event["proposal"].endswith(" — gated once over them")
+        record = event["left_out"]
+        assert {row["repo"]: row["head"] for row in record["branches"]} \
+            == committed
+        assert record["before"] == r.state["wrap_up"]["store"]
+        assert record["entries"] == ["B1"]
+        assert "slice 074: close-out report as the wrap-up left it, before it " \
+               "is taken back" in g.specs_commits
+        assert close_out.route(event)[0] == "operator:landing"
+    else:
+        assert event["consequence"].startswith("none in this run")
+        assert "left_out" not in event and not event["proposal"]
+    # never on the wrap-up's own list
     assert [e["id"] for e, _ in close_out.worklist(slice_dir)] == ["B1"]
     report = load_report(slice_dir)
     assert f"{event['id']} — The wrap-up was left out" in report
@@ -20010,6 +20041,650 @@ def test_a_sweeps_entry_is_its_result_and_a_test_fixer_is_the_checks():
         assert (entry["section"], entry["role"], "passed" in entry,
                 "words" in entry) == ("Completion check", "Gate sweep",
                                       False, False)
+
+
+# -- the fixes pass (AIWF-171) ---------------------------------------------------
+#
+# `run_loop.py fixes`, after the close-out is answered: the wrap-up's second
+# dispatch over what the continuation marked `fix now`, on branches of its own,
+# gated once over the stack, landed and pushed, and recorded by the driver —
+# and the landing of a left-out wrap-up's branches (AIWF-176). Over real git
+# with real origins, since what it records is a commit as the upstream holds
+# it, which `rule --commit` checks for real; the session and the gates stay
+# scripted.
+
+FIXES = "phase/074-fixes"
+FIXES_DONE = {"outcome": "done", "summary": "fixed", "fixed": ["B1"]}
+FIX_LABELS = {"trigger": "normal-use", "impact": "degraded", "signal": "silent",
+              "fix": "one-edit", "area": "plain", "repo": "repo"}
+
+
+class FixesLoop(RealGitLoop):
+    """The scripted loop over real git whose repos have origins: the pass
+    fetches them and pushes to them."""
+
+    def _fetch_origin(self, root):
+        RunLoop._fetch_origin(self, root)
+
+
+def bare_origin(root, name):
+    path = Path(root) / "origins" / f"{name}.git"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sh(root, "init", "-q", "--bare", "-b", "main", str(path))
+    return path
+
+
+def tracked_repo(path, files):
+    """A repo at `path` holding `files`, committed on main and pushed to a
+    bare origin of its own that main tracks."""
+    path.mkdir(parents=True, exist_ok=True)
+    for rel, text in files.items():
+        (path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (path / rel).write_text(text)
+    origin = bare_origin(path.parent, path.name)
+    sh(path, "init", "-q", "-b", "main")
+    sh(path, "add", "-A")
+    sh(path, "commit", "-qm", "init")
+    sh(path, "remote", "add", "origin", str(origin))
+    sh(path, "push", "-q", "-u", "origin", "main")
+    return path
+
+
+def commit_file(root, rel, text, subject):
+    path = Path(root) / rel
+    path.write_text(text)
+    sh(root, "add", "--", rel)
+    sh(root, "commit", "-qm", subject)
+    return sh(root, "rev-parse", "HEAD")
+
+
+def fixes_world(tmp, plant=None, sibling=False, holds=""):
+    """A slice whose run is over and whose close-out is answered, in
+    `slices/completed/`: the code repo (and a sibling), the spec repo, each
+    tracking an origin; state.json as a completed run leaves it; `plant`,
+    called with the world, writes the entries and the rulings, which are
+    committed and pushed after it."""
+    root = Path(tmp).resolve()
+    repo = tracked_repo(root / "repo", {
+        ".aiworkflowrc": rc(), ".kubecoder/project.yaml": "projects: {}\n",
+        "test-plan.md": "t\n", "doc-plan.md": "d\n", "philosophy.md": "p\n",
+        "a.txt": "a\n", "b.txt": "b\n"})
+    sib = (tracked_repo(root / "Sibling", {
+        ".kubecoder/project.yaml": "projects: []\n", "chart.yaml": "chart\n"})
+        if sibling else None)
+    specs = root / "specs"
+    slice_dir = specs / "slices" / "completed" / "074_test_slice"
+    slice_dir.mkdir(parents=True)
+    (slice_dir / "plan.md").write_text(
+        "# Slice 074 — the test slice\n\n## Phases\n\n"
+        + phase_section("1", "First phase", done=True)
+        + (phase_section("2", "Chart", "../Sibling", done=True) if sib else "")
+        + holds)
+    (slice_dir / "verification.json").write_text('{"items": []}\n')
+    (specs / "design.md").write_text("the design record\n")
+    head = sh(repo, "rev-parse", "HEAD")
+    rounds = {"stage": None, "executor_rounds": 1, "review_rounds": 1,
+              "gate_runs": 1}
+    phases = {"1": {"status": "merged", "target": PROJECT, **rounds,
+                    "landed": {"root": str(repo), "base": head, "head": head}}}
+    bases = {str(repo): "main", str(specs): "main"}
+    if sib:
+        sib_head = sh(sib, "rev-parse", "HEAD")
+        phases["2"] = {"status": "merged", "target": "../Sibling", **rounds,
+                       "landed": {"root": str(sib), "base": sib_head,
+                                  "head": sib_head}}
+        bases[str(sib)] = "main"
+    (slice_dir / "state.json").write_text(json.dumps({
+        "slice": "074_test_slice", "run_phase": "done", "bases": bases,
+        "phases": phases, "known_phases": list(phases), "history": [],
+        "shared_repos": [], "bailouts": [], "consult_seq": 0, "generation": 0,
+        "test_rounds": 1, "exit": {"code": 0, "ts": "2026-11-15T10:00:00+00:00"},
+        "progress": [{"code": "wrap-up", "label": "Wrap-up", "state": "done"}],
+        "doc_phase": {"stage": "done", "gate_runs": 1, "nudges": 0,
+                      "session": None}}, indent=2))
+    close_out.init_report(slice_dir)
+    tracked_repo(specs, {})
+    world = types.SimpleNamespace(slice_dir=slice_dir, repo=repo, sib=sib,
+                                  specs=specs)
+    if plant is not None:
+        plant(world)
+        sh(specs, "add", "-A")
+        sh(specs, "commit", "-qm", "the answers, read back")
+        sh(specs, "push", "-q")
+    return world
+
+
+def ruled(slice_dir, eid, answer="Agree", by="pvginkel"):
+    """Pilot's answer lines on `eid`, read back as `absorb` reads them."""
+    with close_out._writing(slice_dir) as data:
+        close_out._absorb(data, {eid: {"lines": {"answer": answer, "by": by}}},
+                          "2026-11-15")
+
+
+def ruled_fix(slice_dir, headline, change=None, repo="repo"):
+    """A defect whose proposal the operator agreed to and the continuation
+    marked `fix now`."""
+    eid = close_out.append_entry(
+        slice_dir, "defect", headline, f"The body of {headline}.",
+        consequence="a reader is misled", provenance="read — code-reviewer, P1 r1",
+        labels={**FIX_LABELS, "repo": repo}, proposal=f"fix now: {headline}")
+    ruled(slice_dir, eid)
+    close_out.fix_now_entry(slice_dir, eid, "run-slice", change=change)
+    return eid
+
+
+def fixes_to_exit(loop):
+    try:
+        loop.fixes()
+    except SystemExit as e:
+        return e.code
+    raise AssertionError("fixes() did not exit")
+
+
+def fix_in(root, eid, rel="a.txt"):
+    """The session's fix of `eid`: one commit on the fixes branch, its id
+    in the subject."""
+    def effect(loop):
+        assert sh(root, "rev-parse", "--abbrev-ref", "HEAD") == FIXES
+        path = Path(root) / rel
+        commit_file(root, rel, path.read_text() + f"fixed for {eid}\n",
+                    f"{eid}: the ruled change")
+    return effect
+
+
+def takes_back(eid):
+    """The session takes the fix of `eid` back: the entry restated as a card
+    request, and the card proposed."""
+    def effect(loop):
+        close_out.restate_entry(
+            loop.slice_dir, eid, "wrap-up", f"{eid} needs a design",
+            "Tried the ruled change; test_page went red on it.\n\nThe fix needs "
+            "a choice of where the page reads its status from.")
+        close_out.propose_entry(loop.slice_dir, eid, "wrap-up",
+                                "Card it, as this section says.", mark="card")
+    return effect
+
+
+def doing(*effects):
+    def effect(loop):
+        for one in effects:
+            one(loop)
+    return effect
+
+
+def entry_in(slice_dir, eid):
+    return next(e for e in json.loads((slice_dir / "close-out.json").read_text())
+                ["entries"] if e["id"] == eid)
+
+
+def test_the_fixes_pass_with_nothing_ruled_fix_now_ends_at_once():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        w = fixes_world(tmp, plant=lambda w: close_out.append_entry(
+            w.slice_dir, "event", "resumed", "b", consequence="none"))
+        r = FixesLoop(w.slice_dir, [], repo_root=w.repo)
+        assert fixes_to_exit(r) == 0
+        assert not r.wrap_up_sessions and not r.doc_gate_calls
+        state = load_state(w.slice_dir)
+        fx = state["fixes"]
+        assert (fx["stage"], fx["outcome"], fx["entries"]) == ("done", "nothing", {})
+        assert state["exit"]["code"] == 0 and state["exit"]["pass"] == "fixes"
+        assert state["driver"]["pass"] == "fixes"
+        assert not sh(w.repo, "branch", "--list", FIXES)
+        assert [s["code"] for s in state["progress"]] == ["wrap-up"]
+        # the completed slice's lock goes with the pass
+        assert not (w.slice_dir / "run.lock").exists()
+        code, out, _ = wait(w.slice_dir)
+        assert (code, out.splitlines()) == (
+            0, ["ended: exit 0", "fixes: nothing was ruled fix now"])
+
+
+def test_the_fixes_pass_refuses_a_run_not_over_and_a_halt():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        w = fixes_world(tmp, plant=lambda w: ruled_fix(w.slice_dir, "a page"))
+        state = load_state(w.slice_dir)
+        state["run_phase"] = "docs"
+        (w.slice_dir / "state.json").write_text(json.dumps(state))
+        r = FixesLoop(w.slice_dir, [], repo_root=w.repo)
+        assert fixes_to_exit(r) == 2
+        assert "fixes" not in load_state(w.slice_dir)
+        assert load_state(w.slice_dir)["exit"] == state["exit"], "nothing recorded"
+        state["run_phase"] = "done"
+        (w.slice_dir / "state.json").write_text(json.dumps(state))
+        halt = Path(tmp) / "halt"
+        halt.write_text("")
+        with patched(run_loop, HALT_FILE=halt):
+            r = FixesLoop(w.slice_dir, [], repo_root=w.repo)
+            assert fixes_to_exit(r) == run_loop.EXIT_HALTED
+        assert "fixes" not in load_state(w.slice_dir)
+        assert not r.wrap_up_sessions
+
+
+def test_two_fixes_gated_green_are_landed_pushed_and_ruled_with_upstream_hashes():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        def plant(w):
+            ruled_fix(w.slice_dir, "the page reads wrong",
+                      change="the page reads 'ready' — 'say ready', the operator")
+            ruled_fix(w.slice_dir, "the chart pins the old tag", repo="Sibling")
+
+        w = fixes_world(tmp, plant=plant, sibling=True)
+        r = FixesLoop(w.slice_dir, [], repo_root=w.repo, doc_gates=[True],
+                      wrap_gates=[True],
+                      wrap_ups=[(FIXES_DONE, doing(fix_in(w.repo, "B1"),
+                                                   fix_in(w.sib, "B2",
+                                                          "chart.yaml")))])
+        r.spec_push = True
+        assert fixes_to_exit(r) == 0
+        # the dispatch: the fixes pass's opening, what was ruled, the repos
+        # with their branch and gate, and its own verdict file
+        [session] = r.wrap_up_sessions
+        assert session["agent"] == "wrap-up"
+        prompt = session["prompt"]
+        flat = " ".join(prompt.split())
+        assert flat.startswith(
+            "Slice 074_test_slice is built and its close-out answered. This is "
+            "the fixes pass, the wrap-up's second dispatch")
+        assert ("  2 entries are ruled fix now\n"
+                "  B1 · fix now — the ruled change: the page reads 'ready' — "
+                "'say ready', the operator\n") in prompt
+        assert ("  B2 · fix now — as the proposal the ruling agreed to says: "
+                "fix now: the chart pins the old tag\n") in prompt
+        assert f"  - {w.repo} — branch {FIXES} — gate: `kc project lint`" in prompt
+        assert f"  - {w.sib} — branch {FIXES} — gate: `kc project test`" in prompt
+        assert "Strike nothing, and never push" in flat
+        assert (f"Write your verdict to {w.slice_dir / 'fixes_result.json'}: "
+                "`fixed`") in flat
+        assert "worklist <close-out.md> [--fixes]" in prompt
+        # landed: each base fast-forwarded to its fix and pushed
+        for root, eid in ((w.repo, "B1"), (w.sib, "B2")):
+            assert sh(root, "log", "-1", "--format=%s", "main") \
+                == f"{eid}: the ruled change"
+            assert sh(root, "rev-parse", "main") == sh(root, "rev-parse",
+                                                      "origin/main")
+            assert not sh(root, "branch", "--list", FIXES)
+            assert sh(root, "rev-parse", "--abbrev-ref", "HEAD") == "main"
+        b1_sha = sh(w.repo, "rev-parse", "main")
+        b2_sha = sh(w.sib, "rev-parse", "main")
+        # recorded by the driver: ruled done with the commit the upstream holds
+        b1, b2 = entry_in(w.slice_dir, "B1"), entry_in(w.slice_dir, "B2")
+        assert b1["strike"]["commit"] == b1_sha
+        assert b2["strike"]["commit"] == b2_sha
+        assert b1["ruling"]["did"] == (
+            f"fixed in the fixes pass: `{b1_sha[:12]}` in repo — the fixes "
+            "pass's gate green over it (fixes_gate_r1.log, "
+            "fixes_doc_gate_r1.log)")
+        assert close_out.fixes_worklist(w.slice_dir) == []
+        state = load_state(w.slice_dir)
+        fx = state["fixes"]
+        assert (fx["stage"], fx["outcome"], fx["reason"]) == ("done", "landed", None)
+        assert fx["entries"]["B1"]["state"] == "landed"
+        assert fx["entries"]["B1"]["commit"] == b1_sha
+        assert fx["entries"]["B1"]["repo"] == str(w.repo)
+        assert fx["repos"][str(w.repo)]["landed"] == b1_sha
+        assert fx["repos"][str(w.sib)]["pushed"] is True
+        assert [(Path(g["repo"]).name, g["outcome"], Path(g["log"]).name)
+                for g in fx["gates"]] == [
+            ("Sibling", "green", "fixes_gate_r1.log"),
+            ("repo", "green", "fixes_doc_gate_r1.log")]
+        assert fx["session"] == "sess-wrap-1"
+        assert [(h["role"], h["round"], h["outcome"]) for h in state["history"]
+                if h["role"] in ("wrap-up", "fixes-gate", "fixes-doc-gate")] == [
+            ("wrap-up", 1, "done"), ("fixes-gate", 1, "green"),
+            ("fixes-doc-gate", 1, "green")]
+        # Pilot's tile: the step, done, saying what came of it
+        assert state["progress"][-1] == {
+            "code": "fixes", "label": "Fixes · 2 landed", "state": "done",
+            "started": state["progress"][-1]["started"]}
+        assert state["exit"]["pass"] == "fixes"
+        code, out, _ = wait(w.slice_dir)
+        assert (code, out.splitlines()) == (0, [
+            "ended: exit 0", f"landed: B1 {b1_sha}", f"landed: B2 {b2_sha}"])
+        # the store's commits went out with --spec-push
+        assert sh(w.specs, "rev-parse", "main") == sh(w.specs, "rev-parse",
+                                                     "origin/main")
+        assert "slice 074: close-out report after the fixes pass" in sh(
+            w.specs, "log", "--format=%s", "main")
+
+
+def test_a_fix_the_wrap_up_takes_back_is_carded_and_the_other_lands():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        def plant(w):
+            ruled_fix(w.slice_dir, "the page reads wrong")
+            ruled_fix(w.slice_dir, "the status line is stale")
+
+        w = fixes_world(tmp, plant=plant)
+        r = FixesLoop(w.slice_dir, [], repo_root=w.repo, doc_gates=[True],
+                      wrap_ups=[(FIXES_DONE, doing(fix_in(w.repo, "B1"),
+                                                   takes_back("B2")))])
+        assert fixes_to_exit(r) == 0
+        b1_sha = sh(w.repo, "rev-parse", "origin/main")
+        assert sh(w.repo, "log", "-1", "--format=%s", b1_sha) \
+            == "B1: the ruled change"
+        assert entry_in(w.slice_dir, "B1")["strike"]["commit"] == b1_sha
+        # the one it took back: its card request stands, its ruling uncarried
+        b2 = entry_in(w.slice_dir, "B2")
+        assert b2["wrap_up"]["outcome"] == "card" and b2["wrap_up"]["by"] == "wrap-up"
+        assert b2["restated"]["headline"] == "B2 needs a design"
+        assert not b2["strike"] and not b2["ruling"].get("did")
+        fx = load_state(w.slice_dir)["fixes"]
+        assert fx["outcome"] == "partial"
+        assert fx["entries"]["B2"] == {
+            "state": "carded", "landing": False, "commit": None, "repo": None,
+            "card": "wrap-up", "written": True,
+            "reason": "the wrap-up took the fix back: Tried the ruled change; "
+                      "test_page went red on it."}
+        code, out, _ = wait(w.slice_dir)
+        assert out.splitlines() == [
+            "ended: exit 0", f"landed: B1 {b1_sha}",
+            "carded: B2 — the wrap-up took the fix back: Tried the ruled "
+            "change; test_page went red on it."]
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            run_loop.cmd_status(types.SimpleNamespace(slice_dir=str(w.slice_dir)))
+        out = printed.getvalue()
+        assert "  fixes pass: stage done, partial" in out.splitlines()
+        assert f"    landed: B1 {b1_sha}" in out.splitlines()
+
+
+def test_a_gate_red_twice_lands_nothing_and_every_entry_gets_the_drivers_card():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        def plant(w):
+            ruled_fix(w.slice_dir, "the page reads wrong")
+            ruled_fix(w.slice_dir, "the status line is stale")
+
+        w = fixes_world(tmp, plant=plant)
+        before = sh(w.repo, "rev-parse", "main")
+        r = FixesLoop(w.slice_dir, [], repo_root=w.repo, doc_gates=[False, False],
+                      wrap_ups=[(FIXES_DONE, doing(fix_in(w.repo, "B1"),
+                                                   fix_in(w.repo, "B2", "b.txt")))])
+        assert fixes_to_exit(r) == 0
+        assert r.doc_gate_calls == [False, False]
+        # nothing landed, nothing pushed; the branch stays, unmerged
+        assert sh(w.repo, "rev-parse", "main") == before
+        assert sh(w.repo, "rev-parse", "origin/main") == before
+        assert sh(w.repo, "log", "--format=%s", f"main..{FIXES}").splitlines() \
+            == ["B2: the ruled change", "B1: the ruled change"]
+        assert sh(w.repo, "rev-parse", "--abbrev-ref", "HEAD") == "main"
+        log = w.slice_dir / "fixes_doc_gate_r2.log"
+        reason = ("the fixes were made, and the doc gate went red on them twice "
+                  f"(output in {log})")
+        fx = load_state(w.slice_dir)["fixes"]
+        assert (fx["outcome"], fx["reason"]) == ("carded", reason)
+        for eid, headline in (("B1", "the page reads wrong"),
+                              ("B2", "the status line is stale")):
+            assert fx["entries"][eid]["state"] == "carded"
+            assert fx["entries"][eid]["card"] == "driver"
+            entry = entry_in(w.slice_dir, eid)
+            assert not entry["strike"] and not entry["ruling"].get("did")
+            assert entry["wrap_up"]["outcome"] == "card"
+            assert entry["proposal"] == close_out.FIXES_CARD_PROPOSAL
+            assert entry["restated"]["by"] == "the run loop"
+            assert entry["restated"]["headline"] == headline
+            assert entry["restated"]["body"] == [
+                "The fix this entry was ruled for did not land in the fixes "
+                f"pass: {reason}.", "", f"The body of {headline}."]
+            card = close_out.card_view(w.slice_dir, [eid])
+            assert card.startswith(f"{headline}\n\nThe fix this entry was ruled")
+            assert len(card.split()) <= close_out.CARD_WORDS_MAX
+        code, out, _ = wait(w.slice_dir)
+        assert out.splitlines()[1] == f"carded: B1 — {reason}"
+
+
+def test_a_soft_failure_of_the_fixes_pass_lands_nothing():
+    if shutil.which("git") is None:
+        return
+    # the session timed out after it committed
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        w = fixes_world(tmp, plant=lambda w: ruled_fix(w.slice_dir, "a page"))
+        before = sh(w.repo, "rev-parse", "main")
+        r = FixesLoop(w.slice_dir, [], repo_root=w.repo,
+                      wrap_ups=[(TIMED_OUT, fix_in(w.repo, "B1"))])
+        assert fixes_to_exit(r) == 0
+        assert not r.doc_gate_calls
+        assert sh(w.repo, "rev-parse", "origin/main") == before
+        assert sh(w.repo, "log", "-1", "--format=%s", FIXES) == "B1: the ruled change"
+        fx = load_state(w.slice_dir)["fixes"]
+        why = f"the session timed out after {run_loop.TIMEOUTS['wrap-up']}s"
+        assert fx["reason"] == why
+        assert fx["entries"]["B1"]["reason"] == why
+        assert entry_in(w.slice_dir, "B1")["wrap_up"]["outcome"] == "card"
+    # uncommitted work in a repo it would branch: no dispatch at all
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        w = fixes_world(tmp, plant=lambda w: ruled_fix(w.slice_dir, "a page"))
+        (w.repo / "a.txt").write_text("someone's edit\n")
+        r = FixesLoop(w.slice_dir, [], repo_root=w.repo)
+        assert fixes_to_exit(r) == 0
+        assert not r.wrap_up_sessions
+        assert (w.repo / "a.txt").read_text() == "someone's edit\n", "left as found"
+        fx = load_state(w.slice_dir)["fixes"]
+        assert fx["reason"] == "uncommitted changes in repo before its dispatch"
+        assert fx["entries"]["B1"]["state"] == "carded"
+
+
+def test_a_repo_the_plan_holds_gets_no_fixes_branch():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        w = fixes_world(tmp, plant=lambda w: ruled_fix(w.slice_dir, "a page"),
+                        sibling=True,
+                        holds="\n## Push holds\n\n- ../Sibling — the operator "
+                              "pushes the chart\n")
+        r = FixesLoop(w.slice_dir, [], repo_root=w.repo, doc_gates=[True],
+                      wrap_ups=[(FIXES_DONE, fix_in(w.repo, "B1"))])
+        assert fixes_to_exit(r) == 0
+        prompt = r.wrap_up_sessions[0]["prompt"]
+        assert "- The plan holds these repos (`## Push holds`)" in prompt
+        assert "  - ../Sibling — the operator pushes the chart" in prompt
+        assert f"  - {w.sib} — branch" not in prompt
+        fx = load_state(w.slice_dir)["fixes"]
+        assert list(fx["repos"]) == [str(w.repo)]
+        assert not sh(w.sib, "branch", "--list", FIXES)
+        assert not r.wrap_gate_calls
+        assert fx["entries"]["B1"]["state"] == "landed"
+
+
+def left_out_world(tmp, conflict=False):
+    """A slice whose first wrap-up was left out with two commits on its
+    branch in the code repo: B1 and B2 fixed (struck naming them), T1
+    restated as a card request — then the store taken back, its entries
+    noted, the event entered asking to land the branch. Since: the operator
+    ruled the event `fix now` (marked), B2 a card, T1 Agree. `conflict`:
+    the doc phase's landing on main edited the line B1's commit edits."""
+    def plant(w):
+        repo, slice_dir = w.repo, w.slice_dir
+        cut = sh(repo, "rev-parse", "main")
+        sh(repo, "checkout", "-q", "-b", "phase/074-wrap-up")
+        w1 = commit_file(repo, "a.txt", "a, fixed for B1\n", "B1: the page")
+        w2 = commit_file(repo, "b.txt", "b, fixed for B2\n", "B2: the status")
+        sh(repo, "checkout", "-q", "main")
+        commit_file(repo, "a.txt" if conflict else "docs.md",
+                    "a, as the docs have it\n", "docs: the doc phase")
+        sh(repo, "push", "-q")
+        for headline in ("the page reads wrong", "the status line is stale"):
+            close_out.append_entry(slice_dir, "defect", headline, "b",
+                                   consequence="misleads", labels=FIX_LABELS)
+        close_out.append_entry(slice_dir, "test-gap", "no test pins the page",
+                               "the long story " * 40, consequence="drifts",
+                               labels=FIX_LABELS, proposal="card: pin it")
+        sh(w.specs, "add", "-A")
+        sh(w.specs, "commit", "-qm", "before the wrap-up")
+        before_sha = sh(w.specs, "rev-parse", "HEAD")
+        before = json.loads((slice_dir / "close-out.json").read_text())
+        # the wrap-up's writes
+        close_out.strike_entry(slice_dir, "B1", "fixed", by="wrap-up", commit=w1)
+        close_out.strike_entry(slice_dir, "B2", "fixed", by="wrap-up", commit=w2)
+        close_out.restate_entry(slice_dir, "T1", "wrap-up", "pin the page",
+                                "A test that reads the page's status.")
+        close_out.propose_entry(slice_dir, "T1", "wrap-up", "Card it.", mark="card")
+        sh(w.specs, "commit", "-qam", "as the wrap-up left it")
+        left_sha = sh(w.specs, "rev-parse", "HEAD")
+        left = json.loads((slice_dir / "close-out.json").read_text())
+        # the leave-out: the store back, the entries noted, the event entered
+        (slice_dir / "close-out.json").write_text(json.dumps(before, indent=2) + "\n")
+        close_out.wrap_up_dropped(slice_dir, ["B1", "B2", "T1"], left,
+                                  "the session timed out", "phase/074-wrap-up")
+        eid = close_out.append_entry(
+            slice_dir, "event", "The wrap-up was left out of the landing: the "
+            "session timed out", "What it committed stays on its branches.",
+            consequence=run_loop.WRAP_UP_LANDING_CONSEQUENCE,
+            proposal="fix now: land the wrap-up's branches — `phase/074-wrap-up` "
+                     "in repo — gated once over them")
+        close_out.set_left_out(slice_dir, eid, {
+            "branches": [{"repo": str(repo), "branch": "phase/074-wrap-up",
+                          "cut": cut, "head": w2}],
+            "store": left_sha, "before": before_sha,
+            "path": "slices/completed/074_test_slice/close-out.json",
+            "entries": ["B1", "B2", "T1"]})
+        ruled(slice_dir, eid)
+        close_out.fix_now_entry(slice_dir, eid, "run-slice")
+        ruled(slice_dir, "B2", answer="card")
+        ruled(slice_dir, "T1")
+        w.w1, w.w2, w.event = w1, w2, eid
+
+    return fixes_world(tmp, plant=plant)
+
+
+def test_a_left_out_wrap_ups_branches_land_and_what_it_wrote_comes_back():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        w = left_out_world(tmp)
+        assert close_out.route(entry_in(w.slice_dir, w.event))[0] \
+            == "operator:landing"
+        r = FixesLoop(w.slice_dir, [], repo_root=w.repo, doc_gates=[True])
+        assert fixes_to_exit(r) == 0
+        # the landing is the driver's: no session
+        assert not r.wrap_up_sessions
+        assert r.doc_gate_calls == [True]
+        # the wrap-up's two commits picked onto the base, gated, pushed
+        assert sh(w.repo, "log", "--format=%s", "origin/main").splitlines()[:3] \
+            == ["B2: the status", "B1: the page", "docs: the doc phase"]
+        p2 = sh(w.repo, "rev-parse", "origin/main")
+        p1 = sh(w.repo, "rev-parse", "origin/main~1")
+        assert {p1, p2}.isdisjoint({w.w1, w.w2})
+        fx = load_state(w.slice_dir)["fixes"]
+        assert fx["picked"][w.event] == {str(w.repo): [[w.w1, p1], [w.w2, p2]]}
+        assert fx["entries"][w.event]["state"] == "landed"
+        assert fx["entries"][w.event]["commit"] == p2
+        # the event ruled done, naming what landed, on the upstream's hash
+        event = entry_in(w.slice_dir, w.event)
+        assert event["strike"]["commit"] == p2
+        assert event["ruling"]["did"].startswith(
+            f"landed the wrap-up's branches in the fixes pass: 2 commit(s) in "
+            f"repo, `{p2[:12]}` the last — the fixes pass's gate green over it "
+            "(fixes_doc_gate_r1.log); what the wrap-up wrote to the store is "
+            "back on B1, B2 and T1")
+        # B1, unruled: its strike back, remapped to the commit that landed
+        b1 = entry_in(w.slice_dir, "B1")
+        assert b1["strike"]["commit"] == p1 and b1["strike"]["by"] == "wrap-up"
+        assert b1["notes"][-1]["history"] == close_out.LANDED
+        # B2, ruled since: the ruling stands — no strike over it, a note
+        b2 = entry_in(w.slice_dir, "B2")
+        assert not b2["strike"] and b2["ruling"]["answer_lines"]["answer"] == "card"
+        assert f"It had struck the entry — fixed (`{p2}`) — and the ruling " \
+               "stands" in " ".join(b2["notes"][-1]["text"])
+        # T1, ruled since: its restatement back, so the card filed from it is
+        # the wrap-up's text and within its words; its mark is not
+        t1 = entry_in(w.slice_dir, "T1")
+        assert t1["restated"]["headline"] == "pin the page"
+        assert not t1.get("wrap_up")
+        card = close_out.card_view(w.slice_dir, ["T1"])
+        assert card.startswith("pin the page\n\nA test that reads the page's status.")
+        assert len(card.split()) <= close_out.CARD_WORDS_MAX
+        # no section opens with "not landed" any more
+        assert close_out._ask_lead(t1, "Comes to you", "operator:x", "") is None
+        code, out, _ = wait(w.slice_dir)
+        assert out.splitlines() == ["ended: exit 0", f"landed: {w.event} {p2}"]
+
+
+def test_a_left_out_landing_that_does_not_pick_cleanly_is_carded():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        w = left_out_world(tmp, conflict=True)
+        origin = sh(w.repo, "rev-parse", "origin/main")
+        r = FixesLoop(w.slice_dir, [], repo_root=w.repo)
+        assert fixes_to_exit(r) == 0
+        assert not r.doc_gate_calls and not r.wrap_up_sessions
+        assert sh(w.repo, "rev-parse", "origin/main") == origin
+        assert sh(w.repo, "status", "--porcelain") == ""
+        assert not sh(w.repo, "branch", "--list", FIXES), "an empty branch goes"
+        reason = (f"the wrap-up's commit {w.w1[:12]} does not cherry-pick cleanly "
+                  f"onto {FIXES} in repo (conflicts in a.txt)")
+        fx = load_state(w.slice_dir)["fixes"]
+        assert fx["entries"][w.event]["reason"] == reason
+        event = entry_in(w.slice_dir, w.event)
+        assert event["wrap_up"]["outcome"] == "card"
+        assert not event["ruling"].get("did")
+        # nothing the wrap-up wrote came back
+        assert not entry_in(w.slice_dir, "B1")["strike"]
+        code, out, _ = wait(w.slice_dir)
+        assert out.splitlines() == ["ended: exit 0", f"carded: {w.event} — {reason}"]
+
+
+def test_a_fix_in_the_spec_repo_lands_with_its_commit_on_the_upstream():
+    """An edit a project rule reserves for the operator's word, agreed to:
+    the pass makes it in the spec repo, on the branch checked out there, and
+    the commit as origin holds it is the record — no code repo is gated."""
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        def plant(w):
+            eid = close_out.append_entry(
+                w.slice_dir, "prose", "the design record says on demand", "b",
+                consequence="a reader is misled", labels={**FIX_LABELS,
+                                                          "repo": "specs"})
+            close_out.restate_entry(w.slice_dir, eid, "wrap-up",
+                                    "say it syncs on start",
+                                    "design.md: on demand → on start; the rule")
+            close_out.propose_entry(w.slice_dir, eid, "wrap-up",
+                                    "Edit design.md on your word.", mark="word")
+            ruled(w.slice_dir, eid)
+            close_out.fix_now_entry(w.slice_dir, eid, "run-slice")
+
+        w = fixes_world(tmp, plant=plant)
+
+        def edit(loop):
+            commit_file(loop.spec_root, "design.md", "it syncs on start\n",
+                        "P1: the design record syncs on start")
+
+        r = FixesLoop(w.slice_dir, [], repo_root=w.repo,
+                      wrap_ups=[(FIXES_DONE, edit)])
+        r.spec_push = True
+        assert fixes_to_exit(r) == 0
+        assert not r.doc_gate_calls
+        sha = sh(w.specs, "log", "-1", "--format=%H", "--", "design.md")
+        assert sh(w.specs, "merge-base", "--is-ancestor", sha, "origin/main") == ""
+        p1 = entry_in(w.slice_dir, "P1")
+        assert p1["strike"]["commit"] == sha
+        assert p1["ruling"]["did"] == (
+            f"fixed in the fixes pass: `{sha[:12]}` in specs — no gate of the "
+            "fixes pass covers the spec repo")
+        fx = load_state(w.slice_dir)["fixes"]
+        assert fx["spec_commits"] == [[sha, "P1: the design record syncs on start"]]
+        assert fx["entries"]["P1"]["repo"] == str(w.specs)
+        assert not sh(w.repo, "branch", "--list", FIXES)
+
+
+def test_wait_relaunches_a_gone_fixes_pass_with_its_own_command():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp, state={
+            "run_phase": "done", "driver": {"pid": 1, "pass": "fixes"},
+            "fixes": {"stage": "dispatch", "entries": {"B1": {"state": "pending"}}}})
+        code, out, _ = wait(slice_dir)
+        assert code == run_loop.WAIT_KILLED
+        assert out.splitlines()[1] == (
+            f"next: python3 {run_loop.SCRIPT} fixes "
+            f"{os.path.abspath(slice_dir)} --detach")
 
 
 if __name__ == "__main__":

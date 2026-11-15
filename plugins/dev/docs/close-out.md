@@ -37,7 +37,8 @@ is written again. So are a strike, what `rule --did` recorded and a criterion `s
 history note, on a closed report too; one that would change nothing is refused. Nothing renders
 on a write. The loops render when they stop and at the run's
 end, after the wrap-up; the last render is the one the run registers. After it, only the run's
-continuation writes, through `absorb`, `rule`, `fold`, `settle` and `close`, and a
+continuation writes, through `absorb`, `fix-now`, `rule`, `fold`, `settle` and `close`, and
+the fixes pass it starts: the wrap-up's card requests, and the driver's record of what landed. A
 `close-out.md` that carries Pilot's answers is never rendered over: a render writes the record
 alone.
 
@@ -474,11 +475,14 @@ are entries, and entries go to a wrap-up: the loop has no end, and fix rounds re
 findings only ([run-loop.md](run-loop.md)). Its assurance is its bar, the gate, and one commit
 per entry — each can be read and taken back on its own.
 
-**One caller, at the run's end.** The driver dispatches it after the doc-writer's session and
-lands what it committed with the doc phase; it never fails a run ([run-loop.md](run-loop.md)
+**Two dispatches.** The driver dispatches it at the run's end, after the doc-writer's session,
+and lands what it committed with the doc phase; it never fails a run ([run-loop.md](run-loop.md)
 § After the last phase). It runs before the run's last render, so no entry waits for a wrap-up
 nobody dispatches: an entry it did not reach comes to the operator in the document, said as what
-it is — an entry nobody looked at.
+it is — an entry nobody looked at. Where its landing was left out over commits it had made, the
+event that says so asks the operator to land them, a `fix now` (its `left_out`). The second
+dispatch makes what the operator ruled `fix now`, after they answered: the fixes pass
+([§ The continuation](#the-continuation), [run-loop.md](run-loop.md) § The fixes pass).
 
 ## Writing an entry
 
@@ -530,8 +534,19 @@ there is one), which closes the entry, and closes the report.
   then the report's path. Entries that are one
   fix are one card. Actions the operator wants carded go together, on one card in their action
   queue: a list they work from, not a card each.
-- **`fix now`** — made here only where the project's `CLAUDE.md` classes the change as ad hoc
-  work.
+- **`fix now`** — marked here, made by the run's fixes pass. Which rulings are one is yours to
+  read: an assent to a proposal that opens `fix now:`, an assent to a request for the operator's
+  word, whose section writes the edit out, or the operator's own words asking for the fix. Mark
+  each, `close_out.py fix-now <id> --by run-slice`, with `--change "<their words>"` where their
+  words say the change and the proposal does not. It refuses an entry with no ruling, one struck
+  or carried out, and a request for the operator's word whose ruling Pilot chose, which is made
+  on their own word alone. Then `run_loop.py fixes` ([run-loop.md](run-loop.md) § The fixes
+  pass): the wrap-up makes every marked entry on branches of its own, the driver gates them
+  once over the stack, lands and pushes them, and records each. A fix that landed is ruled
+  carried out, with its commit as the upstream holds it. One that did not is a card request,
+  its section restated as the card and its proposal the line Agree files it on; file it as a
+  `card` ruling is, with no second document, and record it. The pass runs before any card is
+  filed, so every card is filed from the section as it stands after it.
 - **`fold into <slice>`** — `close_out.py fold <id> --into <slice>` appends the entry verbatim as
   an ask to that slice's `slice.md` and stages it; commit it, then record it. It refuses a slice
   planned or running, whose run never reads `slice.md` again.
@@ -544,8 +559,9 @@ there is one), which closes the entry, and closes the report.
 - **An owed-after action, done** — `close_out.py settle <Vnn> --verdict pass|fail --evidence
   "<their words, or what you observed>"` per criterion, which writes it into
   `verification.json`; a hold's action lists every criterion its push owes.
-- **What cannot be carried out as ruled** — a `fix now` no rule allows, a fold into a running
-  slice — is a new document with the alternatives as a decision, never a quiet substitute.
+- **What cannot be carried out as ruled** — a fold into a running slice, a `fix now` Pilot chose
+  on a request for the operator's word — is a new document with the alternatives as a decision,
+  never a quiet substitute.
 - **A record that turns out wrong** — a slip in `--did`, a verdict the operator reverses after
   the close — is written again with the verb that wrote it (§ The write model).
 - **Neither `close-out.json` nor `verification.json` is edited by hand.** At the end,

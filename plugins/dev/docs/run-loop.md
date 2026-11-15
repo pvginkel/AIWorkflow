@@ -670,7 +670,10 @@ whole plan is a feature of the review, not a cost. Then:
   folded, marked or relabelled it — why its landing was left out, and that the entry is back as
   it stood; or, where it left no mark, that it did not. The entry's section opens with that note
   (**Reached, not landed.** or **Not landed.**) in place of **Not reached.**, which would say
-  nobody looked at it ([close-out.md](close-out.md) § Lifecycle). A repo it would branch that holds uncommitted work is a soft failure before
+  nobody looked at it ([close-out.md](close-out.md) § Lifecycle). Where the wrap-up left commits
+  on its branches, the event asks to land them: its proposal is a `fix now`, and its `left_out`
+  keeps the branches and the store as the wrap-up left it, committed before it is taken back.
+  Agree has the fixes pass land them (§ The fixes pass). A repo it would branch that holds uncommitted work is a soft failure before
   anything is dispatched. A gate that goes red with its commits, in the primary repo or a
   sibling, is run once more on the same tree before the landing is left out, and green there
   keeps it: PilotApp slice 031's doc gate went red on one test of 497, a timeout, and one sample
@@ -709,6 +712,57 @@ phase, after the wrap-up, whenever the run stops, and when it completes, the run
 renders once more when the cost block has landed and registers the report with Pilot
 ([pilot.md](pilot.md) § The documents).
 
+## The fixes pass
+
+`run_loop.py fixes <slice> [--detach] [--spec-push]` is the run's continuation's: it runs once
+the close-out is answered and the continuation has marked the rulings that are a `fix now`
+([close-out.md](close-out.md) § The continuation). It works on a slice folder wherever it
+stands, `slices/completed/` included. It refuses with exit 2 a run that is not over, a slice
+another driver holds and a slice with no state or no store, and with exit 3 a spec repo off its
+base, a stale plugin or a `kc project list` that fails. It takes `run.lock` as `run` does and
+records its exit as the pass's (`exit.pass`), so `wait`, `status` and `stop` work on it, and the
+same command takes up a pass a halt or an interrupt stopped. It exits 0 whatever became of the
+fixes. What did is `state.json`'s `fixes` ([runner-state.md](runner-state.md)), and `wait`'s
+end lines say it an entry a line: `landed: B3 <sha>`, `carded: T4 — <reason>`, or
+`fixes: nothing was ruled fix now`.
+
+- **Nothing marked, nothing done.** Where `close_out.py worklist --fixes` names nothing, the pass
+  ends at once, with no dispatch and no step.
+- **Branches of its own.** The store is committed as the pass found it, and the targets are set
+  up as at a run's start. Each code repo the slice touched and the plan does not hold gets
+  `phase/<NNN>-fixes`, cut from its base; where the project pushes, the base is fast-forwarded to
+  its origin first, since the continuation may come days after the run. A repo that holds
+  uncommitted work, or stands on a branch other than its base (another run's), is a soft failure
+  before anything is dispatched.
+- **The landing a left-out wrap-up asked for** is the driver's: the commits its event's
+  `left_out` names are cherry-picked onto the fixes branch, in order. A commit that is gone or
+  does not pick cleanly takes that entry's picks back, and the entry is carded.
+- **The dispatch.** One `dev:wrap-up` session takes every other entry
+  ([wrap-up.md](../agents/wrap-up.md) § The fixes pass). Its commits go on the fixes branches,
+  and in the spec repo on the branch checked out there. It strikes nothing, and a fix it takes
+  back it restates as a card request. When the session has ended, the trees are settled as after
+  the first wrap-up's.
+- **The gate, once over the stack**, as the first wrap-up's: each other repo with a commit on its
+  branch gets the gate a phase there gets, and the primary repo the doc gate's full sweep. Each
+  is run once more on the same tree on a red or a timeout. A fix in the spec repo has no gate.
+- **The landing.** Each branch is fast-forwarded into its base and pushed under the run's
+  grants, holds and devlock; a moved origin is taken by a rebase onto it. A landing that fails
+  stops there, and what landed before it stays landed.
+- **The record is the driver's.** A fix that landed is ruled carried out (`rule --did
+  --commit`), with its commit as the upstream holds it, after any strike the session wrote in
+  the pass is taken back. The landing of a left-out wrap-up also brings back what that wrap-up
+  wrote to the store, over no ruling the operator has made since. An entry that did not land is
+  carded: with the session's card request where it wrote one, else with the driver's, its
+  section restated as the card with the reason it did not land and cut to the card's 200 words.
+  Then the report is rendered and committed.
+- **A soft failure lands nothing.** It is any of a first wrap-up's soft failures, a gate red
+  twice among them. The fixes branches stay, unmerged, for whoever wants to read them, and every
+  entry is carded with the reason. The pass never stops the continuation.
+
+A stop before the landing starts the pass again from a clean slate: the trees put back, the
+fixes branches deleted and the store taken back to where the pass found it. A stop at or after
+the landing takes the pass up there.
+
 ## The steps Pilot shows
 
 The run keeps the steps it goes through in `state.json`'s `progress`, and the `wait` its stage's
@@ -727,6 +781,7 @@ past the first is a step of its own, never a reused one, so the tile shows the w
 | `test` | `test` "Test phase", `test-2` "Test phase 2" | a test round's dispatch, to its verdict and the push check after it |
 | `docs` | `docs` "Doc phase" | the doc-writer's dispatch |
 | `wrap-up` | `wrap-up` "Wrap-up" | the wrap-up, then the doc gate and its nudges, the landing and the other repos' pushes, to the ladder's end |
+| `fixes` | `fixes` "Fixes", "Fixes · 2 landed, 1 carded" once done | the fixes pass, after the close-out is answered: its dispatch, gate, landing and record; a pass with nothing marked is no step |
 
 The round is the one the run counts: the phase's code-writer rounds, its review rounds, the sweep
 runs, the completion consults answered, the test rounds. A reattached round keeps its number and
@@ -778,7 +833,7 @@ in its place (the table's last row), the last line set standing. Whose words the
 | A stop the resume follows | an operator question: "Follows the operator's answer to the question the run stopped on"; a timeout: "The round before ran out of time: " and what ran out; any other: "Resumed after the run stopped: " and its reason |
 
 The consult's verdict and the test agent's carry `why` for this; the reviewer's findings carry
-their summaries already. The doc phase and the wrap-up have one step each, and so no why.
+their summaries already. The doc phase, the wrap-up and the fixes pass have one step each, and so no why.
 
 ## Protocol invariants
 

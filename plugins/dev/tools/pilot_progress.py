@@ -23,7 +23,8 @@ through `publish_steps`.
 A step's code is `[P<phase>.]<kind>[-<round>]`: round 1 has no suffix, the
 phase id is the plan's (`P3.code`, `P3a.review-2`, `sweep`, `write-2`). The
 kinds are a fixed set, because a later estimate keys on them: the run loop's
-`code`, `review`, `sweep`, `consult`, `test`, `docs` and `wrap-up`, the plan
+`code`, `review`, `sweep`, `consult`, `test`, `docs`, `wrap-up` and
+`fixes` (the fixes pass, after the close-out is answered), the plan
 loop's `ground` (the grounding ahead of its passes), `write` and `review`.
 
 A publisher sends the whole list with one JSON-RPC `tools/call` of Pilot's
@@ -72,7 +73,8 @@ ACTIVE = "active"
 DONE = "done"
 STATES = (PENDING, ACTIVE, DONE)
 
-RUN_KINDS = ("code", "review", "sweep", "consult", "test", "docs", "wrap-up")
+RUN_KINDS = ("code", "review", "sweep", "consult", "test", "docs", "wrap-up",
+             "fixes")
 PLAN_KINDS = ("ground", "write", "review")
 KINDS = frozenset(RUN_KINDS + PLAN_KINDS)
 

@@ -1,6 +1,6 @@
 ---
 name: wrap-up
-description: Works through what a slice's close-out report gives the wrap-up — fixes what is decided and safe, one commit per entry; asks for a card where a likely problem is more than it can fix responsibly; gives the labels an author could not; vets what comes to the operator; leaves the rest closed. Runs on Opus. Spawned by the run loop after the doc phase, before the report is rendered for Pilot.
+description: Works through what a slice's close-out report gives the wrap-up — fixes what is decided and safe, one commit per entry; asks for a card where a likely problem is more than it can fix responsibly; gives the labels an author could not; vets what comes to the operator; leaves the rest closed. Runs on Opus. Spawned by the run loop after the doc phase, before the report is rendered for Pilot, and once more, in the fixes pass, for what the operator ruled `fix now`.
 model: opus
 ---
 
@@ -180,6 +180,28 @@ strike.
 Batch independent tool calls into one message: read the work list, the entries (`show`) and
 the code they name together.
 
+## The fixes pass
+
+Once the operator has answered the close-out, the driver dispatches you a second time, for what
+they ruled `fix now`; your dispatch says which pass it is. `close_out.py worklist --fixes` names
+every entry it takes, with the ruled change: the operator's words where they said it, else the
+proposal they agreed to. The ruling settled what to change. What can still take a fix back is
+what you meet making it.
+
+- **A fix is the ruled change and everything that pins what it changes**: the tests and the doc
+  lines that state the old behaviour. Find them, and change them with it. One commit per entry,
+  its id in the subject, verified by its targeted test; then the gate your dispatch names, once
+  over the stack of fixes in a component, as step 3 above allows.
+- **Strike nothing.** The driver records each fix once it has landed, with its commit as the
+  upstream holds it.
+- **A fix you cannot make as ruled, you take back**, so that the branch stands where it stood:
+  one whose gate goes red, as step 4 reads a red, or one that reaches past what the ruling saw,
+  into a wire contract, stored data or a deploy to prove it. Restate the entry as a card request
+  (above): what the ruling asked, what you tried, and what went red or where it reached. Then
+  give it the line Agree files it on (`propose --card`). That is its mark; the continuation files
+  the card, and no second document asks the operator again.
+- **Nothing else of the report is yours in this pass**: no labelling, no vetting, no other entry.
+
 ## Hand-back
 
 Commit the store when you are done (`close-out.json`, staged by name). Your final message is
@@ -202,6 +224,7 @@ If your dispatch names a verdict file, write this there as JSON, with your debri
  "debrief": "your debrief"}
 ```
 
-- `done` — every entry of the work list carries its mark.
+- `done` — every entry of the work list carries its mark. In the fixes pass, the lists are
+  `fixed`, the entries you committed a fix for, and `cards`, those you took back.
 - `blocked` — an environmental problem stopped you; `summary` says which, and the lists say
   what was finished before it.

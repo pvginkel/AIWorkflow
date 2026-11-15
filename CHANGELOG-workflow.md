@@ -4,6 +4,43 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-15 — A `fix now` is made in a fixes pass: the wrap-up's second dispatch, gated, landed and recorded (v0.10.77)
+
+AIWF-171 and AIWF-176's landing route, from the handover AIWF-209.
+
+- **The fixes pass** (AIWF-171). A `fix now` the operator ruled was made by the continuation
+  itself, and only where the project's `CLAUDE.md` classed it as ad hoc work: no gate, no
+  branch, by a session whose bounds forbid code work otherwise. Now the continuation marks
+  each ruling that is one (`close_out.py fix-now <id> --by --change`, the ruled change in the
+  operator's words where the proposal does not say it; refused on an entry with no ruling, one
+  struck or carried out, and on Pilot's ruling of a request for the operator's word), and
+  `run_loop.py fixes <slice> [--detach] [--spec-push]` makes them. One more `dev:wrap-up`
+  session works on `phase/<NNN>-fixes` in each code repo the slice touched and the plan does not
+  hold, over `worklist --fixes`; it strikes nothing, and a fix that goes red or reaches past the
+  ruling it takes back as a card request. The driver gates the stack once, as the first
+  wrap-up's (each gate once more on the same tree), lands and pushes under the run's grants,
+  holds and devlock, and records each entry: `rule --did --commit` with the hash as the upstream
+  holds it, or a card request — the session's, or the driver's, the section restated as the card
+  with the reason and cut to its 200 words — that the continuation files with no second
+  document. A soft failure lands nothing and cards every entry; the pass never stops the
+  continuation. It takes `run.lock`, records `exit.pass: fixes`, and `wait` prints `landed:`
+  and `carded:` lines at its end and the pass's own relaunch when its driver is gone;
+  `state.json`'s `fixes` is its record, and Pilot's tile gets a `fixes` step (a new step kind).
+  It runs on a folder in `slices/completed/` too. run-slice's § The close-out answered is now
+  three steps: absorb and mark, the pass and its wait, then every other ruling, the pass's card
+  requests among them, and the close. The `fix now` exception in its bounds is gone, and so is
+  the `CLAUDE.md` condition in close-out.md and in PilotProjects' `rules/stages.md`.
+- **A left-out wrap-up's work can land** (AIWF-176). A wrap-up whose landing was left out lost
+  its commits to branches nobody merged, and its store writes with them (slice 038). Where it
+  left commits, the left-out event now carries the proposal `fix now: land the wrap-up's
+  branches — …` and a `left_out` record: each branch's cut and head, and the spec repo commits
+  holding the store before the wrap-up and as it left it, committed before it is taken back.
+  Agree is a `fix now`: the fixes pass cherry-picks those commits onto its branches, gates them
+  with the rest and lands them, then brings back what the wrap-up wrote to the store — on an
+  entry nobody has ruled on since, its restatement, labels, proposal, mark and strike (the
+  commit remapped to the one that landed); on one ruled since, its restatement alone, so a card
+  filed from it is the wrap-up's text. A commit that does not pick cleanly cards the event.
+
 ## 2026-11-15 — A sibling's ruling folded into a plan, renders on a question, a timed-out wrap-up gate retried, the wait's timeout named (v0.10.76)
 
 AIWF-169, AIWF-167, AIWF-176's driver half, AIWF-132's review and AIWF-204's fourth ask, from the

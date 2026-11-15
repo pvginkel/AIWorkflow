@@ -21,8 +21,8 @@ its manifest — what lets runs be read before/after a plugin change; a resume d
 it), `orchestrator` (the launching session's id and transcript
 path, or `null` for a hand-run), `driver` (the driver that holds `run.lock`, as its note names it:
 `environment` — `KUBECODER_ENVIRONMENT_ID`, `null` outside KubeCoder — `host`, `pid`, `started`;
-a `--resume` writes its own over it, and `status` prints it beside the lock's liveness and
-heartbeat), `spec_unpushed` (present only while the spec repo's branch holds commits its upstream
+a `--resume` writes its own over it, and so does the fixes pass, with `pass: fixes`; `status`
+prints it beside the lock's liveness and heartbeat), `spec_unpushed` (present only while the spec repo's branch holds commits its upstream
 lacks and the driver could not push them, or was not permitted to: `tip`, `ahead` — `null` with
 no upstream — `environment`, `since` and `error`; written and cleared at each push, and printed by
 `status`, [run-loop.md](run-loop.md) § Protocol invariants),
@@ -61,14 +61,15 @@ verdict's `outcome` and `summary`, `settled`, the `head` its row was noted on, a
 `entry` that asks for its card when it was not settled; [run-loop.md](run-loop.md) § After the
 last phase), `test_fixer_rounds` (the test-fixer's rounds the run has dispatched), `in_flight`, `exit` (how the run ended — its exit `code` and `ts`, the driver's last
 write, after `bailout.json`; cleared when a `--resume` starts, so a run that is not running and
-has none was killed from outside), `bailouts` (every stop this run made — `reason`, `phase`,
+has none was killed from outside; the fixes pass clears it as it starts and writes its own,
+with `pass: fixes`, which `wait` reads its end lines by), `bailouts` (every stop this run made — `reason`, `phase`,
 `question`, `ts`, the `run_phase` it stopped in, its `details` clipped to 600 characters and
 the `document` an operator question rendered, or `null`, and its `attach`, the renders a
 writer's question attached, slice-relative, `[]` where none — kept here because `bailout.json` is
 unlinked on resume; the resume that follows a stop writes it
 into the close-out report as an event and marks the row `reported`, so each stop is entered
 once however often the run resumes), `halts` (every stop at Pilot's halt file — `at`, where the
-run stood, the `run_phase` it stopped in and `ts`; a halt is not a bail, and nothing reports it;
+run stood, the `run_phase` it stopped in, `fixes` for the fixes pass, and `ts`; a halt is not a bail, and nothing reports it;
 [run-loop.md](run-loop.md) § Protocol invariants), `step` (the plan task the run serves, as
 `run --step` gave it from Pilot's brief; every document the run renders carries it, and a resume
 that gives none keeps it), `prerun_held` (the ids of the actions owed before the run whose
@@ -99,7 +100,17 @@ no doc phase, where the ladder starts at the wrap-up; `gate_last`, the doc gate'
 wrap-up stage made, which the gate stage takes instead of running the sweep again on the same
 commit; and `sibling_heads`, each other code repo's base sha as the ladder began, which tells the
 `siblings` stage whether a base that diverged from its origin carries only the run's own commits
-and may be rebased), `phases`, and `history`.
+and may be rebased), `fixes` (the fixes pass's record, [run-loop.md](run-loop.md) § The fixes
+pass: its `stage` — `cut` | `dispatch` | `gate` | `landing` | `record` | `done` — its `outcome`,
+`nothing` | `landed` | `partial` | `carded`, and the `reason` nothing landed where there is one;
+`store`, the spec repo commit the store stood at as the pass found it; its `session`; per entry
+its `state` — `pending` | `landed` | `carded` — whether it is a left-out wrap-up's `landing`, its
+`commit` and `repo`, the `reason` it was carded and whose card it is, `wrap-up` or `driver`; per
+repo the `branch`, the `base`, the `cut` sha, the `head`, its `commits`, the sha it `landed` at
+and whether it was `pushed`, and `rebased`, each commit's new sha after a rebase onto a moved
+origin; `spec_commits`, its fixes in the spec repo; `picked`, per landing entry and repo each
+wrap-up commit with its pick; `gate_runs` and `gates`, each run's `repo`, `outcome` and `log`;
+and `failed`, the landing that stopped short), `phases`, and `history`.
 
 Per phase: `status` (`pending` | `in_progress` | `merged`), `stage` (`executor` | `gate` |
 `review` | `merging` | `null`), `branch`, `target`, `worktree` (a shared target's linked

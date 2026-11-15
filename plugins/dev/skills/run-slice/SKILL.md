@@ -220,10 +220,20 @@ At exit 0, in this order:
 
 ## The close-out answered
 
-A sub-agent carries out close-out.md § The continuation: `close_out.py absorb`, every ruling
-carried out and recorded (`rule --did`), `close`, `render`, the store and the record committed by
-name. Then the session moves the slice card to done (pilot.md § Cards) and ends the turn. What
-the sub-agent could not carry out as ruled comes back as a store of asks: the session renders and
+1. A sub-agent reads the answers in and marks the fixes, as close-out.md § The continuation
+   says: `close_out.py absorb`, then `fix-now` on each ruling that is a `fix now`. It carries out
+   nothing else, and hands back the ids it marked.
+2. With any marked, the session launches the fixes pass, `run_loop.py fixes <slice> --detach
+   --spec-push`, and waits on it as on the run, at the `timeout:` the wait prints. Exit 0's lines
+   say what landed and what was carded; any other exit is handled as the run's is, its `next:`
+   line the relaunch.
+3. A sub-agent carries out every other ruling and records it (`rule --did`), the pass's card
+   requests among them, each filed as a `card` ruling is, then runs `close` and `render`. It
+   commits the store, the record, and the `state.json`, `log.txt` and `debrief.json` the pass
+   wrote, by name.
+
+Then the session moves the slice card to done (pilot.md § Cards) and ends the turn. What the
+sub-agents could not carry out as ruled comes back as a store of asks: the session renders and
 registers it and ends the turn, and the card waits for that document's continuation.
 
 ## The clarification
@@ -235,7 +245,8 @@ message is its answers, as the sub-agent gave them.
 ## The nudge
 
 Carry on from where the session stood (pilot.md § The nudge and the halt): a run still live is
-waited on (`run_loop.py wait <slice>`); one that exited 7 or 130 is resumed and waited on; a
+waited on (`run_loop.py wait <slice>`); one that exited 7 or 130 is resumed and waited on, a
+fixes pass launched again with its own command; a
 document still unanswered is left as it is, and the turn ends; one answered in place is read back
 as the continuation reads it.
 
@@ -243,8 +254,8 @@ as the continuation reads it.
 
 - **Nothing else is yours**: no test running, no pre-exploration, no re-derivation of an agent's
   result, no suite re-run, no doc work. Escalate, don't absorb: work that dispatches dev agents or
-  changes code belongs in a phase the loop executes — the one exception is a close-out's
-  `fix now`, where close-out.md allows it.
+  changes code belongs in a phase the loop executes, or in the fixes pass a close-out's
+  `fix now` is made in.
 - **Notify nobody, and tell nothing outside a document.** Pilot puts what the operator needs in
   front of them. The turn's last message is one line, the one this skill names where the turn
   ends, else where the stage stands with the path of each document the turn registered or
